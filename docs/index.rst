@@ -24,5 +24,6 @@ Key features:
    getting-started/index
    user-guide/index
    admin-guide/index
+   api-reference/index
    architecture/index
    development/index
