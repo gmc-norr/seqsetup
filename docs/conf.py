@@ -10,23 +10,24 @@ extensions = []
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
-html_theme = "sphinx_rtd_theme"
+html_theme = "furo"
 html_static_path = ["_static"]
 
 html_logo = "_static/logo.svg"
 html_favicon = "_static/logo.svg"
 
 html_theme_options = {
-    "navigation_depth": 3,
-    "collapse_navigation": False,
-    "logo_only": False,
-    "display_version": True,
-}
-
-html_context = {
-    "display_github": True,
-    "github_user": "parlar",
-    "github_repo": "seqsetup",
-    "github_version": "main",
-    "conf_py_path": "/docs/",
+    "source_repository": "https://github.com/parlar/seqsetup",
+    "source_branch": "main",
+    "source_directory": "docs/",
+    "light_css_variables": {
+        "color-brand-primary": "#2563eb",
+        "color-brand-content": "#1d4ed8",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#60a5fa",
+        "color-brand-content": "#3b82f6",
+    },
+    "sidebar_hide_name": False,
+    "navigation_with_keys": True,
 }

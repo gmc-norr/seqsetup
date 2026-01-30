@@ -21,8 +21,21 @@ Additional columns (test ID, project, description) are mapped based on position.
 API Import
 ^^^^^^^^^^
 
-If a sample API is configured, samples can be imported by providing identifiers
-that are resolved against the external system.
+If a sample API is configured (see :doc:`/admin-guide/sample-api`), samples can
+be imported from an external system such as a LIMS:
+
+1. In the sample entry step of the wizard, select **Import from worklist**
+2. SeqSetup fetches the list of available worklists from the configured API
+3. Select a worklist from the dropdown
+4. Click **Import** to fetch and add the samples
+
+Imported samples are created with any available metadata from the API response,
+including test IDs, index sequences, and index names. If index sequences are
+provided, they are assigned directly to the samples and override cycles are
+calculated automatically.
+
+Duplicate sample IDs (samples already present in the run) are skipped during
+import.
 
 Sample Table
 ------------

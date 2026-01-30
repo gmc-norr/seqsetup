@@ -10,4 +10,5 @@ Administrative functions are available to users with the Admin role.
    profiles
    local-users
    api-tokens
+   sample-api
    instruments
