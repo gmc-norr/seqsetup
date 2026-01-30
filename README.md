@@ -1,5 +1,7 @@
 # SeqSetup
 
+> **Note:** This project is under active development and is not ready for production use. APIs, data models, and features may change without notice.
+
 A web-based application for configuring and managing sample information for Illumina DNA sequencing workflows. SeqSetup generates Illumina Sample Sheet v2 files and associated metadata for instruments including NovaSeq X, MiSeq i100, and others.
 
 ## Prerequisites
