@@ -1,0 +1,39 @@
+---
+ApplicationProfileName: DragenRna
+ApplicationProfileVersion: 1.0.0
+ApplicationName: DragenRna
+ApplicationType: Dragen
+
+Settings:
+  SoftwareVersion: 4.1.23
+  AppVersion: 1.2.1
+  MapAlignOutFormat: bam
+  KeepFastq: true
+
+Data:
+  DifferentialExpressionEnable: False
+  ReferenceGenomeDir: hg38-alt_masked.cnv.graph.hla.rna-8-1667497097-2
+  RnaGeneAnnotationFile: na
+  RnaPipelineMode: MapAlign
+  DownSampleNumReads: false
+  VariantCallingMode: AllVariantCallers
+  Comparison1: na
+  Comparison2: na
+  Comparison3: na
+  Comparison4: na
+  Comparison5: na
+
+DataFields:
+  - DifferentialExpressionEnable
+  - ReferenceGenomeDir
+  - RnaGeneAnnotationFile
+  - RnaPipelineMode
+  - DownSampleNumReads
+  - VariantCallingMode
+  - Comparison1
+  - Comparison2
+  - Comparison3
+  - Comparison4
+  - Comparison5
+  - Sample_ID
+

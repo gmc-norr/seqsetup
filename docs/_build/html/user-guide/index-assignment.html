@@ -1,0 +1,325 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Index Assignment &mdash; SeqSetup 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Override Cycles" href="override-cycles.html" />
+    <link rel="prev" title="Samples" href="samples.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            SeqSetup
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting-started/index.html">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/installation.html">Installation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/installation.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/installation.html#docker-compose-recommended">Docker Compose (Recommended)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/installation.html#local-development-setup">Local Development Setup</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/configuration.html">Configuration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/configuration.html#environment-variables">Environment Variables</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/configuration.html#configuration-files">Configuration Files</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/configuration.html#session-key">Session Key</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/configuration.html#disabling-default-credentials">Disabling Default Credentials</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">User Guide</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="authentication.html">Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#user-roles">User Roles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#login">Login</a></li>
+<li class="toctree-l3"><a class="reference internal" href="authentication.html#session-management">Session Management</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="dashboard.html">Dashboard</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="dashboard.html#run-list">Run List</a></li>
+<li class="toctree-l3"><a class="reference internal" href="dashboard.html#navigation">Navigation</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="run-setup.html">Run Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="run-setup.html#starting-a-new-run">Starting a New Run</a></li>
+<li class="toctree-l3"><a class="reference internal" href="run-setup.html#editing-run-settings">Editing Run Settings</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="samples.html">Samples</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="samples.html#adding-samples">Adding Samples</a></li>
+<li class="toctree-l3"><a class="reference internal" href="samples.html#sample-table">Sample Table</a></li>
+</ul>
+</li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Index Assignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#index-kits">Index Kits</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#assigning-indexes">Assigning Indexes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="override-cycles.html">Override Cycles</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="override-cycles.html#override-cycles-format">Override Cycles Format</a></li>
+<li class="toctree-l3"><a class="reference internal" href="override-cycles.html#automatic-calculation">Automatic Calculation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="override-cycles.html#global-vs-per-sample">Global vs Per-Sample</a></li>
+<li class="toctree-l3"><a class="reference internal" href="override-cycles.html#forward-orientation">Forward Orientation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="override-cycles.html#manual-override">Manual Override</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lane-assignment.html">Lane Assignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lane-assignment.html#default-behavior">Default Behavior</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lane-assignment.html#assigning-lanes">Assigning Lanes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lane-assignment.html#lane-display">Lane Display</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lane-assignment.html#clearing-lanes">Clearing Lanes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="validation.html">Validation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="validation.html#index-collision-detection">Index Collision Detection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="validation.html#index-distance-matrix">Index Distance Matrix</a></li>
+<li class="toctree-l3"><a class="reference internal" href="validation.html#color-balance-analysis">Color Balance Analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="validation.html#dark-cycle-detection">Dark Cycle Detection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="validation.html#duplicate-sample-ids">Duplicate Sample IDs</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="export.html">Export</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="export.html#samplesheet-v2">SampleSheet v2</a></li>
+<li class="toctree-l3"><a class="reference internal" href="export.html#json-metadata">JSON Metadata</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../admin-guide/index.html">Admin Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/index-kits.html">Index Kit Management</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/index-kits.html#index-kit-structure">Index Kit Structure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/index-kits.html#adding-index-kits">Adding Index Kits</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/profiles.html">Profiles</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/profiles.html#test-profiles">Test Profiles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/profiles.html#application-profiles">Application Profiles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/profiles.html#profile-storage">Profile Storage</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/local-users.html">Local User Management</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/local-users.html#creating-users">Creating Users</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/local-users.html#editing-users">Editing Users</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/local-users.html#deleting-users">Deleting Users</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/local-users.html#authentication-priority">Authentication Priority</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/api-tokens.html">API Tokens</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/api-tokens.html#creating-tokens">Creating Tokens</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/api-tokens.html#using-tokens">Using Tokens</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/api-tokens.html#managing-tokens">Managing Tokens</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/instruments.html">Instrument Configuration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#configuration-structure">Configuration Structure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#supported-instruments">Supported Instruments</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#i5-read-orientation">i5 Read Orientation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#sbs-chemistry">SBS Chemistry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#customizing-instruments">Customizing Instruments</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture/index.html">Architecture</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../architecture/data-models.html">Data Models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/data-models.html#sequencingrun">SequencingRun</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/data-models.html#runcycles">RunCycles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/data-models.html#instrumentplatform">InstrumentPlatform</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/data-models.html#sample">Sample</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/data-models.html#index-models">Index Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/data-models.html#analysis">Analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/data-models.html#user-and-authentication-models">User and Authentication Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/data-models.html#validation-models">Validation Models</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../architecture/services.html">Services</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#cyclecalculator">CycleCalculator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#samplesheetv2exporter">SampleSheetV2Exporter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#jsonexporter">JSONExporter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#authservice">AuthService</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#ldapservice">LDAPService</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#validationservice">ValidationService</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#indexvalidator">IndexValidator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#indexparser">IndexParser</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#profilevalidator">ProfileValidator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#githubsyncservice">GitHubSyncService</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/services.html#sampleapiservice">SampleAPIService</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../architecture/samplesheet-format.html">SampleSheet v2 Format Reference</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../architecture/samplesheet-format.html#file-structure">File Structure</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../development/index.html">Development</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../development/setup.html">Development Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#environment-management">Environment Management</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#dependencies">Dependencies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#running-tests">Running Tests</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#building-documentation">Building Documentation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#mongodb-for-development">MongoDB for Development</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../development/project-structure.html">Project Structure</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../development/project-structure.html#source-layout">Source Layout</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/project-structure.html#application-layers">Application Layers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/project-structure.html#technology-stack">Technology Stack</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">SeqSetup</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">User Guide</a></li>
+      <li class="breadcrumb-item active">Index Assignment</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/user-guide/index-assignment.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="index-assignment">
+<h1>Index Assignment<a class="headerlink" href="#index-assignment" title="Link to this heading"></a></h1>
+<p>Sequencing indexes (barcodes) are assigned to samples to enable demultiplexing after
+the run.</p>
+<section id="index-kits">
+<h2>Index Kits<a class="headerlink" href="#index-kits" title="Link to this heading"></a></h2>
+<p>Indexes are organized into kits. Each kit contains a set of index pairs (i7 + i5)
+designed to work together.</p>
+<section id="kit-modes">
+<h3>Kit Modes<a class="headerlink" href="#kit-modes" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt><strong>Unique Dual Indexing (UDI)</strong></dt><dd><p>Pre-defined pairs of i7 and i5 indexes. Each pair is assigned as a unit. This is
+the most common mode for modern instruments.</p>
+</dd>
+<dt><strong>Combinatorial</strong></dt><dd><p>i7 and i5 indexes are selected independently and combined freely. Any i7 can be
+paired with any i5 from the kit.</p>
+</dd>
+<dt><strong>Single Index</strong></dt><dd><p>Only i7 indexes are used. No i5 index is assigned.</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="assigning-indexes">
+<h2>Assigning Indexes<a class="headerlink" href="#assigning-indexes" title="Link to this heading"></a></h2>
+<section id="drag-and-drop">
+<h3>Drag and Drop<a class="headerlink" href="#drag-and-drop" title="Link to this heading"></a></h3>
+<ol class="arabic simple">
+<li><p>Select an index kit from the kit selector in the index panel</p></li>
+<li><p>Available index pairs are displayed in the panel</p></li>
+<li><p>Select one or more index pairs by clicking (use Shift/Ctrl for multi-select)</p></li>
+<li><p>Select one or more target samples in the sample table</p></li>
+<li><p>Drag the indexes onto the selected samples, or click <strong>Assign</strong></p></li>
+</ol>
+<p>Indexes are assigned in order: the first selected index pair goes to the first
+selected sample, the second pair to the second sample, and so on.</p>
+</section>
+<section id="bulk-assignment">
+<h3>Bulk Assignment<a class="headerlink" href="#bulk-assignment" title="Link to this heading"></a></h3>
+<p>When multiple index pairs and multiple samples are selected, indexes are assigned
+sequentially in the order they appear.</p>
+</section>
+<section id="clearing-indexes">
+<h3>Clearing Indexes<a class="headerlink" href="#clearing-indexes" title="Link to this heading"></a></h3>
+<p>To remove index assignments:</p>
+<ul class="simple">
+<li><p>Select the sample(s) and click <strong>Clear Indexes</strong></p></li>
+<li><p>This removes the index pair, kit association, and resets override cycle patterns</p></li>
+</ul>
+</section>
+<section id="kit-defaults">
+<h3>Kit Defaults<a class="headerlink" href="#kit-defaults" title="Link to this heading"></a></h3>
+<p>When indexes from a kit are assigned, the kit may provide default settings that
+are applied to the sample:</p>
+<ul class="simple">
+<li><p><strong>Effective index cycles</strong> – The number of cycles the kit expects for its indexes</p></li>
+<li><p><strong>Index override patterns</strong> – Pre-defined override patterns (e.g., <code class="docutils literal notranslate"><span class="pre">I8N2</span></code>)</p></li>
+<li><p><strong>Read override patterns</strong> – Pre-defined read patterns (e.g., <code class="docutils literal notranslate"><span class="pre">N2Y*</span></code>, <code class="docutils literal notranslate"><span class="pre">U8Y*</span></code>)</p></li>
+</ul>
+<p>These defaults are populated automatically but can be overridden per sample.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="samples.html" class="btn btn-neutral float-left" title="Samples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="override-cycles.html" class="btn btn-neutral float-right" title="Override Cycles" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Pär Larsson.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

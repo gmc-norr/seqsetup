@@ -1,0 +1,18 @@
+# SeqSetup Development User Credentials
+# IMPORTANT: This file should NOT be committed to version control
+# Passwords are stored as bcrypt hashes
+
+users:
+  admin:
+    display_name: "Administrator"
+    email: "admin@example.com"
+    # Password: admin123 (for development only)
+    password_hash: "$2b$12$9HxXUATPGswgLl9PEUgvquxm.ZeK3i4D5sNHQ6lKmluUS713CNSNe"
+    role: admin
+
+  user:
+    display_name: "Standard User"
+    email: "user@example.com"
+    # Password: user123 (for development only)
+    password_hash: "$2b$12$tnksEXs.4JQD9fmT2bfj9.lterxNWyjuJbDHO/2qE.nnCmNSPUMEG"
+    role: standard

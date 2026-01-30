@@ -1,0 +1,425 @@
+# Instrument Configuration
+#
+# This file defines supported sequencing instruments, their flowcells,
+# SBS chemistry, and color balance settings.
+#
+# SBS Chemistry Groups (from Illumina documentation):
+#
+#   Four-color SBS:
+#     Instruments: GAIIx, HiSeq 2000/2500, HiSeq 4000, HiSeq X, MiSeq (classic)
+#     Channels: Blue, Green, Yellow, Red
+#     Base colors: A=Green, C=Blue, T=Yellow, G=Red
+#     No dark base. Highly tolerant of low-diversity libraries.
+#
+#   Two-color SBS (Red+Green):
+#     Instruments: NextSeq 500/550, MiniSeq, NovaSeq 6000
+#     Channels: Red, Green
+#     Base colors: A=Red+Green (both), C=Red, T=Green, G=Dark
+#     Channel 1 (Red):   A + C
+#     Channel 2 (Green): A + T
+#     Dark base: G. Sensitive to low-diversity and index imbalance.
+#
+#   Two-color SBS (Blue+Green, XLEAP):
+#     Instruments: NovaSeq X/X Plus, MiSeq i100/i100 Plus, NextSeq 1000/2000
+#     Channels: Blue, Green
+#     Base colors: A=Blue, C=Blue+Green (both), T=Green, G=Dark
+#     Channel 1 (Blue):  A + C
+#     Channel 2 (Green): C + T
+#     Dark base: G. Improved optics; reduced dark-base miscalls.
+#
+# i5 (Index 2) Read Orientation:
+#
+#   Forward (as written):
+#     Instruments: MiSeq (classic), HiSeq 2000/2500 (Rapid Run), NextSeq 500/550,
+#                  MiniSeq, NextSeq 1000/2000, MiSeq i100/i100 Plus
+#     i5 is read in the same orientation as the oligo sequence in the sample sheet.
+#
+#   Reverse-complement:
+#     Instruments: HiSeq 4000, HiSeq X, NovaSeq 6000, NovaSeq X/X Plus
+#     Patterned flow cell geometry causes i5 to be read as the reverse complement.
+#
+# Color balance is relevant for 2-color chemistry instruments where
+# poor balance can affect base calling quality.
+#
+# For each 2-color instrument, channel1_bases and channel2_bases define
+# which bases produce signal in each dye channel. The validation service
+# uses these to compute per-position color balance.
+
+instruments:
+  # NovaSeq X Series - Two-color XLEAP chemistry (Blue+Green)
+  NovaSeq X Series:
+    chemistry_type: 2-color
+    sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
+    i5_read_orientation: reverse-complement  # i5 read as reverse complement
+    color_balance_enabled: true
+    dye_channels: ["Blue", "Green"]
+    base_colors:
+      A: "Blue"
+      C: "Blue+Green"
+      T: "Green"
+      G: "Dark"
+    channel1_name: "Blue"
+    channel1_bases: ["A", "C"]
+    channel2_name: "Green"
+    channel2_bases: ["C", "T"]
+    dark_base: "G"
+    error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+    flowcells:
+      "1.5B":
+        lanes: 2
+        reads: 1500000000
+        reagent_kits: [100, 200, 300]
+        description: "1.5 billion reads, 2 lanes"
+      "10B":
+        lanes: 8
+        reads: 10000000000
+        reagent_kits: [100, 200, 300]
+        description: "10 billion reads, 8 lanes"
+      "25B":
+        lanes: 8
+        reads: 25000000000
+        reagent_kits: [100, 200, 300]
+        description: "25 billion reads, 8 lanes"
+
+  # MiSeq i100 Series - Two-color XLEAP chemistry (Blue+Green)
+  MiSeq i100 Series:
+    chemistry_type: 2-color
+    sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
+    i5_read_orientation: forward  # i5 read as written in sample sheet
+    color_balance_enabled: true
+    dye_channels: ["Blue", "Green"]
+    base_colors:
+      A: "Blue"
+      C: "Blue+Green"
+      T: "Green"
+      G: "Dark"
+    channel1_name: "Blue"
+    channel1_bases: ["A", "C"]
+    channel2_name: "Green"
+    channel2_bases: ["C", "T"]
+    dark_base: "G"
+    error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+    flowcells:
+      "5M":
+        lanes: 1
+        reads: 5000000
+        reagent_kits: [100, 300, 600, 1000]
+        description: "5 million reads, 1 lane"
+      "25M":
+        lanes: 1
+        reads: 25000000
+        reagent_kits: [100, 300, 600, 1000]
+        description: "25 million reads, 1 lane"
+      "50M":
+        lanes: 1
+        reads: 50000000
+        reagent_kits: [100, 300, 600]
+        description: "50 million reads, 1 lane"
+      "100M":
+        lanes: 1
+        reads: 100000000
+        reagent_kits: [100, 300]
+        description: "100 million reads, 1 lane"
+
+  # NextSeq 1000/2000 - Two-color XLEAP chemistry (Blue+Green)
+  NextSeq 1000/2000:
+    chemistry_type: 2-color
+    sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
+    i5_read_orientation: forward
+    color_balance_enabled: true
+    dye_channels: ["Blue", "Green"]
+    base_colors:
+      A: "Blue"
+      C: "Blue+Green"
+      T: "Green"
+      G: "Dark"
+    channel1_name: "Blue"
+    channel1_bases: ["A", "C"]
+    channel2_name: "Green"
+    channel2_bases: ["C", "T"]
+    dark_base: "G"
+    error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+    flowcells:
+      "P1":
+        lanes: 1
+        reads: 100000000
+        reagent_kits: [100, 200, 300, 600]
+        description: "100 million reads, 1 lane"
+      "P2":
+        lanes: 1
+        reads: 400000000
+        reagent_kits: [100, 200, 300, 600]
+        description: "400 million reads, 1 lane"
+      "P3":
+        lanes: 1
+        reads: 1200000000
+        reagent_kits: [50, 100, 200, 300]
+        description: "1.2 billion reads, 1 lane"
+
+  # =========================================================================
+  # Two-color SBS (Red+Green) instruments
+  # =========================================================================
+
+  # NextSeq 500/550 - Two-color SBS (Red+Green)
+  NextSeq 500/550:
+    chemistry_type: 2-color
+    sbs_chemistry: "Two-color SBS (Red+Green)"
+    i5_read_orientation: forward
+    color_balance_enabled: true
+    dye_channels: ["Red", "Green"]
+    base_colors:
+      A: "Red+Green"
+      C: "Red"
+      T: "Green"
+      G: "Dark"
+    channel1_name: "Red"
+    channel1_bases: ["A", "C"]
+    channel2_name: "Green"
+    channel2_bases: ["A", "T"]
+    dark_base: "G"
+    error_tendencies: "Dark-base ambiguity; poly-G tails; elevated substitutions"
+    flowcells:
+      "High Output":
+        lanes: 4
+        reads: 400000000
+        reagent_kits: [75, 150, 300]
+        description: "400 million reads, 4 lanes"
+      "Mid Output":
+        lanes: 4
+        reads: 130000000
+        reagent_kits: [150, 300]
+        description: "130 million reads, 4 lanes"
+
+  # MiniSeq - Two-color SBS (Red+Green)
+  MiniSeq:
+    chemistry_type: 2-color
+    sbs_chemistry: "Two-color SBS (Red+Green)"
+    i5_read_orientation: forward
+    color_balance_enabled: true
+    dye_channels: ["Red", "Green"]
+    base_colors:
+      A: "Red+Green"
+      C: "Red"
+      T: "Green"
+      G: "Dark"
+    channel1_name: "Red"
+    channel1_bases: ["A", "C"]
+    channel2_name: "Green"
+    channel2_bases: ["A", "T"]
+    dark_base: "G"
+    error_tendencies: "Dark-base ambiguity; poly-G tails; elevated substitutions"
+    flowcells:
+      "High Output":
+        lanes: 1
+        reads: 25000000
+        reagent_kits: [75, 150, 300]
+        description: "25 million reads, 1 lane"
+      "Mid Output":
+        lanes: 1
+        reads: 8000000
+        reagent_kits: [150, 300]
+        description: "8 million reads, 1 lane"
+
+  # NovaSeq 6000 - Two-color SBS (Red+Green)
+  NovaSeq 6000:
+    chemistry_type: 2-color
+    sbs_chemistry: "Two-color SBS (Red+Green)"
+    i5_read_orientation: reverse-complement
+    color_balance_enabled: true
+    dye_channels: ["Red", "Green"]
+    base_colors:
+      A: "Red+Green"
+      C: "Red"
+      T: "Green"
+      G: "Dark"
+    channel1_name: "Red"
+    channel1_bases: ["A", "C"]
+    channel2_name: "Green"
+    channel2_bases: ["A", "T"]
+    dark_base: "G"
+    error_tendencies: "Dark-base ambiguity; poly-G tails; elevated substitutions"
+    flowcells:
+      "SP":
+        lanes: 2
+        reads: 800000000
+        reagent_kits: [100, 200, 300, 500]
+        description: "800 million reads, 2 lanes"
+      "S1":
+        lanes: 2
+        reads: 1600000000
+        reagent_kits: [100, 200, 300]
+        description: "1.6 billion reads, 2 lanes"
+      "S2":
+        lanes: 2
+        reads: 4100000000
+        reagent_kits: [100, 200, 300]
+        description: "4.1 billion reads, 2 lanes"
+      "S4":
+        lanes: 4
+        reads: 10000000000
+        reagent_kits: [200, 300]
+        description: "10 billion reads, 4 lanes"
+
+  # =========================================================================
+  # Four-color SBS instruments
+  # =========================================================================
+
+  # GAIIx - Four-color SBS
+  GAIIx:
+    chemistry_type: 4-color
+    sbs_chemistry: "Four-color SBS"
+    i5_read_orientation: forward
+    color_balance_enabled: false
+    flowcells:
+      "Standard":
+        lanes: 8
+        reads: 320000000
+        reagent_kits: [36, 50, 76, 100, 150]
+        description: "320 million reads, 8 lanes"
+
+  # HiSeq 2000/2500 - Four-color SBS
+  HiSeq 2000/2500:
+    chemistry_type: 4-color
+    sbs_chemistry: "Four-color SBS"
+    i5_read_orientation: forward
+    color_balance_enabled: false
+    flowcells:
+      "High Output v4":
+        lanes: 8
+        reads: 4000000000
+        reagent_kits: [50, 100, 125, 250]
+        description: "4 billion reads, 8 lanes"
+      "Rapid Run v2":
+        lanes: 2
+        reads: 600000000
+        reagent_kits: [50, 100, 150, 200, 250]
+        description: "600 million reads, 2 lanes"
+
+  # HiSeq 4000 - Four-color SBS
+  HiSeq 4000:
+    chemistry_type: 4-color
+    sbs_chemistry: "Four-color SBS"
+    i5_read_orientation: reverse-complement
+    color_balance_enabled: false
+    flowcells:
+      "Standard":
+        lanes: 8
+        reads: 5000000000
+        reagent_kits: [50, 75, 150, 300]
+        description: "5 billion reads, 8 lanes"
+
+  # HiSeq X - Four-color SBS
+  HiSeq X:
+    chemistry_type: 4-color
+    sbs_chemistry: "Four-color SBS"
+    i5_read_orientation: reverse-complement
+    color_balance_enabled: false
+    flowcells:
+      "Standard":
+        lanes: 8
+        reads: 6000000000
+        reagent_kits: [300]
+        description: "6 billion reads, 8 lanes"
+
+  # MiSeq (classic) - Four-color SBS
+  MiSeq:
+    chemistry_type: 4-color
+    sbs_chemistry: "Four-color SBS"
+    i5_read_orientation: forward
+    color_balance_enabled: false
+    flowcells:
+      "v2 Standard":
+        lanes: 1
+        reads: 15000000
+        reagent_kits: [50, 300, 500]
+        description: "15 million reads, 1 lane"
+      "v3":
+        lanes: 1
+        reads: 25000000
+        reagent_kits: [150, 600]
+        description: "25 million reads, 1 lane"
+      "v2 Nano":
+        lanes: 1
+        reads: 1000000
+        reagent_kits: [300, 500]
+        description: "1 million reads, 1 lane"
+      "v2 Micro":
+        lanes: 1
+        reads: 4000000
+        reagent_kits: [300]
+        description: "4 million reads, 1 lane"
+
+# Default cycle configurations per reagent kit
+# These are typical defaults using (kit_label / 2) + 1 per read for paired-end.
+# Kit cycle budgets include all reads (R1 + I1 + I2 + R2), but kits contain
+# extra cycles beyond the label (~38 extra for XLEAP, ~29 for classic MiSeq).
+# Users can customize per run.
+default_cycles:
+  36:
+    read1: 18
+    read2: 18
+    index1: 8
+    index2: 8
+  50:
+    read1: 26
+    read2: 26
+    index1: 8
+    index2: 8
+  75:
+    read1: 36
+    read2: 36
+    index1: 8
+    index2: 8
+  76:
+    read1: 38
+    read2: 38
+    index1: 8
+    index2: 8
+  100:
+    read1: 51
+    read2: 51
+    index1: 10
+    index2: 10
+  125:
+    read1: 63
+    read2: 63
+    index1: 8
+    index2: 8
+  150:
+    read1: 76
+    read2: 76
+    index1: 10
+    index2: 10
+  200:
+    read1: 101
+    read2: 101
+    index1: 10
+    index2: 10
+  250:
+    read1: 126
+    read2: 126
+    index1: 10
+    index2: 10
+  300:
+    read1: 151
+    read2: 151
+    index1: 10
+    index2: 10
+  500:
+    read1: 251
+    read2: 251
+    index1: 10
+    index2: 10
+  600:
+    read1: 301
+    read2: 301
+    index1: 10
+    index2: 10
+  1000:
+    read1: 501
+    read2: 501
+    index1: 10
+    index2: 10
+
+# Common index cycle options
+index_cycle_options: [8, 10, 12, 17, 24]

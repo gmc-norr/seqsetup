@@ -1,0 +1,29 @@
+---
+ApplicationProfileName: DragenGermlineIdtWgs
+ApplicationProfileVersion: 1.0.0
+ApplicationType: Dragen
+ApplicationName: DragenGermline
+
+
+Settings:
+  SoftwareVersion: 4.1.23
+  AppVersion: 1.2.1
+  MapAlignOutFormat: bam
+  KeepFastq: true
+
+Data:
+  ReferenceGenomeDir: hg38-alt_masked.cnv.graph.hla.rna-8-1667497097-2
+  VariantCallingMode: AllVariantCallers
+  QcCoverage1BedFile: na
+  QcCoverage2BedFile: na
+  QcCoverage3BedFile: na
+  QcCrossContaminationVcfFile: na
+
+DataFields:
+  - ReferenceGenomeDir
+  - VariantCallingMode
+  - QcCoverage1BedFile
+  - QcCoverage2BedFile
+  - QcCoverage3BedFile
+  - QcCrossContaminationVcfFile
+  - Sample_ID

@@ -1,0 +1,29 @@
+---
+ApplicationProfileName: DragenEnrichmentGermline
+ApplicationProfileVersion: 1.0.0
+ApplicationType: Dragen
+ApplicationName: DragenEnrichment
+
+Settings:
+  SoftwareVersion: 4.1.23
+  AppVersion: 1.2.1
+  MapAlignOutFormat: bam
+  KeepFastq: true
+
+Data:
+  BedFile: gms560_hg38.BedFile
+  ReferenceGenomeDir: hg38-alt_masked.cnv.graph.hla.rna-8-1667497097-2
+  VariantCallingMode: AllVariantCallers
+  GermlineOrSomatic: germline
+  AuxNoiseBaselineFile: na
+  AuxCnvPanelOfNormalsFile: na
+
+DataFields:
+  - Sample_ID
+  - ReferenceGenomeDir
+  - BedFile
+  - GermlineOrSomatic
+  - AuxNoiseBaselineFile
+  - AuxCnvPanelOfNormalsFile
+  - VariantCallingMode
+

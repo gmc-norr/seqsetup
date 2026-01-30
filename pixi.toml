@@ -1,0 +1,26 @@
+[workspace]
+authors = ["Pär Larsson <par.larsson@umu.se>"]
+channels = ["conda-forge"]
+name = "sequencing_run_setup"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+serve = "PYTHONPATH=src python -m sequencing_run_setup.app"
+test = "PYTHONPATH=src pytest tests/"
+docs = "sphinx-build -b html docs docs/_build/html"
+
+[dependencies]
+python = ">=3.12"
+pytest = ">=8.0"
+pyyaml = ">=6.0"
+
+[pypi-dependencies]
+python-fasthtml = ">=0.12"
+python-multipart = ">=0.0.9"
+bcrypt = ">=4.0"
+pymongo = ">=4.6"
+ldap3 = ">=2.9"
+packaging = ">=24.0"
+sphinx = ">=7.0"
+sphinx-rtd-theme = ">=2.0"

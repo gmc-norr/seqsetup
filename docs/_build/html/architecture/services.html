@@ -1,0 +1,389 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Services &mdash; SeqSetup 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="SampleSheet v2 Format Reference" href="samplesheet-format.html" />
+    <link rel="prev" title="Data Models" href="data-models.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            SeqSetup
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting-started/index.html">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/installation.html">Installation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/installation.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/installation.html#docker-compose-recommended">Docker Compose (Recommended)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/installation.html#local-development-setup">Local Development Setup</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/configuration.html">Configuration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/configuration.html#environment-variables">Environment Variables</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/configuration.html#configuration-files">Configuration Files</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/configuration.html#session-key">Session Key</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting-started/configuration.html#disabling-default-credentials">Disabling Default Credentials</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../user-guide/index.html">User Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/authentication.html">Authentication</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/authentication.html#user-roles">User Roles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/authentication.html#login">Login</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/authentication.html#session-management">Session Management</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/dashboard.html">Dashboard</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/dashboard.html#run-list">Run List</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/dashboard.html#navigation">Navigation</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/run-setup.html">Run Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/run-setup.html#starting-a-new-run">Starting a New Run</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/run-setup.html#editing-run-settings">Editing Run Settings</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/samples.html">Samples</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/samples.html#adding-samples">Adding Samples</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/samples.html#sample-table">Sample Table</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/index-assignment.html">Index Assignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/index-assignment.html#index-kits">Index Kits</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/index-assignment.html#assigning-indexes">Assigning Indexes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/override-cycles.html">Override Cycles</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/override-cycles.html#override-cycles-format">Override Cycles Format</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/override-cycles.html#automatic-calculation">Automatic Calculation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/override-cycles.html#global-vs-per-sample">Global vs Per-Sample</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/override-cycles.html#forward-orientation">Forward Orientation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/override-cycles.html#manual-override">Manual Override</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/lane-assignment.html">Lane Assignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/lane-assignment.html#default-behavior">Default Behavior</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/lane-assignment.html#assigning-lanes">Assigning Lanes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/lane-assignment.html#lane-display">Lane Display</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/lane-assignment.html#clearing-lanes">Clearing Lanes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/validation.html">Validation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/validation.html#index-collision-detection">Index Collision Detection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/validation.html#index-distance-matrix">Index Distance Matrix</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/validation.html#color-balance-analysis">Color Balance Analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/validation.html#dark-cycle-detection">Dark Cycle Detection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/validation.html#duplicate-sample-ids">Duplicate Sample IDs</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../user-guide/export.html">Export</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/export.html#samplesheet-v2">SampleSheet v2</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../user-guide/export.html#json-metadata">JSON Metadata</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../admin-guide/index.html">Admin Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/index-kits.html">Index Kit Management</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/index-kits.html#index-kit-structure">Index Kit Structure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/index-kits.html#adding-index-kits">Adding Index Kits</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/profiles.html">Profiles</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/profiles.html#test-profiles">Test Profiles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/profiles.html#application-profiles">Application Profiles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/profiles.html#profile-storage">Profile Storage</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/local-users.html">Local User Management</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/local-users.html#creating-users">Creating Users</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/local-users.html#editing-users">Editing Users</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/local-users.html#deleting-users">Deleting Users</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/local-users.html#authentication-priority">Authentication Priority</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/api-tokens.html">API Tokens</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/api-tokens.html#creating-tokens">Creating Tokens</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/api-tokens.html#using-tokens">Using Tokens</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/api-tokens.html#managing-tokens">Managing Tokens</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../admin-guide/instruments.html">Instrument Configuration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#configuration-structure">Configuration Structure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#supported-instruments">Supported Instruments</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#i5-read-orientation">i5 Read Orientation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#sbs-chemistry">SBS Chemistry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../admin-guide/instruments.html#customizing-instruments">Customizing Instruments</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Architecture</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="data-models.html">Data Models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="data-models.html#sequencingrun">SequencingRun</a></li>
+<li class="toctree-l3"><a class="reference internal" href="data-models.html#runcycles">RunCycles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="data-models.html#instrumentplatform">InstrumentPlatform</a></li>
+<li class="toctree-l3"><a class="reference internal" href="data-models.html#sample">Sample</a></li>
+<li class="toctree-l3"><a class="reference internal" href="data-models.html#index-models">Index Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="data-models.html#analysis">Analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="data-models.html#user-and-authentication-models">User and Authentication Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="data-models.html#validation-models">Validation Models</a></li>
+</ul>
+</li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Services</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#cyclecalculator">CycleCalculator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#samplesheetv2exporter">SampleSheetV2Exporter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#jsonexporter">JSONExporter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#authservice">AuthService</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#ldapservice">LDAPService</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#validationservice">ValidationService</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#indexvalidator">IndexValidator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#indexparser">IndexParser</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#profilevalidator">ProfileValidator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#githubsyncservice">GitHubSyncService</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sampleapiservice">SampleAPIService</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="samplesheet-format.html">SampleSheet v2 Format Reference</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="samplesheet-format.html#file-structure">File Structure</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../development/index.html">Development</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../development/setup.html">Development Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#environment-management">Environment Management</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#dependencies">Dependencies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#running-tests">Running Tests</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#building-documentation">Building Documentation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/setup.html#mongodb-for-development">MongoDB for Development</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../development/project-structure.html">Project Structure</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../development/project-structure.html#source-layout">Source Layout</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/project-structure.html#application-layers">Application Layers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../development/project-structure.html#technology-stack">Technology Stack</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">SeqSetup</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Architecture</a></li>
+      <li class="breadcrumb-item active">Services</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/architecture/services.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="services">
+<h1>Services<a class="headerlink" href="#services" title="Link to this heading"></a></h1>
+<p>SeqSetup’s business logic is organized into service classes.</p>
+<section id="cyclecalculator">
+<h2>CycleCalculator<a class="headerlink" href="#cyclecalculator" title="Link to this heading"></a></h2>
+<p>Handles all override cycle computation.</p>
+<p><strong>Key methods:</strong></p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">calculate_run_cycles(reagent_kit_cycles,</span> <span class="pre">...)</span></code></dt><dd><p>Computes default cycle distribution for a reagent kit, with optional overrides
+for individual segments.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">calculate_override_cycles(sample,</span> <span class="pre">run_cycles)</span></code></dt><dd><p>Generates the full override cycles string for a sample based on its index
+lengths and the run’s cycle configuration. Returns a string like
+<code class="docutils literal notranslate"><span class="pre">Y151;I8N2;I8N2;Y151</span></code>.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">infer_global_override_cycles(run)</span></code></dt><dd><p>Checks if all samples in a run have the same override cycles. Returns the
+common string if uniform, or <code class="docutils literal notranslate"><span class="pre">None</span></code> if per-sample overrides are needed.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">populate_index_override_patterns(sample,</span> <span class="pre">run_cycles)</span></code></dt><dd><p>Computes resolved index patterns (e.g., <code class="docutils literal notranslate"><span class="pre">I8N2</span></code>) from the effective index
+length and run index cycles. Sets <code class="docutils literal notranslate"><span class="pre">index1_override_pattern</span></code> and
+<code class="docutils literal notranslate"><span class="pre">index2_override_pattern</span></code> on the sample.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">update_all_sample_override_cycles(run)</span></code></dt><dd><p>Recalculates override cycles and patterns for all samples in a run. Called
+after run cycle changes.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">reverse_override_segment(segment)</span></code></dt><dd><p>Reverses the token order within an override cycles segment. Used for
+reverse-complement i5 instruments (e.g., <code class="docutils literal notranslate"><span class="pre">I8N2</span></code> becomes <code class="docutils literal notranslate"><span class="pre">N2I8</span></code>).</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">validate_cycles(cycles,</span> <span class="pre">reagent_kit_cycles)</span></code></dt><dd><p>Validates that total cycles do not exceed the reagent kit capacity.</p>
+</dd>
+</dl>
+</section>
+<section id="samplesheetv2exporter">
+<h2>SampleSheetV2Exporter<a class="headerlink" href="#samplesheetv2exporter" title="Link to this heading"></a></h2>
+<p>Generates Illumina SampleSheet v2 CSV output.</p>
+<p><strong>Key methods:</strong></p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">export(run,</span> <span class="pre">test_profile_repo=None,</span> <span class="pre">app_profile_repo=None)</span></code></dt><dd><p>Main entry point. Writes all sections and returns the complete sample sheet as
+a string.</p>
+</dd>
+</dl>
+<p><strong>Sections written:</strong></p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">[Header]</span></code> – File format version, run name, instrument platform</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[Reads]</span></code> – Cycle counts for all four segments</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[BCLConvert_Settings]</span></code> – Barcode mismatches, global override cycles, adapter
+settings</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[BCLConvert_Data]</span></code> – Per-sample rows with index sequences, projects, and
+optionally per-sample override cycles and lane assignments</p></li>
+<li><p>DRAGEN sections – Generated from application profiles (if available) or
+legacy analysis objects</p></li>
+</ol>
+<p><strong>Instrument adjustments:</strong></p>
+<p>For reverse-complement i5 instruments (NovaSeq X, NovaSeq 6000, etc.), the
+Index 2 override cycles segment is automatically reversed at export time.</p>
+</section>
+<section id="jsonexporter">
+<h2>JSONExporter<a class="headerlink" href="#jsonexporter" title="Link to this heading"></a></h2>
+<p>Exports complete run metadata as JSON, including information not supported by the
+SampleSheet v2 format (test IDs, detailed metadata, kit information).</p>
+</section>
+<section id="authservice">
+<h2>AuthService<a class="headerlink" href="#authservice" title="Link to this heading"></a></h2>
+<p>Handles user authentication with a priority chain:</p>
+<ol class="arabic simple">
+<li><p>LDAP/AD authentication (if configured)</p></li>
+<li><p>Local MongoDB users</p></li>
+<li><p>File-based users (<code class="docutils literal notranslate"><span class="pre">config/users.yaml</span></code>)</p></li>
+</ol>
+<p>Supports bcrypt password verification and optional LDAP fallback to local
+authentication.</p>
+</section>
+<section id="ldapservice">
+<h2>LDAPService<a class="headerlink" href="#ldapservice" title="Link to this heading"></a></h2>
+<p>Manages LDAP/AD integration:</p>
+<ul class="simple">
+<li><p>Connection management with TLS support</p></li>
+<li><p>User search and DN resolution</p></li>
+<li><p>Group-based role assignment (admin group membership)</p></li>
+<li><p>LDAP injection prevention (RFC 4515 escaping)</p></li>
+</ul>
+</section>
+<section id="validationservice">
+<h2>ValidationService<a class="headerlink" href="#validationservice" title="Link to this heading"></a></h2>
+<p>Performs comprehensive run validation:</p>
+<ul class="simple">
+<li><p><strong>Duplicate sample IDs</strong> – Detects non-unique identifiers</p></li>
+<li><p><strong>Index collisions</strong> – Per-lane Hamming distance checking against mismatch
+thresholds</p></li>
+<li><p><strong>Dark cycle detection</strong> – Identifies indexes starting with two dark bases
+(two-color SBS instruments)</p></li>
+<li><p><strong>Color balance analysis</strong> – Per-position signal distribution across fluorescence
+channels</p></li>
+<li><p><strong>Distance matrices</strong> – All-vs-all Hamming distance computation for visualization</p></li>
+</ul>
+</section>
+<section id="indexvalidator">
+<h2>IndexValidator<a class="headerlink" href="#indexvalidator" title="Link to this heading"></a></h2>
+<p>Validates index kit definitions:</p>
+<ul class="simple">
+<li><p>Mode-specific structural checks (pairs for UDI, separate lists for combinatorial)</p></li>
+<li><p>Sequence validation (valid DNA characters: A, C, G, T, N)</p></li>
+<li><p>Duplicate detection within kits</p></li>
+<li><p>Version format validation (PEP 440)</p></li>
+</ul>
+</section>
+<section id="indexparser">
+<h2>IndexParser<a class="headerlink" href="#indexparser" title="Link to this heading"></a></h2>
+<p>Parses index kit definitions from CSV files, supporting multiple column layouts
+and index modes.</p>
+</section>
+<section id="profilevalidator">
+<h2>ProfileValidator<a class="headerlink" href="#profilevalidator" title="Link to this heading"></a></h2>
+<p>Validates test and application profile definitions against the expected schema.</p>
+</section>
+<section id="githubsyncservice">
+<h2>GitHubSyncService<a class="headerlink" href="#githubsyncservice" title="Link to this heading"></a></h2>
+<p>Synchronizes application and test profiles from a GitHub repository, keeping
+local definitions up to date with a remote source.</p>
+</section>
+<section id="sampleapiservice">
+<h2>SampleAPIService<a class="headerlink" href="#sampleapiservice" title="Link to this heading"></a></h2>
+<p>Imports sample and test identifiers from an external API, supporting bulk
+sample creation during run setup.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="data-models.html" class="btn btn-neutral float-left" title="Data Models" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="samplesheet-format.html" class="btn btn-neutral float-right" title="SampleSheet v2 Format Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Pär Larsson.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
