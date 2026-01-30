@@ -20,4 +20,13 @@ html_theme_options = {
     "navigation_depth": 3,
     "collapse_navigation": False,
     "logo_only": False,
+    "display_version": True,
+}
+
+html_context = {
+    "display_github": True,
+    "github_user": "parlar",
+    "github_repo": "seqsetup",
+    "github_version": "main",
+    "conf_py_path": "/docs/",
 }
