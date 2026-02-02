@@ -164,7 +164,7 @@ def auth_beforeware(req, sess):
     path = req.url.path
 
     # Check if route is public
-    if path in PUBLIC_ROUTES or path.startswith("/static"):
+    if path in PUBLIC_ROUTES or path.startswith(("/static", "/css", "/js", "/img")):
         req.scope["auth"] = None
         return
 
@@ -237,9 +237,9 @@ indexes.register(app, rt, get_index_kit_repo)
 profiles.register(app, rt, get_test_profile_repo, get_app_profile_repo)
 wizard.register(app, rt, get_run_repo, get_index_kit_repo, get_test_repo, get_sample_api_config_repo)  # /runs/new/* before /runs/{run_id}
 samples.register(app, rt, get_run_repo, get_index_kit_repo, get_sample_api_config_repo)
-runs.register(app, rt, get_run_repo)
-export.register(app, rt, get_run_repo, get_index_kit_repo, get_test_profile_repo, get_app_profile_repo)
-validation.register(app, rt, get_run_repo)  # /runs/{run_id}/validation before /runs/{run_id}
+runs.register(app, rt, get_run_repo, get_test_profile_repo, get_app_profile_repo, get_instrument_config_repo)
+export.register(app, rt, get_run_repo, get_index_kit_repo, get_test_profile_repo, get_app_profile_repo, get_instrument_config_repo)
+validation.register(app, rt, get_run_repo, get_test_profile_repo, get_app_profile_repo, get_instrument_config_repo)  # /runs/{run_id}/validation before /runs/{run_id}
 main.register(app, rt, get_run_repo, get_index_kit_repo)  # /runs/{run_id} must be LAST
 
 

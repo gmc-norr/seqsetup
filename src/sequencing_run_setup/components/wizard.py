@@ -388,7 +388,7 @@ def CycleConfigFormWizard(run: SequencingRun):
     index_cycle_options = get_index_cycle_options()
 
     return Fieldset(
-        Legend("Cycle Configuration"),
+        Legend("Run Cycle Configuration"),
         Div(
             Div(
                 Label("Read 1", fr="read1_cycles"),

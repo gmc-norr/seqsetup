@@ -6,10 +6,12 @@ from starlette.responses import Response
 from ..components.layout import AppShell
 from ..components.admin import (
     AuthenticationPage,
+    FlowcellsSection,
     InstrumentConfigForm,
     InstrumentsPage,
     LDAPConfigForm,
     LDAPTestResult,
+    OnboardAppsSection,
     ProfileSyncPage,
     ProfileSyncResult,
     SampleApiConfigForm,
@@ -224,6 +226,134 @@ def register(
         get_instrument_config_repo().save(config)
 
         return InstrumentConfigForm(config, message="Instrument visibility settings saved")
+
+    @app.post("/admin/settings/onboard-applications")
+    async def update_onboard_applications(req):
+        """Update onboard application configuration for a single instrument."""
+        error = require_admin(req)
+        if error:
+            return error
+
+        form_data = await req.form()
+        inst_name = form_data.get("instrument", "")
+
+        if not inst_name:
+            return Response("Missing instrument parameter", status_code=400)
+
+        config = get_instrument_config_repo().get()
+
+        # Collect all entries for this instrument from form data
+        # Form fields: {inst_name}|name|{idx} and {inst_name}|version|{idx}
+        # Indices may be non-sequential (dynamically added rows use timestamps)
+        prefix = f"{inst_name}|name|"
+        indices = [
+            key[len(prefix):] for key in form_data.keys()
+            if key.startswith(prefix)
+        ]
+        entries = []
+        for idx in indices:
+            app_name = form_data.get(f"{inst_name}|name|{idx}", "").strip()
+            app_version = form_data.get(f"{inst_name}|version|{idx}", "").strip()
+            if app_name:  # Skip empty name rows
+                entries.append({
+                    "name": app_name,
+                    "software_version": app_version,
+                })
+
+        config.set_onboard_applications(inst_name, entries)
+        get_instrument_config_repo().save(config)
+
+        return OnboardAppsSection(inst_name, config, message="Applications saved")
+
+    @app.post("/admin/onboard-applications/add-row")
+    async def add_onboard_application_row(req):
+        """Return a new empty application row for HTMX insertion."""
+        error = require_admin(req)
+        if error:
+            return error
+
+        form_data = await req.form()
+        instrument = form_data.get("instrument", "")
+        suggestions_str = form_data.get("suggestions", "")
+        suggestions = [s for s in suggestions_str.split(",") if s] if suggestions_str else []
+
+        # Find the next available index by counting existing rows via JS timestamp
+        # Use a high index to avoid collisions with existing rows
+        import time
+        idx = int(time.time() * 1000) % 100000
+
+        from ..components.admin import OnboardApplicationRow
+        return OnboardApplicationRow(instrument, idx, suggestions=suggestions)
+
+    # Flowcell management routes
+
+    @app.post("/admin/settings/flowcells")
+    async def update_flowcells(req):
+        """Update flowcell configuration for a single instrument."""
+        error = require_admin(req)
+        if error:
+            return error
+
+        form_data = await req.form()
+        inst_name = form_data.get("instrument", "")
+
+        if not inst_name:
+            return Response("Missing instrument parameter", status_code=400)
+
+        config = get_instrument_config_repo().get()
+
+        # Collect flowcell entries from form data
+        # Fields: {inst_name}|fc_name|{idx}, fc_lanes, fc_reads, fc_kits
+        prefix = f"{inst_name}|fc_name|"
+        indices = [
+            key[len(prefix):] for key in form_data.keys()
+            if key.startswith(prefix)
+        ]
+        flowcells = []
+        for idx in indices:
+            fc_name = form_data.get(f"{inst_name}|fc_name|{idx}", "").strip()
+            fc_lanes = form_data.get(f"{inst_name}|fc_lanes|{idx}", "1").strip()
+            fc_reads = form_data.get(f"{inst_name}|fc_reads|{idx}", "0").strip()
+            fc_kits_str = form_data.get(f"{inst_name}|fc_kits|{idx}", "").strip()
+
+            if not fc_name:
+                continue
+
+            # Parse reagent kits from comma-separated string
+            reagent_kits = []
+            if fc_kits_str:
+                for k in fc_kits_str.split(","):
+                    k = k.strip()
+                    if k.isdigit():
+                        reagent_kits.append(int(k))
+
+            flowcells.append({
+                "name": fc_name,
+                "lanes": int(fc_lanes) if fc_lanes.isdigit() else 1,
+                "reads": int(fc_reads) if fc_reads.isdigit() else 0,
+                "reagent_kits": reagent_kits,
+            })
+
+        config.set_custom_flowcells(inst_name, flowcells)
+        get_instrument_config_repo().save(config)
+
+        return FlowcellsSection(inst_name, config, message="Flowcells saved")
+
+    @app.post("/admin/flowcells/add-row")
+    async def add_flowcell_row(req):
+        """Return a new empty flowcell row for HTMX insertion."""
+        error = require_admin(req)
+        if error:
+            return error
+
+        form_data = await req.form()
+        instrument = form_data.get("instrument", "")
+
+        import time
+        idx = int(time.time() * 1000) % 100000
+
+        from ..components.admin import FlowcellRow
+        return FlowcellRow(instrument, idx)
 
     # Profile Sync Routes (only if repos are provided)
     if get_profile_sync_config_repo is not None:

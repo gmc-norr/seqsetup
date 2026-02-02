@@ -105,7 +105,7 @@ def CycleConfigDisplay(run: SequencingRun):
     cycles = run.run_cycles or RunCycles(150, 150, 10, 10)
 
     return Fieldset(
-        Legend("Cycle Configuration"),
+        Legend("Run Cycle Configuration"),
         Div(
             Div(
                 Span("Read 1: ", cls="cycle-label"),

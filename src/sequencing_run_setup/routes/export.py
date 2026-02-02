@@ -7,6 +7,9 @@ from starlette.responses import Response as StarletteResponse
 
 from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_exporter import SampleSheetV2Exporter
+from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
+from ..services.validation import ValidationService
+from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
 
 
 def _sanitize_filename(name: str, default: str = "export") -> str:
@@ -43,8 +46,21 @@ def register(
     get_index_kit_repo,
     get_test_profile_repo=None,
     get_app_profile_repo=None,
+    get_instrument_config_repo=None,
 ):
     """Register export routes."""
+
+    def _run_validation(run):
+        """Run full validation with all available repos."""
+        test_profile_repo = get_test_profile_repo() if get_test_profile_repo else None
+        app_profile_repo = get_app_profile_repo() if get_app_profile_repo else None
+        instrument_config = get_instrument_config_repo().get() if get_instrument_config_repo else None
+        return ValidationService.validate_run(
+            run,
+            test_profile_repo=test_profile_repo,
+            app_profile_repo=app_profile_repo,
+            instrument_config=instrument_config,
+        )
 
     @rt("/runs/{run_id}/export/samplesheet")
     def export_samplesheet(run_id: str):
@@ -85,6 +101,39 @@ def register(
                 status_code=500,
             )
 
+    @rt("/runs/{run_id}/export/samplesheet-v1")
+    def export_samplesheet_v1(run_id: str):
+        """Download SampleSheet v1 CSV for instruments that support it."""
+        run_repo = get_run_repo()
+        run = run_repo.get_by_id(run_id)
+
+        if not run:
+            return StarletteResponse(content="Run not found", status_code=404)
+
+        if not SampleSheetV1Exporter.supports(run.instrument_platform):
+            return StarletteResponse(
+                content="SampleSheet v1 not supported for this instrument",
+                status_code=400,
+            )
+
+        try:
+            content = SampleSheetV1Exporter.export(run)
+            safe_name = _sanitize_filename(run.run_name, "SampleSheet")
+            filename = f"{safe_name}.csv"
+
+            return StarletteResponse(
+                content=content,
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                },
+            )
+        except Exception as e:
+            return StarletteResponse(
+                content=f"Error generating SampleSheet v1: {e}",
+                status_code=500,
+            )
+
     @rt("/runs/{run_id}/export/json")
     def export_json(run_id: str):
         """Download full JSON metadata for a specific run."""
@@ -113,5 +162,61 @@ def register(
         except Exception as e:
             return StarletteResponse(
                 content=f"Error generating JSON: {e}",
+                status_code=500,
+            )
+
+    @rt("/runs/{run_id}/export/validation-report")
+    def export_validation_json(run_id: str):
+        """Download validation report as JSON."""
+        run_repo = get_run_repo()
+        run = run_repo.get_by_id(run_id)
+
+        if not run:
+            return StarletteResponse(content="Run not found", status_code=404)
+
+        try:
+            result = _run_validation(run)
+            content = ValidationReportJSON.export(run, result)
+            safe_name = _sanitize_filename(run.run_name, "validation_report")
+            filename = f"{safe_name}_validation.json"
+
+            return StarletteResponse(
+                content=content,
+                media_type="application/json",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                },
+            )
+        except Exception as e:
+            return StarletteResponse(
+                content=f"Error generating validation report: {e}",
+                status_code=500,
+            )
+
+    @rt("/runs/{run_id}/export/validation-pdf")
+    def export_validation_pdf(run_id: str):
+        """Download validation report as PDF."""
+        run_repo = get_run_repo()
+        run = run_repo.get_by_id(run_id)
+
+        if not run:
+            return StarletteResponse(content="Run not found", status_code=404)
+
+        try:
+            result = _run_validation(run)
+            pdf_bytes = ValidationReportPDF.export(run, result)
+            safe_name = _sanitize_filename(run.run_name, "validation_report")
+            filename = f"{safe_name}_validation.pdf"
+
+            return StarletteResponse(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                },
+            )
+        except Exception as e:
+            return StarletteResponse(
+                content=f"Error generating validation PDF: {e}",
                 status_code=500,
             )

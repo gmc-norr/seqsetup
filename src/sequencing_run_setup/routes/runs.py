@@ -16,6 +16,11 @@ from ..data.instruments import (
 )
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus
 from ..services.cycle_calculator import CycleCalculator
+from ..services.json_exporter import JSONExporter
+from ..services.samplesheet_exporter import SampleSheetV2Exporter
+from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
+from ..services.validation import ValidationService
+from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
 
 
 def _get_username(req) -> str:
@@ -24,7 +29,7 @@ def _get_username(req) -> str:
     return user.username if user else ""
 
 
-def register(app, rt, get_run_repo):
+def register(app, rt, get_run_repo, get_test_profile_repo=None, get_app_profile_repo=None, get_instrument_config_repo=None):
     """Register run configuration routes."""
 
     @app.post("/runs/{run_id}/name")
@@ -190,6 +195,33 @@ def register(app, rt, get_run_repo):
             return RunStatusBar(run)
 
         run.status = new_status
+
+        # Pre-generate exports when transitioning to READY
+        if new_status == RunStatus.READY:
+            test_profile_repo = get_test_profile_repo() if get_test_profile_repo else None
+            app_profile_repo = get_app_profile_repo() if get_app_profile_repo else None
+            run.generated_samplesheet = SampleSheetV2Exporter.export(
+                run,
+                test_profile_repo=test_profile_repo,
+                app_profile_repo=app_profile_repo,
+            )
+            run.generated_json = JSONExporter.export(run)
+
+            # Generate v1 samplesheet if instrument supports it
+            if SampleSheetV1Exporter.supports(run.instrument_platform):
+                run.generated_samplesheet_v1 = SampleSheetV1Exporter.export(run)
+
+            # Generate validation reports
+            instrument_config = get_instrument_config_repo().get() if get_instrument_config_repo else None
+            result = ValidationService.validate_run(
+                run,
+                test_profile_repo=test_profile_repo,
+                app_profile_repo=app_profile_repo,
+                instrument_config=instrument_config,
+            )
+            run.generated_validation_json = ValidationReportJSON.export(run, result)
+            run.generated_validation_pdf = ValidationReportPDF.export(run, result)
+
         run.touch(reset_validation=False, updated_by=_get_username(req))
         run_repo.save(run)
 

@@ -5,6 +5,7 @@ from starlette.responses import RedirectResponse
 
 from ..components.layout import AppShell
 from ..models.sequencing_run import RunStatus
+from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 
 
@@ -291,26 +292,61 @@ def ValidatePanelForRun(run):
 
 def ExportPanelForRun(run):
     """Export panel with download buttons."""
-    # Check if export is allowed
+    is_ready = run.status == RunStatus.READY
     all_have_indexes = run.all_samples_have_indexes if run.has_samples else False
-    can_export = run.has_samples and all_have_indexes
+    ss_enabled = is_ready and all_have_indexes
+    json_enabled = is_ready
+    val_json_enabled = run.generated_validation_json is not None
+    val_pdf_enabled = run.generated_validation_pdf is not None
+    has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
+    v1_enabled = is_ready and all_have_indexes
+
+    buttons = [
+        A(
+            "Download Sample Sheet",
+            href=f"/runs/{run.id}/export/samplesheet" if ss_enabled else None,
+            cls=f"btn btn-primary btn-small export-btn{'' if ss_enabled else ' disabled'}",
+        ),
+    ]
+
+    if has_v1:
+        buttons.append(
+            A(
+                "Download Sample Sheet v1",
+                href=f"/runs/{run.id}/export/samplesheet-v1" if v1_enabled else None,
+                cls=f"btn btn-primary btn-small export-btn{'' if v1_enabled else ' disabled'}",
+            ),
+        )
+
+    buttons.extend([
+        A(
+            "Download JSON",
+            href=f"/runs/{run.id}/export/json" if json_enabled else None,
+            cls=f"btn btn-secondary btn-small export-btn{'' if json_enabled else ' disabled'}",
+        ),
+        A(
+            "Download Validation Report (JSON)",
+            href=f"/runs/{run.id}/export/validation-report" if val_json_enabled else None,
+            cls=f"btn btn-secondary btn-small export-btn{'' if val_json_enabled else ' disabled'}",
+        ),
+        A(
+            "Download Validation Report (PDF)",
+            href=f"/runs/{run.id}/export/validation-pdf" if val_pdf_enabled else None,
+            cls=f"btn btn-secondary btn-small export-btn{'' if val_pdf_enabled else ' disabled'}",
+        ),
+    ])
 
     return Fieldset(
         Legend("Export"),
         Div(
             Div(
-                A(
-                    "Download Sample Sheet",
-                    href=f"/runs/{run.id}/export/samplesheet",
-                    cls=f"btn btn-primary btn-small export-btn {'disabled' if not can_export else ''}",
-                ),
-                A(
-                    "Download JSON",
-                    href=f"/runs/{run.id}/export/json",
-                    cls="btn btn-secondary btn-small export-btn",
-                ),
+                *buttons,
                 cls="export-buttons",
             ),
+            P(
+                "Run must be marked as ready to enable exports",
+                cls="export-warning",
+            ) if not is_ready else None,
             cls="export-panel-content",
         ),
         cls="config-panel export-display",

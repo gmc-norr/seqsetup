@@ -105,27 +105,77 @@ def get_instrument_config(name: str) -> Optional[dict]:
     return _instruments.get(name)
 
 
-def get_flowcells_for_instrument_name(name: str) -> dict:
-    """Get available flowcells for an instrument by name."""
+def get_flowcells_for_instrument_name(name: str, instrument_config=None) -> dict:
+    """Get available flowcells for an instrument by name.
+
+    When instrument_config is provided and has custom flowcells for this
+    instrument, returns those instead of YAML defaults.
+
+    Returns dict keyed by flowcell name, each value has "lanes", "reads",
+    "reagent_kits", and optionally "description".
+    """
+    # Check DB overrides first
+    if instrument_config:
+        custom = instrument_config.get_custom_flowcells(name)
+        if custom:
+            return {
+                fc["name"]: {
+                    "lanes": fc.get("lanes", 1),
+                    "reads": fc.get("reads", 0),
+                    "reagent_kits": fc.get("reagent_kits", []),
+                }
+                for fc in custom
+            }
+
     config = get_instrument_config(name)
     if config:
         return config.get("flowcells", {})
     return {}
 
 
+def get_flowcells_list_for_instrument_name(name: str, instrument_config=None) -> list[dict]:
+    """Get flowcells as a list of dicts for an instrument.
+
+    Returns list of {"name", "lanes", "reads", "reagent_kits"} dicts.
+    When instrument_config has custom entries, returns those; otherwise
+    converts YAML format to list format.
+    """
+    if instrument_config:
+        custom = instrument_config.get_custom_flowcells(name)
+        if custom:
+            return custom
+
+    config = get_instrument_config(name)
+    if not config:
+        return []
+
+    yaml_flowcells = config.get("flowcells", {})
+    return [
+        {
+            "name": fc_name,
+            "lanes": fc_data.get("lanes", 1),
+            "reads": fc_data.get("reads", 0),
+            "reagent_kits": fc_data.get("reagent_kits", []),
+        }
+        for fc_name, fc_data in yaml_flowcells.items()
+    ]
+
+
 def get_reagent_kits_for_flowcell_by_name(
-    instrument_name: str, flowcell_type: str
+    instrument_name: str, flowcell_type: str, instrument_config=None
 ) -> list[int]:
     """Get available reagent kit cycles for a flowcell type."""
-    flowcells = get_flowcells_for_instrument_name(instrument_name)
+    flowcells = get_flowcells_for_instrument_name(instrument_name, instrument_config)
     if flowcell_type in flowcells:
         return flowcells[flowcell_type].get("reagent_kits", [])
     return []
 
 
-def get_lanes_for_flowcell_by_name(instrument_name: str, flowcell_type: str) -> int:
+def get_lanes_for_flowcell_by_name(
+    instrument_name: str, flowcell_type: str, instrument_config=None
+) -> int:
     """Get number of lanes for a flowcell type."""
-    flowcells = get_flowcells_for_instrument_name(instrument_name)
+    flowcells = get_flowcells_for_instrument_name(instrument_name, instrument_config)
     if flowcell_type in flowcells:
         return flowcells[flowcell_type].get("lanes", 1)
     return 1
@@ -198,6 +248,63 @@ def get_channel_config_by_name(name: str) -> Optional[dict]:
     }
 
 
+def has_dragen_onboard_by_name(name: str) -> bool:
+    """Check if an instrument has DRAGEN onboard hardware.
+
+    Returns True for instruments with has_dragen_onboard: true in config.
+    """
+    config = get_instrument_config(name)
+    if config:
+        return config.get("has_dragen_onboard", False)
+    return False
+
+
+def get_onboard_applications_by_name(name: str, instrument_config=None) -> list[dict]:
+    """Get onboard applications and their software versions for an instrument.
+
+    Returns a list of dicts, each with "name" and "software_version" keys.
+    Multiple entries with the same name but different versions are allowed.
+
+    When instrument_config is provided and has entries for this instrument,
+    the DB entries are the authoritative list. Otherwise, YAML defaults are
+    converted to list format and returned.
+
+    Args:
+        name: Instrument name
+        instrument_config: Optional InstrumentConfig with DB entries
+
+    Returns:
+        List of application entries. Empty list if instrument not found.
+    """
+    config = get_instrument_config(name)
+    if not config:
+        return []
+
+    # If DB has entries for this instrument, use those
+    if instrument_config:
+        db_entries = instrument_config.get_onboard_applications(name)
+        if db_entries:
+            return db_entries
+
+    # Convert YAML dict format to list format
+    yaml_apps = config.get("onboard_applications", {})
+    return [
+        {"name": app_name, "software_version": app_config.get("software_version", "")}
+        for app_name, app_config in yaml_apps.items()
+    ]
+
+
+def get_yaml_onboard_application_names(name: str) -> list[str]:
+    """Get the application names defined in YAML for an instrument.
+
+    Used to provide suggestions in the admin UI.
+    """
+    config = get_instrument_config(name)
+    if not config:
+        return []
+    return list(config.get("onboard_applications", {}).keys())
+
+
 def get_default_cycles(reagent_kit: int) -> dict:
     """Get default cycle configuration for a reagent kit."""
     # Convert reagent_kit to string for YAML key lookup
@@ -266,6 +373,8 @@ def get_all_instruments() -> list[dict]:
             "flowcells": list(flowcells.keys()),
             "chemistry_type": config.get("chemistry_type", "2-color"),
             "color_balance_enabled": config.get("color_balance_enabled", False),
+            "onboard_applications": config.get("onboard_applications", {}),
+            "has_dragen_onboard": config.get("has_dragen_onboard", False),
         })
     return result
 
@@ -286,23 +395,23 @@ def _platform_to_name(platform: InstrumentPlatform) -> str:
     return platform.value
 
 
-def get_flowcells_for_instrument(platform: InstrumentPlatform) -> dict:
+def get_flowcells_for_instrument(platform: InstrumentPlatform, instrument_config=None) -> dict:
     """Get available flowcells for an instrument platform (legacy)."""
-    return get_flowcells_for_instrument_name(_platform_to_name(platform))
+    return get_flowcells_for_instrument_name(_platform_to_name(platform), instrument_config)
 
 
 def get_reagent_kits_for_flowcell(
-    platform: InstrumentPlatform, flowcell_type: str
+    platform: InstrumentPlatform, flowcell_type: str, instrument_config=None
 ) -> list[int]:
     """Get available reagent kit cycles for a flowcell type (legacy)."""
     return get_reagent_kits_for_flowcell_by_name(
-        _platform_to_name(platform), flowcell_type
+        _platform_to_name(platform), flowcell_type, instrument_config
     )
 
 
-def get_lanes_for_flowcell(platform: InstrumentPlatform, flowcell_type: str) -> int:
+def get_lanes_for_flowcell(platform: InstrumentPlatform, flowcell_type: str, instrument_config=None) -> int:
     """Get number of lanes for a flowcell type (legacy)."""
-    return get_lanes_for_flowcell_by_name(_platform_to_name(platform), flowcell_type)
+    return get_lanes_for_flowcell_by_name(_platform_to_name(platform), flowcell_type, instrument_config)
 
 
 def get_chemistry_type(platform: InstrumentPlatform) -> ChemistryType:
@@ -328,3 +437,49 @@ def get_channel_config(platform: InstrumentPlatform) -> Optional[dict]:
 def get_i5_read_orientation(platform: InstrumentPlatform) -> str:
     """Get i5 (Index 2) read orientation for an instrument platform (legacy)."""
     return get_i5_read_orientation_by_name(_platform_to_name(platform))
+
+
+def get_samplesheet_v2_i5_orientation(platform: InstrumentPlatform) -> str:
+    """Get i5 orientation expected by BCL Convert for SampleSheet v2.
+
+    This differs from the physical i5 read orientation for some instruments.
+    For example, NovaSeq X physically reads i5 in reverse-complement, but
+    BCL Convert expects forward i5 in the sample sheet.
+
+    Returns:
+        "forward" or "reverse-complement"
+    """
+    return get_samplesheet_v2_i5_orientation_by_name(_platform_to_name(platform))
+
+
+def get_samplesheet_v2_i5_orientation_by_name(name: str) -> str:
+    """Get i5 orientation expected by BCL Convert for SampleSheet v2 by instrument name.
+
+    Falls back to i5_read_orientation if samplesheet_v2_i5_orientation is not set.
+
+    Returns:
+        "forward" or "reverse-complement"
+    """
+    config = get_instrument_config(name)
+    if config:
+        # Use explicit v2 orientation if set, otherwise fall back to physical orientation
+        return config.get("samplesheet_v2_i5_orientation",
+                          config.get("i5_read_orientation", "forward"))
+    return "forward"
+
+
+def get_samplesheet_versions(platform: InstrumentPlatform) -> list[int]:
+    """Get supported samplesheet versions for an instrument platform.
+
+    Returns list of supported versions (e.g. [1, 2] or [2]).
+    Defaults to [2] if not specified in config.
+    """
+    config = get_instrument_config(_platform_to_name(platform))
+    if config:
+        return config.get("samplesheet_versions", [2])
+    return [2]
+
+
+def get_onboard_applications(platform: InstrumentPlatform, instrument_config=None) -> list[dict]:
+    """Get onboard applications for an instrument platform (legacy)."""
+    return get_onboard_applications_by_name(_platform_to_name(platform), instrument_config)

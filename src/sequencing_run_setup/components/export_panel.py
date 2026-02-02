@@ -2,7 +2,8 @@
 
 from fasthtml.common import *
 
-from ..models.sequencing_run import SequencingRun
+from ..models.sequencing_run import RunStatus, SequencingRun
+from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 
 
@@ -15,29 +16,78 @@ def ExportPanel(run: SequencingRun):
     """
     has_samples = run.has_samples
     all_indexed = run.all_samples_have_indexes if has_samples else False
+    is_ready = run.status == RunStatus.READY
+
+    # SampleSheet and JSON: enabled only when ready
+    ss_enabled = is_ready and all_indexed
+    json_enabled = is_ready
+    has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
+    v1_enabled = is_ready and all_indexed
+
+    # Validation reports: enabled only when pre-generated data exists
+    val_json_enabled = run.generated_validation_json is not None
+    val_pdf_enabled = run.generated_validation_pdf is not None
+
+    v1_option = Div(
+        A(
+            "Download SampleSheet v1",
+            href=f"/runs/{run.id}/export/samplesheet-v1" if v1_enabled else None,
+            cls="btn btn-primary" + ("" if v1_enabled else " disabled"),
+            download=f"{run.run_name or 'SampleSheet'}_v1.csv" if v1_enabled else None,
+        ),
+        P(
+            "Run must be marked as ready" if not is_ready else "All samples must have indexes assigned",
+            cls="export-warning",
+        ) if not v1_enabled else None,
+        cls="export-option",
+    ) if has_v1 else None
 
     return Div(
         H3("Export"),
         Div(
             A(
                 "Download SampleSheet v2",
-                href="/export/samplesheet",
-                cls="btn btn-primary" + ("" if all_indexed else " disabled"),
-                download=f"{run.run_name or 'SampleSheet'}.csv",
+                href=f"/runs/{run.id}/export/samplesheet" if ss_enabled else None,
+                cls="btn btn-primary" + ("" if ss_enabled else " disabled"),
+                download=f"{run.run_name or 'SampleSheet'}.csv" if ss_enabled else None,
             ),
             P(
-                "All samples must have indexes assigned",
+                "Run must be marked as ready" if not is_ready else "All samples must have indexes assigned",
                 cls="export-warning",
-            ) if not all_indexed else None,
+            ) if not ss_enabled else None,
+            cls="export-option",
+        ),
+        v1_option,
+        Div(
+            A(
+                "Download JSON Metadata",
+                href=f"/runs/{run.id}/export/json" if json_enabled else None,
+                cls="btn btn-secondary" + ("" if json_enabled else " disabled"),
+                download=f"{run.run_name or 'run_metadata'}.json" if json_enabled else None,
+            ),
+            P(
+                "Run must be marked as ready",
+                cls="export-warning",
+            ) if not json_enabled else None,
             cls="export-option",
         ),
         Div(
             A(
-                "Download JSON Metadata",
-                href="/export/json",
-                cls="btn btn-secondary",
-                download=f"{run.run_name or 'run_metadata'}.json",
+                "Download Validation Report (JSON)",
+                href=f"/runs/{run.id}/export/validation-report" if val_json_enabled else None,
+                cls="btn btn-secondary" + ("" if val_json_enabled else " disabled"),
+                download=f"{run.run_name or 'validation_report'}_validation.json" if val_json_enabled else None,
             ),
+            A(
+                "Download Validation Report (PDF)",
+                href=f"/runs/{run.id}/export/validation-pdf" if val_pdf_enabled else None,
+                cls="btn btn-secondary" + ("" if val_pdf_enabled else " disabled"),
+                download=f"{run.run_name or 'validation_report'}_validation.pdf" if val_pdf_enabled else None,
+            ),
+            P(
+                "Run must be marked as ready to generate reports",
+                cls="export-warning",
+            ) if not (val_json_enabled and val_pdf_enabled) else None,
             cls="export-option",
         ),
         ValidationSummary(run),

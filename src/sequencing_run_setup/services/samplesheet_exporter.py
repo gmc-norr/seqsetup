@@ -3,10 +3,11 @@
 from io import StringIO
 from typing import TextIO, Optional, TYPE_CHECKING
 
-from ..data.instruments import get_i5_read_orientation
+from ..data.instruments import get_i5_read_orientation, get_samplesheet_v2_i5_orientation
 from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
+from .samplesheet_v1_exporter import _reverse_complement
 
 if TYPE_CHECKING:
     from ..repositories.test_profile_repo import TestProfileRepository
@@ -147,6 +148,10 @@ class SampleSheetV2Exporter:
 
         output.write(",".join(columns) + "\n")
 
+        # Determine if i5 needs reverse-complement for BCL Convert
+        v2_i5_orientation = get_samplesheet_v2_i5_orientation(run.instrument_platform)
+        rc_i5 = v2_i5_orientation == "reverse-complement"
+
         # Data rows - output one row per sample per lane
         for sample in run.samples:
             # Get override cycles once per sample
@@ -157,6 +162,11 @@ class SampleSheetV2Exporter:
                 )
             if override:
                 override = cls._adjust_override_cycles_for_instrument(override, run)
+
+            # Get i5 sequence, applying RC if BCL Convert expects it
+            i5_seq = sample.index2_sequence or ""
+            if rc_i5 and i5_seq:
+                i5_seq = _reverse_complement(i5_seq)
 
             # If sample has specific lanes, output one row per lane
             # If no lanes specified (empty list), output single row without lane
@@ -170,7 +180,7 @@ class SampleSheetV2Exporter:
 
                 row.append(cls._escape_csv(sample.sample_id))
                 row.append(sample.index1_sequence or "")
-                row.append(sample.index2_sequence or "")
+                row.append(i5_seq)
                 row.append(cls._escape_csv(sample.project or ""))
 
                 if has_per_sample_override:
@@ -390,7 +400,12 @@ class SampleSheetV2Exporter:
                     if original == "Index":
                         row.append(sample.index1_sequence or "")
                     elif original == "Index2":
-                        row.append(sample.index2_sequence or "")
+                        i5 = sample.index2_sequence or ""
+                        if i5 and run:
+                            v2_orient = get_samplesheet_v2_i5_orientation(run.instrument_platform)
+                            if v2_orient == "reverse-complement":
+                                i5 = _reverse_complement(i5)
+                        row.append(i5)
                     else:
                         row.append(str(profile.data.get(field, "")))
                 elif field == "BarcodeMismatchesIndex1":

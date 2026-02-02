@@ -22,8 +22,25 @@ def _get_username(req) -> str:
     return user.username if user else ""
 
 
-def register(app, rt, get_run_repo):
+def register(
+    app,
+    rt,
+    get_run_repo,
+    get_test_profile_repo=None,
+    get_app_profile_repo=None,
+    get_instrument_config_repo=None,
+):
     """Register validation routes."""
+
+    def _validate_run(run):
+        """Run validation with profile repos if available."""
+        instrument_config = get_instrument_config_repo().get() if get_instrument_config_repo else None
+        return ValidationService.validate_run(
+            run,
+            test_profile_repo=get_test_profile_repo() if get_test_profile_repo else None,
+            app_profile_repo=get_app_profile_repo() if get_app_profile_repo else None,
+            instrument_config=instrument_config,
+        )
 
     @rt("/runs/{run_id}/validation")
     def validation_page(req, run_id: str):
@@ -35,7 +52,8 @@ def register(app, rt, get_run_repo):
             return Response("Run not found", status_code=404)
 
         user = req.scope.get("auth")
-        return ValidationPage(run, user)
+        result = _validate_run(run)
+        return ValidationPage(run, user, result=result)
 
     @rt("/runs/{run_id}/validation/tab/issues")
     def get_issues_tab(run_id: str):
@@ -46,7 +64,7 @@ def register(app, rt, get_run_repo):
         if not run:
             return Div(P("Run not found"), cls="error")
 
-        result = ValidationService.validate_run(run)
+        result = _validate_run(run)
         return ValidationTabs(run_id, result, active_tab="issues")
 
     @rt("/runs/{run_id}/validation/tab/heatmaps")
@@ -58,7 +76,7 @@ def register(app, rt, get_run_repo):
         if not run:
             return Div(P("Run not found"), cls="error")
 
-        result = ValidationService.validate_run(run)
+        result = _validate_run(run)
         return ValidationTabs(run_id, result, active_tab="heatmaps", index_type=type)
 
     @rt("/runs/{run_id}/validation/tab/colorbalance")
@@ -70,7 +88,7 @@ def register(app, rt, get_run_repo):
         if not run:
             return Div(P("Run not found"), cls="error")
 
-        result = ValidationService.validate_run(run)
+        result = _validate_run(run)
         return ValidationTabs(run_id, result, active_tab="colorbalance")
 
     @rt("/runs/{run_id}/validation/tab/darkcycles")
@@ -82,7 +100,7 @@ def register(app, rt, get_run_repo):
         if not run:
             return Div(P("Run not found"), cls="error")
 
-        result = ValidationService.validate_run(run)
+        result = _validate_run(run)
         return ValidationTabs(run_id, result, active_tab="darkcycles")
 
     @rt("/runs/{run_id}/validation/errors")
@@ -94,7 +112,7 @@ def register(app, rt, get_run_repo):
         if not run:
             return Div(P("Run not found"), cls="error")
 
-        result = ValidationService.validate_run(run)
+        result = _validate_run(run)
         return ValidationErrorList(result)
 
     @rt("/runs/{run_id}/validation/heatmap")
@@ -106,7 +124,7 @@ def register(app, rt, get_run_repo):
         if not run:
             return Div(P("Run not found"), cls="error")
 
-        result = ValidationService.validate_run(run)
+        result = _validate_run(run)
         matrix = result.distance_matrices.get(lane)
         if matrix and len(matrix.sample_names) >= 2:
             return LaneHeatmapContent(run_id, lane, matrix, index_type=type)
@@ -120,7 +138,7 @@ def register(app, rt, get_run_repo):
         if not run:
             return Response("Run not found", status_code=404)
 
-        result = ValidationService.validate_run(run)
+        result = _validate_run(run)
 
         # Only allow approval if there are no errors
         can_approve = (
@@ -147,5 +165,5 @@ def register(app, rt, get_run_repo):
         run.touch(reset_validation=False, updated_by=_get_username(req))
         run_repo.save(run)
 
-        result = ValidationService.validate_run(run)
+        result = _validate_run(run)
         return ValidationApprovalBar(run, result)

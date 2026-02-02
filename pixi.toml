@@ -14,6 +14,8 @@ docs = "sphinx-build -b html docs docs/_build/html"
 python = ">=3.14"
 pytest = ">=8.0"
 pyyaml = ">=6.0"
+matplotlib = ">=3.10.8,<4"
+reportlab = ">=4.4.9,<5"
 
 [pypi-dependencies]
 python-fasthtml = ">=0.12"

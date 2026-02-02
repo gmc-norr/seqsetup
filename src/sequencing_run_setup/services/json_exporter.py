@@ -46,7 +46,6 @@ class JSONExporter:
                 "no_lane_splitting": run.no_lane_splitting,
             },
             "samples": [cls._serialize_sample(s, run) for s in run.samples],
-            "index_kits": [cls._serialize_index_kit(k) for k in run.index_kits],
             "analyses": [cls._serialize_analysis(a) for a in run.analyses],
         }
 
@@ -62,7 +61,7 @@ class JSONExporter:
             "sample_id": sample.sample_id,
             "sample_name": sample.sample_name,
             "project": sample.project,
-            "lane": sample.lane,
+            "lanes": sample.lanes,
             "index1": (
                 {
                     "name": sample.index_pair.index1.name,

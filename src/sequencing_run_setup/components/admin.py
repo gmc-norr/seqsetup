@@ -636,6 +636,7 @@ def InstrumentConfigForm(instrument_config: InstrumentConfig, message: Optional[
     two_color = [i for i in all_instruments if i["chemistry_type"] == "2-color"]
 
     def instrument_checkbox(inst):
+        has_dragen = inst.get("has_dragen_onboard", False)
         return Div(
             Label(
                 Input(
@@ -652,6 +653,8 @@ def InstrumentConfigForm(instrument_config: InstrumentConfig, message: Optional[
                 cls="field-hint",
                 style="margin: 0.15rem 0 0 1.5rem;",
             ),
+            OnboardAppsSection(inst["name"], instrument_config) if has_dragen else None,
+            FlowcellsSection(inst["name"], instrument_config),
             cls="instrument-option",
             style="margin-bottom: 0.5rem;",
         )
@@ -850,4 +853,245 @@ def SampleApiConfigForm(config: SampleApiConfig, message: Optional[str] = None):
             hx_swap="outerHTML",
         ),
         id="sample-api-config-form",
+    )
+
+
+# Onboard Applications Components
+
+def OnboardApplicationRow(inst_name: str, idx: int, app_name: str = "", version: str = "", suggestions: list[str] = None):
+    """Single application entry row with name, version, and remove button."""
+    datalist_id = f"suggestions-{inst_name.replace(' ', '-').replace('/', '-')}"
+    suggestions = suggestions or []
+
+    return Div(
+        Div(
+            Input(
+                type="text",
+                name=f"{inst_name}|name|{idx}",
+                value=app_name,
+                placeholder="Application name",
+                list=datalist_id,
+                cls="settings-input settings-input-small",
+            ),
+            cls="app-name-col",
+        ),
+        Div(
+            Input(
+                type="text",
+                name=f"{inst_name}|version|{idx}",
+                value=version,
+                placeholder="e.g. 4.3.6",
+                cls="settings-input settings-input-small",
+            ),
+            cls="app-version-col",
+        ),
+        Div(
+            Button(
+                "Remove",
+                type="button",
+                onclick="this.closest('.app-entry-row').remove()",
+                cls="btn-secondary btn-small",
+            ),
+            cls="app-remove-col",
+        ),
+        cls="app-entry-row",
+        style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;",
+    )
+
+
+def OnboardAppsSection(inst_name: str, instrument_config: InstrumentConfig, message: Optional[str] = None):
+    """Collapsible onboard applications section for a single DRAGEN instrument.
+
+    Returns a <Details> element used both inline in the instruments page
+    and as the HTMX swap target when saving applications.
+    """
+    from ..data.instruments import (
+        get_onboard_applications_by_name,
+        get_yaml_onboard_application_names,
+    )
+
+    entries = get_onboard_applications_by_name(inst_name, instrument_config)
+    suggestions = get_yaml_onboard_application_names(inst_name)
+    datalist_id = f"suggestions-{inst_name.replace(' ', '-').replace('/', '-')}"
+    rows_id = f"app-rows-{inst_name.replace(' ', '-').replace('/', '-')}"
+    section_id = f"onboard-section-{inst_name.replace(' ', '-').replace('/', '-')}"
+
+    app_rows = [
+        OnboardApplicationRow(
+            inst_name, idx,
+            app_name=entry.get("name", ""),
+            version=entry.get("software_version", ""),
+            suggestions=suggestions,
+        )
+        for idx, entry in enumerate(entries)
+    ]
+
+    return Details(
+        Summary("Onboard Applications"),
+        Div(message, cls="settings-message success", style="margin: 0.5rem 0;") if message else None,
+        Datalist(
+            *[Option(value=s) for s in suggestions],
+            id=datalist_id,
+        ),
+        Div(
+            Div(Strong("Application"), cls="app-name-col"),
+            Div(Strong("Version"), cls="app-version-col"),
+            Div("", cls="app-remove-col"),
+            cls="app-entry-header",
+            style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;",
+        ),
+        Div(*app_rows, id=rows_id),
+        Div(
+            Button(
+                "+ Add Application",
+                type="button",
+                hx_post="/admin/onboard-applications/add-row",
+                hx_vals=f'{{"instrument": "{inst_name}", "suggestions": "{",".join(suggestions)}"}}',
+                hx_target=f"#{rows_id}",
+                hx_swap="beforeend",
+                cls="btn-secondary btn-small",
+            ),
+            style="margin-top: 0.5rem;",
+        ),
+        Div(
+            Button(
+                "Save Applications",
+                type="button",
+                hx_post="/admin/settings/onboard-applications",
+                hx_include=f"[name^='{inst_name}|']",
+                hx_target=f"#{section_id}",
+                hx_swap="outerHTML",
+                hx_vals=f'{{"instrument": "{inst_name}"}}',
+                cls="btn-primary btn-small",
+            ),
+            style="margin-top: 0.5rem;",
+        ),
+        open=True,
+        style="margin: 0.25rem 0 0.5rem 1.5rem;",
+        id=section_id,
+    )
+
+
+# Flowcell Components
+
+def FlowcellRow(inst_name: str, idx: int, name: str = "", lanes: int = 1, reads: int = 0, reagent_kits: str = ""):
+    """Single flowcell entry row."""
+    return Div(
+        Div(
+            Input(
+                type="text",
+                name=f"{inst_name}|fc_name|{idx}",
+                value=name,
+                placeholder="Flowcell name",
+                cls="settings-input settings-input-small",
+            ),
+            cls="fc-name-col",
+        ),
+        Div(
+            Input(
+                type="number",
+                name=f"{inst_name}|fc_lanes|{idx}",
+                value=str(lanes),
+                min="1",
+                cls="settings-input settings-input-small",
+            ),
+            cls="fc-lanes-col",
+        ),
+        Div(
+            Input(
+                type="number",
+                name=f"{inst_name}|fc_reads|{idx}",
+                value=str(reads),
+                min="0",
+                cls="settings-input settings-input-small",
+            ),
+            cls="fc-reads-col",
+        ),
+        Div(
+            Input(
+                type="text",
+                name=f"{inst_name}|fc_kits|{idx}",
+                value=reagent_kits,
+                placeholder="e.g. 100, 200, 300",
+                cls="settings-input settings-input-small",
+            ),
+            cls="fc-kits-col",
+        ),
+        Div(
+            Button(
+                "Remove",
+                type="button",
+                onclick="this.closest('.fc-entry-row').remove()",
+                cls="btn-secondary btn-small",
+            ),
+            cls="fc-remove-col",
+        ),
+        cls="fc-entry-row",
+        style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;",
+    )
+
+
+def FlowcellsSection(inst_name: str, instrument_config: InstrumentConfig, message: Optional[str] = None):
+    """Collapsible flowcells section for an instrument.
+
+    Returns a <Details> element used inline in the instruments page
+    and as the HTMX swap target when saving flowcells.
+    """
+    from ..data.instruments import get_flowcells_list_for_instrument_name
+
+    entries = get_flowcells_list_for_instrument_name(inst_name, instrument_config)
+    section_id = f"flowcells-section-{inst_name.replace(' ', '-').replace('/', '-')}"
+    rows_id = f"fc-rows-{inst_name.replace(' ', '-').replace('/', '-')}"
+
+    fc_rows = [
+        FlowcellRow(
+            inst_name, idx,
+            name=entry.get("name", ""),
+            lanes=entry.get("lanes", 1),
+            reads=entry.get("reads", 0),
+            reagent_kits=", ".join(str(k) for k in entry.get("reagent_kits", [])),
+        )
+        for idx, entry in enumerate(entries)
+    ]
+
+    return Details(
+        Summary("Flowcells"),
+        Div(message, cls="settings-message success", style="margin: 0.5rem 0;") if message else None,
+        Div(
+            Div(Strong("Name"), cls="fc-name-col"),
+            Div(Strong("Lanes"), cls="fc-lanes-col"),
+            Div(Strong("Reads"), cls="fc-reads-col"),
+            Div(Strong("Reagent Kits"), cls="fc-kits-col"),
+            Div("", cls="fc-remove-col"),
+            cls="fc-entry-header",
+            style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;",
+        ),
+        Div(*fc_rows, id=rows_id),
+        Div(
+            Button(
+                "+ Add Flowcell",
+                type="button",
+                hx_post="/admin/flowcells/add-row",
+                hx_vals=f'{{"instrument": "{inst_name}"}}',
+                hx_target=f"#{rows_id}",
+                hx_swap="beforeend",
+                cls="btn-secondary btn-small",
+            ),
+            style="margin-top: 0.5rem;",
+        ),
+        Div(
+            Button(
+                "Save Flowcells",
+                type="button",
+                hx_post="/admin/settings/flowcells",
+                hx_include=f"[name^='{inst_name}|fc_']",
+                hx_target=f"#{section_id}",
+                hx_swap="outerHTML",
+                hx_vals=f'{{"instrument": "{inst_name}"}}',
+                cls="btn-primary btn-small",
+            ),
+            style="margin-top: 0.5rem;",
+        ),
+        style="margin: 0.25rem 0 0.5rem 1.5rem;",
+        id=section_id,
     )

@@ -27,7 +27,7 @@
 #     Channel 2 (Green): C + T
 #     Dark base: G. Improved optics; reduced dark-base miscalls.
 #
-# i5 (Index 2) Read Orientation:
+# i5 (Index 2) Read Orientation (physical):
 #
 #   Forward (as written):
 #     Instruments: MiSeq (classic), HiSeq 2000/2500 (Rapid Run), NextSeq 500/550,
@@ -37,6 +37,18 @@
 #   Reverse-complement:
 #     Instruments: HiSeq 4000, HiSeq X, NovaSeq 6000, NovaSeq X/X Plus
 #     Patterned flow cell geometry causes i5 to be read as the reverse complement.
+#
+# SampleSheet v2 i5 Orientation (for BCL Convert):
+#
+#   The orientation BCL Convert expects for i5 in the sample sheet does NOT
+#   always match the physical read orientation. Per the Illumina i5 Index
+#   Orientation Table ("Standalone BCL Convert" column):
+#
+#   Forward:
+#     MiSeq, NextSeq 1000/2000, NovaSeq X/X Plus, MiSeq i100, GAIIx, HiSeq 2000/2500
+#
+#   Reverse-complement:
+#     MiniSeq, iSeq 100, NextSeq 500/550, NovaSeq 6000, HiSeq 4000, HiSeq X
 #
 # Color balance is relevant for 2-color chemistry instruments where
 # poor balance can affect base calling quality.
@@ -49,8 +61,10 @@ instruments:
   # NovaSeq X Series - Two-color XLEAP chemistry (Blue+Green)
   NovaSeq X Series:
     chemistry_type: 2-color
+    has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
     i5_read_orientation: reverse-complement  # i5 read as reverse complement
+    samplesheet_v2_i5_orientation: forward  # BCL Convert expects forward
     color_balance_enabled: true
     dye_channels: ["Blue", "Green"]
     base_colors:
@@ -64,6 +78,17 @@ instruments:
     channel2_bases: ["C", "T"]
     dark_base: "G"
     error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
+      DragenGermline:
+        software_version: "4.3.6"
+      DragenSomatic:
+        software_version: "4.3.6"
+      DragenRNA:
+        software_version: "4.3.6"
+      DragenEnrichment:
+        software_version: "4.3.6"
     flowcells:
       "1.5B":
         lanes: 2
@@ -84,8 +109,10 @@ instruments:
   # MiSeq i100 Series - Two-color XLEAP chemistry (Blue+Green)
   MiSeq i100 Series:
     chemistry_type: 2-color
+    has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
     i5_read_orientation: forward  # i5 read as written in sample sheet
+    samplesheet_v2_i5_orientation: forward  # BCL Convert expects forward
     color_balance_enabled: true
     dye_channels: ["Blue", "Green"]
     base_colors:
@@ -99,6 +126,9 @@ instruments:
     channel2_bases: ["C", "T"]
     dark_base: "G"
     error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "5M":
         lanes: 1
@@ -124,8 +154,10 @@ instruments:
   # NextSeq 1000/2000 - Two-color XLEAP chemistry (Blue+Green)
   NextSeq 1000/2000:
     chemistry_type: 2-color
+    has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
     i5_read_orientation: forward
+    samplesheet_v2_i5_orientation: forward  # BCL Convert expects forward
     color_balance_enabled: true
     dye_channels: ["Blue", "Green"]
     base_colors:
@@ -139,6 +171,13 @@ instruments:
     channel2_bases: ["C", "T"]
     dark_base: "G"
     error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
+      DragenGermline:
+        software_version: "4.3.6"
+      DragenEnrichment:
+        software_version: "4.3.6"
     flowcells:
       "P1":
         lanes: 1
@@ -165,6 +204,7 @@ instruments:
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
     i5_read_orientation: forward
+    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
     color_balance_enabled: true
     dye_channels: ["Red", "Green"]
     base_colors:
@@ -178,6 +218,9 @@ instruments:
     channel2_bases: ["A", "T"]
     dark_base: "G"
     error_tendencies: "Dark-base ambiguity; poly-G tails; elevated substitutions"
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "High Output":
         lanes: 4
@@ -195,6 +238,7 @@ instruments:
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
     i5_read_orientation: forward
+    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
     color_balance_enabled: true
     dye_channels: ["Red", "Green"]
     base_colors:
@@ -208,6 +252,9 @@ instruments:
     channel2_bases: ["A", "T"]
     dark_base: "G"
     error_tendencies: "Dark-base ambiguity; poly-G tails; elevated substitutions"
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "High Output":
         lanes: 1
@@ -222,9 +269,11 @@ instruments:
 
   # NovaSeq 6000 - Two-color SBS (Red+Green)
   NovaSeq 6000:
+    samplesheet_versions: [1, 2]
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
     i5_read_orientation: reverse-complement
+    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
     color_balance_enabled: true
     dye_channels: ["Red", "Green"]
     base_colors:
@@ -238,6 +287,9 @@ instruments:
     channel2_bases: ["A", "T"]
     dark_base: "G"
     error_tendencies: "Dark-base ambiguity; poly-G tails; elevated substitutions"
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "SP":
         lanes: 2
@@ -269,7 +321,11 @@ instruments:
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: forward
+    samplesheet_v2_i5_orientation: forward
     color_balance_enabled: false
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "Standard":
         lanes: 8
@@ -282,7 +338,11 @@ instruments:
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: forward
+    samplesheet_v2_i5_orientation: forward
     color_balance_enabled: false
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "High Output v4":
         lanes: 8
@@ -300,7 +360,11 @@ instruments:
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: reverse-complement
+    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
     color_balance_enabled: false
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "Standard":
         lanes: 8
@@ -313,7 +377,11 @@ instruments:
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: reverse-complement
+    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
     color_balance_enabled: false
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "Standard":
         lanes: 8
@@ -323,10 +391,15 @@ instruments:
 
   # MiSeq (classic) - Four-color SBS
   MiSeq:
+    samplesheet_versions: [1, 2]
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: forward
+    samplesheet_v2_i5_orientation: forward
     color_balance_enabled: false
+    onboard_applications:
+      BCLConvert:
+        software_version: "4.3.6"
     flowcells:
       "v2 Standard":
         lanes: 1

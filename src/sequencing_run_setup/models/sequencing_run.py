@@ -1,5 +1,6 @@
 """Sequencing run configuration models."""
 
+import base64
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -134,6 +135,13 @@ class SequencingRun:
     # Assigned analyses
     analyses: list[Analysis] = field(default_factory=list)
 
+    # Pre-generated exports (populated when status transitions to READY)
+    generated_samplesheet: Optional[str] = None
+    generated_samplesheet_v1: Optional[str] = None
+    generated_json: Optional[str] = None
+    generated_validation_json: Optional[str] = None
+    generated_validation_pdf: Optional[bytes] = None  # PDF bytes, base64-encoded in MongoDB
+
     def add_sample(self, sample: Sample) -> None:
         """Add a sample to the run."""
         self.samples.append(sample)
@@ -215,6 +223,14 @@ class SequencingRun:
             "no_lane_splitting": self.no_lane_splitting,
             "samples": [s.to_dict() for s in self.samples],
             "analyses": [a.to_dict() for a in self.analyses],
+            "generated_samplesheet": self.generated_samplesheet,
+            "generated_samplesheet_v1": self.generated_samplesheet_v1,
+            "generated_json": self.generated_json,
+            "generated_validation_json": self.generated_validation_json,
+            "generated_validation_pdf": (
+                base64.b64encode(self.generated_validation_pdf).decode("ascii")
+                if self.generated_validation_pdf else None
+            ),
         }
 
     @classmethod
@@ -261,4 +277,12 @@ class SequencingRun:
             no_lane_splitting=data.get("no_lane_splitting", False),
             samples=[Sample.from_dict(s) for s in data.get("samples", [])],
             analyses=[Analysis.from_dict(a) for a in data.get("analyses", [])],
+            generated_samplesheet=data.get("generated_samplesheet"),
+            generated_samplesheet_v1=data.get("generated_samplesheet_v1"),
+            generated_json=data.get("generated_json"),
+            generated_validation_json=data.get("generated_validation_json"),
+            generated_validation_pdf=(
+                base64.b64decode(data["generated_validation_pdf"])
+                if data.get("generated_validation_pdf") else None
+            ),
         )

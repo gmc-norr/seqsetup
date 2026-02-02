@@ -181,6 +181,42 @@ class SampleDarkCycleInfo:
     i5_leading_dark: int  # Number of leading dark bases in i5 read sequence (0, 1, or 2)
 
 
+class ValidationSeverity(Enum):
+    """Severity level for validation issues."""
+
+    ERROR = "error"
+    WARNING = "warning"
+
+
+@dataclass
+class ConfigurationError:
+    """A run configuration error or warning.
+
+    Used for: lane assignment issues, index length inconsistency,
+    mixed indexing mode, sample ID characters, run cycles vs index length,
+    missing lane assignments, duplicate index pairs, barcode mismatch threshold issues.
+    """
+
+    severity: ValidationSeverity
+    category: str  # e.g. "lane_out_of_range", "index_length_mismatch", etc.
+    message: str  # Human-readable description
+    sample_names: list[str] = field(default_factory=list)  # Affected samples (if applicable)
+    lane: Optional[int] = None  # Affected lane (if applicable)
+
+
+@dataclass
+class ApplicationValidationError:
+    """Error when a sample's application profile is not available on the instrument."""
+
+    sample_id: str  # Internal UUID
+    sample_name: str  # Display name
+    test_id: str  # The sample's test_id
+    application_name: str  # e.g. "DragenGermline"
+    profile_name: str  # ApplicationProfileName
+    error_type: str  # "app_not_available", "version_not_available", "profile_not_found", "test_profile_not_found"
+    detail: str  # Human-readable message
+
+
 @dataclass
 class IndexCollision:
     """Represents a collision between two indexes in the same lane."""
@@ -240,6 +276,8 @@ class ValidationResult:
     dark_cycle_errors: list[DarkCycleError] = field(default_factory=list)
     dark_cycle_samples: list[SampleDarkCycleInfo] = field(default_factory=list)  # Per-sample dark cycle info
     color_balance: dict[int, LaneColorBalance] = field(default_factory=dict)  # Lane -> balance
+    application_errors: list[ApplicationValidationError] = field(default_factory=list)
+    configuration_errors: list[ConfigurationError] = field(default_factory=list)
     chemistry_type: Optional[str] = None  # "2-color" or "4-color"
     color_balance_enabled: bool = True  # Whether color balance analysis is shown for this instrument
     channel_config: Optional[dict] = None  # Dye channel configuration from instruments.yaml
@@ -251,12 +289,25 @@ class ValidationResult:
             len(self.duplicate_sample_ids) > 0
             or len(self.index_collisions) > 0
             or len(self.dark_cycle_errors) > 0
+            or len(self.application_errors) > 0
+            or any(e.severity == ValidationSeverity.ERROR for e in self.configuration_errors)
         )
 
     @property
     def error_count(self) -> int:
         """Total number of errors."""
-        return len(self.duplicate_sample_ids) + len(self.index_collisions) + len(self.dark_cycle_errors)
+        return (
+            len(self.duplicate_sample_ids)
+            + len(self.index_collisions)
+            + len(self.dark_cycle_errors)
+            + len(self.application_errors)
+            + sum(1 for e in self.configuration_errors if e.severity == ValidationSeverity.ERROR)
+        )
+
+    @property
+    def warning_count(self) -> int:
+        """Total number of warnings."""
+        return sum(1 for e in self.configuration_errors if e.severity == ValidationSeverity.WARNING)
 
     @property
     def color_balance_issue_count(self) -> int:

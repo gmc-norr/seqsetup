@@ -52,6 +52,7 @@ def TestProfilesSection(
         for ref in tp.application_profiles:
             ap = resolved_map.get((ref.profile_name, ref.profile_version))
             if ap:
+                sw_version = ap.settings.get("SoftwareVersion", "") if ap.settings else ""
                 app_refs.append(
                     Tr(
                         Td(ref.profile_name),
@@ -59,6 +60,7 @@ def TestProfilesSection(
                         Td(f"v{ap.version}"),
                         Td(ap.application_name),
                         Td(ap.application_type),
+                        Td(sw_version or "—"),
                     )
                 )
             else:
@@ -67,7 +69,7 @@ def TestProfilesSection(
                         Td(ref.profile_name),
                         Td(ref.profile_version),
                         Td("—", style="color: var(--text-muted);"),
-                        Td("—", colspan="2", style="color: var(--text-muted);"),
+                        Td("—", colspan="3", style="color: var(--text-muted);"),
                     )
                 )
 
@@ -79,6 +81,7 @@ def TestProfilesSection(
                     Th("Resolved"),
                     Th("Application"),
                     Th("Type"),
+                    Th("Software Version"),
                 )
             ),
             Tbody(*app_refs),
@@ -124,10 +127,14 @@ def ApplicationProfilesSection(app_profiles: list[ApplicationProfile]):
 
     rows = []
     for ap in sorted(app_profiles, key=lambda a: (a.application_name, a.name)):
+        sw_version = ap.settings.get("SoftwareVersion", "")
+
+        # Summarize remaining settings (exclude SoftwareVersion since it has its own column)
+        other_settings = {k: v for k, v in ap.settings.items() if k != "SoftwareVersion"}
         settings_summary = ", ".join(
-            f"{k}: {v}" for k, v in list(ap.settings.items())[:3]
+            f"{k}: {v}" for k, v in list(other_settings.items())[:3]
         )
-        if len(ap.settings) > 3:
+        if len(other_settings) > 3:
             settings_summary += ", ..."
 
         rows.append(
@@ -136,6 +143,7 @@ def ApplicationProfilesSection(app_profiles: list[ApplicationProfile]):
                 Td(f"v{ap.version}"),
                 Td(ap.application_name),
                 Td(ap.application_type),
+                Td(sw_version or "—"),
                 Td(settings_summary or "—", style="font-size: 0.85em;"),
             )
         )
@@ -149,6 +157,7 @@ def ApplicationProfilesSection(app_profiles: list[ApplicationProfile]):
                     Th("Version"),
                     Th("Application"),
                     Th("Type"),
+                    Th("Software Version"),
                     Th("Settings"),
                 )
             ),

@@ -166,3 +166,105 @@ class TestSampleSheetV2Exporter:
         output = SampleSheetV2Exporter.export(run)
 
         assert "InstrumentPlatform,MiSeq i100 Series" in output
+
+    def test_export_novaseq_x_i5_forward(self):
+        """NovaSeq X: BCL Convert expects i5 in forward orientation."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        output = SampleSheetV2Exporter.export(run)
+        # i5 should be forward (as stored) for NovaSeq X
+        assert "S1,ATTACTCG,TATAGCCT," in output
+
+    def test_export_novaseq_6000_i5_reverse_complement(self):
+        """NovaSeq 6000: BCL Convert expects i5 reverse-complemented."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_6000,
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        output = SampleSheetV2Exporter.export(run)
+        # TATAGCCT reverse-complemented is AGGCTATA
+        assert "S1,ATTACTCG,AGGCTATA," in output
+        # Original forward i5 should NOT appear in data rows
+        assert "TATAGCCT" not in output.split("[BCLConvert_Data]")[1]
+
+    def test_export_nextseq_500_i5_reverse_complement(self):
+        """NextSeq 500/550: BCL Convert expects i5 reverse-complemented."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        output = SampleSheetV2Exporter.export(run)
+        # TATAGCCT reverse-complemented is AGGCTATA
+        assert "S1,ATTACTCG,AGGCTATA," in output
+
+    def test_export_miseq_classic_i5_forward(self):
+        """MiSeq (classic): BCL Convert expects i5 in forward orientation."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.MISEQ,
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        output = SampleSheetV2Exporter.export(run)
+        # i5 should be forward for MiSeq
+        assert "S1,ATTACTCG,TATAGCCT," in output
+
+    def test_export_miniseq_i5_reverse_complement(self):
+        """MiniSeq: BCL Convert expects i5 reverse-complemented."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.MINISEQ,
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        output = SampleSheetV2Exporter.export(run)
+        # TATAGCCT reverse-complemented is AGGCTATA
+        assert "S1,ATTACTCG,AGGCTATA," in output
