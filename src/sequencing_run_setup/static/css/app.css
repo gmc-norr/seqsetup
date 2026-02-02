@@ -2093,6 +2093,12 @@ body {
     border: 1px solid var(--success);
 }
 
+.settings-message.error {
+    background: rgba(220, 38, 38, 0.1);
+    color: var(--danger);
+    border: 1px solid var(--danger);
+}
+
 /* Admin section in sidebar */
 .admin-section {
     margin-top: 0.5rem;

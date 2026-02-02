@@ -767,9 +767,9 @@ def ProfileListSection(title: str, profiles: list):
 def SampleApiPage(config: SampleApiConfig, message: Optional[str] = None):
     """Sample API configuration page."""
     return Div(
-        H2("Sample API"),
+        H2("LIMS Integration"),
         P(
-            "Configure an external API endpoint for fetching sample data.",
+            "Configure a connection to an external LIMS for fetching worklists and sample data.",
             cls="page-description",
         ),
         Div(message, cls="settings-message success") if message else None,
@@ -779,10 +779,14 @@ def SampleApiPage(config: SampleApiConfig, message: Optional[str] = None):
     )
 
 
-def SampleApiConfigForm(config: SampleApiConfig, message: Optional[str] = None):
+def SampleApiConfigForm(config: SampleApiConfig, message: Optional[str] = None, error: Optional[str] = None):
     """Form for sample API configuration."""
     return Div(
         Div(message, cls="settings-message success") if message else None,
+        Div(
+            error,
+            style="background: rgba(220, 38, 38, 0.1); color: #dc2626; border: 1px solid #dc2626; padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.875rem;",
+        ) if error else None,
         Form(
             Fieldset(
                 Legend("API Endpoint"),
@@ -837,7 +841,7 @@ def SampleApiConfigForm(config: SampleApiConfig, message: Optional[str] = None):
                             name="enabled",
                             checked=config.enabled,
                         ),
-                        " Enable Sample API",
+                        " Enable LIMS Integration",
                         cls="checkbox-label",
                     ),
                     P("When enabled, a 'Fetch Worklist' option appears in sample forms.", cls="field-hint"),

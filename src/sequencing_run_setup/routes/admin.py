@@ -451,7 +451,7 @@ def register(
                 user=user,
                 active_route="/admin/sample-api",
                 content=SampleApiPage(config),
-                title="Sample API",
+                title="LIMS Integration",
             )
 
         @app.post("/admin/settings/sample-api")
@@ -474,6 +474,18 @@ def register(
                 api_key=api_key if api_key else existing_config.api_key,
                 enabled=enabled == "on",
             )
+
+            # Test connection before enabling
+            if config.enabled and config.base_url:
+                from ..services.sample_api import check_connection
+                success, msg = check_connection(config)
+                if not success:
+                    config.enabled = False
+                    config_repo.save(config)
+                    return SampleApiConfigForm(
+                        config, error=f"Connection failed: {msg}. Integration has been disabled."
+                    )
+
             config_repo.save(config)
 
-            return SampleApiConfigForm(config, message="Sample API configuration saved")
+            return SampleApiConfigForm(config, message="LIMS integration configuration saved")

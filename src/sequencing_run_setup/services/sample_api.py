@@ -94,6 +94,30 @@ def fetch_worklists(config: SampleApiConfig) -> Tuple[bool, str, list[dict]]:
         return False, msg, []
 
 
+def check_connection(config: SampleApiConfig) -> Tuple[bool, str]:
+    """Test the API connection by calling the worklists endpoint.
+
+    Unlike fetch_worklists(), this does not require config.enabled to be True,
+    since it's used to validate the connection before enabling.
+
+    Returns:
+        Tuple of (success, message).
+    """
+    if not config.base_url:
+        return False, "API base URL is not configured"
+
+    try:
+        data = _api_get(config.worklists_url, config.api_key)
+        if not isinstance(data, list):
+            return False, "API response is not a JSON array"
+        return True, f"Connection successful ({len(data)} worklists found)"
+    except SampleApiError as e:
+        return False, str(e)
+    except Exception as e:
+        logger.exception("Connection test failed")
+        return False, f"Unexpected error: {e}"
+
+
 def fetch_worklist_samples(config: SampleApiConfig, worklist_id: str) -> Tuple[bool, str, list[dict]]:
     """
     Fetch samples for a specific worklist from the API.
