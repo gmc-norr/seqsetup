@@ -1,0 +1,53 @@
+# NextSeq 1000/2000 - Two-color XLEAP chemistry (Blue+Green)
+#
+# Mid-throughput sequencer with XLEAP SBS chemistry and onboard DRAGEN.
+# i5 read in forward orientation. BCL Convert expects forward i5.
+
+version: "1.0.0"
+
+name: NextSeq 1000/2000
+samplesheet_name: NextSeq1k2k
+chemistry_type: 2-color
+has_dragen_onboard: true
+sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
+i5_read_orientation: forward
+samplesheet_v2_i5_orientation: forward
+
+color_balance_enabled: true
+dye_channels: ["Blue", "Green"]
+base_colors:
+  A: "Blue"
+  C: "Blue+Green"
+  T: "Green"
+  G: "Dark"
+channel1_name: "Blue"
+channel1_bases: ["A", "C"]
+channel2_name: "Green"
+channel2_bases: ["C", "T"]
+dark_base: "G"
+error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+
+onboard_applications:
+  BCLConvert:
+    software_version: "4.3.6"
+  DragenGermline:
+    software_version: "4.3.6"
+  DragenEnrichment:
+    software_version: "4.3.6"
+
+flowcells:
+  "P1":
+    lanes: 1
+    reads: 100000000
+    reagent_kits: [100, 200, 300, 600]
+    description: "100 million reads, 1 lane"
+  "P2":
+    lanes: 1
+    reads: 400000000
+    reagent_kits: [100, 200, 300, 600]
+    description: "400 million reads, 1 lane"
+  "P3":
+    lanes: 1
+    reads: 1200000000
+    reagent_kits: [50, 100, 200, 300]
+    description: "1.2 billion reads, 1 lane"

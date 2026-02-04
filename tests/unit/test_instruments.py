@@ -2,7 +2,7 @@
 
 import pytest
 
-from sequencing_run_setup.data.instruments import (
+from seqsetup.data.instruments import (
     ChemistryType,
     get_chemistry_type,
     get_i5_read_orientation,
@@ -12,7 +12,7 @@ from sequencing_run_setup.data.instruments import (
     get_samplesheet_versions,
     is_color_balance_enabled,
 )
-from sequencing_run_setup.models.sequencing_run import InstrumentPlatform
+from seqsetup.models.sequencing_run import InstrumentPlatform
 
 
 class TestGetSamplesheetVersions:

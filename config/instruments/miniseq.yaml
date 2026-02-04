@@ -1,0 +1,44 @@
+# MiniSeq - Two-color SBS (Red+Green)
+#
+# Compact benchtop sequencer with classic two-color SBS chemistry.
+# i5 read in forward orientation. BCL Convert expects reverse-complement i5.
+
+version: "1.0.0"
+
+name: MiniSeq
+samplesheet_name: MiniSeq
+chemistry_type: 2-color
+has_dragen_onboard: false
+sbs_chemistry: "Two-color SBS (Red+Green)"
+i5_read_orientation: forward
+samplesheet_v2_i5_orientation: reverse-complement
+
+color_balance_enabled: true
+dye_channels: ["Red", "Green"]
+base_colors:
+  A: "Red+Green"
+  C: "Red"
+  T: "Green"
+  G: "Dark"
+channel1_name: "Red"
+channel1_bases: ["A", "C"]
+channel2_name: "Green"
+channel2_bases: ["A", "T"]
+dark_base: "G"
+error_tendencies: "Dark-base ambiguity; poly-G tails; elevated substitutions"
+
+onboard_applications:
+  BCLConvert:
+    software_version: "4.3.6"
+
+flowcells:
+  "High Output":
+    lanes: 1
+    reads: 25000000
+    reagent_kits: [75, 150, 300]
+    description: "25 million reads, 1 lane"
+  "Mid Output":
+    lanes: 1
+    reads: 8000000
+    reagent_kits: [150, 300]
+    description: "8 million reads, 1 lane"

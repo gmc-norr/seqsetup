@@ -2,13 +2,14 @@
 
 import pytest
 
-from sequencing_run_setup.models.index import Index, IndexPair, IndexType
-from sequencing_run_setup.models.sample import Sample
-from sequencing_run_setup.models.sequencing_run import (
+from seqsetup.models.index import Index, IndexPair, IndexType
+from seqsetup.models.sample import Sample
+from seqsetup.models.sequencing_run import (
     InstrumentPlatform,
     SequencingRun,
 )
-from sequencing_run_setup.services.validation import ValidationService
+from seqsetup.services.validation import ValidationService
+from seqsetup.services.validation_utils import hamming_distance, reverse_complement
 
 
 class TestHammingDistance:
@@ -16,37 +17,37 @@ class TestHammingDistance:
 
     def test_identical_sequences(self):
         """Identical sequences have distance 0."""
-        dist = ValidationService._hamming_distance("ATCGATCG", "ATCGATCG")
+        dist = hamming_distance("ATCGATCG", "ATCGATCG")
         assert dist == 0
 
     def test_one_mismatch(self):
         """Single mismatch gives distance 1."""
-        dist = ValidationService._hamming_distance("ATCGATCG", "ATCGATCC")
+        dist = hamming_distance("ATCGATCG", "ATCGATCC")
         assert dist == 1
 
     def test_two_mismatches(self):
         """Two mismatches gives distance 2."""
-        dist = ValidationService._hamming_distance("ATCGATCG", "ATCGATTC")
+        dist = hamming_distance("ATCGATCG", "ATCGATTC")
         assert dist == 2
 
     def test_all_different(self):
         """All positions different."""
-        dist = ValidationService._hamming_distance("AAAA", "TTTT")
+        dist = hamming_distance("AAAA", "TTTT")
         assert dist == 4
 
     def test_different_lengths_seq2_longer(self):
         """Different length sequences compare only up to shorter length."""
-        dist = ValidationService._hamming_distance("ATCG", "ATCGAA")
+        dist = hamming_distance("ATCG", "ATCGAA")
         assert dist == 0  # 0 mismatches in 4-char overlap
 
     def test_different_lengths_seq1_longer(self):
         """Different length where seq1 is longer."""
-        dist = ValidationService._hamming_distance("ATCGAA", "ATCG")
+        dist = hamming_distance("ATCGAA", "ATCG")
         assert dist == 0  # 0 mismatches in 4-char overlap
 
     def test_different_lengths_with_mismatches(self):
         """Different lengths with mismatches in overlap."""
-        dist = ValidationService._hamming_distance("ATCG", "TTCGAA")
+        dist = hamming_distance("ATCG", "TTCGAA")
         assert dist == 1  # 1 mismatch in 4-char overlap (A vs T at pos 0)
 
 
@@ -686,7 +687,7 @@ class TestColorBalance:
 
     def test_color_balance_channel1(self):
         """Channel 1 (Blue) includes A and C bases (XLEAP default)."""
-        from sequencing_run_setup.models.validation import PositionColorBalance
+        from seqsetup.models.validation import PositionColorBalance
 
         pos = PositionColorBalance(position=1, a_count=2, c_count=2, g_count=0, t_count=0)
         assert pos.channel1_count == 4  # A + C (Blue channel)
@@ -694,7 +695,7 @@ class TestColorBalance:
 
     def test_color_balance_channel2(self):
         """Channel 2 (Green) includes C and T bases (XLEAP default)."""
-        from sequencing_run_setup.models.validation import PositionColorBalance
+        from seqsetup.models.validation import PositionColorBalance
 
         pos = PositionColorBalance(position=1, a_count=0, c_count=2, g_count=0, t_count=2)
         assert pos.channel2_count == 4  # C + T (Green channel)
@@ -702,21 +703,21 @@ class TestColorBalance:
 
     def test_color_balance_status_ok(self):
         """Status is OK when both channels have good coverage."""
-        from sequencing_run_setup.models.validation import ColorBalanceStatus, PositionColorBalance
+        from seqsetup.models.validation import ColorBalanceStatus, PositionColorBalance
 
         pos = PositionColorBalance(position=1, a_count=1, c_count=1, g_count=1, t_count=1)
         assert pos.status == ColorBalanceStatus.OK
 
     def test_color_balance_status_error_all_g(self):
         """Status is ERROR when all bases are G (no signal)."""
-        from sequencing_run_setup.models.validation import ColorBalanceStatus, PositionColorBalance
+        from seqsetup.models.validation import ColorBalanceStatus, PositionColorBalance
 
         pos = PositionColorBalance(position=1, a_count=0, c_count=0, g_count=4, t_count=0)
         assert pos.status == ColorBalanceStatus.ERROR
 
     def test_color_balance_status_error_no_channel2(self):
         """Status is ERROR when no channel 2 signal (XLEAP: no C or T)."""
-        from sequencing_run_setup.models.validation import ColorBalanceStatus, PositionColorBalance
+        from seqsetup.models.validation import ColorBalanceStatus, PositionColorBalance
 
         # Only A and G = channel2 (C+T) has 0 signal
         pos = PositionColorBalance(position=1, a_count=2, c_count=0, g_count=2, t_count=0)
@@ -724,14 +725,14 @@ class TestColorBalance:
 
     def test_color_balance_status_error_no_red(self):
         """Status is ERROR when no red signal (all A+G)."""
-        from sequencing_run_setup.models.validation import ColorBalanceStatus, PositionColorBalance
+        from seqsetup.models.validation import ColorBalanceStatus, PositionColorBalance
 
         pos = PositionColorBalance(position=1, a_count=2, c_count=0, g_count=2, t_count=0)
         assert pos.status == ColorBalanceStatus.ERROR
 
     def test_color_balance_status_warning_low_channel1(self):
         """Status is WARNING when channel 1 is below 25%."""
-        from sequencing_run_setup.models.validation import ColorBalanceStatus, PositionColorBalance
+        from seqsetup.models.validation import ColorBalanceStatus, PositionColorBalance
 
         # XLEAP: channel1 (Blue) = A+C. Only 1 A out of 10 = 10% channel1
         pos = PositionColorBalance(position=1, a_count=1, c_count=0, g_count=4, t_count=5)
@@ -740,7 +741,7 @@ class TestColorBalance:
 
     def test_color_balance_status_warning_low_channel2(self):
         """Status is WARNING when channel 2 is below 25%."""
-        from sequencing_run_setup.models.validation import ColorBalanceStatus, PositionColorBalance
+        from seqsetup.models.validation import ColorBalanceStatus, PositionColorBalance
 
         # XLEAP: channel2 (Green) = C+T. Only 1 T out of 10 = 10% channel2
         pos = PositionColorBalance(position=1, a_count=5, c_count=0, g_count=4, t_count=1)
@@ -807,11 +808,11 @@ class TestColorBalance:
         assert color_balance[1].has_issues is False
 
     def test_reverse_complement_helper(self):
-        """_reverse_complement produces correct output."""
-        assert ValidationService._reverse_complement("ATCG") == "CGAT"
-        assert ValidationService._reverse_complement("AAAA") == "TTTT"
-        assert ValidationService._reverse_complement("GCTA") == "TAGC"
-        assert ValidationService._reverse_complement("") == ""
+        """reverse_complement produces correct output."""
+        assert reverse_complement("ATCG") == "CGAT"
+        assert reverse_complement("AAAA") == "TTTT"
+        assert reverse_complement("GCTA") == "TAGC"
+        assert reverse_complement("") == ""
 
     def test_color_balance_i5_forward_orientation(self):
         """i5 sequences are used as-is for forward orientation."""

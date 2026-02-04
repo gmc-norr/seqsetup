@@ -2,7 +2,7 @@
 
 import pytest
 
-from sequencing_run_setup.services.profile_validator import (
+from seqsetup.services.profile_validator import (
     ProfileValidationError,
     validate_application_profile_yaml,
     validate_test_profile_yaml,
@@ -292,19 +292,19 @@ class TestFromYamlValidation:
     """Test that from_yaml methods call validators."""
 
     def test_test_profile_from_yaml_validates(self):
-        from sequencing_run_setup.models.test_profile import TestProfile
+        from seqsetup.models.test_profile import TestProfile
 
         with pytest.raises(ProfileValidationError):
             TestProfile.from_yaml({})
 
     def test_application_profile_from_yaml_validates(self):
-        from sequencing_run_setup.models.application_profile import ApplicationProfile
+        from seqsetup.models.application_profile import ApplicationProfile
 
         with pytest.raises(ProfileValidationError):
             ApplicationProfile.from_yaml({})
 
     def test_test_profile_from_yaml_valid(self):
-        from sequencing_run_setup.models.test_profile import TestProfile
+        from seqsetup.models.test_profile import TestProfile
 
         data = {
             "TestType": "WGS",
@@ -324,7 +324,7 @@ class TestFromYamlValidation:
         assert len(tp.application_profiles) == 1
 
     def test_application_profile_from_yaml_valid(self):
-        from sequencing_run_setup.models.application_profile import ApplicationProfile
+        from seqsetup.models.application_profile import ApplicationProfile
 
         data = {
             "ApplicationProfileName": "DragenGermline",

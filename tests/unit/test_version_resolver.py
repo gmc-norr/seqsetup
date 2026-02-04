@@ -2,9 +2,9 @@
 
 import pytest
 
-from sequencing_run_setup.models.application_profile import ApplicationProfile
-from sequencing_run_setup.models.test_profile import ApplicationProfileReference
-from sequencing_run_setup.services.version_resolver import (
+from seqsetup.models.application_profile import ApplicationProfile
+from seqsetup.models.test_profile import ApplicationProfileReference
+from seqsetup.services.version_resolver import (
     resolve_application_profiles,
 )
 

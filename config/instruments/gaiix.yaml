@@ -1,0 +1,27 @@
+# GAIIx - Four-color SBS
+#
+# Legacy sequencer with four-color SBS chemistry.
+# Highly tolerant of low-diversity libraries.
+# i5 read in forward orientation. BCL Convert expects forward i5.
+
+version: "1.0.0"
+
+name: GAIIx
+samplesheet_name: GAIIx
+chemistry_type: 4-color
+has_dragen_onboard: false
+sbs_chemistry: "Four-color SBS"
+i5_read_orientation: forward
+samplesheet_v2_i5_orientation: forward
+color_balance_enabled: false
+
+onboard_applications:
+  BCLConvert:
+    software_version: "4.3.6"
+
+flowcells:
+  "Standard":
+    lanes: 8
+    reads: 320000000
+    reagent_kits: [36, 50, 76, 100, 150]
+    description: "320 million reads, 8 lanes"

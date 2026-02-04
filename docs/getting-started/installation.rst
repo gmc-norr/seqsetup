@@ -19,7 +19,7 @@ Docker Compose is the recommended way to run a fully functional instance.
 
    # Clone the repository
    git clone <repository-url>
-   cd sequencing_run_setup
+   cd seqsetup
 
    # Start the application and MongoDB
    docker compose up --build

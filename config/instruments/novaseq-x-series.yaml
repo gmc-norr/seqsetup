@@ -1,0 +1,58 @@
+# NovaSeq X Series - Two-color XLEAP chemistry (Blue+Green)
+#
+# High-throughput sequencer with XLEAP SBS chemistry and onboard DRAGEN.
+# Patterned flow cell with i5 read in reverse-complement orientation.
+# BCL Convert expects forward i5 in sample sheet.
+
+version: "1.0.0"
+
+name: NovaSeq X Series
+samplesheet_name: NovaSeqXSeries
+chemistry_type: 2-color
+has_dragen_onboard: true
+sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
+i5_read_orientation: reverse-complement
+samplesheet_v2_i5_orientation: forward
+
+color_balance_enabled: true
+dye_channels: ["Blue", "Green"]
+base_colors:
+  A: "Blue"
+  C: "Blue+Green"
+  T: "Green"
+  G: "Dark"
+channel1_name: "Blue"
+channel1_bases: ["A", "C"]
+channel2_name: "Green"
+channel2_bases: ["C", "T"]
+dark_base: "G"
+error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+
+onboard_applications:
+  BCLConvert:
+    software_version: "4.3.6"
+  DragenGermline:
+    software_version: "4.3.6"
+  DragenSomatic:
+    software_version: "4.3.6"
+  DragenRNA:
+    software_version: "4.3.6"
+  DragenEnrichment:
+    software_version: "4.3.6"
+
+flowcells:
+  "1.5B":
+    lanes: 2
+    reads: 1500000000
+    reagent_kits: [100, 200, 300]
+    description: "1.5 billion reads, 2 lanes"
+  "10B":
+    lanes: 8
+    reads: 10000000000
+    reagent_kits: [100, 200, 300]
+    description: "10 billion reads, 8 lanes"
+  "25B":
+    lanes: 8
+    reads: 25000000000
+    reagent_kits: [100, 200, 300]
+    description: "25 billion reads, 8 lanes"

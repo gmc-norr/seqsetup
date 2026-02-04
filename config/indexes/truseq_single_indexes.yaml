@@ -1,0 +1,73 @@
+# TruSeq Single Index Kit
+# 24 single indexes for low-plex applications
+# Catalog: 20020492, 20020493, 20020494
+
+name: "TruSeq Single Index"
+version: "1.0.0"
+description: "24 single indexes for TruSeq library prep"
+comments: "Illumina Catalog #20020492/93/94. Sets A, B, C combined."
+
+index_mode: single
+is_fixed_layout: false
+
+# TruSeq adapters
+adapter_read1: "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+adapter_read2: "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+
+default_index1_cycles: 6
+
+# TruSeq AR (Adapter Read) indexes - 6bp
+i7_indexes:
+  # Set A (1-8)
+  - name: "AR001"
+    sequence: "ATCACG"
+  - name: "AR002"
+    sequence: "CGATGT"
+  - name: "AR003"
+    sequence: "TTAGGC"
+  - name: "AR004"
+    sequence: "TGACCA"
+  - name: "AR005"
+    sequence: "ACAGTG"
+  - name: "AR006"
+    sequence: "GCCAAT"
+  - name: "AR007"
+    sequence: "CAGATC"
+  - name: "AR008"
+    sequence: "ACTTGA"
+
+  # Set B (9-16)
+  - name: "AR009"
+    sequence: "GATCAG"
+  - name: "AR010"
+    sequence: "TAGCTT"
+  - name: "AR011"
+    sequence: "GGCTAC"
+  - name: "AR012"
+    sequence: "CTTGTA"
+  - name: "AR013"
+    sequence: "AGTCAA"
+  - name: "AR014"
+    sequence: "AGTTCC"
+  - name: "AR015"
+    sequence: "ATGTCA"
+  - name: "AR016"
+    sequence: "CCGTCC"
+
+  # Set C (17-24)
+  - name: "AR018"
+    sequence: "GTCCGC"
+  - name: "AR019"
+    sequence: "GTGAAA"
+  - name: "AR020"
+    sequence: "GTGGCC"
+  - name: "AR021"
+    sequence: "GTTTCG"
+  - name: "AR022"
+    sequence: "CGTACG"
+  - name: "AR023"
+    sequence: "GAGTGG"
+  - name: "AR025"
+    sequence: "ACTGAT"
+  - name: "AR027"
+    sequence: "ATTCCT"

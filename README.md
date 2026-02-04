@@ -19,7 +19,7 @@ This is the recommended way to run a fully functional instance.
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd sequencing_run_setup
+cd seqsetup
 
 # Start the application and MongoDB
 docker compose up --build
@@ -143,13 +143,13 @@ pixi run test
 ## Project Structure
 
 ```
-sequencing_run_setup/
+seqsetup/
 ├── config/                          # Configuration files
 │   ├── instruments.yaml             # Instrument and flowcell definitions
 │   ├── mongodb.yaml                 # Database connection settings
 │   ├── users.yaml                   # Development user credentials
 │   └── profiles/                    # Application/test profiles
-├── src/sequencing_run_setup/        # Application source code
+├── src/seqsetup/        # Application source code
 │   ├── app.py                       # Application entry point
 │   ├── components/                  # UI components (FastHTML)
 │   ├── data/                        # Static data loaders

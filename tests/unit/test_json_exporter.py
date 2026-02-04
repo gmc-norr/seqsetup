@@ -4,15 +4,15 @@ import json
 
 import pytest
 
-from sequencing_run_setup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
-from sequencing_run_setup.models.index import Index, IndexPair, IndexType
-from sequencing_run_setup.models.sample import Sample
-from sequencing_run_setup.models.sequencing_run import (
+from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
+from seqsetup.models.index import Index, IndexPair, IndexType
+from seqsetup.models.sample import Sample
+from seqsetup.models.sequencing_run import (
     InstrumentPlatform,
     RunCycles,
     SequencingRun,
 )
-from sequencing_run_setup.services.json_exporter import JSONExporter
+from seqsetup.services.json_exporter import JSONExporter
 
 
 @pytest.fixture

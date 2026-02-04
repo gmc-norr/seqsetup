@@ -1,0 +1,122 @@
+# Custom UMI Dual Index Kit
+# For libraries with inline UMIs requiring special read override patterns
+# This is an example demonstrating advanced override cycle configurations
+
+name: "Custom UMI Dual Index Kit"
+version: "1.0.0"
+description: "Dual indexes for UMI-tagged libraries with 8bp inline UMI"
+comments: "Example kit for UMI workflows. Read override patterns extract UMI from read start."
+
+index_mode: unique_dual
+is_fixed_layout: false
+
+# Adapter sequences
+adapter_read1: "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+adapter_read2: "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+
+# 8bp indexes
+default_index1_cycles: 8
+default_index2_cycles: 8
+
+# Read override patterns for UMI extraction
+# U8Y* = Extract 8bp UMI, then read the rest
+# This tells BCL Convert to treat first 8bp as UMI
+default_read1_override: "U8Y*"
+default_read2_override: "Y*"
+
+index_pairs:
+  - name: "UMI-UD01"
+    index1:
+      name: "UMI-i7-01"
+      sequence: "ATTACTCG"
+    index2:
+      name: "UMI-i5-01"
+      sequence: "TATAGCCT"
+
+  - name: "UMI-UD02"
+    index1:
+      name: "UMI-i7-02"
+      sequence: "TCCGGAGA"
+    index2:
+      name: "UMI-i5-02"
+      sequence: "ATAGAGGC"
+
+  - name: "UMI-UD03"
+    index1:
+      name: "UMI-i7-03"
+      sequence: "CGCTCATT"
+    index2:
+      name: "UMI-i5-03"
+      sequence: "CCTATCCT"
+
+  - name: "UMI-UD04"
+    index1:
+      name: "UMI-i7-04"
+      sequence: "GAGATTCC"
+    index2:
+      name: "UMI-i5-04"
+      sequence: "GGCTCTGA"
+
+  - name: "UMI-UD05"
+    index1:
+      name: "UMI-i7-05"
+      sequence: "ATTCAGAA"
+    index2:
+      name: "UMI-i5-05"
+      sequence: "AGGCGAAG"
+
+  - name: "UMI-UD06"
+    index1:
+      name: "UMI-i7-06"
+      sequence: "GAATTCGT"
+    index2:
+      name: "UMI-i5-06"
+      sequence: "TAATCTTA"
+
+  - name: "UMI-UD07"
+    index1:
+      name: "UMI-i7-07"
+      sequence: "CTGAAGCT"
+    index2:
+      name: "UMI-i5-07"
+      sequence: "CAGGACGT"
+
+  - name: "UMI-UD08"
+    index1:
+      name: "UMI-i7-08"
+      sequence: "TAATGCGC"
+    index2:
+      name: "UMI-i5-08"
+      sequence: "GTACTGAC"
+
+  - name: "UMI-UD09"
+    index1:
+      name: "UMI-i7-09"
+      sequence: "CGGCTATG"
+    index2:
+      name: "UMI-i5-09"
+      sequence: "ACTGATCC"
+
+  - name: "UMI-UD10"
+    index1:
+      name: "UMI-i7-10"
+      sequence: "TCCGCGAA"
+    index2:
+      name: "UMI-i5-10"
+      sequence: "GCTAATCT"
+
+  - name: "UMI-UD11"
+    index1:
+      name: "UMI-i7-11"
+      sequence: "TCTCGCGC"
+    index2:
+      name: "UMI-i5-11"
+      sequence: "ATCTAGGT"
+
+  - name: "UMI-UD12"
+    index1:
+      name: "UMI-i7-12"
+      sequence: "AGCGATAG"
+    index2:
+      name: "UMI-i5-12"
+      sequence: "TGCAGGTA"

@@ -1,0 +1,28 @@
+# HiSeq X - Four-color SBS
+#
+# High-throughput sequencer optimized for human whole genome sequencing.
+# Four-color SBS chemistry with patterned flow cell.
+# i5 read in reverse-complement orientation.
+# BCL Convert expects reverse-complement i5.
+
+version: "1.0.0"
+
+name: HiSeq X
+samplesheet_name: HiSeqX
+chemistry_type: 4-color
+has_dragen_onboard: false
+sbs_chemistry: "Four-color SBS"
+i5_read_orientation: reverse-complement
+samplesheet_v2_i5_orientation: reverse-complement
+color_balance_enabled: false
+
+onboard_applications:
+  BCLConvert:
+    software_version: "4.3.6"
+
+flowcells:
+  "Standard":
+    lanes: 8
+    reads: 6000000000
+    reagent_kits: [300]
+    description: "6 billion reads, 8 lanes"

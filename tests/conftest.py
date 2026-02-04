@@ -1,11 +1,11 @@
-"""Pytest fixtures for sequencing_run_setup tests."""
+"""Pytest fixtures for seqsetup tests."""
 
 import pytest
 
-from sequencing_run_setup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
-from sequencing_run_setup.models.index import Index, IndexKit, IndexPair, IndexType
-from sequencing_run_setup.models.sample import Sample
-from sequencing_run_setup.models.sequencing_run import (
+from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
+from seqsetup.models.index import Index, IndexKit, IndexPair, IndexType
+from seqsetup.models.sample import Sample
+from seqsetup.models.sequencing_run import (
     InstrumentPlatform,
     RunCycles,
     SequencingRun,

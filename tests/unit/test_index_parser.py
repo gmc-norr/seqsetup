@@ -2,7 +2,7 @@
 
 import pytest
 
-from sequencing_run_setup.services.index_parser import IndexParser
+from seqsetup.services.index_parser import IndexParser
 
 
 class TestIndexParser:
@@ -32,7 +32,7 @@ Sample2,TTGGAATT"""
 
         # When no i5 indexes are present, auto-detects as single mode
         # and stores indexes in i7_indexes instead of index_pairs
-        from sequencing_run_setup.models.index import IndexMode
+        from seqsetup.models.index import IndexMode
         assert kit.index_mode == IndexMode.SINGLE
         assert len(kit.i7_indexes) == 2
         assert kit.i7_indexes[0].sequence == "ATCGATCG"
@@ -136,7 +136,7 @@ IndexSequences:
         kit = IndexParser.parse_from_content(content, "kit.yaml")
         assert kit.name == "Kit"
         # When no i5 indexes are present, auto-detects as single mode
-        from sequencing_run_setup.models.index import IndexMode
+        from seqsetup.models.index import IndexMode
         assert kit.index_mode == IndexMode.SINGLE
         assert len(kit.i7_indexes) == 1
         assert kit.i7_indexes[0].sequence == "ATCG"
@@ -223,7 +223,7 @@ Sample2,TTGGAATT,A2"""
 
         kit = IndexParser._parse_csv(csv_content, "TestKit")
 
-        from sequencing_run_setup.models.index import IndexMode
+        from seqsetup.models.index import IndexMode
         assert kit.index_mode == IndexMode.SINGLE
         assert len(kit.i7_indexes) == 2
         assert kit.i7_indexes[0].well_position == "A1"
@@ -237,7 +237,7 @@ Sample2,TTGGAATT"""
 
         kit = IndexParser._parse_csv(csv_content, "TestKit")
 
-        from sequencing_run_setup.models.index import IndexMode
+        from seqsetup.models.index import IndexMode
         assert kit.index_mode == IndexMode.SINGLE
         assert len(kit.i7_indexes) == 2
         assert kit.i7_indexes[0].well_position is None
@@ -257,7 +257,7 @@ name,sequence,well
 
         kit = IndexParser._parse_combinatorial_csv(csv_content, "TestKit")
 
-        from sequencing_run_setup.models.index import IndexMode
+        from seqsetup.models.index import IndexMode
         assert kit.index_mode == IndexMode.COMBINATORIAL
         assert len(kit.i7_indexes) == 2
         assert len(kit.i5_indexes) == 2
@@ -280,7 +280,7 @@ name,sequence
 
         kit = IndexParser._parse_combinatorial_csv(csv_content, "TestKit")
 
-        from sequencing_run_setup.models.index import IndexMode
+        from seqsetup.models.index import IndexMode
         assert kit.index_mode == IndexMode.COMBINATORIAL
         assert len(kit.i7_indexes) == 2
         assert len(kit.i5_indexes) == 2
@@ -378,3 +378,203 @@ UDP0001,D701,ATTACTCG,TATAGCCT"""
         assert kit.index_pairs[0].name == "UDP0001"
         assert kit.index_pairs[0].index1.name == "D701"
         assert kit.index_pairs[0].index2.name == "UDP0001"  # falls back to pair name
+
+
+class TestSyncYamlFormat:
+    """Tests for parsing sync/export YAML format."""
+
+    def test_parse_sync_yaml_unique_dual(self):
+        """Test parsing sync YAML format for unique dual kit."""
+        yaml_content = """
+name: "Test UDI Kit"
+version: "2.0"
+description: "Test description"
+index_mode: unique_dual
+is_fixed_layout: true
+adapter_read1: "CTGTCTCT"
+default_index1_cycles: 8
+
+index_pairs:
+  - name: "UDI0001"
+    well_position: "A01"
+    index1:
+      name: "i7-001"
+      sequence: "ATTACTCG"
+    index2:
+      name: "i5-001"
+      sequence: "TATAGCCT"
+"""
+        from seqsetup.models.index import IndexMode
+
+        kit = IndexParser.parse_from_content(yaml_content, "test.yaml")
+
+        assert kit.name == "Test UDI Kit"
+        assert kit.version == "2.0"
+        assert kit.description == "Test description"
+        assert kit.index_mode == IndexMode.UNIQUE_DUAL
+        assert kit.is_fixed_layout is True
+        assert kit.adapter_read1 == "CTGTCTCT"
+        assert kit.default_index1_cycles == 8
+        assert len(kit.index_pairs) == 1
+        assert kit.index_pairs[0].name == "UDI0001"
+        assert kit.index_pairs[0].well_position == "A01"
+        assert kit.index_pairs[0].index1.sequence == "ATTACTCG"
+        assert kit.index_pairs[0].index2.sequence == "TATAGCCT"
+
+    def test_parse_sync_yaml_combinatorial(self):
+        """Test parsing sync YAML format for combinatorial kit."""
+        yaml_content = """
+name: "Nextera XT"
+version: "1.0"
+index_mode: combinatorial
+
+i7_indexes:
+  - name: "N701"
+    sequence: "ATTACTCG"
+  - name: "N702"
+    sequence: "TCCGGAGA"
+
+i5_indexes:
+  - name: "S501"
+    sequence: "TATAGCCT"
+  - name: "S502"
+    sequence: "ATAGAGGC"
+"""
+        from seqsetup.models.index import IndexMode
+
+        kit = IndexParser.parse_from_content(yaml_content, "nextera.yaml")
+
+        assert kit.name == "Nextera XT"
+        assert kit.index_mode == IndexMode.COMBINATORIAL
+        assert len(kit.i7_indexes) == 2
+        assert len(kit.i5_indexes) == 2
+        assert kit.i7_indexes[0].name == "N701"
+        assert kit.i7_indexes[0].sequence == "ATTACTCG"
+
+    def test_parse_sync_yaml_single(self):
+        """Test parsing sync YAML format for single index kit."""
+        yaml_content = """
+name: "Single Kit"
+version: "1.0"
+index_mode: single
+
+i7_indexes:
+  - name: "i7-001"
+    sequence: "ATTACTCG"
+  - name: "i7-002"
+    sequence: "TCCGGAGA"
+"""
+        from seqsetup.models.index import IndexMode
+
+        kit = IndexParser.parse_from_content(yaml_content, "single.yaml")
+
+        assert kit.name == "Single Kit"
+        assert kit.index_mode == IndexMode.SINGLE
+        assert len(kit.i7_indexes) == 2
+
+    def test_parse_sync_yaml_with_all_fields(self):
+        """Test parsing sync YAML with all optional fields."""
+        yaml_content = """
+name: "Full Kit"
+version: "3.0"
+description: "Full description"
+comments: "Some comments"
+index_mode: unique_dual
+is_fixed_layout: true
+adapter_read1: "ADAPTER1"
+adapter_read2: "ADAPTER2"
+default_index1_cycles: 10
+default_index2_cycles: 10
+default_read1_override: "U8Y*"
+default_read2_override: "N2Y*"
+
+index_pairs:
+  - name: "P1"
+    index1:
+      name: "i7"
+      sequence: "ATCGATCG"
+    index2:
+      name: "i5"
+      sequence: "GCTAGCTA"
+"""
+        kit = IndexParser.parse_from_content(yaml_content, "full.yaml")
+
+        assert kit.description == "Full description"
+        assert kit.comments == "Some comments"
+        assert kit.adapter_read1 == "ADAPTER1"
+        assert kit.adapter_read2 == "ADAPTER2"
+        assert kit.default_index1_cycles == 10
+        assert kit.default_index2_cycles == 10
+        assert kit.default_read1_override == "U8Y*"
+        assert kit.default_read2_override == "N2Y*"
+
+    def test_parse_detects_sync_vs_illumina_format(self):
+        """Test that parser correctly detects sync format vs legacy Illumina format."""
+        # Sync format (has index_pairs)
+        sync_yaml = """
+name: "Sync Kit"
+index_mode: unique_dual
+index_pairs:
+  - name: "P1"
+    index1:
+      name: "i7"
+      sequence: "ATCG"
+"""
+        # Legacy Illumina format (has IndexSequences)
+        illumina_yaml = """
+Name: "Illumina Kit"
+IndexSequences:
+  i7Index1:
+    D701: "ATCG"
+"""
+        sync_kit = IndexParser.parse_from_content(sync_yaml, "sync.yaml")
+        illumina_kit = IndexParser.parse_from_content(illumina_yaml, "illumina.yaml")
+
+        assert sync_kit.name == "Sync Kit"
+        assert illumina_kit.name == "Illumina Kit"
+
+    def test_version_normalization(self):
+        """Test that version is normalized (e.g., '1' becomes '1.0')."""
+        yaml_content = """
+name: "Kit"
+version: "1"
+index_mode: unique_dual
+index_pairs:
+  - name: "P1"
+    index1:
+      name: "i7"
+      sequence: "ATCG"
+"""
+        kit = IndexParser.parse_from_content(yaml_content, "kit.yaml")
+        assert kit.version == "1.0"
+
+
+class TestSemanticVersionValidation:
+    """Tests for semantic version validation."""
+
+    def test_validate_semantic_version_valid(self):
+        """Test valid semantic versions."""
+        from seqsetup.services.index_parser import validate_semantic_version
+
+        valid_versions = ["1.0", "1.0.0", "2.1", "2.1.3", "10.20.30", "0.1.0"]
+        for v in valid_versions:
+            is_valid, error = validate_semantic_version(v)
+            assert is_valid, f"Expected '{v}' to be valid, got: {error}"
+
+    def test_validate_semantic_version_invalid(self):
+        """Test invalid semantic versions."""
+        from seqsetup.services.index_parser import validate_semantic_version
+
+        invalid_versions = ["1", "v1.0", "1.0.0.0", "1.x", "latest", "a.b.c", ""]
+        for v in invalid_versions:
+            is_valid, error = validate_semantic_version(v)
+            assert not is_valid, f"Expected '{v}' to be invalid"
+
+    def test_normalize_version(self):
+        """Test version normalization."""
+        from seqsetup.services.index_parser import normalize_version
+
+        assert normalize_version("1") == "1.0"
+        assert normalize_version("1.0") == "1.0"
+        assert normalize_version("1.2.3") == "1.2.3"
+        assert normalize_version("  2  ") == "2.0"

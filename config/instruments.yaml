@@ -60,6 +60,7 @@
 instruments:
   # NovaSeq X Series - Two-color XLEAP chemistry (Blue+Green)
   NovaSeq X Series:
+    samplesheet_name: NovaSeqXSeries
     chemistry_type: 2-color
     has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
@@ -108,6 +109,7 @@ instruments:
 
   # MiSeq i100 Series - Two-color XLEAP chemistry (Blue+Green)
   MiSeq i100 Series:
+    samplesheet_name: MiSeqi100Series
     chemistry_type: 2-color
     has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
@@ -153,6 +155,7 @@ instruments:
 
   # NextSeq 1000/2000 - Two-color XLEAP chemistry (Blue+Green)
   NextSeq 1000/2000:
+    samplesheet_name: NextSeq1k2k
     chemistry_type: 2-color
     has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
@@ -201,6 +204,7 @@ instruments:
 
   # NextSeq 500/550 - Two-color SBS (Red+Green)
   NextSeq 500/550:
+    samplesheet_name: NextSeq500
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
     i5_read_orientation: forward
@@ -235,6 +239,7 @@ instruments:
 
   # MiniSeq - Two-color SBS (Red+Green)
   MiniSeq:
+    samplesheet_name: MiniSeq
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
     i5_read_orientation: forward
@@ -269,6 +274,7 @@ instruments:
 
   # NovaSeq 6000 - Two-color SBS (Red+Green)
   NovaSeq 6000:
+    samplesheet_name: NovaSeq6000
     samplesheet_versions: [1, 2]
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
@@ -318,6 +324,7 @@ instruments:
 
   # GAIIx - Four-color SBS
   GAIIx:
+    samplesheet_name: GAIIx
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: forward
@@ -335,6 +342,7 @@ instruments:
 
   # HiSeq 2000/2500 - Four-color SBS
   HiSeq 2000/2500:
+    samplesheet_name: HiSeq2500
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: forward
@@ -357,6 +365,7 @@ instruments:
 
   # HiSeq 4000 - Four-color SBS
   HiSeq 4000:
+    samplesheet_name: HiSeq4000
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: reverse-complement
@@ -374,6 +383,7 @@ instruments:
 
   # HiSeq X - Four-color SBS
   HiSeq X:
+    samplesheet_name: HiSeqX
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
     i5_read_orientation: reverse-complement
@@ -391,6 +401,7 @@ instruments:
 
   # MiSeq (classic) - Four-color SBS
   MiSeq:
+    samplesheet_name: MiSeq
     samplesheet_versions: [1, 2]
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"

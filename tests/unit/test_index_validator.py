@@ -2,14 +2,14 @@
 
 import pytest
 
-from sequencing_run_setup.models.index import (
+from seqsetup.models.index import (
     Index,
     IndexKit,
     IndexMode,
     IndexPair,
     IndexType,
 )
-from sequencing_run_setup.services.index_validator import IndexValidator
+from seqsetup.services.index_validator import IndexValidator
 
 
 # ---------------------------------------------------------------------------

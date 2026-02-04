@@ -2,7 +2,7 @@
 
 import pytest
 
-from sequencing_run_setup.models.api_token import ApiToken
+from seqsetup.models.api_token import ApiToken
 
 
 class TestApiTokenGeneration:

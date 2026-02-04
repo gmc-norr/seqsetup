@@ -4,14 +4,14 @@ import json
 
 import pytest
 
-from sequencing_run_setup.models.sequencing_run import (
+from seqsetup.models.sequencing_run import (
     InstrumentPlatform,
     RunCycles,
     SequencingRun,
 )
-from sequencing_run_setup.models.sample import Sample
-from sequencing_run_setup.models.index import Index, IndexPair, IndexType
-from sequencing_run_setup.models.validation import (
+from seqsetup.models.sample import Sample
+from seqsetup.models.index import Index, IndexPair, IndexType
+from seqsetup.models.validation import (
     ColorBalanceStatus,
     ConfigurationError,
     DarkCycleError,
@@ -24,7 +24,7 @@ from sequencing_run_setup.models.validation import (
     ValidationResult,
     ValidationSeverity,
 )
-from sequencing_run_setup.services.validation_report import (
+from seqsetup.services.validation_report import (
     ValidationReportJSON,
     ValidationReportPDF,
 )

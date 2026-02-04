@@ -2,8 +2,8 @@
 
 import pytest
 
-from sequencing_run_setup.models.local_user import LocalUser
-from sequencing_run_setup.models.user import UserRole
+from seqsetup.models.local_user import LocalUser
+from seqsetup.models.user import UserRole
 
 
 class TestLocalUserPassword:

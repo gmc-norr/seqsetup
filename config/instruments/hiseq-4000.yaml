@@ -1,0 +1,27 @@
+# HiSeq 4000 - Four-color SBS
+#
+# High-throughput sequencer with four-color SBS chemistry.
+# Patterned flow cell with i5 read in reverse-complement orientation.
+# BCL Convert expects reverse-complement i5.
+
+version: "1.0.0"
+
+name: HiSeq 4000
+samplesheet_name: HiSeq4000
+chemistry_type: 4-color
+has_dragen_onboard: false
+sbs_chemistry: "Four-color SBS"
+i5_read_orientation: reverse-complement
+samplesheet_v2_i5_orientation: reverse-complement
+color_balance_enabled: false
+
+onboard_applications:
+  BCLConvert:
+    software_version: "4.3.6"
+
+flowcells:
+  "Standard":
+    lanes: 8
+    reads: 5000000000
+    reagent_kits: [50, 75, 150, 300]
+    description: "5 billion reads, 8 lanes"

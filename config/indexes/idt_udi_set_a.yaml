@@ -1,0 +1,102 @@
+# IDT for Illumina DNA/RNA UD Indexes Set A
+# Example index kit YAML format for GitHub sync
+#
+# This format supports all IndexKit fields including:
+# - Adapter sequences for trimming
+# - Default override cycles
+# - Well positions for plate-based kits
+# - Unique dual, combinatorial, or single index modes
+
+name: "IDT for Illumina DNA/RNA UD Indexes Set A"
+version: "1.0.0"
+description: "96 unique dual indexes for library preparation"
+comments: "Illumina Catalog #20027213"
+
+# Index mode: unique_dual | combinatorial | single
+index_mode: unique_dual
+
+# Layout settings
+is_fixed_layout: true
+
+# Optional adapter sequences for trimming (Nextera transposon adapters)
+adapter_read1: "CTGTCTCTTATACACATCT"
+adapter_read2: "CTGTCTCTTATACACATCT"
+
+# Optional override cycle defaults
+# These specify how many cycles to use for demultiplexing when less than full index length
+default_index1_cycles: 10
+default_index2_cycles: 10
+
+# Index pairs for unique dual mode
+index_pairs:
+  - name: "UDI0001"
+    well_position: "A01"
+    index1:
+      name: "UDP0001-i7"
+      sequence: "GAACTGAGCG"
+    index2:
+      name: "UDP0001-i5"
+      sequence: "TCGTGGAGCG"
+
+  - name: "UDI0002"
+    well_position: "B01"
+    index1:
+      name: "UDP0002-i7"
+      sequence: "AGGTCAGATA"
+    index2:
+      name: "UDP0002-i5"
+      sequence: "CTACAAGATA"
+
+  - name: "UDI0003"
+    well_position: "C01"
+    index1:
+      name: "UDP0003-i7"
+      sequence: "CGTCTCATAT"
+    index2:
+      name: "UDP0003-i5"
+      sequence: "TATAGTAGCT"
+
+  - name: "UDI0004"
+    well_position: "D01"
+    index1:
+      name: "UDP0004-i7"
+      sequence: "ATTCCATAAG"
+    index2:
+      name: "UDP0004-i5"
+      sequence: "TGCCTGGTGG"
+
+  - name: "UDI0005"
+    well_position: "E01"
+    index1:
+      name: "UDP0005-i7"
+      sequence: "GACGAGATTA"
+    index2:
+      name: "UDP0005-i5"
+      sequence: "ACATTATCCT"
+
+  - name: "UDI0006"
+    well_position: "F01"
+    index1:
+      name: "UDP0006-i7"
+      sequence: "AACATCGCGC"
+    index2:
+      name: "UDP0006-i5"
+      sequence: "CGTAACACTT"
+
+  - name: "UDI0007"
+    well_position: "G01"
+    index1:
+      name: "UDP0007-i7"
+      sequence: "CTAGTGCTCT"
+    index2:
+      name: "UDP0007-i5"
+      sequence: "TACAGGCGTA"
+
+  - name: "UDI0008"
+    well_position: "H01"
+    index1:
+      name: "UDP0008-i7"
+      sequence: "GATCAAGGCA"
+    index2:
+      name: "UDP0008-i5"
+      sequence: "ACTCTATGAG"

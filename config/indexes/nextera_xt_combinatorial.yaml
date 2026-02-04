@@ -1,0 +1,66 @@
+# Nextera XT Index Kit v2 (Combinatorial mode)
+# Example index kit YAML format for GitHub sync - combinatorial mode
+#
+# Combinatorial mode allows any i7 to be paired with any i5,
+# creating N*M possible combinations from N i7 indexes and M i5 indexes.
+
+name: "Nextera XT Index Kit v2"
+version: "1.0.0"
+description: "Combinatorial indexing for Nextera XT library prep"
+comments: "Illumina Catalog #FC-131-2001, FC-131-2002"
+
+# Index mode: unique_dual | combinatorial | single
+index_mode: combinatorial
+
+# No fixed layout - indexes can be combined freely
+is_fixed_layout: false
+
+# 8bp indexes
+default_index1_cycles: 8
+default_index2_cycles: 8
+
+# i7 indexes (Index 1)
+i7_indexes:
+  - name: "N701"
+    sequence: "ATTACTCG"
+  - name: "N702"
+    sequence: "TCCGGAGA"
+  - name: "N703"
+    sequence: "CGCTCATT"
+  - name: "N704"
+    sequence: "GAGATTCC"
+  - name: "N705"
+    sequence: "ATTCAGAA"
+  - name: "N706"
+    sequence: "GAATTCGT"
+  - name: "N707"
+    sequence: "CTGAAGCT"
+  - name: "N710"
+    sequence: "CGAGGCTG"
+  - name: "N711"
+    sequence: "AAGAGGCA"
+  - name: "N712"
+    sequence: "GTAGAGGA"
+  - name: "N714"
+    sequence: "GCTCATGA"
+  - name: "N715"
+    sequence: "ATCTCAGG"
+
+# i5 indexes (Index 2)
+i5_indexes:
+  - name: "S501"
+    sequence: "TATAGCCT"
+  - name: "S502"
+    sequence: "ATAGAGGC"
+  - name: "S503"
+    sequence: "CCTATCCT"
+  - name: "S504"
+    sequence: "GGCTCTGA"
+  - name: "S505"
+    sequence: "AGGCGAAG"
+  - name: "S506"
+    sequence: "TAATCTTA"
+  - name: "S507"
+    sequence: "CAGGACGT"
+  - name: "S508"
+    sequence: "GTACTGAC"

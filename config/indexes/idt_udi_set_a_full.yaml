@@ -1,0 +1,890 @@
+# IDT for Illumina DNA/RNA UD Indexes Set A - Full 96 indexes
+# 96 unique dual indexes for library preparation
+# Catalog: 20027213
+
+name: "IDT for Illumina UD Indexes Set A"
+version: "1.0.0"
+description: "96 unique dual indexes from IDT for Illumina DNA/RNA library prep"
+comments: "Illumina Catalog #20027213. 10bp indexes. Plate A."
+
+index_mode: unique_dual
+is_fixed_layout: true
+
+adapter_read1: "CTGTCTCTTATACACATCT"
+adapter_read2: "CTGTCTCTTATACACATCT"
+
+default_index1_cycles: 10
+default_index2_cycles: 10
+
+index_pairs:
+  # Row A
+  - name: "A01"
+    well_position: "A01"
+    index1:
+      name: "UDP0001"
+      sequence: "GAACTGAGCG"
+    index2:
+      name: "UDP0001"
+      sequence: "TCGTGGAGCG"
+
+  - name: "A02"
+    well_position: "A02"
+    index1:
+      name: "UDP0009"
+      sequence: "GACTGAGTAG"
+    index2:
+      name: "UDP0009"
+      sequence: "GTCGTTGTCG"
+
+  - name: "A03"
+    well_position: "A03"
+    index1:
+      name: "UDP0017"
+      sequence: "CTTGCCATTA"
+    index2:
+      name: "UDP0017"
+      sequence: "GCGGTTAATC"
+
+  - name: "A04"
+    well_position: "A04"
+    index1:
+      name: "UDP0025"
+      sequence: "GAAGGAAGAT"
+    index2:
+      name: "UDP0025"
+      sequence: "ATCGGAGTTC"
+
+  - name: "A05"
+    well_position: "A05"
+    index1:
+      name: "UDP0033"
+      sequence: "CTAATTCGCC"
+    index2:
+      name: "UDP0033"
+      sequence: "CGGTTATTAG"
+
+  - name: "A06"
+    well_position: "A06"
+    index1:
+      name: "UDP0041"
+      sequence: "TCAACCGATT"
+    index2:
+      name: "UDP0041"
+      sequence: "ACTTCAATGC"
+
+  - name: "A07"
+    well_position: "A07"
+    index1:
+      name: "UDP0049"
+      sequence: "CTGATCGTAG"
+    index2:
+      name: "UDP0049"
+      sequence: "AACCATAGAA"
+
+  - name: "A08"
+    well_position: "A08"
+    index1:
+      name: "UDP0057"
+      sequence: "GACGCTACCT"
+    index2:
+      name: "UDP0057"
+      sequence: "CGTCAATTGG"
+
+  - name: "A09"
+    well_position: "A09"
+    index1:
+      name: "UDP0065"
+      sequence: "TGCTTCCGTG"
+    index2:
+      name: "UDP0065"
+      sequence: "GTTACCTGCC"
+
+  - name: "A10"
+    well_position: "A10"
+    index1:
+      name: "UDP0073"
+      sequence: "CCAACAGTAG"
+    index2:
+      name: "UDP0073"
+      sequence: "CAGATCTGTC"
+
+  - name: "A11"
+    well_position: "A11"
+    index1:
+      name: "UDP0081"
+      sequence: "AGGCTAATGA"
+    index2:
+      name: "UDP0081"
+      sequence: "AACTGGTGTT"
+
+  - name: "A12"
+    well_position: "A12"
+    index1:
+      name: "UDP0089"
+      sequence: "AAGACGTAGA"
+    index2:
+      name: "UDP0089"
+      sequence: "CAGCCTTCCA"
+
+  # Row B
+  - name: "B01"
+    well_position: "B01"
+    index1:
+      name: "UDP0002"
+      sequence: "AGGTCAGATA"
+    index2:
+      name: "UDP0002"
+      sequence: "CTACAAGATA"
+
+  - name: "B02"
+    well_position: "B02"
+    index1:
+      name: "UDP0010"
+      sequence: "AGTCAGACGA"
+    index2:
+      name: "UDP0010"
+      sequence: "TAATCCAGCG"
+
+  - name: "B03"
+    well_position: "B03"
+    index1:
+      name: "UDP0018"
+      sequence: "GTTGACGAAT"
+    index2:
+      name: "UDP0018"
+      sequence: "CTAATGATGG"
+
+  - name: "B04"
+    well_position: "B04"
+    index1:
+      name: "UDP0026"
+      sequence: "AATCGGCTGT"
+    index2:
+      name: "UDP0026"
+      sequence: "TGATGTACGA"
+
+  - name: "B05"
+    well_position: "B05"
+    index1:
+      name: "UDP0034"
+      sequence: "AACCAACCAG"
+    index2:
+      name: "UDP0034"
+      sequence: "TCCATCGAGT"
+
+  - name: "B06"
+    well_position: "B06"
+    index1:
+      name: "UDP0042"
+      sequence: "CTGTTGGTCC"
+    index2:
+      name: "UDP0042"
+      sequence: "TGCCTTGATC"
+
+  - name: "B07"
+    well_position: "B07"
+    index1:
+      name: "UDP0050"
+      sequence: "AGGAACACGT"
+    index2:
+      name: "UDP0050"
+      sequence: "TTGGCTCCAT"
+
+  - name: "B08"
+    well_position: "B08"
+    index1:
+      name: "UDP0058"
+      sequence: "CGTTATGCGA"
+    index2:
+      name: "UDP0058"
+      sequence: "GAGATAGTCA"
+
+  - name: "B09"
+    well_position: "B09"
+    index1:
+      name: "UDP0066"
+      sequence: "ACTAGGTGTC"
+    index2:
+      name: "UDP0066"
+      sequence: "CGCATATTGC"
+
+  - name: "B10"
+    well_position: "B10"
+    index1:
+      name: "UDP0074"
+      sequence: "TTACGTCTCG"
+    index2:
+      name: "UDP0074"
+      sequence: "TCGGATCGTA"
+
+  - name: "B11"
+    well_position: "B11"
+    index1:
+      name: "UDP0082"
+      sequence: "TGCGGACTAT"
+    index2:
+      name: "UDP0082"
+      sequence: "GTATCGCTGG"
+
+  - name: "B12"
+    well_position: "B12"
+    index1:
+      name: "UDP0090"
+      sequence: "CTAACACGGT"
+    index2:
+      name: "UDP0090"
+      sequence: "ATCACGGAGA"
+
+  # Row C
+  - name: "C01"
+    well_position: "C01"
+    index1:
+      name: "UDP0003"
+      sequence: "CGTCTCATAT"
+    index2:
+      name: "UDP0003"
+      sequence: "TATAGTAGCT"
+
+  - name: "C02"
+    well_position: "C02"
+    index1:
+      name: "UDP0011"
+      sequence: "CCGTATGTTC"
+    index2:
+      name: "UDP0011"
+      sequence: "CGGAATCTAA"
+
+  - name: "C03"
+    well_position: "C03"
+    index1:
+      name: "UDP0019"
+      sequence: "TAACGAACGA"
+    index2:
+      name: "UDP0019"
+      sequence: "AACCGAACGC"
+
+  - name: "C04"
+    well_position: "C04"
+    index1:
+      name: "UDP0027"
+      sequence: "TTCCGTTCGG"
+    index2:
+      name: "UDP0027"
+      sequence: "AGTTAGCGCC"
+
+  - name: "C05"
+    well_position: "C05"
+    index1:
+      name: "UDP0035"
+      sequence: "TCTCCGTATA"
+    index2:
+      name: "UDP0035"
+      sequence: "AATGCCGGTA"
+
+  - name: "C06"
+    well_position: "C06"
+    index1:
+      name: "UDP0043"
+      sequence: "GGAATGCCTG"
+    index2:
+      name: "UDP0043"
+      sequence: "CCGGAATGTG"
+
+  - name: "C07"
+    well_position: "C07"
+    index1:
+      name: "UDP0051"
+      sequence: "TCGCAATAGA"
+    index2:
+      name: "UDP0051"
+      sequence: "CCACGAACTG"
+
+  - name: "C08"
+    well_position: "C08"
+    index1:
+      name: "UDP0059"
+      sequence: "CGACAGTAGA"
+    index2:
+      name: "UDP0059"
+      sequence: "TAAGCCTCGG"
+
+  - name: "C09"
+    well_position: "C09"
+    index1:
+      name: "UDP0067"
+      sequence: "TGGTAAGCGT"
+    index2:
+      name: "UDP0067"
+      sequence: "TTCCGGTAAT"
+
+  - name: "C10"
+    well_position: "C10"
+    index1:
+      name: "UDP0075"
+      sequence: "GTGGAATCGT"
+    index2:
+      name: "UDP0075"
+      sequence: "AAGCAGTCGC"
+
+  - name: "C11"
+    well_position: "C11"
+    index1:
+      name: "UDP0083"
+      sequence: "ATCCGACGTA"
+    index2:
+      name: "UDP0083"
+      sequence: "CGTTAACGGA"
+
+  - name: "C12"
+    well_position: "C12"
+    index1:
+      name: "UDP0091"
+      sequence: "CGAGATCGTT"
+    index2:
+      name: "UDP0091"
+      sequence: "GGTAGAACCA"
+
+  # Row D
+  - name: "D01"
+    well_position: "D01"
+    index1:
+      name: "UDP0004"
+      sequence: "ATTCCATAAG"
+    index2:
+      name: "UDP0004"
+      sequence: "TGCCTGGTGG"
+
+  - name: "D02"
+    well_position: "D02"
+    index1:
+      name: "UDP0012"
+      sequence: "GAATAATCTC"
+    index2:
+      name: "UDP0012"
+      sequence: "ACCTTCCTTC"
+
+  - name: "D03"
+    well_position: "D03"
+    index1:
+      name: "UDP0020"
+      sequence: "ACCTGCAATG"
+    index2:
+      name: "UDP0020"
+      sequence: "TTCGAATGTT"
+
+  - name: "D04"
+    well_position: "D04"
+    index1:
+      name: "UDP0028"
+      sequence: "CCAAGCTCTA"
+    index2:
+      name: "UDP0028"
+      sequence: "CGCGATCTTG"
+
+  - name: "D05"
+    well_position: "D05"
+    index1:
+      name: "UDP0036"
+      sequence: "GCTGACTTGA"
+    index2:
+      name: "UDP0036"
+      sequence: "CGATAGCTTG"
+
+  - name: "D06"
+    well_position: "D06"
+    index1:
+      name: "UDP0044"
+      sequence: "TCATGTCGGA"
+    index2:
+      name: "UDP0044"
+      sequence: "ATTAGCGGCT"
+
+  - name: "D07"
+    well_position: "D07"
+    index1:
+      name: "UDP0052"
+      sequence: "CCTGATTGCC"
+    index2:
+      name: "UDP0052"
+      sequence: "AATCTCGGTA"
+
+  - name: "D08"
+    well_position: "D08"
+    index1:
+      name: "UDP0060"
+      sequence: "TGAGCCTTAG"
+    index2:
+      name: "UDP0060"
+      sequence: "AACGCTTACC"
+
+  - name: "D09"
+    well_position: "D09"
+    index1:
+      name: "UDP0068"
+      sequence: "CAAGCAGCTA"
+    index2:
+      name: "UDP0068"
+      sequence: "GTAAGGCCTG"
+
+  - name: "D10"
+    well_position: "D10"
+    index1:
+      name: "UDP0076"
+      sequence: "CAGATAGCAC"
+    index2:
+      name: "UDP0076"
+      sequence: "TTCCAGGCAT"
+
+  - name: "D11"
+    well_position: "D11"
+    index1:
+      name: "UDP0084"
+      sequence: "TTCGTGCGAC"
+    index2:
+      name: "UDP0084"
+      sequence: "TAATGAGCGA"
+
+  - name: "D12"
+    well_position: "D12"
+    index1:
+      name: "UDP0092"
+      sequence: "TTCCTCAGGA"
+    index2:
+      name: "UDP0092"
+      sequence: "TACGGCCTTA"
+
+  # Row E
+  - name: "E01"
+    well_position: "E01"
+    index1:
+      name: "UDP0005"
+      sequence: "GACGAGATTA"
+    index2:
+      name: "UDP0005"
+      sequence: "ACATTATCCT"
+
+  - name: "E02"
+    well_position: "E02"
+    index1:
+      name: "UDP0013"
+      sequence: "TTGGACTTGG"
+    index2:
+      name: "UDP0013"
+      sequence: "CTTATGGAGT"
+
+  - name: "E03"
+    well_position: "E03"
+    index1:
+      name: "UDP0021"
+      sequence: "CGATTAGGCT"
+    index2:
+      name: "UDP0021"
+      sequence: "GAGACATACT"
+
+  - name: "E04"
+    well_position: "E04"
+    index1:
+      name: "UDP0029"
+      sequence: "TCGGCAATCT"
+    index2:
+      name: "UDP0029"
+      sequence: "TGGTTGGCCT"
+
+  - name: "E05"
+    well_position: "E05"
+    index1:
+      name: "UDP0037"
+      sequence: "ACGGACTTCA"
+    index2:
+      name: "UDP0037"
+      sequence: "GACTCGATGA"
+
+  - name: "E06"
+    well_position: "E06"
+    index1:
+      name: "UDP0045"
+      sequence: "AATTGTGCCT"
+    index2:
+      name: "UDP0045"
+      sequence: "CTTGTCCGAC"
+
+  - name: "E07"
+    well_position: "E07"
+    index1:
+      name: "UDP0053"
+      sequence: "GCTGAGTTCA"
+    index2:
+      name: "UDP0053"
+      sequence: "TCGATGTCGA"
+
+  - name: "E08"
+    well_position: "E08"
+    index1:
+      name: "UDP0061"
+      sequence: "ACGTAACATG"
+    index2:
+      name: "UDP0061"
+      sequence: "TTCCTTAGGC"
+
+  - name: "E09"
+    well_position: "E09"
+    index1:
+      name: "UDP0069"
+      sequence: "TCATCCTATG"
+    index2:
+      name: "UDP0069"
+      sequence: "ACTGGTGCAT"
+
+  - name: "E10"
+    well_position: "E10"
+    index1:
+      name: "UDP0077"
+      sequence: "GATCGCATAG"
+    index2:
+      name: "UDP0077"
+      sequence: "CTGAGCAATG"
+
+  - name: "E11"
+    well_position: "E11"
+    index1:
+      name: "UDP0085"
+      sequence: "GAGACCTAGA"
+    index2:
+      name: "UDP0085"
+      sequence: "CCAGGTATTC"
+
+  - name: "E12"
+    well_position: "E12"
+    index1:
+      name: "UDP0093"
+      sequence: "TTGCAACCGG"
+    index2:
+      name: "UDP0093"
+      sequence: "GTCTCATTGG"
+
+  # Row F
+  - name: "F01"
+    well_position: "F01"
+    index1:
+      name: "UDP0006"
+      sequence: "AACATCGCGC"
+    index2:
+      name: "UDP0006"
+      sequence: "CGTAACACTT"
+
+  - name: "F02"
+    well_position: "F02"
+    index1:
+      name: "UDP0014"
+      sequence: "CAGTCCAACT"
+    index2:
+      name: "UDP0014"
+      sequence: "GCACAACTGA"
+
+  - name: "F03"
+    well_position: "F03"
+    index1:
+      name: "UDP0022"
+      sequence: "TACGCCGATA"
+    index2:
+      name: "UDP0022"
+      sequence: "ATCGTCGTAG"
+
+  - name: "F04"
+    well_position: "F04"
+    index1:
+      name: "UDP0030"
+      sequence: "TCCGTGCATT"
+    index2:
+      name: "UDP0030"
+      sequence: "TTGGAGCTTG"
+
+  - name: "F05"
+    well_position: "F05"
+    index1:
+      name: "UDP0038"
+      sequence: "GTTGTTCGAG"
+    index2:
+      name: "UDP0038"
+      sequence: "TCTCAGGACG"
+
+  - name: "F06"
+    well_position: "F06"
+    index1:
+      name: "UDP0046"
+      sequence: "GTGTCTACGC"
+    index2:
+      name: "UDP0046"
+      sequence: "ACCAGTTGCG"
+
+  - name: "F07"
+    well_position: "F07"
+    index1:
+      name: "UDP0054"
+      sequence: "AAGGCGTTAG"
+    index2:
+      name: "UDP0054"
+      sequence: "GAACATTCGG"
+
+  - name: "F08"
+    well_position: "F08"
+    index1:
+      name: "UDP0062"
+      sequence: "TGCCGAACGT"
+    index2:
+      name: "UDP0062"
+      sequence: "CTATGTCCTC"
+
+  - name: "F09"
+    well_position: "F09"
+    index1:
+      name: "UDP0070"
+      sequence: "TCCGTATCCA"
+    index2:
+      name: "UDP0070"
+      sequence: "CGCCTTCAAT"
+
+  - name: "F10"
+    well_position: "F10"
+    index1:
+      name: "UDP0078"
+      sequence: "CGACTTCGAC"
+    index2:
+      name: "UDP0078"
+      sequence: "GAAGTACCGT"
+
+  - name: "F11"
+    well_position: "F11"
+    index1:
+      name: "UDP0086"
+      sequence: "ACAGTCGTGC"
+    index2:
+      name: "UDP0086"
+      sequence: "AGCAATCCGA"
+
+  - name: "F12"
+    well_position: "F12"
+    index1:
+      name: "UDP0094"
+      sequence: "AAGCGGTTAC"
+    index2:
+      name: "UDP0094"
+      sequence: "GCCTGAGTTA"
+
+  # Row G
+  - name: "G01"
+    well_position: "G01"
+    index1:
+      name: "UDP0007"
+      sequence: "CTAGTGCTCT"
+    index2:
+      name: "UDP0007"
+      sequence: "TACAGGCGTA"
+
+  - name: "G02"
+    well_position: "G02"
+    index1:
+      name: "UDP0015"
+      sequence: "ATGACGTAAC"
+    index2:
+      name: "UDP0015"
+      sequence: "TTGGTGAGAG"
+
+  - name: "G03"
+    well_position: "G03"
+    index1:
+      name: "UDP0023"
+      sequence: "AGCGTACCGT"
+    index2:
+      name: "UDP0023"
+      sequence: "CCAACTCCAG"
+
+  - name: "G04"
+    well_position: "G04"
+    index1:
+      name: "UDP0031"
+      sequence: "GTGCCTTAAT"
+    index2:
+      name: "UDP0031"
+      sequence: "ACCGCTTCAG"
+
+  - name: "G05"
+    well_position: "G05"
+    index1:
+      name: "UDP0039"
+      sequence: "CAGTATCGGA"
+    index2:
+      name: "UDP0039"
+      sequence: "AGACCTTAGC"
+
+  - name: "G06"
+    well_position: "G06"
+    index1:
+      name: "UDP0047"
+      sequence: "CGCAATGTTG"
+    index2:
+      name: "UDP0047"
+      sequence: "TGGATGGTAC"
+
+  - name: "G07"
+    well_position: "G07"
+    index1:
+      name: "UDP0055"
+      sequence: "TAATGACGCA"
+    index2:
+      name: "UDP0055"
+      sequence: "CTAGGCATCA"
+
+  - name: "G08"
+    well_position: "G08"
+    index1:
+      name: "UDP0063"
+      sequence: "GCCGTATGTT"
+    index2:
+      name: "UDP0063"
+      sequence: "AGTGCCTTAC"
+
+  - name: "G09"
+    well_position: "G09"
+    index1:
+      name: "UDP0071"
+      sequence: "AGGCATGTCT"
+    index2:
+      name: "UDP0071"
+      sequence: "GGATGCGATA"
+
+  - name: "G10"
+    well_position: "G10"
+    index1:
+      name: "UDP0079"
+      sequence: "CTTGCATCGG"
+    index2:
+      name: "UDP0079"
+      sequence: "TTGAGGTGCC"
+
+  - name: "G11"
+    well_position: "G11"
+    index1:
+      name: "UDP0087"
+      sequence: "TTGGTATGGC"
+    index2:
+      name: "UDP0087"
+      sequence: "TGCGATAGAC"
+
+  - name: "G12"
+    well_position: "G12"
+    index1:
+      name: "UDP0095"
+      sequence: "GCATCGAATC"
+    index2:
+      name: "UDP0095"
+      sequence: "ATAGGACGAC"
+
+  # Row H
+  - name: "H01"
+    well_position: "H01"
+    index1:
+      name: "UDP0008"
+      sequence: "GATCAAGGCA"
+    index2:
+      name: "UDP0008"
+      sequence: "ACTCTATGAG"
+
+  - name: "H02"
+    well_position: "H02"
+    index1:
+      name: "UDP0016"
+      sequence: "GCATCCTTGT"
+    index2:
+      name: "UDP0016"
+      sequence: "AATAGGCTCG"
+
+  - name: "H03"
+    well_position: "H03"
+    index1:
+      name: "UDP0024"
+      sequence: "GTACCAGCTG"
+    index2:
+      name: "UDP0024"
+      sequence: "TGTTCTGAGG"
+
+  - name: "H04"
+    well_position: "H04"
+    index1:
+      name: "UDP0032"
+      sequence: "TCGAGCAGTT"
+    index2:
+      name: "UDP0032"
+      sequence: "GAGGCAAGAC"
+
+  - name: "H05"
+    well_position: "H05"
+    index1:
+      name: "UDP0040"
+      sequence: "GTTCTCGTGA"
+    index2:
+      name: "UDP0040"
+      sequence: "TGTAACGACC"
+
+  - name: "H06"
+    well_position: "H06"
+    index1:
+      name: "UDP0048"
+      sequence: "ACGGAGATTC"
+    index2:
+      name: "UDP0048"
+      sequence: "CTGCAAGAGC"
+
+  - name: "H07"
+    well_position: "H07"
+    index1:
+      name: "UDP0056"
+      sequence: "GCTTCGAACA"
+    index2:
+      name: "UDP0056"
+      sequence: "ATGCCAACAC"
+
+  - name: "H08"
+    well_position: "H08"
+    index1:
+      name: "UDP0064"
+      sequence: "TATCGCAAGC"
+    index2:
+      name: "UDP0064"
+      sequence: "AGGTTGCCAT"
+
+  - name: "H09"
+    well_position: "H09"
+    index1:
+      name: "UDP0072"
+      sequence: "CTGTATGACG"
+    index2:
+      name: "UDP0072"
+      sequence: "AATTACGGCG"
+
+  - name: "H10"
+    well_position: "H10"
+    index1:
+      name: "UDP0080"
+      sequence: "AAGCTACTCG"
+    index2:
+      name: "UDP0080"
+      sequence: "TGACCTTGCA"
+
+  - name: "H11"
+    well_position: "H11"
+    index1:
+      name: "UDP0088"
+      sequence: "CAAGCATACG"
+    index2:
+      name: "UDP0088"
+      sequence: "CGGATCTTCA"
+
+  - name: "H12"
+    well_position: "H12"
+    index1:
+      name: "UDP0096"
+      sequence: "CTGAGATACG"
+    index2:
+      name: "UDP0096"
+      sequence: "TTCAGTTACG"

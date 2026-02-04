@@ -3,14 +3,14 @@
 import pytest
 from datetime import datetime
 
-from sequencing_run_setup.models.index import Index, IndexPair, IndexType
-from sequencing_run_setup.models.sample import Sample
-from sequencing_run_setup.models.sequencing_run import (
+from seqsetup.models.index import Index, IndexPair, IndexType
+from seqsetup.models.sample import Sample
+from seqsetup.models.sequencing_run import (
     InstrumentPlatform,
     RunCycles,
     SequencingRun,
 )
-from sequencing_run_setup.services.samplesheet_v1_exporter import (
+from seqsetup.services.samplesheet_v1_exporter import (
     SampleSheetV1Exporter,
     _reverse_complement,
 )

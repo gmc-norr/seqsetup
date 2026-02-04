@@ -1,0 +1,240 @@
+# Illumina DNA Prep with Enrichment Tagmentation Indexes
+# 96 unique dual indexes for tagmentation-based library prep
+# Catalog: 20040560
+
+name: "Illumina DNA Prep Tagmentation Indexes"
+version: "1.0.0"
+description: "96 unique dual indexes for Illumina DNA Prep with Enrichment"
+comments: "Illumina Catalog #20040560. Indexes are 10bp. Use with Illumina DNA Prep kit."
+
+index_mode: unique_dual
+is_fixed_layout: true
+
+# Nextera/Tagmentation adapters
+adapter_read1: "CTGTCTCTTATACACATCT"
+adapter_read2: "CTGTCTCTTATACACATCT"
+
+# 10bp indexes, use all cycles
+default_index1_cycles: 10
+default_index2_cycles: 10
+
+index_pairs:
+  # Column 1
+  - name: "UDP0001"
+    well_position: "A01"
+    index1:
+      name: "UDP0001-i7"
+      sequence: "GAACTGAGCG"
+    index2:
+      name: "UDP0001-i5"
+      sequence: "TCGTGGAGCG"
+
+  - name: "UDP0002"
+    well_position: "B01"
+    index1:
+      name: "UDP0002-i7"
+      sequence: "AGGTCAGATA"
+    index2:
+      name: "UDP0002-i5"
+      sequence: "CTACAAGATA"
+
+  - name: "UDP0003"
+    well_position: "C01"
+    index1:
+      name: "UDP0003-i7"
+      sequence: "CGTCTCATAT"
+    index2:
+      name: "UDP0003-i5"
+      sequence: "TATAGTAGCT"
+
+  - name: "UDP0004"
+    well_position: "D01"
+    index1:
+      name: "UDP0004-i7"
+      sequence: "ATTCCATAAG"
+    index2:
+      name: "UDP0004-i5"
+      sequence: "TGCCTGGTGG"
+
+  - name: "UDP0005"
+    well_position: "E01"
+    index1:
+      name: "UDP0005-i7"
+      sequence: "GACGAGATTA"
+    index2:
+      name: "UDP0005-i5"
+      sequence: "ACATTATCCT"
+
+  - name: "UDP0006"
+    well_position: "F01"
+    index1:
+      name: "UDP0006-i7"
+      sequence: "AACATCGCGC"
+    index2:
+      name: "UDP0006-i5"
+      sequence: "CGTAACACTT"
+
+  - name: "UDP0007"
+    well_position: "G01"
+    index1:
+      name: "UDP0007-i7"
+      sequence: "CTAGTGCTCT"
+    index2:
+      name: "UDP0007-i5"
+      sequence: "TACAGGCGTA"
+
+  - name: "UDP0008"
+    well_position: "H01"
+    index1:
+      name: "UDP0008-i7"
+      sequence: "GATCAAGGCA"
+    index2:
+      name: "UDP0008-i5"
+      sequence: "ACTCTATGAG"
+
+  # Column 2
+  - name: "UDP0009"
+    well_position: "A02"
+    index1:
+      name: "UDP0009-i7"
+      sequence: "GACTGAGTAG"
+    index2:
+      name: "UDP0009-i5"
+      sequence: "GTCGTTGTCG"
+
+  - name: "UDP0010"
+    well_position: "B02"
+    index1:
+      name: "UDP0010-i7"
+      sequence: "AGTCAGACGA"
+    index2:
+      name: "UDP0010-i5"
+      sequence: "TAATCCAGCG"
+
+  - name: "UDP0011"
+    well_position: "C02"
+    index1:
+      name: "UDP0011-i7"
+      sequence: "CCGTATGTTC"
+    index2:
+      name: "UDP0011-i5"
+      sequence: "CGGAATCTAA"
+
+  - name: "UDP0012"
+    well_position: "D02"
+    index1:
+      name: "UDP0012-i7"
+      sequence: "GAATAATCTC"
+    index2:
+      name: "UDP0012-i5"
+      sequence: "ACCTTCCTTC"
+
+  # Column 3
+  - name: "UDP0013"
+    well_position: "A03"
+    index1:
+      name: "UDP0013-i7"
+      sequence: "TTGGACTTGG"
+    index2:
+      name: "UDP0013-i5"
+      sequence: "CTTATGGAGT"
+
+  - name: "UDP0014"
+    well_position: "B03"
+    index1:
+      name: "UDP0014-i7"
+      sequence: "CAGTCCAACT"
+    index2:
+      name: "UDP0014-i5"
+      sequence: "GCACAACTGA"
+
+  - name: "UDP0015"
+    well_position: "C03"
+    index1:
+      name: "UDP0015-i7"
+      sequence: "ATGACGTAAC"
+    index2:
+      name: "UDP0015-i5"
+      sequence: "TTGGTGAGAG"
+
+  - name: "UDP0016"
+    well_position: "D03"
+    index1:
+      name: "UDP0016-i7"
+      sequence: "GCATCCTTGT"
+    index2:
+      name: "UDP0016-i5"
+      sequence: "AATAGGCTCG"
+
+  # Column 4
+  - name: "UDP0017"
+    well_position: "A04"
+    index1:
+      name: "UDP0017-i7"
+      sequence: "CTTGCCATTA"
+    index2:
+      name: "UDP0017-i5"
+      sequence: "GCGGTTAATC"
+
+  - name: "UDP0018"
+    well_position: "B04"
+    index1:
+      name: "UDP0018-i7"
+      sequence: "GTTGACGAAT"
+    index2:
+      name: "UDP0018-i5"
+      sequence: "CTAATGATGG"
+
+  - name: "UDP0019"
+    well_position: "C04"
+    index1:
+      name: "UDP0019-i7"
+      sequence: "TAACGAACGA"
+    index2:
+      name: "UDP0019-i5"
+      sequence: "AACCGAACGC"
+
+  - name: "UDP0020"
+    well_position: "D04"
+    index1:
+      name: "UDP0020-i7"
+      sequence: "ACCTGCAATG"
+    index2:
+      name: "UDP0020-i5"
+      sequence: "TTCGAATGTT"
+
+  - name: "UDP0021"
+    well_position: "E04"
+    index1:
+      name: "UDP0021-i7"
+      sequence: "CGATTAGGCT"
+    index2:
+      name: "UDP0021-i5"
+      sequence: "GAGACATACT"
+
+  - name: "UDP0022"
+    well_position: "F04"
+    index1:
+      name: "UDP0022-i7"
+      sequence: "TACGCCGATA"
+    index2:
+      name: "UDP0022-i5"
+      sequence: "ATCGTCGTAG"
+
+  - name: "UDP0023"
+    well_position: "G04"
+    index1:
+      name: "UDP0023-i7"
+      sequence: "AGCGTACCGT"
+    index2:
+      name: "UDP0023-i5"
+      sequence: "CCAACTCCAG"
+
+  - name: "UDP0024"
+    well_position: "H04"
+    index1:
+      name: "UDP0024-i7"
+      sequence: "GTACCAGCTG"
+    index2:
+      name: "UDP0024-i5"
+      sequence: "TGTTCTGAGG"

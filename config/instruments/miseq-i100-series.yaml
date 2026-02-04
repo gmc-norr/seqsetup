@@ -1,0 +1,54 @@
+# MiSeq i100 Series - Two-color XLEAP chemistry (Blue+Green)
+#
+# Benchtop sequencer with XLEAP SBS chemistry and onboard DRAGEN.
+# i5 read in forward orientation. BCL Convert expects forward i5.
+
+version: "1.0.0"
+
+name: MiSeq i100 Series
+samplesheet_name: MiSeqi100Series
+chemistry_type: 2-color
+has_dragen_onboard: true
+sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
+i5_read_orientation: forward
+samplesheet_v2_i5_orientation: forward
+
+color_balance_enabled: true
+dye_channels: ["Blue", "Green"]
+base_colors:
+  A: "Blue"
+  C: "Blue+Green"
+  T: "Green"
+  G: "Dark"
+channel1_name: "Blue"
+channel1_bases: ["A", "C"]
+channel2_name: "Green"
+channel2_bases: ["C", "T"]
+dark_base: "G"
+error_tendencies: "Reduced dark-base miscalls; flatter error spectrum"
+
+onboard_applications:
+  BCLConvert:
+    software_version: "4.3.6"
+
+flowcells:
+  "5M":
+    lanes: 1
+    reads: 5000000
+    reagent_kits: [100, 300, 600, 1000]
+    description: "5 million reads, 1 lane"
+  "25M":
+    lanes: 1
+    reads: 25000000
+    reagent_kits: [100, 300, 600, 1000]
+    description: "25 million reads, 1 lane"
+  "50M":
+    lanes: 1
+    reads: 50000000
+    reagent_kits: [100, 300, 600]
+    description: "50 million reads, 1 lane"
+  "100M":
+    lanes: 1
+    reads: 100000000
+    reagent_kits: [100, 300]
+    description: "100 million reads, 1 lane"

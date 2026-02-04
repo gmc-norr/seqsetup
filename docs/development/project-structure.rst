@@ -6,13 +6,13 @@ Source Layout
 
 .. code-block:: text
 
-   sequencing_run_setup/
+   seqsetup/
    ├── config/                          # Configuration files
    │   ├── instruments.yaml             # Instrument and flowcell definitions
    │   ├── mongodb.yaml                 # Database connection settings
    │   ├── users.yaml                   # Development user credentials
    │   └── profiles/                    # Application/test profile YAML files
-   ├── src/sequencing_run_setup/        # Application source code
+   ├── src/seqsetup/        # Application source code
    │   ├── app.py                       # Application entry point (FastHTML)
    │   ├── components/                  # UI components
    │   ├── data/                        # Static data loaders

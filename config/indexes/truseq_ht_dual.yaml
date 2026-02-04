@@ -1,0 +1,64 @@
+# TruSeq HT Dual Index Kit (Combinatorial)
+# 96 combinations from 12 i7 indexes × 8 i5 indexes
+# Catalog: FC-131-2004
+
+name: "TruSeq HT Dual Index"
+version: "1.0.0"
+description: "TruSeq HT dual indexing kit with 96 combinatorial combinations"
+comments: "Illumina Catalog #FC-131-2004. 8bp indexes."
+
+index_mode: combinatorial
+is_fixed_layout: false
+
+# TruSeq adapters
+adapter_read1: "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+adapter_read2: "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+
+default_index1_cycles: 8
+default_index2_cycles: 8
+
+# D700 series i7 indexes (Index 1)
+i7_indexes:
+  - name: "D701"
+    sequence: "ATTACTCG"
+  - name: "D702"
+    sequence: "TCCGGAGA"
+  - name: "D703"
+    sequence: "CGCTCATT"
+  - name: "D704"
+    sequence: "GAGATTCC"
+  - name: "D705"
+    sequence: "ATTCAGAA"
+  - name: "D706"
+    sequence: "GAATTCGT"
+  - name: "D707"
+    sequence: "CTGAAGCT"
+  - name: "D708"
+    sequence: "TAATGCGC"
+  - name: "D709"
+    sequence: "CGGCTATG"
+  - name: "D710"
+    sequence: "TCCGCGAA"
+  - name: "D711"
+    sequence: "TCTCGCGC"
+  - name: "D712"
+    sequence: "AGCGATAG"
+
+# D500 series i5 indexes (Index 2)
+i5_indexes:
+  - name: "D501"
+    sequence: "TATAGCCT"
+  - name: "D502"
+    sequence: "ATAGAGGC"
+  - name: "D503"
+    sequence: "CCTATCCT"
+  - name: "D504"
+    sequence: "GGCTCTGA"
+  - name: "D505"
+    sequence: "AGGCGAAG"
+  - name: "D506"
+    sequence: "TAATCTTA"
+  - name: "D507"
+    sequence: "CAGGACGT"
+  - name: "D508"
+    sequence: "GTACTGAC"

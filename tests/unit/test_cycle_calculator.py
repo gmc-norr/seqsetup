@@ -2,10 +2,10 @@
 
 import pytest
 
-from sequencing_run_setup.models.index import Index, IndexPair, IndexType
-from sequencing_run_setup.models.sample import Sample
-from sequencing_run_setup.models.sequencing_run import RunCycles, SequencingRun
-from sequencing_run_setup.services.cycle_calculator import CycleCalculator
+from seqsetup.models.index import Index, IndexPair, IndexType
+from seqsetup.models.sample import Sample
+from seqsetup.models.sequencing_run import RunCycles, SequencingRun
+from seqsetup.services.cycle_calculator import CycleCalculator
 
 
 class TestCycleCalculator:

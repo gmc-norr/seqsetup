@@ -1,0 +1,44 @@
+# MiSeq (classic) - Four-color SBS
+#
+# Benchtop sequencer with four-color SBS chemistry.
+# Highly tolerant of low-diversity libraries.
+# i5 read in forward orientation. BCL Convert expects forward i5.
+# Supports both SampleSheet v1 and v2 formats.
+
+version: "1.0.0"
+
+name: MiSeq
+samplesheet_name: MiSeq
+samplesheet_versions: [1, 2]
+chemistry_type: 4-color
+has_dragen_onboard: false
+sbs_chemistry: "Four-color SBS"
+i5_read_orientation: forward
+samplesheet_v2_i5_orientation: forward
+color_balance_enabled: false
+
+onboard_applications:
+  BCLConvert:
+    software_version: "4.3.6"
+
+flowcells:
+  "v2 Standard":
+    lanes: 1
+    reads: 15000000
+    reagent_kits: [50, 300, 500]
+    description: "15 million reads, 1 lane"
+  "v3":
+    lanes: 1
+    reads: 25000000
+    reagent_kits: [150, 600]
+    description: "25 million reads, 1 lane"
+  "v2 Nano":
+    lanes: 1
+    reads: 1000000
+    reagent_kits: [300, 500]
+    description: "1 million reads, 1 lane"
+  "v2 Micro":
+    lanes: 1
+    reads: 4000000
+    reagent_kits: [300]
+    description: "4 million reads, 1 lane"
