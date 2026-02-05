@@ -4,164 +4,82 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SeqSetup – System Description and Functional Specification
-1. Overview
+SeqSetup is a web-based application for configuring and managing sample information for Illumina DNA sequencing workflows. It generates Illumina Sample Sheet v2 files and associated metadata.
 
-SeqSetup is a web-based application developed in Python using FastHTML and supporting libraries. The system is designed to configure and manage sample information for Illumina DNA sequencing workflows. All application data is stored in a MongoDB database.
+### Technology Stack
 
-SeqSetup provides controlled user access, structured run setup, index and test management, and standardized export of sequencing configuration files and metadata.
+- **Backend**: Python with FastHTML framework
+- **Database**: MongoDB
+- **Frontend**: Server-rendered HTML with HTMX for dynamic updates
+- **Authentication**: Local users, LDAP, or Active Directory
 
-2. System Architecture
+## User Authentication and Authorization
 
-Backend: Python (FastHTML framework)
+### Authentication Methods
 
-Database: MongoDB
+Authentication is configured through the admin interface. Supported methods:
 
-Client Interface: Web-based user interface
+1. **Local** - Users stored in MongoDB or `config/users.yaml`
+2. **LDAP** - LDAP directory server
+3. **Active Directory** - Microsoft AD with LDAP protocol
 
-Primary Function: Generation and management of Illumina Sample Sheet v2 files and associated metadata
+### User Roles
 
-3. User Authentication and Authorization
-3.1 Current Implementation
+- **Administrator** - Full access including index kit management, profiles, local users, API tokens
+- **Standard User** - Run setup, sample management, and export functions
 
-Users authenticate via a login mechanism within SeqSetup. Two user roles are supported:
+### Security Configuration
 
-Administrator
+- Session secret: Set `SEQSETUP_SESSION_SECRET` environment variable in production
+- LDAP SSL: Enable `verify_ssl_cert` in production to prevent MITM attacks
+- API access: Only `ready` and `archived` runs are accessible via API
 
-Standard User
+## Functional Capabilities
 
-During development, user credentials are stored in a local configuration file that is read by the application. This file is not accessible through the web interface.
+After authentication, users can:
 
-3.2 Planned Implementation
+- Create and manage sequencing runs (wizard-based workflow)
+- Import samples via paste or external Sample API
+- Assign indexes using drag-and-drop interface
+- Configure lanes, barcode mismatches, and override cycles
+- Validate runs (index collisions, color balance, dark cycles)
+- Export Sample Sheet v2, Sample Sheet v1 (MiSeq), JSON metadata, validation reports
 
-Future versions will integrate Active Directory / LDAP for authentication and authorization based on group membership:
+### Run Status Workflow
 
-Users assigned to an administrator group will have permission to manage index kits and applications globally.
+Runs follow a state machine: **Draft** → **Ready** → **Archived**
 
-Users assigned to a standard user group will be restricted to using existing index kits and applications.
+- **Draft**: Editable, validation not required
+- **Ready**: Locked, validation approved, exports generated
+- **Archived**: Archived for historical reference
 
+## Export Functions
 
+### Sample Sheet v2
+Illumina Sample Sheet v2 CSV for NovaSeq X, MiSeq i100, and other supported instruments.
 
+### Sample Sheet v1
+Legacy CSV format for instruments that require it (MiSeq).
 
-4. Functional Capabilities
+### JSON Metadata
+Complete run and sample data including test IDs, user info, and all configuration.
 
-After authentication, users may perform the following actions based on their role:
+### Validation Reports
+JSON and PDF reports showing validation status, index collisions, and color balance analysis.
 
-Initiate sample sheet setup for a new sequencing run
+## API
 
-Add custom index kits to the database (administrator only)
+The JSON API provides programmatic access using Bearer token authentication.
 
-Manage existing index kits (administrator only)
+**Security**: Only `ready` and `archived` runs are accessible. Draft runs cannot be accessed via API.
 
-Manage tests
-
-Import index and test definitions from external files
-
-The user will land on a page where previous samplesheets and samplesheets under construction can be seen. In the top bar, where logged in user can be seen to the right, functions should be available to allow opening different views according to the above list. Yhen initiate samplesheet setup for a new sequencing run is selected, a wizard should be entered.
-
-
-5. Run Setup Workflow
-5.1 Run Initialization
-
-Creation of a new sample sheet is performed using a guided wizard. During initialization, the user specifies:
-
-Sequencing instrument
-
-Flowcell type
-
-Number of run cycles
-
-Optional user comments
-
-The selected configuration, together with the authenticated user identity, is stored as run-level metadata.
-
-Based on the selected flowcell, the allowable number of run cycles is constrained to the maximum supported by that flowcell type.
-
-5.2 Sample and Test Assignment
-
-For each run:
-
-Sample identifiers and associated test identifiers are added via clipboard paste into a structured table.
-
-Future versions will support importing sample and test identifiers from an external API.
-
-5.3 Index Assignment
-
-Sequencing indexes compatible with BCL Convert are assigned using a drag-and-drop interface:
-
-Multiple index pairs may be selected simultaneously.
-
-Index pairs can be applied to one or more samples in a single operation.
-
-Index assignment follows the order of the selected index pairs.
-
-5.4 Lane Assignment
-
-Lane configuration is performed as follows:
-
-One or more samples are selected.
-
-The user activates the “Set lanes” function.
-
-A selection menu displays all lanes available for the previously selected flowcell.
-
-Selected lanes are applied to the chosen samples.
-
-5.5 Barcode Mismatch Configuration
-
-The default maximum number of allowed mismatches for i5 and i7 indexes is set to 1.
-
-These values can be modified on a per-sample basis.
-
-5.6 Override Cycle Determination
-
-Based on:
-
-Index sequence lengths
-
-Configured run cycles
-
-SeqSetup automatically determines and assigns override cycles for each sample when required.
-
-6. Export Functions
-6.1 Sample Sheet Export
-
-SeqSetup supports exporting Illumina Sample Sheet v2 files for use with:
-
-NovaSeq X
-
-MiSeq i100
-
-The exported sample sheet contains only parameters supported by the sequencing instrument.
-
-A UUID is embedded in the sample sheet to enable linkage with extended metadata not supported by Sample Sheet v2.
-
-6.2 Metadata Export
-
-All run and sample metadata can be exported in JSON format. The JSON export includes, but is not limited to:
-
-Sample identifiers
-
-Test identifiers
-
-Index sequences
-
-Maximum barcode mismatches
-
-Instrument configuration (instrument type, flowcell, run cycles)
-
-User information
-
-Run comments
-
-The JSON file represents the complete and authoritative dataset for the sequencing run.
-
-7. Data Integrity and Traceability
-
-The inclusion of a UUID in the sample sheet enables traceability between instrument-compatible configuration files and extended metadata stored within SeqSetup. This ensures that information not supported by Illumina Sample Sheet v2 (e.g., test identifiers) can be reliably associated with the corresponding sequencing run.
-
-
-
+Endpoints:
+- `GET /api/runs` - List runs (status=ready|archived)
+- `GET /api/runs/{id}/samplesheet-v2` - Download Sample Sheet v2
+- `GET /api/runs/{id}/samplesheet-v1` - Download Sample Sheet v1
+- `GET /api/runs/{id}/json` - Download JSON metadata
+- `GET /api/runs/{id}/validation-report` - Download validation JSON
+- `GET /api/runs/{id}/validation-pdf` - Download validation PDF
 
 ## Development Environment
 
@@ -173,8 +91,11 @@ This project uses **Pixi** for environment and dependency management.
 # Install dependencies and activate environment
 pixi install
 
-# Run a task (once tasks are defined in pixi.toml)
-pixi run <task-name>
+# Run the application
+pixi run dev
+
+# Run tests
+pixi run test
 
 # Add a dependency
 pixi add <package-name>
@@ -187,9 +108,54 @@ pixi add --feature dev <package-name>
 
 - **pixi.toml** - Project manifest (dependencies, tasks, metadata)
 - **pixi.lock** - Lock file (auto-generated, do not edit manually)
-- Platform: linux-64
-- Channel: conda-forge
 
-## Architecture
+## Project Structure
 
-Project structure is being established. Source code should be added following standard Python package conventions.
+```
+src/seqsetup/
+├── app.py              # Main FastHTML application, auth middleware
+├── context.py          # AppContext for dependency injection
+├── components/         # UI components (FastHTML)
+│   ├── edit_run.py     # Run editing components
+│   ├── index_panel.py  # Index kit display components
+│   ├── layout.py       # App shell, navigation
+│   ├── wizard.py       # Sample table, wizard steps
+│   └── ...
+├── models/             # Data models (dataclasses)
+│   ├── sequencing_run.py
+│   ├── index.py
+│   ├── auth_config.py
+│   └── ...
+├── repositories/       # MongoDB data access
+├── routes/             # Route handlers
+│   ├── api.py          # JSON API endpoints
+│   ├── export.py       # File download routes
+│   ├── runs.py         # Run management
+│   ├── samples.py      # Sample management
+│   ├── validation.py   # Validation page
+│   └── ...
+├── services/           # Business logic
+│   ├── validation.py   # Run validation
+│   ├── samplesheet_v2_exporter.py
+│   ├── ldap.py         # LDAP authentication
+│   └── ...
+├── utils/              # Shared utilities
+│   └── html.py         # XSS protection helpers
+└── static/             # CSS, JS, images
+```
+
+## Configuration Files
+
+- `config/mongodb.yaml` - Database connection
+- `config/users.yaml` - Development user credentials
+- `config/instruments.yaml` - Instrument definitions
+- `.sesskey` - Session secret (auto-generated, keep out of version control)
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MONGODB_URI` | MongoDB connection URI | `mongodb://localhost:27017` |
+| `MONGODB_DATABASE` | Database name | `seqsetup` |
+| `SEQSETUP_SESSION_SECRET` | Session encryption key | Auto-generated in `.sesskey` |
+| `INSTRUMENTS_CONFIG` | Path to instruments config | `config/instruments.yaml` |

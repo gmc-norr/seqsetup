@@ -16,9 +16,11 @@ from ..components.wizard import (
 )
 from ..models.index import Index, IndexKit, IndexType
 from ..models.sample import Sample
+from ..models.sequencing_run import RunStatus
 from ..data.instruments import get_lanes_for_flowcell
 from ..context import AppContext
 from ..services.cycle_calculator import CycleCalculator
+from .utils import check_run_editable, get_username
 
 
 def _apply_kit_defaults(sample: Sample, kit: IndexKit) -> None:
@@ -231,12 +233,6 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
     return samples
 
 
-def _get_username(req) -> str:
-    """Extract username from request auth scope."""
-    user = req.scope.get("auth")
-    return user.username if user else ""
-
-
 def register(app, rt, ctx: AppContext):
     """Register sample routes."""
 
@@ -262,7 +258,7 @@ def register(app, rt, ctx: AppContext):
             lanes=[1],
         )
         run.add_sample(sample)
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
@@ -274,6 +270,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         # Get form data from request
         form = await req.form()
@@ -348,7 +347,7 @@ def register(app, rt, ctx: AppContext):
                 added_count += 1
 
         if added_count > 0:
-            run.touch(updated_by=_get_username(req))
+            run.touch(updated_by=get_username(req))
             ctx.run_repo.save(run)
 
         # Return different views based on context
@@ -463,6 +462,9 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         existing_sample_ids = {s.sample_id for s in run.samples}
         added_count = 0
         skipped_duplicates = []
@@ -516,7 +518,7 @@ def register(app, rt, ctx: AppContext):
             added_count += 1
 
         if added_count > 0:
-            run.touch(updated_by=_get_username(req))
+            run.touch(updated_by=get_username(req))
             ctx.run_repo.save(run)
 
         # Build result messages
@@ -575,6 +577,9 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         try:
             indexes_data = json.loads(indexes_json)
         except json.JSONDecodeError as e:
@@ -627,7 +632,7 @@ def register(app, rt, ctx: AppContext):
                     sample, run.run_cycles
                 )
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         # Return the sample table based on context
@@ -661,6 +666,9 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         form = await req.form()
         sample_ids_json = form.get("sample_ids", "[]")
         lanes_json = form.get("lanes", "[]")
@@ -676,7 +684,7 @@ def register(app, rt, ctx: AppContext):
             if sample.id in sample_ids:
                 sample.lanes = sorted(lanes)
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         # Return updated sample table
@@ -702,6 +710,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         form = await req.form()
         sample_ids_json = form.get("sample_ids", "[]")
@@ -734,7 +745,7 @@ def register(app, rt, ctx: AppContext):
                 sample.barcode_mismatches_index1 = mismatch_index1
                 sample.barcode_mismatches_index2 = mismatch_index2
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         # Return updated sample table
@@ -759,6 +770,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         form = await req.form()
         sample_ids_json = form.get("sample_ids", "[]")
@@ -786,7 +800,7 @@ def register(app, rt, ctx: AppContext):
                     else:
                         sample.override_cycles = None
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         # Return updated sample table
@@ -812,6 +826,9 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         form = await req.form()
         sample_ids_json = form.get("sample_ids", "[]")
         test_id_str = form.get("test_id", "")
@@ -828,7 +845,7 @@ def register(app, rt, ctx: AppContext):
             if sample.id in sample_ids:
                 sample.test_id = test_id
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         # Return updated sample table
@@ -853,6 +870,9 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         form = await req.form()
         sample_ids_json = form.get("sample_ids", "[]")
 
@@ -865,7 +885,7 @@ def register(app, rt, ctx: AppContext):
         for sample_id in sample_ids:
             run.remove_sample(sample_id)
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         # Return updated sample table
@@ -879,8 +899,11 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         run.remove_sample(id)
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         # Return different views based on context
@@ -905,7 +928,7 @@ def register(app, rt, ctx: AppContext):
             sample.sample_id = sample_id
             sample.sample_name = sample_name
             sample.project = project
-            run.touch(updated_by=_get_username(req))
+            run.touch(updated_by=get_username(req))
             ctx.run_repo.save(run)
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
             return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=False, num_lanes=num_lanes)
@@ -933,6 +956,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         sample = run.get_sample(id)
         if not sample:
@@ -971,7 +997,7 @@ def register(app, rt, ctx: AppContext):
                 sample, run.run_cycles
             )
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
@@ -993,6 +1019,9 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         sample = run.get_sample(id)
         if sample:
             if index_type == "i7":
@@ -1002,7 +1031,7 @@ def register(app, rt, ctx: AppContext):
             else:
                 sample.clear_index()
 
-            run.touch(updated_by=_get_username(req))
+            run.touch(updated_by=get_username(req))
             ctx.run_repo.save(run)
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
             # Return simplified row for add_step2 context
@@ -1026,6 +1055,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         sample = run.get_sample(id)
         if not sample:
@@ -1064,7 +1096,7 @@ def register(app, rt, ctx: AppContext):
         else:
             sample.barcode_mismatches_index2 = None
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)

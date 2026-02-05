@@ -20,6 +20,7 @@ class LDAPConfig:
     # Connection settings
     server_url: str = ""  # e.g., "ldap://dc.example.com" or "ldaps://dc.example.com:636"
     use_ssl: bool = True
+    verify_ssl_cert: bool = False  # Set to True in production for proper certificate validation
     base_dn: str = ""  # e.g., "DC=example,DC=com"
 
     # Bind credentials (for searching users)
@@ -50,6 +51,7 @@ class LDAPConfig:
         return {
             "server_url": self.server_url,
             "use_ssl": self.use_ssl,
+            "verify_ssl_cert": self.verify_ssl_cert,
             "base_dn": self.base_dn,
             "bind_dn": self.bind_dn,
             "bind_password": self.bind_password,
@@ -72,6 +74,7 @@ class LDAPConfig:
         return cls(
             server_url=data.get("server_url", ""),
             use_ssl=data.get("use_ssl", True),
+            verify_ssl_cert=data.get("verify_ssl_cert", False),
             base_dn=data.get("base_dn", ""),
             bind_dn=data.get("bind_dn", ""),
             bind_password=data.get("bind_password", ""),

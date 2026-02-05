@@ -21,13 +21,8 @@ from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
-from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
-
-
-def _get_username(req) -> str:
-    """Extract username from request auth scope."""
-    user = req.scope.get("auth")
-    return user.username if user else ""
+from ..services.validation_report import ValidationReportJSON
+from .utils import check_run_editable, get_username
 
 
 def register(app, rt, ctx: AppContext):
@@ -43,9 +38,12 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         run.run_name = run_name
         run.run_description = run_description
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
         return ""
 
@@ -55,6 +53,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         # Parse platform
         for platform in InstrumentPlatform:
@@ -71,7 +72,7 @@ def register(app, rt, ctx: AppContext):
         else:
             run.flowcell_type = ""
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
         return FlowcellSelectWizard(run_id, run.flowcell_type, flowcells)
 
@@ -81,6 +82,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         run.flowcell_type = flowcell_type
 
@@ -93,7 +97,7 @@ def register(app, rt, ctx: AppContext):
         if reagent_kits and run.reagent_cycles not in reagent_kits:
             run.reagent_cycles = reagent_kits[0]
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
         return ReagentKitSelectWizard(run_id, run.reagent_cycles, reagent_kits)
 
@@ -103,6 +107,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         run.reagent_cycles = reagent_cycles
 
@@ -118,7 +125,7 @@ def register(app, rt, ctx: AppContext):
         # Update all sample override cycles
         CycleCalculator.update_all_sample_override_cycles(run)
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
         return CycleConfigFormWizard(run)
 
@@ -136,6 +143,9 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         run.run_cycles = RunCycles(
             read1_cycles=read1_cycles,
             read2_cycles=read2_cycles,
@@ -146,7 +156,7 @@ def register(app, rt, ctx: AppContext):
         # Update all sample override cycles
         CycleCalculator.update_all_sample_override_cycles(run)
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
         return SampleTableWizard(run, show_drop_zones=False)
 
@@ -163,11 +173,14 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        if err := check_run_editable(run):
+            return err
+
         run.barcode_mismatches_index1 = barcode_mismatches_index1
         run.barcode_mismatches_index2 = barcode_mismatches_index2
         run.no_lane_splitting = no_lane_splitting
 
-        run.touch(updated_by=_get_username(req))
+        run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
         return ""
 
@@ -185,7 +198,7 @@ def register(app, rt, ctx: AppContext):
 
         # Block transition to "ready" unless validation is approved
         if new_status == RunStatus.READY and not run.validation_approved:
-            from .main import RunStatusBar
+            from ..components.edit_run import RunStatusBar
             return RunStatusBar(run)
 
         run.status = new_status
@@ -203,7 +216,8 @@ def register(app, rt, ctx: AppContext):
             if SampleSheetV1Exporter.supports(run.instrument_platform):
                 run.generated_samplesheet_v1 = SampleSheetV1Exporter.export(run)
 
-            # Generate validation reports
+            # Generate validation JSON report (fast)
+            # PDF is generated lazily on first download to keep Mark Ready fast
             result = ValidationService.validate_run(
                 run,
                 test_profile_repo=ctx.test_profile_repo,
@@ -211,10 +225,21 @@ def register(app, rt, ctx: AppContext):
                 instrument_config=ctx.instrument_config,
             )
             run.generated_validation_json = ValidationReportJSON.export(run, result)
-            run.generated_validation_pdf = ValidationReportPDF.export(run, result)
+            run.generated_validation_pdf = None  # Generated on-demand when downloaded
 
-        run.touch(reset_validation=False, updated_by=_get_username(req))
+        run.touch(reset_validation=False, updated_by=get_username(req))
         ctx.run_repo.save(run)
 
-        from .main import RunStatusBar
-        return RunStatusBar(run)
+        from ..components.edit_run import RunStatusBar, SampleTableSectionForRun, ExportPanelForRun
+
+        # Get test profiles for the sample table
+        test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+
+        # Return status bar as main response, plus export panel and sample section as out-of-band swaps
+        export_panel = ExportPanelForRun(run)
+        export_panel.attrs["hx-swap-oob"] = "true"
+
+        sample_section = SampleTableSectionForRun(run, ctx.index_kit_repo.list_all(), test_profiles)
+        sample_section.attrs["hx-swap-oob"] = "true"
+
+        return Div(RunStatusBar(run), export_panel, sample_section)

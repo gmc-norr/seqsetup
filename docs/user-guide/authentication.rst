@@ -34,5 +34,8 @@ Session Management
 After successful login, a session is created and maintained via a browser cookie.
 The session persists until the user logs out or the session expires.
 
-The session secret key is stored in ``.sesskey`` at the project root and is
-auto-generated on first startup.
+The session secret key can be configured via the ``SEQSETUP_SESSION_SECRET``
+environment variable (recommended for production). If not set, it falls back to
+``.sesskey`` at the project root, which is auto-generated on first startup.
+
+See :doc:`/admin-guide/authentication` for LDAP/AD configuration details.

@@ -1,5 +1,6 @@
 """Main FastHTML application."""
 
+import os
 import secrets
 from pathlib import Path
 
@@ -31,12 +32,15 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "users.yaml"
 SESSKEY_PATH = PROJECT_ROOT / ".sesskey"
 
-# Session secret key
-if SESSKEY_PATH.exists():
-    SESSION_SECRET = SESSKEY_PATH.read_text().strip()
-else:
-    SESSION_SECRET = secrets.token_hex(32)
-    SESSKEY_PATH.write_text(SESSION_SECRET)
+# Session secret key - prefer environment variable for production security
+# Falls back to file-based storage for development convenience
+SESSION_SECRET = os.environ.get("SEQSETUP_SESSION_SECRET")
+if not SESSION_SECRET:
+    if SESSKEY_PATH.exists():
+        SESSION_SECRET = SESSKEY_PATH.read_text().strip()
+    else:
+        SESSION_SECRET = secrets.token_hex(32)
+        SESSKEY_PATH.write_text(SESSION_SECRET)
 
 # Auth service (get_auth_config is set after function is defined)
 auth_service = None

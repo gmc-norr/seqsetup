@@ -1,6 +1,5 @@
 """Index panel UI component with draggable indexes."""
 
-import html
 from typing import Optional
 from urllib.parse import quote
 
@@ -8,45 +7,7 @@ from fasthtml.common import *
 
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from ..models.user import User
-
-
-def _escape_js_string(value: str) -> str:
-    """
-    Escape a string for safe use in JavaScript string literals within HTML attributes.
-
-    This prevents XSS attacks when embedding user data in onclick handlers.
-
-    Args:
-        value: The string to escape
-
-    Returns:
-        Escaped string safe for JavaScript string literals
-    """
-    if not value:
-        return ""
-    # Escape backslashes first, then single quotes (for JS strings)
-    # Also escape newlines and other control characters
-    value = value.replace("\\", "\\\\")
-    value = value.replace("'", "\\'")
-    value = value.replace('"', '\\"')
-    value = value.replace("\n", "\\n")
-    value = value.replace("\r", "\\r")
-    value = value.replace("<", "\\x3c")  # Prevent breaking out of script context
-    value = value.replace(">", "\\x3e")
-    return value
-
-
-def _escape_html_attr(value: str) -> str:
-    """
-    Escape a string for safe use in HTML attributes.
-
-    Args:
-        value: The string to escape
-
-    Returns:
-        Escaped string safe for HTML attributes
-    """
-    return html.escape(value, quote=True) if value else ""
+from ..utils.html import escape_html_attr, escape_js_string
 
 
 def IndexKitsPage(index_kits: list[IndexKit], user: Optional[User] = None):
@@ -60,9 +21,12 @@ def IndexKitsPage(index_kits: list[IndexKit], user: Optional[User] = None):
     can_upload = user is not None
 
     return Div(
-        H2("Index Kits"),
+        Div(
+            H2("Index Kits", style="margin: 0;"),
+            A("+ Import Index Kit", href="/indexes/import", cls="btn btn-primary btn-small") if can_upload else None,
+            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;",
+        ),
         P("Manage the index kits available for all samplesheet setups.", cls="page-description"),
-        IndexUploadForm() if can_upload else None,
         Div(
             IndexKitSummaryTable(index_kits, user=user) if index_kits else NoIndexKitsMessage(can_upload),
             id="index-kits-container",
@@ -71,15 +35,38 @@ def IndexKitsPage(index_kits: list[IndexKit], user: Optional[User] = None):
     )
 
 
+def IndexKitImportPage(error_message: str = None):
+    """
+    Page for importing/creating new index kits.
+
+    Args:
+        error_message: Optional error message to display
+    """
+    return Div(
+        Div(
+            A("Back to Index Kits", href="/indexes", cls="btn btn-secondary btn-small"),
+            style="margin-bottom: 1rem;",
+        ),
+        H2("Import Index Kit"),
+        P("Import an index kit from a CSV, TSV, or YAML file.", cls="page-description"),
+        Div(
+            Div(error_message, cls="error-message") if error_message else None,
+            id="import-message-container",
+        ),
+        IndexUploadForm(),
+        cls="index-kits-page",
+    )
+
+
 def IndexKitSummaryTable(index_kits: list[IndexKit], can_manage: bool = False, user: Optional[User] = None):
-    """Summary table listing all index kits.
+    """Card-based grid layout listing all index kits.
 
     Args:
         index_kits: List of index kits to display
         can_manage: Deprecated, use user instead
         user: Current user for per-kit permission checks
     """
-    rows = []
+    cards = []
     for kit in index_kits:
         mode_label = {
             IndexMode.UNIQUE_DUAL: "Unique Dual",
@@ -87,21 +74,18 @@ def IndexKitSummaryTable(index_kits: list[IndexKit], can_manage: bool = False, u
             IndexMode.SINGLE: "Single",
         }.get(kit.index_mode, "Unknown")
 
+        mode_color = {
+            IndexMode.UNIQUE_DUAL: "kit-mode-dual",
+            IndexMode.COMBINATORIAL: "kit-mode-comb",
+            IndexMode.SINGLE: "kit-mode-single",
+        }.get(kit.index_mode, "")
+
         if kit.is_combinatorial():
             index_count = len(kit.i7_indexes) + len(kit.i5_indexes)
         elif kit.is_single():
             index_count = len(kit.i7_indexes)
         else:
             index_count = len(kit.index_pairs)
-
-        adapter_info = ""
-        if kit.adapter_read1 or kit.adapter_read2:
-            parts = []
-            if kit.adapter_read1:
-                parts.append(f"R1: {kit.adapter_read1[:12]}...")
-            if kit.adapter_read2:
-                parts.append(f"R2: {kit.adapter_read2[:12]}...")
-            adapter_info = ", ".join(parts)
 
         url_name = quote(kit.name, safe="")
         url_version = quote(kit.version, safe="")
@@ -114,22 +98,20 @@ def IndexKitSummaryTable(index_kits: list[IndexKit], can_manage: bool = False, u
             elif kit.created_by and kit.created_by == user.username:
                 can_remove = True
 
-        actions = []
-        actions.append(
+        # Build action buttons
+        actions = [
             A(
                 "View",
                 href=f"/indexes/detail/{url_name}/{url_version}",
-                cls="btn btn-small btn-secondary",
-            )
-        )
-        actions.append(
+                cls="btn btn-small btn-primary",
+            ),
             A(
                 "Download",
                 href=f"/indexes/download/{url_name}/{url_version}",
                 cls="btn btn-small btn-secondary",
                 title="Download as YAML",
-            )
-        )
+            ),
+        ]
         if can_remove:
             actions.append(
                 Button(
@@ -142,48 +124,55 @@ def IndexKitSummaryTable(index_kits: list[IndexKit], can_manage: bool = False, u
                 ),
             )
 
-        # Add synced badge if kit is from GitHub
+        # Source badge for GitHub-synced kits
         source_badge = None
         if getattr(kit, 'source', 'user') == 'github':
-            source_badge = Span(
-                "synced",
-                cls="badge badge-info",
-                title="Synced from GitHub",
-                style="font-size: 0.65rem; padding: 0.1rem 0.4rem; margin-left: 0.5rem; background: var(--bg-info, #0ea5e9); color: white; border-radius: 4px;",
+            source_badge = Span("synced", cls="kit-card-badge kit-badge-synced", title="Synced from GitHub")
+
+        # Adapter info
+        adapter_items = []
+        if kit.adapter_read1:
+            adapter_items.append(
+                Span(f"R1: {kit.adapter_read1[:15]}{'...' if len(kit.adapter_read1) > 15 else ''}", cls="kit-adapter")
+            )
+        if kit.adapter_read2:
+            adapter_items.append(
+                Span(f"R2: {kit.adapter_read2[:15]}{'...' if len(kit.adapter_read2) > 15 else ''}", cls="kit-adapter")
             )
 
-        rows.append(
-            Tr(
-                Td(kit.name, source_badge) if source_badge else Td(kit.name),
-                Td(kit.version),
-                Td(mode_label),
-                Td(str(index_count)),
-                Td(kit.description or "-"),
-                Td(
-                    Span(adapter_info, style="font-family: monospace; font-size: 0.7rem;")
-                    if adapter_info else Span("-", style="color: var(--text-muted);")
+        cards.append(
+            Div(
+                # Card header with name and version
+                Div(
+                    Div(
+                        Span(kit.name, cls="kit-card-name"),
+                        source_badge,
+                        cls="kit-card-title-row",
+                    ),
+                    Span(f"v{kit.version}", cls="kit-card-version"),
+                    cls="kit-card-header",
                 ),
-                Td(kit.created_by or "-"),
-                Td(Div(*actions, cls="actions")),
+                # Badges row
+                Div(
+                    Span(mode_label, cls=f"kit-card-badge {mode_color}"),
+                    Span(f"{index_count} indexes", cls="kit-card-badge kit-badge-count"),
+                    cls="kit-card-badges",
+                ),
+                # Description
+                P(kit.description, cls="kit-card-desc") if kit.description else None,
+                # Adapters (if any)
+                Div(*adapter_items, cls="kit-card-adapters") if adapter_items else None,
+                # Footer with creator and actions
+                Div(
+                    Span(f"by {kit.created_by}" if kit.created_by else "", cls="kit-card-creator"),
+                    Div(*actions, cls="kit-card-actions"),
+                    cls="kit-card-footer",
+                ),
+                cls="kit-card",
             )
         )
 
-    return Table(
-        Thead(
-            Tr(
-                Th("Name"),
-                Th("Version"),
-                Th("Mode"),
-                Th("Indexes"),
-                Th("Description"),
-                Th("Adapters"),
-                Th("Created by"),
-                Th("Actions"),
-            ),
-        ),
-        Tbody(*rows),
-        cls="sample-table",
-    )
+    return Div(*cards, cls="kit-cards-grid")
 
 
 def IndexKitDetailPage(kit: IndexKit, user: Optional[User] = None):
@@ -579,7 +568,7 @@ def IndexUploadForm():
         ),
         hx_post="/indexes/upload",
         hx_encoding="multipart/form-data",
-        hx_target="#index-kits-container",
+        hx_target="#import-message-container",
         hx_swap="innerHTML",
         cls="index-upload-form",
     )
@@ -834,8 +823,8 @@ def DraggableIndexPair(pair: IndexPair):
         i5_preview = pair.index2_sequence[:8] + ("..." if len(pair.index2_sequence) > 8 else "")
 
     # Escape user data for safe use in JavaScript event handlers
-    safe_id = _escape_js_string(pair.id)
-    safe_name = _escape_html_attr(pair.name)
+    safe_id = escape_js_string(pair.id)
+    safe_name = escape_html_attr(pair.name)
 
     return Div(
         Span(pair.name, cls="index-name"),
@@ -868,8 +857,8 @@ def DraggableIndex(index: Index, kit_name: str):
     index_id = f"{kit_name}_{index_type}_{index.name}"
 
     # Escape user data for safe use in JavaScript event handlers
-    safe_index_id = _escape_js_string(index_id)
-    safe_name = _escape_html_attr(index.name)
+    safe_index_id = escape_js_string(index_id)
+    safe_name = escape_html_attr(index.name)
 
     return Div(
         Span(index.name, cls="index-name"),
@@ -890,6 +879,9 @@ def NoIndexKitsMessage(can_upload: bool = False):
     """Message shown when no index kits are loaded."""
     return Div(
         P("No index kits loaded."),
-        P("Import a CSV, TSV, or YAML file to add indexes.") if can_upload else P("Contact an administrator to add index kits."),
+        P(
+            A("Import an index kit", href="/indexes/import"),
+            " to get started.",
+        ) if can_upload else P("Contact an administrator to add index kits."),
         cls="no-kits-message",
     )

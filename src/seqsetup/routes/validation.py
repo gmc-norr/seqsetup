@@ -15,12 +15,7 @@ from ..components.validation_panel import (
 )
 from ..context import AppContext
 from ..services.validation import ValidationService
-
-
-def _get_username(req) -> str:
-    """Extract username from request auth scope."""
-    user = req.scope.get("auth")
-    return user.username if user else ""
+from .utils import get_username
 
 
 def register(app, rt, ctx: AppContext):
@@ -133,7 +128,7 @@ def register(app, rt, ctx: AppContext):
         )
         if can_approve:
             run.validation_approved = True
-            run.touch(reset_validation=False, updated_by=_get_username(req))
+            run.touch(reset_validation=False, updated_by=get_username(req))
             ctx.run_repo.save(run)
 
         return ValidationApprovalBar(run, result)
@@ -146,7 +141,7 @@ def register(app, rt, ctx: AppContext):
             return Response("Run not found", status_code=404)
 
         run.validation_approved = False
-        run.touch(reset_validation=False, updated_by=_get_username(req))
+        run.touch(reset_validation=False, updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         result = _validate_run(run)

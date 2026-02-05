@@ -64,11 +64,16 @@ def register(app, rt, ctx: AppContext):
             )
 
         try:
-            content = SampleSheetV2Exporter.export(
-                run,
-                test_profile_repo=ctx.test_profile_repo,
-                app_profile_repo=ctx.app_profile_repo,
-            )
+            # Use cached content if available, otherwise generate fresh
+            if run.generated_samplesheet_v2:
+                content = run.generated_samplesheet_v2
+            else:
+                content = SampleSheetV2Exporter.export(
+                    run,
+                    test_profile_repo=ctx.test_profile_repo,
+                    app_profile_repo=ctx.app_profile_repo,
+                )
+
             # Sanitize filename to prevent header injection
             safe_name = _sanitize_filename(run.run_name, "SampleSheet_v2")
             filename = f"{safe_name}.csv"
@@ -101,7 +106,12 @@ def register(app, rt, ctx: AppContext):
             )
 
         try:
-            content = SampleSheetV1Exporter.export(run)
+            # Use cached content if available, otherwise generate fresh
+            if run.generated_samplesheet_v1:
+                content = run.generated_samplesheet_v1
+            else:
+                content = SampleSheetV1Exporter.export(run)
+
             safe_name = _sanitize_filename(run.run_name, "SampleSheet")
             filename = f"{safe_name}.csv"
 
@@ -130,7 +140,12 @@ def register(app, rt, ctx: AppContext):
             )
 
         try:
-            content = JSONExporter.export(run)
+            # Use cached content if available, otherwise generate fresh
+            if run.generated_json:
+                content = run.generated_json
+            else:
+                content = JSONExporter.export(run)
+
             # Sanitize filename to prevent header injection
             safe_name = _sanitize_filename(run.run_name, "run_metadata")
             filename = f"{safe_name}.json"
@@ -157,8 +172,13 @@ def register(app, rt, ctx: AppContext):
             return StarletteResponse(content="Run not found", status_code=404)
 
         try:
-            result = _run_validation(run)
-            content = ValidationReportJSON.export(run, result)
+            # Use cached content if available, otherwise generate fresh
+            if run.generated_validation_json:
+                content = run.generated_validation_json
+            else:
+                result = _run_validation(run)
+                content = ValidationReportJSON.export(run, result)
+
             safe_name = _sanitize_filename(run.run_name, "validation_report")
             filename = f"{safe_name}_validation.json"
 
@@ -184,8 +204,16 @@ def register(app, rt, ctx: AppContext):
             return StarletteResponse(content="Run not found", status_code=404)
 
         try:
-            result = _run_validation(run)
-            pdf_bytes = ValidationReportPDF.export(run, result)
+            # Use cached content if available, otherwise generate and cache
+            if run.generated_validation_pdf:
+                pdf_bytes = run.generated_validation_pdf
+            else:
+                result = _run_validation(run)
+                pdf_bytes = ValidationReportPDF.export(run, result)
+                # Cache the generated PDF for future downloads
+                run.generated_validation_pdf = pdf_bytes
+                ctx.run_repo.save(run)
+
             safe_name = _sanitize_filename(run.run_name, "validation_report")
             filename = f"{safe_name}_validation.pdf"
 

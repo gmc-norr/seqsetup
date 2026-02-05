@@ -1,13 +1,19 @@
 Export
 ======
 
-Export endpoints provide instrument-ready SampleSheet v2 files and structured
-JSON metadata for individual runs.
+Export endpoints provide instrument-ready SampleSheet files and structured
+metadata for individual runs. These endpoints are accessed through the web
+interface using session authentication.
+
+.. note::
+
+   For programmatic access with Bearer token authentication, see the
+   :doc:`runs` API endpoints (``/api/runs/{run_id}/samplesheet-v2``, etc.).
 
 Export SampleSheet v2
 ---------------------
 
-.. http:get:: /runs/{run_id}/export/samplesheet
+.. http:get:: /runs/{run_id}/export/samplesheet-v2
 
    Download an Illumina SampleSheet v2 CSV file for the specified run.
 
@@ -15,11 +21,6 @@ Export SampleSheet v2
    :status 200: Returns the SampleSheet CSV as a file download.
    :status 404: Run not found.
    :status 500: Error generating the SampleSheet.
-
-   **Example request**::
-
-      GET /runs/a1b2c3d4-.../export/samplesheet HTTP/1.1
-      Authorization: Bearer <token>
 
    **Response headers**::
 
@@ -37,6 +38,20 @@ Export SampleSheet v2
    For details on the SampleSheet format, see
    :doc:`/architecture/samplesheet-format`.
 
+Export SampleSheet v1
+---------------------
+
+.. http:get:: /runs/{run_id}/export/samplesheet-v1
+
+   Download a SampleSheet v1 CSV file for instruments that support it
+   (e.g., MiSeq i100 Series).
+
+   :param run_id: Run UUID
+   :status 200: Returns the SampleSheet CSV as a file download.
+   :status 400: SampleSheet v1 not supported for this instrument.
+   :status 404: Run not found.
+   :status 500: Error generating the SampleSheet.
+
 Export JSON Metadata
 --------------------
 
@@ -48,11 +63,6 @@ Export JSON Metadata
    :status 200: Returns the JSON metadata as a file download.
    :status 404: Run not found.
    :status 500: Error generating the JSON export.
-
-   **Example request**::
-
-      GET /runs/a1b2c3d4-.../export/json HTTP/1.1
-      Authorization: Bearer <token>
 
    **Response headers**::
 
@@ -93,7 +103,7 @@ Export JSON Metadata
             "sample_id": "Sample_01",
             "sample_name": "Sample_01",
             "project": "ProjectA",
-            "lane": 1,
+            "lanes": [1],
             "index1": {
               "name": "UDP0001",
               "sequence": "AACGTTCC",
@@ -126,6 +136,30 @@ Export JSON Metadata
    The JSON export includes all metadata for the run, including information
    not representable in the SampleSheet v2 format (e.g., test identifiers,
    index kit details, detailed sample metadata).
+
+Export Validation Report (JSON)
+-------------------------------
+
+.. http:get:: /runs/{run_id}/export/validation-report
+
+   Download the validation report in JSON format.
+
+   :param run_id: Run UUID
+   :status 200: Returns the validation report JSON as a file download.
+   :status 404: Run not found.
+   :status 500: Error generating the validation report.
+
+Export Validation Report (PDF)
+------------------------------
+
+.. http:get:: /runs/{run_id}/export/validation-pdf
+
+   Download the validation report as a PDF document.
+
+   :param run_id: Run UUID
+   :status 200: Returns the validation report PDF as a file download.
+   :status 404: Run not found.
+   :status 500: Error generating the validation PDF.
 
 Differences Between Formats
 ---------------------------

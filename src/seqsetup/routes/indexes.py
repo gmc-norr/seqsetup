@@ -10,6 +10,7 @@ from starlette.responses import Response
 
 from ..components.index_panel import (
     IndexKitDetailPage,
+    IndexKitImportPage,
     IndexKitSection,
     IndexKitSummaryTable,
     IndexKitsPage,
@@ -55,6 +56,18 @@ def register(app, rt, ctx: AppContext):
             title="Index Kits",
         )
 
+    @rt("/indexes/import")
+    def index_kit_import_page(req):
+        """Display the index kit import page."""
+        user = req.scope.get("auth")
+
+        return AppShell(
+            user=user,
+            active_route="/indexes",
+            content=IndexKitImportPage(),
+            title="Import Index Kit",
+        )
+
     @app.post("/indexes/upload")
     async def upload_index_kit(
         req,
@@ -77,7 +90,16 @@ def register(app, rt, ctx: AppContext):
             return Response("Forbidden: Authentication required", status_code=403)
 
         if not index_file or not index_file.filename:
-            return NoIndexKitsMessage(can_upload=True)
+            return Div("Please select a file to import.", cls="error-message")
+
+        # Limit file size to prevent DoS (1MB should be plenty for index kit files)
+        MAX_INDEX_FILE_SIZE = 1 * 1024 * 1024  # 1 MB
+        file_content = await index_file.read()
+        if len(file_content) > MAX_INDEX_FILE_SIZE:
+            return Div(
+                f"File too large. Maximum size is {MAX_INDEX_FILE_SIZE // 1024} KB.",
+                cls="error-message",
+            )
 
         try:
             # Convert string to IndexMode enum
@@ -89,7 +111,7 @@ def register(app, rt, ctx: AppContext):
             idx1_cycles = _parse_index_override(default_index1_override)
             idx2_cycles = _parse_index_override(default_index2_override)
 
-            content = (await index_file.read()).decode("utf-8")
+            content = file_content.decode("utf-8")
             kit = IndexParser.parse_from_content(
                 content,
                 index_file.filename,
@@ -129,39 +151,31 @@ def register(app, rt, ctx: AppContext):
             # Validate the parsed kit
             validation = IndexValidator.validate(kit)
             if not validation.is_valid:
-                kits = ctx.index_kit_repo.list_all()
                 error_list = Ul(*[Li(e) for e in validation.errors], cls="error-list")
                 return Div(
-                    IndexKitSummaryTable(kits, user=user) if kits else None,
-                    Div(
-                        H4("Validation errors:"),
-                        error_list,
-                        cls="error-message",
-                    ),
+                    H4("Validation errors:"),
+                    error_list,
+                    cls="error-message",
                 )
 
             # Check for duplicate name+version
             if ctx.index_kit_repo.exists(kit.name, kit.version):
-                kits = ctx.index_kit_repo.list_all()
                 return Div(
-                    IndexKitSummaryTable(kits, user=user) if kits else None,
-                    Div(
-                        f"An index kit named '{kit.name}' version '{kit.version}' already exists.",
-                        cls="error-message",
-                    ),
+                    f"An index kit named '{kit.name}' version '{kit.version}' already exists.",
+                    cls="error-message",
                 )
 
             ctx.index_kit_repo.save(kit)
         except Exception as e:
             # Return error message
-            kits = ctx.index_kit_repo.list_all()
-            return Div(
-                IndexKitSummaryTable(kits, user=user) if kits else None,
-                Div(f"Error parsing file: {e}", cls="error-message"),
-            )
+            return Div(f"Error parsing file: {e}", cls="error-message")
 
-        kits = ctx.index_kit_repo.list_all()
-        return IndexKitSummaryTable(kits, user=user)
+        # Success - redirect to index kits page
+        return Response(
+            content="",
+            status_code=200,
+            headers={"HX-Redirect": "/indexes"},
+        )
 
     @app.post("/indexes/kits/{name}/{version}/delete")
     def remove_index_kit(req, name: str, version: str):

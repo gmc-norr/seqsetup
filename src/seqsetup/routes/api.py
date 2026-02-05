@@ -2,13 +2,39 @@
 
 from starlette.responses import JSONResponse, Response
 
+from ..models.sequencing_run import RunStatus
+
 
 def register(app, rt, get_run_repo):
     """Register API routes."""
 
+    # Only allow API access to runs in these statuses
+    ALLOWED_API_STATUSES = {RunStatus.READY, RunStatus.ARCHIVED}
+
+    def _check_run_access(run):
+        """Check if run can be accessed via API. Returns error response or None."""
+        if not run:
+            return Response("Run not found", status_code=404)
+        if run.status not in ALLOWED_API_STATUSES:
+            return Response(
+                "Run not available via API. Only ready or archived runs can be accessed.",
+                status_code=403,
+            )
+        return None
+
     @rt("/api/runs")
     def api_list_runs(req, status: str = "ready"):
-        """List runs filtered by status. Defaults to 'ready'."""
+        """List runs filtered by status. Defaults to 'ready'.
+
+        Only 'ready' and 'archived' statuses are allowed via API.
+        """
+        # Restrict status parameter to allowed values
+        if status not in ("ready", "archived"):
+            return Response(
+                "Invalid status. Only 'ready' and 'archived' are allowed via API.",
+                status_code=400,
+            )
+
         run_repo = get_run_repo()
         runs = run_repo.list_by_status(status)
         return JSONResponse([run.to_dict() for run in runs])
@@ -18,8 +44,11 @@ def register(app, rt, get_run_repo):
         """Get pre-generated SampleSheet v2 CSV for a ready run."""
         run_repo = get_run_repo()
         run = run_repo.get_by_id(run_id)
-        if not run:
-            return Response("Run not found", status_code=404)
+
+        error = _check_run_access(run)
+        if error:
+            return error
+
         if not run.generated_samplesheet_v2:
             return Response("SampleSheet v2 not yet generated", status_code=404)
         return Response(
@@ -32,8 +61,11 @@ def register(app, rt, get_run_repo):
         """Get pre-generated SampleSheet v1 CSV for a ready run."""
         run_repo = get_run_repo()
         run = run_repo.get_by_id(run_id)
-        if not run:
-            return Response("Run not found", status_code=404)
+
+        error = _check_run_access(run)
+        if error:
+            return error
+
         if not run.generated_samplesheet_v1:
             return Response("SampleSheet v1 not available for this run", status_code=404)
         return Response(
@@ -46,8 +78,11 @@ def register(app, rt, get_run_repo):
         """Get pre-generated JSON metadata for a ready run."""
         run_repo = get_run_repo()
         run = run_repo.get_by_id(run_id)
-        if not run:
-            return Response("Run not found", status_code=404)
+
+        error = _check_run_access(run)
+        if error:
+            return error
+
         if not run.generated_json:
             return Response("JSON metadata not yet generated", status_code=404)
         return Response(
@@ -60,8 +95,11 @@ def register(app, rt, get_run_repo):
         """Get pre-generated validation report JSON for a ready run."""
         run_repo = get_run_repo()
         run = run_repo.get_by_id(run_id)
-        if not run:
-            return Response("Run not found", status_code=404)
+
+        error = _check_run_access(run)
+        if error:
+            return error
+
         if not run.generated_validation_json:
             return Response("Validation report not yet generated", status_code=404)
         return Response(
@@ -74,8 +112,11 @@ def register(app, rt, get_run_repo):
         """Get pre-generated validation report PDF for a ready run."""
         run_repo = get_run_repo()
         run = run_repo.get_by_id(run_id)
-        if not run:
-            return Response("Run not found", status_code=404)
+
+        error = _check_run_access(run)
+        if error:
+            return error
+
         if not run.generated_validation_pdf:
             return Response("Validation PDF not yet generated", status_code=404)
         return Response(

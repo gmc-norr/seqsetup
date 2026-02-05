@@ -57,7 +57,9 @@ class LDAPService:
 
         tls = None
         if self.config.use_ssl or self.config.server_url.startswith("ldaps://"):
-            tls = Tls(validate=ssl.CERT_NONE)  # In production, use proper cert validation
+            # Use CERT_REQUIRED for production security, CERT_NONE for development/testing
+            cert_validation = ssl.CERT_REQUIRED if self.config.verify_ssl_cert else ssl.CERT_NONE
+            tls = Tls(validate=cert_validation)
 
         return Server(
             self.config.server_url,

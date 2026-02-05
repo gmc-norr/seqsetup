@@ -1,6 +1,18 @@
 Runs
 ====
 
+Access Restrictions
+-------------------
+
+The API only provides access to runs that have been finalized. Draft runs are
+not accessible via the API to prevent exposure of incomplete or unapproved
+configurations.
+
+**Allowed statuses:** ``ready``, ``archived``
+
+Attempting to access a draft run or specifying ``draft`` as a status filter
+returns HTTP 403 Forbidden.
+
 List Runs
 ---------
 
@@ -8,9 +20,10 @@ List Runs
 
    List sequencing runs filtered by status.
 
-   :query status: Filter by run status. One of ``draft``, ``ready``, or
-      ``archived``. Defaults to ``ready``.
+   :query status: Filter by run status. One of ``ready`` or ``archived``.
+      Defaults to ``ready``. The ``draft`` status is not allowed via API.
    :status 200: Returns a JSON array of run objects.
+   :status 400: Invalid status (e.g., ``draft`` was requested).
    :status 401: Authentication required.
 
    **Example request**::
@@ -153,19 +166,149 @@ Each sample in the ``samples`` array contains:
    * - ``project``
      - string
      - Project assignment
-   * - ``lane``
-     - integer
-     - Flowcell lane assignment
+   * - ``test_id``
+     - string
+     - Associated test identifier
+   * - ``worksheet_id``
+     - string
+     - Source worksheet ID (from LIMS import)
+   * - ``lanes``
+     - array
+     - Flowcell lane assignments (empty array = all lanes)
    * - ``index_pair``
      - object
-     - Assigned index pair with ``index1`` and ``index2`` sub-objects
-       containing ``name``, ``sequence``, and ``length``
+     - Assigned index pair (unique dual mode) with ``index1`` and ``index2``
+       sub-objects containing ``name``, ``sequence``, and ``length``
+   * - ``index1``
+     - object
+     - i7 index (combinatorial/single mode) with ``name``, ``sequence``, ``length``
+   * - ``index2``
+     - object
+     - i5 index (combinatorial mode) with ``name``, ``sequence``, ``length``
+   * - ``index_kit_name``
+     - string
+     - Name of the index kit the assigned indexes came from
    * - ``override_cycles``
      - string
      - Override cycles string (e.g., ``Y151;I8N2;I8N2;Y151``) or null
+   * - ``barcode_mismatches_index1``
+     - integer
+     - Per-sample allowed mismatches for i7 index (default: 1)
+   * - ``barcode_mismatches_index2``
+     - integer
+     - Per-sample allowed mismatches for i5 index (default: 1)
+   * - ``analyses``
+     - array
+     - List of analysis IDs assigned to this sample
    * - ``description``
      - string
      - Optional sample description
    * - ``metadata``
      - object
      - Additional sample metadata
+
+Get SampleSheet v2
+------------------
+
+.. http:get:: /api/runs/{run_id}/samplesheet-v2
+
+   Get the pre-generated SampleSheet v2 CSV for a ready or archived run.
+
+   :param run_id: Run UUID
+   :status 200: Returns the SampleSheet v2 CSV.
+   :status 403: Run is a draft (not accessible via API).
+   :status 404: Run not found or SampleSheet not yet generated.
+
+   **Example request**::
+
+      GET /api/runs/a1b2c3d4-.../samplesheet-v2 HTTP/1.1
+      Authorization: Bearer <token>
+
+   **Response headers**::
+
+      Content-Type: text/csv
+
+Get SampleSheet v1
+------------------
+
+.. http:get:: /api/runs/{run_id}/samplesheet-v1
+
+   Get the pre-generated SampleSheet v1 CSV for instruments that support it
+   (e.g., MiSeq).
+
+   :param run_id: Run UUID
+   :status 200: Returns the SampleSheet v1 CSV.
+   :status 403: Run is a draft (not accessible via API).
+   :status 404: Run not found or SampleSheet v1 not available for this run.
+
+   **Example request**::
+
+      GET /api/runs/a1b2c3d4-.../samplesheet-v1 HTTP/1.1
+      Authorization: Bearer <token>
+
+   **Response headers**::
+
+      Content-Type: text/csv
+
+Get JSON Metadata
+-----------------
+
+.. http:get:: /api/runs/{run_id}/json
+
+   Get the pre-generated JSON metadata for a ready or archived run.
+
+   :param run_id: Run UUID
+   :status 200: Returns the JSON metadata.
+   :status 403: Run is a draft (not accessible via API).
+   :status 404: Run not found or JSON not yet generated.
+
+   **Example request**::
+
+      GET /api/runs/a1b2c3d4-.../json HTTP/1.1
+      Authorization: Bearer <token>
+
+   **Response headers**::
+
+      Content-Type: application/json
+
+Get Validation Report (JSON)
+----------------------------
+
+.. http:get:: /api/runs/{run_id}/validation-report
+
+   Get the pre-generated validation report in JSON format.
+
+   :param run_id: Run UUID
+   :status 200: Returns the validation report JSON.
+   :status 403: Run is a draft (not accessible via API).
+   :status 404: Run not found or validation report not yet generated.
+
+   **Example request**::
+
+      GET /api/runs/a1b2c3d4-.../validation-report HTTP/1.1
+      Authorization: Bearer <token>
+
+   **Response headers**::
+
+      Content-Type: application/json
+
+Get Validation Report (PDF)
+---------------------------
+
+.. http:get:: /api/runs/{run_id}/validation-pdf
+
+   Get the pre-generated validation report as a PDF document.
+
+   :param run_id: Run UUID
+   :status 200: Returns the validation report PDF.
+   :status 403: Run is a draft (not accessible via API).
+   :status 404: Run not found or validation PDF not yet generated.
+
+   **Example request**::
+
+      GET /api/runs/a1b2c3d4-.../validation-pdf HTTP/1.1
+      Authorization: Bearer <token>
+
+   **Response headers**::
+
+      Content-Type: application/pdf

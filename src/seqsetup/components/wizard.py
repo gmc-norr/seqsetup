@@ -4,16 +4,15 @@ from fasthtml.common import *
 
 from ..models.index import Index, IndexKit, IndexMode, IndexType
 from ..models.sequencing_run import SequencingRun
-from .export_panel import ExportPanel, ValidationSummary
+from .export_panel import ValidationSummary
 from .index_panel import (
     CombinatorialIndexContent,
     DraggableIndex,
     DraggableIndexPair,
     IndexKitSection,
     SingleIndexContent,
-    _escape_js_string,
-    _escape_html_attr,
 )
+from ..utils.html import escape_html_attr, escape_js_string
 
 
 def WizardProgress(current_step: int, run_id: str):
@@ -702,7 +701,7 @@ def BulkPasteSectionWizard(run_id: str, sample_api_enabled: bool = False):
     )
 
 
-def SampleTableWizard(run: SequencingRun, show_drop_zones: bool = False, index_kits: list[IndexKit] = None, num_lanes: int = 1, show_bulk_actions: bool = True, context: str = "", test_profiles: list = None):
+def SampleTableWizard(run: SequencingRun, show_drop_zones: bool = False, index_kits: list[IndexKit] = None, num_lanes: int = 1, show_bulk_actions: bool = True, context: str = "", test_profiles: list = None, editable: bool = True):
     """Sample table for wizard with run_id in paths.
 
     Args:
@@ -715,6 +714,7 @@ def SampleTableWizard(run: SequencingRun, show_drop_zones: bool = False, index_k
                           index assignment view.
         context: Context string for HTMX endpoints (e.g., "add_step2" for simplified view)
         test_profiles: List of TestProfile objects for the test ID dropdown
+        editable: Whether the table allows editing (delete buttons, bulk actions, etc.)
     """
     if not run.samples:
         return Div(
@@ -729,9 +729,12 @@ def SampleTableWizard(run: SequencingRun, show_drop_zones: bool = False, index_k
     if index_kits:
         show_i5_column = any(not kit.is_single() for kit in index_kits)
 
+    # Disable bulk actions if not editable
+    effective_bulk_actions = show_bulk_actions and editable
+
     header_cells = []
-    # Only show checkbox column if bulk actions are enabled
-    if show_bulk_actions:
+    # Only show checkbox column if bulk actions are enabled and editable
+    if effective_bulk_actions:
         header_cells.append(
             Th(
                 Input(type="checkbox", cls="select-all-checkbox", onclick="toggleSelectAllSamples(this)"),
@@ -748,16 +751,18 @@ def SampleTableWizard(run: SequencingRun, show_drop_zones: bool = False, index_k
         header_cells.append(Th("Index (i7)"))
         if show_i5_column:
             header_cells.append(Th("Index (i5)"))
-        # Only show lanes, override cycles, mismatches if bulk actions enabled
+        # Show lanes, override cycles, mismatches columns when bulk actions is enabled (read-only when not editable)
         if show_bulk_actions:
             header_cells.append(Th("Lanes"))
             header_cells.append(Th("Override Cycles"))
             header_cells.append(Th("MM i7", title="Barcode Mismatches Index 1"))
             header_cells.append(Th("MM i5", title="Barcode Mismatches Index 2"))
-    header_cells.append(Th("", cls="actions-col"))  # Minimal width for delete button
+    # Only show actions column if editable
+    if editable:
+        header_cells.append(Th("", cls="actions-col"))  # Minimal width for delete button
 
-    # Bulk action panel for lane assignment (only if enabled)
-    bulk_action_panel = BulkLaneAssignmentPanel(run.id, num_lanes, test_profiles) if show_bulk_actions else None
+    # Bulk action panel for lane assignment (only if enabled and editable)
+    bulk_action_panel = BulkLaneAssignmentPanel(run.id, num_lanes, test_profiles) if effective_bulk_actions else None
 
     return Div(
         bulk_action_panel,
@@ -765,7 +770,7 @@ def SampleTableWizard(run: SequencingRun, show_drop_zones: bool = False, index_k
             Thead(Tr(*header_cells)),
             Tbody(
                 *[
-                    SampleRowWizard(sample, run.id, run.run_cycles, show_drop_zones, show_i5_column, num_lanes, show_bulk_actions, context)
+                    SampleRowWizard(sample, run.id, run.run_cycles, show_drop_zones, show_i5_column, num_lanes, show_bulk_actions, context, editable)
                     for sample in run.samples
                 ]
             ),
@@ -1009,7 +1014,7 @@ def _TestIdDropdown(test_profiles: list = None):
     )
 
 
-def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = False, show_i5_column: bool = True, num_lanes: int = 1, show_bulk_actions: bool = True, context: str = ""):
+def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = False, show_i5_column: bool = True, num_lanes: int = 1, show_bulk_actions: bool = True, context: str = "", editable: bool = True):
     """Sample row for wizard with run_id in paths.
 
     Args:
@@ -1021,6 +1026,7 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
         num_lanes: Number of lanes
         show_bulk_actions: Whether to show checkbox and bulk action columns
         context: Context string for HTMX endpoints (e.g., "add_step2" for simplified view)
+        editable: Whether the row allows editing (delete button, etc.)
     """
     # Build context query string for HTMX endpoints
     ctx_param = f"?context={context}" if context else ""
@@ -1030,9 +1036,9 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
 
     row_class = "sample-row has-index" if has_index else "sample-row"
 
-    # Checkbox for selection (only if bulk actions enabled)
+    # Checkbox for selection (only if bulk actions enabled AND editable)
     checkbox_cell = None
-    if show_bulk_actions:
+    if show_bulk_actions and editable:
         checkbox_cell = Td(
             Input(
                 type="checkbox",
@@ -1072,16 +1078,19 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
                 cls="index-cell",
             )
         else:
-            index_i7 = Td(
-                Div(
-                    "Drop i7",
-                    cls="drop-zone i7-drop",
-                    data_context=context,
-                    ondragover="event.preventDefault(); this.classList.add('drag-over')",
-                    ondragleave="this.classList.remove('drag-over')",
-                    ondrop=f"handleIndexDrop(event, '{sample.id}', '{run_id}', 'i7')",
-                ),
-            )
+            if editable:
+                index_i7 = Td(
+                    Div(
+                        "Drop i7",
+                        cls="drop-zone i7-drop",
+                        data_context=context,
+                        ondragover="event.preventDefault(); this.classList.add('drag-over')",
+                        ondragleave="this.classList.remove('drag-over')",
+                        ondrop=f"handleIndexDrop(event, '{sample.id}', '{run_id}', 'i7')",
+                    ),
+                )
+            else:
+                index_i7 = Td(Span("-", cls="no-index"), cls="index-cell")
 
         # i5 column - show assigned name+sequence or drop zone
         if show_i5_column:
@@ -1112,16 +1121,19 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
                     cls="index-cell",
                 )
             else:
-                index_i5 = Td(
-                    Div(
-                        "Drop i5",
-                        cls="drop-zone i5-drop",
-                        data_context=context,
-                        ondragover="event.preventDefault(); this.classList.add('drag-over')",
-                        ondragleave="this.classList.remove('drag-over')",
-                        ondrop=f"handleIndexDrop(event, '{sample.id}', '{run_id}', 'i5')",
-                    ),
-                )
+                if editable:
+                    index_i5 = Td(
+                        Div(
+                            "Drop i5",
+                            cls="drop-zone i5-drop",
+                            data_context=context,
+                            ondragover="event.preventDefault(); this.classList.add('drag-over')",
+                            ondragleave="this.classList.remove('drag-over')",
+                            ondrop=f"handleIndexDrop(event, '{sample.id}', '{run_id}', 'i5')",
+                        ),
+                    )
+                else:
+                    index_i5 = Td(Span("-", cls="no-index"), cls="index-cell")
         else:
             index_i5 = None
 
@@ -1137,59 +1149,74 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
             cls="lane-cell",
         )
 
-        # Override cycles input
-        override_cell = Td(
-            Input(
-                type="text",
-                name="override_cycles",
-                value=sample.override_cycles or "",
-                placeholder="Auto",
-                hx_post=f"/runs/{run_id}/samples/{sample.id}/settings",
-                hx_target=f"#sample-row-{sample.id}",
-                hx_swap="outerHTML",
-                hx_trigger="change",
-                cls="override-cycles-input",
-            ),
-            cls="override-cell",
-        )
+        # Override cycles input (or read-only display)
+        if editable:
+            override_cell = Td(
+                Input(
+                    type="text",
+                    name="override_cycles",
+                    value=sample.override_cycles or "",
+                    placeholder="Auto",
+                    hx_post=f"/runs/{run_id}/samples/{sample.id}/settings",
+                    hx_target=f"#sample-row-{sample.id}",
+                    hx_swap="outerHTML",
+                    hx_trigger="change",
+                    cls="override-cycles-input",
+                ),
+                cls="override-cell",
+            )
+        else:
+            override_cell = Td(
+                Span(sample.override_cycles or "Auto", cls="override-cycles-display"),
+                cls="override-cell",
+            )
 
-        # Barcode mismatches inputs
-        mismatch_i7_cell = Td(
-            Input(
-                type="number",
-                name="barcode_mismatches_index1",
-                value=str(sample.barcode_mismatches_index1) if sample.barcode_mismatches_index1 is not None else "",
-                placeholder="-",
-                min="0",
-                max="2",
-                hx_post=f"/runs/{run_id}/samples/{sample.id}/settings",
-                hx_target=f"#sample-row-{sample.id}",
-                hx_swap="outerHTML",
-                hx_trigger="change",
-                cls="mismatch-input",
-            ),
-            cls="mismatch-cell",
-        )
-
-        mismatch_i5_cell = Td(
-            Input(
-                type="number",
-                name="barcode_mismatches_index2",
-                value=str(sample.barcode_mismatches_index2) if sample.barcode_mismatches_index2 is not None else "",
-                placeholder="-",
-                min="0",
-                max="2",
-                hx_post=f"/runs/{run_id}/samples/{sample.id}/settings",
-                hx_target=f"#sample-row-{sample.id}",
-                hx_swap="outerHTML",
-                hx_trigger="change",
-                cls="mismatch-input",
-            ),
-            cls="mismatch-cell",
-        )
+        # Barcode mismatches inputs (or read-only display)
+        if editable:
+            mismatch_i7_cell = Td(
+                Input(
+                    type="number",
+                    name="barcode_mismatches_index1",
+                    value=str(sample.barcode_mismatches_index1) if sample.barcode_mismatches_index1 is not None else "",
+                    placeholder="-",
+                    min="0",
+                    max="2",
+                    hx_post=f"/runs/{run_id}/samples/{sample.id}/settings",
+                    hx_target=f"#sample-row-{sample.id}",
+                    hx_swap="outerHTML",
+                    hx_trigger="change",
+                    cls="mismatch-input",
+                ),
+                cls="mismatch-cell",
+            )
+            mismatch_i5_cell = Td(
+                Input(
+                    type="number",
+                    name="barcode_mismatches_index2",
+                    value=str(sample.barcode_mismatches_index2) if sample.barcode_mismatches_index2 is not None else "",
+                    placeholder="-",
+                    min="0",
+                    max="2",
+                    hx_post=f"/runs/{run_id}/samples/{sample.id}/settings",
+                    hx_target=f"#sample-row-{sample.id}",
+                    hx_swap="outerHTML",
+                    hx_trigger="change",
+                    cls="mismatch-input",
+                ),
+                cls="mismatch-cell",
+            )
+        else:
+            mismatch_i7_cell = Td(
+                Span(str(sample.barcode_mismatches_index1) if sample.barcode_mismatches_index1 is not None else "-", cls="mismatch-display"),
+                cls="mismatch-cell",
+            )
+            mismatch_i5_cell = Td(
+                Span(str(sample.barcode_mismatches_index2) if sample.barcode_mismatches_index2 is not None else "-", cls="mismatch-display"),
+                cls="mismatch-cell",
+            )
 
         cells = []
-        if show_bulk_actions:
+        if show_bulk_actions and editable:
             cells.append(checkbox_cell)
         cells.extend([
             Td(sample.sample_id),
@@ -1203,31 +1230,34 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
         # Only include lanes, override cycles, mismatches if bulk actions enabled
         if show_bulk_actions:
             cells.extend([lane_cell, override_cell, mismatch_i7_cell, mismatch_i5_cell])
-        delete_url = f"/runs/{run_id}/samples/{sample.id}{ctx_param}"
 
-        # For add_step2 context, delete should just remove the row (not refresh entire table)
-        # because we don't have access to existing_sample_ids to filter properly
-        if context == "add_step2":
-            delete_target = f"#sample-row-{sample.id}"
-            delete_swap = "outerHTML"
-        else:
-            delete_target = "#sample-table"
-            delete_swap = "outerHTML"
+        # Only show delete button if editable
+        if editable:
+            delete_url = f"/runs/{run_id}/samples/{sample.id}{ctx_param}"
 
-        cells.append(
-            Td(
-                Button(
-                    "×",
-                    hx_delete=delete_url,
-                    hx_target=delete_target,
-                    hx_swap=delete_swap,
-                    hx_confirm="Delete this sample?",
-                    cls="btn-tiny btn-danger",
-                    title="Delete sample",
-                ),
-                cls="actions",
+            # For add_step2 context, delete should just remove the row (not refresh entire table)
+            # because we don't have access to existing_sample_ids to filter properly
+            if context == "add_step2":
+                delete_target = f"#sample-row-{sample.id}"
+                delete_swap = "outerHTML"
+            else:
+                delete_target = "#sample-table"
+                delete_swap = "outerHTML"
+
+            cells.append(
+                Td(
+                    Button(
+                        "×",
+                        hx_delete=delete_url,
+                        hx_target=delete_target,
+                        hx_swap=delete_swap,
+                        hx_confirm="Delete this sample?",
+                        cls="btn-tiny btn-danger",
+                        title="Delete sample",
+                    ),
+                    cls="actions",
+                )
             )
-        )
 
         return Tr(
             *cells,
@@ -1237,25 +1267,29 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
     else:
         # Simple row without drop zones
         cells = []
-        if show_bulk_actions:
+        if show_bulk_actions and editable:
             cells.append(checkbox_cell)
         cells.extend([
             Td(sample.sample_id),
             Td(sample.test_id),
             Td(sample.worksheet_id or "-", cls="worksheet-cell"),
-            Td(
-                Button(
-                    "×",
-                    hx_delete=f"/runs/{run_id}/samples/{sample.id}",
-                    hx_target=f"#sample-row-{sample.id}",
-                    hx_swap="outerHTML",
-                    hx_confirm="Delete this sample?",
-                    cls="btn-tiny btn-danger",
-                    title="Delete sample",
-                ),
-                cls="actions",
-            ),
         ])
+        # Only show delete button if editable
+        if editable:
+            cells.append(
+                Td(
+                    Button(
+                        "×",
+                        hx_delete=f"/runs/{run_id}/samples/{sample.id}",
+                        hx_target=f"#sample-row-{sample.id}",
+                        hx_swap="outerHTML",
+                        hx_confirm="Delete this sample?",
+                        cls="btn-tiny btn-danger",
+                        title="Delete sample",
+                    ),
+                    cls="actions",
+                )
+            )
         return Tr(
             *cells,
             cls=row_class,
@@ -1441,8 +1475,8 @@ def DraggableIndexPairCompact(pair):
     from ..models.index import IndexPair
 
     # Escape user data for safe use in JavaScript event handlers
-    safe_id = _escape_js_string(pair.id)
-    safe_name = _escape_html_attr(pair.name)
+    safe_id = escape_js_string(pair.id)
+    safe_name = escape_html_attr(pair.name)
 
     # Get index names
     i7_name = pair.index1.name if pair.index1 else ""
@@ -1482,8 +1516,8 @@ def DraggableIndexCompact(index, kit_name: str, index_type: str):
     index_id = f"{kit_name}_{index_type}_{index.name}"
 
     # Escape user data for safe use in JavaScript event handlers
-    safe_index_id = _escape_js_string(index_id)
-    safe_name = _escape_html_attr(index.name)
+    safe_index_id = escape_js_string(index_id)
+    safe_name = escape_html_attr(index.name)
 
     # Show well position if available, otherwise nothing
     well_display = Span(index.well_position, cls="index-well-compact") if index.well_position else None

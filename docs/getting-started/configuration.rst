@@ -20,6 +20,9 @@ Environment Variables
    * - ``INSTRUMENTS_CONFIG``
      - Path to instruments YAML config
      - ``config/instruments.yaml``
+   * - ``SEQSETUP_SESSION_SECRET``
+     - Session encryption secret key (use in production)
+     - Auto-generated in ``.sesskey``
 
 Environment variables take precedence over configuration files.
 
@@ -46,9 +49,18 @@ All configuration files are in the ``config/`` directory:
 Session Key
 -----------
 
-A session secret key is stored in ``.sesskey`` at the project root. It is
-auto-generated on first startup if it does not exist. Keep this file out of
-version control.
+The session secret key is used to encrypt session cookies. For production
+deployments, set the ``SEQSETUP_SESSION_SECRET`` environment variable to a
+secure random value::
+
+   export SEQSETUP_SESSION_SECRET="$(openssl rand -hex 32)"
+
+If the environment variable is not set, the application falls back to reading
+from ``.sesskey`` at the project root. This file is auto-generated on first
+startup if it does not exist.
+
+Keep the session secret out of version control. If the secret changes, all
+existing sessions are invalidated.
 
 Disabling Default Credentials
 -----------------------------
