@@ -8,3 +8,4 @@ This section covers how to install and configure SeqSetup.
 
    installation
    configuration
+   deployment
