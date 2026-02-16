@@ -84,14 +84,9 @@ class TestUniqueDualValidation:
         assert any("i7" in e and "required" in e for e in result.errors)
 
     def test_invalid_dna_characters(self):
-        kit = IndexKit(
-            name="Bad DNA",
-            index_mode=IndexMode.UNIQUE_DUAL,
-            index_pairs=[_make_pair("UDP001", "AAXCGGTT", "TTGGCCAA")],
-        )
-        result = IndexValidator.validate(kit)
-        assert not result.is_valid
-        assert any("invalid characters" in e for e in result.errors)
+        """Invalid DNA is now caught at the model level during Index construction."""
+        with pytest.raises(ValueError, match="invalid characters"):
+            _make_pair("UDP001", "AAXCGGTT", "TTGGCCAA")
 
     def test_duplicate_pair_names(self):
         kit = IndexKit(
@@ -174,26 +169,14 @@ class TestCombinatorialValidation:
         assert any("i5" in e for e in result.errors)
 
     def test_invalid_i7_sequence(self):
-        kit = IndexKit(
-            name="Bad",
-            index_mode=IndexMode.COMBINATORIAL,
-            i7_indexes=[_make_index("A", "ZZZZGGTT", IndexType.I7)],
-            i5_indexes=[_make_index("01", "TTGGCCAA", IndexType.I5)],
-        )
-        result = IndexValidator.validate(kit)
-        assert not result.is_valid
-        assert any("invalid characters" in e for e in result.errors)
+        """Invalid DNA is now caught at the model level during Index construction."""
+        with pytest.raises(ValueError, match="invalid characters"):
+            _make_index("A", "ZZZZGGTT", IndexType.I7)
 
     def test_invalid_i5_sequence(self):
-        kit = IndexKit(
-            name="Bad",
-            index_mode=IndexMode.COMBINATORIAL,
-            i7_indexes=[_make_index("A", "AACCGGTT", IndexType.I7)],
-            i5_indexes=[_make_index("01", "12345678", IndexType.I5)],
-        )
-        result = IndexValidator.validate(kit)
-        assert not result.is_valid
-        assert any("invalid characters" in e for e in result.errors)
+        """Invalid DNA is now caught at the model level during Index construction."""
+        with pytest.raises(ValueError, match="invalid characters"):
+            _make_index("01", "12345678", IndexType.I5)
 
     def test_duplicate_i7_names(self):
         kit = IndexKit(
@@ -263,14 +246,9 @@ class TestSingleValidation:
         assert any("at least one i7" in e for e in result.errors)
 
     def test_invalid_sequence(self):
-        kit = IndexKit(
-            name="Bad",
-            index_mode=IndexMode.SINGLE,
-            i7_indexes=[_make_index("A", "HELLO!!!", IndexType.I7)],
-        )
-        result = IndexValidator.validate(kit)
-        assert not result.is_valid
-        assert any("invalid characters" in e for e in result.errors)
+        """Invalid DNA is now caught at the model level during Index construction."""
+        with pytest.raises(ValueError, match="invalid characters"):
+            _make_index("A", "HELLO!!!", IndexType.I7)
 
     def test_duplicate_names(self):
         kit = IndexKit(

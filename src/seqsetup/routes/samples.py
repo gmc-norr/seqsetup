@@ -1,6 +1,8 @@
 """Sample management routes."""
 
+import json
 from dataclasses import dataclass
+
 from fasthtml.common import *
 from starlette.responses import Response
 
@@ -236,6 +238,23 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
 def register(app, rt, ctx: AppContext):
     """Register sample routes."""
 
+    def _sample_table_with_nav(run):
+        """Return sample table with wizard step 2 navigation."""
+        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
+        can_proceed = run.has_samples and run.all_samples_have_indexes
+        return (
+            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
+            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
+        )
+
+    def _update_override_cycles(sample, run):
+        """Recalculate override cycles for a sample from run configuration."""
+        if run.run_cycles and sample.has_index:
+            CycleCalculator.populate_index_override_patterns(sample, run.run_cycles)
+            sample.override_cycles = CycleCalculator.calculate_override_cycles(
+                sample, run.run_cycles
+            )
+
     @rt("/runs/{run_id}/samples")
     def add_sample(req, run_id: str, sample_id: str, sample_name: str = "", project: str = "", test_id: str = ""):
         """Add a new sample to a run."""
@@ -249,6 +268,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         sample = Sample(
             sample_id=sample_id,
@@ -336,12 +358,7 @@ def register(app, rt, ctx: AppContext):
                     if not sample.index_kit_name:
                         sample.index_kit_name = ps.index_pair_name or "Pasted"
 
-                # Calculate override cycles and index override patterns if indexes were assigned
-                if sample.has_index and run.run_cycles:
-                    CycleCalculator.populate_index_override_patterns(sample, run.run_cycles)
-                    sample.override_cycles = CycleCalculator.calculate_override_cycles(
-                        sample, run.run_cycles
-                    )
+                _update_override_cycles(sample, run)
 
                 run.add_sample(sample)
                 added_count += 1
@@ -387,14 +404,8 @@ def register(app, rt, ctx: AppContext):
                 AddSamplesNavigation(1, run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids),
             )
 
-        # Default: Return the sample table and updated navigation (out-of-band swap)
-        # In combined step 2, show drop zones and require indexes to proceed
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        can_proceed = run.has_samples and run.all_samples_have_indexes
-        return (
-            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
-        )
+        # Default: return updated sample table with wizard navigation
+        return _sample_table_with_nav(run)
 
     @app.get("/runs/{run_id}/samples/worklists")
     def list_worklists(run_id: str, context: str = "", existing_ids: str = ""):
@@ -507,12 +518,7 @@ def register(app, rt, ctx: AppContext):
                 if not sample.index_kit_name:
                     sample.index_kit_name = api_sample.get("index_pair_name", "API")
 
-            # Calculate override cycles and index override patterns if indexes were assigned
-            if sample.has_index and run.run_cycles:
-                CycleCalculator.populate_index_override_patterns(sample, run.run_cycles)
-                sample.override_cycles = CycleCalculator.calculate_override_cycles(
-                    sample, run.run_cycles
-                )
+            _update_override_cycles(sample, run)
 
             run.add_sample(sample)
             added_count += 1
@@ -539,13 +545,8 @@ def register(app, rt, ctx: AppContext):
                 AddSamplesNavigation(1, run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids),
             )
 
-        # Default: return updated sample table
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        can_proceed = run.has_samples and run.all_samples_have_indexes
-        return (
-            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
-        )
+        # Default: return updated sample table with wizard navigation
+        return _sample_table_with_nav(run)
 
     @app.post("/runs/{run_id}/samples/assign-indexes-bulk")
     async def assign_indexes_bulk(req, run_id: str):
@@ -558,7 +559,6 @@ def register(app, rt, ctx: AppContext):
             index_type: For combinatorial mode, the drop zone type ('i7' or 'i5')
             context: Context for determining response format ("add_step2" for simplified view)
         """
-        import json
 
         # Get form data from request (needed for htmx.ajax with values)
         form = await req.form()
@@ -582,8 +582,8 @@ def register(app, rt, ctx: AppContext):
 
         try:
             indexes_data = json.loads(indexes_json)
-        except json.JSONDecodeError as e:
-            return Response(f"Invalid indexes_json: {e}", status_code=400)
+        except json.JSONDecodeError:
+            return Response("Invalid request data", status_code=400)
 
         # Find the starting sample index
         start_idx = None
@@ -625,31 +625,18 @@ def register(app, rt, ctx: AppContext):
                     sample.index_kit_name = kit.name
                     _apply_kit_defaults(sample, kit)
 
-            # Calculate override cycles and index override patterns
-            if run.run_cycles:
-                CycleCalculator.populate_index_override_patterns(sample, run.run_cycles)
-                sample.override_cycles = CycleCalculator.calculate_override_cycles(
-                    sample, run.run_cycles
-                )
+            _update_override_cycles(sample, run)
 
         run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
         # Return the sample table based on context
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-
         if context == "add_step2":
-            # Simplified table for Add Samples wizard step 2 - only show new samples
             existing_ids_set = set(id.strip() for id in existing_ids.split(",") if id.strip()) if existing_ids else set()
             new_samples = [s for s in run.samples if s.id not in existing_ids_set]
             return NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
 
-        # Default: Return full table with navigation OOB swap
-        can_proceed = run.has_samples and run.all_samples_have_indexes
-        return (
-            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
-        )
+        return _sample_table_with_nav(run)
 
     @app.post("/runs/{run_id}/samples/set-lanes")
     async def set_lanes_bulk(req, run_id: str):
@@ -660,7 +647,6 @@ def register(app, rt, ctx: AppContext):
             sample_ids: JSON array of sample IDs to update
             lanes: JSON array of lane numbers (empty = all lanes)
         """
-        import json
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -676,8 +662,8 @@ def register(app, rt, ctx: AppContext):
         try:
             sample_ids = json.loads(sample_ids_json)
             lanes = json.loads(lanes_json)
-        except json.JSONDecodeError as e:
-            return Response(f"Invalid JSON: {e}", status_code=400)
+        except json.JSONDecodeError:
+            return Response("Invalid request data", status_code=400)
 
         # Update lanes for each selected sample
         for sample in run.samples:
@@ -687,13 +673,7 @@ def register(app, rt, ctx: AppContext):
         run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
-        # Return updated sample table
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        can_proceed = run.has_samples and run.all_samples_have_indexes
-        return (
-            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
-        )
+        return _sample_table_with_nav(run)
 
     @app.post("/runs/{run_id}/samples/set-mismatches")
     async def set_mismatches_bulk(req, run_id: str):
@@ -705,7 +685,6 @@ def register(app, rt, ctx: AppContext):
             mismatch_index1: Mismatch value for index 1 (empty string to clear)
             mismatch_index2: Mismatch value for index 2 (empty string to clear)
         """
-        import json
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -721,21 +700,21 @@ def register(app, rt, ctx: AppContext):
 
         try:
             sample_ids = json.loads(sample_ids_json)
-        except json.JSONDecodeError as e:
-            return Response(f"Invalid JSON: {e}", status_code=400)
+        except json.JSONDecodeError:
+            return Response("Invalid request data", status_code=400)
 
         # Parse mismatch values (empty string means clear/None)
         mismatch_index1 = None
         if mismatch_index1_str.strip():
             try:
-                mismatch_index1 = int(mismatch_index1_str)
+                mismatch_index1 = max(0, min(3, int(mismatch_index1_str)))
             except ValueError:
                 pass
 
         mismatch_index2 = None
         if mismatch_index2_str.strip():
             try:
-                mismatch_index2 = int(mismatch_index2_str)
+                mismatch_index2 = max(0, min(3, int(mismatch_index2_str)))
             except ValueError:
                 pass
 
@@ -748,13 +727,7 @@ def register(app, rt, ctx: AppContext):
         run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
-        # Return updated sample table
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        can_proceed = run.has_samples and run.all_samples_have_indexes
-        return (
-            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
-        )
+        return _sample_table_with_nav(run)
 
     @app.post("/runs/{run_id}/samples/set-override-cycles")
     async def set_override_cycles_bulk(req, run_id: str):
@@ -765,7 +738,6 @@ def register(app, rt, ctx: AppContext):
             sample_ids: JSON array of sample IDs to update
             override_cycles: Override cycles value (empty string to recalculate auto)
         """
-        import json
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -780,8 +752,8 @@ def register(app, rt, ctx: AppContext):
 
         try:
             sample_ids = json.loads(sample_ids_json)
-        except json.JSONDecodeError as e:
-            return Response(f"Invalid JSON: {e}", status_code=400)
+        except json.JSONDecodeError:
+            return Response("Invalid request data", status_code=400)
 
         # Update override cycles for each selected sample
         override_cycles = override_cycles_str.strip() if override_cycles_str else None
@@ -803,13 +775,7 @@ def register(app, rt, ctx: AppContext):
         run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
-        # Return updated sample table
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        can_proceed = run.has_samples and run.all_samples_have_indexes
-        return (
-            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
-        )
+        return _sample_table_with_nav(run)
 
     @app.post("/runs/{run_id}/samples/set-test-id")
     async def set_test_id_bulk(req, run_id: str):
@@ -820,7 +786,6 @@ def register(app, rt, ctx: AppContext):
             sample_ids: JSON array of sample IDs to update
             test_id: Test ID value (empty string to clear)
         """
-        import json
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -835,8 +800,8 @@ def register(app, rt, ctx: AppContext):
 
         try:
             sample_ids = json.loads(sample_ids_json)
-        except json.JSONDecodeError as e:
-            return Response(f"Invalid JSON: {e}", status_code=400)
+        except json.JSONDecodeError:
+            return Response("Invalid request data", status_code=400)
 
         # Update test_id for each selected sample
         test_id = test_id_str.strip()
@@ -848,13 +813,7 @@ def register(app, rt, ctx: AppContext):
         run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
 
-        # Return updated sample table
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        can_proceed = run.has_samples and run.all_samples_have_indexes
-        return (
-            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
-        )
+        return _sample_table_with_nav(run)
 
     @app.post("/runs/{run_id}/samples/bulk-delete")
     async def delete_samples_bulk(req, run_id: str):
@@ -864,7 +823,6 @@ def register(app, rt, ctx: AppContext):
         Form data:
             sample_ids: JSON array of sample IDs to delete
         """
-        import json
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -878,8 +836,8 @@ def register(app, rt, ctx: AppContext):
 
         try:
             sample_ids = json.loads(sample_ids_json)
-        except json.JSONDecodeError as e:
-            return Response(f"Invalid JSON: {e}", status_code=400)
+        except json.JSONDecodeError:
+            return Response("Invalid request data", status_code=400)
 
         # Remove each selected sample
         for sample_id in sample_ids:
@@ -921,6 +879,9 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
 
         sample = run.get_sample(id)
 
@@ -990,12 +951,7 @@ def register(app, rt, ctx: AppContext):
         else:
             return Response("Missing index_pair_id or index_id/index_type", status_code=400)
 
-        # Calculate override cycles and index override patterns
-        if run.run_cycles:
-            CycleCalculator.populate_index_override_patterns(sample, run.run_cycles)
-            sample.override_cycles = CycleCalculator.calculate_override_cycles(
-                sample, run.run_cycles
-            )
+        _update_override_cycles(sample, run)
 
         run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
@@ -1080,7 +1036,7 @@ def register(app, rt, ctx: AppContext):
         barcode_mismatches_index1 = barcode_mismatches_index1.strip()
         if barcode_mismatches_index1:
             try:
-                sample.barcode_mismatches_index1 = int(barcode_mismatches_index1)
+                sample.barcode_mismatches_index1 = max(0, min(3, int(barcode_mismatches_index1)))
             except ValueError:
                 sample.barcode_mismatches_index1 = None
         else:
@@ -1090,7 +1046,7 @@ def register(app, rt, ctx: AppContext):
         barcode_mismatches_index2 = barcode_mismatches_index2.strip()
         if barcode_mismatches_index2:
             try:
-                sample.barcode_mismatches_index2 = int(barcode_mismatches_index2)
+                sample.barcode_mismatches_index2 = max(0, min(3, int(barcode_mismatches_index2)))
             except ValueError:
                 sample.barcode_mismatches_index2 = None
         else:

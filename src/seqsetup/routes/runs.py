@@ -104,6 +104,8 @@ def register(app, rt, ctx: AppContext):
     @app.post("/runs/{run_id}/reagent-kit")
     def update_reagent_kit(req, run_id: str, reagent_cycles: int):
         """Update reagent kit and return updated cycle configuration."""
+        reagent_cycles = max(1, min(reagent_cycles, 2000))
+
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
@@ -139,6 +141,11 @@ def register(app, rt, ctx: AppContext):
         index2_cycles: int,
     ):
         """Update cycle configuration."""
+        read1_cycles = max(0, min(read1_cycles, 600))
+        read2_cycles = max(0, min(read2_cycles, 600))
+        index1_cycles = max(0, min(index1_cycles, 600))
+        index2_cycles = max(0, min(index2_cycles, 600))
+
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
@@ -169,6 +176,9 @@ def register(app, rt, ctx: AppContext):
         no_lane_splitting: bool = False,
     ):
         """Update BCLConvert settings."""
+        barcode_mismatches_index1 = max(0, min(barcode_mismatches_index1, 3))
+        barcode_mismatches_index2 = max(0, min(barcode_mismatches_index2, 3))
+
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)

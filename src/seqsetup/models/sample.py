@@ -1,7 +1,7 @@
 """Sample data model."""
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 import uuid
 
 from .index import Index, IndexPair
@@ -63,7 +63,22 @@ class Sample:
 
     # Additional metadata
     description: str = ""
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Clamp barcode mismatches to 0-3 range
+        if self.barcode_mismatches_index1 is not None:
+            self.barcode_mismatches_index1 = max(0, min(3, self.barcode_mismatches_index1))
+        if self.barcode_mismatches_index2 is not None:
+            self.barcode_mismatches_index2 = max(0, min(3, self.barcode_mismatches_index2))
+        # Clamp index cycles to positive values if set
+        if self.index1_cycles is not None:
+            self.index1_cycles = max(1, self.index1_cycles)
+        if self.index2_cycles is not None:
+            self.index2_cycles = max(1, self.index2_cycles)
+        # Filter lanes to only positive integers
+        if self.lanes:
+            self.lanes = [lane for lane in self.lanes if isinstance(lane, int) and lane > 0]
 
     @property
     def index1_sequence(self) -> Optional[str]:

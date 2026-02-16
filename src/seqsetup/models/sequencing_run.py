@@ -66,6 +66,13 @@ class RunCycles:
     index1_cycles: int
     index2_cycles: int
 
+    def __post_init__(self):
+        # Clamp all cycle counts to non-negative
+        self.read1_cycles = max(0, self.read1_cycles)
+        self.read2_cycles = max(0, self.read2_cycles)
+        self.index1_cycles = max(0, self.index1_cycles)
+        self.index2_cycles = max(0, self.index2_cycles)
+
     @property
     def total_cycles(self) -> int:
         """Total number of cycles."""
@@ -141,6 +148,13 @@ class SequencingRun:
     generated_json: Optional[str] = None
     generated_validation_json: Optional[str] = None
     generated_validation_pdf: Optional[bytes] = None  # PDF bytes, base64-encoded in MongoDB
+
+    def __post_init__(self):
+        # Clamp reagent_cycles to positive
+        self.reagent_cycles = max(1, self.reagent_cycles)
+        # Clamp barcode mismatches to 0-3
+        self.barcode_mismatches_index1 = max(0, min(3, self.barcode_mismatches_index1))
+        self.barcode_mismatches_index2 = max(0, min(3, self.barcode_mismatches_index2))
 
     def add_sample(self, sample: Sample) -> None:
         """Add a sample to the run."""

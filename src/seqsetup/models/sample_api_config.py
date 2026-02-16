@@ -26,7 +26,7 @@ class SampleApiConfig:
 
     # Field mappings: SeqSetup field name -> API field name
     # Supported SeqSetup fields: worksheet_id, investigator, updated_at, samples
-    field_mappings: dict = field(default_factory=dict)
+    field_mappings: dict[str, str] = field(default_factory=dict)
 
     def worklists_url(
         self,

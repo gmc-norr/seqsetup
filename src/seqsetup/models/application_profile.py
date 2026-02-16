@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 import uuid
 
 
@@ -22,16 +22,16 @@ class ApplicationProfile:
     application_name: str = ""  # ApplicationName (e.g., "DragenGermline", "BCLConvert")
 
     # Settings dict (SoftwareVersion, AppVersion, MapAlignOutFormat, etc.)
-    settings: dict = field(default_factory=dict)
+    settings: dict[str, Any] = field(default_factory=dict)
 
     # Data dict (ReferenceGenomeDir, VariantCallingMode, etc.)
-    data: dict = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
 
     # List of field names that appear in Data section
     data_fields: list[str] = field(default_factory=list)
 
     # Translation mapping (e.g., IndexI7 -> Index)
-    translate: dict = field(default_factory=dict)
+    translate: dict[str, str] = field(default_factory=dict)
 
     # Sync metadata
     source_file: str = ""  # Original filename from GitHub

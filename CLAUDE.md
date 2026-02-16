@@ -1,161 +1,144 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Context
 
-## Project Overview
+SeqSetup is a **clinical-use** application for configuring Illumina DNA sequencing runs.
+It generates Sample Sheets that directly control sequencer behavior. Errors in sample
+identity, index assignment, or export output can lead to incorrect clinical results.
 
-SeqSetup is a web-based application for configuring and managing sample information for Illumina DNA sequencing workflows. It generates Illumina Sample Sheet v2 files and associated metadata.
+**Correctness and safety are non-negotiable. When in doubt, do less, not more.**
 
-### Technology Stack
+Technology: Python, FastHTML, MongoDB, HTMX. Environment managed with Pixi.
 
-- **Backend**: Python with FastHTML framework
-- **Database**: MongoDB
-- **Frontend**: Server-rendered HTML with HTMX for dynamic updates
-- **Authentication**: Local users, LDAP, or Active Directory
+## What Claude Should and Should Not Do
 
-## User Authentication and Authorization
+### DO:
+- Refactor for clarity 
+- Suggest improvements to robustness and readability
+- Point out potential clinical pitfalls
+- Ask clarifying questions if assumptions are unclear
+- Save all changes in a changes.txt file in the root
 
-### Authentication Methods
+### DO NOT:
+- Assume clinical validity without evidence
+- Introduce silent behavior changes
 
-Authentication is configured through the admin interface. Supported methods:
+## Hard Rules
 
-1. **Local** - Users stored in MongoDB or `config/users.yaml`
-2. **LDAP** - LDAP directory server
-3. **Active Directory** - Microsoft AD with LDAP protocol
+These rules must NEVER be violated.
 
-### User Roles
+### Input sanitization
+- Strip and length-limit all string inputs: `.strip()[:N]` (typically 256 for short fields, 4096 for descriptions)
+- Clamp all numeric inputs to valid ranges: `max(low, min(high, value))`
+- Validate DNA sequences against `^[ACGTN]*$` after uppercasing
+- Use `escape_js_string()` and `escape_html_attr()` from `utils/html.py` when embedding user data in HTML or JavaScript — never raw f-strings
+- Use `sanitize_filename()` from `routes/utils.py` for Content-Disposition headers
 
-- **Administrator** - Full access including index kit management, profiles, local users, API tokens
-- **Standard User** - Run setup, sample management, and export functions
+### Run state integrity
+- Never allow mutations to a run unless `check_run_editable(run)` passes (returns None)
+- Never expose draft runs via the API — only `ready` and `archived`
+- Always call `run.touch(updated_by=get_username(req))` before saving after mutations
+- Pre-generate all exports (samplesheet v2, v1, JSON, validation) when transitioning to Ready — the API serves pre-generated content, not live exports
+- Modifying samples or indexes must reset `validation_approved` (the model handles this via `add_sample`/`remove_sample`, but verify if bypassing those methods)
 
-### Security Configuration
+### Authentication and authorization
+- All non-public routes require authentication — never add unprotected routes
+- Admin routes must check `require_admin(req)` and return the error response if non-None
+- API routes require Bearer token auth — tokens stored as bcrypt hashes, never log or expose plaintext
+- Access the authenticated user via `req.scope.get("auth")`, API token via `req.scope.get("api_token")`
 
-- Session secret: Set `SEQSETUP_SESSION_SECRET` environment variable in production
-- LDAP SSL: Enable `verify_ssl_cert` in production to prevent MITM attacks
-- API access: Only `ready` and `archived` runs are accessible via API
+### Data integrity
+- Validation services are **read-only** — they must never mutate run state
+- Repositories contain **no business logic** — they are thin data access layers
+- Models are **self-validating** — invariants enforced in `__post_init__`
+- Never silently discard data. If input is invalid, reject it or clamp it visibly.
 
-## Functional Capabilities
+## Conventions
 
-After authentication, users can:
-
-- Create and manage sequencing runs (wizard-based workflow)
-- Import samples via paste or external Sample API
-- Assign indexes using drag-and-drop interface
-- Configure lanes, barcode mismatches, and override cycles
-- Validate runs (index collisions, color balance, dark cycles)
-- Export Sample Sheet v2, Sample Sheet v1 (MiSeq), JSON metadata, validation reports
-
-### Run Status Workflow
-
-Runs follow a state machine: **Draft** → **Ready** → **Archived**
-
-- **Draft**: Editable, validation not required
-- **Ready**: Locked, validation approved, exports generated
-- **Archived**: Archived for historical reference
-
-## Export Functions
-
-### Sample Sheet v2
-Illumina Sample Sheet v2 CSV for NovaSeq X, MiSeq i100, and other supported instruments.
-
-### Sample Sheet v1
-Legacy CSV format for instruments that require it (MiSeq).
-
-### JSON Metadata
-Complete run and sample data including test IDs, user info, and all configuration.
-
-### Validation Reports
-JSON and PDF reports showing validation status, index collisions, and color balance analysis.
-
-## API
-
-The JSON API provides programmatic access using Bearer token authentication.
-
-**Security**: Only `ready` and `archived` runs are accessible. Draft runs cannot be accessed via API.
-
-Endpoints:
-- `GET /api/runs` - List runs (status=ready|archived)
-- `GET /api/runs/{id}/samplesheet-v2` - Download Sample Sheet v2
-- `GET /api/runs/{id}/samplesheet-v1` - Download Sample Sheet v1
-- `GET /api/runs/{id}/json` - Download JSON metadata
-- `GET /api/runs/{id}/validation-report` - Download validation JSON
-- `GET /api/runs/{id}/validation-pdf` - Download validation PDF
-
-## Development Environment
-
-This project uses **Pixi** for environment and dependency management.
-
-### Common Commands
-
-```bash
-# Install dependencies and activate environment
-pixi install
-
-# Run the application
-pixi run dev
-
-# Run tests
-pixi run test
-
-# Add a dependency
-pixi add <package-name>
-
-# Add a development dependency
-pixi add --feature dev <package-name>
+### Route handler pattern (follow this order)
+```python
+def handler(req, run_id: str, ...):
+    # 1. Validate and sanitize inputs
+    value = value.strip()[:256]
+    # 2. Load data from repository
+    run = ctx.run_repo.get_by_id(run_id)
+    if not run: return Response("Not found", status_code=404)
+    # 3. Check permissions and editable state
+    if err := check_run_editable(run): return err
+    # 4. Mutate model
+    run.add_sample(sample)
+    # 5. Touch and save
+    run.touch(updated_by=get_username(req))
+    ctx.run_repo.save(run)
+    # 6. Return FastHTML component
+    return SomeComponent(...)
 ```
 
-### Project Configuration
+### Models
+- Python `@dataclass` with `to_dict()` / `from_dict()` for MongoDB serialization
+- Validation and normalization in `__post_init__`
+- Use `field(default_factory=...)` for mutable defaults (lists, datetimes)
 
-- **pixi.toml** - Project manifest (dependencies, tasks, metadata)
-- **pixi.lock** - Lock file (auto-generated, do not edit manually)
+### Tests
+- Run with `pixi run test`
+- Group by feature using test classes with docstrings
+- Descriptive names: `test_verb_expected_behavior`
+- Always test both valid and invalid inputs
+- Test edge cases around security boundaries (draft vs ready, admin vs user)
+
+## Working Style
+
+- **Do not add features, refactoring, or "improvements" beyond what is asked.** This is clinical software — unnecessary changes increase risk.
+- **Do not add comments, docstrings, or type annotations to code you didn't change.**
+- **Read code before modifying it.** Understand the existing pattern before touching it.
+- **Run tests after changes.** Do not assume correctness — verify it.
+- **Ask before making architectural changes.** The existing patterns exist for reasons.
 
 ## Project Structure
 
 ```
 src/seqsetup/
-├── app.py              # Main FastHTML application, auth middleware
-├── context.py          # AppContext for dependency injection
-├── components/         # UI components (FastHTML)
-│   ├── edit_run.py     # Run editing components
-│   ├── index_panel.py  # Index kit display components
-│   ├── layout.py       # App shell, navigation
-│   ├── wizard.py       # Sample table, wizard steps
-│   └── ...
-├── models/             # Data models (dataclasses)
-│   ├── sequencing_run.py
-│   ├── index.py
-│   ├── auth_config.py
-│   └── ...
-├── repositories/       # MongoDB data access
-├── routes/             # Route handlers
-│   ├── api.py          # JSON API endpoints
-│   ├── export.py       # File download routes
-│   ├── runs.py         # Run management
-│   ├── samples.py      # Sample management
-│   ├── validation.py   # Validation page
-│   └── ...
-├── services/           # Business logic
-│   ├── validation.py   # Run validation
-│   ├── samplesheet_v2_exporter.py
-│   ├── ldap.py         # LDAP authentication
-│   └── ...
-├── utils/              # Shared utilities
-│   └── html.py         # XSS protection helpers
+├── app.py              # FastHTML app, auth middleware
+├── context.py          # AppContext (dependency injection)
+├── components/         # UI components (FastHTML/HTMX)
+├── models/             # Dataclasses — self-validating, with to_dict/from_dict
+├── repositories/       # MongoDB access — thin, no business logic
+├── routes/             # Request handlers — follow the pattern above
+│   ├── utils.py        # check_run_editable, require_admin, get_username, sanitize_filename
+│   └── api.py          # JSON API (ready/archived runs only)
+├── services/           # Business logic — validation, export, LDAP
+│   └── validation.py   # Read-only validation, never mutates state
+├── utils/
+│   └── html.py         # escape_js_string, escape_html_attr
 └── static/             # CSS, JS, images
 ```
 
-## Configuration Files
+## Key Files
 
-- `config/mongodb.yaml` - Database connection
-- `config/users.yaml` - Development user credentials
-- `config/instruments.yaml` - Instrument definitions
-- `.sesskey` - Session secret (auto-generated, keep out of version control)
+| File | Purpose |
+|------|---------|
+| `routes/utils.py` | `check_run_editable()`, `require_admin()`, `get_username()`, `sanitize_filename()` |
+| `utils/html.py` | `escape_js_string()`, `escape_html_attr()` — use these for all user data in HTML/JS |
+| `models/sequencing_run.py` | `SequencingRun`, `RunStatus`, `RunCycles` — central data model |
+| `models/sample.py` | `Sample` — DNA sequences validated here |
+| `services/validation.py` | Index collision, color balance, application profile validation |
 
-## Environment Variables
+## Commands
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MONGODB_URI` | MongoDB connection URI | `mongodb://localhost:27017` |
-| `MONGODB_DATABASE` | Database name | `seqsetup` |
-| `SEQSETUP_SESSION_SECRET` | Session encryption key | Auto-generated in `.sesskey` |
-| `INSTRUMENTS_CONFIG` | Path to instruments config | `config/instruments.yaml` |
+```bash
+pixi install          # Install dependencies
+pixi run dev          # Run the application
+pixi run test         # Run tests
+pixi add <pkg>        # Add dependency
+pixi add --feature dev <pkg>  # Add dev dependency
+```
+
+## Run Status State Machine
+
+**Draft** → **Ready** → **Archived**
+
+- **Draft**: Editable. Validation not required.
+- **Ready**: Locked. Validation must be approved. All exports pre-generated. Accessible via API.
+- **Archived**: Read-only historical record. Accessible via API.
+
+Transition to Ready requires `validation_approved == True` and triggers export generation.

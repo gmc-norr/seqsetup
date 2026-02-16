@@ -1,8 +1,11 @@
 """Index-related data models."""
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+
+_VALID_DNA_RE = re.compile(r'^[ACGTN]*$')
 
 
 class IndexType(Enum):
@@ -37,6 +40,13 @@ class Index:
     def __post_init__(self):
         # Normalize sequence to uppercase
         self.sequence = self.sequence.upper()
+        # Validate DNA characters
+        if self.sequence and not _VALID_DNA_RE.match(self.sequence):
+            invalid = set(self.sequence) - set("ACGTN")
+            raise ValueError(
+                f"Index sequence contains invalid characters: {invalid}. "
+                f"Only A, C, G, T, N are allowed."
+            )
 
     def to_dict(self) -> dict:
         """Convert to dictionary for MongoDB storage."""
@@ -143,6 +153,13 @@ class IndexKit:
 
     created_by: str = ""  # Username of who uploaded this kit
     source: str = "user"  # "user" for uploaded kits, "github" for synced kits
+
+    def __post_init__(self):
+        # Clamp default index cycles to positive values if set
+        if self.default_index1_cycles is not None:
+            self.default_index1_cycles = max(1, self.default_index1_cycles)
+        if self.default_index2_cycles is not None:
+            self.default_index2_cycles = max(1, self.default_index2_cycles)
 
     @property
     def kit_id(self) -> str:

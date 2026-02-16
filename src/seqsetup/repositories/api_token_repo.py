@@ -14,6 +14,11 @@ class ApiTokenRepository:
 
     def __init__(self, db: Database):
         self.collection = db[self.COLLECTION]
+        self._ensure_indexes()
+
+    def _ensure_indexes(self) -> None:
+        """Create indexes for efficient token lookup."""
+        self.collection.create_index("token_prefix", sparse=True)
 
     def list_all(self) -> list[ApiToken]:
         """List all tokens (without plaintext)."""
@@ -40,14 +45,31 @@ class ApiTokenRepository:
         self.collection.delete_one({"_id": token_id})
 
     def verify_token(self, plaintext: str) -> Optional[ApiToken]:
-        """Verify a plaintext token against all stored hashes.
+        """Verify a plaintext token against stored hashes.
+
+        Uses token_prefix for fast filtering before expensive bcrypt comparison.
+        Falls back to full scan for legacy tokens without a prefix.
 
         Returns the matching ApiToken if found, otherwise None.
         """
-        for token in self.list_all():
+        prefix = plaintext[:8]
+
+        # First: try tokens matching the prefix (fast path)
+        for doc in self.collection.find({"token_prefix": prefix}):
+            token = ApiToken.from_dict(doc)
             try:
                 if token.verify(plaintext):
                     return token
             except Exception:
                 continue
+
+        # Fallback: check legacy tokens without a prefix
+        for doc in self.collection.find({"$or": [{"token_prefix": ""}, {"token_prefix": {"$exists": False}}]}):
+            token = ApiToken.from_dict(doc)
+            try:
+                if token.verify(plaintext):
+                    return token
+            except Exception:
+                continue
+
         return None

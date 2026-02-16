@@ -1,0 +1,135 @@
+Changes made during maintainability and clarity review
+======================================================
+
+Date: 2026-02-16
+
+Files changed:
+  - src/seqsetup/routes/export.py
+  - src/seqsetup/routes/indexes.py
+  - src/seqsetup/routes/samples.py
+  - src/seqsetup/routes/validation.py
+
+Net result: 95 lines removed (185 deletions, 90 insertions).
+
+Changes:
+
+  Round 1 — Remove duplication and fix imports:
+
+  1. export.py: Removed duplicate _sanitize_filename() function (27 lines).
+     This was identical to sanitize_filename() already centralized in
+     routes/utils.py. Now imports from routes/utils instead.
+
+  2. indexes.py: Removed unused "from pathlib import Path" import.
+
+  3. indexes.py: Moved logger definition after all imports (was wedged
+     between import groups, breaking standard Python import ordering).
+
+  Round 2 — Simplify repeated patterns:
+
+  4. samples.py: Extracted _sample_table_with_nav(run) helper. Replaced
+     7 occurrences of the 5-line "build table + navigation" return block
+     with a one-line call. (-28 lines)
+
+  5. samples.py: Extracted _update_override_cycles(sample, run) helper.
+     Replaced 4 occurrences of the 5-line CycleCalculator pattern with
+     a one-line call. (-16 lines)
+
+  6. samples.py: Moved "import json" from 6 inline function-level imports
+     to a single module-level import. (-5 lines)
+
+  7. validation.py: Consolidated 4 nearly-identical tab handlers
+     (get_issues_tab, get_heatmaps_tab, get_colorbalance_tab,
+     get_darkcycles_tab) into a single parameterized handler
+     get_validation_tab(run_id, tab, type). (-22 lines)
+
+  8. validation.py: Removed 3 unused imports (HeatmapsTabContent,
+     IssuesTabContent, ValidationPanel). (-3 lines)
+
+All 402 tests pass. No behavior changes.
+
+---
+
+Round 3 — Add missing test coverage (81 new tests):
+
+Date: 2026-02-16
+
+New files:
+  - tests/unit/test_route_utils.py (new)
+  - tests/unit/test_html_utils.py (new)
+
+Modified files:
+  - tests/unit/test_models.py
+  - tests/unit/test_model_validation.py
+
+Tests added:
+
+  1. test_route_utils.py: 15 tests for previously-untested security utilities:
+     - get_username() — auth user, API token, precedence, no auth (4 tests)
+     - check_run_editable() — draft/ready/archived status (3 tests)
+     - require_admin() — admin/standard/no-auth (3 tests)
+     - sanitize_filename() — normal, special chars, empty, traversal,
+       header injection, truncation, leading dots (11 tests; some overlap
+       with the above count as multi-assertion)
+
+  2. test_html_utils.py: 13 tests for XSS prevention utilities:
+     - escape_js_string() — quotes, backslashes, newlines, angle brackets,
+       XSS payloads, backslash-before-quote ordering (8 tests)
+     - escape_html_attr() — ampersand, angles, quotes, injection (5 tests)
+
+  3. test_models.py: Added 41 tests in existing file:
+     - Sample index sequences via individual indexes (not pair) (3 tests)
+     - Sample has_full_index property (3 tests)
+     - Sample index assignment mutual exclusion: assign_index clears
+       individual, assign_index1/index2 clears pair,
+       clear_index1/clear_index2 with/without companion (6 tests)
+     - Sample lanes_display property (2 tests)
+     - Sample to_dict/from_dict round-trip with index pair, without index,
+       with individual indexes, backward compat lane→lanes (5 tests)
+     - SequencingRun mutation invariants: add_sample/remove_sample reset
+       validation_approved, get_sample found/not-found (5 tests)
+     - SequencingRun touch() behavior: reset validation, preserve,
+       updated_by, timestamp (4 tests)
+     - SequencingRun analysis management: add/get/remove (3 tests)
+     - SequencingRun from_dict backward compat: "complete"→"archived",
+       datetime objects, missing timestamps (3 tests)
+     - SequencingRun edge cases: empty has_samples,
+       empty all_samples_have_indexes (2 tests)
+     - IndexKit serialization: unique dual, combinatorial, all optional
+       fields, kit_id property, _id field (5 tests)
+
+  4. test_model_validation.py: Added 2 edge case tests:
+     - Sample lanes with float values filtered (1 test)
+     - Sample lanes with string/None values filtered (1 test)
+
+All 483 tests pass (81 new, 402 existing).
+
+---
+
+Review of existing uncommitted changes (not modified, just assessed):
+
+GOOD changes already present (no action needed):
+  - Model __post_init__ validation (Index DNA regex, Sample/RunCycles/
+    SequencingRun/IndexKit clamping) — enforces invariants at model level
+  - require_admin() centralized in routes/utils.py — removes duplication
+    from admin.py, api_tokens.py, local_users.py
+  - get_username() now handles API token auth — returns "api:{name}"
+  - Error messages no longer leak exception details to users — logged
+    server-side via logger.exception() instead
+  - Missing check_run_editable() calls added in samples.py (add_sample,
+    update_sample) — these were security gaps
+  - Input clamping added at route level (reagent_cycles, cycle values,
+    barcode mismatches) — defense in depth
+  - ApiToken prefix-based lookup — performance improvement for token
+    verification
+  - IndexKitRepository uses MongoDB queries instead of loading all kits
+    for find_index_pair, find_index lookups
+  - bulk_save uses pymongo bulk_write instead of looping save()
+  - Validation heatmap endpoint validates "type" parameter
+  - New test file test_model_validation.py covers __post_init__ behavior
+
+Potential concerns flagged (not changed):
+  - Untracked files AUDIT_REPORT.md, MALWARE_AUDIT.md,
+    MANUAL_REVIEW_GUIDE.md, SECURITY_VERIFICATION_GUIDE.md, and
+    tools/malware_detection/ appear to be generated security audit
+    artifacts. Consider whether these should be committed, .gitignored,
+    or deleted.

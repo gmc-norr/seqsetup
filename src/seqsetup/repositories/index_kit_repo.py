@@ -2,6 +2,7 @@
 
 from typing import Optional
 
+from pymongo import ReplaceOne
 from pymongo.database import Database
 
 from ..models.index import Index, IndexKit, IndexPair
@@ -71,10 +72,10 @@ class IndexKitRepository:
 
     def find_index_pair(self, pair_id: str) -> Optional[IndexPair]:
         """Find an index pair across all kits by its ID."""
-        for kit in self.list_all():
-            pair = kit.get_index_pair_by_id(pair_id)
-            if pair:
-                return pair
+        doc = self.collection.find_one({"index_pairs.id": pair_id})
+        if doc:
+            kit = IndexKit.from_dict(doc)
+            return kit.get_index_pair_by_id(pair_id)
         return None
 
     def find_index_pair_with_kit(self, pair_id: str) -> tuple[Optional[IndexPair], Optional["IndexKit"]]:
@@ -84,7 +85,9 @@ class IndexKitRepository:
         Returns:
             Tuple of (IndexPair, IndexKit) or (None, None) if not found.
         """
-        for kit in self.list_all():
+        doc = self.collection.find_one({"index_pairs.id": pair_id})
+        if doc:
+            kit = IndexKit.from_dict(doc)
             pair = kit.get_index_pair_by_id(pair_id)
             if pair:
                 return pair, kit
@@ -96,10 +99,9 @@ class IndexKitRepository:
 
         Index IDs are formatted as: {kit_name}_{i7|i5}_{index_name}
         """
-        for kit in self.list_all():
-            index = kit.get_index_by_id(index_id)
-            if index:
-                return index
+        kit = self._find_kit_for_index(index_id)
+        if kit:
+            return kit.get_index_by_id(index_id)
         return None
 
     def find_index_with_kit(self, index_id: str) -> tuple[Optional[Index], Optional["IndexKit"]]:
@@ -111,11 +113,35 @@ class IndexKitRepository:
         Returns:
             Tuple of (Index, IndexKit) or (None, None) if not found.
         """
-        for kit in self.list_all():
+        kit = self._find_kit_for_index(index_id)
+        if kit:
             index = kit.get_index_by_id(index_id)
             if index:
                 return index, kit
         return None, None
+
+    def _find_kit_for_index(self, index_id: str) -> Optional[IndexKit]:
+        """Find the kit containing an individual index by parsing the index ID.
+
+        Index IDs are formatted as: {kit_name}_{i7|i5}_{index_name}
+        Try to extract the kit name and query by name first; fall back to scanning all kits.
+        """
+        # Try to extract kit name from index_id by finding _i7_ or _i5_ separator
+        for separator in ("_i7_", "_i5_"):
+            pos = index_id.find(separator)
+            if pos > 0:
+                kit_name = index_id[:pos]
+                # Query kits by name (may return multiple versions)
+                for doc in self.collection.find({"name": kit_name}):
+                    kit = IndexKit.from_dict(doc)
+                    if kit.get_index_by_id(index_id):
+                        return kit
+
+        # Fall back: scan all kits if name parsing didn't work
+        for kit in self.list_all():
+            if kit.get_index_by_id(index_id):
+                return kit
+        return None
 
     def delete_synced(self) -> int:
         """Delete all synced index kits (source == 'github').
@@ -127,16 +153,19 @@ class IndexKitRepository:
         return result.deleted_count
 
     def bulk_save(self, kits: list[IndexKit]) -> int:
-        """Save multiple index kits efficiently.
+        """Save multiple index kits efficiently using bulk write.
 
         Returns:
-            Number of kits saved.
+            Number of kits processed.
         """
-        count = 0
-        for kit in kits:
-            self.save(kit)
-            count += 1
-        return count
+        if not kits:
+            return 0
+        operations = [
+            ReplaceOne({"_id": kit.kit_id}, kit.to_dict(), upsert=True)
+            for kit in kits
+        ]
+        result = self.collection.bulk_write(operations)
+        return result.upserted_count + result.modified_count
 
     def list_synced(self) -> list[IndexKit]:
         """Get all synced index kits (source == 'github')."""

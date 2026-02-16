@@ -3,6 +3,7 @@
 from fasthtml.common import *
 from starlette.responses import Response
 
+from .utils import require_admin
 from ..components.layout import AppShell
 from ..components.local_users import EditUserRow, LocalUsersPage, UserTable
 from ..models.local_user import LocalUser
@@ -11,13 +12,6 @@ from ..models.user import UserRole
 
 def register(app, rt, get_local_user_repo):
     """Register local user management routes."""
-
-    def require_admin(req):
-        """Check if user is admin, return error response if not."""
-        user = req.scope.get("auth")
-        if not user or user.role != UserRole.ADMIN:
-            return Response("Admin access required", status_code=403)
-        return None
 
     @app.get("/admin/users")
     def admin_users(req):

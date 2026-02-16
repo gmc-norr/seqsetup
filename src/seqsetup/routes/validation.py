@@ -4,13 +4,10 @@ from fasthtml.common import *
 from starlette.responses import Response
 
 from ..components.validation_panel import (
-    HeatmapsTabContent,
-    IssuesTabContent,
     LaneHeatmapContent,
     ValidationApprovalBar,
     ValidationErrorList,
     ValidationPage,
-    ValidationPanel,
     ValidationTabs,
 )
 from ..context import AppContext
@@ -42,49 +39,16 @@ def register(app, rt, ctx: AppContext):
         result = _validate_run(run)
         return ValidationPage(run, user, result=result)
 
-    @rt("/runs/{run_id}/validation/tab/issues")
-    def get_issues_tab(run_id: str):
-        """Get the Issues tab content (returns full tabs for proper button state)."""
+    @rt("/runs/{run_id}/validation/tab/{tab}")
+    def get_validation_tab(run_id: str, tab: str, type: str = "i7"):
+        """Get validation tab content (issues, heatmaps, colorbalance, darkcycles)."""
         run = ctx.run_repo.get_by_id(run_id)
-
         if not run:
             return Div(P("Run not found"), cls="error")
 
         result = _validate_run(run)
-        return ValidationTabs(run_id, result, active_tab="issues")
-
-    @rt("/runs/{run_id}/validation/tab/heatmaps")
-    def get_heatmaps_tab(run_id: str, type: str = "i7"):
-        """Get the Heatmaps tab content with specified index type (returns full tabs for proper button state)."""
-        run = ctx.run_repo.get_by_id(run_id)
-
-        if not run:
-            return Div(P("Run not found"), cls="error")
-
-        result = _validate_run(run)
-        return ValidationTabs(run_id, result, active_tab="heatmaps", index_type=type)
-
-    @rt("/runs/{run_id}/validation/tab/colorbalance")
-    def get_colorbalance_tab(run_id: str):
-        """Get the Color Balance tab content (returns full tabs for proper button state)."""
-        run = ctx.run_repo.get_by_id(run_id)
-
-        if not run:
-            return Div(P("Run not found"), cls="error")
-
-        result = _validate_run(run)
-        return ValidationTabs(run_id, result, active_tab="colorbalance")
-
-    @rt("/runs/{run_id}/validation/tab/darkcycles")
-    def get_darkcycles_tab(run_id: str):
-        """Get the Dark Cycles tab content (returns full tabs for proper button state)."""
-        run = ctx.run_repo.get_by_id(run_id)
-
-        if not run:
-            return Div(P("Run not found"), cls="error")
-
-        result = _validate_run(run)
-        return ValidationTabs(run_id, result, active_tab="darkcycles")
+        kwargs = {"index_type": type} if tab == "heatmaps" else {}
+        return ValidationTabs(run_id, result, active_tab=tab, **kwargs)
 
     @rt("/runs/{run_id}/validation/errors")
     def get_validation_errors(run_id: str):
@@ -100,6 +64,8 @@ def register(app, rt, ctx: AppContext):
     @rt("/runs/{run_id}/validation/heatmap")
     def get_heatmap(run_id: str, lane: int = 1, type: str = "i7"):
         """Get heatmap for specific lane and index type (legacy endpoint)."""
+        if type not in ("i7", "i5"):
+            type = "i7"
         run = ctx.run_repo.get_by_id(run_id)
 
         if not run:

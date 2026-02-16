@@ -17,17 +17,19 @@ class TestApiTokenGeneration:
         tokens = {ApiToken.generate_token() for _ in range(10)}
         assert len(tokens) == 10
 
-    def test_hash_token_returns_bcrypt_hash(self):
+    def test_hash_token_returns_bcrypt_hash_and_prefix(self):
         plaintext = ApiToken.generate_token()
-        hashed = ApiToken.hash_token(plaintext)
+        hashed, prefix = ApiToken.hash_token(plaintext)
         assert isinstance(hashed, str)
         assert hashed.startswith("$2")
+        assert prefix == plaintext[:8]
 
     def test_hash_token_different_each_time(self):
         plaintext = "test-token"
-        hash1 = ApiToken.hash_token(plaintext)
-        hash2 = ApiToken.hash_token(plaintext)
+        hash1, prefix1 = ApiToken.hash_token(plaintext)
+        hash2, prefix2 = ApiToken.hash_token(plaintext)
         assert hash1 != hash2  # different salts
+        assert prefix1 == prefix2  # same prefix
 
 
 class TestApiTokenVerify:
@@ -35,25 +37,31 @@ class TestApiTokenVerify:
 
     def test_verify_correct_token(self):
         plaintext = ApiToken.generate_token()
+        hashed, prefix = ApiToken.hash_token(plaintext)
         token = ApiToken(
             name="test",
-            token_hash=ApiToken.hash_token(plaintext),
+            token_hash=hashed,
+            token_prefix=prefix,
         )
         assert token.verify(plaintext) is True
 
     def test_verify_wrong_token(self):
         plaintext = ApiToken.generate_token()
+        hashed, prefix = ApiToken.hash_token(plaintext)
         token = ApiToken(
             name="test",
-            token_hash=ApiToken.hash_token(plaintext),
+            token_hash=hashed,
+            token_prefix=prefix,
         )
         assert token.verify("wrong-token") is False
 
     def test_verify_empty_token(self):
         plaintext = ApiToken.generate_token()
+        hashed, prefix = ApiToken.hash_token(plaintext)
         token = ApiToken(
             name="test",
-            token_hash=ApiToken.hash_token(plaintext),
+            token_hash=hashed,
+            token_prefix=prefix,
         )
         assert token.verify("") is False
 
@@ -62,29 +70,37 @@ class TestApiTokenSerialization:
     """Tests for to_dict / from_dict round-trip."""
 
     def test_to_dict_has_expected_keys(self):
-        token = ApiToken(name="my-token", token_hash="hash", created_by="admin")
+        token = ApiToken(name="my-token", token_hash="hash", token_prefix="abcd1234", created_by="admin")
         d = token.to_dict()
         assert d["_id"] == token.id
         assert d["name"] == "my-token"
         assert d["token_hash"] == "hash"
+        assert d["token_prefix"] == "abcd1234"
         assert d["created_by"] == "admin"
         assert "created_at" in d
 
     def test_round_trip(self):
-        original = ApiToken(name="round-trip", token_hash="hash123", created_by="user1")
+        original = ApiToken(name="round-trip", token_hash="hash123", token_prefix="prefix12", created_by="user1")
         d = original.to_dict()
         restored = ApiToken.from_dict(d)
         assert restored.id == original.id
         assert restored.name == original.name
         assert restored.token_hash == original.token_hash
+        assert restored.token_prefix == original.token_prefix
         assert restored.created_by == original.created_by
 
     def test_from_dict_missing_fields(self):
         token = ApiToken.from_dict({})
         assert token.name == ""
         assert token.token_hash == ""
+        assert token.token_prefix == ""
         assert token.created_by == ""
 
     def test_from_dict_uses_id_fallback(self):
         token = ApiToken.from_dict({"id": "abc123"})
         assert token.id == "abc123"
+
+    def test_from_dict_backward_compat_no_prefix(self):
+        """Legacy tokens without token_prefix should deserialize with empty prefix."""
+        token = ApiToken.from_dict({"name": "old-token", "token_hash": "hash"})
+        assert token.token_prefix == ""

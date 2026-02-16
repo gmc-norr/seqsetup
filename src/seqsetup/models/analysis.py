@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 import uuid
 
 
@@ -37,7 +37,7 @@ class Analysis:
     # Downstream pipeline settings (e.g., nf-core)
     pipeline_name: str = ""  # e.g., "nf-core/sarek"
     pipeline_version: str = ""
-    pipeline_params: dict = field(default_factory=dict)
+    pipeline_params: dict[str, Any] = field(default_factory=dict)
 
     # Assigned sample IDs
     sample_ids: list[str] = field(default_factory=list)

@@ -1,8 +1,13 @@
 """Admin settings routes."""
 
+import logging
+
 from fasthtml.common import *
 from starlette.responses import Response
 
+logger = logging.getLogger("seqsetup")
+
+from .utils import require_admin
 from ..components.layout import AppShell
 from ..components.admin import (
     AuthenticationPage,
@@ -17,7 +22,6 @@ from ..components.admin import (
 )
 from ..models.auth_config import AuthMethod, LDAPConfig
 from ..models.sample_api_config import SampleApiConfig
-from ..models.user import UserRole
 from ..services.ldap import LDAPService, LDAPError
 
 
@@ -34,13 +38,6 @@ def register(
     get_instrument_definition_repo=None,
 ):
     """Register admin settings routes."""
-
-    def require_admin(req):
-        """Check if user is admin, return error response if not."""
-        user = req.scope.get("auth")
-        if not user or user.role != UserRole.ADMIN:
-            return Response("Admin access required", status_code=403)
-        return None
 
     @app.get("/admin/authentication")
     def admin_authentication(req):
@@ -175,8 +172,9 @@ def register(
 
         except LDAPError as e:
             return LDAPTestResult(False, str(e))
-        except Exception as e:
-            return LDAPTestResult(False, f"Unexpected error: {e}")
+        except Exception:
+            logger.exception("LDAP connection test failed unexpectedly")
+            return LDAPTestResult(False, "Connection test failed unexpectedly")
 
     @app.post("/admin/settings/ldap/test-auth")
     def test_ldap_auth(req, test_username: str = "", test_password: str = ""):
@@ -203,8 +201,9 @@ def register(
             )
         except LDAPError as e:
             return LDAPTestResult(False, str(e))
-        except Exception as e:
-            return LDAPTestResult(False, f"Authentication failed: {e}")
+        except Exception:
+            logger.exception("LDAP authentication test failed")
+            return LDAPTestResult(False, "Authentication test failed")
 
     # Config Sync Routes (only if repos are provided)
     if get_profile_sync_config_repo is not None:

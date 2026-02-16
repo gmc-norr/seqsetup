@@ -1,12 +1,14 @@
 """Index management routes for global index kits."""
 
+import logging
 import re
-from pathlib import Path
 from typing import Optional
 
 from fasthtml.common import *
 from starlette.datastructures import UploadFile
 from starlette.responses import Response
+
+logger = logging.getLogger("seqsetup")
 
 from ..components.index_panel import (
     IndexKitDetailPage,
@@ -166,9 +168,9 @@ def register(app, rt, ctx: AppContext):
                 )
 
             ctx.index_kit_repo.save(kit)
-        except Exception as e:
-            # Return error message
-            return Div(f"Error parsing file: {e}", cls="error-message")
+        except Exception:
+            logger.exception("Failed to parse index kit file")
+            return Div("Failed to parse file. Please check the format and try again.", cls="error-message")
 
         # Success - redirect to index kits page
         return Response(

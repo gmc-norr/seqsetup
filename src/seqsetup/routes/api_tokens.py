@@ -3,21 +3,14 @@
 from fasthtml.common import *
 from starlette.responses import Response
 
+from .utils import require_admin
 from ..components.layout import AppShell
 from ..components.api_tokens import ApiTokensPage
 from ..models.api_token import ApiToken
-from ..models.user import UserRole
 
 
 def register(app, rt, get_api_token_repo):
     """Register API token management routes."""
-
-    def require_admin(req):
-        """Check if user is admin, return error response if not."""
-        user = req.scope.get("auth")
-        if not user or user.role != UserRole.ADMIN:
-            return Response("Admin access required", status_code=403)
-        return None
 
     @app.get("/admin/api-tokens")
     def admin_api_tokens(req):
@@ -52,9 +45,11 @@ def register(app, rt, get_api_token_repo):
 
         # Generate token
         plaintext = ApiToken.generate_token()
+        token_hash, token_prefix = ApiToken.hash_token(plaintext)
         token = ApiToken(
             name=name,
-            token_hash=ApiToken.hash_token(plaintext),
+            token_hash=token_hash,
+            token_prefix=token_prefix,
             created_by=user.username,
         )
         get_api_token_repo().save(token)

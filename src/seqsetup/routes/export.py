@@ -1,6 +1,6 @@
 """Export routes for SampleSheet and JSON."""
 
-import re
+import logging
 
 from fasthtml.common import *
 from starlette.responses import Response as StarletteResponse
@@ -11,33 +11,9 @@ from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
+from .utils import sanitize_filename
 
-
-def _sanitize_filename(name: str, default: str = "export") -> str:
-    """
-    Sanitize a filename for use in Content-Disposition headers.
-
-    Removes or replaces characters that could be used for header injection
-    or cause filesystem issues.
-
-    Args:
-        name: The filename to sanitize
-        default: Default name if result would be empty
-
-    Returns:
-        Safe filename containing only alphanumeric, dash, underscore, and dot
-    """
-    if not name:
-        return default
-    # Remove any characters that aren't alphanumeric, dash, underscore, dot, or space
-    sanitized = re.sub(r'[^\w\-. ]', '', name)
-    # Replace spaces with underscores
-    sanitized = sanitized.replace(' ', '_')
-    # Remove leading/trailing dots and spaces
-    sanitized = sanitized.strip('. ')
-    # Limit length
-    sanitized = sanitized[:100]
-    return sanitized if sanitized else default
+logger = logging.getLogger("seqsetup")
 
 
 def register(app, rt, ctx: AppContext):
@@ -75,7 +51,7 @@ def register(app, rt, ctx: AppContext):
                 )
 
             # Sanitize filename to prevent header injection
-            safe_name = _sanitize_filename(run.run_name, "SampleSheet_v2")
+            safe_name = sanitize_filename(run.run_name, "SampleSheet_v2")
             filename = f"{safe_name}.csv"
 
             return StarletteResponse(
@@ -85,9 +61,10 @@ def register(app, rt, ctx: AppContext):
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 },
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Failed to generate SampleSheet v2")
             return StarletteResponse(
-                content=f"Error generating SampleSheet v2: {e}",
+                content="Failed to generate SampleSheet v2. Please try again.",
                 status_code=500,
             )
 
@@ -112,7 +89,7 @@ def register(app, rt, ctx: AppContext):
             else:
                 content = SampleSheetV1Exporter.export(run)
 
-            safe_name = _sanitize_filename(run.run_name, "SampleSheet")
+            safe_name = sanitize_filename(run.run_name, "SampleSheet")
             filename = f"{safe_name}.csv"
 
             return StarletteResponse(
@@ -122,9 +99,10 @@ def register(app, rt, ctx: AppContext):
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 },
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Failed to generate SampleSheet v1")
             return StarletteResponse(
-                content=f"Error generating SampleSheet v1: {e}",
+                content="Failed to generate SampleSheet v1. Please try again.",
                 status_code=500,
             )
 
@@ -147,7 +125,7 @@ def register(app, rt, ctx: AppContext):
                 content = JSONExporter.export(run)
 
             # Sanitize filename to prevent header injection
-            safe_name = _sanitize_filename(run.run_name, "run_metadata")
+            safe_name = sanitize_filename(run.run_name, "run_metadata")
             filename = f"{safe_name}.json"
 
             return StarletteResponse(
@@ -157,9 +135,10 @@ def register(app, rt, ctx: AppContext):
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 },
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Failed to generate JSON export")
             return StarletteResponse(
-                content=f"Error generating JSON: {e}",
+                content="Failed to generate JSON export. Please try again.",
                 status_code=500,
             )
 
@@ -179,7 +158,7 @@ def register(app, rt, ctx: AppContext):
                 result = _run_validation(run)
                 content = ValidationReportJSON.export(run, result)
 
-            safe_name = _sanitize_filename(run.run_name, "validation_report")
+            safe_name = sanitize_filename(run.run_name, "validation_report")
             filename = f"{safe_name}_validation.json"
 
             return StarletteResponse(
@@ -189,9 +168,10 @@ def register(app, rt, ctx: AppContext):
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 },
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Failed to generate validation report")
             return StarletteResponse(
-                content=f"Error generating validation report: {e}",
+                content="Failed to generate validation report. Please try again.",
                 status_code=500,
             )
 
@@ -214,7 +194,7 @@ def register(app, rt, ctx: AppContext):
                 run.generated_validation_pdf = pdf_bytes
                 ctx.run_repo.save(run)
 
-            safe_name = _sanitize_filename(run.run_name, "validation_report")
+            safe_name = sanitize_filename(run.run_name, "validation_report")
             filename = f"{safe_name}_validation.pdf"
 
             return StarletteResponse(
@@ -224,8 +204,9 @@ def register(app, rt, ctx: AppContext):
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 },
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Failed to generate validation PDF")
             return StarletteResponse(
-                content=f"Error generating validation PDF: {e}",
+                content="Failed to generate validation PDF. Please try again.",
                 status_code=500,
             )
