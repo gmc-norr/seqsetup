@@ -3,13 +3,14 @@
 from fasthtml.common import *
 from starlette.responses import Response
 
-from .utils import require_admin
+from .utils import require_admin, sanitize_string
 from ..components.layout import AppShell
 from ..components.api_tokens import ApiTokensPage
+from ..context import AppContext
 from ..models.api_token import ApiToken
 
 
-def register(app, rt, get_api_token_repo):
+def register(app, rt, ctx: AppContext):
     """Register API token management routes."""
 
     @app.get("/admin/api-tokens")
@@ -20,7 +21,7 @@ def register(app, rt, get_api_token_repo):
             return error
 
         user = req.scope.get("auth")
-        tokens = get_api_token_repo().list_all()
+        tokens = ctx.api_token_repo.list_all()
 
         return AppShell(
             user=user,
@@ -37,10 +38,10 @@ def register(app, rt, get_api_token_repo):
             return error
 
         user = req.scope.get("auth")
-        name = name.strip()
+        name = sanitize_string(name, 256)
 
         if not name:
-            tokens = get_api_token_repo().list_all()
+            tokens = ctx.api_token_repo.list_all()
             return ApiTokensPage(tokens, message="Token name is required")
 
         # Generate token
@@ -52,9 +53,9 @@ def register(app, rt, get_api_token_repo):
             token_prefix=token_prefix,
             created_by=user.username,
         )
-        get_api_token_repo().save(token)
+        ctx.api_token_repo.save(token)
 
-        tokens = get_api_token_repo().list_all()
+        tokens = ctx.api_token_repo.list_all()
         return ApiTokensPage(tokens, new_token=plaintext)
 
     @app.post("/admin/api-tokens/{token_id}/revoke")
@@ -64,7 +65,7 @@ def register(app, rt, get_api_token_repo):
         if error:
             return error
 
-        repo = get_api_token_repo()
+        repo = ctx.api_token_repo
         token = repo.get_by_id(token_id)
         token_name = token.name if token else "Unknown"
         repo.delete(token_id)

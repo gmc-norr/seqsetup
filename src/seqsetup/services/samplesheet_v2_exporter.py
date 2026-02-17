@@ -241,7 +241,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenGermline_Data]\n")
         output.write("Sample_ID\n")
         for sample_id in analysis.sample_ids:
-            output.write(f"{sample_id}\n")
+            output.write(f"{cls._escape_csv(sample_id)}\n")
         output.write("\n")
 
     @classmethod
@@ -257,7 +257,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenSomatic_Data]\n")
         output.write("Sample_ID\n")
         for sample_id in analysis.sample_ids:
-            output.write(f"{sample_id}\n")
+            output.write(f"{cls._escape_csv(sample_id)}\n")
         output.write("\n")
 
     @classmethod
@@ -273,7 +273,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenRNA_Data]\n")
         output.write("Sample_ID\n")
         for sample_id in analysis.sample_ids:
-            output.write(f"{sample_id}\n")
+            output.write(f"{cls._escape_csv(sample_id)}\n")
         output.write("\n")
 
     @classmethod

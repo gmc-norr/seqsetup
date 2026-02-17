@@ -2,13 +2,18 @@
 
 import json
 import logging
+import ssl
 import urllib.request
 import urllib.error
+from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 from ..models.sample_api_config import SampleApiConfig
 
 logger = logging.getLogger(__name__)
+
+# Maximum API response size (10 MB)
+_MAX_RESPONSE_SIZE = 10 * 1024 * 1024
 
 
 class SampleApiError(Exception):
@@ -16,8 +21,23 @@ class SampleApiError(Exception):
     pass
 
 
+def _validate_url(url: str) -> None:
+    """Validate that a URL is safe to fetch (HTTPS with public hostname)."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise SampleApiError(f"Unsupported URL scheme: {parsed.scheme}")
+    hostname = parsed.hostname or ""
+    if not hostname:
+        raise SampleApiError("URL has no hostname")
+    # Block requests to localhost/private IPs to prevent SSRF
+    if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        raise SampleApiError(f"Requests to {hostname} are not allowed")
+
+
 def _api_get(url: str, api_key: str = "") -> dict | list:
     """Make a GET request to the API and return parsed JSON."""
+    _validate_url(url)
+
     headers = {
         "Accept": "application/json",
         "User-Agent": "SeqSetup-SampleAPI",
@@ -27,9 +47,15 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
 
     request = urllib.request.Request(url, headers=headers)
 
+    # Use default SSL context for certificate verification
+    ssl_context = ssl.create_default_context()
+
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
+            data = response.read(_MAX_RESPONSE_SIZE + 1)
+            if len(data) > _MAX_RESPONSE_SIZE:
+                raise SampleApiError("API response exceeds maximum size limit")
+            return json.loads(data.decode("utf-8"))
     except urllib.error.HTTPError as e:
         raise SampleApiError(f"API error: {e.code} {e.reason}")
     except urllib.error.URLError as e:

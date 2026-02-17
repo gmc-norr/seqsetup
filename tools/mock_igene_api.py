@@ -2,7 +2,7 @@
 """
 Mock iGene API server for testing SeqSetup LIMS integration.
 
-Implements the endpoints from config/igeneapi_openapi.json with test data.
+Implements the endpoints from igene_openapi.json with test data.
 
 Run with: pixi run mock-api
 Or directly: uvicorn tools.mock_igene_api:app --port 8100
@@ -65,7 +65,7 @@ class Report(BaseModel):
     SampleFluoroConc: Optional[float] = None
     Mother: Optional[str] = None
     Father: Optional[str] = None
-    Phenotype_Status: Optional[str] = None
+    PhenotypeStatus: Optional[str] = None
 
 
 # Test data: worksheets
@@ -315,7 +315,7 @@ def root(api_key: str = Header(None, alias="api-key")):
 @app.get("/worksheets")
 def worksheets(
     status: Optional[str] = Query(None),
-    detail: bool = Query(False, description="Return full worksheet objects instead of just IDs"),
+    detail: Optional[bool] = Query(None, description="Return full worksheet objects instead of just IDs"),
     page: int = Query(1),
     page_size: int = Query(20),
     api_key: str = Header(None, alias="api-key"),
@@ -323,12 +323,10 @@ def worksheets(
     """
     Get sequencing worksheets.
 
-    Status codes:
+    The status parameter should be one of the iGene codes:
     - KS (Klar att starta) - Ready to start
-    - P (Påbörjad) - In progress
-    - A (Avslutad) - Completed
-
-    Use detail=true to get full worksheet objects instead of just IDs.
+    - P (Pabörjad) - In progress
+    - A (Avslutad - klar pa lab) - Completed
     """
     verify_api_key(api_key)
 
@@ -359,7 +357,12 @@ def worksheet_reports(
     worksheet_id: str,
     api_key: str = Header(None, alias="api-key"),
 ) -> list[Optional[Report]]:
-    """Get sample reports for a specific worksheet."""
+    """Get sample reports for a specific worksheet.
+
+    Made to match the specification in:
+    'Inforande Novaseq/iGene/CSV till Sample Sheet Creator.xlsx' (file in Teams),
+    with two additions: gene panels and test notes.
+    """
     verify_api_key(api_key)
 
     if worksheet_id not in WORKSHEET_SAMPLES:
@@ -368,12 +371,13 @@ def worksheet_reports(
     return WORKSHEET_SAMPLES[worksheet_id]
 
 
-@app.get("/worksheets/sample/{sample_id}")
+@app.get("/worksheets/seq_sample/{sample_id}")
 def sample_report(
     sample_id: str,
     api_key: str = Header(None, alias="api-key"),
 ) -> Report:
-    """Get report for a single sample by ID."""
+    """Same as in worksheets endpoint, but for a single sample.
+    Only for sequencing samples (SeqYY-X) from the new WGS workflow."""
     verify_api_key(api_key)
 
     # Search all worksheets for the sample
@@ -424,176 +428,21 @@ def genes_for_panel(
     return GENE_PANELS[panel_name]
 
 
-# ==============================================================================
-# iGene-native format endpoints (AL/Investigator/samples format)
-# These endpoints return data in the format used by the real iGene API
-# ==============================================================================
-
-
-@app.get("/igene/worksheets")
-def igene_worksheets(
-    status: Optional[str] = Query(None),
-    detail: bool = Query(False),
-    page: int = Query(1),
-    page_size: int = Query(20),
-    api_key: str = Header(None, alias="api-key"),
-):
-    """
-    iGene-native format: List worksheets with AL field for worksheet ID.
-
-    Returns worksheets in the iGene format:
-    {"AL": "...", "Investigator": "...", "samples": {...}, "updatedAt": "..."}
-    """
-    verify_api_key(api_key)
-
-    # Filter by status
-    filtered = list(WORKSHEETS.values())
-    if status:
-        filtered = [w for w in filtered if w["status"] == status]
-
-    # Pagination
-    total = len(filtered)
-    start = (page - 1) * page_size
-    end = start + page_size
-    paginated = filtered[start:end]
-
-    pagination = {"total": total, "page": page, "page_size": page_size}
-
-    # Transform to iGene format
-    igene_worksheets = []
-    for ws in paginated:
-        ws_id = ws["id"]
-        # Build samples dict: {sample_id: test_id}
-        samples_dict = {}
-        if ws_id in WORKSHEET_SAMPLES:
-            for report in WORKSHEET_SAMPLES[ws_id]:
-                samples_dict[report.SampleID] = report.TestID
-
-        igene_worksheets.append({
-            "AL": ws_id,
-            "Investigator": "LIMS_USER",  # Mock investigator
-            "samples": samples_dict,
-            "updatedAt": f"{ws.get('created', '2025-01-01')}T12:00:00.000000",
-        })
-
-    if detail:
-        return [igene_worksheets, pagination]
-    else:
-        # Just return AL values
-        return [[ws["AL"] for ws in igene_worksheets], pagination]
-
-
-@app.get("/igene/worksheets/{worksheet_id}")
-def igene_worksheet_detail(
-    worksheet_id: str,
-    api_key: str = Header(None, alias="api-key"),
-):
-    """
-    iGene-native format: Get single worksheet with embedded samples.
-
-    Returns a single worksheet object with samples as a dict mapping sample_id to test_id.
-    """
-    verify_api_key(api_key)
-
-    if worksheet_id not in WORKSHEETS:
-        raise HTTPException(status_code=404, detail=f"Worksheet {worksheet_id} not found")
-
-    ws = WORKSHEETS[worksheet_id]
-
-    # Build samples dict: {sample_id: test_id}
-    samples_dict = {}
-    if worksheet_id in WORKSHEET_SAMPLES:
-        for report in WORKSHEET_SAMPLES[worksheet_id]:
-            samples_dict[report.SampleID] = report.TestID
-
-    return {
-        "AL": ws["id"],
-        "Investigator": "LIMS_USER",
-        "samples": samples_dict,
-        "updatedAt": f"{ws.get('created', '2025-01-01')}T12:00:00.000000",
-    }
-
-
-# ==============================================================================
-# SeqSetup-compatible endpoints
-# These endpoints match what SeqSetup's sample API integration expects
-# ==============================================================================
-
-
-@app.get("/worksheets-simple")
-def worksheets_seqsetup(
-    status: Optional[str] = Query(None),
-    api_key: str = Header(None, alias="api-key"),
-):
-    """
-    SeqSetup-compatible endpoint: List available worksheets.
-
-    Returns a plain JSON array of worksheet objects with 'id' and 'name' fields.
-    """
-    verify_api_key(api_key)
-
-    filtered = list(WORKSHEETS.values())
-    if status:
-        filtered = [w for w in filtered if w["status"] == status]
-
-    # Return format matching SeqSetup expectations
-    return [{"id": w["id"], "name": w["name"]} for w in filtered]
-
-
-@app.get("/worksheets-simple/{worksheet_id}/samples")
-def worksheet_samples_seqsetup(
-    worksheet_id: str,
-    api_key: str = Header(None, alias="api-key"),
-):
-    """
-    SeqSetup-compatible endpoint: Get samples for a worksheet.
-
-    Returns a plain JSON array of sample objects with fields that SeqSetup
-    can map (sample_id, test_id, etc.).
-    """
-    verify_api_key(api_key)
-
-    if worksheet_id not in WORKSHEET_SAMPLES:
-        raise HTTPException(status_code=404, detail=f"Worksheet {worksheet_id} not found")
-
-    # Convert Report objects to dicts with SeqSetup-compatible field names
-    samples = []
-    for report in WORKSHEET_SAMPLES[worksheet_id]:
-        samples.append({
-            "sample_id": report.SampleID,
-            "test_id": report.TestID,
-            "test_profile": report.TestProfile,
-            "panels": report.Panels,
-            "sex": report.Sex,
-            "sample_type": report.RootSampleType,
-            # Include original fields for reference
-            "library_sample_id": report.LibrarySampleID,
-            "worksheet_id": report.WorksheetID,
-            "investigator": report.Investigator,
-        })
-
-    return samples
-
-
 if __name__ == "__main__":
     import uvicorn
 
     print("Starting Mock iGene API server on http://localhost:8100")
     print("API Key for testing: test-api-key-12345")
-    print("\niGene-compatible endpoints:")
-    print("  GET /                              - Health check")
-    print("  GET /worksheets                    - List worksheets")
-    print("      ?status=KS                     - Filter by status")
-    print("      ?detail=true                   - Return full objects")
-    print("  GET /worksheets/{id}               - Get samples for worksheet")
-    print("  GET /worksheets/sample/{id}        - Get single sample")
-    print("  GET /gene_panels                   - List gene panels")
-    print("  GET /gene_panels/{name}            - Get genes in panel")
-    print("\niGene-native format endpoints (AL/Investigator/samples):")
-    print("  GET /igene/worksheets              - List worksheets (iGene format)")
-    print("      ?detail=true                   - Return full objects with samples")
-    print("  GET /igene/worksheets/{id}         - Get worksheet with embedded samples")
-    print("\nSeqSetup-compatible endpoints:")
-    print("  GET /worksheets-simple             - List worksheets (plain array)")
-    print("  GET /worksheets-simple/{id}/samples - Get samples for worksheet")
+    print("\nEndpoints:")
+    print("  GET /                                  - Health check")
+    print("  GET /worksheets                        - List worksheets")
+    print("      ?status=KS                         - Filter by status (KS/P/A)")
+    print("      ?detail=true                       - Return full objects")
+    print("      ?page=1&page_size=20               - Pagination")
+    print("  GET /worksheets/{id}                   - Get sample reports for worksheet")
+    print("  GET /worksheets/seq_sample/{sample_id} - Get single sample report")
+    print("  GET /gene_panels                       - List gene panels")
+    print("      ?gene=BRCA1                        - Filter by gene name")
+    print("      ?gene_id=HGNC:1100                 - Filter by gene ID")
+    print("  GET /gene_panels/{name}                - Get genes in panel")
     uvicorn.run(app, host="0.0.0.0", port=8100)

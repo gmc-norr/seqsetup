@@ -13,11 +13,10 @@ Technology: Python, FastHTML, MongoDB, HTMX. Environment managed with Pixi.
 ## What Claude Should and Should Not Do
 
 ### DO:
-- Refactor for clarity 
+- Refactor for clarity
 - Suggest improvements to robustness and readability
 - Point out potential clinical pitfalls
 - Ask clarifying questions if assumptions are unclear
-- Save all changes in a changes.txt file in the root
 
 ### DO NOT:
 - Assume clinical validity without evidence
@@ -33,6 +32,7 @@ These rules must NEVER be violated.
 - Validate DNA sequences against `^[ACGTN]*$` after uppercasing
 - Use `escape_js_string()` and `escape_html_attr()` from `utils/html.py` when embedding user data in HTML or JavaScript — never raw f-strings
 - Use `sanitize_filename()` from `routes/utils.py` for Content-Disposition headers
+- Use `_escape_csv()` for all user-supplied values in SampleSheet output (BCLConvert, DRAGEN, and Cloud sections)
 
 ### Run state integrity
 - Never allow mutations to a run unless `check_run_editable(run)` passes (returns None)
@@ -40,10 +40,14 @@ These rules must NEVER be violated.
 - Always call `run.touch(updated_by=get_username(req))` before saving after mutations
 - Pre-generate all exports (samplesheet v2, v1, JSON, validation) when transitioning to Ready — the API serves pre-generated content, not live exports
 - Modifying samples or indexes must reset `validation_approved` (the model handles this via `add_sample`/`remove_sample`, but verify if bypassing those methods)
+- Enforce state machine transitions via `check_status_transition()`: DRAFT→READY, READY→DRAFT, READY→ARCHIVED. ARCHIVED is terminal.
+- Exports are only available for READY and ARCHIVED runs — enforce via `check_run_exportable()`
+- Validation approval is only allowed on DRAFT runs; unapproval is blocked on ARCHIVED runs
 
 ### Authentication and authorization
 - All non-public routes require authentication — never add unprotected routes
 - Admin routes must check `require_admin(req)` and return the error response if non-None
+- Index kit upload requires admin — standard users cannot upload index kits
 - API routes require Bearer token auth — tokens stored as bcrypt hashes, never log or expose plaintext
 - Access the authenticated user via `req.scope.get("auth")`, API token via `req.scope.get("api_token")`
 
@@ -52,6 +56,11 @@ These rules must NEVER be violated.
 - Repositories contain **no business logic** — they are thin data access layers
 - Models are **self-validating** — invariants enforced in `__post_init__`
 - Never silently discard data. If input is invalid, reject it or clamp it visibly.
+
+### External API safety
+- The LIMS API client (`services/sample_api.py`) uses SSL certificate verification via `ssl.create_default_context()`
+- URLs are validated before fetching — localhost and loopback addresses are blocked to prevent SSRF
+- API responses are size-limited (10 MB) to prevent memory exhaustion
 
 ## Conventions
 
@@ -98,16 +107,28 @@ def handler(req, run_id: str, ...):
 
 ```
 src/seqsetup/
-├── app.py              # FastHTML app, auth middleware
-├── context.py          # AppContext (dependency injection)
+├── app.py              # FastHTML app creation, route registration
+├── startup.py          # Repo initialization, service factories, DI setup
+├── middleware.py        # Auth beforeware (session + Bearer token)
+├── context.py          # AppContext dataclass (dependency injection)
+├── openapi.py          # OpenAPI spec for the JSON API
 ├── components/         # UI components (FastHTML/HTMX)
+│   ├── wizard/         # Run creation wizard (steps, sample table, indexes)
+│   ├── admin/          # Admin pages (auth, instruments, sync, API config)
+│   └── validation/     # Validation page (issues, heatmaps, color balance)
 ├── models/             # Dataclasses — self-validating, with to_dict/from_dict
 ├── repositories/       # MongoDB access — thin, no business logic
+│   └── base.py         # BaseRepository[T], SingletonConfigRepository[C]
 ├── routes/             # Request handlers — follow the pattern above
-│   ├── utils.py        # check_run_editable, require_admin, get_username, sanitize_filename
+│   ├── utils.py        # Guards: check_run_editable, check_status_transition,
+│   │                   #   check_run_exportable, require_admin, get_username, sanitize_*
 │   └── api.py          # JSON API (ready/archived runs only)
-├── services/           # Business logic — validation, export, LDAP
-│   └── validation.py   # Read-only validation, never mutates state
+├── services/           # Business logic — validation, export, LDAP, LIMS API
+│   ├── validation.py   # Read-only validation orchestrator
+│   ├── sample_api.py   # External LIMS API client (SSL verified, SSRF protected)
+│   └── database.py     # MongoDB connection (timeout + health check on init)
+├── data/
+│   └── instruments.py  # Instrument definitions (YAML + synced DB)
 ├── utils/
 │   └── html.py         # escape_js_string, escape_html_attr
 └── static/             # CSS, JS, images
@@ -117,28 +138,40 @@ src/seqsetup/
 
 | File | Purpose |
 |------|---------|
-| `routes/utils.py` | `check_run_editable()`, `require_admin()`, `get_username()`, `sanitize_filename()` |
+| `routes/utils.py` | `check_run_editable()`, `check_status_transition()`, `check_run_exportable()`, `require_admin()`, `get_username()`, `sanitize_*()` |
 | `utils/html.py` | `escape_js_string()`, `escape_html_attr()` — use these for all user data in HTML/JS |
 | `models/sequencing_run.py` | `SequencingRun`, `RunStatus`, `RunCycles` — central data model |
 | `models/sample.py` | `Sample` — DNA sequences validated here |
 | `services/validation.py` | Index collision, color balance, application profile validation |
+| `services/samplesheet_v2_exporter.py` | Sample Sheet v2 generation with `_escape_csv()` for all user data |
+| `services/sample_api.py` | LIMS API client with SSL, SSRF protection, size limits |
+| `services/database.py` | MongoDB connection with timeout and health check |
+| `startup.py` | Application initialization, repository registry, `get_app_context()` |
+| `context.py` | `AppContext` — all repos and service factories in one dataclass |
+| `repositories/base.py` | `BaseRepository[T]` and `SingletonConfigRepository[C]` base classes |
 
 ## Commands
 
 ```bash
 pixi install          # Install dependencies
-pixi run dev          # Run the application
-pixi run test         # Run tests
+pixi run serve        # Run the application (localhost:5001)
+pixi run test         # Run tests (607 unit tests)
+pixi run mock-api     # Start mock LIMS API server (localhost:8100)
 pixi add <pkg>        # Add dependency
 pixi add --feature dev <pkg>  # Add dev dependency
 ```
 
 ## Run Status State Machine
 
-**Draft** → **Ready** → **Archived**
+```
+Draft ──→ Ready ──→ Archived (terminal)
+            │
+            └──→ Draft (back to editing)
+```
 
 - **Draft**: Editable. Validation not required.
 - **Ready**: Locked. Validation must be approved. All exports pre-generated. Accessible via API.
-- **Archived**: Read-only historical record. Accessible via API.
+- **Archived**: Read-only historical record. Accessible via API. No transitions out.
 
 Transition to Ready requires `validation_approved == True` and triggers export generation.
+Transition is enforced by `check_status_transition()` in `routes/utils.py`.

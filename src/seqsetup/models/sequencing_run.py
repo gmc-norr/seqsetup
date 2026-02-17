@@ -273,7 +273,7 @@ class SequencingRun:
             id=data.get("_id") or data["id"],
             run_name=data.get("run_name", ""),
             run_description=data.get("run_description", ""),
-            status=RunStatus({"complete": "archived"}.get(data.get("status", "draft"), data.get("status", "draft"))),
+            status=RunStatus("archived" if data.get("status") == "complete" else data.get("status", "draft")),
             validation_approved=data.get("validation_approved", False),
             created_by=data.get("created_by", ""),
             updated_by=data.get("updated_by", ""),

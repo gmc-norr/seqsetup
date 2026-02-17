@@ -2,6 +2,7 @@
 
 import json
 import logging
+import ssl
 import urllib.request
 import urllib.error
 from typing import Optional, Tuple
@@ -211,7 +212,8 @@ class GitHubSyncService:
                 },
             )
 
-            with urllib.request.urlopen(request, timeout=30) as response:
+            ssl_context = ssl.create_default_context()
+            with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
                 data = json.loads(response.read().decode("utf-8"))
 
             # Ensure we have a list
@@ -235,7 +237,8 @@ class GitHubSyncService:
                 headers={"User-Agent": "SeqSetup-ProfileSync"},
             )
 
-            with urllib.request.urlopen(request, timeout=30) as response:
+            ssl_context = ssl.create_default_context()
+            with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
                 return response.read().decode("utf-8")
 
         except urllib.error.HTTPError as e:

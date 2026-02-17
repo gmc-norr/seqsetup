@@ -875,3 +875,258 @@ class TestColorBalance:
         for pos in i7_balance.positions:
             assert pos.a_count == 2
             assert pos.t_count == 0
+
+class TestValidationServiceEdgeCases:
+    """Edge case tests for ValidationService."""
+
+    def test_validate_empty_run(self):
+        """Empty run (no samples) should validate without errors."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[],
+        )
+
+        errors = ValidationService.validate_sample_ids(run)
+        assert len(errors) == 0
+
+    def test_validate_single_sample_run(self):
+        """Single sample run should validate without collisions."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[Sample(sample_id="ONLY_ONE")],
+        )
+
+        errors = ValidationService.validate_sample_ids(run)
+        assert len(errors) == 0
+
+    def test_validate_very_large_run(self):
+        """Large run with many samples should be validated."""
+        samples = [
+            Sample(sample_id=f"SAMPLE_{i:05d}") for i in range(100)
+        ]
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=samples,
+        )
+
+        errors = ValidationService.validate_sample_ids(run)
+        assert len(errors) == 0  # All unique IDs
+
+    def test_validate_all_samples_same_id(self):
+        """All samples with same ID should trigger duplicate error."""
+        samples = [
+            Sample(sample_id="DUPLICATE") for _ in range(5)
+        ]
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=samples,
+        )
+
+        errors = ValidationService.validate_sample_ids(run)
+        assert len(errors) == 1
+        assert "5 times" in errors[0]
+
+    def test_hamming_distance_empty_strings(self):
+        """Hamming distance for empty strings."""
+        dist = hamming_distance("", "")
+        assert dist == 0
+
+    def test_hamming_distance_empty_vs_nonempty(self):
+        """Hamming distance with one empty string."""
+        dist = hamming_distance("", "ATCG")
+        assert dist == 0  # 0-length overlap
+
+    def test_hamming_distance_very_long_sequences(self):
+        """Hamming distance for very long sequences."""
+        seq1 = "ATCG" * 1000  # 4000 bp
+        seq2 = "ATCG" * 1000
+        dist = hamming_distance(seq1, seq2)
+        assert dist == 0
+
+    def test_hamming_distance_long_sequences_one_diff(self):
+        """Hamming distance for long sequences with one difference."""
+        seq1 = "A" + "ATCG" * 999 + "TC"
+        seq2 = "T" + "ATCG" * 999 + "TC"
+        dist = hamming_distance(seq1, seq2)
+        assert dist == 1
+
+    def test_reverse_complement_all_bases(self):
+        """Reverse complement of all bases."""
+        from seqsetup.services.validation_utils import reverse_complement
+        assert reverse_complement("A") == "T"
+        assert reverse_complement("T") == "A"
+        assert reverse_complement("C") == "G"
+        assert reverse_complement("G") == "C"
+
+    def test_reverse_complement_with_n(self):
+        """Reverse complement with N (ambiguous base)."""
+        from seqsetup.services.validation_utils import reverse_complement
+        assert reverse_complement("ATCN") == "NGAT"
+
+    def test_reverse_complement_empty(self):
+        """Reverse complement of empty string."""
+        from seqsetup.services.validation_utils import reverse_complement
+        assert reverse_complement("") == ""
+
+    def test_reverse_complement_long_sequence(self):
+        """Reverse complement of long sequence."""
+        from seqsetup.services.validation_utils import reverse_complement
+        original = "ATCGATCGATCG"
+        rc = reverse_complement(original)
+        # RC of ATCGATCGATCG = CGATCGATCGAT
+        assert rc == "CGATCGATCGAT"
+
+    def test_color_balance_empty_run(self):
+        """Color balance for empty run returns empty dict."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[],
+        )
+
+        balance = ValidationService.calculate_color_balance(run)
+        assert balance == {}
+
+    def test_color_balance_single_sample(self):
+        """Color balance for single sample."""
+        sample = Sample(
+            sample_id="S1",
+            index1=Index(name="i7", sequence="ATCGATCG", index_type=IndexType.I7),
+        )
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[sample],
+        )
+
+        balance = ValidationService.calculate_color_balance(run)
+        # Should have calculation for this run
+        assert len(balance) > 0
+
+    def test_dark_cycles_empty_run(self):
+        """Dark cycle detection for empty run returns empty list."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[],
+        )
+
+        dark_cycles = ValidationService.validate_dark_cycles(run)
+        assert dark_cycles == []
+
+    def test_index_collision_lane_isolation(self):
+        """Test that lane information is correctly used in collision detection."""
+        from seqsetup.models.index import IndexPair
+        
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            barcode_mismatches_index1=1,
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    lanes=[1],
+                    index_pair=IndexPair(
+                        id="p1",
+                        name="Pair1",
+                        index1=Index(name="i7_1", sequence="ATCGATCG", index_type=IndexType.I7),
+                        index2=Index(name="i5_1", sequence="GCTAGCTA", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+
+        collisions = ValidationService.validate_index_collisions(run)
+        # Single sample should have no collisions
+        assert len(collisions) == 0
+
+    def test_index_collision_many_samples_unique_indexes(self):
+        """Many samples on same lane with well-separated indexes have no collisions."""
+        from seqsetup.models.index import IndexPair
+
+        # All pairs have combined hamming distance >= 4 (well above threshold of 3)
+        base_sequences = [
+            ("AAAAAAAA", "CCCCCCCC"),
+            ("TTTTTTTT", "GGGGGGGG"),
+            ("AATTAATT", "CCGGCCGG"),
+            ("TTAATTAA", "GGCCGGCC"),
+            ("AAAATTTT", "CCCCGGGG"),
+            ("TTTTAAAA", "GGGGCCCC"),
+            ("AATTTTAA", "CCGGGGCC"),
+            ("TTAAAATT", "GGCCCCGG"),
+            ("ATATATAT", "CGCGCGCG"),
+        ]
+
+        samples = [
+            Sample(
+                sample_id=f"S{i}",
+                lanes=[1],
+                index_pair=IndexPair(
+                    id=f"p{i}",
+                    name=f"Pair{i}",
+                    index1=Index(
+                        name=f"i7_{i}",
+                        sequence=base_sequences[i][0],
+                        index_type=IndexType.I7,
+                    ),
+                    index2=Index(
+                        name=f"i5_{i}",
+                        sequence=base_sequences[i][1],
+                        index_type=IndexType.I5,
+                    ),
+                ),
+            )
+            for i in range(len(base_sequences))
+        ]
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=samples,
+        )
+
+        collisions = ValidationService.validate_index_collisions(run)
+        assert len(collisions) == 0
+
+    def test_validate_run_comprehensive(self):
+        """Comprehensive validation of complete run."""
+        from seqsetup.models.index import IndexPair
+        
+        run = SequencingRun(
+            run_name="TestRun",
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            reagent_cycles=200,
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    sample_name="Control",
+                    index_pair=IndexPair(
+                        id="p1",
+                        name="Pair1",
+                        index1=Index(name="i7_1", sequence="ATCGATCG", index_type=IndexType.I7),
+                        index2=Index(name="i5_1", sequence="GCTAGCTA", index_type=IndexType.I5),
+                    ),
+                ),
+                Sample(
+                    sample_id="S2",
+                    sample_name="Test",
+                    index_pair=IndexPair(
+                        id="p2",
+                        name="Pair2",
+                        index1=Index(name="i7_2", sequence="TTTTTTTT", index_type=IndexType.I7),
+                        index2=Index(name="i5_2", sequence="AAAAAAAA", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+
+        # Run through validation
+        errors = ValidationService.validate_sample_ids(run)
+        assert len(errors) == 0
+
+        collisions = ValidationService.validate_index_collisions(run)
+        assert len(collisions) == 0

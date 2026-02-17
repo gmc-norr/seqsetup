@@ -1,5 +1,7 @@
 """Run configuration routes."""
 
+import logging
+
 from fasthtml.common import *
 from starlette.responses import Response
 
@@ -22,7 +24,9 @@ from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.validation_report import ValidationReportJSON
-from .utils import check_run_editable, get_username
+from .utils import check_run_editable, check_status_transition, get_username, sanitize_string
+
+logger = logging.getLogger(__name__)
 
 
 def register(app, rt, ctx: AppContext):
@@ -31,8 +35,8 @@ def register(app, rt, ctx: AppContext):
     @app.post("/runs/{run_id}/name")
     def update_run_name(req, run_id: str, run_name: str = "", run_description: str = ""):
         """Update run name and description."""
-        run_name = run_name.strip()[:256]
-        run_description = run_description.strip()[:4096]
+        run_name = sanitize_string(run_name, 256)
+        run_description = sanitize_string(run_description, 4096)
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -206,6 +210,10 @@ def register(app, rt, ctx: AppContext):
         except ValueError:
             return Response(f"Invalid status: {status}", status_code=400)
 
+        # Enforce state machine transitions
+        if err := check_status_transition(run.status, new_status):
+            return err
+
         # Block transition to "ready" unless validation is approved
         if new_status == RunStatus.READY and not run.validation_approved:
             from ..components.edit_run import RunStatusBar
@@ -215,27 +223,31 @@ def register(app, rt, ctx: AppContext):
 
         # Pre-generate exports when transitioning to READY
         if new_status == RunStatus.READY:
-            run.generated_samplesheet_v2 = SampleSheetV2Exporter.export(
-                run,
-                test_profile_repo=ctx.test_profile_repo,
-                app_profile_repo=ctx.app_profile_repo,
-            )
-            run.generated_json = JSONExporter.export(run)
+            try:
+                run.generated_samplesheet_v2 = SampleSheetV2Exporter.export(
+                    run,
+                    test_profile_repo=ctx.test_profile_repo,
+                    app_profile_repo=ctx.app_profile_repo,
+                )
+                run.generated_json = JSONExporter.export(run)
 
-            # Generate v1 samplesheet if instrument supports it
-            if SampleSheetV1Exporter.supports(run.instrument_platform):
-                run.generated_samplesheet_v1 = SampleSheetV1Exporter.export(run)
+                # Generate v1 samplesheet if instrument supports it
+                if SampleSheetV1Exporter.supports(run.instrument_platform):
+                    run.generated_samplesheet_v1 = SampleSheetV1Exporter.export(run)
 
-            # Generate validation JSON report (fast)
-            # PDF is generated lazily on first download to keep Mark Ready fast
-            result = ValidationService.validate_run(
-                run,
-                test_profile_repo=ctx.test_profile_repo,
-                app_profile_repo=ctx.app_profile_repo,
-                instrument_config=ctx.instrument_config,
-            )
-            run.generated_validation_json = ValidationReportJSON.export(run, result)
-            run.generated_validation_pdf = None  # Generated on-demand when downloaded
+                # Generate validation JSON report (fast)
+                # PDF is generated lazily on first download to keep Mark Ready fast
+                result = ValidationService.validate_run(
+                    run,
+                    test_profile_repo=ctx.test_profile_repo,
+                    app_profile_repo=ctx.app_profile_repo,
+                    instrument_config=ctx.instrument_config,
+                )
+                run.generated_validation_json = ValidationReportJSON.export(run, result)
+                run.generated_validation_pdf = None  # Generated on-demand when downloaded
+            except Exception:
+                logger.error(f"Failed to generate exports for run {run_id}", exc_info=True)
+                return Response("Failed to generate exports", status_code=500)
 
         run.touch(reset_validation=False, updated_by=get_username(req))
         ctx.run_repo.save(run)

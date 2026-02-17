@@ -2,44 +2,24 @@
 
 from typing import Optional
 
-from pymongo.database import Database
-
 from ..models.local_user import LocalUser
 from ..models.user import UserRole
+from .base import BaseRepository
 
 
-class LocalUserRepository:
+class LocalUserRepository(BaseRepository[LocalUser]):
     """Repository for managing local users in MongoDB."""
 
     COLLECTION = "local_users"
+    MODEL_CLASS = LocalUser
 
-    def __init__(self, db: Database):
-        self.collection = db[self.COLLECTION]
-
-    def list_all(self) -> list[LocalUser]:
-        """Get all local users."""
-        docs = self.collection.find()
-        return [LocalUser.from_dict(doc) for doc in docs]
+    def _get_id(self, item: LocalUser) -> str:
+        """Local users use username as document ID."""
+        return item.username
 
     def get_by_username(self, username: str) -> Optional[LocalUser]:
         """Get a user by username."""
-        doc = self.collection.find_one({"_id": username})
-        if doc:
-            return LocalUser.from_dict(doc)
-        return None
-
-    def save(self, user: LocalUser) -> None:
-        """Insert or update a local user."""
-        self.collection.replace_one(
-            {"_id": user.username},
-            user.to_dict(),
-            upsert=True,
-        )
-
-    def delete(self, username: str) -> bool:
-        """Delete a local user by username."""
-        result = self.collection.delete_one({"_id": username})
-        return result.deleted_count > 0
+        return self.get_by_id(username)
 
     def exists(self, username: str) -> bool:
         """Check if a user with the given username exists."""

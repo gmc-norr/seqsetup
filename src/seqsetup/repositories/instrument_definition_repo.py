@@ -2,31 +2,18 @@
 
 from typing import Optional
 
-from pymongo.database import Database
-
 from ..models.instrument_definition import InstrumentDefinition
+from .base import BaseRepository
 
 
-class InstrumentDefinitionRepository:
+class InstrumentDefinitionRepository(BaseRepository[InstrumentDefinition]):
     """Repository for managing InstrumentDefinition documents in MongoDB.
 
     Stores instrument definitions synced from GitHub.
     """
 
-    def __init__(self, db: Database):
-        self.collection = db["instrument_definitions"]
-
-    def list_all(self) -> list[InstrumentDefinition]:
-        """Get all instrument definitions."""
-        docs = self.collection.find()
-        return [InstrumentDefinition.from_dict(doc) for doc in docs]
-
-    def get_by_id(self, instrument_id: str) -> Optional[InstrumentDefinition]:
-        """Get an instrument definition by ID."""
-        doc = self.collection.find_one({"_id": instrument_id})
-        if doc:
-            return InstrumentDefinition.from_dict(doc)
-        return None
+    COLLECTION = "instrument_definitions"
+    MODEL_CLASS = InstrumentDefinition
 
     def get_by_name(self, name: str) -> Optional[InstrumentDefinition]:
         """Get an instrument definition by name."""
@@ -34,21 +21,6 @@ class InstrumentDefinitionRepository:
         if doc:
             return InstrumentDefinition.from_dict(doc)
         return None
-
-    def save(self, instrument: InstrumentDefinition) -> None:
-        """Insert or update an instrument definition."""
-        data = instrument.to_dict()
-        data["_id"] = instrument.id
-        self.collection.replace_one(
-            {"_id": instrument.id},
-            data,
-            upsert=True,
-        )
-
-    def delete(self, instrument_id: str) -> bool:
-        """Delete an instrument definition by ID."""
-        result = self.collection.delete_one({"_id": instrument_id})
-        return result.deleted_count > 0
 
     def delete_all(self) -> int:
         """Delete all instrument definitions. Used for full resync."""

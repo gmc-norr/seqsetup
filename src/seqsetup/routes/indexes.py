@@ -25,6 +25,7 @@ from ..models.index import IndexMode
 from ..services.index_parser import IndexParser
 from ..services.index_validator import IndexValidator
 from ..services.index_kit_yaml_exporter import IndexKitYamlExporter
+from .utils import require_admin
 
 
 def _parse_index_override(pattern: str) -> Optional[int]:
@@ -87,9 +88,9 @@ def register(app, rt, ctx: AppContext):
         comments: str = "",
     ):
         """Upload and parse an index kit file."""
+        if err := require_admin(req):
+            return err
         user = req.scope.get("auth")
-        if not user:
-            return Response("Forbidden: Authentication required", status_code=403)
 
         if not index_file or not index_file.filename:
             return Div("Please select a file to import.", cls="error-message")

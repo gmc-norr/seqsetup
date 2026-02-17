@@ -3,14 +3,15 @@
 from fasthtml.common import *
 from starlette.responses import Response
 
-from .utils import require_admin
+from .utils import require_admin, sanitize_string
 from ..components.layout import AppShell
 from ..components.local_users import EditUserRow, LocalUsersPage, UserTable
+from ..context import AppContext
 from ..models.local_user import LocalUser
 from ..models.user import UserRole
 
 
-def register(app, rt, get_local_user_repo):
+def register(app, rt, ctx: AppContext):
     """Register local user management routes."""
 
     @app.get("/admin/users")
@@ -21,7 +22,7 @@ def register(app, rt, get_local_user_repo):
             return error
 
         user = req.scope.get("auth")
-        users = get_local_user_repo().list_all()
+        users = ctx.local_user_repo.list_all()
 
         return AppShell(
             user=user,
@@ -44,9 +45,10 @@ def register(app, rt, get_local_user_repo):
         if error:
             return error
 
-        repo = get_local_user_repo()
-        username = username.strip()
-        display_name = display_name.strip()
+        repo = ctx.local_user_repo
+        username = sanitize_string(username, 256)
+        display_name = sanitize_string(display_name, 256)
+        email = sanitize_string(email, 256)
 
         if not username:
             return LocalUsersPage(repo.list_all(), error="Username is required.")
@@ -71,7 +73,7 @@ def register(app, rt, get_local_user_repo):
             username=username,
             display_name=display_name,
             role=user_role,
-            email=email.strip(),
+            email=email,
         )
         new_user.set_password(password)
         repo.save(new_user)
@@ -87,7 +89,7 @@ def register(app, rt, get_local_user_repo):
         if error:
             return error
 
-        repo = get_local_user_repo()
+        repo = ctx.local_user_repo
         user = repo.get_by_username(username)
         if not user:
             return Response("User not found", status_code=404)
@@ -101,7 +103,7 @@ def register(app, rt, get_local_user_repo):
         if error:
             return error
 
-        repo = get_local_user_repo()
+        repo = ctx.local_user_repo
         user = repo.get_by_username(username)
         if not user:
             return Response("User not found", status_code=404)
@@ -154,12 +156,14 @@ def register(app, rt, get_local_user_repo):
         if error:
             return error
 
-        repo = get_local_user_repo()
+        repo = ctx.local_user_repo
         user = repo.get_by_username(username)
         if not user:
             return LocalUsersPage(repo.list_all(), error=f"User '{username}' not found.")
 
-        display_name = display_name.strip()
+        display_name = sanitize_string(display_name, 256)
+        email = sanitize_string(email, 256)
+
         if not display_name:
             return LocalUsersPage(repo.list_all(), error="Display name is required.")
 
@@ -177,7 +181,7 @@ def register(app, rt, get_local_user_repo):
                 )
 
         user.display_name = display_name
-        user.email = email.strip()
+        user.email = email
         user.role = new_role
 
         if password:
@@ -198,7 +202,7 @@ def register(app, rt, get_local_user_repo):
         if error:
             return error
 
-        repo = get_local_user_repo()
+        repo = ctx.local_user_repo
         user = repo.get_by_username(username)
 
         if not user:

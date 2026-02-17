@@ -4,6 +4,7 @@ from fasthtml.common import *
 
 from ..models.sample import Sample
 from ..models.sequencing_run import RunCycles
+from ..utils.html import escape_html_attr, escape_js_string
 
 
 def SampleTableSection(samples: list[Sample], run_cycles: RunCycles | None = None):
@@ -143,20 +144,22 @@ def IndexDropZone(sample: Sample, index_type: str = "index1"):
     """
     if sample.has_index:
         # Show assigned index
+        title_text = f"{sample.index_pair.name}: {sample.index1_sequence}" if sample.index_pair else ""
         return Span(
             sample.index1_sequence,
             cls="assigned-index",
-            title=f"{sample.index_pair.name}: {sample.index1_sequence}",
+            title=escape_html_attr(title_text),
         )
     else:
         # Show drop target
+        escaped_sample_id = escape_js_string(sample.id)
         return Div(
             "Drop index here",
             cls="drop-zone",
             data_sample_id=sample.id,
             ondragover="event.preventDefault(); this.classList.add('drag-over')",
             ondragleave="this.classList.remove('drag-over')",
-            ondrop=f"handleIndexDrop(event, '{sample.id}')",
+            ondrop=f"handleIndexDrop(event, '{escaped_sample_id}')",
         )
 
 

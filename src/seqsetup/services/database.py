@@ -1,5 +1,6 @@
 """MongoDB database connection management."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -7,6 +8,9 @@ from typing import Optional
 import yaml
 from pymongo import MongoClient
 from pymongo.database import Database
+from pymongo.errors import ConnectionFailure
+
+logger = logging.getLogger(__name__)
 
 # Global database connection
 _client: Optional[MongoClient] = None
@@ -51,9 +55,24 @@ def init_db() -> Database:
     uri = config.get("uri", "mongodb://localhost:27017")
     database_name = config.get("database", "seqsetup")
 
-    _client = MongoClient(uri)
-    _db = _client[database_name]
+    try:
+        _client = MongoClient(
+            uri,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+        )
+        # Verify connectivity by pinging the server
+        _client.admin.command("ping")
+    except ConnectionFailure as e:
+        _client = None
+        logger.error("Failed to connect to MongoDB: %s", e)
+        raise
+    except Exception as e:
+        _client = None
+        logger.error("Unexpected error connecting to MongoDB: %s", e)
+        raise
 
+    _db = _client[database_name]
     return _db
 
 

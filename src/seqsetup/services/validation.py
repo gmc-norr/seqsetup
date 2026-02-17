@@ -9,6 +9,7 @@ specialized validator modules:
 - application_profile_validator: Application profile compatibility checks
 """
 
+import logging
 import re
 from collections import defaultdict
 
@@ -29,6 +30,9 @@ from .application_profile_validator import ApplicationProfileValidator
 from .color_analysis_validator import ColorAnalysisValidator
 from .index_collision_validator import IndexCollisionValidator
 from .validation_utils import hamming_distance
+
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationService:
@@ -62,13 +66,11 @@ class ValidationService:
         duplicate_errors = cls.validate_sample_ids(run)
 
         # Index collision validation (delegated)
-        collisions = IndexCollisionValidator.validate_index_collisions(
-            run, instrument_config
-        )
+        collisions = IndexCollisionValidator.validate_index_collisions(run, instrument_config)
+
         distance_matrices = (
             IndexCollisionValidator.calculate_index_distances(run, instrument_config)
-            if run.samples
-            else {}
+            if run.samples else {}
         )
 
         # Check if color balance analysis is enabled for this instrument
@@ -83,13 +85,13 @@ class ValidationService:
         # Color balance and dark cycle analysis (delegated)
         if color_balance_enabled and run.samples:
             color_balance = ColorAnalysisValidator.calculate_color_balance(
-                run, channel_config, i5_orientation, instrument_config
+                run, channel_config, i5_orientation, instrument_config,
             )
             dark_cycle_errors = ColorAnalysisValidator.validate_dark_cycles(
-                run, channel_config, i5_orientation
+                run, channel_config, i5_orientation,
             )
             dark_cycle_samples = ColorAnalysisValidator.build_dark_cycle_info(
-                run, channel_config, i5_orientation
+                run, channel_config, i5_orientation,
             )
         else:
             color_balance = {}
@@ -100,7 +102,7 @@ class ValidationService:
         application_errors = []
         if test_profile_repo and app_profile_repo and run.samples:
             application_errors = ApplicationProfileValidator.validate_application_profiles(
-                run, test_profile_repo, app_profile_repo, instrument_config
+                run, test_profile_repo, app_profile_repo, instrument_config,
             )
 
         # Configuration validation (inline - many private helpers)
@@ -118,7 +120,7 @@ class ValidationService:
             color_balance=color_balance,
             application_errors=application_errors,
             configuration_errors=configuration_errors,
-            chemistry_type=chemistry.value,
+            chemistry_type=chemistry.value if chemistry else "",
             color_balance_enabled=color_balance_enabled,
             channel_config=channel_config,
         )

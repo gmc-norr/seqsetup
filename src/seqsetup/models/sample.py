@@ -78,7 +78,7 @@ class Sample:
             self.index2_cycles = max(1, self.index2_cycles)
         # Filter lanes to only positive integers
         if self.lanes:
-            self.lanes = [lane for lane in self.lanes if isinstance(lane, int) and lane > 0]
+            self.lanes = [lane for lane in self.lanes if isinstance(lane, int) and not isinstance(lane, bool) and lane > 0]
 
     @property
     def index1_sequence(self) -> Optional[str]:

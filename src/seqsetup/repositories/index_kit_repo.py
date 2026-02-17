@@ -3,21 +3,20 @@
 from typing import Optional
 
 from pymongo import ReplaceOne
-from pymongo.database import Database
 
 from ..models.index import Index, IndexKit, IndexPair
+from .base import BaseRepository
 
 
-class IndexKitRepository:
+class IndexKitRepository(BaseRepository[IndexKit]):
     """Repository for managing IndexKit documents in MongoDB."""
 
-    def __init__(self, db: Database):
-        self.collection = db["index_kits"]
+    COLLECTION = "index_kits"
+    MODEL_CLASS = IndexKit
 
-    def list_all(self) -> list[IndexKit]:
-        """Get all index kits."""
-        docs = self.collection.find()
-        return [IndexKit.from_dict(doc) for doc in docs]
+    def _get_id(self, item: IndexKit) -> str:
+        """Index kits use kit_id (name:version) as document ID."""
+        return item.kit_id
 
     def get_by_name(self, name: str) -> Optional[IndexKit]:
         """Get the first index kit matching a name (any version)."""
@@ -39,10 +38,7 @@ class IndexKitRepository:
 
     def get_by_kit_id(self, kit_id: str) -> Optional[IndexKit]:
         """Get an index kit by its composite ID (name:version)."""
-        doc = self.collection.find_one({"_id": kit_id})
-        if doc:
-            return IndexKit.from_dict(doc)
-        return None
+        return self.get_by_id(kit_id)
 
     def exists(self, name: str, version: str) -> bool:
         """Check if a kit with the given name and version already exists."""
@@ -51,14 +47,6 @@ class IndexKitRepository:
             return True
         # Fall back: match by name and version fields (handles legacy _id format)
         return self.collection.count_documents({"name": name, "version": version}) > 0
-
-    def save(self, kit: IndexKit) -> None:
-        """Insert or update an index kit."""
-        self.collection.replace_one(
-            {"_id": kit.kit_id},
-            kit.to_dict(),
-            upsert=True,
-        )
 
     def delete(self, name: str, version: str) -> bool:
         """Delete an index kit by name and version."""

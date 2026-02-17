@@ -2,10 +2,11 @@
 
 from starlette.responses import JSONResponse, Response
 
+from ..context import AppContext
 from ..models.sequencing_run import RunStatus
 
 
-def register(app, rt, get_run_repo):
+def register(app, rt, ctx: AppContext):
     """Register API routes."""
 
     # Only allow API access to runs in these statuses
@@ -35,15 +36,13 @@ def register(app, rt, get_run_repo):
                 status_code=400,
             )
 
-        run_repo = get_run_repo()
-        runs = run_repo.list_by_status(status)
+        runs = ctx.run_repo.list_by_status(status)
         return JSONResponse([run.to_dict() for run in runs])
 
     @rt("/api/runs/{run_id}/samplesheet-v2")
     def api_get_samplesheet_v2(req, run_id: str):
         """Get pre-generated SampleSheet v2 CSV for a ready run."""
-        run_repo = get_run_repo()
-        run = run_repo.get_by_id(run_id)
+        run = ctx.run_repo.get_by_id(run_id)
 
         error = _check_run_access(run)
         if error:
@@ -59,8 +58,7 @@ def register(app, rt, get_run_repo):
     @rt("/api/runs/{run_id}/samplesheet-v1")
     def api_get_samplesheet_v1(req, run_id: str):
         """Get pre-generated SampleSheet v1 CSV for a ready run."""
-        run_repo = get_run_repo()
-        run = run_repo.get_by_id(run_id)
+        run = ctx.run_repo.get_by_id(run_id)
 
         error = _check_run_access(run)
         if error:
@@ -76,8 +74,7 @@ def register(app, rt, get_run_repo):
     @rt("/api/runs/{run_id}/json")
     def api_get_json(req, run_id: str):
         """Get pre-generated JSON metadata for a ready run."""
-        run_repo = get_run_repo()
-        run = run_repo.get_by_id(run_id)
+        run = ctx.run_repo.get_by_id(run_id)
 
         error = _check_run_access(run)
         if error:
@@ -93,8 +90,7 @@ def register(app, rt, get_run_repo):
     @rt("/api/runs/{run_id}/validation-report")
     def api_get_validation_json(req, run_id: str):
         """Get pre-generated validation report JSON for a ready run."""
-        run_repo = get_run_repo()
-        run = run_repo.get_by_id(run_id)
+        run = ctx.run_repo.get_by_id(run_id)
 
         error = _check_run_access(run)
         if error:
@@ -110,8 +106,7 @@ def register(app, rt, get_run_repo):
     @rt("/api/runs/{run_id}/validation-pdf")
     def api_get_validation_pdf(req, run_id: str):
         """Get pre-generated validation report PDF for a ready run."""
-        run_repo = get_run_repo()
-        run = run_repo.get_by_id(run_id)
+        run = ctx.run_repo.get_by_id(run_id)
 
         error = _check_run_access(run)
         if error:

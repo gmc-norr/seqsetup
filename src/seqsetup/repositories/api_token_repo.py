@@ -5,44 +5,22 @@ from typing import Optional
 from pymongo.database import Database
 
 from ..models.api_token import ApiToken
+from .base import BaseRepository
 
 
-class ApiTokenRepository:
+class ApiTokenRepository(BaseRepository[ApiToken]):
     """Repository for managing API tokens in MongoDB."""
 
     COLLECTION = "api_tokens"
+    MODEL_CLASS = ApiToken
 
     def __init__(self, db: Database):
-        self.collection = db[self.COLLECTION]
+        super().__init__(db)
         self._ensure_indexes()
 
     def _ensure_indexes(self) -> None:
         """Create indexes for efficient token lookup."""
         self.collection.create_index("token_prefix", sparse=True)
-
-    def list_all(self) -> list[ApiToken]:
-        """List all tokens (without plaintext)."""
-        docs = self.collection.find()
-        return [ApiToken.from_dict(doc) for doc in docs]
-
-    def get_by_id(self, token_id: str) -> Optional[ApiToken]:
-        """Get a single token by ID."""
-        doc = self.collection.find_one({"_id": token_id})
-        if doc:
-            return ApiToken.from_dict(doc)
-        return None
-
-    def save(self, token: ApiToken) -> None:
-        """Insert or upsert a token."""
-        self.collection.replace_one(
-            {"_id": token.id},
-            token.to_dict(),
-            upsert=True,
-        )
-
-    def delete(self, token_id: str) -> None:
-        """Delete (revoke) a token."""
-        self.collection.delete_one({"_id": token_id})
 
     def verify_token(self, plaintext: str) -> Optional[ApiToken]:
         """Verify a plaintext token against stored hashes.

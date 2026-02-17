@@ -11,7 +11,7 @@ from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
-from .utils import sanitize_filename
+from .utils import check_run_exportable, sanitize_filename
 
 logger = logging.getLogger("seqsetup")
 
@@ -38,6 +38,9 @@ def register(app, rt, ctx: AppContext):
                 content="Run not found",
                 status_code=404,
             )
+
+        if err := check_run_exportable(run):
+            return err
 
         try:
             # Use cached content if available, otherwise generate fresh
@@ -75,6 +78,9 @@ def register(app, rt, ctx: AppContext):
 
         if not run:
             return StarletteResponse(content="Run not found", status_code=404)
+
+        if err := check_run_exportable(run):
+            return err
 
         if not SampleSheetV1Exporter.supports(run.instrument_platform):
             return StarletteResponse(
@@ -117,6 +123,9 @@ def register(app, rt, ctx: AppContext):
                 status_code=404,
             )
 
+        if err := check_run_exportable(run):
+            return err
+
         try:
             # Use cached content if available, otherwise generate fresh
             if run.generated_json:
@@ -150,6 +159,9 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return StarletteResponse(content="Run not found", status_code=404)
 
+        if err := check_run_exportable(run):
+            return err
+
         try:
             # Use cached content if available, otherwise generate fresh
             if run.generated_validation_json:
@@ -182,6 +194,9 @@ def register(app, rt, ctx: AppContext):
 
         if not run:
             return StarletteResponse(content="Run not found", status_code=404)
+
+        if err := check_run_exportable(run):
+            return err
 
         try:
             # Use cached content if available, otherwise generate and cache

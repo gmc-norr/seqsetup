@@ -3,7 +3,7 @@
 from fasthtml.common import *
 from starlette.responses import Response
 
-from ..components.validation_panel import (
+from ..components.validation import (
     LaneHeatmapContent,
     ValidationApprovalBar,
     ValidationErrorList,
@@ -12,6 +12,7 @@ from ..components.validation_panel import (
 )
 from ..context import AppContext
 from ..services.validation import ValidationService
+from ..models.sequencing_run import RunStatus
 from .utils import get_username
 
 
@@ -84,6 +85,10 @@ def register(app, rt, ctx: AppContext):
         if not run:
             return Response("Run not found", status_code=404)
 
+        # Only draft runs can have validation approved
+        if run.status != RunStatus.DRAFT:
+            return Response("Validation can only be approved on draft runs", status_code=400)
+
         result = _validate_run(run)
 
         # Only allow approval if there are no errors
@@ -105,6 +110,10 @@ def register(app, rt, ctx: AppContext):
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
+
+        # Cannot unapprove archived runs (terminal state)
+        if run.status == RunStatus.ARCHIVED:
+            return Response("Cannot modify archived runs", status_code=400)
 
         run.validation_approved = False
         run.touch(reset_validation=False, updated_by=get_username(req))

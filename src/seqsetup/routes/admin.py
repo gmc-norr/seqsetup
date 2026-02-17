@@ -7,7 +7,7 @@ from starlette.responses import Response
 
 logger = logging.getLogger("seqsetup")
 
-from .utils import require_admin
+from .utils import require_admin, sanitize_string
 from ..components.layout import AppShell
 from ..components.admin import (
     AuthenticationPage,
@@ -20,23 +20,13 @@ from ..components.admin import (
     SampleApiPage,
     SyncedInstrumentsSection,
 )
+from ..context import AppContext
 from ..models.auth_config import AuthMethod, LDAPConfig
 from ..models.sample_api_config import SampleApiConfig
 from ..services.ldap import LDAPService, LDAPError
 
 
-def register(
-    app,
-    rt,
-    get_auth_config_repo,
-    get_instrument_config_repo,
-    get_profile_sync_config_repo=None,
-    get_github_sync_service=None,
-    get_app_profile_repo=None,
-    get_test_profile_repo=None,
-    get_sample_api_config_repo=None,
-    get_instrument_definition_repo=None,
-):
+def register(app, rt, ctx: AppContext):
     """Register admin settings routes."""
 
     @app.get("/admin/authentication")
@@ -47,7 +37,7 @@ def register(
             return error
 
         user = req.scope.get("auth")
-        auth_config = get_auth_config_repo().get()
+        auth_config = ctx.auth_config_repo.get()
 
         return AppShell(
             user=user,
@@ -65,8 +55,8 @@ def register(
 
         user = req.scope.get("auth")
         synced_instruments = []
-        if get_instrument_definition_repo:
-            synced_instruments = get_instrument_definition_repo().list_all()
+        if ctx.instrument_definition_repo:
+            synced_instruments = ctx.instrument_definition_repo.list_all()
 
         return AppShell(
             user=user,
@@ -82,8 +72,7 @@ def register(
         if error:
             return error
 
-        auth_config_repo = get_auth_config_repo()
-        config = auth_config_repo.get()
+        config = ctx.auth_config_repo.get()
 
         try:
             config.auth_method = AuthMethod(auth_method)
@@ -91,7 +80,7 @@ def register(
             config.auth_method = AuthMethod.LOCAL
 
         config.allow_local_fallback = allow_local_fallback == "on"
-        auth_config_repo.save(config)
+        ctx.auth_config_repo.save(config)
 
         return LDAPConfigForm(config, message="Authentication method updated")
 
@@ -120,8 +109,7 @@ def register(
         if error:
             return error
 
-        auth_config_repo = get_auth_config_repo()
-        config = auth_config_repo.get()
+        config = ctx.auth_config_repo.get()
 
         config.ldap_config = LDAPConfig(
             server_url=server_url,
@@ -143,7 +131,7 @@ def register(
         )
         config.ldap_configured = bool(server_url and base_dn)
         config.ldap_tested = False  # Reset tested flag when config changes
-        auth_config_repo.save(config)
+        ctx.auth_config_repo.save(config)
 
         return LDAPConfigForm(config, message="LDAP configuration saved")
 
@@ -154,8 +142,7 @@ def register(
         if error:
             return error
 
-        auth_config_repo = get_auth_config_repo()
-        config = auth_config_repo.get()
+        config = ctx.auth_config_repo.get()
 
         if not config.ldap_config.server_url:
             return LDAPTestResult(False, "LDAP server URL is not configured")
@@ -166,7 +153,7 @@ def register(
 
             if success:
                 config.ldap_tested = True
-                auth_config_repo.save(config)
+                ctx.auth_config_repo.save(config)
 
             return LDAPTestResult(success, message)
 
@@ -186,8 +173,7 @@ def register(
         if not test_username or not test_password:
             return LDAPTestResult(False, "Please provide both username and password")
 
-        auth_config_repo = get_auth_config_repo()
-        config = auth_config_repo.get()
+        config = ctx.auth_config_repo.get()
 
         if not config.ldap_config.server_url:
             return LDAPTestResult(False, "LDAP server URL is not configured")
@@ -205,8 +191,8 @@ def register(
             logger.exception("LDAP authentication test failed")
             return LDAPTestResult(False, "Authentication test failed")
 
-    # Config Sync Routes (only if repos are provided)
-    if get_profile_sync_config_repo is not None:
+    # Config Sync Routes (only if repo is available)
+    if ctx.profile_sync_config_repo is not None:
 
         @app.get("/admin/config-sync")
         def admin_config_sync(req):
@@ -216,9 +202,9 @@ def register(
                 return error
 
             user = req.scope.get("auth")
-            config = get_profile_sync_config_repo().get()
-            app_profiles = get_app_profile_repo().list_all() if get_app_profile_repo else []
-            test_profiles = get_test_profile_repo().list_all() if get_test_profile_repo else []
+            config = ctx.profile_sync_config_repo.get()
+            app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
+            test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
 
             return AppShell(
                 user=user,
@@ -246,24 +232,24 @@ def register(
             if error:
                 return error
 
-            config_repo = get_profile_sync_config_repo()
-            config = config_repo.get()
+            config = ctx.profile_sync_config_repo.get()
 
-            config.github_repo_url = github_repo_url
-            config.github_branch = github_branch
-            config.test_profiles_path = test_profiles_path
-            config.application_profiles_path = application_profiles_path
-            config.instruments_path = instruments_path
-            config.index_kits_path = index_kits_path
+            # Sanitize and length-limit inputs
+            config.github_repo_url = sanitize_string(github_repo_url, 1024)
+            config.github_branch = sanitize_string(github_branch, 128)
+            config.test_profiles_path = sanitize_string(test_profiles_path, 256)
+            config.application_profiles_path = sanitize_string(application_profiles_path, 256)
+            config.instruments_path = sanitize_string(instruments_path, 256)
+            config.index_kits_path = sanitize_string(index_kits_path, 256)
             config.sync_enabled = sync_enabled == "on"
             config.sync_instruments_enabled = sync_instruments_enabled == "on"
             config.sync_index_kits_enabled = sync_index_kits_enabled == "on"
-            config.sync_interval_minutes = sync_interval_minutes
+            config.sync_interval_minutes = max(1, min(1440, sync_interval_minutes))  # Clamp 1-1440 minutes
 
-            config_repo.save(config)
+            ctx.profile_sync_config_repo.save(config)
 
-            app_profiles = get_app_profile_repo().list_all() if get_app_profile_repo else []
-            test_profiles = get_test_profile_repo().list_all() if get_test_profile_repo else []
+            app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
+            test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
 
             return ConfigSyncPage(config, app_profiles, test_profiles, message="Configuration saved")
 
@@ -274,15 +260,15 @@ def register(
             if error:
                 return error
 
-            if get_github_sync_service is None:
+            if ctx.get_github_sync_service is None:
                 return ConfigSyncPage(
-                    get_profile_sync_config_repo().get(),
+                    ctx.profile_sync_config_repo.get(),
                     [],
                     [],
                     message="Sync service not available",
                 )
 
-            sync_service = get_github_sync_service()
+            sync_service = ctx.get_github_sync_service()
             success, message, count = sync_service.sync()
 
             # Clear synced instruments cache to pick up new definitions
@@ -290,14 +276,14 @@ def register(
             clear_synced_instruments_cache()
 
             # Reload config and profiles to show updated data
-            config = get_profile_sync_config_repo().get()
-            app_profiles = get_app_profile_repo().list_all() if get_app_profile_repo else []
-            test_profiles = get_test_profile_repo().list_all() if get_test_profile_repo else []
+            config = ctx.profile_sync_config_repo.get()
+            app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
+            test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
 
             return ConfigSyncPage(config, app_profiles, test_profiles, message=message)
 
-    # Sample API Routes (only if repo is provided)
-    if get_sample_api_config_repo is not None:
+    # Sample API Routes (only if repo is available)
+    if ctx.sample_api_config_repo is not None:
 
         @app.get("/admin/sample-api")
         def admin_sample_api(req):
@@ -307,7 +293,7 @@ def register(
                 return error
 
             user = req.scope.get("auth")
-            config = get_sample_api_config_repo().get()
+            config = ctx.sample_api_config_repo.get()
 
             return AppShell(
                 user=user,
@@ -332,19 +318,26 @@ def register(
             if error:
                 return error
 
-            config_repo = get_sample_api_config_repo()
-            existing_config = config_repo.get()
+            existing_config = ctx.sample_api_config_repo.get()
 
-            # Build field mappings dict from form inputs
+            # Sanitize and length-limit inputs
+            base_url = sanitize_string(base_url, 1024)
+            api_key = sanitize_string(api_key, 512)
+
+            # Build field mappings dict from form inputs with length limits
             field_mappings = {}
-            if field_worksheet_id.strip():
-                field_mappings["worksheet_id"] = field_worksheet_id.strip()
-            if field_investigator.strip():
-                field_mappings["investigator"] = field_investigator.strip()
-            if field_updated_at.strip():
-                field_mappings["updated_at"] = field_updated_at.strip()
-            if field_samples.strip():
-                field_mappings["samples"] = field_samples.strip()
+            val = sanitize_string(field_worksheet_id, 256)
+            if val:
+                field_mappings["worksheet_id"] = val
+            val = sanitize_string(field_investigator, 256)
+            if val:
+                field_mappings["investigator"] = val
+            val = sanitize_string(field_updated_at, 256)
+            if val:
+                field_mappings["updated_at"] = val
+            val = sanitize_string(field_samples, 256)
+            if val:
+                field_mappings["samples"] = val
 
             config = SampleApiConfig(
                 base_url=base_url,
@@ -359,12 +352,12 @@ def register(
                 success, msg = check_connection(config)
                 if not success:
                     config.enabled = False
-                    config_repo.save(config)
+                    ctx.sample_api_config_repo.save(config)
                     return SampleApiConfigForm(
                         config, error=f"Connection failed: {msg}. Integration has been disabled."
                     )
 
-            config_repo.save(config)
+            ctx.sample_api_config_repo.save(config)
 
             return SampleApiConfigForm(config, message="LIMS integration configuration saved")
 
@@ -411,8 +404,8 @@ def register(
 
         return LogsPage([], stats, message="Logs cleared")
 
-    # Synced Instruments Routes (only if repo is provided)
-    if get_instrument_definition_repo is not None:
+    # Synced Instruments Routes (only if repo is available)
+    if ctx.instrument_definition_repo is not None:
 
         @app.post("/admin/instruments/synced/toggle")
         async def toggle_synced_instrument(req):
@@ -427,10 +420,10 @@ def register(
             enabled = enabled_str.lower() == "true"
 
             if instrument_id:
-                get_instrument_definition_repo().set_enabled(instrument_id, enabled)
+                ctx.instrument_definition_repo.set_enabled(instrument_id, enabled)
 
             # Return updated section
-            instruments = get_instrument_definition_repo().list_all()
+            instruments = ctx.instrument_definition_repo.list_all()
             return SyncedInstrumentsSection(instruments)
 
         @app.post("/admin/instruments/synced/enable-all")
@@ -440,7 +433,7 @@ def register(
             if error:
                 return error
 
-            repo = get_instrument_definition_repo()
+            repo = ctx.instrument_definition_repo
             for inst in repo.list_all():
                 repo.set_enabled(inst.id, True)
 
@@ -454,7 +447,7 @@ def register(
             if error:
                 return error
 
-            repo = get_instrument_definition_repo()
+            repo = ctx.instrument_definition_repo
             for inst in repo.list_all():
                 repo.set_enabled(inst.id, False)
 

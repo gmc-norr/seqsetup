@@ -1,12 +1,16 @@
 """Application context for dependency injection."""
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 from .repositories import IndexKitRepository, RunRepository, TestRepository
+from .repositories.api_token_repo import ApiTokenRepository
 from .repositories.application_profile_repo import ApplicationProfileRepository
 from .repositories.auth_config_repo import AuthConfigRepository
 from .repositories.instrument_config_repo import InstrumentConfigRepository
+from .repositories.instrument_definition_repo import InstrumentDefinitionRepository
+from .repositories.local_user_repo import LocalUserRepository
+from .repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .repositories.sample_api_config_repo import SampleApiConfigRepository
 from .repositories.test_profile_repo import TestProfileRepository
 
@@ -26,7 +30,7 @@ class AppContext:
             ...
         )
         # In routes:
-        run = ctx.run_repo.get(run_id)
+        run = ctx.run_repo.get_by_id(run_id)
     """
 
     # Core repositories (always required)
@@ -40,6 +44,13 @@ class AppContext:
     instrument_config_repo: Optional[InstrumentConfigRepository] = None
     auth_config_repo: Optional[AuthConfigRepository] = None
     sample_api_config_repo: Optional[SampleApiConfigRepository] = None
+    api_token_repo: Optional[ApiTokenRepository] = None
+    local_user_repo: Optional[LocalUserRepository] = None
+    instrument_definition_repo: Optional[InstrumentDefinitionRepository] = None
+    profile_sync_config_repo: Optional[ProfileSyncConfigRepository] = None
+
+    # Service factories (callables that return service instances)
+    get_github_sync_service: Optional[Callable] = None
 
     @property
     def instrument_config(self):

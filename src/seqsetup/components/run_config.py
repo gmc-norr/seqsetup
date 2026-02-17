@@ -4,6 +4,7 @@ from fasthtml.common import *
 
 from ..data.instruments import get_flowcells_for_instrument
 from ..models.sequencing_run import RunCycles, SequencingRun
+from ..utils.html import escape_html_attr
 
 
 def RunConfigPanel(run: SequencingRun):
@@ -33,7 +34,7 @@ def RunMetadataDisplay(run: SequencingRun):
     return Div(
         Div(
             Span("UUID: ", cls="metadata-label"),
-            Span(run.id, cls="metadata-value uuid-value", title=run.id),
+            Span(run.id, cls="metadata-value uuid-value", title=escape_html_attr(run.id)),
             cls="metadata-item",
         ),
         Div(
