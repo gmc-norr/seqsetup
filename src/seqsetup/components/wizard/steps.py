@@ -173,6 +173,7 @@ def WizardStep2(run: SequencingRun, index_kits: list[IndexKit], sample_api_enabl
                 ),
                 # Sample table on the right with drop zones
                 Div(
+                    H3(f"Samples ({len(run.samples)})"),
                     SampleTableWizard(run, show_drop_zones=True),
                     cls="wizard-sample-panel",
                 ),

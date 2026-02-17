@@ -22,16 +22,18 @@ class SampleApiError(Exception):
 
 
 def _validate_url(url: str) -> None:
-    """Validate that a URL is safe to fetch (HTTPS with public hostname)."""
+    """Validate that a URL uses HTTP(S) and has a hostname.
+
+    Note: The base URL is configured by an admin through the settings UI,
+    not by end users, so we allow localhost/private IPs (needed for local
+    LIMS servers and development with the mock API).
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise SampleApiError(f"Unsupported URL scheme: {parsed.scheme}")
     hostname = parsed.hostname or ""
     if not hostname:
         raise SampleApiError("URL has no hostname")
-    # Block requests to localhost/private IPs to prevent SSRF
-    if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
-        raise SampleApiError(f"Requests to {hostname} are not allowed")
 
 
 def _api_get(url: str, api_key: str = "") -> dict | list:

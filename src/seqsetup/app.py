@@ -1,5 +1,6 @@
 """Main FastHTML application."""
 
+import hashlib
 from pathlib import Path
 
 from fasthtml.common import *
@@ -30,12 +31,22 @@ init_repos()
 # Create auth middleware (needs api_token_repo for Bearer token verification)
 bware = make_auth_beforeware(get_api_token_repo)
 
+# Cache-busting hash for static assets
+def _asset_hash(filename: str) -> str:
+    path = static_dir / filename
+    if path.exists():
+        return hashlib.md5(path.read_bytes()).hexdigest()[:8]
+    return "0"
+
+_css_v = _asset_hash("css/app.css")
+_js_v = _asset_hash("js/app.js")
+
 # Create FastHTML app with session support
 app, rt = fast_app(
     hdrs=[
         Link(rel="icon", type="image/svg+xml", href="/img/favicon.svg"),
-        Link(rel="stylesheet", href="/css/app.css"),
-        Script(src="/js/app.js"),
+        Link(rel="stylesheet", href=f"/css/app.css?v={_css_v}"),
+        Script(src=f"/js/app.js?v={_js_v}"),
     ],
     pico=False,  # Use custom CSS instead of Pico
     secret_key=SESSION_SECRET,

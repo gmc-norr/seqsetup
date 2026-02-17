@@ -1,0 +1,23 @@
+Bootstrap: docker
+From: ghcr.io/prefix-dev/pixi:latest
+
+%files
+    pixi.toml /app/pixi.toml
+    pixi.lock /app/pixi.lock
+    src/ /app/src/
+    config/ /app/config/
+
+%post
+    cd /app
+    pixi install --locked
+
+%environment
+    export PYTHONPATH=/app/src
+
+%runscript
+    cd /app
+    exec pixi run serve
+
+%labels
+    Author par.larsson@umu.se
+    Description SeqSetup - Illumina sequencing run configuration

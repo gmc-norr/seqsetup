@@ -105,10 +105,13 @@ function handleDragStart(event, indexId, indexType) {
 
 function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     event.preventDefault();
-    event.target.classList.remove('drag-over');
+
+    // Find the drop zone element reliably (event.target may be a child node)
+    const dropZone = event.currentTarget || event.target.closest('.drop-zone') || event.target;
+    dropZone.classList.remove('drag-over');
 
     // Get context from drop zone data attribute (for simplified wizard views)
-    const context = event.target.dataset.context || '';
+    const context = dropZone.dataset ? (dropZone.dataset.context || '') : '';
 
     // Get existing_ids from sample-table data attribute (for filtering in add_step2)
     const sampleTable = document.getElementById('sample-table');
@@ -141,20 +144,43 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     if (indexes.length === 1) {
         // Single index assignment
         const indexData = indexes[0];
-        const values = { context: context, existing_ids: existingIds };
 
-        if (indexData.type === 'pair') {
-            values.index_pair_id = indexData.id;
+        // Check if samples are selected via checkboxes — assign to all selected
+        const checkedIds = getSelectedSampleIds();
+        if (checkedIds.length > 0) {
+            // Include the drop target if not already selected
+            if (!checkedIds.includes(sampleId)) {
+                checkedIds.push(sampleId);
+            }
+            htmx.ajax('POST', `/runs/${runId}/samples/assign-index-to-selected`, {
+                target: '#sample-table',
+                swap: 'outerHTML',
+                values: {
+                    sample_ids: JSON.stringify(checkedIds),
+                    index_pair_id: indexData.type === 'pair' ? indexData.id : '',
+                    index_id: indexData.type !== 'pair' ? indexData.id : '',
+                    index_type: indexData.type !== 'pair' ? indexData.type : '',
+                    context: context,
+                    existing_ids: existingIds
+                }
+            });
         } else {
-            values.index_id = indexData.id;
-            values.index_type = indexData.type;
-        }
+            // No samples selected — assign to just the drop target
+            const values = { context: context, existing_ids: existingIds };
 
-        htmx.ajax('POST', `/runs/${runId}/samples/${sampleId}/assign-index`, {
-            target: `#sample-row-${sampleId}`,
-            swap: 'outerHTML',
-            values: values
-        });
+            if (indexData.type === 'pair') {
+                values.index_pair_id = indexData.id;
+            } else {
+                values.index_id = indexData.id;
+                values.index_type = indexData.type;
+            }
+
+            htmx.ajax('POST', `/runs/${runId}/samples/${sampleId}/assign-index`, {
+                target: `#sample-row-${sampleId}`,
+                swap: 'outerHTML',
+                values: values
+            });
+        }
     } else {
         // Multi-index assignment - assign to consecutive samples starting from drop target
         // Use htmx.ajax to properly handle OOB swaps for navigation

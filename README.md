@@ -233,14 +233,14 @@ SeqSetup follows a layered architecture with clear separation of concerns:
 │  Browser (HTMX)                                 │
 ├─────────────────────────────────────────────────┤
 │  FastHTML App (app.py)                          │
-│  ├── Middleware (middleware.py) — auth           │
+│  ├── Middleware (middleware.py) — auth          │
 │  ├── Startup (startup.py) — init & DI           │
 │  └── Context (context.py) — shared state        │
 ├─────────────────────────────────────────────────┤
-│  Routes (routes/)         │ Components           │
-│  Request handling,        │ (components/)        │
-│  input validation,        │ Server-rendered      │
-│  orchestration            │ HTML via FastHTML     │
+│  Routes (routes/)         │ Components          │
+│  Request handling,        │ (components/)       │
+│  input validation,        │ Server-rendered     │
+│  orchestration            │ HTML via FastHTML   │
 ├─────────────────────────────────────────────────┤
 │  Services (services/)                           │
 │  Business logic: validation, export, auth,      │
@@ -523,4 +523,4 @@ The mock server implements the OpenAPI spec defined in `igene_openapi.json`.
 
 ## Author
 
-Pär Larsson <par.larsson@umu.se>
+Pär Larsson <par.g.larsson@regionvasterbotten.se>

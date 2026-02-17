@@ -697,14 +697,15 @@ body {
 
 /* Drop zone */
 .drop-zone {
-    padding: 0.25rem 0.4rem;
-    border: 2px dashed var(--border);
+    padding: 0.3rem 0.5rem;
+    border: 1.5px dashed var(--border);
     border-radius: 4px;
     text-align: center;
     color: var(--text-muted);
     font-size: 0.75rem;
     min-width: 100px;
     transition: all 0.2s;
+    background: var(--bg);
 }
 
 .drop-zone.drag-over {
@@ -1700,14 +1701,15 @@ body {
 /* Wizard Step 2 (Samples & Indexes) layout */
 .wizard-step3-layout {
     display: grid;
-    grid-template-columns: 350px 1fr;
-    gap: 1.5rem;
+    grid-template-columns: 320px 1fr;
+    gap: 1rem;
 }
 
 .wizard-index-panel {
-    background: var(--bg);
+    background: var(--card-bg);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 0.75rem;
+    padding: 1rem;
     height: fit-content;
     max-height: 800px;
     overflow-y: auto;
@@ -1715,12 +1717,24 @@ body {
 
 .wizard-index-panel h3 {
     margin-top: 0;
-    margin-bottom: 0.5rem;
-    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+    font-weight: 600;
 }
 
 .wizard-sample-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
     overflow-x: auto;
+}
+
+.wizard-sample-panel h3 {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+    font-weight: 600;
 }
 
 .index-kits-compact {
@@ -1869,21 +1883,21 @@ body {
 
 /* Drop zones for different index types */
 .drop-zone.i7-drop {
-    border-color: #93c5fd;
+    border-color: #bfdbfe;
 }
 
 .drop-zone.i7-drop.drag-over {
     border-color: #2563eb;
-    background: rgba(37, 99, 235, 0.1);
+    background: rgba(37, 99, 235, 0.08);
 }
 
 .drop-zone.i5-drop {
-    border-color: #fdba74;
+    border-color: #fed7aa;
 }
 
 .drop-zone.i5-drop.drag-over {
     border-color: #ea580c;
-    background: rgba(234, 88, 12, 0.1);
+    background: rgba(234, 88, 12, 0.08);
 }
 
 /* Index assigned display with clear button */

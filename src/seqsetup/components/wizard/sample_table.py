@@ -359,6 +359,10 @@ def NewSamplesTableWizard(run: SequencingRun, samples: list, index_kits: list[In
         show_i5_column = any(not kit.is_single() for kit in index_kits)
 
     header_cells = [
+        Th(
+            Input(type="checkbox", cls="select-all-checkbox", onclick="toggleSelectAllSamples(this)"),
+            cls="checkbox-cell",
+        ),
         Th("Sample ID"),
         Th("Test ID"),
         Th("Worksheet"),
@@ -374,7 +378,7 @@ def NewSamplesTableWizard(run: SequencingRun, samples: list, index_kits: list[In
             Thead(Tr(*header_cells)),
             Tbody(
                 *[
-                    SampleRowWizard(sample, run.id, run.run_cycles, show_drop_zones=True, show_i5_column=show_i5_column, num_lanes=1, show_bulk_actions=False, context=context)
+                    SampleRowWizard(sample, run.id, run.run_cycles, show_drop_zones=True, show_i5_column=show_i5_column, num_lanes=1, show_bulk_actions=False, context=context, show_checkboxes=True)
                     for sample in samples
                 ]
             ),
@@ -565,7 +569,7 @@ def _TestIdDropdown(test_profiles: list = None):
     )
 
 
-def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = False, show_i5_column: bool = True, num_lanes: int = 1, show_bulk_actions: bool = True, context: str = "", editable: bool = True):
+def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = False, show_i5_column: bool = True, num_lanes: int = 1, show_bulk_actions: bool = True, context: str = "", editable: bool = True, show_checkboxes: bool = None):
     """Sample row for wizard with run_id in paths.
 
     Args:
@@ -575,9 +579,10 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
         show_drop_zones: Whether to show index drop zones
         show_i5_column: Whether to show i5 index column
         num_lanes: Number of lanes
-        show_bulk_actions: Whether to show checkbox and bulk action columns
+        show_bulk_actions: Whether to show bulk action columns (lanes, override cycles, mismatches)
         context: Context string for HTMX endpoints (e.g., "add_step2" for simplified view)
         editable: Whether the row allows editing (delete button, etc.)
+        show_checkboxes: Whether to show selection checkboxes. None = derive from show_bulk_actions and editable.
     """
     # Build context query string for HTMX endpoints
     ctx_param = f"?context={context}" if context else ""
@@ -587,9 +592,10 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
 
     row_class = "sample-row has-index" if has_index else "sample-row"
 
-    # Checkbox for selection (only if bulk actions enabled AND editable)
+    # Checkbox for selection (decoupled from bulk actions)
+    effective_checkboxes = show_checkboxes if show_checkboxes is not None else (show_bulk_actions and editable)
     checkbox_cell = None
-    if show_bulk_actions and editable:
+    if effective_checkboxes:
         checkbox_cell = Td(
             Input(
                 type="checkbox",
@@ -767,7 +773,7 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
             )
 
         cells = []
-        if show_bulk_actions and editable:
+        if effective_checkboxes:
             cells.append(checkbox_cell)
         cells.extend([
             Td(sample.sample_id),
@@ -818,7 +824,7 @@ def SampleRowWizard(sample, run_id: str, run_cycles, show_drop_zones: bool = Fal
     else:
         # Simple row without drop zones
         cells = []
-        if show_bulk_actions and editable:
+        if effective_checkboxes:
             cells.append(checkbox_cell)
         cells.extend([
             Td(sample.sample_id),

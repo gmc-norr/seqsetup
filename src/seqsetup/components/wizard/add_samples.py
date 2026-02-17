@@ -161,6 +161,7 @@ def AddSamplesStep2(run: SequencingRun, index_kits: list[IndexKit], existing_sam
                 ) if new_samples and not all_have_indexes else None,
                 # Sample table on the right with drop zones (no bulk actions in this wizard)
                 Div(
+                    H3(f"Samples ({len(new_samples)})") if new_samples else None,
                     P("All samples have indexes assigned.", cls="all-indexed-message") if all_have_indexes and new_samples else None,
                     NewSamplesTableWizard(run, new_samples, index_kits, context="add_step2", existing_ids=existing_ids_param) if new_samples else None,
                     cls="wizard-sample-panel",

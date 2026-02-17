@@ -445,6 +445,89 @@ def register(app, rt, ctx: AppContext):
 
         return _sample_table_with_nav(run)
 
+    @app.post("/runs/{run_id}/samples/assign-index-to-selected")
+    async def assign_index_to_selected(req, run_id: str):
+        """
+        Assign one index to all selected (checked) samples.
+
+        Used when the user selects multiple samples via checkboxes and drops
+        a single index onto any of them (e.g., same i7 for all selected samples
+        in combinatorial mode).
+
+        Form data:
+            sample_ids: JSON array of sample IDs to assign to
+            index_pair_id: For unique dual mode (pre-paired indexes)
+            index_id + index_type: For combinatorial/single mode (individual indexes)
+            context: Response format selector ("add_step2" for simplified view)
+            existing_ids: For add_step2 filtering
+        """
+        form = await req.form()
+        sample_ids_json = form.get("sample_ids", "")
+        index_pair_id = form.get("index_pair_id", "")
+        index_id = form.get("index_id", "")
+        index_type = form.get("index_type", "")
+        context = form.get("context", "")
+        existing_ids = form.get("existing_ids", "")
+
+        if not sample_ids_json:
+            return Response("Missing sample_ids", status_code=400)
+
+        run = ctx.run_repo.get_by_id(run_id)
+        if not run:
+            return Response("Run not found", status_code=404)
+
+        if err := check_run_editable(run):
+            return err
+
+        try:
+            sample_ids = json.loads(sample_ids_json)
+        except json.JSONDecodeError:
+            return Response("Invalid sample_ids format", status_code=400)
+
+        # Look up the index once
+        kit = None
+        index_pair = None
+        index = None
+
+        if index_pair_id:
+            index_pair, kit = ctx.index_kit_repo.find_index_pair_with_kit(index_pair_id)
+            if not index_pair:
+                return Response("Index pair not found", status_code=404)
+        elif index_id and index_type:
+            index, kit = ctx.index_kit_repo.find_index_with_kit(index_id)
+            if not index:
+                return Response("Index not found", status_code=404)
+        else:
+            return Response("Missing index_pair_id or index_id/index_type", status_code=400)
+
+        # Assign the same index to all selected samples
+        for sid in sample_ids:
+            sample = run.get_sample(sid)
+            if not sample:
+                continue
+
+            if index_pair:
+                sample.assign_index(index_pair)
+            elif index_type == "i7":
+                sample.assign_index1(index)
+            elif index_type == "i5":
+                sample.assign_index2(index)
+
+            sample.index_kit_name = kit.name
+            _apply_kit_defaults(sample, kit)
+            _update_override_cycles(sample, run)
+
+        run.touch(updated_by=get_username(req))
+        ctx.run_repo.save(run)
+
+        # Return the sample table based on context
+        if context == "add_step2":
+            existing_ids_set = set(id.strip() for id in existing_ids.split(",") if id.strip()) if existing_ids else set()
+            new_samples = [s for s in run.samples if s.id not in existing_ids_set]
+            return NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
+
+        return _sample_table_with_nav(run)
+
     @app.post("/runs/{run_id}/samples/set-lanes")
     async def set_lanes_bulk(req, run_id: str):
         """
@@ -769,9 +852,10 @@ def register(app, rt, ctx: AppContext):
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        # Return simplified row for add_step2 context
+        # Return simplified row for add_step2 context (with checkboxes for multi-select drop)
         show_bulk = context != "add_step2"
-        return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes, show_bulk_actions=show_bulk, context=context)
+        show_cb = True if context == "add_step2" else None
+        return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes, show_bulk_actions=show_bulk, context=context, show_checkboxes=show_cb)
 
     @app.post("/runs/{run_id}/samples/{id}/clear-index")
     def clear_index(req, run_id: str, id: str, index_type: str = "", context: str = ""):
@@ -802,9 +886,10 @@ def register(app, rt, ctx: AppContext):
             run.touch(updated_by=get_username(req))
             ctx.run_repo.save(run)
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-            # Return simplified row for add_step2 context
+            # Return simplified row for add_step2 context (with checkboxes for multi-select drop)
             show_bulk = context != "add_step2"
-            return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes, show_bulk_actions=show_bulk, context=context)
+            show_cb = True if context == "add_step2" else None
+            return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes, show_bulk_actions=show_bulk, context=context, show_checkboxes=show_cb)
 
         return ""
 
