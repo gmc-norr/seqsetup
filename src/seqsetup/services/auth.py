@@ -48,8 +48,16 @@ class AuthService:
                     f"User config file not found: {self.config_path}"
                 )
             with open(self.config_path) as f:
-                config = yaml.safe_load(f)
-            self._users_cache = config.get("users", {})
+                config = yaml.safe_load(f) or {}
+
+            if not isinstance(config, dict):
+                raise ValueError("Invalid user config format: expected a mapping at top level")
+
+            users = config.get("users", {})
+            if not isinstance(users, dict):
+                raise ValueError("Invalid user config format: 'users' must be a mapping")
+
+            self._users_cache = users
         return self._users_cache
 
     def reload_config(self) -> None:
@@ -142,7 +150,8 @@ class AuthService:
         # Fall back to YAML config file
         try:
             users = self._load_users()
-        except FileNotFoundError:
+        except (FileNotFoundError, ValueError, yaml.YAMLError):
+            logger.error("Invalid YAML user configuration in %s", self.config_path)
             raise AuthenticationError("Invalid username or password")
 
         if username not in users:

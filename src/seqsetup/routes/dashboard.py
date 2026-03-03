@@ -8,6 +8,7 @@ from ..components.dashboard import DashboardContent
 from ..components.layout import AppShell
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus
+from .utils import check_status_transition
 
 
 def register(app, rt, ctx: AppContext):
@@ -44,6 +45,10 @@ def register(app, rt, ctx: AppContext):
 
         if run.status == RunStatus.ARCHIVED:
             return Response("Run is already archived", status_code=403)
+
+        # Enforce the same state machine used by the run detail routes.
+        if err := check_status_transition(run.status, RunStatus.ARCHIVED):
+            return err
 
         # Remember which tab we came from
         previous_tab = "ready" if run.status == RunStatus.READY else "draft"

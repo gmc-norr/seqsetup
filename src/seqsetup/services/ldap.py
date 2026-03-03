@@ -218,7 +218,7 @@ class LDAPService:
             LDAPError: If authentication fails
         """
         try:
-            from ldap3 import Connection, SIMPLE, SUBTREE
+            from ldap3 import Connection, SIMPLE
         except ImportError:
             raise LDAPError("ldap3 package is not installed. Run: pip install ldap3")
 
@@ -229,17 +229,21 @@ class LDAPService:
         conn = self._bind_connection()
 
         try:
-            # Escape username to prevent LDAP injection
-            safe_username = self._escape_ldap_filter(username)
+            user_dn = self._get_user_dn(username, conn)
+            if not user_dn:
+                raise LDAPError("Invalid username or password")
 
-            # Search for user
-            search_filter = self.config.user_search_filter.replace("{username}", safe_username)
-            search_base = self.config.user_search_base or self.config.base_dn
+            # Get user attributes
+            display_name = username
+            email = None
+            groups = []
 
+            # Fetch attributes from the resolved DN. This supports both
+            # search-based lookup and direct user_dn_pattern configurations.
             conn.search(
-                search_base=search_base,
-                search_filter=search_filter,
-                search_scope=SUBTREE,
+                search_base=user_dn,
+                search_filter="(objectClass=*)",
+                search_scope="BASE",
                 attributes=[
                     self.config.username_attribute,
                     self.config.display_name_attribute,
@@ -248,31 +252,23 @@ class LDAPService:
                 ],
             )
 
-            if not conn.entries:
-                raise LDAPError("Invalid username or password")
+            if conn.entries:
+                user_entry = conn.entries[0]
 
-            user_entry = conn.entries[0]
-            user_dn = user_entry.entry_dn
+                if hasattr(user_entry, self.config.display_name_attribute):
+                    attr = getattr(user_entry, self.config.display_name_attribute)
+                    if attr and attr.value:
+                        display_name = str(attr.value)
 
-            # Get user attributes
-            display_name = username
-            email = None
-            groups = []
+                if hasattr(user_entry, self.config.email_attribute):
+                    attr = getattr(user_entry, self.config.email_attribute)
+                    if attr and attr.value:
+                        email = str(attr.value)
 
-            if hasattr(user_entry, self.config.display_name_attribute):
-                attr = getattr(user_entry, self.config.display_name_attribute)
-                if attr and attr.value:
-                    display_name = str(attr.value)
-
-            if hasattr(user_entry, self.config.email_attribute):
-                attr = getattr(user_entry, self.config.email_attribute)
-                if attr and attr.value:
-                    email = str(attr.value)
-
-            if hasattr(user_entry, self.config.group_membership_attribute):
-                attr = getattr(user_entry, self.config.group_membership_attribute)
-                if attr:
-                    groups = list(attr.values) if hasattr(attr, "values") else []
+                if hasattr(user_entry, self.config.group_membership_attribute):
+                    attr = getattr(user_entry, self.config.group_membership_attribute)
+                    if attr:
+                        groups = list(attr.values) if hasattr(attr, "values") else []
 
         finally:
             conn.unbind()

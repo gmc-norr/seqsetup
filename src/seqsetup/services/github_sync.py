@@ -77,6 +77,7 @@ class GitHubSyncService:
                 config.github_branch,
                 config.application_profiles_path,
                 self._parse_application_profile,
+                strict=True,
             )
             logger.info(f"Fetched {len(app_profiles)} application profiles")
 
@@ -87,6 +88,7 @@ class GitHubSyncService:
                 config.github_branch,
                 config.test_profiles_path,
                 self._parse_test_profile,
+                strict=True,
             )
             logger.info(f"Fetched {len(test_profiles)} test profiles")
 
@@ -98,6 +100,7 @@ class GitHubSyncService:
                     repo,
                     config.github_branch,
                     config.instruments_path,
+                    strict=True,
                 )
                 logger.info(f"Fetched {len(instruments)} instrument definitions")
 
@@ -109,8 +112,36 @@ class GitHubSyncService:
                     repo,
                     config.github_branch,
                     config.index_kits_path,
+                    strict=True,
                 )
                 logger.info(f"Fetched {len(index_kits)} index kits")
+
+            # Guard against accidental data loss on partial/failed fetches.
+            # If we already have synced data, never replace it with an empty fetch result.
+            existing_app_profiles = self.app_profile_repo.collection.count_documents({})
+            existing_test_profiles = self.test_profile_repo.collection.count_documents({})
+            self._guard_against_destructive_replace(
+                existing_app_profiles, len(app_profiles), "application profiles"
+            )
+            self._guard_against_destructive_replace(
+                existing_test_profiles, len(test_profiles), "test profiles"
+            )
+
+            if config.sync_instruments_enabled and self.instrument_definition_repo:
+                existing_instruments = (
+                    self.instrument_definition_repo.collection.count_documents({})
+                )
+                self._guard_against_destructive_replace(
+                    existing_instruments, len(instruments), "instrument definitions"
+                )
+
+            if config.sync_index_kits_enabled and self.index_kit_repo:
+                existing_synced_index_kits = self.index_kit_repo.collection.count_documents(
+                    {"source": "github"}
+                )
+                self._guard_against_destructive_replace(
+                    existing_synced_index_kits, len(index_kits), "synced index kits"
+                )
 
             # Save to database (replace all)
             self.app_profile_repo.delete_all()
@@ -253,6 +284,7 @@ class GitHubSyncService:
         branch: str,
         path: str,
         parser,
+        strict: bool = False,
     ) -> list:
         """Fetch YAML files from directory recursively and parse them.
 
@@ -271,6 +303,8 @@ class GitHubSyncService:
         try:
             contents = self._fetch_directory_contents(owner, repo, branch, path)
         except GitHubSyncError as e:
+            if strict:
+                raise
             logger.warning(f"Could not fetch {path}: {e}")
             return profiles
 
@@ -282,7 +316,7 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_profiles = self._fetch_profiles_recursive(
-                    owner, repo, branch, item_path, parser
+                    owner, repo, branch, item_path, parser, strict=False
                 )
                 profiles.extend(sub_profiles)
 
@@ -310,6 +344,7 @@ class GitHubSyncService:
         repo: str,
         branch: str,
         path: str,
+        strict: bool = False,
     ) -> list[InstrumentDefinition]:
         """Fetch instrument definitions from GitHub.
 
@@ -332,6 +367,8 @@ class GitHubSyncService:
         try:
             contents = self._fetch_directory_contents(owner, repo, branch, path)
         except GitHubSyncError as e:
+            if strict:
+                raise
             logger.warning(f"Could not fetch instruments from {path}: {e}")
             return instruments
 
@@ -343,6 +380,7 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_instruments = self._fetch_instruments(owner, repo, branch, item_path)
+                # Subdirectories are best-effort; top-level fetch is strict.
                 instruments.extend(sub_instruments)
 
             elif item_type == "file" and item_name.endswith((".yaml", ".yml")):
@@ -453,6 +491,7 @@ class GitHubSyncService:
         repo: str,
         branch: str,
         path: str,
+        strict: bool = False,
     ) -> list[IndexKit]:
         """Fetch index kit definitions from GitHub.
 
@@ -473,6 +512,8 @@ class GitHubSyncService:
         try:
             contents = self._fetch_directory_contents(owner, repo, branch, path)
         except GitHubSyncError as e:
+            if strict:
+                raise
             logger.warning(f"Could not fetch index kits from {path}: {e}")
             return index_kits
 
@@ -484,6 +525,7 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_kits = self._fetch_index_kits(owner, repo, branch, item_path)
+                # Subdirectories are best-effort; top-level fetch is strict.
                 index_kits.extend(sub_kits)
 
             elif item_type == "file" and item_name.endswith((".yaml", ".yml")):
@@ -518,3 +560,13 @@ class GitHubSyncService:
                         logger.warning(f"Failed to process index kit {item_path}: {e}")
 
         return index_kits
+
+    @staticmethod
+    def _guard_against_destructive_replace(
+        existing_count: int, fetched_count: int, data_type: str
+    ) -> None:
+        """Fail-safe guard: never replace non-empty synced data with an empty fetch."""
+        if existing_count > 0 and fetched_count == 0:
+            raise GitHubSyncError(
+                f"Refusing to replace {existing_count} existing {data_type} with 0 fetched items"
+            )

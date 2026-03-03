@@ -1,18 +1,12 @@
-# SeqSetup Development User Credentials
-# IMPORTANT: This file should NOT be committed to version control
-# Passwords are stored as bcrypt hashes
+# SeqSetup local fallback credentials.
+# Keep this file out of production builds and populate credentials per environment.
+#
+# Format:
+# users:
+#   username:
+#     display_name: "User Name"
+#     email: "user@example.com"
+#     password_hash: "$2b$12$..."  # bcrypt hash
+#     role: admin|standard
 
-users:
-  admin:
-    display_name: "Administrator"
-    email: "admin@example.com"
-    # Password: admin123 (for development only)
-    password_hash: "$2b$12$9HxXUATPGswgLl9PEUgvquxm.ZeK3i4D5sNHQ6lKmluUS713CNSNe"
-    role: admin
-
-  user:
-    display_name: "Standard User"
-    email: "user@example.com"
-    # Password: user123 (for development only)
-    password_hash: "$2b$12$tnksEXs.4JQD9fmT2bfj9.lterxNWyjuJbDHO/2qE.nnCmNSPUMEG"
-    role: standard
+users: {}

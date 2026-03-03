@@ -74,14 +74,20 @@ The application starts at `http://localhost:5001`.
 
 ### 5. Log in
 
-Default development credentials (defined in `config/users.yaml`):
+No default passwords are committed.
 
-| Username | Password  | Role     |
-|----------|-----------|----------|
-| `admin`  | `admin123`| Admin    |
-| `user`   | `user123` | Standard |
+Create a bootstrap user in `config/users.yaml` with a bcrypt hash:
 
-**These credentials are for development only.** See [Disabling Default Credentials](#disabling-default-credentials) for production deployments.
+```yaml
+users:
+  admin:
+    display_name: "Administrator"
+    email: "admin@example.com"
+    password_hash: "$2b$12$..."  # bcrypt hash
+    role: admin
+```
+
+Use `AuthService.hash_password(...)` (or `bcrypt`) to generate the hash.
 
 ## Running Tests
 
@@ -109,7 +115,7 @@ Environment variables take precedence over configuration files.
 All configuration files are in the `config/` directory:
 
 - **`mongodb.yaml`** -- MongoDB connection settings (URI and database name).
-- **`users.yaml`** -- Local user credentials (bcrypt-hashed passwords). Used during development; production deployments should use LDAP/AD.
+- **`users.yaml`** -- File-based fallback users (bcrypt-hashed passwords). Empty by default; add only bootstrap users needed for your environment.
 - **`instruments.yaml`** -- Supported sequencing instruments, flowcell types, reagent kits, SBS chemistry definitions, and default cycle configurations.
 - **`profiles/`** -- Application and test profile definitions (can be synced from GitHub).
 - **`indexes/`** -- Bundled index kit definitions in CSV and YAML formats.
@@ -118,15 +124,15 @@ All configuration files are in the `config/` directory:
 
 A session secret key is stored in `.sesskey` at the project root. It is auto-generated on first startup if it does not exist. Keep this file out of version control. For production, set `SEQSETUP_SESSION_SECRET` instead.
 
-### Disabling Default Credentials
+### File-Based Fallback Users
 
-The default development users in `config/users.yaml` should not be available in production. The authentication system checks credentials in this order:
+The authentication system checks credentials in this order:
 
 1. **LDAP/AD** (if configured and enabled)
 2. **Local users in MongoDB** (managed through the admin interface)
 3. **`config/users.yaml`** (file-based fallback)
 
-To disable the default credentials, use one or more of the following approaches:
+To disable file-based fallback users, use one or more of the following approaches:
 
 **Remove the YAML users.** Replace the contents of `config/users.yaml` with an empty user list:
 

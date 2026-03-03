@@ -37,6 +37,42 @@ def _apply_kit_defaults(sample: Sample, kit: IndexKit) -> None:
         sample.read2_override_pattern = kit.default_read2_override
 
 
+def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
+    """Validate and normalize lane selection payload.
+
+    Returns sorted unique lanes, or None if the payload is invalid.
+    Empty list means "all lanes".
+    """
+    if not isinstance(raw_lanes, list):
+        return None
+
+    lanes: list[int] = []
+    seen: set[int] = set()
+
+    for lane in raw_lanes:
+        if isinstance(lane, bool):
+            return None
+
+        if isinstance(lane, str):
+            lane = lane.strip()
+            if not lane:
+                continue
+            if not lane.isdigit():
+                return None
+            lane = int(lane)
+        elif not isinstance(lane, int):
+            return None
+
+        if lane < 1 or lane > max_lanes:
+            return None
+
+        if lane not in seen:
+            seen.add(lane)
+            lanes.append(lane)
+
+    return sorted(lanes)
+
+
 def register(app, rt, ctx: AppContext):
     """Register sample routes."""
 
@@ -391,6 +427,8 @@ def register(app, rt, ctx: AppContext):
             indexes_data = json.loads(indexes_json)
         except json.JSONDecodeError:
             return Response("Invalid request data", status_code=400)
+        if not isinstance(indexes_data, list):
+            return Response("Invalid request data", status_code=400)
 
         # Find the starting sample index
         start_idx = None
@@ -402,35 +440,56 @@ def register(app, rt, ctx: AppContext):
         if start_idx is None:
             return Response("Start sample not found", status_code=404)
 
+        # Validate and resolve all index assignments before applying changes.
+        resolved_assignments = []
+        for idx_data in indexes_data:
+            if not isinstance(idx_data, dict):
+                return Response("Invalid request data", status_code=400)
+
+            idx_id = idx_data.get("id")
+            idx_type = idx_data.get("type", "pair")
+
+            if not isinstance(idx_id, str) or not idx_id:
+                return Response("Invalid request data", status_code=400)
+
+            if idx_type == "pair":
+                index_pair, kit = ctx.index_kit_repo.find_index_pair_with_kit(idx_id)
+                if not index_pair or not kit:
+                    return Response("Index pair not found", status_code=404)
+                resolved_assignments.append((idx_type, index_pair, kit))
+            elif idx_type == "i7":
+                index, kit = ctx.index_kit_repo.find_index_with_kit(idx_id)
+                if not index or not kit:
+                    return Response("Index not found", status_code=404)
+                resolved_assignments.append((idx_type, index, kit))
+            elif idx_type == "i5":
+                index, kit = ctx.index_kit_repo.find_index_with_kit(idx_id)
+                if not index or not kit:
+                    return Response("Index not found", status_code=404)
+                resolved_assignments.append((idx_type, index, kit))
+            else:
+                return Response(f"Invalid index type: {idx_type}", status_code=400)
+
         # Assign indexes to consecutive samples
-        for offset, idx_data in enumerate(indexes_data):
+        for offset, (idx_type, resolved_index, kit) in enumerate(resolved_assignments):
             sample_idx = start_idx + offset
             if sample_idx >= len(run.samples):
                 break  # No more samples to assign to
 
             sample = run.samples[sample_idx]
-            idx_id = idx_data.get("id")
-            idx_type = idx_data.get("type", "pair")
 
             if idx_type == "pair":
-                # Unique dual mode - assign pre-paired index
-                index_pair, kit = ctx.index_kit_repo.find_index_pair_with_kit(idx_id)
-                if index_pair:
-                    sample.assign_index(index_pair)
-                    sample.index_kit_name = kit.name
-                    _apply_kit_defaults(sample, kit)
+                sample.assign_index(resolved_index)
+                sample.index_kit_name = kit.name
+                _apply_kit_defaults(sample, kit)
             elif idx_type == "i7":
-                index, kit = ctx.index_kit_repo.find_index_with_kit(idx_id)
-                if index:
-                    sample.assign_index1(index)
-                    sample.index_kit_name = kit.name
-                    _apply_kit_defaults(sample, kit)
+                sample.assign_index1(resolved_index)
+                sample.index_kit_name = kit.name
+                _apply_kit_defaults(sample, kit)
             elif idx_type == "i5":
-                index, kit = ctx.index_kit_repo.find_index_with_kit(idx_id)
-                if index:
-                    sample.assign_index2(index)
-                    sample.index_kit_name = kit.name
-                    _apply_kit_defaults(sample, kit)
+                sample.assign_index2(resolved_index)
+                sample.index_kit_name = kit.name
+                _apply_kit_defaults(sample, kit)
 
             _update_override_cycles(sample, run)
 
@@ -554,11 +613,23 @@ def register(app, rt, ctx: AppContext):
             lanes = json.loads(lanes_json)
         except json.JSONDecodeError:
             return Response("Invalid request data", status_code=400)
+        if not isinstance(sample_ids, list):
+            return Response("Invalid request data", status_code=400)
+
+        max_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
+        normalized_lanes = _normalize_lane_selection(lanes, max_lanes)
+        if normalized_lanes is None:
+            return Response(
+                f"Invalid lane selection. Use lane numbers between 1 and {max_lanes}.",
+                status_code=400,
+            )
+
+        selected_ids = {str(sample_id) for sample_id in sample_ids}
 
         # Update lanes for each selected sample
         for sample in run.samples:
-            if sample.id in sample_ids:
-                sample.lanes = sorted(lanes)
+            if sample.id in selected_ids:
+                sample.lanes = normalized_lanes
 
         run.touch(updated_by=get_username(req))
         ctx.run_repo.save(run)
@@ -954,4 +1025,3 @@ def register(app, rt, ctx: AppContext):
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes)
-
