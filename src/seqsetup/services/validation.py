@@ -108,6 +108,12 @@ class ValidationService:
         # Configuration validation (inline - many private helpers)
         configuration_errors = cls.validate_configuration(run, instrument_config)
 
+        # When profile repos are configured, every sample must have a test_id —
+        # the SampleSheet v2 exporter's profile-driven path silently drops samples
+        # without one, and emits no BCLConvert section at all if none are present.
+        if test_profile_repo and app_profile_repo and run.samples:
+            configuration_errors.extend(cls._validate_samples_have_test_id(run))
+
         # Get chemistry type for display purposes
         chemistry = get_chemistry_type(run.instrument_platform)
 
@@ -535,6 +541,40 @@ class ValidationService:
                     )
 
         return errors
+
+    @classmethod
+    def _validate_samples_have_test_id(
+        cls,
+        run: SequencingRun,
+    ) -> list[ConfigurationError]:
+        """Require every sample to have a test_id when profile repos are configured.
+
+        Without a test_id, the profile-driven SampleSheet v2 export path emits no
+        BCLConvert_Data row for the sample (and no BCLConvert section at all when
+        no sample has one). Block approval rather than ship an unusable sheet.
+        """
+        missing = [
+            sample.sample_id or sample.sample_name or sample.id
+            for sample in run.samples
+            if not sample.test_id
+        ]
+        if not missing:
+            return []
+
+        preview = ", ".join(missing[:5])
+        more = f" and {len(missing) - 5} more" if len(missing) > 5 else ""
+        return [
+            ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="missing_test_id",
+                message=(
+                    f"{len(missing)} sample(s) have no test_id assigned: {preview}{more}. "
+                    f"A test_id is required to determine which application profiles "
+                    f"(BCLConvert, DRAGEN, etc.) to apply during demultiplexing."
+                ),
+                sample_names=missing,
+            )
+        ]
 
     # -------------------------------------------------------------------------
     # Backward compatibility: expose validator classes and methods

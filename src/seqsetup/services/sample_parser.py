@@ -1,5 +1,7 @@
 """Sample parsing logic for pasted/uploaded sample data."""
 
+import csv
+import io
 import re
 from dataclasses import dataclass
 
@@ -111,12 +113,28 @@ def _is_header_row(parts: list[str]) -> bool:
     return False
 
 
+def _detect_delimiter(paste_data: str) -> str:
+    """Pick a single delimiter for the whole file.
+
+    Tab wins over comma when present anywhere — pasted CSV-from-spreadsheet
+    is almost always tab-delimited; only explicit comma-only paste uses ','.
+    Picking once per file (rather than per line) lets us use csv.reader,
+    which handles quoting correctly — a row with a quoted comma in the
+    sample ID would otherwise misparse and shift every downstream column.
+    """
+    if "\t" in paste_data:
+        return "\t"
+    return ","
+
+
 def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
     """
     Parse pasted sample data.
 
     Supports:
-    - Tab or comma-separated columns
+    - Tab or comma-separated columns (delimiter chosen for the whole input)
+    - Quoted fields (RFC 4180) so a sample ID containing a comma stays
+      intact rather than splitting the row
     - Optional header row (auto-detected and used for column mapping)
     - Columns: sample_id, test_id, index_i7, index_i5, index_pair_name, i7_name, i5_name
 
@@ -127,25 +145,22 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
         List of ParsedSample objects
     """
     samples = []
-    lines = paste_data.strip().split("\n")
+    if not paste_data or not paste_data.strip():
+        return samples
+
+    delimiter = _detect_delimiter(paste_data)
+    reader = csv.reader(io.StringIO(paste_data), delimiter=delimiter)
+    rows: list[list[str]] = []
+    for raw in reader:
+        if not any(cell.strip() for cell in raw):
+            continue  # skip wholly blank rows
+        rows.append([cell.strip() for cell in raw])
 
     # Default column mapping (no header)
     column_mapping = {"sample_id": 0, "test_id": 1, "index1": 2, "index2": 3}
     header_detected = False
 
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line:
-            continue
-
-        # Try tab separator first, then comma
-        if "\t" in line:
-            parts = [p.strip() for p in line.split("\t")]
-        elif "," in line:
-            parts = [p.strip() for p in line.split(",")]
-        else:
-            parts = [line.strip()]
-
+    for i, parts in enumerate(rows):
         # Check first non-empty line for header
         if i == 0 and _is_header_row(parts):
             column_mapping = _detect_column_mapping(parts)

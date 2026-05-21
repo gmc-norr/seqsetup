@@ -194,7 +194,7 @@ class SampleSheetV2Exporter:
                 row.append(i5_seq)
 
                 if has_per_sample_override:
-                    row.append(override or "")
+                    row.append(cls._escape_csv(override or ""))
 
                 if has_barcode_mismatch:
                     # Use sample-specific values or fall back to run defaults
@@ -233,7 +233,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenGermline_Settings]\n")
 
         if analysis.reference_genome:
-            output.write(f"ReferenceGenomeDir,{analysis.reference_genome}\n")
+            output.write(f"ReferenceGenomeDir,{cls._escape_csv(analysis.reference_genome)}\n")
 
         output.write("MapAlignOutFormat,cram\n")
         output.write("\n")
@@ -250,7 +250,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenSomatic_Settings]\n")
 
         if analysis.reference_genome:
-            output.write(f"ReferenceGenomeDir,{analysis.reference_genome}\n")
+            output.write(f"ReferenceGenomeDir,{cls._escape_csv(analysis.reference_genome)}\n")
 
         output.write("\n")
 
@@ -266,7 +266,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenRNA_Settings]\n")
 
         if analysis.reference_genome:
-            output.write(f"ReferenceGenomeDir,{analysis.reference_genome}\n")
+            output.write(f"ReferenceGenomeDir,{cls._escape_csv(analysis.reference_genome)}\n")
 
         output.write("\n")
 
@@ -307,8 +307,13 @@ class SampleSheetV2Exporter:
 
     @classmethod
     def _escape_csv(cls, value: str) -> str:
-        """Escape a value for CSV output."""
-        if "," in value or '"' in value or "\n" in value:
+        """Escape a value for CSV output.
+
+        Lone CR is quoted as well as LF — a Mac-style line ending pasted from
+        an upstream source would otherwise write a literal \\r mid-row and split
+        the Sample Sheet into the wrong number of columns.
+        """
+        if "," in value or '"' in value or "\n" in value or "\r" in value:
             return '"' + value.replace('"', '""') + '"'
         return value
 
@@ -338,34 +343,37 @@ class SampleSheetV2Exporter:
         if not samples_by_test:
             return
 
-        # Track which application profiles we've already written
-        written_profiles: set[tuple[str, str]] = set()
+        # Accumulate samples per ApplicationProfile across all referencing test_ids,
+        # then emit each section once with the unioned sample list. Otherwise samples
+        # whose test_id resolves to an already-seen ApplicationProfile would be
+        # silently dropped from the section's data rows.
+        profile_to_entry: dict[tuple[str, str], dict] = {}
+        profile_order: list[tuple[str, str]] = []  # preserve first-seen order for determinism
 
-        # For each test type, get application profiles and write sections
         for test_id, samples in samples_by_test.items():
-            # Look up TestProfile by test_type
             test_profile = test_profile_repo.get_by_test_type(test_id)
             if not test_profile:
                 continue
 
-            # Resolve each ApplicationProfile reference
             for app_ref in test_profile.application_profiles:
                 profile_key = (app_ref.profile_name, app_ref.profile_version)
 
-                # Skip if already written
-                if profile_key in written_profiles:
-                    continue
+                if profile_key not in profile_to_entry:
+                    app_profile = app_profile_repo.get_by_name_version(
+                        app_ref.profile_name, app_ref.profile_version
+                    )
+                    if not app_profile:
+                        continue
+                    profile_to_entry[profile_key] = {"profile": app_profile, "samples": []}
+                    profile_order.append(profile_key)
 
-                # Look up ApplicationProfile
-                app_profile = app_profile_repo.get_by_name_version(
-                    app_ref.profile_name, app_ref.profile_version
-                )
-                if not app_profile:
-                    continue
+                profile_to_entry[profile_key]["samples"].extend(samples)
 
-                # Write settings and data sections
-                cls._write_application_profile_section(output, app_profile, samples, run)
-                written_profiles.add(profile_key)
+        for key in profile_order:
+            entry = profile_to_entry[key]
+            cls._write_application_profile_section(
+                output, entry["profile"], entry["samples"], run
+            )
 
     @classmethod
     def _write_application_profile_section(
@@ -381,7 +389,9 @@ class SampleSheetV2Exporter:
         # Write Settings section
         output.write(f"[{app_name}_Settings]\n")
         for key, value in profile.settings.items():
-            output.write(f"{key},{value}\n")
+            output.write(
+                f"{cls._escape_csv(str(key))},{cls._escape_csv(str(value))}\n"
+            )
         output.write("\n")
 
         # Write Data section

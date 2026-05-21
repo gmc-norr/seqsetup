@@ -474,6 +474,30 @@ class TestSampleStringFields:
         sample = Sample(override_cycles="U8Y*,I8,U8Y*")
         assert sample.override_cycles == "U8Y*,I8,U8Y*"
 
+    def test_override_cycles_rejects_injected_text(self):
+        """Free-form text in override_cycles would flow into the Sample Sheet
+        and shift downstream columns. Reject any non-override character."""
+        with pytest.raises(ValueError, match="override_cycles"):
+            Sample(override_cycles="Y151,injected")
+
+    def test_override_cycles_rejects_html_tags(self):
+        with pytest.raises(ValueError, match="override_cycles"):
+            Sample(override_cycles="<script>alert(1)</script>")
+
+    def test_override_cycles_rejects_shell_injection_chars(self):
+        with pytest.raises(ValueError, match="override_cycles"):
+            Sample(override_cycles="Y151; rm -rf /")
+
+    def test_override_cycles_lowercased_normalised_to_uppercase(self):
+        """Operator-pasted lowercase override is accepted by uppercasing,
+        matching the Index sequence convention."""
+        sample = Sample(override_cycles="y151;i8n2;n2i8;y151")
+        assert sample.override_cycles == "Y151;I8N2;N2I8;Y151"
+
+    def test_override_cycles_empty_string_allowed(self):
+        sample = Sample(override_cycles="")
+        assert sample.override_cycles == ""
+
     def test_index1_override_pattern_none(self):
         sample = Sample(index1_override_pattern=None)
         assert sample.index1_override_pattern is None

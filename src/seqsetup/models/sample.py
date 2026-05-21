@@ -1,10 +1,18 @@
 """Sample data model."""
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 import uuid
 
 from .index import Index, IndexPair
+
+
+# Illumina override-cycle notation: Y (read), I (index), U (UMI), N (mask),
+# digits (counts), `*` (remaining-cycles wildcard), `;` (segment separator).
+# A comma is also tolerated for legacy stored values that used commas as
+# segment separators.
+_VALID_OVERRIDE_CYCLES_RE = re.compile(r'^[YIUN0-9*;,]*$')
 
 
 @dataclass
@@ -79,6 +87,17 @@ class Sample:
         # Filter lanes to only positive integers
         if self.lanes:
             self.lanes = [lane for lane in self.lanes if isinstance(lane, int) and not isinstance(lane, bool) and lane > 0]
+        # override_cycles: uppercase + restrict to override-notation characters.
+        # Free-form text would flow into the Sample Sheet and shift columns.
+        if self.override_cycles is not None:
+            self.override_cycles = self.override_cycles.upper()
+            if not _VALID_OVERRIDE_CYCLES_RE.match(self.override_cycles):
+                bad = sorted(set(self.override_cycles) - set("YIUN0123456789*;,"))
+                raise ValueError(
+                    f"Invalid characters in override_cycles "
+                    f"({''.join(repr(c) for c in bad)}). "
+                    f"Allowed: Y, I, U, N, digits, '*', ';', ','."
+                )
 
     @property
     def index1_sequence(self) -> Optional[str]:

@@ -13,9 +13,38 @@ from .validation_utils import hamming_distance
 class IndexCollisionValidator:
     """Validator for detecting index collisions and calculating distance matrices."""
 
-    # Minimum safe distances for collision detection
-    I7_ONLY_MIN_DISTANCE = 3  # i7-only: safe if distance >= 3
-    COMBINED_MIN_DISTANCE = 4  # i7+i5 combined: safe if distance >= 4
+    # Legacy class attributes kept for any external callers that read them.
+    # The actual collision thresholds are derived per-pair from the configured
+    # barcode_mismatches_index1/index2 (run-level or per-sample) — see
+    # _effective_mismatches and _check_sample_pair_collision below.
+    I7_ONLY_MIN_DISTANCE = 3
+    COMBINED_MIN_DISTANCE = 4
+
+    @classmethod
+    def _effective_mismatches(
+        cls,
+        sample1: Sample,
+        sample2: Sample,
+        run: SequencingRun,
+        index_num: int,
+    ) -> int:
+        """Return the pair-effective mismatch budget for the given index.
+
+        Uses the larger of the two samples' per-sample values (falling back to
+        the run-level default when a sample's value is None) — a collision
+        possible for either sample is a collision for the pair.
+        """
+        if index_num == 1:
+            m1 = sample1.barcode_mismatches_index1
+            m2 = sample2.barcode_mismatches_index1
+            default = run.barcode_mismatches_index1
+        else:
+            m1 = sample1.barcode_mismatches_index2
+            m2 = sample2.barcode_mismatches_index2
+            default = run.barcode_mismatches_index2
+        m1 = m1 if m1 is not None else default
+        m2 = m2 if m2 is not None else default
+        return max(m1, m2)
 
     @classmethod
     def validate_index_collisions(
@@ -124,14 +153,13 @@ class IndexCollisionValidator:
         """
         Check for index collisions among samples in a single lane.
 
-        Collision thresholds:
-        - i7 only (no i5): collision if i7 distance < 3
-        - i7 + i5 combined: collision if combined distance < 4
+        Thresholds are derived per-pair from configured barcode_mismatches_*
+        (see _check_sample_pair_collision).
 
         Args:
             samples: Samples in this lane
             lane: Lane number
-            run: Parent run (unused, kept for API compatibility)
+            run: Parent run (used to source mismatch tolerances)
 
         Returns:
             List of collisions found in this lane
@@ -144,7 +172,7 @@ class IndexCollisionValidator:
                 sample1 = samples[i]
                 sample2 = samples[j]
 
-                collision = cls._check_sample_pair_collision(sample1, sample2, lane)
+                collision = cls._check_sample_pair_collision(sample1, sample2, lane, run)
                 if collision:
                     collisions.append(collision)
 
@@ -156,20 +184,28 @@ class IndexCollisionValidator:
         sample1: Sample,
         sample2: Sample,
         lane: int,
+        run: SequencingRun = None,
     ) -> Optional[IndexCollision]:
         """
         Check if two samples have colliding indexes.
 
-        Uses combined distance when both samples have i5, otherwise i7-only distance.
+        Thresholds derive from configured barcode_mismatches_*:
+        - i7-only: collision iff d_i7 <= 2 * m_i7
+        - i7+i5 combined: collision iff d_combined <= 2 * (m_i7 + m_i5)
 
-        Thresholds:
-        - i7 only: collision if distance < 3 (i.e., distance <= 2)
-        - i7+i5 combined: collision if distance < 4 (i.e., distance <= 3)
+        Where m_i7 (m_i5) is the larger of the two samples' configured
+        barcode_mismatches_index1 (index2), falling back to the run-level
+        default. This matches the standard "two reads can collide within
+        their mismatch budgets when their Hamming distance is no more than
+        twice the budget" reasoning used in _validate_mismatch_threshold.
 
         Args:
             sample1: First sample
             sample2: Second sample
             lane: Lane number
+            run: Parent run (required for threshold derivation; kept Optional
+                for backward compatibility with any external callers — falls
+                back to legacy hardcoded thresholds when None)
 
         Returns:
             IndexCollision if collision detected, None otherwise
@@ -190,10 +226,14 @@ class IndexCollisionValidator:
         both_have_i5 = bool(i5_seq1 and i5_seq2)
 
         if both_have_i5:
-            # Use combined distance with threshold of 4
             i5_distance = hamming_distance(i5_seq1, i5_seq2)
             combined_distance = i7_distance + i5_distance
-            threshold = cls.COMBINED_MIN_DISTANCE - 1  # collision if distance <= 3
+            if run is not None:
+                m_i7 = cls._effective_mismatches(sample1, sample2, run, 1)
+                m_i5 = cls._effective_mismatches(sample1, sample2, run, 2)
+                threshold = 2 * (m_i7 + m_i5)
+            else:
+                threshold = cls.COMBINED_MIN_DISTANCE - 1  # legacy fallback
 
             if combined_distance <= threshold:
                 return IndexCollision(
@@ -209,8 +249,11 @@ class IndexCollisionValidator:
                     mismatch_threshold=threshold,
                 )
         else:
-            # Use i7-only distance with threshold of 3
-            threshold = cls.I7_ONLY_MIN_DISTANCE - 1  # collision if distance <= 2
+            if run is not None:
+                m_i7 = cls._effective_mismatches(sample1, sample2, run, 1)
+                threshold = 2 * m_i7
+            else:
+                threshold = cls.I7_ONLY_MIN_DISTANCE - 1  # legacy fallback
 
             if i7_distance <= threshold:
                 return IndexCollision(

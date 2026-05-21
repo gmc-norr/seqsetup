@@ -329,3 +329,15 @@ class TestSampleSheetV1ExporterSectionOrder:
         output = SampleSheetV1Exporter.export(miseq_run)
         assert "Dragen" not in output
         assert "BCLConvert" not in output
+
+
+class TestSampleSheetV1EscapeCsv:
+    """Direct unit tests for the v1 exporter's _escape_csv helper."""
+
+    def test_escape_csv_quotes_lone_cr(self):
+        """A lone CR (Mac-style line ending) must be quoted, not written raw."""
+        assert SampleSheetV1Exporter._escape_csv("foo\rbar") == '"foo\rbar"'
+
+    def test_escape_csv_quotes_crlf(self):
+        """A CRLF sequence must be quoted (preserving the \\r inside quotes)."""
+        assert SampleSheetV1Exporter._escape_csv("foo\r\nbar") == '"foo\r\nbar"'

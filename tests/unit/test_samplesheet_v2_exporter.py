@@ -3,6 +3,7 @@
 import pytest
 
 from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
+from seqsetup.models.application_profile import ApplicationProfile
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (
@@ -10,6 +11,7 @@ from seqsetup.models.sequencing_run import (
     RunCycles,
     SequencingRun,
 )
+from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 
 
@@ -142,6 +144,125 @@ class TestSampleSheetV2Exporter:
 
         assert '"Run, with comma"' in output
 
+    def test_escape_csv_quotes_lone_cr(self):
+        """A lone CR (Mac-style line ending) must be quoted, not written raw."""
+        assert SampleSheetV2Exporter._escape_csv("foo\rbar") == '"foo\rbar"'
+
+    def test_escape_csv_quotes_crlf(self):
+        """A CRLF sequence must be quoted (the \\n already triggers, but the \\r should be preserved inside quotes)."""
+        assert SampleSheetV2Exporter._escape_csv("foo\r\nbar") == '"foo\r\nbar"'
+
+    def test_export_escapes_override_cycles_with_comma(self):
+        """Per-sample override_cycles containing a comma must be CSV-quoted.
+
+        Some legacy stored values use commas as segment separators (see
+        test_override_cycles_complex_pattern). Those still need to be emitted
+        as a single CSV cell, not split across columns. Per-sample
+        OverrideCycles column is emitted only when global inference fails
+        (samples disagree on effective index lengths), so two samples with
+        different index lengths force the per-sample path.
+        """
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    override_cycles="Y*,I8,I8,Y*",  # legacy comma-separated form
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),  # 8 bp
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+                Sample(
+                    sample_id="S2",
+                    index_pair=IndexPair(
+                        id="p2", name="p2",
+                        index1=Index(name="i7b", sequence="TCCGGAGAGG", index_type=IndexType.I7),  # 10 bp
+                        index2=Index(name="i5b", sequence="ATAGAGGCAA", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+
+        output = SampleSheetV2Exporter.export(run)
+        # The comma-containing value must be quoted so the row keeps the right column count.
+        assert '"Y*,I8,I8,Y*"' in output
+
+    def test_export_escapes_reference_genome_with_comma(self):
+        """analysis.reference_genome with a comma must be quoted in DRAGEN sections."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+            analyses=[
+                Analysis(
+                    name="malicious",
+                    analysis_type=AnalysisType.DRAGEN_ONBOARD,
+                    dragen_pipeline=DRAGENPipeline.GERMLINE,
+                    reference_genome="hg38,injected",
+                    sample_ids=["S1"],
+                ),
+            ],
+        )
+
+        output = SampleSheetV2Exporter.export(run)
+        assert '"hg38,injected"' in output
+
+    def test_export_escapes_application_profile_setting_with_comma(self):
+        """profile.settings keys/values with commas must be CSV-quoted in the Settings section."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    test_id="WGS",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        app_profile = ApplicationProfile(
+            name="BCLConvertNextera",
+            version="1.0.0",
+            application_type="BclConvert",
+            application_name="BCLConvert",
+            settings={"SoftwareVersion": "4.3,injected"},
+            data_fields=["Sample_ID", "Index", "Index2"],
+            data={},
+        )
+        tp = TestProfile(
+            test_type="WGS",
+            test_name="WGS",
+            version="1.0.0",
+            application_profiles=[
+                ApplicationProfileReference(profile_name="BCLConvertNextera", profile_version="1.0.0"),
+            ],
+        )
+        test_profile_repo = _StubTestProfileRepo({"WGS": tp})
+        app_profile_repo = _StubAppProfileRepo({("BCLConvertNextera", "1.0.0"): app_profile})
+
+        output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
+        # The value contained a comma — must be quoted so it stays a single CSV field.
+        assert '"4.3,injected"' in output
+
     def test_export_empty_run(self):
         """Test exporting run with no samples."""
         run = SequencingRun(
@@ -271,3 +392,131 @@ class TestSampleSheetV2Exporter:
         output = SampleSheetV2Exporter.export(run)
         # TATAGCCT reverse-complemented is AGGCTATA
         assert "S1,ATTACTCG,AGGCTATA," in output
+
+
+class _StubTestProfileRepo:
+    """In-memory test profile repo keyed by test_type."""
+
+    def __init__(self, profiles_by_test_type: dict):
+        self._profiles = profiles_by_test_type
+
+    def get_by_test_type(self, test_type):
+        return self._profiles.get(test_type)
+
+
+class _StubAppProfileRepo:
+    """In-memory application profile repo keyed by (name, version)."""
+
+    def __init__(self, profiles_by_key: dict):
+        self._profiles = profiles_by_key
+
+    def get_by_name_version(self, name, version):
+        return self._profiles.get((name, version))
+
+
+class TestApplicationSectionsAcrossTestProfiles:
+    """When two TestProfiles reference the same ApplicationProfile, samples from
+    every referencing test_id must appear in that profile's data section.
+
+    Without this guarantee, the exporter writes the section once with only the
+    first test_id's samples and silently drops the rest — they never reach the
+    sequencer's demultiplexer.
+    """
+
+    def _make_app_profile(self):
+        return ApplicationProfile(
+            name="BCLConvertNextera",
+            version="1.0.0",
+            application_type="BclConvert",
+            application_name="BCLConvert",
+            settings={"SoftwareVersion": "4.3.6"},
+            data_fields=["Sample_ID", "Index", "Index2"],
+            data={},
+        )
+
+    def _make_test_profile(self, test_type):
+        return TestProfile(
+            test_type=test_type,
+            test_name=test_type,
+            version="1.0.0",
+            application_profiles=[
+                ApplicationProfileReference(
+                    profile_name="BCLConvertNextera",
+                    profile_version="1.0.0",
+                ),
+            ],
+        )
+
+    def _make_sample(self, sample_id, test_id, i7, i5):
+        return Sample(
+            sample_id=sample_id,
+            test_id=test_id,
+            index_pair=IndexPair(
+                id=f"pair_{sample_id}",
+                name=f"pair_{sample_id}",
+                index1=Index(name=f"i7_{sample_id}", sequence=i7, index_type=IndexType.I7),
+                index2=Index(name=f"i5_{sample_id}", sequence=i5, index_type=IndexType.I5),
+            ),
+        )
+
+    @staticmethod
+    def _extract_section(output: str, section_name: str) -> str:
+        """Return the body of [section_name] (everything until the next [Section] or EOF)."""
+        marker = f"[{section_name}]"
+        start = output.index(marker) + len(marker)
+        tail = output[start:]
+        # Section ends at the next "[...]" header
+        next_idx = tail.find("\n[")
+        return tail if next_idx == -1 else tail[:next_idx]
+
+    def test_shared_app_profile_includes_samples_from_every_test_id(self):
+        """A sample whose test_id resolves to an already-emitted ApplicationProfile must still appear in that profile's data section."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[
+                self._make_sample("S_WGS", "WGS", "ATTACTCG", "TATAGCCT"),
+                self._make_sample("S_RNA", "RNA", "TCCGGAGA", "ATAGAGGC"),
+            ],
+        )
+        app_profile = self._make_app_profile()
+        test_profile_repo = _StubTestProfileRepo({
+            "WGS": self._make_test_profile("WGS"),
+            "RNA": self._make_test_profile("RNA"),
+        })
+        app_profile_repo = _StubAppProfileRepo({
+            ("BCLConvertNextera", "1.0.0"): app_profile,
+        })
+
+        output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
+        # Pin the assertions to BCLConvert_Data — both samples also legitimately
+        # appear in Cloud_Data, so a global `in output` check would not catch the bug.
+        bcl_data = self._extract_section(output, "BCLConvert_Data")
+        assert "S_WGS" in bcl_data
+        assert "S_RNA" in bcl_data
+
+    def test_shared_app_profile_section_written_only_once(self):
+        """The shared section must not be duplicated (header line appears once)."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[
+                self._make_sample("S_WGS", "WGS", "ATTACTCG", "TATAGCCT"),
+                self._make_sample("S_RNA", "RNA", "TCCGGAGA", "ATAGAGGC"),
+            ],
+        )
+        app_profile = self._make_app_profile()
+        test_profile_repo = _StubTestProfileRepo({
+            "WGS": self._make_test_profile("WGS"),
+            "RNA": self._make_test_profile("RNA"),
+        })
+        app_profile_repo = _StubAppProfileRepo({
+            ("BCLConvertNextera", "1.0.0"): app_profile,
+        })
+
+        output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
+
+        assert output.count("[BCLConvert_Data]") == 1
+        assert output.count("[BCLConvert_Settings]") == 1

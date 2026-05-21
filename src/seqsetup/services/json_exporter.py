@@ -56,6 +56,12 @@ class JSONExporter:
         if not override and sample.index_pair and run.run_cycles:
             override = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
 
+        # Use Sample properties so combinatorial/single-mode indexes
+        # (stored on sample.index1 / sample.index2) are serialised too,
+        # not only the unique-dual IndexPair case.
+        i1_seq = sample.index1_sequence
+        i2_seq = sample.index2_sequence
+
         return {
             "id": sample.id,
             "sample_id": sample.sample_id,
@@ -64,20 +70,20 @@ class JSONExporter:
             "lanes": sample.lanes,
             "index1": (
                 {
-                    "name": sample.index_pair.index1.name,
-                    "sequence": sample.index1_sequence,
-                    "length": sample.index_pair.index1_length,
+                    "name": sample.index1_name,
+                    "sequence": i1_seq,
+                    "length": len(i1_seq),
                 }
-                if sample.index_pair
+                if i1_seq is not None
                 else None
             ),
             "index2": (
                 {
-                    "name": sample.index_pair.index2.name,
-                    "sequence": sample.index2_sequence,
-                    "length": sample.index_pair.index2_length,
+                    "name": sample.index2_name,
+                    "sequence": i2_seq,
+                    "length": len(i2_seq),
                 }
-                if sample.index_pair and sample.index_pair.index2
+                if i2_seq is not None
                 else None
             ),
             "override_cycles": override,

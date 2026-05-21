@@ -7,6 +7,17 @@ from ..components.login import LoginPage
 from ..services.auth import AuthenticationError
 
 
+def _login_user(sess, user) -> None:
+    """Apply the authenticated user to the session.
+
+    Clears any prior session contents first to defeat session fixation: an
+    attacker who plants a known session ID on a shared workstation must not
+    retain that session after a legitimate user logs in.
+    """
+    sess.clear()
+    sess["user"] = user.to_dict()
+
+
 def register(app, rt, auth_service):
     """Register authentication routes."""
 
@@ -24,8 +35,7 @@ def register(app, rt, auth_service):
         try:
             user = auth_service.authenticate(username, password)
 
-            # Store user in session
-            sess["user"] = user.to_dict()
+            _login_user(sess, user)
 
             # Redirect to main application
             return RedirectResponse("/", status_code=303)

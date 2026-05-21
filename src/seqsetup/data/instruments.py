@@ -7,6 +7,7 @@ Configuration can come from two sources:
 To sync instruments from GitHub, configure the repository in Admin > Profiles.
 """
 
+import logging
 import os
 from enum import Enum
 from pathlib import Path
@@ -16,6 +17,9 @@ import yaml
 
 if TYPE_CHECKING:
     from ..repositories.instrument_definition_repo import InstrumentDefinitionRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChemistryType(Enum):
@@ -531,7 +535,20 @@ def get_all_instruments() -> list[dict]:
 
         result = []
         for name, inst in synced.items():
-            platform = name_to_platform.get(name)  # May be None for new instruments
+            platform = name_to_platform.get(name)
+            if platform is None:
+                # Synced an instrument whose name has no corresponding
+                # InstrumentPlatform enum value. The wizard, route handlers,
+                # and exporters all dereference platform.value and would crash
+                # on None, so skip this entry. Onboarding a new instrument
+                # requires adding it to the enum and releasing.
+                logger.warning(
+                    "Skipping synced instrument %r: no matching InstrumentPlatform "
+                    "enum value. Add it to InstrumentPlatform and release before this "
+                    "instrument can be used.",
+                    name,
+                )
+                continue
             result.append({
                 "name": name,
                 "platform": platform,

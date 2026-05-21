@@ -207,6 +207,13 @@ class LDAPService:
         """
         Authenticate user against LDAP/Active Directory.
 
+        Order of operations is security-relevant: the user-bind (password
+        verification) MUST precede any attribute lookup whose result feeds
+        role determination. If user_dn_pattern is a loose template that
+        resolves to an unintended DN, fetching attributes against it before
+        verifying the password would let those attributes (groups in
+        particular) influence the final User.role.
+
         Args:
             username: Username (sAMAccountName for AD)
             password: User's password
@@ -225,21 +232,43 @@ class LDAPService:
         if not password:
             raise LDAPError("Password cannot be empty")
 
-        # First, bind with service account to search for user
-        conn = self._bind_connection()
-
-        try:
-            user_dn = self._get_user_dn(username, conn)
+        # Resolve the candidate user DN. Search-based lookup needs a service
+        # bind; pattern-based lookup does not — defer the service bind until
+        # after we know we'll need it.
+        if self.config.user_dn_pattern:
+            safe_username = self._escape_ldap_filter(username)
+            user_dn = self.config.user_dn_pattern.replace("{username}", safe_username)
+        else:
+            conn = self._bind_connection()
+            try:
+                user_dn = self._get_user_dn(username, conn)
+            finally:
+                conn.unbind()
             if not user_dn:
                 raise LDAPError("Invalid username or password")
 
-            # Get user attributes
-            display_name = username
-            email = None
-            groups = []
+        # Verify the password by binding as the candidate user BEFORE trusting
+        # the DN for any role-determining lookup.
+        server = self._get_server()
+        user_conn = Connection(
+            server,
+            user=user_dn,
+            password=password,
+            authentication=SIMPLE,
+            read_only=True,
+            receive_timeout=self.config.receive_timeout,
+        )
+        if not user_conn.bind():
+            raise LDAPError("Invalid username or password")
+        user_conn.unbind()
 
-            # Fetch attributes from the resolved DN. This supports both
-            # search-based lookup and direct user_dn_pattern configurations.
+        # Password verified — now fetch attributes for display + role.
+        display_name = username
+        email = None
+        groups = []
+
+        conn = self._bind_connection()
+        try:
             conn.search(
                 search_base=user_dn,
                 search_filter="(objectClass=*)",
@@ -269,27 +298,9 @@ class LDAPService:
                     attr = getattr(user_entry, self.config.group_membership_attribute)
                     if attr:
                         groups = list(attr.values) if hasattr(attr, "values") else []
-
         finally:
             conn.unbind()
 
-        # Now try to bind as the user to verify password
-        server = self._get_server()
-        user_conn = Connection(
-            server,
-            user=user_dn,
-            password=password,
-            authentication=SIMPLE,
-            read_only=True,
-            receive_timeout=self.config.receive_timeout,
-        )
-
-        if not user_conn.bind():
-            raise LDAPError("Invalid username or password")
-
-        user_conn.unbind()
-
-        # Determine role based on group membership
         role = self._determine_role(groups)
 
         return User(

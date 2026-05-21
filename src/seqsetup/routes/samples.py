@@ -479,15 +479,15 @@ def register(app, rt, ctx: AppContext):
             sample = run.samples[sample_idx]
 
             if idx_type == "pair":
-                sample.assign_index(resolved_index)
+                run.assign_index_pair_to_sample(sample.id, resolved_index)
                 sample.index_kit_name = kit.name
                 _apply_kit_defaults(sample, kit)
             elif idx_type == "i7":
-                sample.assign_index1(resolved_index)
+                run.assign_index1_to_sample(sample.id, resolved_index)
                 sample.index_kit_name = kit.name
                 _apply_kit_defaults(sample, kit)
             elif idx_type == "i5":
-                sample.assign_index2(resolved_index)
+                run.assign_index2_to_sample(sample.id, resolved_index)
                 sample.index_kit_name = kit.name
                 _apply_kit_defaults(sample, kit)
 
@@ -566,11 +566,11 @@ def register(app, rt, ctx: AppContext):
                 continue
 
             if index_pair:
-                sample.assign_index(index_pair)
+                run.assign_index_pair_to_sample(sample.id, index_pair)
             elif index_type == "i7":
-                sample.assign_index1(index)
+                run.assign_index1_to_sample(sample.id, index)
             elif index_type == "i5":
-                sample.assign_index2(index)
+                run.assign_index2_to_sample(sample.id, index)
 
             sample.index_kit_name = kit.name
             _apply_kit_defaults(sample, kit)
@@ -716,8 +716,12 @@ def register(app, rt, ctx: AppContext):
         except json.JSONDecodeError:
             return Response("Invalid request data", status_code=400)
 
-        # Update override cycles for each selected sample
-        override_cycles = override_cycles_str.strip() if override_cycles_str else None
+        # Update override cycles for each selected sample.
+        # Length-limit defensively even though the model regex restricts the
+        # character set — a multi-megabyte all-`Y` string would pass the regex
+        # but balloon the document.
+        override_cycles = sanitize_string(override_cycles_str, 256) if override_cycles_str else None
+        override_cycles = override_cycles or None  # empty string -> None for the recalculate path
 
         for sample in run.samples:
             if sample.id in sample_ids:
@@ -765,7 +769,7 @@ def register(app, rt, ctx: AppContext):
             return Response("Invalid request data", status_code=400)
 
         # Update test_id for each selected sample
-        test_id = test_id_str.strip()
+        test_id = sanitize_string(test_id_str, 256)
 
         for sample in run.samples:
             if sample.id in sample_ids:
@@ -837,6 +841,10 @@ def register(app, rt, ctx: AppContext):
     @rt("/runs/{run_id}/samples/{id}")
     def update_sample(req, run_id: str, id: str, sample_id: str, sample_name: str = "", project: str = ""):
         """Update a sample."""
+        # Reject blank sample_id before any mutation — mirrors add_sample.
+        # Blanking sample_id would silently break demultiplexing for that sample.
+        if not sample_id or not sample_id.strip():
+            return Response("sample_id is required", status_code=400)
         # Validate and sanitize inputs
         sample_id = sanitize_string(sample_id, 256)
         sample_name = sanitize_string(sample_name, 256)
@@ -897,7 +905,7 @@ def register(app, rt, ctx: AppContext):
             if not index_pair:
                 return Response("Index pair not found", status_code=404)
 
-            sample.assign_index(index_pair)
+            run.assign_index_pair_to_sample(sample.id, index_pair)
             sample.index_kit_name = kit.name
             _apply_kit_defaults(sample, kit)
         elif index_id and index_type:
@@ -907,9 +915,9 @@ def register(app, rt, ctx: AppContext):
                 return Response("Index not found", status_code=404)
 
             if index_type == "i7":
-                sample.assign_index1(index)
+                run.assign_index1_to_sample(sample.id, index)
             elif index_type == "i5":
-                sample.assign_index2(index)
+                run.assign_index2_to_sample(sample.id, index)
             else:
                 return Response(f"Invalid index type: {index_type}", status_code=400)
             sample.index_kit_name = kit.name
@@ -948,11 +956,11 @@ def register(app, rt, ctx: AppContext):
         sample = run.get_sample(id)
         if sample:
             if index_type == "i7":
-                sample.clear_index1()
+                run.clear_sample_index1(sample.id)
             elif index_type == "i5":
-                sample.clear_index2()
+                run.clear_sample_index2(sample.id)
             else:
-                sample.clear_index()
+                run.clear_sample_index(sample.id)
 
             run.touch(updated_by=get_username(req))
             ctx.run_repo.save(run)
@@ -988,7 +996,7 @@ def register(app, rt, ctx: AppContext):
             return Response("Sample not found", status_code=404)
 
         # Update override cycles
-        override_cycles = override_cycles.strip()
+        override_cycles = sanitize_string(override_cycles, 256)
         if override_cycles:
             sample.override_cycles = override_cycles
         else:

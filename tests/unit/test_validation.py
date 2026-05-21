@@ -185,11 +185,11 @@ class TestIndexCollisions:
         assert len(collisions) == 1
         assert collisions[0].index_type == "i7+i5"
         assert collisions[0].hamming_distance == 0
-        # Combined threshold: collision if distance <= 3
-        assert collisions[0].mismatch_threshold == 3
+        # Combined threshold for default m1=m2=1: 2 * (1 + 1) = 4
+        assert collisions[0].mismatch_threshold == 4
 
     def test_collision_combined_within_threshold(self):
-        """Collision when combined distance <= 3."""
+        """Collision when combined distance is within 2*(m1+m2)."""
         run = SequencingRun(
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
             flowcell_type="10B",
@@ -205,7 +205,8 @@ class TestIndexCollisions:
         assert len(collisions) == 1
         assert collisions[0].index_type == "i7+i5"
         assert collisions[0].hamming_distance == 2
-        assert collisions[0].mismatch_threshold == 3
+        # Combined threshold for default m1=m2=1: 2 * (1 + 1) = 4
+        assert collisions[0].mismatch_threshold == 4
 
     def test_collision_i7_only_within_threshold(self):
         """Collision when i7-only distance <= 2."""
@@ -335,6 +336,94 @@ class TestIndexCollisions:
         assert collisions[0].index_type == "i7"
         assert collisions[0].hamming_distance == 0
         assert collisions[0].mismatch_threshold == 2  # i7-only threshold
+
+    def test_combined_threshold_collision_at_distance_4_default(self):
+        """At default mismatches=1, combined distance=4 is now a collision.
+
+        Two reads at total distance 4 — e.g. d_i7=2, d_i5=2 — can both fall
+        within the m1+m2 mismatch budget and be mis-assigned. The old hardcoded
+        threshold (collision iff d<4) silently let this through.
+        """
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[
+                self._make_sample_with_indexes("S1", "ATCGATCG", "GCTAGCTA", lanes=[1]),
+                self._make_sample_with_indexes(
+                    "S2", "AAAGATCG", "AATAGCTA", lanes=[1]
+                ),  # i7: pos 1 T→A, pos 2 C→A = 2 diffs; i5: pos 0 G→A, pos 1 C→A = 2 diffs; combined=4
+            ],
+        )
+
+        collisions = ValidationService.validate_index_collisions(run)
+        assert len(collisions) == 1
+        assert collisions[0].hamming_distance == 4
+        assert collisions[0].mismatch_threshold == 4
+
+    def test_i7_only_threshold_scales_with_configured_mismatches(self):
+        """With per-sample barcode_mismatches_index1=2, an i7 distance of 4 is a collision."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[
+                self._make_sample_with_indexes("S1", "ATCGATCG", "", lanes=[1]),
+                self._make_sample_with_indexes(
+                    "S2", "TAGCATCG", "", lanes=[1]
+                ),  # 4 diffs in first 4 positions: A↔T, T↔A, C↔G, G↔C
+            ],
+        )
+        # Per-sample mismatch overrides — sample-level is authoritative in this codebase.
+        for s in run.samples:
+            s.barcode_mismatches_index1 = 2
+
+        collisions = ValidationService.validate_index_collisions(run)
+        assert len(collisions) == 1
+        assert collisions[0].index_type == "i7"
+        assert collisions[0].hamming_distance == 4
+        assert collisions[0].mismatch_threshold == 4  # 2 * m_i7 = 4
+
+    def test_combined_threshold_scales_with_configured_mismatches(self):
+        """With per-sample m_i7=2 and m_i5=1, combined threshold becomes 2*(2+1) = 6."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[
+                self._make_sample_with_indexes("S1", "ATCGATCG", "GCTAGCTA", lanes=[1]),
+                self._make_sample_with_indexes(
+                    "S2", "TTCGATCG", "GCTAGCTT", lanes=[1]
+                ),  # d_i7=1, d_i5=1, combined=2 — far below 6
+            ],
+        )
+        # Per-sample mismatch overrides (run-level alone doesn't propagate when
+        # per-sample value is set, which it is by default).
+        for s in run.samples:
+            s.barcode_mismatches_index1 = 2
+            s.barcode_mismatches_index2 = 1
+
+        collisions = ValidationService.validate_index_collisions(run)
+        assert len(collisions) == 1
+        assert collisions[0].mismatch_threshold == 6  # 2 * (2 + 1)
+
+    def test_per_sample_mismatch_override_respected(self):
+        """A sample's per-sample barcode_mismatches_index1 raises the pair threshold."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            barcode_mismatches_index1=1,
+            barcode_mismatches_index2=1,
+            samples=[
+                self._make_sample_with_indexes("S1", "ATCGATCG", "", lanes=[1]),
+                self._make_sample_with_indexes(
+                    "S2", "TTCGATCG", "", lanes=[1]
+                ),  # d_i7=2 — under default would only just collide at 2 ≤ 2
+            ],
+        )
+        # Bump S1's per-sample mismatch budget to 2 — pair-effective m becomes 2.
+        run.samples[0].barcode_mismatches_index1 = 2
+
+        collisions = ValidationService.validate_index_collisions(run)
+        assert len(collisions) == 1
+        assert collisions[0].mismatch_threshold == 4  # max(2,1)*2 = 4
 
     def test_samples_without_indexes_skipped(self):
         """Samples without indexes are skipped in collision detection."""
@@ -625,6 +714,112 @@ class TestValidateRun:
 
         result = ValidationService.validate_run(run)
         assert hasattr(result, "color_balance")
+
+
+class _StubTestProfileRepo:
+    """Minimal stub: every test_id lookup returns None.
+
+    Triggers the same exporter gating condition (both repos present)
+    without exercising real profile resolution.
+    """
+
+    def get_by_test_type(self, test_id):
+        return None
+
+
+class _StubAppProfileRepo:
+    """Minimal stub: every app profile lookup returns None."""
+
+    def get_by_name_version(self, name, version):
+        return None
+
+
+class TestMissingTestIdRequiresApproval:
+    """When profile repos are configured, samples without test_id must block approval.
+
+    Without this check, the SampleSheet v2 exporter silently emits no BCLConvert
+    sections for samples lacking test_id (and emits no BCLConvert section at all
+    when no sample has one), producing an unusable Sample Sheet.
+    """
+
+    def test_missing_test_id_with_repos_emits_error(self):
+        """A sample with blank test_id produces a missing_test_id error when both repos present."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[Sample(sample_id="S1", test_id="")],
+        )
+
+        result = ValidationService.validate_run(
+            run,
+            test_profile_repo=_StubTestProfileRepo(),
+            app_profile_repo=_StubAppProfileRepo(),
+        )
+        missing_test_id = [
+            e for e in result.configuration_errors if e.category == "missing_test_id"
+        ]
+        assert len(missing_test_id) == 1
+        assert "S1" in missing_test_id[0].sample_names
+        assert missing_test_id[0].severity.value == "error"
+
+    def test_missing_test_id_without_repos_emits_no_error(self):
+        """No missing_test_id error when profile repos are absent (hardcoded export path)."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[Sample(sample_id="S1", test_id="")],
+        )
+
+        result = ValidationService.validate_run(run)  # no repos
+        missing_test_id = [
+            e for e in result.configuration_errors if e.category == "missing_test_id"
+        ]
+        assert missing_test_id == []
+
+    def test_all_samples_with_test_id_emits_no_error(self):
+        """No missing_test_id error when every sample has a test_id."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[
+                Sample(sample_id="S1", test_id="TEST-1"),
+                Sample(sample_id="S2", test_id="TEST-2"),
+            ],
+        )
+
+        result = ValidationService.validate_run(
+            run,
+            test_profile_repo=_StubTestProfileRepo(),
+            app_profile_repo=_StubAppProfileRepo(),
+        )
+        missing_test_id = [
+            e for e in result.configuration_errors if e.category == "missing_test_id"
+        ]
+        assert missing_test_id == []
+
+    def test_partial_missing_test_id_aggregates(self):
+        """All samples without test_id are listed; samples with test_id are not."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[
+                Sample(sample_id="S1", test_id="TEST-1"),
+                Sample(sample_id="S2", test_id=""),
+                Sample(sample_id="S3", test_id=""),
+            ],
+        )
+
+        result = ValidationService.validate_run(
+            run,
+            test_profile_repo=_StubTestProfileRepo(),
+            app_profile_repo=_StubAppProfileRepo(),
+        )
+        missing_test_id = [
+            e for e in result.configuration_errors if e.category == "missing_test_id"
+        ]
+        # One aggregated error listing both affected samples
+        assert len(missing_test_id) == 1
+        assert sorted(missing_test_id[0].sample_names) == ["S2", "S3"]
 
 
 class TestColorBalance:

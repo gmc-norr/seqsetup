@@ -173,6 +173,41 @@ class SequencingRun:
                 return sample
         return None
 
+    def _require_sample(self, sample_id: str) -> Sample:
+        sample = self.get_sample(sample_id)
+        if sample is None:
+            raise ValueError(f"Sample {sample_id!r} not found in run")
+        return sample
+
+    # Index mutations on a sample invalidate any prior validation approval.
+    # Routing all index changes through these run-level methods (instead of
+    # calling Sample.assign_*/clear_* directly) enforces the invariant at the
+    # model layer rather than relying on every caller to remember run.touch().
+
+    def assign_index_pair_to_sample(self, sample_id: str, index_pair) -> None:
+        self._require_sample(sample_id).assign_index(index_pair)
+        self.validation_approved = False
+
+    def assign_index1_to_sample(self, sample_id: str, index) -> None:
+        self._require_sample(sample_id).assign_index1(index)
+        self.validation_approved = False
+
+    def assign_index2_to_sample(self, sample_id: str, index) -> None:
+        self._require_sample(sample_id).assign_index2(index)
+        self.validation_approved = False
+
+    def clear_sample_index(self, sample_id: str) -> None:
+        self._require_sample(sample_id).clear_index()
+        self.validation_approved = False
+
+    def clear_sample_index1(self, sample_id: str) -> None:
+        self._require_sample(sample_id).clear_index1()
+        self.validation_approved = False
+
+    def clear_sample_index2(self, sample_id: str) -> None:
+        self._require_sample(sample_id).clear_index2()
+        self.validation_approved = False
+
     def touch(self, reset_validation: bool = True, updated_by: str = "") -> None:
         """Update the updated_at timestamp.
 

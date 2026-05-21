@@ -145,7 +145,12 @@ class SampleSheetV1Exporter:
 
     @classmethod
     def _escape_csv(cls, value: str) -> str:
-        """Escape a value for CSV output."""
-        if "," in value or '"' in value or "\n" in value:
+        """Escape a value for CSV output.
+
+        Lone CR is quoted as well as LF — a Mac-style line ending pasted from
+        an upstream source would otherwise write a literal \\r mid-row and split
+        the Sample Sheet into the wrong number of columns.
+        """
+        if "," in value or '"' in value or "\n" in value or "\r" in value:
             return '"' + value.replace('"', '""') + '"'
         return value

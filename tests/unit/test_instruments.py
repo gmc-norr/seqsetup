@@ -143,3 +143,70 @@ class TestIsColorBalanceEnabled:
     def test_miseq_disabled(self):
         """4-color instruments typically don't need color balance checks."""
         assert is_color_balance_enabled(InstrumentPlatform.MISEQ) is False
+
+
+class TestSyncedInstrumentsUnknownPlatform:
+    """Synced instruments without a corresponding InstrumentPlatform enum value
+    must be skipped — the wizard, status routes, and exporter all dereference
+    `platform.value` and would crash on None. Path A: surface a clear admin
+    warning and skip; new instruments require a code release.
+    """
+
+    def _stub_repo(self, instruments):
+        """Build a stub repo returning the given InstrumentDefinition list."""
+        class _StubRepo:
+            def list_all(self_inner):
+                return instruments
+        return _StubRepo()
+
+    def _make_definition(self, name: str):
+        from seqsetup.models.instrument_definition import (
+            FlowcellDefinition,
+            InstrumentDefinition,
+        )
+        return InstrumentDefinition(
+            name=name,
+            flowcells=[FlowcellDefinition(name="FC1", lanes=1)],
+            chemistry_type="2-color",
+            color_balance_enabled=True,
+            samplesheet_name=name,
+            i5_read_orientation="forward",
+            samplesheet_v2_i5_orientation="forward",
+        )
+
+    def test_unknown_synced_name_skipped(self):
+        from seqsetup.data import instruments as instruments_module
+        from seqsetup.data.instruments import get_all_instruments
+
+        # Known + unknown together — the unknown one must be filtered out.
+        known = self._make_definition("NovaSeq X Series")
+        unknown = self._make_definition("NovaSeq Z Hypothetical")
+
+        instruments_module.set_instrument_definition_repo(
+            self._stub_repo([known, unknown])
+        )
+        try:
+            result = get_all_instruments()
+            names = [inst["name"] for inst in result]
+            assert "NovaSeq X Series" in names
+            assert "NovaSeq Z Hypothetical" not in names
+            # And every returned entry must have a usable platform enum.
+            assert all(inst["platform"] is not None for inst in result)
+        finally:
+            instruments_module.set_instrument_definition_repo(None)
+            instruments_module.clear_synced_instruments_cache()
+
+    def test_only_unknown_names_returns_empty(self):
+        """If every synced instrument has an unknown name, return empty rather than crash."""
+        from seqsetup.data import instruments as instruments_module
+        from seqsetup.data.instruments import get_all_instruments
+
+        unknown_only = [self._make_definition("Mystery Sequencer X")]
+        instruments_module.set_instrument_definition_repo(self._stub_repo(unknown_only))
+        try:
+            result = get_all_instruments()
+            # All filtered out, but no exception.
+            assert result == []
+        finally:
+            instruments_module.set_instrument_definition_repo(None)
+            instruments_module.clear_synced_instruments_cache()

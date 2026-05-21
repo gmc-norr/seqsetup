@@ -132,6 +132,23 @@ invalid: yaml: content
         kit = IndexKitSyncParser.parse(yaml_content, "invalid.yaml")
         assert kit is None
 
+    def test_parse_unknown_index_mode_rejected(self):
+        """Unknown index_mode must NOT silently fall back to unique_dual —
+        round-tripping `combinatorial` → corrupted → `unique_dual` would
+        silently change the assay model. Reject by returning None."""
+        yaml_content = """
+name: "Kit"
+version: "1.0"
+index_mode: "totally_made_up_mode"
+index_pairs:
+  - name: "P1"
+    index1:
+      name: "i7"
+      sequence: "ATCG"
+"""
+        kit = IndexKitSyncParser.parse(yaml_content, "bogus_mode.yaml")
+        assert kit is None
+
     def test_parse_empty_content(self):
         """Test parsing empty content returns None."""
         kit = IndexKitSyncParser.parse("", "empty.yaml")

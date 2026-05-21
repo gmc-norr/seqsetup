@@ -78,6 +78,20 @@ class IndexPair:
     index2: Optional[Index] = None  # i5 (optional for single indexing)
     well_position: Optional[str] = None  # e.g., "A01" for fixed-layout kits
 
+    def __post_init__(self):
+        # An i5 in the i7 slot (or vice versa) would silently misroute reads at
+        # demultiplexing — reject swapped pairs at construction time.
+        if self.index1.index_type != IndexType.I7:
+            raise ValueError(
+                f"IndexPair.index1 must be an i7 index, got "
+                f"index_type={self.index1.index_type.value}"
+            )
+        if self.index2 is not None and self.index2.index_type != IndexType.I5:
+            raise ValueError(
+                f"IndexPair.index2 must be an i5 index, got "
+                f"index_type={self.index2.index_type.value}"
+            )
+
     @property
     def index1_length(self) -> int:
         """Length of index1 (i7) sequence."""

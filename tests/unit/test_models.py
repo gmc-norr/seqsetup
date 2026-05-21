@@ -58,6 +58,29 @@ class TestIndexPair:
         assert pair.index2_length == 0
         assert pair.index2_sequence is None
 
+    def test_index_pair_rejects_i5_in_index1_slot(self):
+        """index1 must be an i7 index; an i5 in the i7 slot is a kit-construction error
+        that would silently cause reads to be mis-assigned at demultiplex time."""
+        import pytest
+        with pytest.raises(ValueError, match="index1.*i7|i7.*index1"):
+            IndexPair(
+                id="swapped",
+                name="Swapped",
+                index1=Index(name="wrong", sequence="ATCGATCG", index_type=IndexType.I5),
+                index2=Index(name="ok", sequence="GCTAGCTA", index_type=IndexType.I5),
+            )
+
+    def test_index_pair_rejects_i7_in_index2_slot(self):
+        """index2, if present, must be an i5 index."""
+        import pytest
+        with pytest.raises(ValueError, match="index2.*i5|i5.*index2"):
+            IndexPair(
+                id="swapped",
+                name="Swapped",
+                index1=Index(name="ok", sequence="ATCGATCG", index_type=IndexType.I7),
+                index2=Index(name="wrong", sequence="GCTAGCTA", index_type=IndexType.I7),
+            )
+
 
 class TestIndexKit:
     """Tests for IndexKit model."""
@@ -353,6 +376,91 @@ class TestSequencingRun:
         assert d["generated_json"] == '{"key": "value"}'
         assert d["generated_validation_json"] == '{"errors": []}'
         assert d["generated_validation_pdf"] == base64.b64encode(b"%PDF-test").decode("ascii")
+
+
+class TestSampleIndexMutationResetsApproval:
+    """Index assignment/clearing must reset validation_approved at the model layer.
+
+    Approval implies "the indexes I've validated produce a safe demultiplex" —
+    any subsequent change to those indexes invalidates that promise. Relying on
+    every call-site to remember run.touch() is brittle for clinical software.
+    """
+
+    def _make_sample(self, sample_id="S1"):
+        return Sample(sample_id=sample_id)
+
+    def _make_index_pair(self):
+        return IndexPair(
+            id="p1", name="p1",
+            index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+            index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+        )
+
+    def _make_i7(self):
+        return Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7)
+
+    def _make_i5(self):
+        return Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5)
+
+    def _run_with_approved_sample(self):
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+        )
+        sample = self._make_sample()
+        run.add_sample(sample)
+        run.validation_approved = True
+        return run, sample
+
+    def test_assign_index_pair_resets_approval(self):
+        run, sample = self._run_with_approved_sample()
+        run.assign_index_pair_to_sample(sample.id, self._make_index_pair())
+        assert run.validation_approved is False
+        assert run.get_sample(sample.id).index_pair is not None
+
+    def test_assign_index1_resets_approval(self):
+        run, sample = self._run_with_approved_sample()
+        run.assign_index1_to_sample(sample.id, self._make_i7())
+        assert run.validation_approved is False
+        assert run.get_sample(sample.id).index1 is not None
+
+    def test_assign_index2_resets_approval(self):
+        run, sample = self._run_with_approved_sample()
+        run.assign_index2_to_sample(sample.id, self._make_i5())
+        assert run.validation_approved is False
+        assert run.get_sample(sample.id).index2 is not None
+
+    def test_clear_index_resets_approval(self):
+        run, sample = self._run_with_approved_sample()
+        sample.assign_index(self._make_index_pair())
+        run.validation_approved = True  # reset after the unsafe path
+        run.clear_sample_index(sample.id)
+        assert run.validation_approved is False
+        assert run.get_sample(sample.id).index_pair is None
+
+    def test_clear_index1_resets_approval(self):
+        run, sample = self._run_with_approved_sample()
+        sample.assign_index1(self._make_i7())
+        run.validation_approved = True
+        run.clear_sample_index1(sample.id)
+        assert run.validation_approved is False
+        assert run.get_sample(sample.id).index1 is None
+
+    def test_clear_index2_resets_approval(self):
+        run, sample = self._run_with_approved_sample()
+        sample.assign_index2(self._make_i5())
+        run.validation_approved = True
+        run.clear_sample_index2(sample.id)
+        assert run.validation_approved is False
+        assert run.get_sample(sample.id).index2 is None
+
+    def test_assign_to_missing_sample_raises(self):
+        run, _ = self._run_with_approved_sample()
+        import pytest
+        with pytest.raises(ValueError, match="not found"):
+            run.assign_index_pair_to_sample("nonexistent-id", self._make_index_pair())
+        # Approval is unchanged because no mutation happened.
+        assert run.validation_approved is True
 
     def test_to_dict_generated_fields_none(self, sample_run):
         """Test that None generated fields serialize as None."""

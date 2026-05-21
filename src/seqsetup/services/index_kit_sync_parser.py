@@ -81,16 +81,22 @@ class IndexKitSyncParser:
 
     @classmethod
     def _parse_kit(cls, data: dict, source_file: str) -> IndexKit:
-        """Parse dict data into IndexKit."""
+        """Parse dict data into IndexKit.
+
+        Raises ValueError on unknown index_mode rather than silently defaulting:
+        round-tripping a corrupted `combinatorial` kit through a `unique_dual`
+        fallback would silently change the assay model and pair samples with
+        the wrong indexes at demultiplex time.
+        """
         # Parse index mode
         mode_str = data.get("index_mode", "unique_dual")
         try:
             index_mode = IndexMode(mode_str)
         except ValueError:
-            logger.warning(
-                f"Unknown index_mode '{mode_str}' in {source_file}, defaulting to unique_dual"
+            raise ValueError(
+                f"Unknown index_mode {mode_str!r} in {source_file}. "
+                f"Valid values: {[m.value for m in IndexMode]}"
             )
-            index_mode = IndexMode.UNIQUE_DUAL
 
         name = data.get("name", "")
         if not name:

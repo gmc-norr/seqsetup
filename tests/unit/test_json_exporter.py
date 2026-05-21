@@ -154,3 +154,72 @@ class TestJSONExporter:
         s1 = data["samples"][0]
         assert s1["override_cycles"] is not None
         assert "I8" in s1["override_cycles"]
+
+
+class TestJsonExporterCombinatorialIndexes:
+    """Combinatorial / single-mode indexes are stored on Sample.index1/index2
+    rather than via Sample.index_pair. The JSON exporter must serialise them too —
+    silently emitting null would mislead any downstream tool that reads this JSON
+    as a record of the demultiplex configuration.
+    """
+
+    def _make_run(self, sample) -> SequencingRun:
+        return SequencingRun(
+            id="combo-run",
+            run_name="Combo Run",
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[sample],
+        )
+
+    def test_combinatorial_both_indexes_exported(self):
+        sample = Sample(id="s1", sample_id="Sx")
+        sample.assign_index1(Index(name="UDP0001_i7", sequence="ATTACTCG", index_type=IndexType.I7))
+        sample.assign_index2(Index(name="UDP0001_i5", sequence="TATAGCCT", index_type=IndexType.I5))
+
+        data = json.loads(JSONExporter.export(self._make_run(sample)))
+        s = data["samples"][0]
+
+        assert s["index1"] is not None
+        assert s["index1"]["name"] == "UDP0001_i7"
+        assert s["index1"]["sequence"] == "ATTACTCG"
+        assert s["index1"]["length"] == 8
+
+        assert s["index2"] is not None
+        assert s["index2"]["name"] == "UDP0001_i5"
+        assert s["index2"]["sequence"] == "TATAGCCT"
+        assert s["index2"]["length"] == 8
+
+    def test_single_index_only_i7_exported(self):
+        """Single-index mode: only i7 is set; index2 should serialise to null."""
+        sample = Sample(id="s1", sample_id="Sx")
+        sample.assign_index1(Index(name="N701", sequence="TAAGGCGA", index_type=IndexType.I7))
+
+        data = json.loads(JSONExporter.export(self._make_run(sample)))
+        s = data["samples"][0]
+
+        assert s["index1"] is not None
+        assert s["index1"]["sequence"] == "TAAGGCGA"
+        assert s["index1"]["length"] == 8
+        assert s["index2"] is None
+
+    def test_index_pair_mode_still_exported_correctly(self):
+        """Regression guard: unique-dual mode (via IndexPair) keeps working."""
+        sample = Sample(
+            id="s1",
+            sample_id="Sx",
+            index_pair=IndexPair(
+                id="p1", name="p1",
+                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+            ),
+        )
+
+        data = json.loads(JSONExporter.export(self._make_run(sample)))
+        s = data["samples"][0]
+
+        assert s["index1"]["sequence"] == "ATTACTCG"
+        assert s["index1"]["length"] == 8
+        assert s["index2"]["sequence"] == "TATAGCCT"
+        assert s["index2"]["length"] == 8
