@@ -33,6 +33,55 @@ class TestLocalUserPassword:
             f"Update _BCRYPT_ROUNDS (and the assertion) only after a deliberate review."
         )
 
+
+class TestWeakPasswordPolicy:
+    """The weak-password policy on set_password defends clinical deployments
+    against the easiest operator footguns (default `admin/admin123`, etc.)."""
+
+    def test_known_weak_password_rejected(self):
+        from seqsetup.models.local_user import WeakPasswordError
+        user = LocalUser(username="test", display_name="Test")
+        for weak in ("admin", "admin123", "password", "welcome1", "letmein"):
+            with pytest.raises(WeakPasswordError):
+                user.set_password(weak)
+
+    def test_weak_password_check_is_case_insensitive(self):
+        from seqsetup.models.local_user import WeakPasswordError
+        user = LocalUser(username="test", display_name="Test")
+        with pytest.raises(WeakPasswordError):
+            user.set_password("PASSWORD")
+        with pytest.raises(WeakPasswordError):
+            user.set_password("AdMiN123")
+
+    def test_short_password_rejected(self):
+        from seqsetup.models.local_user import WeakPasswordError
+        user = LocalUser(username="test", display_name="Test")
+        with pytest.raises(WeakPasswordError, match="at least"):
+            user.set_password("short1")  # 6 chars
+
+    def test_repeated_character_rejected(self):
+        from seqsetup.models.local_user import WeakPasswordError
+        user = LocalUser(username="test", display_name="Test")
+        with pytest.raises(WeakPasswordError):
+            user.set_password("aaaaaaaa")
+
+    def test_all_digits_rejected(self):
+        from seqsetup.models.local_user import WeakPasswordError
+        user = LocalUser(username="test", display_name="Test")
+        with pytest.raises(WeakPasswordError):
+            user.set_password("19940215")
+
+    def test_strong_password_accepted(self):
+        user = LocalUser(username="test", display_name="Test")
+        user.set_password("Clin1cal-Op3rator!")
+        # No exception; hash stored.
+        assert user.password_hash.startswith("$2")
+
+    def test_mixed_password_at_minimum_length_accepted(self):
+        user = LocalUser(username="test", display_name="Test")
+        user.set_password("Strong-1")  # exactly 8 chars
+        assert user.password_hash
+
     def test_verify_correct_password(self):
         user = LocalUser(username="test", display_name="Test")
         user.set_password("mypassword")

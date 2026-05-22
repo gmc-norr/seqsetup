@@ -6,7 +6,7 @@ from ..models.sequencing_run import (
     RunCycles,
     SequencingRun,
 )
-from .base import BaseRepository
+from .base import BaseRepository, ConflictError
 
 
 class RunRepository(BaseRepository[SequencingRun]):
@@ -19,6 +19,53 @@ class RunRepository(BaseRepository[SequencingRun]):
         """Get all runs with a given status."""
         docs = self.collection.find({"status": status})
         return [SequencingRun.from_dict(doc) for doc in docs]
+
+    def save(self, run: SequencingRun) -> None:
+        """Insert or update a run with optimistic-locking on updated_at.
+
+        First save (never loaded — ``_loaded_updated_at is None``) uses an
+        unconditional upsert so brand-new runs work as before.
+
+        Subsequent saves filter on the load-time updated_at. If a concurrent
+        edit has bumped the stored updated_at since this instance was loaded,
+        ``matched_count == 0`` and ConflictError is raised — silently
+        overwriting the concurrent edit would lose clinical data.
+
+        On success, ``_loaded_updated_at`` is moved forward to the new
+        updated_at so the next save of the same instance still has a valid
+        version token.
+        """
+        item_id = self._get_id(run)
+        doc = run.to_dict()
+        doc["_id"] = item_id
+
+        if run._loaded_updated_at is None:
+            # First-time insert (or unloaded fresh instance) — upsert.
+            self.collection.replace_one({"_id": item_id}, doc, upsert=True)
+            run._loaded_updated_at = run.updated_at
+            return
+
+        # Optimistic-lock check: stored updated_at must match the one we read.
+        expected = run._loaded_updated_at.isoformat()
+        result = self.collection.replace_one(
+            {"_id": item_id, "updated_at": expected},
+            doc,
+            upsert=False,
+        )
+        if result.matched_count == 0:
+            # Either the doc was deleted or its updated_at no longer matches.
+            current = self.collection.find_one({"_id": item_id}, {"updated_at": 1})
+            if current is None:
+                raise ConflictError(
+                    f"Run {item_id} was deleted while you were editing it"
+                )
+            raise ConflictError(
+                f"Run {item_id} was modified by another user since you loaded it "
+                f"(expected updated_at={expected}, "
+                f"now {current.get('updated_at')!r}). "
+                f"Refresh to see the latest version and reapply your changes."
+            )
+        run._loaded_updated_at = run.updated_at
 
     def create_run(self, created_by: str = "") -> SequencingRun:
         """Create a new run with default settings and save to database."""

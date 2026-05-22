@@ -378,11 +378,28 @@ def register(app, rt, ctx: AppContext):
                 if not success:
                     config.enabled = False
                     ctx.sample_api_config_repo.save(config)
+                    audit(
+                        "lims_config.updated",
+                        actor=get_username(req),
+                        target="sample_api_config",
+                        outcome="failure",
+                        base_url=config.base_url,
+                        enabled=False,
+                        reason="connection_failed",
+                    )
                     return SampleApiConfigForm(
                         config, error=f"Connection failed: {msg}. Integration has been disabled."
                     )
 
             ctx.sample_api_config_repo.save(config)
+
+            audit(
+                "lims_config.updated",
+                actor=get_username(req),
+                target="sample_api_config",
+                base_url=config.base_url,
+                enabled=config.enabled,
+            )
 
             return SampleApiConfigForm(config, message="LIMS integration configuration saved")
 

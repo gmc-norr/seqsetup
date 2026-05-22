@@ -1,4 +1,18 @@
-"""Shared utilities for route handlers."""
+"""Shared utilities for route handlers.
+
+Access-model note (audit L1)
+----------------------------
+SeqSetup is intentionally single-tenant: any authenticated user with
+``standard`` role can view, edit, and (when archived) delete any run in the
+system. There is no per-resource owner field and no ACL check beyond the
+auth gate. The ``admin`` role is the only authorization boundary, used for
+config changes (instruments, auth, LIMS, index kits) and user management.
+
+If you find yourself adding per-resource ownership checks (e.g. only the
+creator can edit a run), STOP — that's a multi-tenant design decision that
+must be coordinated across the whole route surface, model layer, and UI.
+Implement it consistently or not at all.
+"""
 
 import re
 

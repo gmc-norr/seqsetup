@@ -2,7 +2,10 @@
 
 import json
 import logging
+import os
 import ssl
+import threading
+import time
 import urllib.request
 import urllib.error
 from urllib.parse import urlparse
@@ -14,6 +17,41 @@ logger = logging.getLogger(__name__)
 
 # Maximum API response size (10 MB)
 _MAX_RESPONSE_SIZE = 10 * 1024 * 1024
+
+
+# Minimum interval between consecutive LIMS API calls (per host). Defends
+# against runaway admin operations or buggy UI re-firing requests from
+# flooding the LIMS. Default 100ms = 10 req/sec ceiling; override with
+# SEQSETUP_LIMS_MIN_INTERVAL_MS=<int>.
+def _min_interval_seconds() -> float:
+    try:
+        return max(0.0, float(os.environ.get("SEQSETUP_LIMS_MIN_INTERVAL_MS", "100"))) / 1000.0
+    except ValueError:
+        return 0.1
+
+
+_LAST_REQUEST_AT: dict[str, float] = {}
+_RATE_LIMIT_LOCK = threading.Lock()
+
+
+def _throttle(host: str) -> None:
+    """Sleep just long enough to keep at most one request per host per interval.
+
+    Per-host so multiple LIMS endpoints don't share a budget. Synchronous —
+    admin operations aren't latency-critical; the alternative (queue) is
+    over-design for this audit finding.
+    """
+    interval = _min_interval_seconds()
+    if interval <= 0:
+        return
+    with _RATE_LIMIT_LOCK:
+        last = _LAST_REQUEST_AT.get(host, 0.0)
+        now = time.monotonic()
+        wait = (last + interval) - now
+        if wait > 0:
+            time.sleep(wait)
+            now = time.monotonic()
+        _LAST_REQUEST_AT[host] = now
 
 
 class SampleApiError(Exception):
@@ -39,6 +77,10 @@ def _validate_url(url: str) -> None:
 def _api_get(url: str, api_key: str = "") -> dict | list:
     """Make a GET request to the API and return parsed JSON."""
     _validate_url(url)
+
+    # Per-host throttle. A bulk import that hits the same LIMS host many times
+    # will be paced; calls to different hosts run independently.
+    _throttle(urlparse(url).hostname or "")
 
     headers = {
         "Accept": "application/json",

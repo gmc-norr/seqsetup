@@ -5,9 +5,12 @@ from pathlib import Path
 
 from fasthtml.common import *
 
+from starlette.responses import PlainTextResponse
+
 from .csrf import OriginCheckMiddleware
 from .data.instruments import set_instrument_definition_repo
 from .middleware import make_auth_beforeware
+from .repositories.base import ConflictError
 from .routes import admin, api, api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, runs, samples, swagger, validation, wizard
 from .security_headers import SecurityHeadersMiddleware
 from .services.log_capture import setup_log_capture
@@ -49,6 +52,18 @@ _js_v = _asset_hash("js/app.js")
 # works; production deployments must set SEQSETUP_HTTPS_ONLY=1.
 import os as _os
 _sess_https_only = _os.environ.get("SEQSETUP_HTTPS_ONLY", "").lower() in ("1", "true", "yes")
+
+
+async def _conflict_handler(request, exc):
+    """Translate a ConflictError into a 409 response with the user-facing message.
+
+    The optimistic-locked save path on SequencingRun raises ConflictError when
+    a concurrent edit has bumped the stored updated_at. Without this handler
+    the response would be a 500 stack trace.
+    """
+    return PlainTextResponse(str(exc), status_code=409)
+
+
 app, rt = fast_app(
     hdrs=[
         Link(rel="icon", type="image/svg+xml", href="/img/favicon.svg"),
@@ -61,6 +76,7 @@ app, rt = fast_app(
     static_path=str(static_dir),
     same_site="strict",
     sess_https_only=_sess_https_only,
+    exception_handlers={ConflictError: _conflict_handler},
 )
 
 # Security response-header middleware (X-Content-Type-Options, X-Frame-Options,

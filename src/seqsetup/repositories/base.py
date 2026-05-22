@@ -8,6 +8,16 @@ T = TypeVar("T")
 C = TypeVar("C")
 
 
+class ConflictError(Exception):
+    """Raised when an optimistic-locked save detects a concurrent modification.
+
+    The caller should re-fetch the document and surface the conflict to the
+    user — silently overwriting a concurrent edit would lose clinical data.
+    """
+
+    pass
+
+
 class BaseRepository(Generic[T]):
     """Base class for collection-backed repositories.
 

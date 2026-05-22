@@ -7,7 +7,7 @@ from .utils import get_username, require_admin, sanitize_string
 from ..components.layout import AppShell
 from ..components.local_users import EditUserRow, LocalUsersPage, UserTable
 from ..context import AppContext
-from ..models.local_user import LocalUser
+from ..models.local_user import LocalUser, WeakPasswordError
 from ..models.user import UserRole
 from ..services.audit_log import audit
 
@@ -76,7 +76,10 @@ def register(app, rt, ctx: AppContext):
             role=user_role,
             email=email,
         )
-        new_user.set_password(password)
+        try:
+            new_user.set_password(password)
+        except WeakPasswordError as e:
+            return LocalUsersPage(repo.list_all(), error=str(e))
         repo.save(new_user)
 
         audit(
@@ -195,7 +198,10 @@ def register(app, rt, ctx: AppContext):
 
         password_changed = bool(password)
         if password:
-            user.set_password(password)
+            try:
+                user.set_password(password)
+            except WeakPasswordError as e:
+                return LocalUsersPage(repo.list_all(), error=str(e))
 
         from datetime import datetime
         user.updated_at = datetime.now()

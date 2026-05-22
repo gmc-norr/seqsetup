@@ -22,10 +22,11 @@ from ..components.layout import AppShell
 from ..components.wizard import IndexKitPanel
 from ..context import AppContext
 from ..models.index import IndexMode
+from ..services.audit_log import audit
 from ..services.index_parser import IndexParser
 from ..services.index_validator import IndexValidator
 from ..services.index_kit_yaml_exporter import IndexKitYamlExporter
-from .utils import require_admin
+from .utils import get_username, require_admin
 
 
 def _parse_index_override(pattern: str) -> Optional[int]:
@@ -41,6 +42,66 @@ def _parse_index_override(pattern: str) -> Optional[int]:
     m = re.match(r"I(\d+)", val)
     if m:
         return int(m.group(1))
+    return None
+
+
+# Magic-byte prefixes that identify common binary formats. Index kit files
+# must be plain UTF-8 text (YAML/CSV/TSV); a file starting with any of these
+# was almost certainly mis-selected (PDF/Word/zip-of-spreadsheet/etc.).
+_BINARY_MAGIC_BYTES: tuple[bytes, ...] = (
+    b"\x89PNG\r\n\x1a\n",   # PNG
+    b"\xff\xd8\xff",         # JPEG
+    b"%PDF-",                # PDF
+    b"PK\x03\x04",           # ZIP (xlsx, docx, jar, ...)
+    b"PK\x05\x06",           # ZIP empty archive
+    b"PK\x07\x08",           # ZIP spanned archive
+    b"\x1f\x8b",             # gzip
+    b"BZh",                  # bzip2
+    b"\xfd7zXZ\x00",         # xz
+    b"7z\xbc\xaf\x27\x1c",   # 7z
+    b"\x7fELF",              # ELF binary
+    b"MZ",                   # PE/DOS exe
+    b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",  # OLE (legacy Office)
+    b"{\\rtf",               # RTF
+    b"\x00\x00\x01\x00",     # Windows ICO
+)
+
+
+def _reject_binary_upload(content: bytes) -> Optional[str]:
+    """Return a rejection reason if ``content`` looks binary, else None.
+
+    Index kit files are YAML/CSV/TSV — all UTF-8 text. We reject by:
+      1. Known binary magic-byte prefixes (catches PDF/zip/exe mis-uploads).
+      2. NUL bytes in the first 8 KB (text rarely contains them, binaries often do).
+      3. UTF-8 decode failure on a sniff prefix (binary garbage decodes as
+         random bytes, valid UTF-8 doesn't).
+
+    Returns an admin-friendly message on rejection, or None to allow.
+    """
+    if not content:
+        return None  # empty content is handled by the upstream check
+
+    for prefix in _BINARY_MAGIC_BYTES:
+        if content.startswith(prefix):
+            return (
+                f"File looks like a binary format (magic bytes {prefix[:8]!r}). "
+                f"Index kits must be plain text (YAML, CSV, or TSV)."
+            )
+
+    sniff = content[:8192]
+    if b"\x00" in sniff:
+        return (
+            "File contains NUL bytes in the first 8 KB. "
+            "Index kits must be plain text (YAML, CSV, or TSV)."
+        )
+
+    try:
+        sniff.decode("utf-8")
+    except UnicodeDecodeError:
+        return (
+            "File is not valid UTF-8 text. "
+            "Index kits must be plain text (YAML, CSV, or TSV)."
+        )
     return None
 
 
@@ -103,6 +164,19 @@ def register(app, rt, ctx: AppContext):
                 f"File too large. Maximum size is {MAX_INDEX_FILE_SIZE // 1024} KB.",
                 cls="error-message",
             )
+
+        # Reject obviously-binary uploads (PDF, zip, exe, ...) before parsing.
+        # Extension is admin-supplied and unreliable; content sniff is the
+        # actual line of defence.
+        if reason := _reject_binary_upload(file_content):
+            audit(
+                "index_kit.upload",
+                actor=get_username(req),
+                target=index_file.filename or "",
+                outcome="failure",
+                reason="binary_content",
+            )
+            return Div(reason, cls="error-message")
 
         try:
             # Convert string to IndexMode enum
@@ -171,7 +245,22 @@ def register(app, rt, ctx: AppContext):
             ctx.index_kit_repo.save(kit)
         except Exception:
             logger.exception("Failed to parse index kit file")
+            audit(
+                "index_kit.upload",
+                actor=get_username(req),
+                target=index_file.filename or "",
+                outcome="failure",
+            )
             return Div("Failed to parse file. Please check the format and try again.", cls="error-message")
+
+        audit(
+            "index_kit.upload",
+            actor=get_username(req),
+            target=kit.kit_id,
+            kit_name=kit.name,
+            kit_version=kit.version,
+            mode=kit.index_mode.value,
+        )
 
         # Success - redirect to index kits page
         return Response(
@@ -201,6 +290,15 @@ def register(app, rt, ctx: AppContext):
                 return Response("Forbidden: You can only remove kits you created", status_code=403)
 
         deleted = ctx.index_kit_repo.delete(name, version)
+
+        if deleted:
+            audit(
+                "index_kit.deleted",
+                actor=get_username(req),
+                target=f"{name}:{version}",
+                kit_name=name,
+                kit_version=version,
+            )
 
         kits = ctx.index_kit_repo.list_all()
         if not deleted:

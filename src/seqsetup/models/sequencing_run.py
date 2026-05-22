@@ -145,12 +145,34 @@ class SequencingRun:
     # Assigned analyses
     analyses: list[Analysis] = field(default_factory=list)
 
-    # Pre-generated exports (populated when status transitions to READY)
+    # Pre-generated exports (populated when status transitions to READY).
+    #
+    # Encryption-at-rest note (audit M3)
+    # ----------------------------------
+    # These fields may contain sample identifiers and other clinical
+    # metadata once a run is approved. They are stored plaintext in the
+    # MongoDB document. For deployments that need protection against
+    # backup or storage-level disclosure, encrypt at the *storage* layer:
+    #   - MongoDB's built-in encryption-at-rest (Enterprise) or
+    #     client-side field-level encryption (CSFLE), or
+    #   - Encrypted block storage on the host running mongod.
+    # Application-level wrapping of these fields would multiply the
+    # key-management surface for negligible additional benefit and is
+    # intentionally not done here.
     generated_samplesheet_v2: Optional[str] = None
     generated_samplesheet_v1: Optional[str] = None
     generated_json: Optional[str] = None
     generated_validation_json: Optional[str] = None
     generated_validation_pdf: Optional[bytes] = None  # PDF bytes, base64-encoded in MongoDB
+
+    # Optimistic-locking token captured at load time. Set by from_dict to the
+    # parsed updated_at; touch() does NOT change this. The RunRepository.save
+    # path uses this value in the document filter and raises ConflictError if
+    # a concurrent edit has bumped the stored updated_at. None means "freshly
+    # constructed, never loaded" — save inserts without a version check.
+    _loaded_updated_at: Optional[datetime] = field(
+        default=None, repr=False, compare=False
+    )
 
     def __post_init__(self):
         # Clamp reagent_cycles to positive
@@ -363,4 +385,7 @@ class SequencingRun:
                 base64.b64decode(data["generated_validation_pdf"])
                 if data.get("generated_validation_pdf") else None
             ),
+            # Snapshot the load-time updated_at so optimistic-locked saves
+            # can detect concurrent edits (see RunRepository.save).
+            _loaded_updated_at=updated_at,
         )

@@ -117,3 +117,63 @@ class TestEffectiveApiKey:
         args, kwargs = mock_get.call_args
         called_key = args[1] if len(args) > 1 else kwargs.get("api_key")
         assert called_key == "env-secret"
+
+
+class TestThrottle:
+    """Per-host throttle paces requests to a configurable minimum interval."""
+
+    def _reset_state(self):
+        from seqsetup.services import sample_api as mod
+        mod._LAST_REQUEST_AT.clear()
+
+    def test_no_sleep_on_first_request(self, monkeypatch):
+        from seqsetup.services import sample_api as mod
+        self._reset_state()
+        monkeypatch.setenv("SEQSETUP_LIMS_MIN_INTERVAL_MS", "100")
+        sleep_calls: list = []
+        monkeypatch.setattr(mod.time, "sleep", lambda s: sleep_calls.append(s))
+        mod._throttle("lims.example.com")
+        assert sleep_calls == []
+
+    def test_sleeps_on_rapid_consecutive_requests(self, monkeypatch):
+        from seqsetup.services import sample_api as mod
+        self._reset_state()
+        monkeypatch.setenv("SEQSETUP_LIMS_MIN_INTERVAL_MS", "100")
+
+        # Pin monotonic to advance only when we tell it to.
+        fake_now = [1000.0]
+        monkeypatch.setattr(mod.time, "monotonic", lambda: fake_now[0])
+        sleep_calls: list = []
+
+        def fake_sleep(s):
+            sleep_calls.append(s)
+            fake_now[0] += s
+        monkeypatch.setattr(mod.time, "sleep", fake_sleep)
+
+        mod._throttle("lims.example.com")
+        # Second call immediately — must sleep ~0.1s.
+        mod._throttle("lims.example.com")
+        assert len(sleep_calls) == 1
+        assert sleep_calls[0] == pytest.approx(0.1, abs=1e-6)
+
+    def test_separate_hosts_have_independent_budgets(self, monkeypatch):
+        from seqsetup.services import sample_api as mod
+        self._reset_state()
+        monkeypatch.setenv("SEQSETUP_LIMS_MIN_INTERVAL_MS", "100")
+        sleep_calls: list = []
+        monkeypatch.setattr(mod.time, "sleep", lambda s: sleep_calls.append(s))
+
+        mod._throttle("lims-a.example.com")
+        mod._throttle("lims-b.example.com")  # different host — no wait
+        assert sleep_calls == []
+
+    def test_interval_zero_disables_throttle(self, monkeypatch):
+        from seqsetup.services import sample_api as mod
+        self._reset_state()
+        monkeypatch.setenv("SEQSETUP_LIMS_MIN_INTERVAL_MS", "0")
+        sleep_calls: list = []
+        monkeypatch.setattr(mod.time, "sleep", lambda s: sleep_calls.append(s))
+
+        mod._throttle("lims.example.com")
+        mod._throttle("lims.example.com")
+        assert sleep_calls == []
