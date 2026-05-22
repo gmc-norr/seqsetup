@@ -1,11 +1,70 @@
 """In-memory log capture for admin log viewer."""
 
 import logging
+import re
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
 from typing import Optional
+
+
+# Substrings that, if seen in a log message as the key of a key=value or
+# "key": "value" pattern, indicate the value is a secret and must be scrubbed
+# before being stored in the operator-visible log buffer.
+_SENSITIVE_KEY_NAMES = (
+    "bind_password",
+    "api_key",
+    "api-key",
+    "password",
+    "password_hash",
+    "token_hash",
+    "secret",
+    "session_secret",
+    "authorization",
+)
+
+# Compile once. Matches "<key>: '<value>'", "<key>=<value>", "<key>: <value>",
+# and JSON-ish "<key>": "<value>". Captures the key separator and quoted value
+# so the replacement preserves the surrounding shape.
+def _build_scrub_pattern() -> re.Pattern:
+    keys = "|".join(re.escape(k) for k in _SENSITIVE_KEY_NAMES)
+    # Match: optional " or ', key, optional " or ', then = or : with optional space,
+    # then either quoted value or unquoted value up to comma/whitespace.
+    return re.compile(
+        rf"""(?ix)
+        ([\"\']?(?:{keys})[\"\']?\s*[:=]\s*)   # group 1: key and separator
+        (?:
+            \"((?:[^\"\\]|\\.)*)\"            # group 2: double-quoted value
+          | '((?:[^'\\]|\\.)*)'               # group 3: single-quoted value
+          | ([^\s,;}})\]]+)                   # group 4: unquoted value
+        )
+        """
+    )
+
+
+_SCRUB_PATTERN = _build_scrub_pattern()
+# Bcrypt hash: starts with $2 followed by a/b/y, $cost$, then 53-char base64ish.
+_BCRYPT_PATTERN = re.compile(r"\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}")
+
+
+def scrub_log_message(message: str) -> str:
+    """Replace likely-secret values in a log message with ``***``.
+
+    Defense-in-depth — callers should never log secrets in the first place,
+    but a future careless ``logger.debug(config.to_dict())`` must not expose
+    bind passwords or API keys in the admin log viewer."""
+    def _replace(match: re.Match) -> str:
+        prefix = match.group(1)
+        if match.group(2) is not None:
+            return f'{prefix}"***"'
+        if match.group(3) is not None:
+            return f"{prefix}'***'"
+        return f"{prefix}***"
+
+    scrubbed = _SCRUB_PATTERN.sub(_replace, message)
+    scrubbed = _BCRYPT_PATTERN.sub("$2b$**$***", scrubbed)
+    return scrubbed
 
 
 @dataclass
@@ -46,13 +105,13 @@ class LogCaptureHandler(logging.Handler):
         self._lock = Lock()
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Capture a log record."""
+        """Capture a log record (with sensitive-value scrub applied)."""
         try:
             entry = LogEntry(
                 timestamp=datetime.fromtimestamp(record.created),
                 level=record.levelname,
                 logger_name=record.name,
-                message=self.format(record),
+                message=scrub_log_message(self.format(record)),
                 module=record.module,
                 funcName=record.funcName,
                 lineno=record.lineno,

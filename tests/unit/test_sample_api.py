@@ -74,3 +74,46 @@ class TestCheckConnection:
         config = SampleApiConfig(base_url="https://example.com/api", enabled=False)
         success, msg = check_connection(config)
         assert success is True
+
+
+class TestEffectiveApiKey:
+    """The api_key the service uses must prefer the env var over the stored
+    field so production deployments can keep the secret out of MongoDB."""
+
+    def test_env_var_overrides_stored_key(self, monkeypatch):
+        monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", "env-secret")
+        config = SampleApiConfig(base_url="https://x", api_key="stored-secret")
+        assert config.effective_api_key() == "env-secret"
+
+    def test_falls_back_to_stored_when_env_absent(self, monkeypatch):
+        monkeypatch.delenv("SEQSETUP_LIMS_API_KEY", raising=False)
+        config = SampleApiConfig(base_url="https://x", api_key="stored-secret")
+        assert config.effective_api_key() == "stored-secret"
+
+    def test_empty_env_value_treated_as_unset(self, monkeypatch):
+        monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", "")
+        config = SampleApiConfig(base_url="https://x", api_key="stored-secret")
+        assert config.effective_api_key() == "stored-secret"
+
+    def test_returns_empty_when_neither_set(self, monkeypatch):
+        monkeypatch.delenv("SEQSETUP_LIMS_API_KEY", raising=False)
+        config = SampleApiConfig(base_url="https://x")
+        assert config.effective_api_key() == ""
+
+    @patch("seqsetup.services.sample_api._api_get")
+    def test_request_uses_effective_key_not_raw_field(self, mock_get, monkeypatch):
+        """The HTTP request must carry the env value, not the stored placeholder."""
+        from seqsetup.services.sample_api import fetch_worklists
+
+        monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", "env-secret")
+        mock_get.return_value = []
+        config = SampleApiConfig(
+            base_url="https://example.com/api",
+            api_key="stored-secret",
+            enabled=True,
+        )
+        fetch_worklists(config)
+        # mock_get was called with (url, api_key) — check the api_key arg.
+        args, kwargs = mock_get.call_args
+        called_key = args[1] if len(args) > 1 else kwargs.get("api_key")
+        assert called_key == "env-secret"

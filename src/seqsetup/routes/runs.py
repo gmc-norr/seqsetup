@@ -18,6 +18,7 @@ from ..data.instruments import (
     get_reagent_kits_for_flowcell,
 )
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus
+from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
 from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
@@ -216,9 +217,18 @@ def register(app, rt, ctx: AppContext):
 
         # Block transition to "ready" unless validation is approved
         if new_status == RunStatus.READY and not run.validation_approved:
+            audit(
+                "run.status.denied",
+                actor=get_username(req),
+                target=run_id,
+                outcome="denied",
+                reason="validation_not_approved",
+                attempted_status=new_status.value,
+            )
             from ..components.edit_run import RunStatusBar
             return RunStatusBar(run)
 
+        previous_status = run.status.value
         run.status = new_status
 
         # Pre-generate exports when transitioning to READY
@@ -251,6 +261,14 @@ def register(app, rt, ctx: AppContext):
 
         run.touch(reset_validation=False, updated_by=get_username(req))
         ctx.run_repo.save(run)
+
+        audit(
+            "run.status.changed",
+            actor=get_username(req),
+            target=run_id,
+            from_status=previous_status,
+            to_status=new_status.value,
+        )
 
         from ..components.edit_run import RunStatusBar, SampleTableSectionForRun, ExportPanelForRun
 

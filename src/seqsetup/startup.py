@@ -30,6 +30,10 @@ def resolve_session_secret() -> str:
     """Resolve session secret from environment or file.
 
     Priority: SEQSETUP_SESSION_SECRET env var > .sesskey file > auto-generate.
+
+    A generated .sesskey is written with mode 0600 so only the owning process
+    can read it — world/group access would let anyone with FS access forge
+    sessions. Production should prefer the env var and not rely on the file.
     """
     secret = os.environ.get("SEQSETUP_SESSION_SECRET")
     if secret:
@@ -37,7 +41,13 @@ def resolve_session_secret() -> str:
     if SESSKEY_PATH.exists():
         return SESSKEY_PATH.read_text().strip()
     secret = secrets.token_hex(32)
-    SESSKEY_PATH.write_text(secret)
+    # Open with O_CREAT|O_WRONLY|O_EXCL and an explicit mode so the file is
+    # not briefly world-readable in the gap between create and chmod.
+    fd = os.open(SESSKEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(fd, secret.encode("utf-8"))
+    finally:
+        os.close(fd)
     return secret
 
 

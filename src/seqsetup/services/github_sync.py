@@ -27,6 +27,37 @@ from .instrument_validator import validate_instrument_yaml, ValidationResult
 logger = logging.getLogger(__name__)
 
 
+# Hostnames the file-fetch path is allowed to talk to. raw.githubusercontent.com
+# is what api.github.com returns for public repo files; the *.githubusercontent.com
+# wildcard also covers some redirect cases.
+_GITHUB_CONTENT_HOSTS = (
+    "raw.githubusercontent.com",
+    ".githubusercontent.com",  # suffix-match for any subdomain
+)
+
+
+def _validate_github_content_host(url: str) -> None:
+    """Raise GitHubSyncError if ``url`` points outside the GitHub content hosts."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("https",):
+        raise GitHubSyncError(
+            f"Refused to fetch GitHub content over non-HTTPS scheme: {parsed.scheme!r}"
+        )
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise GitHubSyncError(f"Refused to fetch GitHub content with empty host: {url!r}")
+    for allowed in _GITHUB_CONTENT_HOSTS:
+        if allowed.startswith("."):
+            if host.endswith(allowed) and len(host) > len(allowed):
+                return
+        elif host == allowed:
+            return
+    raise GitHubSyncError(
+        f"Refused to fetch from non-GitHub host {host!r}. "
+        f"Expected one of: {', '.join(_GITHUB_CONTENT_HOSTS)}"
+    )
+
+
 class GitHubSyncError(Exception):
     """Error during GitHub sync operation."""
     pass
@@ -261,7 +292,14 @@ class GitHubSyncService:
             raise GitHubSyncError(f"Network error: {e.reason}")
 
     def _fetch_file_content(self, download_url: str) -> str:
-        """Fetch file content from GitHub."""
+        """Fetch file content from GitHub.
+
+        The download_url comes from the GitHub API's directory listing and
+        normally points at ``*.githubusercontent.com``. Validate the host
+        explicitly so a compromised or maliciously-configured GitHub
+        Enterprise endpoint can't redirect us to fetch from an arbitrary host.
+        """
+        _validate_github_content_host(download_url)
         try:
             request = urllib.request.Request(
                 download_url,

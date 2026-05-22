@@ -292,13 +292,19 @@ class TestRunCyclesValidation:
         assert rc.read1_cycles == 0
         assert rc.total_cycles == 0
 
-    def test_all_cycles_very_large(self):
-        """Very large cycle values are preserved."""
-        rc = RunCycles(read1_cycles=10000, read2_cycles=10000, index1_cycles=1000, index2_cycles=1000)
-        assert rc.read1_cycles == 10000
-        assert rc.read2_cycles == 10000
+    def test_all_cycles_very_large_clamped(self):
+        """Implausibly-large cycle values are clamped to the upper bound."""
+        rc = RunCycles(read1_cycles=10000, read2_cycles=10000, index1_cycles=10000, index2_cycles=10000)
+        # Upper bound is 1000 — generously above current Illumina max (~500).
+        assert rc.read1_cycles == 1000
+        assert rc.read2_cycles == 1000
         assert rc.index1_cycles == 1000
         assert rc.index2_cycles == 1000
+
+    def test_cycles_at_upper_bound_preserved(self):
+        rc = RunCycles(read1_cycles=500, read2_cycles=500, index1_cycles=24, index2_cycles=24)
+        assert rc.read1_cycles == 500
+        assert rc.read2_cycles == 500
 
     def test_total_cycles_sum(self):
         """total_cycles is sum of all four cycle types."""

@@ -173,3 +173,26 @@ class TestLdapAuthOrderingInvariant:
         with self._patch_ldap(_OrderRecordingConnection):
             with pytest.raises(LDAPError):
                 service.authenticate("alice", "wrong-password")
+
+
+class TestEffectiveBindPassword:
+    """The LDAP bind password must prefer the env var over the stored field
+    so production deployments can keep the secret out of MongoDB."""
+
+    def test_env_var_overrides_stored_password(self, monkeypatch):
+        from seqsetup.models.auth_config import LDAPConfig
+        monkeypatch.setenv("SEQSETUP_LDAP_BIND_PASSWORD", "env-secret")
+        cfg = LDAPConfig(bind_dn="CN=svc,DC=ex", bind_password="stored-secret")
+        assert cfg.effective_bind_password() == "env-secret"
+
+    def test_falls_back_to_stored_when_env_absent(self, monkeypatch):
+        from seqsetup.models.auth_config import LDAPConfig
+        monkeypatch.delenv("SEQSETUP_LDAP_BIND_PASSWORD", raising=False)
+        cfg = LDAPConfig(bind_dn="CN=svc,DC=ex", bind_password="stored-secret")
+        assert cfg.effective_bind_password() == "stored-secret"
+
+    def test_empty_env_value_treated_as_unset(self, monkeypatch):
+        from seqsetup.models.auth_config import LDAPConfig
+        monkeypatch.setenv("SEQSETUP_LDAP_BIND_PASSWORD", "")
+        cfg = LDAPConfig(bind_dn="CN=svc,DC=ex", bind_password="stored-secret")
+        assert cfg.effective_bind_password() == "stored-secret"

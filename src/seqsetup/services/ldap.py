@@ -79,7 +79,7 @@ class LDAPService:
         conn = Connection(
             server,
             user=self.config.bind_dn,
-            password=self.config.bind_password,
+            password=self.config.effective_bind_password(),
             authentication=SIMPLE,
             read_only=True,
             receive_timeout=self.config.receive_timeout,

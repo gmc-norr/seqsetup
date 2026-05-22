@@ -627,6 +627,21 @@ class TestSampleIndexMutationResetsApproval:
         run = SequencingRun.from_dict(data)
         assert run.status == RunStatus.ARCHIVED
 
+    def test_from_dict_unknown_status_falls_back_safely(self):
+        """An unknown status string must not crash from_dict — losing access to
+        archived runs because of a renamed enum is a clinical traceability bug.
+        Unknown values map to ARCHIVED (the terminal, read-only state)."""
+        data = {"id": "test-id", "status": "renamed_in_future_version"}
+        run = SequencingRun.from_dict(data)
+        assert run.status == RunStatus.ARCHIVED
+
+    def test_from_dict_unknown_platform_falls_back_safely(self):
+        """An unknown instrument_platform must not crash from_dict."""
+        data = {"id": "test-id", "instrument_platform": "NovaSeq Z Hypothetical"}
+        run = SequencingRun.from_dict(data)
+        # The run loads with the default platform; surfaced as a warning, not a crash.
+        assert run is not None
+
     def test_from_dict_datetime_objects_preserved(self):
         """from_dict handles datetime objects (not just strings)."""
         now = datetime(2025, 6, 15, 10, 30, 0)

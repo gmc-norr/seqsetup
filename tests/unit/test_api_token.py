@@ -104,3 +104,43 @@ class TestApiTokenSerialization:
         """Legacy tokens without token_prefix should deserialize with empty prefix."""
         token = ApiToken.from_dict({"name": "old-token", "token_hash": "hash"})
         assert token.token_prefix == ""
+
+
+class TestApiTokenExpiry:
+    """expires_at gates whether a token may authenticate; last_used_at tracks usage."""
+
+    def test_is_expired_false_when_expires_at_none(self):
+        from seqsetup.models.api_token import ApiToken
+        token = ApiToken(expires_at=None)
+        assert token.is_expired() is False
+
+    def test_is_expired_false_when_in_future(self):
+        from datetime import datetime, timedelta
+        from seqsetup.models.api_token import ApiToken
+        token = ApiToken(expires_at=datetime.now() + timedelta(hours=1))
+        assert token.is_expired() is False
+
+    def test_is_expired_true_when_past(self):
+        from datetime import datetime, timedelta
+        from seqsetup.models.api_token import ApiToken
+        token = ApiToken(expires_at=datetime.now() - timedelta(hours=1))
+        assert token.is_expired() is True
+
+    def test_round_trip_preserves_expires_at_and_last_used_at(self):
+        from datetime import datetime
+        from seqsetup.models.api_token import ApiToken
+        original = ApiToken(
+            name="t",
+            token_hash="h",
+            expires_at=datetime(2030, 1, 1, 12, 0, 0),
+            last_used_at=datetime(2026, 5, 1, 12, 0, 0),
+        )
+        restored = ApiToken.from_dict(original.to_dict())
+        assert restored.expires_at == datetime(2030, 1, 1, 12, 0, 0)
+        assert restored.last_used_at == datetime(2026, 5, 1, 12, 0, 0)
+
+    def test_round_trip_handles_missing_expiry_fields(self):
+        from seqsetup.models.api_token import ApiToken
+        restored = ApiToken.from_dict({"name": "legacy", "token_hash": "h"})
+        assert restored.expires_at is None
+        assert restored.last_used_at is None

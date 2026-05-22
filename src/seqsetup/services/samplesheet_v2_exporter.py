@@ -400,10 +400,12 @@ class SampleSheetV2Exporter:
         # Get data fields from profile, filtering out fields we handle specially
         data_fields = profile.data_fields or list(profile.data.keys())
 
-        # Write header row
-        output.write(",".join(data_fields) + "\n")
+        # Write header row — escape admin-defined column names defensively.
+        output.write(",".join(cls._escape_csv(str(f)) for f in data_fields) + "\n")
 
-        # Write data rows for each sample
+        # Write data rows for each sample. Every cell flows through ",".join()
+        # so any comma or quote in admin/user-supplied content would shift
+        # downstream columns — escape every variable interpolation.
         for sample in samples:
             row = []
             for field in data_fields:
@@ -413,8 +415,8 @@ class SampleSheetV2Exporter:
                     # Use first lane if available
                     row.append(str(sample.lanes[0]) if sample.lanes else "")
                 elif field == "Index":
-                    # i7 index sequence
-                    row.append(sample.index1_sequence or "")
+                    # i7 index sequence (model-validated against [ACGTN], but escape defensively)
+                    row.append(cls._escape_csv(sample.index1_sequence or ""))
                 elif field == "Index2":
                     # i5 index sequence, with RC handling for instrument
                     i5 = sample.index2_sequence or ""
@@ -422,27 +424,33 @@ class SampleSheetV2Exporter:
                         v2_orient = get_samplesheet_v2_i5_orientation(run.instrument_platform)
                         if v2_orient == "reverse-complement":
                             i5 = _reverse_complement(i5)
-                    row.append(i5)
+                    row.append(cls._escape_csv(i5))
                 elif field in profile.translate:
                     # Handle translated fields (e.g., IndexI7 -> Index)
                     original = profile.translate[field]
                     if original == "Index":
-                        row.append(sample.index1_sequence or "")
+                        row.append(cls._escape_csv(sample.index1_sequence or ""))
                     elif original == "Index2":
                         i5 = sample.index2_sequence or ""
                         if i5 and run:
                             v2_orient = get_samplesheet_v2_i5_orientation(run.instrument_platform)
                             if v2_orient == "reverse-complement":
                                 i5 = _reverse_complement(i5)
-                        row.append(i5)
+                        row.append(cls._escape_csv(i5))
                     else:
-                        row.append(str(profile.data.get(field, "")))
+                        row.append(cls._escape_csv(str(profile.data.get(field, ""))))
                 elif field == "BarcodeMismatchesIndex1":
                     val = sample.barcode_mismatches_index1
-                    row.append(str(val) if val is not None else str(profile.data.get(field, "")))
+                    row.append(
+                        str(val) if val is not None
+                        else cls._escape_csv(str(profile.data.get(field, "")))
+                    )
                 elif field == "BarcodeMismatchesIndex2":
                     val = sample.barcode_mismatches_index2
-                    row.append(str(val) if val is not None else str(profile.data.get(field, "")))
+                    row.append(
+                        str(val) if val is not None
+                        else cls._escape_csv(str(profile.data.get(field, "")))
+                    )
                 elif field == "OverrideCycles":
                     # Use sample's override cycles, or calculate from index lengths
                     oc = sample.override_cycles
@@ -450,10 +458,10 @@ class SampleSheetV2Exporter:
                         oc = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
                     if oc and run:
                         oc = cls._adjust_override_cycles_for_instrument(oc, run)
-                    row.append(oc or "")
+                    row.append(cls._escape_csv(oc or ""))
                 else:
                     # Use default value from profile data
-                    row.append(str(profile.data.get(field, "")))
+                    row.append(cls._escape_csv(str(profile.data.get(field, ""))))
             output.write(",".join(row) + "\n")
 
         output.write("\n")

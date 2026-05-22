@@ -5,9 +5,11 @@ from pathlib import Path
 
 from fasthtml.common import *
 
+from .csrf import OriginCheckMiddleware
 from .data.instruments import set_instrument_definition_repo
 from .middleware import make_auth_beforeware
 from .routes import admin, api, api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, runs, samples, swagger, validation, wizard
+from .security_headers import SecurityHeadersMiddleware
 from .services.log_capture import setup_log_capture
 from .startup import (
     get_api_token_repo,
@@ -41,7 +43,12 @@ def _asset_hash(filename: str) -> str:
 _css_v = _asset_hash("css/app.css")
 _js_v = _asset_hash("js/app.js")
 
-# Create FastHTML app with session support
+# Create FastHTML app with session support.
+# same_site="strict" defeats CSRF via cross-site form submissions (the audit's
+# H3/M6 findings). sess_https_only is controlled by env so local-dev HTTP still
+# works; production deployments must set SEQSETUP_HTTPS_ONLY=1.
+import os as _os
+_sess_https_only = _os.environ.get("SEQSETUP_HTTPS_ONLY", "").lower() in ("1", "true", "yes")
 app, rt = fast_app(
     hdrs=[
         Link(rel="icon", type="image/svg+xml", href="/img/favicon.svg"),
@@ -52,7 +59,18 @@ app, rt = fast_app(
     secret_key=SESSION_SECRET,
     before=bware,
     static_path=str(static_dir),
+    same_site="strict",
+    sess_https_only=_sess_https_only,
 )
+
+# Security response-header middleware (X-Content-Type-Options, X-Frame-Options,
+# Referrer-Policy, Cross-Origin-* and HSTS-on-TLS). Applied to every response.
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Origin/Host check on state-changing requests. Defense-in-depth alongside
+# the session cookie's SameSite=Strict. See seqsetup.csrf for details and
+# the SEQSETUP_TRUSTED_ORIGINS env var to allow additional origins.
+app.add_middleware(OriginCheckMiddleware)
 
 # Initialize services
 set_instrument_definition_repo(get_instrument_definition_repo())  # Enable synced instruments

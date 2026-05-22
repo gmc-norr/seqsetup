@@ -3,12 +3,13 @@
 from fasthtml.common import *
 from starlette.responses import Response
 
-from .utils import require_admin, sanitize_string
+from .utils import get_username, require_admin, sanitize_string
 from ..components.layout import AppShell
 from ..components.local_users import EditUserRow, LocalUsersPage, UserTable
 from ..context import AppContext
 from ..models.local_user import LocalUser
 from ..models.user import UserRole
+from ..services.audit_log import audit
 
 
 def register(app, rt, ctx: AppContext):
@@ -77,6 +78,13 @@ def register(app, rt, ctx: AppContext):
         )
         new_user.set_password(password)
         repo.save(new_user)
+
+        audit(
+            "user.created",
+            actor=get_username(req),
+            target=username,
+            role=user_role.value,
+        )
 
         return LocalUsersPage(
             repo.list_all(), message=f"User '{username}' created successfully."
@@ -180,16 +188,27 @@ def register(app, rt, ctx: AppContext):
                     error="Cannot change role: this is the last admin user.",
                 )
 
+        previous_role = user.role
         user.display_name = display_name
         user.email = email
         user.role = new_role
 
+        password_changed = bool(password)
         if password:
             user.set_password(password)
 
         from datetime import datetime
         user.updated_at = datetime.now()
         repo.save(user)
+
+        audit(
+            "user.updated",
+            actor=get_username(req),
+            target=username,
+            from_role=previous_role.value,
+            to_role=new_role.value,
+            password_changed=password_changed,
+        )
 
         return LocalUsersPage(
             repo.list_all(), message=f"User '{username}' updated successfully."
@@ -215,7 +234,14 @@ def register(app, rt, ctx: AppContext):
                 error="Cannot delete the last admin user.",
             )
 
+        deleted_role = user.role.value
         repo.delete(username)
+        audit(
+            "user.deleted",
+            actor=get_username(req),
+            target=username,
+            deleted_role=deleted_role,
+        )
         return LocalUsersPage(
             repo.list_all(), message=f"User '{username}' deleted."
         )

@@ -3,11 +3,12 @@
 from fasthtml.common import *
 from starlette.responses import Response
 
-from .utils import require_admin, sanitize_string
+from .utils import get_username, require_admin, sanitize_string
 from ..components.layout import AppShell
 from ..components.api_tokens import ApiTokensPage
 from ..context import AppContext
 from ..models.api_token import ApiToken
+from ..services.audit_log import audit
 
 
 def register(app, rt, ctx: AppContext):
@@ -55,6 +56,13 @@ def register(app, rt, ctx: AppContext):
         )
         ctx.api_token_repo.save(token)
 
+        audit(
+            "api_token.created",
+            actor=get_username(req),
+            target=token.id,
+            token_name=name,
+        )
+
         tokens = ctx.api_token_repo.list_all()
         return ApiTokensPage(tokens, new_token=plaintext)
 
@@ -69,6 +77,13 @@ def register(app, rt, ctx: AppContext):
         token = repo.get_by_id(token_id)
         token_name = token.name if token else "Unknown"
         repo.delete(token_id)
+
+        audit(
+            "api_token.revoked",
+            actor=get_username(req),
+            target=token_id,
+            token_name=token_name,
+        )
 
         tokens = repo.list_all()
         return ApiTokensPage(tokens, message=f"Token '{token_name}' revoked")

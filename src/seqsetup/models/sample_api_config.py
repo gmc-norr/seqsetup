@@ -1,7 +1,13 @@
 """Sample API configuration model."""
 
+import os
 from dataclasses import dataclass, field
 from typing import Optional
+
+
+# Env var that overrides the stored api_key at use time. Setting this in
+# production keeps the actual secret out of the MongoDB document.
+_API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
 
 
 @dataclass
@@ -21,8 +27,19 @@ class SampleApiConfig:
     """
 
     base_url: str = ""  # e.g. "https://lims.example.com/api"
-    api_key: str = ""
+    api_key: str = ""  # Legacy MongoDB storage; production should use SEQSETUP_LIMS_API_KEY
     enabled: bool = False
+
+    def effective_api_key(self) -> str:
+        """Return the api key to use at request time.
+
+        Prefers the SEQSETUP_LIMS_API_KEY environment variable; falls back to
+        the stored field for backward compatibility with existing deployments.
+        New deployments should set the env var and leave the stored field empty
+        so the secret never lives in the database backup.
+        """
+        env_value = os.environ.get(_API_KEY_ENV, "")
+        return env_value or self.api_key
 
     # Field mappings: SeqSetup field name -> API field name
     # Supported SeqSetup fields: worksheet_id, investigator, updated_at, samples

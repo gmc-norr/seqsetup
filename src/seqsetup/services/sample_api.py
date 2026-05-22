@@ -129,7 +129,7 @@ def fetch_worklists(
 
     try:
         url = config.worklists_url(status=status, limit=limit)
-        data = _api_get(url, config.api_key)
+        data = _api_get(url, config.effective_api_key())
 
         # Handle response format: [worksheets_list, pagination_info]
         worksheets_data = data
@@ -221,7 +221,7 @@ def check_connection(config: SampleApiConfig) -> Tuple[bool, str]:
 
     try:
         url = config.worklists_url()
-        data = _api_get(url, config.api_key)
+        data = _api_get(url, config.effective_api_key())
 
         # Handle response format: [worksheets_list, pagination_info]
         count = 0
@@ -263,7 +263,7 @@ def fetch_worklist_samples(config: SampleApiConfig, worklist_id: str) -> Tuple[b
         return False, "Could not build samples URL", []
 
     try:
-        data = _api_get(url, config.api_key)
+        data = _api_get(url, config.effective_api_key())
 
         # Handle different response formats
         samples = []

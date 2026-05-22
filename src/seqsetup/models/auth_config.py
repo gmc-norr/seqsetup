@@ -1,8 +1,46 @@
 """Authentication configuration models."""
 
+import os
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+
+
+# Env var that overrides the stored LDAP bind_password at use time. Setting
+# this in production keeps the actual secret out of the MongoDB document.
+_BIND_PASSWORD_ENV = "SEQSETUP_LDAP_BIND_PASSWORD"
+
+
+# Allowed characters in a user_dn_pattern: letters/digits, RDN separators
+# (= and ,), names/spacing chars (- . _ space), and the {username} marker.
+# Anything else — wildcards, parentheses, backslashes, control chars — can
+# be used to inject LDAP filter syntax or DN escapes, so reject them at
+# config-save time. Existing stored values are not re-validated.
+_USER_DN_PATTERN_RE = re.compile(r"^[A-Za-z0-9=,\-\._ {}]+$")
+
+
+def validate_user_dn_pattern(value: str) -> None:
+    """Raise ValueError if ``value`` contains chars unsafe for a DN template.
+
+    An empty value is OK — that means "fall back to search-based lookup".
+    """
+    if not value:
+        return
+    if "{username}" not in value:
+        raise ValueError(
+            "user_dn_pattern must contain the '{username}' placeholder"
+        )
+    if not _USER_DN_PATTERN_RE.match(value):
+        bad = sorted(set(value) - set("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                      "abcdefghijklmnopqrstuvwxyz"
+                                      "0123456789=,-._ {}"))
+        raise ValueError(
+            f"user_dn_pattern contains disallowed characters "
+            f"({', '.join(repr(c) for c in bad)}). "
+            f"Allowed: letters, digits, '=', ',', '-', '.', '_', space, "
+            f"and '{{username}}'."
+        )
 
 
 class AuthMethod(Enum):
@@ -25,7 +63,7 @@ class LDAPConfig:
 
     # Bind credentials (for searching users)
     bind_dn: str = ""  # e.g., "CN=ServiceAccount,OU=Services,DC=example,DC=com"
-    bind_password: str = ""
+    bind_password: str = ""  # Legacy MongoDB storage; production should use SEQSETUP_LDAP_BIND_PASSWORD
 
     # User search settings
     user_search_base: str = ""  # e.g., "OU=Users,DC=example,DC=com"
@@ -45,6 +83,17 @@ class LDAPConfig:
     # Connection settings
     connect_timeout: int = 10  # seconds
     receive_timeout: int = 10  # seconds
+
+    def effective_bind_password(self) -> str:
+        """Return the bind password to use at LDAP-bind time.
+
+        Prefers SEQSETUP_LDAP_BIND_PASSWORD env var; falls back to the stored
+        field for backward compatibility. New deployments should set the env
+        var and leave the stored field empty so the secret never lives in
+        the database backup.
+        """
+        env_value = os.environ.get(_BIND_PASSWORD_ENV, "")
+        return env_value or self.bind_password
 
     def to_dict(self) -> dict:
         """Convert to dictionary for storage."""

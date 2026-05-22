@@ -198,5 +198,6 @@ class AuthService:
         """
         import bcrypt
 
-        salt = bcrypt.gensalt()
+        # Pinned cost factor — keep in sync with LocalUser._BCRYPT_ROUNDS.
+        salt = bcrypt.gensalt(rounds=12)
         return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")

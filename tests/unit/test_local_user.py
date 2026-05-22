@@ -16,6 +16,23 @@ class TestLocalUserPassword:
         assert user.password_hash.startswith("$2")
         assert user.password_hash != "mypassword"
 
+    def test_set_password_pins_bcrypt_rounds(self):
+        """The bcrypt cost factor must be pinned, not left to the library default.
+
+        bcrypt's default may change between releases; without an explicit value
+        a future package upgrade could silently lower the work factor below
+        clinical-grade. The hash prefix encodes the rounds as $2b$<rounds>$.
+        """
+        user = LocalUser(username="test", display_name="Test")
+        user.set_password("mypassword")
+        # Prefix format: $2b$<rounds>$<salt+hash>
+        parts = user.password_hash.split("$")
+        rounds = int(parts[2])
+        assert rounds == 12, (
+            f"Expected pinned bcrypt rounds=12, got {rounds}. "
+            f"Update _BCRYPT_ROUNDS (and the assertion) only after a deliberate review."
+        )
+
     def test_verify_correct_password(self):
         user = LocalUser(username="test", display_name="Test")
         user.set_password("mypassword")

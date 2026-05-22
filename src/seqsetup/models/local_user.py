@@ -9,6 +9,11 @@ import bcrypt
 from .user import User, UserRole
 
 
+# Pinned bcrypt work factor. Raise deliberately after a clinical-impact review;
+# never let it drift below 12 with a silent library default change.
+_BCRYPT_ROUNDS = 12
+
+
 @dataclass
 class LocalUser:
     """A locally managed user stored in MongoDB."""
@@ -24,7 +29,7 @@ class LocalUser:
     def set_password(self, plaintext: str) -> None:
         """Hash and store a plaintext password."""
         self.password_hash = bcrypt.hashpw(
-            plaintext.encode("utf-8"), bcrypt.gensalt()
+            plaintext.encode("utf-8"), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
         ).decode("utf-8")
         self.updated_at = datetime.now()
 

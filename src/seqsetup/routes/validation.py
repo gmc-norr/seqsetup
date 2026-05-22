@@ -11,6 +11,7 @@ from ..components.validation import (
     ValidationTabs,
 )
 from ..context import AppContext
+from ..services.audit_log import audit
 from ..services.validation import ValidationService
 from ..models.sequencing_run import RunStatus
 from .utils import get_username
@@ -101,6 +102,17 @@ def register(app, rt, ctx: AppContext):
             run.validation_approved = True
             run.touch(reset_validation=False, updated_by=get_username(req))
             ctx.run_repo.save(run)
+            audit("validation.approved", actor=get_username(req), target=run_id)
+        else:
+            audit(
+                "validation.approve.denied",
+                actor=get_username(req),
+                target=run_id,
+                outcome="denied",
+                error_count=result.error_count,
+                has_samples=run.has_samples,
+                all_samples_have_indexes=run.all_samples_have_indexes,
+            )
 
         return ValidationApprovalBar(run, result)
 
@@ -118,6 +130,7 @@ def register(app, rt, ctx: AppContext):
         run.validation_approved = False
         run.touch(reset_validation=False, updated_by=get_username(req))
         ctx.run_repo.save(run)
+        audit("validation.unapproved", actor=get_username(req), target=run_id)
 
         result = _validate_run(run)
         return ValidationApprovalBar(run, result)

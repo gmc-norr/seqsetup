@@ -7,7 +7,7 @@ from starlette.responses import Response
 
 logger = logging.getLogger("seqsetup")
 
-from .utils import require_admin, sanitize_string
+from .utils import get_username, require_admin, sanitize_string
 from ..components.layout import AppShell
 from ..components.admin import (
     AuthenticationPage,
@@ -21,8 +21,9 @@ from ..components.admin import (
     SyncedInstrumentsSection,
 )
 from ..context import AppContext
-from ..models.auth_config import AuthMethod, LDAPConfig
+from ..models.auth_config import AuthMethod, LDAPConfig, validate_user_dn_pattern
 from ..models.sample_api_config import SampleApiConfig
+from ..services.audit_log import audit
 from ..services.ldap import LDAPService, LDAPError
 
 
@@ -82,6 +83,14 @@ def register(app, rt, ctx: AppContext):
         config.allow_local_fallback = allow_local_fallback == "on"
         ctx.auth_config_repo.save(config)
 
+        audit(
+            "auth.method.changed",
+            actor=get_username(req),
+            target="auth_config",
+            method=config.auth_method.value,
+            allow_local_fallback=config.allow_local_fallback,
+        )
+
         return LDAPConfigForm(config, message="Authentication method updated")
 
     @app.post("/admin/settings/ldap")
@@ -109,6 +118,13 @@ def register(app, rt, ctx: AppContext):
         if error:
             return error
 
+        # Reject DN-template injection attempts before persisting. Empty value
+        # is allowed (falls back to search-based lookup).
+        try:
+            validate_user_dn_pattern(user_dn_pattern)
+        except ValueError as e:
+            return Response(str(e), status_code=400)
+
         config = ctx.auth_config_repo.get()
 
         config.ldap_config = LDAPConfig(
@@ -132,6 +148,15 @@ def register(app, rt, ctx: AppContext):
         config.ldap_configured = bool(server_url and base_dn)
         config.ldap_tested = False  # Reset tested flag when config changes
         ctx.auth_config_repo.save(config)
+
+        audit(
+            "auth.ldap_config.updated",
+            actor=get_username(req),
+            target="ldap_config",
+            server_url=server_url,
+            base_dn=base_dn,
+            bind_dn=bind_dn,
+        )
 
         return LDAPConfigForm(config, message="LDAP configuration saved")
 

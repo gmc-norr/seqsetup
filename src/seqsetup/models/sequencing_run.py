@@ -67,11 +67,14 @@ class RunCycles:
     index2_cycles: int
 
     def __post_init__(self):
-        # Clamp all cycle counts to non-negative
-        self.read1_cycles = max(0, self.read1_cycles)
-        self.read2_cycles = max(0, self.read2_cycles)
-        self.index1_cycles = max(0, self.index1_cycles)
-        self.index2_cycles = max(0, self.index2_cycles)
+        # Clamp all cycle counts to a sane range. Lower bound 0 (some
+        # workflows legitimately set read2=0 for single-end). Upper bound
+        # 1000 — generously above current Illumina chemistry max (~500)
+        # while still catching obviously-bogus stored values.
+        self.read1_cycles = max(0, min(1000, self.read1_cycles))
+        self.read2_cycles = max(0, min(1000, self.read2_cycles))
+        self.index1_cycles = max(0, min(1000, self.index1_cycles))
+        self.index2_cycles = max(0, min(1000, self.index2_cycles))
 
     @property
     def total_cycles(self) -> int:
@@ -304,18 +307,44 @@ class SequencingRun:
         elif updated_at is None:
             updated_at = datetime.now()
 
+        # Defensive enum parsing: an unknown status or instrument_platform
+        # (e.g. from a renamed enum value in a future release, or a
+        # corrupted document) must not make an archived clinical run
+        # unloadable. Surface a warning and fall back to a safe value.
+        raw_status = "archived" if data.get("status") == "complete" else data.get("status", "draft")
+        try:
+            status = RunStatus(raw_status)
+        except ValueError:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Unknown RunStatus %r in stored run %r — falling back to ARCHIVED",
+                raw_status, data.get("_id") or data.get("id"),
+            )
+            status = RunStatus.ARCHIVED
+
+        raw_platform = data.get("instrument_platform", "NovaSeq X Series")
+        try:
+            platform = InstrumentPlatform(raw_platform)
+        except ValueError:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Unknown InstrumentPlatform %r in stored run %r — falling back to NOVASEQ_X",
+                raw_platform, data.get("_id") or data.get("id"),
+            )
+            platform = InstrumentPlatform.NOVASEQ_X
+
         return cls(
             id=data.get("_id") or data["id"],
             run_name=data.get("run_name", ""),
             run_description=data.get("run_description", ""),
-            status=RunStatus("archived" if data.get("status") == "complete" else data.get("status", "draft")),
+            status=status,
             validation_approved=data.get("validation_approved", False),
             created_by=data.get("created_by", ""),
             updated_by=data.get("updated_by", ""),
             created_at=created_at,
             updated_at=updated_at,
             wizard_step=data.get("wizard_step", 1),
-            instrument_platform=InstrumentPlatform(data.get("instrument_platform", "NovaSeq X Series")),
+            instrument_platform=platform,
             flowcell_type=data.get("flowcell_type", ""),
             reagent_cycles=data.get("reagent_cycles", 300),
             run_cycles=run_cycles,

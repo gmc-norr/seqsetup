@@ -221,6 +221,47 @@ class TestSampleSheetV2Exporter:
         output = SampleSheetV2Exporter.export(run)
         assert '"hg38,injected"' in output
 
+    def test_export_escapes_application_profile_data_value_with_comma(self):
+        """profile.data fallback values must be CSV-quoted in the Data section.
+
+        Admin-provided default values in an ApplicationProfile's ``data`` dict
+        flow into BCLConvert_Data rows for fields the sample doesn't override.
+        A comma in any such value would shift columns downstream."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    test_id="WGS",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        app_profile = ApplicationProfile(
+            name="BCLConvertNextera",
+            version="1.0.0",
+            application_type="BclConvert",
+            application_name="BCLConvert",
+            settings={},
+            data_fields=["Sample_ID", "Index", "Index2", "ExtraField"],
+            data={"ExtraField": "value,with,commas"},
+        )
+        tp = TestProfile(
+            test_type="WGS", test_name="WGS", version="1.0.0",
+            application_profiles=[ApplicationProfileReference(profile_name="BCLConvertNextera", profile_version="1.0.0")],
+        )
+        test_profile_repo = _StubTestProfileRepo({"WGS": tp})
+        app_profile_repo = _StubAppProfileRepo({("BCLConvertNextera", "1.0.0"): app_profile})
+
+        output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
+        assert '"value,with,commas"' in output
+
     def test_export_escapes_application_profile_setting_with_comma(self):
         """profile.settings keys/values with commas must be CSV-quoted in the Settings section."""
         run = SequencingRun(
