@@ -58,7 +58,11 @@ class LDAPConfig:
     # Connection settings
     server_url: str = ""  # e.g., "ldap://dc.example.com" or "ldaps://dc.example.com:636"
     use_ssl: bool = True
-    verify_ssl_cert: bool = False  # Set to True in production for proper certificate validation
+    # Cert validation defaults to True — disabling lets a MitM intercept
+    # the bind password and user credentials over LDAPS. Admins can opt out
+    # for testing against an internal CA the host doesn't yet trust, but
+    # the production deployment should leave this on.
+    verify_ssl_cert: bool = True
     base_dn: str = ""  # e.g., "DC=example,DC=com"
 
     # Bind credentials (for searching users)
@@ -123,7 +127,11 @@ class LDAPConfig:
         return cls(
             server_url=data.get("server_url", ""),
             use_ssl=data.get("use_ssl", True),
-            verify_ssl_cert=data.get("verify_ssl_cert", False),
+            # Default True to match the dataclass default (line 65). Existing
+            # MongoDB documents missing this field load with verification ON
+            # — the safe default. Without this match, every legacy config
+            # would silently disable TLS validation.
+            verify_ssl_cert=data.get("verify_ssl_cert", True),
             base_dn=data.get("base_dn", ""),
             bind_dn=data.get("bind_dn", ""),
             bind_password=data.get("bind_password", ""),

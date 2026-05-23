@@ -26,6 +26,42 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "users.yaml"
 SESSKEY_PATH = PROJECT_ROOT / ".sesskey"
 
 
+_MIN_SECRET_LENGTH = 32
+
+
+def _validate_secret_length(secret: str, source: str) -> str:
+    """Fail closed if the loaded secret is too short to be a real session key.
+
+    A short secret defeats the cookie signing — accepting one would silently
+    weaken every authenticated request. ``source`` is included in the error
+    so an operator can find the bad config.
+    """
+    if not secret or len(secret) < _MIN_SECRET_LENGTH:
+        raise RuntimeError(
+            f"Session secret from {source} is too short "
+            f"({len(secret) if secret else 0} chars, need >= {_MIN_SECRET_LENGTH}). "
+            f"Set SEQSETUP_SESSION_SECRET to a sufficiently-long value (e.g. `secrets.token_hex(32)`)."
+        )
+    return secret
+
+
+def _validate_sesskey_permissions(path) -> None:
+    """Fail closed if .sesskey is group- or world-readable.
+
+    A pre-existing .sesskey from before the 0600 fix could still be wide open;
+    refusing to load it forces the operator to chmod or delete-and-regenerate.
+    """
+    import stat
+    mode = stat.S_IMODE(path.stat().st_mode)
+    # Only the owner may read/write.
+    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise RuntimeError(
+            f"Session secret file {path} has insecure permissions "
+            f"({oct(mode)}). Required: 0600. "
+            f"Fix with `chmod 600 {path}` or delete and regenerate."
+        )
+
+
 def resolve_session_secret() -> str:
     """Resolve session secret from environment or file.
 
@@ -34,13 +70,18 @@ def resolve_session_secret() -> str:
     A generated .sesskey is written with mode 0600 so only the owning process
     can read it — world/group access would let anyone with FS access forge
     sessions. Production should prefer the env var and not rely on the file.
+
+    Fails closed if the secret is too short or if a pre-existing .sesskey file
+    has group/world-readable permissions.
     """
     secret = os.environ.get("SEQSETUP_SESSION_SECRET")
     if secret:
-        return secret
+        return _validate_secret_length(secret, "SEQSETUP_SESSION_SECRET env var")
     if SESSKEY_PATH.exists():
-        return SESSKEY_PATH.read_text().strip()
-    secret = secrets.token_hex(32)
+        _validate_sesskey_permissions(SESSKEY_PATH)
+        secret = SESSKEY_PATH.read_text().strip()
+        return _validate_secret_length(secret, f"{SESSKEY_PATH} file")
+    secret = secrets.token_hex(32)  # 64 hex chars
     # Open with O_CREAT|O_WRONLY|O_EXCL and an explicit mode so the file is
     # not briefly world-readable in the gap between create and chmod.
     fd = os.open(SESSKEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

@@ -1,43 +1,50 @@
-"""Edit run page routes."""
+"""Edit run page route.
 
-from fasthtml.common import *
-from starlette.responses import RedirectResponse
+Migrated to Starlette ``Route(...)`` registration. The composed
+``edit-run`` page is still rendered from FT components via
+``ft_page_response``. Must be registered LAST among ``/runs/...`` routes
+because ``{run_id}`` is a path catch-all.
+"""
+
+from fasthtml.common import Div, Fieldset, Legend
+from starlette.requests import Request
+from starlette.responses import RedirectResponse, Response
+from starlette.routing import Route
 
 from ..components.edit_run import (
-    ExportPanelForRun,
     RunConfigPanelHorizontal,
     RunStatusBar,
     SampleTableSectionForRun,
     TopBarForRun,
 )
-from ..components.layout import AppShell
 from ..context import AppContext
+from ..templating import ft_page_response
 
 
-def register(app, rt, ctx: AppContext):
-    """Register main page routes."""
+def register(app, ctx: AppContext) -> None:
+    """Register the edit-run route on the parent Starlette app."""
+    if not hasattr(app, "routes") or not isinstance(app.routes, list):
+        raise TypeError(
+            f"main.register requires a Starlette-style app with a mutable "
+            f"routes list, got {type(app).__name__}"
+        )
 
-    @rt("/runs/{run_id}")
-    def edit_run(req, run_id: str):
-        """Render the edit run page with config above samples."""
-        user = req.scope.get("auth")
+    def edit_run(request: Request) -> Response:
+        """GET /runs/{run_id} — full edit-run page."""
+        run_id = request.path_params["run_id"]
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return RedirectResponse("/", status_code=303)
 
-        # Get test profiles for the dropdown
         test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
 
-        # Stacked layout: status bar, top bar (validate + export), config (with metadata), then samples
+        # Stacked layout: status bar → top bar (validate + export) →
+        # config (with metadata) → samples.
         content = Div(
-            # Run status bar with transition buttons
             RunStatusBar(run),
-            # Top bar with Validate and Export panels
             TopBarForRun(run),
-            # Run configuration (includes metadata)
             RunConfigPanelHorizontal(run),
-            # Samples table at the bottom
             Fieldset(
                 Legend("Samples"),
                 SampleTableSectionForRun(run, ctx.index_kit_repo.list_all(), test_profiles),
@@ -46,9 +53,10 @@ def register(app, rt, ctx: AppContext):
             cls="edit-run-layout",
         )
 
-        return AppShell(
-            user=user,
-            active_route=None,  # Not a main nav item
-            content=content,
-            title=run.run_name or "Edit Run",
+        return ft_page_response(
+            request,
+            content,
+            page_title=run.run_name or "Edit Run",
         )
+
+    app.routes.append(Route("/runs/{run_id}", edit_run, methods=["GET"]))

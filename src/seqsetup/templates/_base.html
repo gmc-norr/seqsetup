@@ -1,0 +1,19 @@
+{# Base layout. Mirrors the document shell that fast_app(...) used to
+   synthesize for every page: head with title/icon/CSS/JS, then the
+   page-specific {% block body %}. Pages override {% block title %} and
+   {% block body %} (and optionally {% block head_extra %}). #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SeqSetup{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+    <link rel="stylesheet" href="/css/app.css?v={{ asset_versions['css/app.css'] }}">
+    <script src="/js/app.js?v={{ asset_versions['js/app.js'] }}"></script>
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    {% block body %}{% endblock %}
+</body>
+</html>

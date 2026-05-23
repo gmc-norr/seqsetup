@@ -163,9 +163,10 @@ class IndexKitYamlExporter:
         Returns:
             Safe filename with .yaml extension
         """
-        # Create filename from kit name and version
+        # Create filename from kit name and version. Both are scrubbed of
+        # any chars that could break a Content-Disposition header (CR/LF in
+        # particular) or shell quoting in downstream tools.
         safe_name = kit.name.lower().replace(" ", "_").replace("/", "-")
-        # Remove any other problematic characters
         safe_name = "".join(c for c in safe_name if c.isalnum() or c in "_-")
-        safe_version = kit.version.replace(".", "_")
+        safe_version = "".join(c for c in kit.version.replace(".", "_") if c.isalnum() or c in "_-")
         return f"{safe_name}_v{safe_version}.yaml"

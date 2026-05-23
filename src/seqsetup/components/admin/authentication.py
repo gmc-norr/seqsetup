@@ -146,6 +146,23 @@ def LDAPSettingsForm(auth_config: AuthConfig):
                 cls="form-row",
             ),
             Div(
+                Label(
+                    Input(
+                        type="checkbox",
+                        name="verify_ssl_cert",
+                        checked=config.verify_ssl_cert,
+                    ),
+                    " Verify SSL certificate (recommended)",
+                    cls="checkbox-label",
+                ),
+                P(
+                    "Disable only for testing against an internal CA the host does not yet trust. "
+                    "When disabled, the LDAPS bind password and user credentials are vulnerable to MITM.",
+                    cls="field-hint",
+                ),
+                cls="form-row",
+            ),
+            Div(
                 Label("Base DN:", fr="base_dn"),
                 Input(
                     type="text",

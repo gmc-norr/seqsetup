@@ -4,19 +4,54 @@ services:
     ports:
       - "5001:5001"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
+      # Mongo connection uses authenticated credentials from .env (see env_file below).
+      # If you want to omit auth for a local-only dev run, override MONGODB_URI in
+      # docker-compose.override.yml — do NOT remove auth from this base file.
+      - MONGODB_URI=mongodb://${MONGO_APP_USER:?must set in .env}:${MONGO_APP_PASSWORD:?must set in .env}@mongodb:27017/seqsetup?authSource=admin
       - MONGODB_DATABASE=seqsetup
+      # Session + secrets: set these in .env. The app fails closed if SEQSETUP_SESSION_SECRET
+      # is too short, so an empty value here is rejected at startup.
+      - SEQSETUP_SESSION_SECRET=${SEQSETUP_SESSION_SECRET:?must set in .env}
+      - SEQSETUP_HTTPS_ONLY=${SEQSETUP_HTTPS_ONLY:-0}
+      - SEQSETUP_LDAP_BIND_PASSWORD=${SEQSETUP_LDAP_BIND_PASSWORD:-}
+      - SEQSETUP_LIMS_API_KEY=${SEQSETUP_LIMS_API_KEY:-}
+    env_file:
+      - .env
     volumes:
-      - ./config:/app/config
+      - ./config:/app/config:ro   # config read-only — no need for app to write here
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
 
   mongodb:
     image: mongo:7
-    ports:
-      - "27017:27017"
+    # IMPORTANT: no `ports:` mapping — Mongo is only reachable from the
+    # internal Compose network. The audit's H1 finding noted that exposing
+    # 27017 to the host (and potentially the wider network) is a critical
+    # exposure when combined with unauthenticated Mongo. Use `docker compose
+    # exec mongodb mongosh` for admin tasks instead.
+    environment:
+      # Root credentials — created by Mongo itself from MONGO_INITDB_ROOT_*.
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:?must set in .env}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:?must set in .env}
+      # App credentials — consumed by docker/mongo-init.sh to create the
+      # least-privileged readWrite-on-seqsetup user.
+      - MONGO_APP_USER=${MONGO_APP_USER:?must set in .env}
+      - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD:?must set in .env}
+    command: ["mongod", "--auth", "--bind_ip_all"]
     volumes:
       - mongo_data:/data/db
+      # Shell init runs once on first container start; creates the app user
+      # against the seqsetup DB. .js init scripts don't work for this — they
+      # run inside mongosh which has no process.env access.
+      - ./docker/mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   mongo_data:

@@ -1,79 +1,110 @@
-"""Dashboard routes for the main landing page."""
+"""Dashboard routes for the main landing page.
 
-from fasthtml.common import *
+Migrated off FastHTML to plain Starlette + Jinja2. The dashboard page
+renders the full app shell; the tab/archive/delete handlers return the
+``_dashboard_content.html`` fragment that HTMX swaps into ``#dashboard``.
+"""
 
+from starlette.requests import Request
 from starlette.responses import Response
+from starlette.routing import Route
 
-from ..components.dashboard import DashboardContent
-from ..components.layout import AppShell
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus
-from .utils import check_status_transition
+from ..services.audit_log import audit
+from ..templating import render
+from .utils import check_status_transition, get_username
 
 
-def register(app, rt, ctx: AppContext):
-    """Register dashboard routes."""
+_VALID_TABS = ("draft", "ready", "archived")
 
-    @rt("/")
-    def dashboard(req):
-        """Render the dashboard showing all runs."""
-        user = req.scope.get("auth")
 
-        runs = ctx.run_repo.list_all()
+def register(app, ctx: AppContext) -> None:
+    """Register dashboard routes on the parent Starlette app.
 
-        return AppShell(
-            user=user,
-            active_route="/",
-            content=DashboardContent(runs),
-            title="Dashboard",
+    Requires ``app`` to have a mutable ``.routes`` list — Starlette /
+    FastHTML do, anything else does not.
+    """
+    if not hasattr(app, "routes") or not isinstance(app.routes, list):
+        raise TypeError(
+            f"dashboard.register requires a Starlette-style app with a mutable "
+            f"routes list, got {type(app).__name__}"
         )
 
-    @rt("/dashboard/tab/{tab}")
-    def dashboard_tab(req, tab: str):
-        """Return dashboard content for a specific tab."""
-        runs = ctx.run_repo.list_all()
-        if tab not in ("draft", "ready", "archived"):
-            tab = "draft"
-        return DashboardContent(runs, active_tab=tab)
+    def dashboard(request: Request) -> Response:
+        """GET / — full dashboard page."""
+        return render(
+            request,
+            "dashboard.html",
+            {"runs": ctx.run_repo.list_all(), "active_tab": "draft"},
+        )
 
-    @app.post("/runs/{run_id}/archive")
-    def archive_run(req, run_id: str):
-        """Archive a run directly from the dashboard."""
+    def dashboard_tab(request: Request) -> Response:
+        """GET /dashboard/tab/{tab} — HTMX swap-out for tab selection."""
+        tab = request.path_params["tab"]
+        if tab not in _VALID_TABS:
+            tab = "draft"
+        return render(
+            request,
+            "_dashboard_content.html",
+            {"runs": ctx.run_repo.list_all(), "active_tab": tab},
+        )
+
+    def archive_run(request: Request) -> Response:
+        """POST /runs/{run_id}/archive — archive a run from the dashboard."""
+        run_id = request.path_params["run_id"]
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
-
         if run.status == RunStatus.ARCHIVED:
             return Response("Run is already archived", status_code=403)
-
-        # Enforce the same state machine used by the run detail routes.
+        # Same state machine the run-edit routes enforce.
         if err := check_status_transition(run.status, RunStatus.ARCHIVED):
             return err
 
-        # Remember which tab we came from
+        previous_status = run.status.value
         previous_tab = "ready" if run.status == RunStatus.READY else "draft"
-
         run.status = RunStatus.ARCHIVED
-        user = req.scope.get("auth")
-        run.touch(reset_validation=False, updated_by=user.username if user else "")
+        run.touch(reset_validation=False, updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        # Return updated dashboard (stays on previous tab)
-        runs = ctx.run_repo.list_all()
-        return DashboardContent(runs, active_tab=previous_tab)
+        audit(
+            "run.archived",
+            actor=get_username(request),
+            target=run_id,
+            from_status=previous_status,
+        )
 
-    @app.delete("/runs/{run_id}")
-    def delete_run(req, run_id: str):
-        """Delete a run. Only archived runs can be deleted."""
+        return render(
+            request,
+            "_dashboard_content.html",
+            {"runs": ctx.run_repo.list_all(), "active_tab": previous_tab},
+        )
+
+    def delete_run(request: Request) -> Response:
+        """DELETE /runs/{run_id} — delete an archived run."""
+        run_id = request.path_params["run_id"]
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
-
         if run.status != RunStatus.ARCHIVED:
             return Response("Only archived runs can be deleted", status_code=403)
 
         ctx.run_repo.delete(run_id)
+        audit(
+            "run.deleted",
+            actor=get_username(request),
+            target=run_id,
+            previous_status=run.status.value,
+            run_name=run.run_name,
+        )
+        return render(
+            request,
+            "_dashboard_content.html",
+            {"runs": ctx.run_repo.list_all(), "active_tab": "archived"},
+        )
 
-        # Return updated dashboard (stays on archived tab) to update counts
-        runs = ctx.run_repo.list_all()
-        return DashboardContent(runs, active_tab="archived")
+    app.routes.append(Route("/", dashboard, methods=["GET"]))
+    app.routes.append(Route("/dashboard/tab/{tab}", dashboard_tab, methods=["GET"]))
+    app.routes.append(Route("/runs/{run_id}/archive", archive_run, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}", delete_run, methods=["DELETE"]))

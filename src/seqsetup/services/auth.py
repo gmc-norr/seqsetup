@@ -117,7 +117,15 @@ class AuthService:
             ldap_service = LDAPService(auth_config.ldap_config)
             return ldap_service.authenticate(username, password)
         except LDAPError as e:
-            raise AuthenticationError(str(e))
+            # Log the underlying LDAP error (includes server-side detail
+            # such as bind hostnames) but surface only a generic message
+            # to the user — the response template echoes this string into
+            # the login page, where exposing infra detail is harmful.
+            import logging
+            logging.getLogger(__name__).warning(
+                "LDAP authentication failed: %s", e, exc_info=True,
+            )
+            raise AuthenticationError("Invalid username or password")
 
     def _authenticate_local(self, username: str, password: str) -> User:
         """

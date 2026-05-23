@@ -572,11 +572,26 @@ Adding a New Admin Page
 Adding a New API Endpoint
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. Add route in ``src/seqsetup/routes/api.py``
-2. Implement Bearer token authentication check
-3. Return JSON responses using ``JSONResponse``
-4. Document in ``docs/api-reference/runs.rst`` or appropriate file
-5. Add to OpenAPI spec if applicable
+The JSON API lives in ``src/seqsetup/api/`` (FastAPI sub-app mounted at
+``/api`` by ``seqsetup.app``). The OpenAPI schema is auto-generated from
+the route signatures and Pydantic response models — there's no separate
+spec file to maintain.
+
+1. Define a Pydantic response model in ``src/seqsetup/api/schemas.py`` if
+   the endpoint returns a JSON shape (skip for CSV/PDF/raw responses).
+2. Add the route to ``src/seqsetup/api/app.py``. Declare ``response_model``
+   so it shows up in the auto-OpenAPI; include ``responses={...}`` for
+   non-200 statuses (at least 401, 403, 404, 429 as appropriate).
+3. Add ``token: AuthToken`` to the handler signature — this requires
+   Bearer auth and applies the per-IP rate limit before bcrypt.
+4. Convert domain dataclasses to the Pydantic response model at the
+   boundary (see ``_run_summary`` for the pattern). Do not let Pydantic
+   models leak into ``seqsetup.models``.
+5. Emit an audit event via ``audit("api.run.read", actor=api_actor(token),
+   target=run_id, resource="...")`` so the access is in the log.
+6. Document in ``docs/api-reference/runs.rst``. The auto-generated Swagger
+   UI at ``/api/docs`` is the runtime source of truth, but the Sphinx
+   reference is still what readers find via search.
 
 Adding CSS Styles
 ~~~~~~~~~~~~~~~~~

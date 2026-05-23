@@ -1,62 +1,70 @@
-"""Authentication middleware for the FastHTML application."""
+"""Authentication middleware.
 
-from fasthtml.common import Beforeware
-from starlette.responses import RedirectResponse, Response
+A pure Starlette ``BaseHTTPMiddleware`` so it applies to every route on
+the app. The previous Beforeware-based implementation only wrapped
+FastHTML's ``@rt``-decorated handlers; routes registered directly on
+``app.routes`` would have bypassed auth entirely.
+"""
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
 
 from .models.user import User
 
-# Routes that don't require authentication
-PUBLIC_ROUTES = {"/login", "/login/submit", "/favicon.ico", "/api/docs", "/api/openapi.json", "/api/openapi.yaml"}
+# Routes that don't require authentication. /api/* is owned by the
+# FastAPI sub-app and short-circuited in dispatch() below regardless of
+# this set.
+PUBLIC_ROUTES = {"/login", "/login/submit", "/favicon.ico"}
+
+# Static-asset URL prefixes that bypass auth. Trailing-slash form is
+# load-bearing — a bare "/css" prefix would also exempt a hypothetical
+# future route like "/cssadmin", which CLAUDE.md treats as a hard rule
+# violation ("never add unprotected routes").
+_STATIC_PREFIXES = ("/static/", "/css/", "/js/", "/img/")
 
 
-def make_auth_beforeware(get_api_token_repo_fn):
-    """Create authentication beforeware.
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Session-based authentication for HTML routes.
 
-    Args:
-        get_api_token_repo_fn: Callable that returns the ApiTokenRepository instance.
-
-    Returns:
-        Beforeware instance for FastHTML app.
+    Sets ``request.scope["auth"]`` to the authenticated User on protected
+    paths; redirects to /login when no session is present. Skips public
+    paths, static assets, and the entire /api/* surface (owned by the
+    FastAPI sub-app's own Bearer-auth dependency).
     """
 
-    def auth_beforeware(req, sess):
-        """
-        Check authentication on protected routes.
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
 
-        Adds `auth` attribute to request scope with User object or None.
-        Redirects to login if not authenticated on protected routes.
-        """
-        path = req.url.path
+        # Public paths and static assets: pass through with no auth.
+        if path in PUBLIC_ROUTES or path.startswith(_STATIC_PREFIXES):
+            request.scope["auth"] = None
+            return await call_next(request)
 
-        # Check if route is public
-        if path in PUBLIC_ROUTES or path.startswith(("/static", "/css", "/js", "/img")):
-            req.scope["auth"] = None
-            return
+        # API surface is handled by the mounted FastAPI sub-app. Skipping
+        # here avoids running both the session check and the Bearer-auth
+        # check on every API request.
+        if path.startswith("/api/") or path == "/api":
+            request.scope["auth"] = None
+            return await call_next(request)
 
-        # API routes require Bearer token authentication
-        if path.startswith("/api/"):
-            auth_header = req.headers.get("authorization", "")
-            if auth_header.startswith("Bearer "):
-                token_str = auth_header[7:]
-                api_token = get_api_token_repo_fn().verify_token(token_str)
-                if api_token:
-                    req.scope["auth"] = None
-                    req.scope["api_token"] = api_token
-                    return
-            return Response("Unauthorized", status_code=401)
+        # Session-backed HTML routes.
+        try:
+            sess = request.session
+        except AssertionError:
+            # No SessionMiddleware installed (e.g., tests that mount this
+            # middleware in isolation). Treat as anonymous.
+            sess = {}
 
-        # Check session for authenticated user
         user_data = sess.get("user")
         if not user_data:
             return RedirectResponse("/login", status_code=303)
 
-        # Restore User object from session
         try:
-            user = User.from_dict(user_data)
-            req.scope["auth"] = user
+            request.scope["auth"] = User.from_dict(user_data)
         except (KeyError, ValueError):
-            # Invalid session data, clear and redirect
+            # Invalid session payload — drop it and force re-login.
             sess.clear()
             return RedirectResponse("/login", status_code=303)
 
-    return Beforeware(auth_beforeware, skip=[r"/favicon\.ico", r"/static/.*"])
+        return await call_next(request)

@@ -1,13 +1,38 @@
 """Sample API configuration model."""
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Optional
+from urllib.parse import quote
 
 
 # Env var that overrides the stored api_key at use time. Setting this in
 # production keeps the actual secret out of the MongoDB document.
 _API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
+
+
+# Worklist IDs are operator-supplied (pasted from a LIMS UI, etc.) and
+# end up appended to the LIMS URL. Restrict to characters that can't
+# escape the path segment: letters, digits, '_', '-', '.', '~'.
+_VALID_WORKLIST_ID_RE = re.compile(r"^[A-Za-z0-9._~\-]+$")
+
+
+class InvalidWorklistIdError(ValueError):
+    """Raised when a worklist_id contains characters unsafe for URL inclusion."""
+
+
+def validate_worklist_id(worklist_id: str) -> None:
+    """Raise InvalidWorklistIdError unless worklist_id is path-segment safe."""
+    if not worklist_id:
+        raise InvalidWorklistIdError("worklist_id is required")
+    if len(worklist_id) > 128:
+        raise InvalidWorklistIdError("worklist_id is too long (max 128 chars)")
+    if not _VALID_WORKLIST_ID_RE.match(worklist_id):
+        raise InvalidWorklistIdError(
+            f"worklist_id {worklist_id!r} contains unsafe characters. "
+            f"Allowed: letters, digits, '.', '_', '-', '~'."
+        )
 
 
 @dataclass
@@ -69,9 +94,19 @@ class SampleApiConfig:
         return f"{base}/worksheets?{'&'.join(params)}"
 
     def worklist_samples_url(self, worklist_id: str) -> str:
-        """URL for fetching samples of a specific worksheet."""
+        """URL for fetching samples of a specific worksheet.
+
+        Validates worklist_id and URL-quotes it before inclusion to prevent
+        operator-supplied input from injecting path segments or query
+        parameters into the LIMS request.
+        """
+        validate_worklist_id(worklist_id)
         base = self.base_url.rstrip("/")
-        return f"{base}/worksheets/{worklist_id}" if base else ""
+        if not base:
+            return ""
+        # quote with safe="" so '/' and other delimiters inside the worklist_id
+        # are percent-encoded (defence-in-depth — the regex already blocks them).
+        return f"{base}/worksheets/{quote(worklist_id, safe='')}"
 
     def get_api_field(self, seqsetup_field: str) -> str:
         """Get the API field name for a SeqSetup field.

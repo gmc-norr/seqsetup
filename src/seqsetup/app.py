@@ -1,21 +1,41 @@
-"""Main FastHTML application."""
+"""Main application module.
 
-import hashlib
+Single FastAPI host. HTML routes are registered as Starlette
+``Route(...)`` objects appended to ``app.routes``; the ``/api/*``
+surface is a FastAPI sub-app mounted at /api. FastAPI is used purely as
+a Starlette-with-decorator-sugar host for the HTML side — the JSON API
+uses its full Pydantic/OpenAPI toolkit.
+
+FT components (``fasthtml.common``) remain as a templating DSL and are
+rendered to HTML strings via the helpers in ``seqsetup.templating``.
+They are progressively being ported to Jinja2 templates under
+``templates/``; this is independent of the routing/middleware framework
+choice.
+
+Middleware order (outermost → innermost):
+    SecurityHeadersMiddleware  ← response-header decorator
+    OriginCheckMiddleware       ← CSRF defense-in-depth
+    SessionMiddleware           ← parses/sets the session cookie
+    AuthMiddleware              ← requires ``request.session`` to exist
+"""
+
+import os
 from pathlib import Path
 
-from fasthtml.common import *
+from fastapi import FastAPI
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import PlainTextResponse, RedirectResponse
+from starlette.staticfiles import StaticFiles
 
-from starlette.responses import PlainTextResponse
-
+from .api.app import create_api_app
 from .csrf import OriginCheckMiddleware
 from .data.instruments import set_instrument_definition_repo
-from .middleware import make_auth_beforeware
+from .middleware import AuthMiddleware
 from .repositories.base import ConflictError
-from .routes import admin, api, api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, runs, samples, swagger, validation, wizard
+from .routes import admin, api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, runs, samples, validation, wizard
 from .security_headers import SecurityHeadersMiddleware
 from .services.log_capture import setup_log_capture
 from .startup import (
-    get_api_token_repo,
     get_app_context,
     get_instrument_definition_repo,
     init_auth_service,
@@ -25,33 +45,17 @@ from .startup import (
 )
 
 # Static files directory
-static_dir = Path(__file__).parent / "static"
+_STATIC_DIR = Path(__file__).parent / "static"
 
 # Resolve session secret
-SESSION_SECRET = resolve_session_secret()
+_SESSION_SECRET = resolve_session_secret()
 
 # Initialize repositories
 init_repos()
 
-# Create auth middleware (needs api_token_repo for Bearer token verification)
-bware = make_auth_beforeware(get_api_token_repo)
-
-# Cache-busting hash for static assets
-def _asset_hash(filename: str) -> str:
-    path = static_dir / filename
-    if path.exists():
-        return hashlib.md5(path.read_bytes()).hexdigest()[:8]
-    return "0"
-
-_css_v = _asset_hash("css/app.css")
-_js_v = _asset_hash("js/app.js")
-
-# Create FastHTML app with session support.
-# same_site="strict" defeats CSRF via cross-site form submissions (the audit's
-# H3/M6 findings). sess_https_only is controlled by env so local-dev HTTP still
-# works; production deployments must set SEQSETUP_HTTPS_ONLY=1.
-import os as _os
-_sess_https_only = _os.environ.get("SEQSETUP_HTTPS_ONLY", "").lower() in ("1", "true", "yes")
+# Production deployments must set SEQSETUP_HTTPS_ONLY=1 so the session cookie
+# carries the Secure attribute. Local-dev HTTP leaves it unset.
+_SESS_HTTPS_ONLY = os.environ.get("SEQSETUP_HTTPS_ONLY", "").lower() in ("1", "true", "yes")
 
 
 async def _conflict_handler(request, exc):
@@ -64,29 +68,51 @@ async def _conflict_handler(request, exc):
     return PlainTextResponse(str(exc), status_code=409)
 
 
-app, rt = fast_app(
-    hdrs=[
-        Link(rel="icon", type="image/svg+xml", href="/img/favicon.svg"),
-        Link(rel="stylesheet", href=f"/css/app.css?v={_css_v}"),
-        Script(src=f"/js/app.js?v={_js_v}"),
-    ],
-    pico=False,  # Use custom CSS instead of Pico
-    secret_key=SESSION_SECRET,
-    before=bware,
-    static_path=str(static_dir),
-    same_site="strict",
-    sess_https_only=_sess_https_only,
+# Disable FastAPI's built-in /docs, /redoc and /openapi.json at the root —
+# the JSON API has its own same-origin Swagger UI at /api/docs (with a
+# strict CSP) served by the mounted sub-app. A root-level Swagger would
+# duplicate the surface and bypass the CSP.
+app = FastAPI(
+    title="SeqSetup",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
     exception_handlers={ConflictError: _conflict_handler},
 )
 
-# Security response-header middleware (X-Content-Type-Options, X-Frame-Options,
-# Referrer-Policy, Cross-Origin-* and HSTS-on-TLS). Applied to every response.
+# Middleware ordering: Starlette's add_middleware prepends — the LAST
+# add_middleware call ends up OUTERMOST. So the order below produces the
+# wrap order documented in the module docstring (Security → Origin →
+# Session → Auth → app).
+app.add_middleware(AuthMiddleware)
+# Cookie name is Starlette's default ``session`` (was ``session_`` under the
+# previous FastHTML host). Sessions from the old host can't be read by the
+# new host and vice-versa — operators upgrading from a FastHTML deployment
+# should expect every user to be silently logged out once.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_SESSION_SECRET,
+    same_site="strict",
+    https_only=_SESS_HTTPS_ONLY,
+)
+app.add_middleware(OriginCheckMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Origin/Host check on state-changing requests. Defense-in-depth alongside
-# the session cookie's SameSite=Strict. See seqsetup.csrf for details and
-# the SEQSETUP_TRUSTED_ORIGINS env var to allow additional origins.
-app.add_middleware(OriginCheckMiddleware)
+# Static asset mounts. The previous FastHTML host auto-mounted these by
+# scanning the static dir; FastAPI/Starlette needs each subdir mounted
+# explicitly. Template references (/css/app.css, /js/app.js,
+# /img/favicon.svg) are unchanged.
+app.mount("/css", StaticFiles(directory=str(_STATIC_DIR / "css")), name="css")
+app.mount("/js", StaticFiles(directory=str(_STATIC_DIR / "js")), name="js")
+app.mount("/img", StaticFiles(directory=str(_STATIC_DIR / "img")), name="img")
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+# Browsers default to /favicon.ico but the real icon is /img/favicon.svg.
+# Redirect rather than 404 — silences noisy access logs on every page load.
+@app.get("/favicon.ico", include_in_schema=False)
+def _favicon_redirect():
+    return RedirectResponse("/img/favicon.svg", status_code=301)
 
 # Initialize services
 set_instrument_definition_repo(get_instrument_definition_repo())  # Enable synced instruments
@@ -97,23 +123,31 @@ setup_log_capture(["seqsetup"])
 # Create shared AppContext for all routes
 _ctx = get_app_context()
 
-# Register routes
-# Note: Order matters! More specific routes must come before generic patterns
-api.register(app, rt, _ctx)
-swagger.register(app, rt)
-auth.register(app, rt, auth_service)
-admin.register(app, rt, _ctx)
-api_tokens.register(app, rt, _ctx)
-local_users.register(app, rt, _ctx)
-dashboard.register(app, rt, _ctx)
-indexes.register(app, rt, _ctx)
-profiles.register(app, rt, _ctx)
-wizard.register(app, rt, _ctx)  # /runs/new/* before /runs/{run_id}
-samples.register(app, rt, _ctx)
-runs.register(app, rt, _ctx)
-export.register(app, rt, _ctx)
-validation.register(app, rt, _ctx)  # /runs/{run_id}/validation before /runs/{run_id}
-main.register(app, rt, _ctx)  # /runs/{run_id} must be LAST
+# Mount the FastAPI sub-app for /api/* — auto-generated OpenAPI at
+# /api/openapi.json and same-origin Swagger UI at /api/docs.
+# Mount BEFORE the HTML route registrations so /api/* path matching wins.
+_api_subapp = create_api_app(_ctx)
+app.mount("/api", _api_subapp)
+
+# HTML route registration. Order matters because Starlette matches in
+# registration order and several paths share prefixes:
+#   - Specific paths before generic patterns
+#   - /runs/new/* before /runs/{run_id}
+#   - /runs/{run_id}/validation, /runs/{run_id}/samples/... before /runs/{run_id}
+#   - /runs/{run_id} (edit page) registered LAST
+auth.register(app, auth_service)
+admin.register(app, _ctx)
+api_tokens.register(app, _ctx)
+local_users.register(app, _ctx)
+dashboard.register(app, _ctx)
+indexes.register(app, _ctx)
+profiles.register(app, _ctx)
+wizard.register(app, _ctx)
+samples.register(app, _ctx)
+runs.register(app, _ctx)
+export.register(app, _ctx)
+validation.register(app, _ctx)
+main.register(app, _ctx)
 
 
 def main_func():

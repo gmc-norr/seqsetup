@@ -108,6 +108,40 @@ def CreateUserForm():
     )
 
 
+def UserRow(user: LocalUser):
+    """Read-only ``<tr>`` for one user — used by UserTable and the
+    cancel-edit handler so both produce identical HTML."""
+    role_label = "Admin" if user.role == UserRole.ADMIN else "Standard"
+    return Tr(
+        Td(user.username),
+        Td(user.display_name),
+        Td(user.email or "-"),
+        Td(role_label),
+        Td(user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else "-"),
+        Td(
+            Div(
+                Button(
+                    "Edit",
+                    hx_get=f"/admin/users/{user.username}/edit-form",
+                    hx_target=f"#user-row-{user.username}",
+                    hx_swap="outerHTML",
+                    cls="btn-secondary btn-small",
+                ),
+                Button(
+                    "Delete",
+                    hx_post=f"/admin/users/{user.username}/delete",
+                    hx_target="#local-users-page",
+                    hx_swap="outerHTML",
+                    hx_confirm=f"Delete user '{user.username}'? This cannot be undone.",
+                    cls="btn-danger btn-small",
+                ),
+                cls="actions",
+            ),
+        ),
+        id=f"user-row-{user.username}",
+    )
+
+
 def UserTable(users: list[LocalUser]):
     """Table listing existing local users."""
     if not users:
@@ -116,39 +150,7 @@ def UserTable(users: list[LocalUser]):
             style="margin-top: 1rem;",
         )
 
-    rows = []
-    for user in users:
-        role_label = "Admin" if user.role == UserRole.ADMIN else "Standard"
-        rows.append(
-            Tr(
-                Td(user.username),
-                Td(user.display_name),
-                Td(user.email or "-"),
-                Td(role_label),
-                Td(user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else "-"),
-                Td(
-                    Div(
-                        Button(
-                            "Edit",
-                            hx_get=f"/admin/users/{user.username}/edit-form",
-                            hx_target=f"#user-row-{user.username}",
-                            hx_swap="outerHTML",
-                            cls="btn-secondary btn-small",
-                        ),
-                        Button(
-                            "Delete",
-                            hx_post=f"/admin/users/{user.username}/delete",
-                            hx_target="#local-users-page",
-                            hx_swap="outerHTML",
-                            hx_confirm=f"Delete user '{user.username}'? This cannot be undone.",
-                            cls="btn-danger btn-small",
-                        ),
-                        cls="actions",
-                    ),
-                ),
-                id=f"user-row-{user.username}",
-            )
-        )
+    rows = [UserRow(user) for user in users]
 
     return Div(
         H3(f"Users ({len(users)})"),

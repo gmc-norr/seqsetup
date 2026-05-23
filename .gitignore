@@ -16,6 +16,9 @@ audit/
 env/
 venv/
 
+# Deployment env file (never commit secrets)
+.env
+
 # Pixi
 .pixi/
 

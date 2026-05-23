@@ -86,6 +86,24 @@ def CreateTokenForm():
                 cls="form-row",
             ),
             Div(
+                Label("Expires in (days):", fr="expiry_days"),
+                Input(
+                    type="number",
+                    name="expiry_days",
+                    id="expiry_days",
+                    value="90",
+                    min="0",
+                    max="730",
+                    cls="settings-input settings-input-small",
+                ),
+                P(
+                    "Default 90 days. Max 730 (~2 years). Set 0 for a non-expiring token "
+                    "(discouraged — a leaked token then has indefinite read access).",
+                    cls="field-hint",
+                ),
+                cls="form-row",
+            ),
+            Div(
                 Button("Create Token", type="submit", cls="btn-primary"),
                 cls="form-actions",
             ),
@@ -96,6 +114,13 @@ def CreateTokenForm():
     )
 
 
+def _format_dt(dt) -> str:
+    """Format an optional datetime, or '—' if unset."""
+    if dt is None:
+        return "—"
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
 def TokenTable(tokens: list[ApiToken]):
     """Table listing existing API tokens."""
     if not tokens:
@@ -104,13 +129,32 @@ def TokenTable(tokens: list[ApiToken]):
             style="margin-top: 1rem;",
         )
 
+    from datetime import datetime
+    now = datetime.now()
+
     rows = []
     for token in tokens:
+        # Visual flag for tokens that have already expired or are within 7 days.
+        expires_label = _format_dt(token.expires_at)
+        expires_style = ""
+        if token.expires_at:
+            if token.is_expired(now):
+                expires_label = f"{expires_label} (EXPIRED)"
+                expires_style = "color: var(--danger); font-weight: 600;"
+            elif (token.expires_at - now).days <= 7:
+                expires_label = f"{expires_label} (expires soon)"
+                expires_style = "color: var(--warning); font-weight: 600;"
+        elif token.expires_at is None:
+            expires_label = "never"
+            expires_style = "color: var(--warning);"
+
         rows.append(
             Tr(
                 Td(token.name),
                 Td(token.created_by),
-                Td(token.created_at.strftime("%Y-%m-%d %H:%M")),
+                Td(_format_dt(token.created_at)),
+                Td(_format_dt(token.last_used_at)),
+                Td(expires_label, style=expires_style),
                 Td(
                     Button(
                         "Revoke",
@@ -132,6 +176,8 @@ def TokenTable(tokens: list[ApiToken]):
                     Th("Name"),
                     Th("Created By"),
                     Th("Created At"),
+                    Th("Last Used"),
+                    Th("Expires"),
                     Th("Actions"),
                 ),
             ),

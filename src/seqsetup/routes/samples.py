@@ -1,11 +1,18 @@
-"""Sample management routes."""
+"""Sample management routes.
+
+Migrated to Starlette ``Route(...)`` registration. Wizard FT components
+are returned via ``ft_response`` because they have not yet been ported
+to Jinja2 templates.
+"""
 
 import json
+import logging
 
-from fasthtml.common import *
+from fasthtml.common import Div, P
+from starlette.requests import Request
 from starlette.responses import Response
+from starlette.routing import Route
 
-from ..components.sample_table import EmptyTableMessage, SampleRow, SampleTable
 from ..components.wizard import (
     AddSamplesNavigation,
     NewSamplesTableWizard,
@@ -15,14 +22,16 @@ from ..components.wizard import (
     WorklistPreview,
     WorklistSelector,
 )
+from ..context import AppContext
+from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
 from ..models.sample import Sample
-from ..models.sequencing_run import RunStatus
-from ..data.instruments import get_lanes_for_flowcell
-from ..context import AppContext
 from ..services.cycle_calculator import CycleCalculator
 from ..services.sample_parser import parse_pasted_samples
+from ..templating import ft_response
 from .utils import check_run_editable, get_username, sanitize_string
+
+logger = logging.getLogger(__name__)
 
 
 def _apply_kit_defaults(sample: Sample, kit: IndexKit) -> None:
@@ -73,16 +82,27 @@ def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
     return sorted(lanes)
 
 
-def register(app, rt, ctx: AppContext):
-    """Register sample routes."""
+def register(app, ctx: AppContext) -> None:
+    """Register sample routes on the parent Starlette app."""
+    if not hasattr(app, "routes") or not isinstance(app.routes, list):
+        raise TypeError(
+            f"samples.register requires a Starlette-style app with a mutable "
+            f"routes list, got {type(app).__name__}"
+        )
 
     def _sample_table_with_nav(run):
-        """Return sample table with wizard step 2 navigation."""
+        """Return sample table + step-2 navigation as an FT response.
+
+        SampleTableWizard returns the table, WizardNavigation the OOB nav.
+        Wrapping both in a Div keeps HTMX able to swap them as one fragment.
+        """
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         can_proceed = run.has_samples and run.all_samples_have_indexes
-        return (
-            SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-            WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
+        return ft_response(
+            Div(
+                SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
+                WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
+            )
         )
 
     def _update_override_cycles(sample, run):
@@ -93,9 +113,15 @@ def register(app, rt, ctx: AppContext):
                 sample, run.run_cycles
             )
 
-    @rt("/runs/{run_id}/samples")
-    def add_sample(req, run_id: str, sample_id: str, sample_name: str = "", project: str = "", test_id: str = ""):
-        """Add a new sample to a run."""
+    async def add_sample(request: Request) -> Response:
+        """POST /runs/{run_id}/samples — add a single sample (legacy non-wizard form)."""
+        run_id = request.path_params["run_id"]
+        form = await request.form()
+        sample_id = form.get("sample_id", "")
+        sample_name = form.get("sample_name", "")
+        project = form.get("project", "")
+        test_id = form.get("test_id", "")
+
         if not sample_id or not sample_id.strip():
             return Response("sample_id is required", status_code=400)
         sample_id = sanitize_string(sample_id, 256)
@@ -118,15 +144,20 @@ def register(app, rt, ctx: AppContext):
             lanes=[1],
         )
         run.add_sample(sample)
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=False, num_lanes=num_lanes)
+        return ft_response(
+            SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=False, num_lanes=num_lanes)
+        )
 
-    @app.post("/runs/{run_id}/samples/bulk")
-    async def add_bulk_samples(req, run_id: str, context: str = "", existing_ids: str = ""):
-        """Add multiple samples from pasted data or uploaded file."""
+    async def add_bulk_samples(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/bulk — add multiple samples from paste/file."""
+        run_id = request.path_params["run_id"]
+        context = request.query_params.get("context", "")
+        existing_ids = request.query_params.get("existing_ids", "")
+
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
@@ -134,10 +165,8 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        # Get form data from request
-        form = await req.form()
+        form = await request.form()
 
-        # Check for uploaded file first, then fall back to paste data
         sample_file = form.get("sample_file")
         if sample_file and hasattr(sample_file, "read") and sample_file.filename:
             raw_bytes = await sample_file.read()
@@ -150,28 +179,22 @@ def register(app, rt, ctx: AppContext):
         else:
             content = form.get("paste_data", "")
 
-        # Parse pasted samples and handle validation errors
         try:
             parsed = parse_pasted_samples(content)
         except ValueError as e:
-            # Return validation error (e.g., invalid DNA sequences)
             return Response(f"Validation error: {str(e)}", status_code=400)
 
-        # Get existing sample IDs to check for duplicates
         existing_sample_ids = {s.sample_id for s in run.samples}
 
-        # Track added and skipped samples
         added_count = 0
-        skipped_duplicates = []
-        skipped_within_paste = []  # Duplicates within the pasted data itself
+        skipped_duplicates: list[str] = []
+        skipped_within_paste: list[str] = []
 
-        seen_in_paste = set()
+        seen_in_paste: set[str] = set()
         for ps in parsed:
             if ps.sample_id in existing_sample_ids:
-                # Skip samples that already exist in the run
                 skipped_duplicates.append(ps.sample_id)
             elif ps.sample_id in seen_in_paste:
-                # Skip duplicates within the pasted data
                 skipped_within_paste.append(ps.sample_id)
             else:
                 seen_in_paste.add(ps.sample_id)
@@ -181,7 +204,6 @@ def register(app, rt, ctx: AppContext):
                     lanes=[1],
                 )
 
-                # Create and assign indexes from pasted sequences
                 if ps.index1_sequence:
                     index1 = Index(
                         name=ps.index1_name or "",
@@ -207,15 +229,12 @@ def register(app, rt, ctx: AppContext):
                 added_count += 1
 
         if added_count > 0:
-            run.touch(updated_by=get_username(req))
+            run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
 
-        # Return different views based on context
         if context == "add_step1":
-            # Add Samples wizard step 1 - return success message and update navigation
             messages = []
 
-            # Success message for added samples
             if added_count == 0:
                 if not parsed:
                     messages.append(P("No samples found in pasted data.", cls="warning-message"))
@@ -226,7 +245,6 @@ def register(app, rt, ctx: AppContext):
             else:
                 messages.append(P(f"Added {added_count} samples.", cls="success-message"))
 
-            # Warning for skipped duplicates (already in run)
             if skipped_duplicates:
                 if len(skipped_duplicates) <= 3:
                     dup_list = ", ".join(skipped_duplicates)
@@ -234,7 +252,6 @@ def register(app, rt, ctx: AppContext):
                     dup_list = ", ".join(skipped_duplicates[:3]) + f" and {len(skipped_duplicates) - 3} more"
                 messages.append(P(f"Skipped {len(skipped_duplicates)} duplicate(s) already in run: {dup_list}", cls="warning-message"))
 
-            # Warning for duplicates within paste
             if skipped_within_paste:
                 if len(skipped_within_paste) <= 3:
                     dup_list = ", ".join(skipped_within_paste)
@@ -242,75 +259,84 @@ def register(app, rt, ctx: AppContext):
                     dup_list = ", ".join(skipped_within_paste[:3]) + f" and {len(skipped_within_paste) - 3} more"
                 messages.append(P(f"Skipped {len(skipped_within_paste)} duplicate(s) in pasted data: {dup_list}", cls="warning-message"))
 
-            return (
-                Div(*messages),
-                AddSamplesNavigation(1, run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids),
+            return ft_response(
+                Div(
+                    Div(*messages),
+                    AddSamplesNavigation(1, run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids),
+                )
             )
 
-        # Default: return updated sample table with wizard navigation
         return _sample_table_with_nav(run)
 
-    @app.get("/runs/{run_id}/samples/worklists")
-    def list_worklists(run_id: str, context: str = "", existing_ids: str = ""):
-        """Fetch available worklists from the API and return a selector."""
+    def list_worklists(request: Request) -> Response:
+        """GET /runs/{run_id}/samples/worklists — list available worklists."""
+        run_id = request.path_params["run_id"]
+        context = request.query_params.get("context", "")
+        existing_ids = request.query_params.get("existing_ids", "")
+
         if ctx.sample_api_config_repo is None:
-            return P("Sample API is not configured.", cls="error-message")
+            return ft_response(P("Sample API is not configured.", cls="error-message"))
 
         from ..services.sample_api import fetch_worklists
 
         api_config = ctx.sample_api_config
         if not api_config.enabled or not api_config.base_url:
-            return P("Sample API is not enabled or base URL is not configured.", cls="error-message")
+            return ft_response(P("Sample API is not enabled or base URL is not configured.", cls="error-message"))
 
         success, message, worklists = fetch_worklists(api_config)
         if not success:
-            return P(f"Failed to load worklists: {message}", cls="error-message")
+            return ft_response(P(f"Failed to load worklists: {message}", cls="error-message"))
 
-        return WorklistSelector(run_id, worklists, context=context, existing_ids=existing_ids)
+        return ft_response(WorklistSelector(run_id, worklists, context=context, existing_ids=existing_ids))
 
-    @app.get("/runs/{run_id}/samples/preview-worklist")
-    def preview_worklist(run_id: str, worklist_id: str = ""):
-        """Preview samples in a worklist before importing."""
+    def preview_worklist(request: Request) -> Response:
+        """GET /runs/{run_id}/samples/preview-worklist — preview samples in a worklist."""
+        worklist_id = request.query_params.get("worklist_id", "")
+
         if ctx.sample_api_config_repo is None:
-            return P("Sample API is not configured.", cls="error-message")
+            return ft_response(P("Sample API is not configured.", cls="error-message"))
 
         if not worklist_id:
-            return P("No worksheet selected.", cls="error-message")
+            return ft_response(P("No worksheet selected.", cls="error-message"))
 
         from ..services.sample_api import fetch_worklist_samples
 
         api_config = ctx.sample_api_config
         if not api_config.enabled or not api_config.base_url:
-            return P("Sample API is not enabled or base URL is not configured.", cls="error-message")
+            return ft_response(P("Sample API is not enabled or base URL is not configured.", cls="error-message"))
 
         success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
         if not success:
-            return P(f"Failed to fetch worksheet samples: {message}", cls="error-message")
+            return ft_response(P(f"Failed to fetch worksheet samples: {message}", cls="error-message"))
 
-        return WorklistPreview(raw_data, worklist_id)
+        return ft_response(WorklistPreview(raw_data, worklist_id))
 
-    @app.post("/runs/{run_id}/samples/fetch-worklist")
-    def import_worklist_samples(req, run_id: str, worklist_id: str = "", context: str = "", existing_ids: str = ""):
-        """Import samples from a selected worklist."""
+    async def import_worklist_samples(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist."""
+        run_id = request.path_params["run_id"]
+        worklist_id = request.query_params.get("worklist_id", "")
+        context = request.query_params.get("context", "")
+        existing_ids = request.query_params.get("existing_ids", "")
+
         if ctx.sample_api_config_repo is None:
-            return P("Sample API is not configured.", cls="error-message")
+            return ft_response(P("Sample API is not configured.", cls="error-message"))
 
         if not worklist_id:
-            return P("No worklist selected.", cls="error-message")
+            return ft_response(P("No worklist selected.", cls="error-message"))
 
         from ..services.sample_api import fetch_worklist_samples, parse_api_samples
 
         api_config = ctx.sample_api_config
         if not api_config.enabled or not api_config.base_url:
-            return P("Sample API is not enabled or base URL is not configured.", cls="error-message")
+            return ft_response(P("Sample API is not enabled or base URL is not configured.", cls="error-message"))
 
         success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
         if not success:
-            return P(f"Failed to fetch worklist samples: {message}", cls="error-message")
+            return ft_response(P(f"Failed to fetch worklist samples: {message}", cls="error-message"))
 
         api_samples = parse_api_samples(raw_data, api_config)
         if not api_samples:
-            return P("No valid samples found in worklist.", cls="warning-message")
+            return ft_response(P("No valid samples found in worklist.", cls="warning-message"))
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -321,7 +347,7 @@ def register(app, rt, ctx: AppContext):
 
         existing_sample_ids = {s.sample_id for s in run.samples}
         added_count = 0
-        skipped_duplicates = []
+        skipped_duplicates: list[str] = []
 
         for api_sample in api_samples:
             sample_id = api_sample.get("sample_id", "")
@@ -339,7 +365,6 @@ def register(app, rt, ctx: AppContext):
                 lanes=[1],
             )
 
-            # Create and assign indexes from API data
             idx1_seq = api_sample.get("index1_sequence", "")
             if idx1_seq:
                 index1 = Index(
@@ -367,10 +392,9 @@ def register(app, rt, ctx: AppContext):
             added_count += 1
 
         if added_count > 0:
-            run.touch(updated_by=get_username(req))
+            run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
 
-        # Build result messages
         messages = []
         if added_count == 0:
             messages.append(P("No new samples added from worklist.", cls="warning-message"))
@@ -383,31 +407,22 @@ def register(app, rt, ctx: AppContext):
             messages.append(P(f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.", cls="warning-message"))
 
         if context == "add_step1":
-            return (
-                Div(*messages),
-                AddSamplesNavigation(1, run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids),
+            return ft_response(
+                Div(
+                    Div(*messages),
+                    AddSamplesNavigation(1, run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids),
+                )
             )
 
-        # Default: return updated sample table with wizard navigation
         return _sample_table_with_nav(run)
 
-    @app.post("/runs/{run_id}/samples/assign-indexes-bulk")
-    async def assign_indexes_bulk(req, run_id: str):
-        """
-        Assign multiple indexes to consecutive samples starting from a given sample.
+    async def assign_indexes_bulk(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/assign-indexes-bulk — assign indexes to consecutive samples."""
+        run_id = request.path_params["run_id"]
 
-        Args:
-            start_sample_id: The sample ID where the drop occurred (first sample to assign)
-            indexes_json: JSON array of {id, type} objects for indexes to assign
-            index_type: For combinatorial mode, the drop zone type ('i7' or 'i5')
-            context: Context for determining response format ("add_step2" for simplified view)
-        """
-
-        # Get form data from request (needed for htmx.ajax with values)
-        form = await req.form()
+        form = await request.form()
         start_sample_id = form.get("start_sample_id", "")
         indexes_json = form.get("indexes_json", "")
-        index_type = form.get("index_type", "")
         context = form.get("context", "")
         existing_ids = form.get("existing_ids", "")
 
@@ -430,7 +445,6 @@ def register(app, rt, ctx: AppContext):
         if not isinstance(indexes_data, list):
             return Response("Invalid request data", status_code=400)
 
-        # Find the starting sample index
         start_idx = None
         for i, sample in enumerate(run.samples):
             if sample.id == start_sample_id:
@@ -440,7 +454,8 @@ def register(app, rt, ctx: AppContext):
         if start_idx is None:
             return Response("Start sample not found", status_code=404)
 
-        # Validate and resolve all index assignments before applying changes.
+        # Validate and resolve all index assignments before applying changes —
+        # an invalid pair downstream must not leave the run half-updated.
         resolved_assignments = []
         for idx_data in indexes_data:
             if not isinstance(idx_data, dict):
@@ -457,12 +472,7 @@ def register(app, rt, ctx: AppContext):
                 if not index_pair or not kit:
                     return Response("Index pair not found", status_code=404)
                 resolved_assignments.append((idx_type, index_pair, kit))
-            elif idx_type == "i7":
-                index, kit = ctx.index_kit_repo.find_index_with_kit(idx_id)
-                if not index or not kit:
-                    return Response("Index not found", status_code=404)
-                resolved_assignments.append((idx_type, index, kit))
-            elif idx_type == "i5":
+            elif idx_type in ("i7", "i5"):
                 index, kit = ctx.index_kit_repo.find_index_with_kit(idx_id)
                 if not index or not kit:
                     return Response("Index not found", status_code=404)
@@ -470,57 +480,42 @@ def register(app, rt, ctx: AppContext):
             else:
                 return Response(f"Invalid index type: {idx_type}", status_code=400)
 
-        # Assign indexes to consecutive samples
         for offset, (idx_type, resolved_index, kit) in enumerate(resolved_assignments):
             sample_idx = start_idx + offset
             if sample_idx >= len(run.samples):
-                break  # No more samples to assign to
+                break
 
             sample = run.samples[sample_idx]
 
             if idx_type == "pair":
                 run.assign_index_pair_to_sample(sample.id, resolved_index)
-                sample.index_kit_name = kit.name
-                _apply_kit_defaults(sample, kit)
             elif idx_type == "i7":
                 run.assign_index1_to_sample(sample.id, resolved_index)
-                sample.index_kit_name = kit.name
-                _apply_kit_defaults(sample, kit)
             elif idx_type == "i5":
                 run.assign_index2_to_sample(sample.id, resolved_index)
-                sample.index_kit_name = kit.name
-                _apply_kit_defaults(sample, kit)
-
+            sample.index_kit_name = kit.name
+            _apply_kit_defaults(sample, kit)
             _update_override_cycles(sample, run)
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        # Return the sample table based on context
         if context == "add_step2":
-            existing_ids_set = set(id.strip() for id in existing_ids.split(",") if id.strip()) if existing_ids else set()
+            existing_ids_set = (
+                {sid.strip() for sid in existing_ids.split(",") if sid.strip()}
+                if existing_ids else set()
+            )
             new_samples = [s for s in run.samples if s.id not in existing_ids_set]
-            return NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
+            return ft_response(
+                NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
+            )
 
         return _sample_table_with_nav(run)
 
-    @app.post("/runs/{run_id}/samples/assign-index-to-selected")
-    async def assign_index_to_selected(req, run_id: str):
-        """
-        Assign one index to all selected (checked) samples.
-
-        Used when the user selects multiple samples via checkboxes and drops
-        a single index onto any of them (e.g., same i7 for all selected samples
-        in combinatorial mode).
-
-        Form data:
-            sample_ids: JSON array of sample IDs to assign to
-            index_pair_id: For unique dual mode (pre-paired indexes)
-            index_id + index_type: For combinatorial/single mode (individual indexes)
-            context: Response format selector ("add_step2" for simplified view)
-            existing_ids: For add_step2 filtering
-        """
-        form = await req.form()
+    async def assign_index_to_selected(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/assign-index-to-selected — assign one index to selected samples."""
+        run_id = request.path_params["run_id"]
+        form = await request.form()
         sample_ids_json = form.get("sample_ids", "")
         index_pair_id = form.get("index_pair_id", "")
         index_id = form.get("index_id", "")
@@ -543,7 +538,6 @@ def register(app, rt, ctx: AppContext):
         except json.JSONDecodeError:
             return Response("Invalid sample_ids format", status_code=400)
 
-        # Look up the index once
         kit = None
         index_pair = None
         index = None
@@ -559,7 +553,6 @@ def register(app, rt, ctx: AppContext):
         else:
             return Response("Missing index_pair_id or index_id/index_type", status_code=400)
 
-        # Assign the same index to all selected samples
         for sid in sample_ids:
             sample = run.get_sample(sid)
             if not sample:
@@ -576,26 +569,24 @@ def register(app, rt, ctx: AppContext):
             _apply_kit_defaults(sample, kit)
             _update_override_cycles(sample, run)
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        # Return the sample table based on context
         if context == "add_step2":
-            existing_ids_set = set(id.strip() for id in existing_ids.split(",") if id.strip()) if existing_ids else set()
+            existing_ids_set = (
+                {sid.strip() for sid in existing_ids.split(",") if sid.strip()}
+                if existing_ids else set()
+            )
             new_samples = [s for s in run.samples if s.id not in existing_ids_set]
-            return NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
+            return ft_response(
+                NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
+            )
 
         return _sample_table_with_nav(run)
 
-    @app.post("/runs/{run_id}/samples/set-lanes")
-    async def set_lanes_bulk(req, run_id: str):
-        """
-        Set lanes for multiple selected samples.
-
-        Form data:
-            sample_ids: JSON array of sample IDs to update
-            lanes: JSON array of lane numbers (empty = all lanes)
-        """
+    async def set_lanes_bulk(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/set-lanes — set lanes for selected samples."""
+        run_id = request.path_params["run_id"]
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -604,7 +595,7 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        form = await req.form()
+        form = await request.form()
         sample_ids_json = form.get("sample_ids", "[]")
         lanes_json = form.get("lanes", "[]")
 
@@ -626,26 +617,18 @@ def register(app, rt, ctx: AppContext):
 
         selected_ids = {str(sample_id) for sample_id in sample_ids}
 
-        # Update lanes for each selected sample
         for sample in run.samples:
             if sample.id in selected_ids:
                 sample.lanes = normalized_lanes
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
         return _sample_table_with_nav(run)
 
-    @app.post("/runs/{run_id}/samples/set-mismatches")
-    async def set_mismatches_bulk(req, run_id: str):
-        """
-        Set barcode mismatches for multiple selected samples.
-
-        Form data:
-            sample_ids: JSON array of sample IDs to update
-            mismatch_index1: Mismatch value for index 1 (empty string to clear)
-            mismatch_index2: Mismatch value for index 2 (empty string to clear)
-        """
+    async def set_mismatches_bulk(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/set-mismatches — set barcode mismatches for selected samples."""
+        run_id = request.path_params["run_id"]
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -654,7 +637,7 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        form = await req.form()
+        form = await request.form()
         sample_ids_json = form.get("sample_ids", "[]")
         mismatch_index1_str = form.get("mismatch_index1", "")
         mismatch_index2_str = form.get("mismatch_index2", "")
@@ -664,7 +647,6 @@ def register(app, rt, ctx: AppContext):
         except json.JSONDecodeError:
             return Response("Invalid request data", status_code=400)
 
-        # Parse mismatch values (empty string means clear/None)
         mismatch_index1 = None
         if mismatch_index1_str.strip():
             try:
@@ -679,26 +661,19 @@ def register(app, rt, ctx: AppContext):
             except ValueError:
                 pass
 
-        # Update mismatches for each selected sample
         for sample in run.samples:
             if sample.id in sample_ids:
                 sample.barcode_mismatches_index1 = mismatch_index1
                 sample.barcode_mismatches_index2 = mismatch_index2
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
         return _sample_table_with_nav(run)
 
-    @app.post("/runs/{run_id}/samples/set-override-cycles")
-    async def set_override_cycles_bulk(req, run_id: str):
-        """
-        Set override cycles for multiple selected samples.
-
-        Form data:
-            sample_ids: JSON array of sample IDs to update
-            override_cycles: Override cycles value (empty string to recalculate auto)
-        """
+    async def set_override_cycles_bulk(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/set-override-cycles — set override cycles for selected samples."""
+        run_id = request.path_params["run_id"]
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -707,7 +682,7 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        form = await req.form()
+        form = await request.form()
         sample_ids_json = form.get("sample_ids", "[]")
         override_cycles_str = form.get("override_cycles", "")
 
@@ -716,20 +691,16 @@ def register(app, rt, ctx: AppContext):
         except json.JSONDecodeError:
             return Response("Invalid request data", status_code=400)
 
-        # Update override cycles for each selected sample.
-        # Length-limit defensively even though the model regex restricts the
-        # character set — a multi-megabyte all-`Y` string would pass the regex
-        # but balloon the document.
+        # Length-limit defensively — the model regex restricts characters but
+        # a multi-megabyte all-`Y` string would still match and balloon the doc.
         override_cycles = sanitize_string(override_cycles_str, 256) if override_cycles_str else None
         override_cycles = override_cycles or None  # empty string -> None for the recalculate path
 
         for sample in run.samples:
             if sample.id in sample_ids:
                 if override_cycles:
-                    # Set explicit override cycles
                     sample.override_cycles = override_cycles
                 else:
-                    # Recalculate default if cleared
                     if run.run_cycles and sample.has_index:
                         sample.override_cycles = CycleCalculator.calculate_override_cycles(
                             sample, run.run_cycles
@@ -737,20 +708,14 @@ def register(app, rt, ctx: AppContext):
                     else:
                         sample.override_cycles = None
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
         return _sample_table_with_nav(run)
 
-    @app.post("/runs/{run_id}/samples/set-test-id")
-    async def set_test_id_bulk(req, run_id: str):
-        """
-        Set test ID for multiple selected samples.
-
-        Form data:
-            sample_ids: JSON array of sample IDs to update
-            test_id: Test ID value (empty string to clear)
-        """
+    async def set_test_id_bulk(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/set-test-id — set test ID for selected samples."""
+        run_id = request.path_params["run_id"]
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -759,7 +724,7 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        form = await req.form()
+        form = await request.form()
         sample_ids_json = form.get("sample_ids", "[]")
         test_id_str = form.get("test_id", "")
 
@@ -768,26 +733,20 @@ def register(app, rt, ctx: AppContext):
         except json.JSONDecodeError:
             return Response("Invalid request data", status_code=400)
 
-        # Update test_id for each selected sample
         test_id = sanitize_string(test_id_str, 256)
 
         for sample in run.samples:
             if sample.id in sample_ids:
                 sample.test_id = test_id
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
         return _sample_table_with_nav(run)
 
-    @app.post("/runs/{run_id}/samples/bulk-delete")
-    async def delete_samples_bulk(req, run_id: str):
-        """
-        Delete multiple selected samples.
-
-        Form data:
-            sample_ids: JSON array of sample IDs to delete
-        """
+    async def delete_samples_bulk(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/bulk-delete — delete multiple selected samples."""
+        run_id = request.path_params["run_id"]
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -796,7 +755,7 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        form = await req.form()
+        form = await request.form()
         sample_ids_json = form.get("sample_ids", "[]")
 
         try:
@@ -804,20 +763,21 @@ def register(app, rt, ctx: AppContext):
         except json.JSONDecodeError:
             return Response("Invalid request data", status_code=400)
 
-        # Remove each selected sample
         for sample_id in sample_ids:
             run.remove_sample(sample_id)
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        # Return updated sample table
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes)
+        return ft_response(SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes))
 
-    @app.delete("/runs/{run_id}/samples/{id}")
-    def delete_sample(req, run_id: str, id: str, context: str = ""):
-        """Delete a sample."""
+    def delete_sample(request: Request) -> Response:
+        """DELETE /runs/{run_id}/samples/{id} — delete a single sample."""
+        run_id = request.path_params["run_id"]
+        sample_id = request.path_params["id"]
+        context = request.query_params.get("context", "")
+
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
@@ -825,31 +785,33 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        run.remove_sample(id)
-        run.touch(updated_by=get_username(req))
+        run.remove_sample(sample_id)
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        # Return different views based on context
         if context == "add_step2":
-            # Add Samples wizard step 2 - just remove the row (button targets row directly)
-            return ""
+            return Response("")
 
-        # Default: Run overview - return the full table (delete button targets #sample-table)
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes)
+        return ft_response(SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes))
 
-    @rt("/runs/{run_id}/samples/{id}")
-    def update_sample(req, run_id: str, id: str, sample_id: str, sample_name: str = "", project: str = ""):
-        """Update a sample."""
+    async def update_sample(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/{id} — update an existing sample."""
+        run_id = request.path_params["run_id"]
+        sample_id_path = request.path_params["id"]
+        form = await request.form()
+        sample_id = form.get("sample_id", "")
+        sample_name = form.get("sample_name", "")
+        project = form.get("project", "")
+
         # Reject blank sample_id before any mutation — mirrors add_sample.
         # Blanking sample_id would silently break demultiplexing for that sample.
         if not sample_id or not sample_id.strip():
             return Response("sample_id is required", status_code=400)
-        # Validate and sanitize inputs
         sample_id = sanitize_string(sample_id, 256)
         sample_name = sanitize_string(sample_name, 256)
         project = sanitize_string(project, 256)
-        
+
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
@@ -857,37 +819,31 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        sample = run.get_sample(id)
+        sample = run.get_sample(sample_id_path)
 
         if sample:
             sample.sample_id = sample_id
             sample.sample_name = sample_name
             sample.project = project
-            run.touch(updated_by=get_username(req))
+            run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-            return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=False, num_lanes=num_lanes)
+            return ft_response(
+                SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=False, num_lanes=num_lanes)
+            )
 
-        return ""
+        return Response("")
 
-    @app.post("/runs/{run_id}/samples/{id}/assign-index")
-    def assign_index(
-        req,
-        run_id: str,
-        id: str,
-        index_pair_id: str = "",
-        index_id: str = "",
-        index_type: str = "",
-        context: str = "",
-    ):
-        """
-        Assign an index to a sample via drag-drop.
+    async def assign_index(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/{id}/assign-index — assign an index via drag-drop."""
+        run_id = request.path_params["run_id"]
+        sample_id_path = request.path_params["id"]
+        form = await request.form()
+        index_pair_id = form.get("index_pair_id", "")
+        index_id = form.get("index_id", "")
+        index_type = form.get("index_type", "")
+        context = form.get("context", "") or request.query_params.get("context", "")
 
-        Supports:
-        - index_pair_id: For unique_dual mode (pre-paired indexes)
-        - index_id + index_type: For combinatorial/single mode (individual indexes)
-        - context: Context for determining response format ("add_step2" for simplified view)
-        """
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
@@ -895,12 +851,11 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        sample = run.get_sample(id)
+        sample = run.get_sample(sample_id_path)
         if not sample:
             return Response("Sample not found", status_code=404)
 
         if index_pair_id:
-            # Unique dual mode - assign a pre-paired index
             index_pair, kit = ctx.index_kit_repo.find_index_pair_with_kit(index_pair_id)
             if not index_pair:
                 return Response("Index pair not found", status_code=404)
@@ -909,7 +864,6 @@ def register(app, rt, ctx: AppContext):
             sample.index_kit_name = kit.name
             _apply_kit_defaults(sample, kit)
         elif index_id and index_type:
-            # Combinatorial/single mode - assign individual index
             index, kit = ctx.index_kit_repo.find_index_with_kit(index_id)
             if not index:
                 return Response("Index not found", status_code=404)
@@ -927,25 +881,28 @@ def register(app, rt, ctx: AppContext):
 
         _update_override_cycles(sample, run)
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        # Return simplified row for add_step2 context (with checkboxes for multi-select drop)
         show_bulk = context != "add_step2"
         show_cb = True if context == "add_step2" else None
-        return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes, show_bulk_actions=show_bulk, context=context, show_checkboxes=show_cb)
+        return ft_response(
+            SampleRowWizard(
+                sample, run_id, run.run_cycles,
+                show_drop_zones=True, num_lanes=num_lanes,
+                show_bulk_actions=show_bulk, context=context, show_checkboxes=show_cb,
+            )
+        )
 
-    @app.post("/runs/{run_id}/samples/{id}/clear-index")
-    def clear_index(req, run_id: str, id: str, index_type: str = "", context: str = ""):
-        """
-        Clear the assigned index from a sample.
+    async def clear_index(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/{id}/clear-index — clear assigned index(es)."""
+        run_id = request.path_params["run_id"]
+        sample_id_path = request.path_params["id"]
+        # The clear button uses GET-style query params even on POST (htmx default).
+        index_type = request.query_params.get("index_type", "")
+        context = request.query_params.get("context", "")
 
-        Args:
-            index_type: Optional. "i7" to clear only i7, "i5" to clear only i5,
-                        empty to clear all indexes.
-            context: Context for determining response format ("add_step2" for simplified view)
-        """
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
@@ -953,7 +910,7 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        sample = run.get_sample(id)
+        sample = run.get_sample(sample_id_path)
         if sample:
             if index_type == "i7":
                 run.clear_sample_index1(sample.id)
@@ -962,28 +919,30 @@ def register(app, rt, ctx: AppContext):
             else:
                 run.clear_sample_index(sample.id)
 
-            run.touch(updated_by=get_username(req))
+            run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-            # Return simplified row for add_step2 context (with checkboxes for multi-select drop)
             show_bulk = context != "add_step2"
             show_cb = True if context == "add_step2" else None
-            return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes, show_bulk_actions=show_bulk, context=context, show_checkboxes=show_cb)
+            return ft_response(
+                SampleRowWizard(
+                    sample, run_id, run.run_cycles,
+                    show_drop_zones=True, num_lanes=num_lanes,
+                    show_bulk_actions=show_bulk, context=context, show_checkboxes=show_cb,
+                )
+            )
 
-        return ""
+        return Response("")
 
-    @app.post("/runs/{run_id}/samples/{id}/settings")
-    def update_sample_settings(
-        req,
-        run_id: str,
-        id: str,
-        override_cycles: str = "",
-        barcode_mismatches_index1: str = "",
-        barcode_mismatches_index2: str = "",
-    ):
-        """
-        Update sample settings (override cycles, barcode mismatches - lanes are set via bulk action).
-        """
+    async def update_sample_settings(request: Request) -> Response:
+        """POST /runs/{run_id}/samples/{id}/settings — update override cycles + mismatches."""
+        run_id = request.path_params["run_id"]
+        sample_id_path = request.path_params["id"]
+        form = await request.form()
+        override_cycles = form.get("override_cycles", "")
+        barcode_mismatches_index1 = form.get("barcode_mismatches_index1", "")
+        barcode_mismatches_index2 = form.get("barcode_mismatches_index2", "")
+
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
             return Response("Run not found", status_code=404)
@@ -991,16 +950,14 @@ def register(app, rt, ctx: AppContext):
         if err := check_run_editable(run):
             return err
 
-        sample = run.get_sample(id)
+        sample = run.get_sample(sample_id_path)
         if not sample:
             return Response("Sample not found", status_code=404)
 
-        # Update override cycles
         override_cycles = sanitize_string(override_cycles, 256)
         if override_cycles:
             sample.override_cycles = override_cycles
         else:
-            # Recalculate default if cleared
             if run.run_cycles and sample.has_index:
                 sample.override_cycles = CycleCalculator.calculate_override_cycles(
                     sample, run.run_cycles
@@ -1008,7 +965,6 @@ def register(app, rt, ctx: AppContext):
             else:
                 sample.override_cycles = None
 
-        # Update barcode mismatches index 1
         barcode_mismatches_index1 = barcode_mismatches_index1.strip()
         if barcode_mismatches_index1:
             try:
@@ -1018,7 +974,6 @@ def register(app, rt, ctx: AppContext):
         else:
             sample.barcode_mismatches_index1 = None
 
-        # Update barcode mismatches index 2
         barcode_mismatches_index2 = barcode_mismatches_index2.strip()
         if barcode_mismatches_index2:
             try:
@@ -1028,8 +983,29 @@ def register(app, rt, ctx: AppContext):
         else:
             sample.barcode_mismatches_index2 = None
 
-        run.touch(updated_by=get_username(req))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes)
+        return ft_response(
+            SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes)
+        )
+
+    # Order matters: specific paths before {id} captures.
+    app.routes.append(Route("/runs/{run_id}/samples", add_sample, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/bulk", add_bulk_samples, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/bulk-delete", delete_samples_bulk, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/worklists", list_worklists, methods=["GET"]))
+    app.routes.append(Route("/runs/{run_id}/samples/preview-worklist", preview_worklist, methods=["GET"]))
+    app.routes.append(Route("/runs/{run_id}/samples/fetch-worklist", import_worklist_samples, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/assign-indexes-bulk", assign_indexes_bulk, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/assign-index-to-selected", assign_index_to_selected, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/set-lanes", set_lanes_bulk, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/set-mismatches", set_mismatches_bulk, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/set-override-cycles", set_override_cycles_bulk, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/set-test-id", set_test_id_bulk, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/{id}/assign-index", assign_index, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/{id}/clear-index", clear_index, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/{id}/settings", update_sample_settings, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/{id}", update_sample, methods=["POST"]))
+    app.routes.append(Route("/runs/{run_id}/samples/{id}", delete_sample, methods=["DELETE"]))

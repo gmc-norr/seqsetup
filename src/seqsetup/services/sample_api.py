@@ -62,16 +62,29 @@ class SampleApiError(Exception):
 def _validate_url(url: str) -> None:
     """Validate that a URL uses HTTP(S) and has a hostname.
 
-    Note: The base URL is configured by an admin through the settings UI,
-    not by end users, so we allow localhost/private IPs (needed for local
-    LIMS servers and development with the mock API).
+    HTTPS is required unless ``SEQSETUP_LIMS_ALLOW_HTTP=1`` is set — clear-text
+    LIMS communication would expose the configured api-key on the wire.
+    Localhost/private IPs are still allowed (needed for the mock API in tests).
     """
     parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise SampleApiError(f"Unsupported URL scheme: {parsed.scheme}")
-    hostname = parsed.hostname or ""
+    hostname = (parsed.hostname or "").lower()
     if not hostname:
         raise SampleApiError("URL has no hostname")
+    if parsed.scheme not in ("http", "https"):
+        raise SampleApiError(f"Unsupported URL scheme: {parsed.scheme}")
+
+    if parsed.scheme == "http":
+        # Allow plain HTTP only for localhost (dev/test) or when explicitly
+        # opted in via env var. Production deployments MUST use HTTPS so
+        # the api-key isn't sent in clear.
+        is_local = hostname in ("localhost", "127.0.0.1", "::1") or hostname.startswith("127.")
+        opt_in = os.environ.get("SEQSETUP_LIMS_ALLOW_HTTP", "").lower() in ("1", "true", "yes")
+        if not (is_local or opt_in):
+            raise SampleApiError(
+                f"Refusing to call LIMS over plain HTTP at {hostname!r}: "
+                f"the configured api-key would be sent in clear text. "
+                f"Use HTTPS, or set SEQSETUP_LIMS_ALLOW_HTTP=1 to opt in (not for production)."
+            )
 
 
 def _api_get(url: str, api_key: str = "") -> dict | list:
@@ -300,7 +313,11 @@ def fetch_worklist_samples(config: SampleApiConfig, worklist_id: str) -> Tuple[b
     if not config.enabled:
         return False, "Sample API is not enabled", []
 
-    url = config.worklist_samples_url(worklist_id)
+    from ..models.sample_api_config import InvalidWorklistIdError
+    try:
+        url = config.worklist_samples_url(worklist_id)
+    except InvalidWorklistIdError as e:
+        return False, str(e), []
     if not url:
         return False, "Could not build samples URL", []
 

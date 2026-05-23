@@ -36,6 +36,11 @@ def audit(
         target: identifier of the affected object (run_id, user_id, etc.)
         outcome: "success", "failure", or "denied"
         **details: small dict of non-sensitive contextual fields
+
+    Best-effort: a json serialization failure (e.g. caller passed bytes or
+    a non-isoformat datetime) logs a warning to the application logger and
+    returns. It must NEVER raise into the caller — a request handler must
+    not 500 because of an audit-log call.
     """
     record: dict[str, Any] = {
         "ts": int(time.time()),
@@ -46,4 +51,42 @@ def audit(
     }
     if details:
         record["details"] = details
-    _audit_logger.info(json.dumps(record, sort_keys=True))
+    try:
+        _audit_logger.info(json.dumps(record, sort_keys=True, default=_json_fallback))
+    except Exception:
+        # Fall back to a minimal record and log the serialization failure.
+        # This keeps the audit trail informative (event/actor/target survive)
+        # without killing the request that triggered the audit.
+        logging.getLogger(__name__).warning(
+            "audit() serialization failed for event=%r — emitting minimal record",
+            event,
+            exc_info=True,
+        )
+        try:
+            _audit_logger.info(json.dumps({
+                "ts": int(time.time()),
+                "event": event,
+                "actor": actor,
+                "target": target,
+                "outcome": outcome,
+                "details_serialization_failed": True,
+            }, sort_keys=True))
+        except Exception:
+            # Absolutely last resort — never raise.
+            pass
+
+
+def _json_fallback(obj):
+    """Last-chance JSON encoder hook.
+
+    Handles datetime/date/bytes/set, then falls back to ``str()``. Anything
+    that can't be stringified falls into the outer try/except in ``audit``.
+    """
+    from datetime import date, datetime
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, (bytes, bytearray)):
+        return obj.decode("utf-8", errors="replace")
+    if isinstance(obj, (set, frozenset)):
+        return sorted(obj)
+    return str(obj)

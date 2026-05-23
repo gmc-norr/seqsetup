@@ -1,0 +1,63 @@
+{# Application shell — header + sidebar + main-content slot.
+
+   Used by every authenticated page. Child templates extend this and
+   override {% block content %}. The active_route variable (string)
+   highlights the matching sidebar entry; pass an empty string for
+   pages without a sidebar entry (e.g. run-edit pages).
+#}
+{% extends "_base.html" %}
+
+{% block title %}{{ page_title|default("SeqSetup") }} - SeqSetup{% endblock %}
+
+{% block body %}
+<main class="app-container">
+    <header class="app-header">
+        <div class="app-brand">
+            <img src="/img/favicon.svg" alt="SeqSetup" width="32" height="32" class="app-logo">
+            <span class="app-brand-text">SeqSetup</span>
+        </div>
+        {% if user %}
+        <div class="user-info">
+            <span class="username">Logged in as: {{ user.display_name }}</span>
+            <a href="/logout">Logout</a>
+        </div>
+        {% endif %}
+    </header>
+
+    <div class="app-shell">
+        <nav class="sidebar">
+            <a href="/" class="nav-item{% if active_route == '/' %} active{% endif %}">Dashboard</a>
+            <a href="/runs/new" class="btn btn-primary sidebar-btn">+ New Run</a>
+
+            <hr class="sidebar-divider">
+
+            <details class="settings-section"{% if active_route in ['/indexes', '/profiles'] %} open{% endif %}>
+                <summary>Settings</summary>
+                <nav class="settings-subnav">
+                    <a href="/indexes" class="nav-item{% if active_route == '/indexes' %} active{% endif %}">Index Kits</a>
+                    <a href="/profiles" class="nav-item{% if active_route == '/profiles' %} active{% endif %}">Profiles</a>
+                </nav>
+            </details>
+
+            {% if user and user.is_admin %}
+            <details class="settings-section admin-section"{% if active_route and active_route.startswith('/admin') %} open{% endif %}>
+                <summary>Admin</summary>
+                <nav class="settings-subnav">
+                    <a href="/admin/users" class="nav-item{% if active_route == '/admin/users' %} active{% endif %}">Users</a>
+                    <a href="/admin/authentication" class="nav-item{% if active_route == '/admin/authentication' %} active{% endif %}">Authentication</a>
+                    <a href="/admin/instruments" class="nav-item{% if active_route == '/admin/instruments' %} active{% endif %}">Instruments</a>
+                    <a href="/admin/config-sync" class="nav-item{% if active_route == '/admin/config-sync' %} active{% endif %}">Config Sync</a>
+                    <a href="/admin/api-tokens" class="nav-item{% if active_route == '/admin/api-tokens' %} active{% endif %}">API Tokens</a>
+                    <a href="/admin/sample-api" class="nav-item{% if active_route == '/admin/sample-api' %} active{% endif %}">LIMS Integration</a>
+                    <a href="/admin/logs" class="nav-item{% if active_route == '/admin/logs' %} active{% endif %}">Logs</a>
+                </nav>
+            </details>
+            {% endif %}
+        </nav>
+
+        <div class="main-content">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</main>
+{% endblock %}

@@ -1,0 +1,90 @@
+{# Dashboard content fragment.
+
+   Rendered both as a standalone fragment (HTMX swaps from
+   /dashboard/tab/{tab}, /runs/{id}/archive, /runs/{id}) and inside
+   dashboard.html (full page). The outer #dashboard element is the
+   HTMX target; the tab buttons swap it via hx-target="#dashboard"
+   hx-swap="outerHTML".
+
+   Inputs:
+     runs:        list[SequencingRun] (all runs, any status)
+     active_tab:  one of "draft" | "ready" | "archived"
+#}
+{% if not runs %}
+<div class="empty-state">
+    <div class="empty-state-content">
+        <h2>No Runs Yet</h2>
+        <p>Get started by creating your first run.</p>
+        <a href="/runs/new" class="btn btn-primary">+ New Run</a>
+    </div>
+</div>
+{% else %}
+{% set counts = {
+    'draft':    runs|selectattr('status.value', 'equalto', 'draft')|list|length,
+    'ready':    runs|selectattr('status.value', 'equalto', 'ready')|list|length,
+    'archived': runs|selectattr('status.value', 'equalto', 'archived')|list|length,
+} %}
+{% set tab_runs = runs
+        | selectattr('status.value', 'equalto', active_tab)
+        | sort(attribute='updated_at', reverse=True)
+        | list %}
+<div id="dashboard" class="dashboard-content">
+    <div class="tab-buttons dashboard-tabs">
+        {% for key, label in [('draft', 'Draft'), ('ready', 'Ready'), ('archived', 'Archived')] %}
+        <button class="tab-button{% if key == active_tab %} active{% endif %}"
+                hx-get="/dashboard/tab/{{ key }}"
+                hx-target="#dashboard"
+                hx-swap="outerHTML">
+            {{ label }} ({{ counts[key] }})
+        </button>
+        {% endfor %}
+    </div>
+
+    <div id="dashboard-tab-content" class="dashboard-tab-content">
+        {% if not tab_runs %}
+        <p class="run-list-empty">No runs</p>
+        {% else %}
+        <div class="run-list">
+            <div class="run-list-row run-list-header-row">
+                <span class="rl-col rl-name">Name</span>
+                <span class="rl-col rl-platform">Platform</span>
+                <span class="rl-col rl-flowcell">Flowcell</span>
+                <span class="rl-col rl-samples">Samples</span>
+                <span class="rl-col rl-user">Created by</span>
+                <span class="rl-col rl-user">Modified by</span>
+                <span class="rl-col rl-updated">Updated</span>
+                <span class="rl-col rl-actions"></span>
+            </div>
+            {% for run in tab_runs %}
+            {% set is_archived = run.status.value == 'archived' %}
+            <div class="run-list-row run-list-item" id="run-item-{{ run.id }}">
+                <a href="/runs/{{ run.id }}" class="rl-col rl-name rl-link">{{ run.run_name or "Untitled Run" }}</a>
+                <span class="rl-col rl-platform">{{ run.instrument_platform.value }}</span>
+                <span class="rl-col rl-flowcell">{{ run.flowcell_type or "—" }}</span>
+                <span class="rl-col rl-samples">{{ run.samples|length }}</span>
+                <span class="rl-col rl-user">{{ run.created_by or "—" }}</span>
+                <span class="rl-col rl-user">{{ run.updated_by or "—" }}</span>
+                <span class="rl-col rl-updated">{{ run.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
+                <div class="rl-col rl-actions">
+                    <a href="/runs/{{ run.id }}" class="btn btn-secondary btn-small">Edit</a>
+                    {% if not is_archived %}
+                    <button class="btn btn-warning btn-small"
+                            hx-post="/runs/{{ run.id }}/archive"
+                            hx-target="#dashboard"
+                            hx-swap="outerHTML"
+                            hx-confirm="Archive this run?">Archive</button>
+                    {% else %}
+                    <button class="btn btn-danger btn-small"
+                            hx-delete="/runs/{{ run.id }}"
+                            hx-target="#dashboard"
+                            hx-swap="outerHTML"
+                            hx-confirm="Are you sure you want to delete this run?">Delete</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

@@ -1,0 +1,181 @@
+"""Integration-test fixtures.
+
+Boots a fresh FastHTML app instance per test with:
+  - mongomock-backed MongoDB (no real mongod required)
+  - Isolated session secret + sesskey (per-test tmp dir)
+  - Pre-seeded admin user for authenticated flows
+
+The app is bootstrapped via ``importlib.reload(seqsetup.app)`` after the
+patches are in place. This keeps the production import-time wiring as the
+canonical source of truth — tests don't duplicate the route registration
+list, so adding a new route doesn't silently bypass smoke coverage.
+"""
+
+import importlib
+import sys
+from pathlib import Path
+
+import mongomock
+import pytest
+from starlette.testclient import TestClient
+
+from seqsetup.models.local_user import LocalUser
+from seqsetup.models.user import UserRole
+
+
+@pytest.fixture
+def isolated_mongo(monkeypatch):
+    """A fresh mongomock database per test."""
+    client = mongomock.MongoClient()
+    db = client["seqsetup_test"]
+
+    # Replace init_db / get_db with the fake.
+    from seqsetup.services import database as db_module
+    monkeypatch.setattr(db_module, "init_db", lambda: db)
+    monkeypatch.setattr(db_module, "get_db", lambda: db)
+    monkeypatch.setattr(db_module, "_db", db)
+
+    yield db
+
+
+@pytest.fixture
+def fresh_app(isolated_mongo, monkeypatch, tmp_path):
+    """Reload seqsetup.app against the isolated mongo + isolated session secret.
+
+    Returns (app, ctx, mongo_db) — tests can mutate ctx repos directly to set
+    up state, then exercise endpoints via TestClient on app.
+    """
+    # Sandbox the session secret to a per-test tmpfile to avoid touching
+    # the real .sesskey, and prevent SecretHandler races between tests.
+    monkeypatch.setenv("SEQSETUP_SESSION_SECRET", "x" * 64)
+    # CSRF middleware reads this at construction; clear to default behavior.
+    monkeypatch.delenv("SEQSETUP_TRUSTED_ORIGINS", raising=False)
+
+    # Sandbox the sesskey file path too, in case the env var is absent.
+    monkeypatch.setattr(
+        "seqsetup.startup.SESSKEY_PATH",
+        tmp_path / ".sesskey",
+    )
+
+    # Reset module-level state on the startup module (cached repos/services)
+    # so reload sees fresh state. Stop the previous scheduler BEFORE nulling
+    # the reference — otherwise the daemon thread keeps ticking against a
+    # dead config repo for the rest of the test run.
+    import seqsetup.startup as startup_module
+    prev_scheduler = getattr(startup_module, "_profile_sync_scheduler", None)
+    if prev_scheduler is not None:
+        try:
+            prev_scheduler.stop()
+        except Exception:
+            pass
+    startup_module._db = None
+    startup_module._repos = {}
+    startup_module._github_sync_service = None
+    startup_module._profile_sync_scheduler = None
+    startup_module._auth_service = None
+
+    # The data.instruments synced cache uses module-level state too.
+    from seqsetup.data import instruments as instruments_module
+    instruments_module._synced_instruments_cache = None
+    instruments_module._instrument_definition_repo = None
+
+    # The log_capture handler accumulates duplicate registrations on each
+    # reload because setup_log_capture(..) calls logger.addHandler without
+    # checking for duplicates. Drop any prior handler from the seqsetup
+    # logger before the reload re-adds one.
+    import logging
+    from seqsetup.services import log_capture as log_capture_module
+    if log_capture_module._log_capture_handler is not None:
+        for name in ("seqsetup", ""):  # both per-logger and root
+            logger = logging.getLogger(name)
+            try:
+                logger.removeHandler(log_capture_module._log_capture_handler)
+            except Exception:
+                pass
+        log_capture_module._log_capture_handler = None
+
+    # Reset rate-limit counters so a previous test's traffic doesn't bleed
+    # into this one. Without this, tests that do many requests trip 429.
+    from seqsetup.rate_limit import reset_all_limiters
+    reset_all_limiters()
+
+    # Reload the app module to re-run the bootstrap wiring against mongomock.
+    if "seqsetup.app" in sys.modules:
+        del sys.modules["seqsetup.app"]
+    app_module = importlib.import_module("seqsetup.app")
+
+    # Don't keep the background scheduler running in tests.
+    scheduler = getattr(startup_module, "_profile_sync_scheduler", None)
+    if scheduler is not None:
+        try:
+            scheduler.stop()
+        except Exception:
+            pass
+
+    yield app_module.app, app_module._ctx, isolated_mongo
+
+
+@pytest.fixture
+def admin_user_seeded(fresh_app):
+    """Insert a known-good admin into the LocalUser repo and return creds."""
+    _app, ctx, _db = fresh_app
+    user = LocalUser(
+        username="admin-test",
+        display_name="Test Admin",
+        email="admin@test.local",
+        role=UserRole.ADMIN,
+    )
+    user.set_password("Cl1nical-Admin!")
+    ctx.local_user_repo.save(user)
+    return {"username": "admin-test", "password": "Cl1nical-Admin!"}
+
+
+@pytest.fixture
+def standard_user_seeded(fresh_app):
+    """Insert a standard user and return creds."""
+    _app, ctx, _db = fresh_app
+    user = LocalUser(
+        username="operator",
+        display_name="Test Operator",
+        email="op@test.local",
+        role=UserRole.STANDARD,
+    )
+    user.set_password("Strong-Op3r4tor!")
+    ctx.local_user_repo.save(user)
+    return {"username": "operator", "password": "Strong-Op3r4tor!"}
+
+
+@pytest.fixture
+def client(fresh_app):
+    """A Starlette TestClient pointed at the fresh app.
+
+    Sends Origin=http://testserver by default so the CSRF middleware accepts
+    same-origin POSTs. Tests that exercise the CSRF rejection path can pass
+    an explicit ``headers={'Origin': 'http://attacker'}``.
+    """
+    app, _ctx, _db = fresh_app
+    return TestClient(app, base_url="http://testserver")
+
+
+@pytest.fixture
+def logged_in_client(fresh_app, admin_user_seeded):
+    """Test client with an authenticated admin session.
+
+    POSTs to /login/submit, then returns the client with the session cookie set.
+    """
+    app, _ctx, _db = fresh_app
+    c = TestClient(app, base_url="http://testserver")
+    response = c.post(
+        "/login/submit",
+        data={
+            "username": admin_user_seeded["username"],
+            "password": admin_user_seeded["password"],
+        },
+        headers={"Origin": "http://testserver"},
+        follow_redirects=False,
+    )
+    # Login should 303 to /
+    assert response.status_code == 303, (
+        f"Login failed (status={response.status_code}); body={response.text[:300]}"
+    )
+    return c

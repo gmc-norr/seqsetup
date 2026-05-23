@@ -1,14 +1,18 @@
-"""Admin settings routes."""
+"""Admin settings routes.
+
+Migrated to Starlette ``Route(...)`` registration. Admin FT components
+(AuthenticationPage, LDAPConfigForm, ConfigSyncPage, SampleApiConfigForm,
+LogsPage, InstrumentsPage, SyncedInstrumentsSection) are still rendered
+via the transitional ``ft_response`` / ``ft_page_response`` helpers — a
+later cleanup converts them to Jinja2.
+"""
 
 import logging
 
-from fasthtml.common import *
+from starlette.requests import Request
 from starlette.responses import Response
+from starlette.routing import Route
 
-logger = logging.getLogger("seqsetup")
-
-from .utils import get_username, require_admin, sanitize_string
-from ..components.layout import AppShell
 from ..components.admin import (
     AuthenticationPage,
     ConfigSyncPage,
@@ -23,355 +27,314 @@ from ..components.admin import (
 from ..context import AppContext
 from ..models.auth_config import AuthMethod, LDAPConfig, validate_user_dn_pattern
 from ..models.sample_api_config import SampleApiConfig
+from ..rate_limit import client_identity, get_login_limiter
 from ..services.audit_log import audit
 from ..services.ldap import LDAPService, LDAPError
+from ..templating import ft_page_response, ft_response
+from .utils import get_username, require_admin, sanitize_string
 
 
-def register(app, rt, ctx: AppContext):
+logger = logging.getLogger("seqsetup")
+
+
+def register(app, ctx: AppContext) -> None:
     """Register admin settings routes."""
+    if not hasattr(app, "routes") or not isinstance(app.routes, list):
+        raise TypeError(
+            f"admin.register requires a Starlette-style app with a mutable "
+            f"routes list, got {type(app).__name__}"
+        )
 
-    @app.get("/admin/authentication")
-    def admin_authentication(req):
-        """Authentication settings page."""
-        error = require_admin(req)
-        if error:
-            return error
+    # ---- Authentication settings ---------------------------------------
 
-        user = req.scope.get("auth")
-        auth_config = ctx.auth_config_repo.get()
-
-        return AppShell(
-            user=user,
+    def admin_authentication(request: Request) -> Response:
+        if err := require_admin(request):
+            return err
+        return ft_page_response(
+            request,
+            AuthenticationPage(ctx.auth_config_repo.get()),
+            page_title="Authentication",
             active_route="/admin/authentication",
-            content=AuthenticationPage(auth_config),
-            title="Authentication",
         )
 
-    @app.get("/admin/instruments")
-    def admin_instruments(req):
-        """Instrument visibility settings page."""
-        error = require_admin(req)
-        if error:
-            return error
-
-        user = req.scope.get("auth")
-        synced_instruments = []
-        if ctx.instrument_definition_repo:
-            synced_instruments = ctx.instrument_definition_repo.list_all()
-
-        return AppShell(
-            user=user,
-            active_route="/admin/instruments",
-            content=InstrumentsPage(synced_instruments),
-            title="Instruments",
-        )
-
-    @app.post("/admin/settings/auth-method")
-    def update_auth_method(req, auth_method: str, allow_local_fallback: str = ""):
-        """Update authentication method."""
-        error = require_admin(req)
-        if error:
-            return error
+    async def update_auth_method(request: Request) -> Response:
+        if err := require_admin(request):
+            return err
+        form = await request.form()
+        auth_method = form.get("auth_method", "")
+        allow_local_fallback = form.get("allow_local_fallback", "")
 
         config = ctx.auth_config_repo.get()
-
         try:
             config.auth_method = AuthMethod(auth_method)
         except ValueError:
             config.auth_method = AuthMethod.LOCAL
-
         config.allow_local_fallback = allow_local_fallback == "on"
         ctx.auth_config_repo.save(config)
-
         audit(
             "auth.method.changed",
-            actor=get_username(req),
+            actor=get_username(request),
             target="auth_config",
             method=config.auth_method.value,
             allow_local_fallback=config.allow_local_fallback,
         )
+        return ft_response(LDAPConfigForm(config, message="Authentication method updated"))
 
-        return LDAPConfigForm(config, message="Authentication method updated")
+    async def update_ldap_config(request: Request) -> Response:
+        if err := require_admin(request):
+            return err
+        form = await request.form()
+        user_dn_pattern = form.get("user_dn_pattern", "")
 
-    @app.post("/admin/settings/ldap")
-    def update_ldap_config(
-        req,
-        server_url: str = "",
-        use_ssl: str = "",
-        base_dn: str = "",
-        bind_dn: str = "",
-        bind_password: str = "",
-        user_search_base: str = "",
-        user_search_filter: str = "(sAMAccountName={username})",
-        user_dn_pattern: str = "",
-        username_attribute: str = "sAMAccountName",
-        display_name_attribute: str = "displayName",
-        email_attribute: str = "mail",
-        admin_group_dn: str = "",
-        user_group_dn: str = "",
-        group_membership_attribute: str = "memberOf",
-        connect_timeout: int = 10,
-        receive_timeout: int = 10,
-    ):
-        """Update LDAP configuration."""
-        error = require_admin(req)
-        if error:
-            return error
-
-        # Reject DN-template injection attempts before persisting. Empty value
-        # is allowed (falls back to search-based lookup).
+        # Reject DN-template injection attempts before persisting.
         try:
             validate_user_dn_pattern(user_dn_pattern)
         except ValueError as e:
             return Response(str(e), status_code=400)
 
         config = ctx.auth_config_repo.get()
-
+        bind_password = form.get("bind_password", "")
         config.ldap_config = LDAPConfig(
-            server_url=server_url,
-            use_ssl=use_ssl == "on",
-            base_dn=base_dn,
-            bind_dn=bind_dn,
+            server_url=form.get("server_url", ""),
+            use_ssl=form.get("use_ssl", "") == "on",
+            verify_ssl_cert=form.get("verify_ssl_cert", "on") == "on",
+            base_dn=form.get("base_dn", ""),
+            bind_dn=form.get("bind_dn", ""),
             bind_password=bind_password if bind_password else config.ldap_config.bind_password,
-            user_search_base=user_search_base,
-            user_search_filter=user_search_filter,
+            user_search_base=form.get("user_search_base", ""),
+            user_search_filter=form.get("user_search_filter", "(sAMAccountName={username})"),
             user_dn_pattern=user_dn_pattern,
-            username_attribute=username_attribute,
-            display_name_attribute=display_name_attribute,
-            email_attribute=email_attribute,
-            admin_group_dn=admin_group_dn,
-            user_group_dn=user_group_dn,
-            group_membership_attribute=group_membership_attribute,
-            connect_timeout=connect_timeout,
-            receive_timeout=receive_timeout,
+            username_attribute=form.get("username_attribute", "sAMAccountName"),
+            display_name_attribute=form.get("display_name_attribute", "displayName"),
+            email_attribute=form.get("email_attribute", "mail"),
+            admin_group_dn=form.get("admin_group_dn", ""),
+            user_group_dn=form.get("user_group_dn", ""),
+            group_membership_attribute=form.get("group_membership_attribute", "memberOf"),
+            connect_timeout=int(form.get("connect_timeout", "10") or 10),
+            receive_timeout=int(form.get("receive_timeout", "10") or 10),
         )
-        config.ldap_configured = bool(server_url and base_dn)
-        config.ldap_tested = False  # Reset tested flag when config changes
+        config.ldap_configured = bool(config.ldap_config.server_url and config.ldap_config.base_dn)
+        config.ldap_tested = False
         ctx.auth_config_repo.save(config)
-
         audit(
             "auth.ldap_config.updated",
-            actor=get_username(req),
+            actor=get_username(request),
             target="ldap_config",
-            server_url=server_url,
-            base_dn=base_dn,
-            bind_dn=bind_dn,
+            server_url=config.ldap_config.server_url,
+            base_dn=config.ldap_config.base_dn,
+            bind_dn=config.ldap_config.bind_dn,
         )
+        return ft_response(LDAPConfigForm(config, message="LDAP configuration saved"))
 
-        return LDAPConfigForm(config, message="LDAP configuration saved")
-
-    @app.post("/admin/settings/ldap/test")
-    def test_ldap_connection(req):
-        """Test LDAP connection with current settings."""
-        error = require_admin(req)
-        if error:
-            return error
-
+    def test_ldap_connection(request: Request) -> Response:
+        if err := require_admin(request):
+            return err
         config = ctx.auth_config_repo.get()
-
         if not config.ldap_config.server_url:
-            return LDAPTestResult(False, "LDAP server URL is not configured")
-
+            return ft_response(LDAPTestResult(False, "LDAP server URL is not configured"))
         try:
             ldap_service = LDAPService(config.ldap_config)
             success, message = ldap_service.test_connection()
-
             if success:
                 config.ldap_tested = True
                 ctx.auth_config_repo.save(config)
-
-            return LDAPTestResult(success, message)
-
+            return ft_response(LDAPTestResult(success, message))
         except LDAPError as e:
-            return LDAPTestResult(False, str(e))
+            return ft_response(LDAPTestResult(False, str(e)))
         except Exception:
             logger.exception("LDAP connection test failed unexpectedly")
-            return LDAPTestResult(False, "Connection test failed unexpectedly")
+            return ft_response(LDAPTestResult(False, "Connection test failed unexpectedly"))
 
-    @app.post("/admin/settings/ldap/test-auth")
-    def test_ldap_auth(req, test_username: str = "", test_password: str = ""):
-        """Test LDAP authentication with a specific user."""
-        error = require_admin(req)
-        if error:
-            return error
+    async def test_ldap_auth(request: Request) -> Response:
+        """Same rate-limiting policy as /login/submit — this endpoint
+        triggers a real LDAP bind from admin-supplied credentials.
+        """
+        if err := require_admin(request):
+            return err
+        form = await request.form()
+        test_username = form.get("test_username", "")
+        test_password = form.get("test_password", "")
 
         if not test_username or not test_password:
-            return LDAPTestResult(False, "Please provide both username and password")
+            return ft_response(LDAPTestResult(False, "Please provide both username and password"))
+
+        limiter = get_login_limiter()
+        ip = client_identity(request)
+        actor_user = (test_username or "")[:128].lower()
+        ok_ip, retry_ip = limiter.allow(f"ldap-test-ip:{ip}")
+        ok_user, retry_user = limiter.allow(f"ldap-test-user:{actor_user}")
+        if not (ok_ip and ok_user):
+            retry = max(retry_ip, retry_user)
+            audit(
+                "ldap.test_auth.rate_limited",
+                actor=get_username(request),
+                outcome="denied",
+                ip=ip,
+                target_user=actor_user,
+                retry_after=retry,
+            )
+            return ft_response(LDAPTestResult(False, f"Too many test attempts. Retry after {retry}s."))
 
         config = ctx.auth_config_repo.get()
-
         if not config.ldap_config.server_url:
-            return LDAPTestResult(False, "LDAP server URL is not configured")
-
+            return ft_response(LDAPTestResult(False, "LDAP server URL is not configured"))
         try:
             ldap_service = LDAPService(config.ldap_config)
             user = ldap_service.authenticate(test_username, test_password)
-            return LDAPTestResult(
+            return ft_response(LDAPTestResult(
                 True,
                 f"Authentication successful! User: {user.display_name}, Role: {user.role.value}",
-            )
+            ))
         except LDAPError as e:
-            return LDAPTestResult(False, str(e))
+            return ft_response(LDAPTestResult(False, str(e)))
         except Exception:
             logger.exception("LDAP authentication test failed")
-            return LDAPTestResult(False, "Authentication test failed")
+            return ft_response(LDAPTestResult(False, "Authentication test failed"))
 
-    # Config Sync Routes (only if repo is available)
+    app.routes.append(Route("/admin/authentication", admin_authentication, methods=["GET"]))
+    app.routes.append(Route("/admin/settings/auth-method", update_auth_method, methods=["POST"]))
+    app.routes.append(Route("/admin/settings/ldap", update_ldap_config, methods=["POST"]))
+    app.routes.append(Route("/admin/settings/ldap/test", test_ldap_connection, methods=["POST"]))
+    app.routes.append(Route("/admin/settings/ldap/test-auth", test_ldap_auth, methods=["POST"]))
+
+    # ---- Instruments page ---------------------------------------------
+
+    def admin_instruments(request: Request) -> Response:
+        if err := require_admin(request):
+            return err
+        synced = ctx.instrument_definition_repo.list_all() if ctx.instrument_definition_repo else []
+        return ft_page_response(
+            request,
+            InstrumentsPage(synced),
+            page_title="Instruments",
+            active_route="/admin/instruments",
+        )
+
+    app.routes.append(Route("/admin/instruments", admin_instruments, methods=["GET"]))
+
+    # ---- Config Sync (only if repo is available) ----------------------
+
     if ctx.profile_sync_config_repo is not None:
 
-        @app.get("/admin/config-sync")
-        def admin_config_sync(req):
-            """Config sync configuration and status page."""
-            error = require_admin(req)
-            if error:
-                return error
-
-            user = req.scope.get("auth")
+        def admin_config_sync(request: Request) -> Response:
+            if err := require_admin(request):
+                return err
             config = ctx.profile_sync_config_repo.get()
             app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
             test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
-
-            return AppShell(
-                user=user,
+            return ft_page_response(
+                request,
+                ConfigSyncPage(config, app_profiles, test_profiles),
+                page_title="Config Sync",
                 active_route="/admin/config-sync",
-                content=ConfigSyncPage(config, app_profiles, test_profiles),
-                title="Config Sync",
             )
 
-        @app.post("/admin/config-sync/config")
-        def update_config_sync_config(
-            req,
-            github_repo_url: str = "",
-            github_branch: str = "main",
-            test_profiles_path: str = "test_profiles/",
-            application_profiles_path: str = "application_profiles/",
-            instruments_path: str = "instruments/",
-            index_kits_path: str = "index_kits/",
-            sync_enabled: str = "",
-            sync_instruments_enabled: str = "",
-            sync_index_kits_enabled: str = "",
-            sync_interval_minutes: int = 60,
-        ):
-            """Update config sync configuration."""
-            error = require_admin(req)
-            if error:
-                return error
-
+        async def update_config_sync_config(request: Request) -> Response:
+            if err := require_admin(request):
+                return err
+            form = await request.form()
             config = ctx.profile_sync_config_repo.get()
-
-            # Sanitize and length-limit inputs
-            config.github_repo_url = sanitize_string(github_repo_url, 1024)
-            config.github_branch = sanitize_string(github_branch, 128)
-            config.test_profiles_path = sanitize_string(test_profiles_path, 256)
-            config.application_profiles_path = sanitize_string(application_profiles_path, 256)
-            config.instruments_path = sanitize_string(instruments_path, 256)
-            config.index_kits_path = sanitize_string(index_kits_path, 256)
-            config.sync_enabled = sync_enabled == "on"
-            config.sync_instruments_enabled = sync_instruments_enabled == "on"
-            config.sync_index_kits_enabled = sync_index_kits_enabled == "on"
-            config.sync_interval_minutes = max(1, min(1440, sync_interval_minutes))  # Clamp 1-1440 minutes
+            config.github_repo_url = sanitize_string(form.get("github_repo_url", ""), 1024)
+            config.github_branch = sanitize_string(form.get("github_branch", "main"), 128)
+            config.test_profiles_path = sanitize_string(form.get("test_profiles_path", "test_profiles/"), 256)
+            config.application_profiles_path = sanitize_string(form.get("application_profiles_path", "application_profiles/"), 256)
+            config.instruments_path = sanitize_string(form.get("instruments_path", "instruments/"), 256)
+            config.index_kits_path = sanitize_string(form.get("index_kits_path", "index_kits/"), 256)
+            config.sync_enabled = form.get("sync_enabled", "") == "on"
+            config.sync_instruments_enabled = form.get("sync_instruments_enabled", "") == "on"
+            config.sync_index_kits_enabled = form.get("sync_index_kits_enabled", "") == "on"
+            try:
+                interval = int(form.get("sync_interval_minutes", "60") or 60)
+            except ValueError:
+                interval = 60
+            config.sync_interval_minutes = max(1, min(1440, interval))
 
             ctx.profile_sync_config_repo.save(config)
-
+            audit(
+                "config_sync.updated",
+                actor=get_username(request),
+                target="profile_sync_config",
+                repo_url=config.github_repo_url,
+                branch=config.github_branch,
+                sync_enabled=config.sync_enabled,
+            )
             app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
             test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+            return ft_response(ConfigSyncPage(config, app_profiles, test_profiles, message="Configuration saved"))
 
-            return ConfigSyncPage(config, app_profiles, test_profiles, message="Configuration saved")
-
-        @app.post("/admin/config-sync/sync")
-        def trigger_manual_sync(req):
-            """Trigger manual config sync."""
-            error = require_admin(req)
-            if error:
-                return error
-
+        def trigger_manual_sync(request: Request) -> Response:
+            if err := require_admin(request):
+                return err
             if ctx.get_github_sync_service is None:
-                return ConfigSyncPage(
-                    ctx.profile_sync_config_repo.get(),
-                    [],
-                    [],
-                    message="Sync service not available",
+                return ft_response(
+                    ConfigSyncPage(
+                        ctx.profile_sync_config_repo.get(),
+                        [], [],
+                        message="Sync service not available",
+                    )
                 )
-
             sync_service = ctx.get_github_sync_service()
             success, message, count = sync_service.sync()
-
-            # Clear synced instruments cache to pick up new definitions
+            audit(
+                "config_sync.triggered",
+                actor=get_username(request),
+                target="github_sync",
+                outcome="success" if success else "failure",
+                items_synced=count,
+            )
             from ..data.instruments import clear_synced_instruments_cache
             clear_synced_instruments_cache()
 
-            # Reload config and profiles to show updated data
             config = ctx.profile_sync_config_repo.get()
             app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
             test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+            return ft_response(ConfigSyncPage(config, app_profiles, test_profiles, message=message))
 
-            return ConfigSyncPage(config, app_profiles, test_profiles, message=message)
+        app.routes.append(Route("/admin/config-sync", admin_config_sync, methods=["GET"]))
+        app.routes.append(Route("/admin/config-sync/config", update_config_sync_config, methods=["POST"]))
+        app.routes.append(Route("/admin/config-sync/sync", trigger_manual_sync, methods=["POST"]))
 
-    # Sample API Routes (only if repo is available)
+    # ---- Sample API (only if repo is available) -----------------------
+
     if ctx.sample_api_config_repo is not None:
 
-        @app.get("/admin/sample-api")
-        def admin_sample_api(req):
-            """Sample API configuration page."""
-            error = require_admin(req)
-            if error:
-                return error
-
-            user = req.scope.get("auth")
-            config = ctx.sample_api_config_repo.get()
-
-            return AppShell(
-                user=user,
+        def admin_sample_api(request: Request) -> Response:
+            if err := require_admin(request):
+                return err
+            return ft_page_response(
+                request,
+                SampleApiPage(ctx.sample_api_config_repo.get()),
+                page_title="LIMS Integration",
                 active_route="/admin/sample-api",
-                content=SampleApiPage(config),
-                title="LIMS Integration",
             )
 
-        @app.post("/admin/settings/sample-api")
-        def update_sample_api_config(
-            req,
-            base_url: str = "",
-            api_key: str = "",
-            enabled: str = "",
-            field_worksheet_id: str = "",
-            field_investigator: str = "",
-            field_updated_at: str = "",
-            field_samples: str = "",
-        ):
-            """Update sample API configuration."""
-            error = require_admin(req)
-            if error:
-                return error
+        async def update_sample_api_config(request: Request) -> Response:
+            if err := require_admin(request):
+                return err
+            form = await request.form()
+            existing = ctx.sample_api_config_repo.get()
+            base_url = sanitize_string(form.get("base_url", ""), 1024)
+            api_key = sanitize_string(form.get("api_key", ""), 512)
+            enabled = form.get("enabled", "") == "on"
 
-            existing_config = ctx.sample_api_config_repo.get()
-
-            # Sanitize and length-limit inputs
-            base_url = sanitize_string(base_url, 1024)
-            api_key = sanitize_string(api_key, 512)
-
-            # Build field mappings dict from form inputs with length limits
             field_mappings = {}
-            val = sanitize_string(field_worksheet_id, 256)
-            if val:
-                field_mappings["worksheet_id"] = val
-            val = sanitize_string(field_investigator, 256)
-            if val:
-                field_mappings["investigator"] = val
-            val = sanitize_string(field_updated_at, 256)
-            if val:
-                field_mappings["updated_at"] = val
-            val = sanitize_string(field_samples, 256)
-            if val:
-                field_mappings["samples"] = val
+            for key, field in (
+                ("worksheet_id", "field_worksheet_id"),
+                ("investigator", "field_investigator"),
+                ("updated_at", "field_updated_at"),
+                ("samples", "field_samples"),
+            ):
+                val = sanitize_string(form.get(field, ""), 256)
+                if val:
+                    field_mappings[key] = val
 
             config = SampleApiConfig(
                 base_url=base_url,
-                api_key=api_key if api_key else existing_config.api_key,
-                enabled=enabled == "on",
+                api_key=api_key if api_key else existing.api_key,
+                enabled=enabled,
                 field_mappings=field_mappings,
             )
 
-            # Test connection before enabling
             if config.enabled and config.base_url:
                 from ..services.sample_api import check_connection
                 success, msg = check_connection(config)
@@ -380,118 +343,100 @@ def register(app, rt, ctx: AppContext):
                     ctx.sample_api_config_repo.save(config)
                     audit(
                         "lims_config.updated",
-                        actor=get_username(req),
+                        actor=get_username(request),
                         target="sample_api_config",
                         outcome="failure",
                         base_url=config.base_url,
                         enabled=False,
                         reason="connection_failed",
                     )
-                    return SampleApiConfigForm(
-                        config, error=f"Connection failed: {msg}. Integration has been disabled."
-                    )
+                    return ft_response(SampleApiConfigForm(
+                        config,
+                        error=f"Connection failed: {msg}. Integration has been disabled.",
+                    ))
 
             ctx.sample_api_config_repo.save(config)
-
             audit(
                 "lims_config.updated",
-                actor=get_username(req),
+                actor=get_username(request),
                 target="sample_api_config",
                 base_url=config.base_url,
                 enabled=config.enabled,
             )
+            return ft_response(SampleApiConfigForm(config, message="LIMS integration configuration saved"))
 
-            return SampleApiConfigForm(config, message="LIMS integration configuration saved")
+        app.routes.append(Route("/admin/sample-api", admin_sample_api, methods=["GET"]))
+        app.routes.append(Route("/admin/settings/sample-api", update_sample_api_config, methods=["POST"]))
 
-    # Log Viewer Routes (always available)
-    @app.get("/admin/logs")
-    def admin_logs(req, level: str = "", search: str = ""):
-        """Application logs viewer page."""
-        error = require_admin(req)
-        if error:
-            return error
+    # ---- Logs ----------------------------------------------------------
 
+    def admin_logs(request: Request) -> Response:
+        if err := require_admin(request):
+            return err
         from ..services.log_capture import get_captured_logs, get_log_stats
 
-        user = req.scope.get("auth")
-        entries = get_captured_logs(
-            level=level if level else None,
-            search=search if search else None,
-            limit=200,
-        )
+        level = request.query_params.get("level", "") or None
+        search = request.query_params.get("search", "") or None
+        entries = get_captured_logs(level=level, search=search, limit=200)
         stats = get_log_stats()
 
-        # For HTMX requests (Refresh/Filter buttons), return just the LogsPage component
-        if req.headers.get("HX-Request"):
-            return LogsPage(entries, stats, level, search)
-
-        return AppShell(
-            user=user,
+        # HTMX refresh: just the LogsPage fragment.
+        if request.headers.get("HX-Request"):
+            return ft_response(LogsPage(entries, stats, level or "", search or ""))
+        return ft_page_response(
+            request,
+            LogsPage(entries, stats, level or "", search or ""),
+            page_title="Logs",
             active_route="/admin/logs",
-            content=LogsPage(entries, stats, level, search),
-            title="Logs",
         )
 
-    @app.post("/admin/logs/clear")
-    def clear_logs(req):
-        """Clear all captured logs."""
-        error = require_admin(req)
-        if error:
-            return error
-
+    def clear_logs(request: Request) -> Response:
+        if err := require_admin(request):
+            return err
         from ..services.log_capture import clear_captured_logs, get_log_stats
-
         clear_captured_logs()
-        stats = get_log_stats()
+        audit("logs.cleared", actor=get_username(request), target="log_buffer")
+        return ft_response(LogsPage([], get_log_stats(), message="Logs cleared"))
 
-        return LogsPage([], stats, message="Logs cleared")
+    app.routes.append(Route("/admin/logs", admin_logs, methods=["GET"]))
+    app.routes.append(Route("/admin/logs/clear", clear_logs, methods=["POST"]))
 
-    # Synced Instruments Routes (only if repo is available)
+    # ---- Synced Instruments (only if repo is available) ---------------
+
     if ctx.instrument_definition_repo is not None:
 
-        @app.post("/admin/instruments/synced/toggle")
-        async def toggle_synced_instrument(req):
-            """Toggle the enabled status of a synced instrument."""
-            error = require_admin(req)
-            if error:
-                return error
-
-            form_data = await req.form()
-            instrument_id = form_data.get("instrument_id", "")
-            enabled_str = form_data.get("enabled", "true")
-            enabled = enabled_str.lower() == "true"
-
+        async def toggle_synced_instrument(request: Request) -> Response:
+            if err := require_admin(request):
+                return err
+            form = await request.form()
+            instrument_id = form.get("instrument_id", "")
+            enabled = form.get("enabled", "true").lower() == "true"
             if instrument_id:
                 ctx.instrument_definition_repo.set_enabled(instrument_id, enabled)
+                audit(
+                    "instrument.toggled",
+                    actor=get_username(request),
+                    target=instrument_id,
+                    enabled=enabled,
+                )
+            return ft_response(SyncedInstrumentsSection(ctx.instrument_definition_repo.list_all()))
 
-            # Return updated section
-            instruments = ctx.instrument_definition_repo.list_all()
-            return SyncedInstrumentsSection(instruments)
-
-        @app.post("/admin/instruments/synced/enable-all")
-        def enable_all_synced_instruments(req):
-            """Enable all synced instruments."""
-            error = require_admin(req)
-            if error:
-                return error
-
+        def enable_all_synced_instruments(request: Request) -> Response:
+            if err := require_admin(request):
+                return err
             repo = ctx.instrument_definition_repo
             for inst in repo.list_all():
                 repo.set_enabled(inst.id, True)
+            return ft_response(SyncedInstrumentsSection(repo.list_all(), message="All instruments enabled"))
 
-            instruments = repo.list_all()
-            return SyncedInstrumentsSection(instruments, message="All instruments enabled")
-
-        @app.post("/admin/instruments/synced/disable-all")
-        def disable_all_synced_instruments(req):
-            """Disable all synced instruments."""
-            error = require_admin(req)
-            if error:
-                return error
-
+        def disable_all_synced_instruments(request: Request) -> Response:
+            if err := require_admin(request):
+                return err
             repo = ctx.instrument_definition_repo
             for inst in repo.list_all():
                 repo.set_enabled(inst.id, False)
+            return ft_response(SyncedInstrumentsSection(repo.list_all(), message="All instruments disabled"))
 
-            instruments = repo.list_all()
-            return SyncedInstrumentsSection(instruments, message="All instruments disabled")
+        app.routes.append(Route("/admin/instruments/synced/toggle", toggle_synced_instrument, methods=["POST"]))
+        app.routes.append(Route("/admin/instruments/synced/enable-all", enable_all_synced_instruments, methods=["POST"]))
+        app.routes.append(Route("/admin/instruments/synced/disable-all", disable_all_synced_instruments, methods=["POST"]))

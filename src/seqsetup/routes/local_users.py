@@ -1,69 +1,70 @@
-"""Admin routes for local user management."""
+"""Admin routes for local user management.
 
-from fasthtml.common import *
+Migrated to Starlette ``Route(...)`` registration; LocalUsersPage /
+EditUserRow / UserRow FT components stay (transitional). All mutation
+audits + last-admin guards + weak-password policy preserved.
+"""
+
+from datetime import datetime
+
+from starlette.requests import Request
 from starlette.responses import Response
+from starlette.routing import Route
 
-from .utils import get_username, require_admin, sanitize_string
-from ..components.layout import AppShell
-from ..components.local_users import EditUserRow, LocalUsersPage, UserTable
+from ..components.local_users import EditUserRow, LocalUsersPage, UserRow
 from ..context import AppContext
 from ..models.local_user import LocalUser, WeakPasswordError
 from ..models.user import UserRole
 from ..services.audit_log import audit
+from ..templating import ft_page_response, ft_response
+from .utils import get_username, require_admin, sanitize_string
 
 
-def register(app, rt, ctx: AppContext):
+def register(app, ctx: AppContext) -> None:
     """Register local user management routes."""
-
-    @app.get("/admin/users")
-    def admin_users(req):
-        """Local user management page."""
-        error = require_admin(req)
-        if error:
-            return error
-
-        user = req.scope.get("auth")
-        users = ctx.local_user_repo.list_all()
-
-        return AppShell(
-            user=user,
-            active_route="/admin/users",
-            content=LocalUsersPage(users),
-            title="Local Users",
+    if not hasattr(app, "routes") or not isinstance(app.routes, list):
+        raise TypeError(
+            f"local_users.register requires a Starlette-style app with a mutable "
+            f"routes list, got {type(app).__name__}"
         )
 
-    @app.post("/admin/users/create")
-    def create_user(
-        req,
-        username: str = "",
-        display_name: str = "",
-        email: str = "",
-        role: str = "standard",
-        password: str = "",
-    ):
-        """Create a new local user."""
-        error = require_admin(req)
-        if error:
-            return error
+    def _page_response(users, message=None, error=None):
+        """Convenience wrapper for the page fragment after mutations."""
+        return ft_response(LocalUsersPage(users, message=message, error=error))
+
+    def admin_users(request: Request) -> Response:
+        """GET /admin/users — full page."""
+        if err := require_admin(request):
+            return err
+        return ft_page_response(
+            request,
+            LocalUsersPage(ctx.local_user_repo.list_all()),
+            page_title="Local Users",
+            active_route="/admin/users",
+        )
+
+    async def create_user(request: Request) -> Response:
+        """POST /admin/users/create — create a user."""
+        if err := require_admin(request):
+            return err
+
+        form = await request.form()
+        username = sanitize_string(form.get("username", ""), 256)
+        display_name = sanitize_string(form.get("display_name", ""), 256)
+        email = sanitize_string(form.get("email", ""), 256)
+        role = form.get("role", "standard")
+        password = form.get("password", "")
 
         repo = ctx.local_user_repo
-        username = sanitize_string(username, 256)
-        display_name = sanitize_string(display_name, 256)
-        email = sanitize_string(email, 256)
 
         if not username:
-            return LocalUsersPage(repo.list_all(), error="Username is required.")
-
+            return _page_response(repo.list_all(), error="Username is required.")
         if not display_name:
-            return LocalUsersPage(repo.list_all(), error="Display name is required.")
-
+            return _page_response(repo.list_all(), error="Display name is required.")
         if not password:
-            return LocalUsersPage(repo.list_all(), error="Password is required.")
-
+            return _page_response(repo.list_all(), error="Password is required.")
         if repo.exists(username):
-            return LocalUsersPage(
-                repo.list_all(), error=f"User '{username}' already exists."
-            )
+            return _page_response(repo.list_all(), error=f"User '{username}' already exists.")
 
         try:
             user_role = UserRole(role)
@@ -79,114 +80,70 @@ def register(app, rt, ctx: AppContext):
         try:
             new_user.set_password(password)
         except WeakPasswordError as e:
-            return LocalUsersPage(repo.list_all(), error=str(e))
+            return _page_response(repo.list_all(), error=str(e))
         repo.save(new_user)
 
         audit(
             "user.created",
-            actor=get_username(req),
+            actor=get_username(request),
             target=username,
             role=user_role.value,
         )
 
-        return LocalUsersPage(
-            repo.list_all(), message=f"User '{username}' created successfully."
+        return _page_response(
+            repo.list_all(),
+            message=f"User '{username}' created successfully.",
         )
 
-    @app.get("/admin/users/{username}/edit-form")
-    def edit_user_form(req, username: str):
-        """Return inline edit form for a user row."""
-        error = require_admin(req)
-        if error:
-            return error
-
-        repo = ctx.local_user_repo
-        user = repo.get_by_username(username)
+    def edit_user_form(request: Request) -> Response:
+        """GET /admin/users/{username}/edit-form — inline edit form."""
+        if err := require_admin(request):
+            return err
+        username = request.path_params["username"]
+        user = ctx.local_user_repo.get_by_username(username)
         if not user:
             return Response("User not found", status_code=404)
+        return ft_response(EditUserRow(user))
 
-        return EditUserRow(user)
-
-    @app.get("/admin/users/{username}/cancel-edit")
-    def cancel_edit(req, username: str):
-        """Return the normal user row (cancel inline edit)."""
-        error = require_admin(req)
-        if error:
-            return error
-
-        repo = ctx.local_user_repo
-        user = repo.get_by_username(username)
+    def cancel_edit(request: Request) -> Response:
+        """GET /admin/users/{username}/cancel-edit — restore read-only row."""
+        if err := require_admin(request):
+            return err
+        username = request.path_params["username"]
+        user = ctx.local_user_repo.get_by_username(username)
         if not user:
             return Response("User not found", status_code=404)
+        return ft_response(UserRow(user))
 
-        role_label = "Admin" if user.role == UserRole.ADMIN else "Standard"
-        return Tr(
-            Td(user.username),
-            Td(user.display_name),
-            Td(user.email or "-"),
-            Td(role_label),
-            Td(
-                user.created_at.strftime("%Y-%m-%d %H:%M")
-                if user.created_at
-                else "-"
-            ),
-            Td(
-                Div(
-                    Button(
-                        "Edit",
-                        hx_get=f"/admin/users/{user.username}/edit-form",
-                        hx_target=f"#user-row-{user.username}",
-                        hx_swap="outerHTML",
-                        cls="btn-secondary btn-small",
-                    ),
-                    Button(
-                        "Delete",
-                        hx_post=f"/admin/users/{user.username}/delete",
-                        hx_target="#local-users-page",
-                        hx_swap="outerHTML",
-                        hx_confirm=f"Delete user '{user.username}'? This cannot be undone.",
-                        cls="btn-danger btn-small",
-                    ),
-                    cls="actions",
-                ),
-            ),
-            id=f"user-row-{user.username}",
-        )
+    async def edit_user(request: Request) -> Response:
+        """POST /admin/users/{username}/edit — update a user."""
+        if err := require_admin(request):
+            return err
 
-    @app.post("/admin/users/{username}/edit")
-    def edit_user(
-        req,
-        username: str,
-        display_name: str = "",
-        email: str = "",
-        role: str = "standard",
-        password: str = "",
-    ):
-        """Update a local user."""
-        error = require_admin(req)
-        if error:
-            return error
+        username = request.path_params["username"]
+        form = await request.form()
+        display_name = sanitize_string(form.get("display_name", ""), 256)
+        email = sanitize_string(form.get("email", ""), 256)
+        role = form.get("role", "standard")
+        password = form.get("password", "")
 
         repo = ctx.local_user_repo
         user = repo.get_by_username(username)
         if not user:
-            return LocalUsersPage(repo.list_all(), error=f"User '{username}' not found.")
-
-        display_name = sanitize_string(display_name, 256)
-        email = sanitize_string(email, 256)
+            return _page_response(repo.list_all(), error=f"User '{username}' not found.")
 
         if not display_name:
-            return LocalUsersPage(repo.list_all(), error="Display name is required.")
+            return _page_response(repo.list_all(), error="Display name is required.")
 
-        # Prevent demoting the last admin
         try:
             new_role = UserRole(role)
         except ValueError:
             new_role = UserRole.STANDARD
 
+        # Prevent demoting the last admin.
         if user.role == UserRole.ADMIN and new_role != UserRole.ADMIN:
             if repo.count_admins() <= 1:
-                return LocalUsersPage(
+                return _page_response(
                     repo.list_all(),
                     error="Cannot change role: this is the last admin user.",
                 )
@@ -201,41 +158,37 @@ def register(app, rt, ctx: AppContext):
             try:
                 user.set_password(password)
             except WeakPasswordError as e:
-                return LocalUsersPage(repo.list_all(), error=str(e))
+                return _page_response(repo.list_all(), error=str(e))
 
-        from datetime import datetime
         user.updated_at = datetime.now()
         repo.save(user)
 
         audit(
             "user.updated",
-            actor=get_username(req),
+            actor=get_username(request),
             target=username,
             from_role=previous_role.value,
             to_role=new_role.value,
             password_changed=password_changed,
         )
 
-        return LocalUsersPage(
-            repo.list_all(), message=f"User '{username}' updated successfully."
+        return _page_response(
+            repo.list_all(),
+            message=f"User '{username}' updated successfully.",
         )
 
-    @app.post("/admin/users/{username}/delete")
-    def delete_user(req, username: str):
-        """Delete a local user."""
-        error = require_admin(req)
-        if error:
-            return error
-
+    def delete_user(request: Request) -> Response:
+        """POST /admin/users/{username}/delete — delete a user."""
+        if err := require_admin(request):
+            return err
+        username = request.path_params["username"]
         repo = ctx.local_user_repo
         user = repo.get_by_username(username)
-
         if not user:
-            return LocalUsersPage(repo.list_all(), error=f"User '{username}' not found.")
+            return _page_response(repo.list_all(), error=f"User '{username}' not found.")
 
-        # Prevent deleting the last admin
         if user.role == UserRole.ADMIN and repo.count_admins() <= 1:
-            return LocalUsersPage(
+            return _page_response(
                 repo.list_all(),
                 error="Cannot delete the last admin user.",
             )
@@ -244,10 +197,15 @@ def register(app, rt, ctx: AppContext):
         repo.delete(username)
         audit(
             "user.deleted",
-            actor=get_username(req),
+            actor=get_username(request),
             target=username,
             deleted_role=deleted_role,
         )
-        return LocalUsersPage(
-            repo.list_all(), message=f"User '{username}' deleted."
-        )
+        return _page_response(repo.list_all(), message=f"User '{username}' deleted.")
+
+    app.routes.append(Route("/admin/users", admin_users, methods=["GET"]))
+    app.routes.append(Route("/admin/users/create", create_user, methods=["POST"]))
+    app.routes.append(Route("/admin/users/{username}/edit-form", edit_user_form, methods=["GET"]))
+    app.routes.append(Route("/admin/users/{username}/cancel-edit", cancel_edit, methods=["GET"]))
+    app.routes.append(Route("/admin/users/{username}/edit", edit_user, methods=["POST"]))
+    app.routes.append(Route("/admin/users/{username}/delete", delete_user, methods=["POST"]))
