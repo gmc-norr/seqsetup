@@ -18,7 +18,6 @@ from ..components.wizard import (
     NewSamplesTableWizard,
     SampleRowWizard,
     SampleTableWizard,
-    WizardNavigation,
     WorklistPreview,
     WorklistSelector,
 )
@@ -28,7 +27,9 @@ from ..models.index import Index, IndexKit, IndexType
 from ..models.sample import Sample
 from ..services.cycle_calculator import CycleCalculator
 from ..services.sample_parser import parse_pasted_samples
-from ..templating import ft_response
+from starlette.responses import HTMLResponse
+
+from ..templating import ft_response, ft_to_html, templates
 from .utils import check_run_editable, get_username, sanitize_string
 
 logger = logging.getLogger(__name__)
@@ -91,19 +92,21 @@ def register(app, ctx: AppContext) -> None:
         )
 
     def _sample_table_with_nav(run):
-        """Return sample table + step-2 navigation as an FT response.
+        """Return sample table + step-2 navigation as a combined response.
 
-        SampleTableWizard returns the table, WizardNavigation the OOB nav.
-        Wrapping both in a Div keeps HTMX able to swap them as one fragment.
+        SampleTableWizard still renders via FT (Phase 3.4 ports it).
+        WizardNavigation is now a Jinja2 template — concatenate the two
+        HTML strings into a single HTMLResponse with HTMX-friendly headers.
+        The hx-swap-oob attribute on the nav div tells HTMX to also swap
+        the matching element on the page out-of-band.
         """
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         can_proceed = run.has_samples and run.all_samples_have_indexes
-        return ft_response(
-            Div(
-                SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes),
-                WizardNavigation(2, run.id, can_proceed=can_proceed, oob=True),
-            )
+        table_html = ft_to_html(SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes))
+        nav_html = templates.env.get_template("wizard/_navigation.html").render(
+            step=2, run_id=run.id, can_proceed=can_proceed, oob=True,
         )
+        return HTMLResponse(table_html + nav_html, headers={"Cache-Control": "no-store"})
 
     def _update_override_cycles(sample, run):
         """Recalculate override cycles for a sample from run configuration."""

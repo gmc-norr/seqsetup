@@ -1,0 +1,11 @@
+{# Wizard navigation: Cancel → /, Continue → /runs/{run_id}.
+
+   Inputs:
+     step:        int (used in the wrapper id — must match the id HTMX targets)
+     run_id:      str
+     can_proceed: bool (informational — Continue is always enabled, matching
+                  the original FT component behaviour)
+     oob:         bool — true to add hx-swap-oob for out-of-band swaps #}
+<div id="wizard-nav-step-{{ step }}"
+     class="wizard-nav"{% if oob %} hx-swap-oob="true"{% endif %}>
+<a href="/" class="btn btn-secondary">Cancel</a><a href="/runs/{{ run_id }}" class="btn btn-primary">Continue to Run</a></div>
