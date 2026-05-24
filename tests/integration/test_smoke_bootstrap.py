@@ -36,3 +36,57 @@ def test_security_headers_applied(client):
     response = client.get("/login")
     assert response.headers.get("X-Content-Type-Options") == "nosniff"
     assert response.headers.get("X-Frame-Options") == "DENY"
+
+
+def test_profiles_page_renders(logged_in_client):
+    """GET /profiles renders the Tailwind-styled empty-state page."""
+    response = logged_in_client.get("/profiles")
+    assert response.status_code == 200
+    # The page must contain the empty-state messages that pre-date the
+    # Tailwind port — they're stable, user-visible text.
+    assert "No test profiles available" in response.text
+    assert "No application profiles available" in response.text
+    # Confirm the new Tailwind structure landed (sanity that the new
+    # template was actually rendered, not the old FT component).
+    assert "space-y-6" in response.text
+
+
+def test_profiles_page_renders_populated(fresh_app, logged_in_client):
+    """GET /profiles renders the populated table rows when profiles exist."""
+    from seqsetup.models.application_profile import ApplicationProfile
+    from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
+
+    app, ctx, db = fresh_app
+
+    ap = ApplicationProfile(
+        name="MyApp",
+        version="1.0.0",
+        application_type="Dragen",
+        application_name="DragenGermline",
+        settings={"SoftwareVersion": "4.2.0", "Foo": "bar"},
+    )
+    ctx.app_profile_repo.save(ap)
+
+    tp = TestProfile(
+        test_type="WGS",
+        test_name="Whole Genome",
+        description="A test profile",
+        version="1.0.0",
+        application_profiles=[
+            ApplicationProfileReference(profile_name="MyApp", profile_version="~=1.0.0"),
+            ApplicationProfileReference(profile_name="MissingApp", profile_version="~=1.0.0"),
+        ],
+    )
+    ctx.test_profile_repo.save(tp)
+
+    response = logged_in_client.get("/profiles")
+    assert response.status_code == 200
+    # Populated headings/counts
+    assert "Test Profiles (1)" in response.text
+    assert "Application Profiles (1)" in response.text
+    # The resolved row should render with the resolved application name
+    assert "DragenGermline" in response.text
+    # The TestProfile card legend
+    assert "Whole Genome" in response.text
+    # The settings-summary cell with Foo: bar (SoftwareVersion is excluded)
+    assert "Foo: bar" in response.text

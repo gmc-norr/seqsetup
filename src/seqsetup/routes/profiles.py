@@ -1,45 +1,74 @@
-"""Profiles settings routes.
+"""Profiles overview page — the canonical reference port for the HTMX
+best-practices redesign.
 
-Migrated to Starlette ``Route(...)`` registration. The ProfilesPage FT
-component is still rendered via the transitional ``ft_page_response``
-helper; conversion to a Jinja2 template happens in a later cleanup PR.
+Patterns demonstrated:
+  - APIRouter with prefix + tags
+  - get_ctx dependency (no closure-captured ctx)
+  - response_class=HTMLResponse
+  - render() with no block_name (full page)
+  - Pre-computed template context (every value built in Python; template
+    iterates only)
+
+See ARCHITECTURE.md and the design spec at
+docs/superpowers/specs/2026-05-24-htmx-best-practices-redesign-design.md
 """
 
-from starlette.requests import Request
-from starlette.responses import Response
-from starlette.routing import Route
+from fastapi import APIRouter, Depends, Request
+from starlette.responses import HTMLResponse
 
-from ..components.profiles import ProfilesPage
 from ..context import AppContext
 from ..services.version_resolver import resolve_application_profiles
-from ..templating import ft_page_response
+from ..templating import render
+from .dependencies import get_ctx
 
 
-def register(app, ctx: AppContext) -> None:
-    """Register profiles routes."""
-    if not hasattr(app, "routes") or not isinstance(app.routes, list):
-        raise TypeError(
-            f"profiles.register requires a Starlette-style app with a mutable "
-            f"routes list, got {type(app).__name__}"
-        )
+router = APIRouter(prefix="", tags=["profiles"])
 
-    def profiles_page(request: Request) -> Response:
-        """GET /profiles — overview page."""
-        test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
-        app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
 
-        # Compute resolved application profiles in the route — the page
-        # template stays purely a renderer.
-        all_refs = []
-        for tp in test_profiles:
-            all_refs.extend(tp.application_profiles)
-        resolved_map = resolve_application_profiles(all_refs, app_profiles)
+def _summarize_settings(settings: dict) -> str:
+    """First three non-SoftwareVersion settings as ``"k: v, k: v, k: v, ..."``."""
+    other = {k: v for k, v in settings.items() if k != "SoftwareVersion"}
+    if not other:
+        return ""
+    summary = ", ".join(f"{k}: {v}" for k, v in list(other.items())[:3])
+    if len(other) > 3:
+        summary += ", ..."
+    return summary
 
-        return ft_page_response(
-            request,
-            ProfilesPage(test_profiles, app_profiles, resolved_map=resolved_map),
-            page_title="Profiles",
-            active_route="/profiles",
-        )
 
-    app.routes.append(Route("/profiles", profiles_page, methods=["GET"]))
+@router.get("/profiles", response_class=HTMLResponse)
+def profiles_page(
+    request: Request,
+    ctx: AppContext = Depends(get_ctx),
+):
+    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
+
+    all_refs = []
+    for tp in test_profiles:
+        all_refs.extend(tp.application_profiles)
+    resolved_map = resolve_application_profiles(all_refs, app_profiles)
+
+    app_profile_rows = [
+        {
+            "name": ap.name,
+            "version": ap.version,
+            "application_name": ap.application_name,
+            "application_type": ap.application_type,
+            "software_version": ap.settings.get("SoftwareVersion", "") if ap.settings else "",
+            "settings_summary": _summarize_settings(ap.settings or {}),
+        }
+        for ap in sorted(app_profiles, key=lambda a: (a.application_name, a.name))
+    ]
+
+    return render(
+        request,
+        "profiles.html",
+        {
+            "test_profiles": test_profiles,
+            "test_profiles_sorted": sorted(test_profiles, key=lambda t: t.test_type),
+            "app_profiles": app_profiles,
+            "app_profile_rows": app_profile_rows,
+            "resolved_map": resolved_map,
+        },
+    )

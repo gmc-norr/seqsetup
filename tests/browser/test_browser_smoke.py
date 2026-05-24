@@ -10,7 +10,7 @@ Asserts:
      hx-get for tab switching).
 
 The toast/HTMX-swap tests both use ``logged_in_page`` because the
-toast slot lives in ``_app_shell.html`` (auth-required) — login pages
+toast slot lives in ``_base.html`` (auth-required) — login pages
 extend ``_base.html`` directly without the shell.
 """
 
@@ -39,7 +39,7 @@ def test_toast_alpine_component_reacts_to_event(logged_in_page, base_url):
     toast renders. This proves the toast_stack.js component registered
     and Alpine processed it.
 
-    Requires logged_in_page — the toast slot lives in _app_shell.html,
+    Requires logged_in_page — the toast slot lives in _base.html,
     which only renders for authenticated pages.
     """
     page = logged_in_page
