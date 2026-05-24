@@ -1,0 +1,29 @@
+{#
+   Single i7 or i5 draggable index row.
+
+   The drag payload matches the format expected by handleDragStart in app.js:
+     { indexes: [{ id: index_id, type: index_type }], multi: false }
+   where index_id is constructed as "{kit.name}_{index_type}_{idx.name}".
+
+   Inputs:
+     idx:        Index instance with name, sequence, well_position.
+     index_type: "i7" or "i5" (default "i7").
+     kit:        Parent IndexKit (needed to construct the index_id).
+#}
+{% set _index_type = index_type | default('i7') %}
+{% set _index_id = kit.name ~ '_' ~ _index_type ~ '_' ~ idx.name %}
+<div class="draggable-index-compact draggable-single {{ _index_type }}-index"
+     draggable="true"
+     data-index-id="{{ _index_id | e }}"
+     data-index-name="{{ idx.name | e }}"
+     data-index-type="{{ _index_type | e }}"
+     data-kit-name="{{ kit.name | e }}"
+     data-well="{{ idx.well_position or '' | e }}"
+     onclick="handleIndexClick(event, this.dataset.indexId, '{{ _index_type | e }}')"
+     ondragstart="handleDragStart(event, this.dataset.indexId, '{{ _index_type | e }}')"
+     title="{{ idx.name | e }}&#10;Well: {{ idx.well_position or 'N/A' | e }}&#10;Sequence: {{ idx.sequence | e }}">
+    <span class="index-name-compact">{{ idx.name | e }}</span>
+    {%- if idx.well_position %}
+    <span class="index-well-compact">{{ idx.well_position | e }}</span>
+    {%- endif %}
+</div>

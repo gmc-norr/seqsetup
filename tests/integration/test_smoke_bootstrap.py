@@ -347,3 +347,11 @@ def test_validation_tab_swap_endpoint_removed(logged_in_client):
     )
     # Either 404 (no route) or some other non-200 — the key is "no HTMX swap path".
     assert response.status_code in (404, 405)
+
+
+def test_indexes_kit_content_empty_selection(logged_in_client):
+    """GET /indexes/kit-content with no selection returns the empty panel."""
+    response = logged_in_client.get("/indexes/kit-content")
+    assert response.status_code == 200
+    assert "Select an index kit" in response.text
+    assert 'id="index-kit-panel"' in response.text

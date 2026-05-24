@@ -1,0 +1,87 @@
+{#
+   Index kit panel — the wizard sidebar showing available indexes for the
+   selected kit. Each row is a drag source; drop targets live in the
+   sample-table rows (not here).
+
+   Inputs:
+     kit: IndexKit instance with index_mode (UNIQUE_DUAL | COMBINATORIAL | SINGLE),
+          index_pairs, i7_indexes, i5_indexes, name, version, description.
+
+   Mirrors the structure of the FT IndexKitPanel + IndexListCompact components
+   in components/wizard/index_panel.py.
+#}
+<div class="index-kit-panel">
+    {# Kit details section #}
+    <div class="kit-details">
+        <div class="kit-detail-item">
+            <span class="kit-detail-label">Mode: </span>
+            <span class="kit-detail-value">
+                {%- if kit.is_combinatorial() %}Combinatorial
+                {%- elif kit.is_single() %}Single (i7 only)
+                {%- else %}Unique Dual
+                {%- endif %}
+            </span>
+        </div>
+        <div class="kit-detail-item">
+            <span class="kit-detail-label">Indexes: </span>
+            <span class="kit-detail-value">
+                {%- if kit.is_combinatorial() %}{{ (kit.i7_indexes | length) + (kit.i5_indexes | length) }}
+                {%- elif kit.is_single() %}{{ kit.i7_indexes | length }}
+                {%- else %}{{ kit.index_pairs | length }}
+                {%- endif %}
+            </span>
+        </div>
+        {%- if kit.description %}
+        <div class="kit-detail-item">
+            <span class="kit-description">{{ kit.description | e }}</span>
+        </div>
+        {%- endif %}
+    </div>
+
+    {# Filter input #}
+    <div class="index-filter-section">
+        <input type="text"
+               id="index-filter-input"
+               placeholder="Filter indexes..."
+               class="index-filter-input"
+               oninput="filterIndexesWizard(this.value)">
+    </div>
+
+    {# Index list — branches mirror IndexListCompact logic #}
+    {% if kit.is_combinatorial() %}
+        <div class="combinatorial-content" id="index-list-items">
+            <div class="index-subsection i7-section">
+                <strong class="index-subsection-header">i7 Indexes</strong>
+                <div class="index-list">
+                    {% for idx in kit.i7_indexes %}
+                        {% set index_type = 'i7' %}
+                        {% include "wizard/_draggable_index.html" %}
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="index-subsection i5-section">
+                <strong class="index-subsection-header">i5 Indexes</strong>
+                <div class="index-list">
+                    {% for idx in kit.i5_indexes %}
+                        {% set index_type = 'i5' %}
+                        {% include "wizard/_draggable_index.html" %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    {% elif kit.is_single() %}
+        <div class="index-list" id="index-list-items">
+            {% for idx in kit.i7_indexes %}
+                {% set index_type = 'i7' %}
+                {% include "wizard/_draggable_index.html" %}
+            {% endfor %}
+        </div>
+    {% else %}
+        {# Unique dual — index pairs #}
+        <div class="index-list" id="index-list-items">
+            {% for pair in kit.index_pairs %}
+                {% include "wizard/_draggable_index_pair.html" %}
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>

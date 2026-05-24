@@ -320,19 +320,16 @@ def get_kit_content(
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET /indexes/kit-content — wizard dropdown content fragment."""
-    # NOTE: The wizard-side IndexKitPanel FT component renders here for now.
-    # Phase 3 Task 3.2 ports it to a Jinja2 template; until then we keep
-    # the FT path so the wizard keeps working.
-    from ..components.wizard import IndexKitPanel
-    from ..templating import ft_response
-    from fasthtml.common import P
-
     if not selected_kit:
-        return ft_response(P("Select an index kit", cls="no-kits-message"))
+        return render(request, "wizard/_index_kit_panel_empty.html", {})
     kit = ctx.index_kit_repo.get_by_kit_id(selected_kit)
     if not kit:
-        return ft_response(P(f"Index kit '{selected_kit}' not found", cls="error-message"))
-    return ft_response(IndexKitPanel(kit))
+        return render(
+            request,
+            "wizard/_index_kit_panel_empty.html",
+            {"error_message": f"Index kit '{selected_kit}' not found"},
+        )
+    return render(request, "wizard/_index_kit_panel.html", {"kit": kit})
 
 
 @router.get("/download/{name}/{version}")

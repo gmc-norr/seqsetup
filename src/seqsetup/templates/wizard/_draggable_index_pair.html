@@ -1,0 +1,30 @@
+{#
+   Unique-dual index pair draggable row.
+
+   The drag payload matches the format expected by handleDragStart in app.js:
+     { indexes: [{ id: pair.id, type: 'pair' }], multi: false }
+
+   Inputs:
+     pair: IndexPair instance with id, name, index1 (i7), index2 (i5),
+           well_position, index1_sequence, index2_sequence.
+#}
+<div class="draggable-index-compact draggable-pair"
+     draggable="true"
+     data-index-pair-id="{{ pair.id | e }}"
+     data-index-name="{{ pair.name | e }}"
+     data-index-type="pair"
+     data-well="{{ pair.well_position or '' | e }}"
+     onclick="handleIndexClick(event, this.dataset.indexPairId, 'pair')"
+     ondragstart="handleDragStart(event, this.dataset.indexPairId, 'pair')"
+     title="{{ pair.name | e }}&#10;i7: {{ pair.index1_sequence | e }}&#10;i5: {{ pair.index2_sequence or 'N/A' | e }}&#10;Well: {{ pair.well_position or 'N/A' | e }}">
+    <span class="index-name-compact">{{ pair.name | e }}</span>
+    {%- if pair.index1 and pair.index1.name != pair.name %}
+    <span class="index-i7-name-compact">{{ pair.index1.name | e }}</span>
+    {%- endif %}
+    {%- if pair.index2 and pair.index2.name != pair.name %}
+    <span class="index-i5-name-compact">{{ pair.index2.name | e }}</span>
+    {%- endif %}
+    {%- if pair.well_position %}
+    <span class="index-well-compact">{{ pair.well_position | e }}</span>
+    {%- endif %}
+</div>
