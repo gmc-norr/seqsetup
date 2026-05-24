@@ -10,6 +10,15 @@ identity, index assignment, or export output can lead to incorrect clinical resu
 
 Technology: Python, FastHTML, MongoDB, HTMX. Environment managed with Pixi.
 
+## Architecture reference
+
+This codebase follows the conventions in `ARCHITECTURE.md` (at the
+repo root). Read that file before adding new routes, forms,
+templates, or client-side interactions. It documents the stack
+(FastAPI + Jinja2 + jinja2-fragments + Tailwind + Alpine.js + Pydantic),
+naming rules, URL conventions, and the canonical reference implementations
+to copy.
+
 ## What Claude Should and Should Not Do
 
 ### DO:

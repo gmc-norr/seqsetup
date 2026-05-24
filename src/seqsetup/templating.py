@@ -9,14 +9,15 @@ API routes are not the concern here — those live in ``seqsetup.api``
 and use FastAPI's auto-generated JSON responses.
 
 Template context contract:
-    Every render() call injects two keys before merging the caller's
+    Every render() call injects one key before merging the caller's
     context:
       - ``user``  — the authenticated User object, or None on public
         pages (login/logout, /favicon.ico). Templates that show
         per-user state must guard with ``{% if user %}``.
-      - ``asset_versions`` — dict mapping static-asset paths to
-        cache-busting hash strings. Use as
-        ``/css/app.css?v={{ asset_versions['css/app.css'] }}``.
+
+    Cache-busting for static assets uses the ``asset_url`` Jinja
+    filter (registered below). Use as ``{{ 'css/app.css' | asset_url }}``
+    which expands to ``/css/app.css?v=<hash>``.
 
 Transitional FT helpers (``ft_to_html`` / ``ft_response`` / ``ft_page_response``):
     During the migration, complex FT-component subtrees (e.g., the
@@ -29,16 +30,16 @@ Transitional FT helpers (``ft_to_html`` / ``ft_response`` / ``ft_page_response``
 """
 
 import hashlib
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from jinja2_fragments.fastapi import Jinja2Blocks
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
-# Imported from starlette directly — Jinja2Templates is a Starlette type
-# that FastAPI re-exports. Importing from starlette matches the "HTML side
-# is plain Starlette + Jinja2" framing.
-from starlette.templating import Jinja2Templates
 
+
+logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).parent
 TEMPLATES_DIR = _PROJECT_ROOT / "templates"
@@ -50,38 +51,50 @@ def _asset_hash(rel_path: str) -> str:
     full = STATIC_DIR / rel_path
     if full.exists():
         return hashlib.md5(full.read_bytes()).hexdigest()[:8]
+    # Missing-asset warning: a template references a static file that
+    # doesn't exist. Browsers will 404 the URL — silent in production
+    # before this warning. Per CLAUDE.md "Never silently discard data."
+    logger.warning("asset_url: missing static file %s", rel_path)
     return "0"
 
 
-# Computed once at import — same lifecycle as the previous FastHTML setup.
-ASSET_VERSIONS = {
-    "css/app.css": _asset_hash("css/app.css"),
-    "js/app.js": _asset_hash("js/app.js"),
-}
+templates = Jinja2Blocks(directory=str(TEMPLATES_DIR))
 
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+def _asset_url(rel_path: str) -> str:
+    """``'js/foo.js' | asset_url`` → ``'/js/foo.js?v=abc12345'``.
+
+    Hash recomputed at template render — fine, the static dir is small
+    and these hashes are computed only during HTML rendering, not for
+    every request to the static file itself.
+    """
+    h = _asset_hash(rel_path)
+    return f"/{rel_path}?v={h}"
+
+
+templates.env.filters["asset_url"] = _asset_url
 
 
 def render(
     request: Request,
     template: str,
     context: Optional[dict] = None,
+    *,
+    block_name: Optional[str] = None,
     status_code: int = 200,
     headers: Optional[dict] = None,
 ):
-    """Render a Jinja2 template with the standard context applied.
+    """Render a full template, or one named ``{% block %}`` from it.
 
-    The wrapping helper exists so every HTML response gets the same
-    globals (current user, asset versions) without each handler having
-    to remember to inject them.
+    ``block_name=None`` → full page (the ``{% extends "_app_shell.html" %}``
+    chain). ``block_name="foo"`` → just the ``{% block foo %}`` contents,
+    no shell — for HTMX swap fragments.
     """
     ctx = dict(context or {})
     # ``request.scope["auth"]`` is set by the auth beforeware. On public
     # routes (PUBLIC_ROUTES in middleware.py) it's None — templates that
     # use ``user`` MUST guard with ``{% if user %}``.
     ctx.setdefault("user", request.scope.get("auth"))
-    ctx.setdefault("asset_versions", ASSET_VERSIONS)
 
     # HTML routes carry session-scoped data (current user, draft run
     # state, error messages, etc.). Intermediate-proxy caching of any of
@@ -92,12 +105,11 @@ def render(
     if headers:
         merged_headers.update(headers)
 
-    # New Starlette signature: (request, name, context, ...). The previous
-    # (name, {"request": request, ...}) form is deprecated.
     return templates.TemplateResponse(
         request,
         template,
         ctx,
+        block_name=block_name,
         status_code=status_code,
         headers=merged_headers,
     )

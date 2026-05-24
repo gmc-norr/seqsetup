@@ -1,7 +1,10 @@
-{# Base layout. Mirrors the document shell that fast_app(...) used to
-   synthesize for every page: head with title/icon/CSS/JS, then the
-   page-specific {% block body %}. Pages override {% block title %} and
-   {% block body %} (and optionally {% block head_extra %}). #}
+{# Base layout — <html><head> shell + body. Child templates extend this
+   (usually via _app_shell.html) and override {% block body %}.
+
+   Asset cache-busting: use the ``asset_url`` Jinja filter, NOT the old
+   ASSET_VERSIONS dict (gone in templating.py). Vendor files are pinned
+   by filename so they skip the filter.
+#}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,11 +12,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}SeqSetup{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
-    <link rel="stylesheet" href="/css/app.css?v={{ asset_versions['css/app.css'] }}">
-    <script src="/js/app.js?v={{ asset_versions['js/app.js'] }}"></script>
+    <link rel="stylesheet" href="{{ 'css/app.css' | asset_url }}">
+
+    {# Loading order matters — see ARCHITECTURE.md "Client-side JS".
+       Alpine MUST load last among the scripts that touch it, because
+       it boots on alpine:init and component files register handlers
+       via Alpine.data(...) before that. #}
+    <script defer src="{{ 'js/vendor/htmx.min.js' | asset_url }}"></script>
+    <script defer src="{{ 'js/app.js' | asset_url }}"></script>
+    {# Component scripts registered here are added one per file as Phase 3 lands them. #}
+    <script defer src="{{ 'js/components/toast_stack.js' | asset_url }}"></script>
+    <script defer src="{{ 'js/vendor/alpine.min.js' | asset_url }}"></script>
+
     {% block head_extra %}{% endblock %}
 </head>
 <body>
     {% block body %}{% endblock %}
+
+    {# Toast notifications — sibling of {% block body %}, NOT inside
+       <main>, so no ancestor transform/filter/contain can confine the
+       fixed-positioning later. See ARCHITECTURE.md. #}
+    <div x-data="toastStack()"
+         @toast.window="addToast($event.detail)"
+         class="fixed top-4 right-4 z-50 space-y-2"
+         id="toast-stack">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div
+                :class="{
+                    'bg-green-100 border-green-400 text-green-800': toast.kind === 'success',
+                    'bg-red-100   border-red-400   text-red-800':   toast.kind === 'error',
+                    'bg-yellow-100 border-yellow-400 text-yellow-800': toast.kind === 'warning',
+                    'bg-blue-100  border-blue-400  text-blue-800':  toast.kind === 'info'
+                }"
+                class="border rounded px-4 py-2 shadow-md max-w-sm"
+                x-text="toast.message">
+            </div>
+        </template>
+    </div>
 </body>
 </html>

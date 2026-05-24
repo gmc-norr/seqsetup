@@ -24,14 +24,14 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import PlainTextResponse, RedirectResponse
+from starlette.responses import RedirectResponse
 from starlette.staticfiles import StaticFiles
 
 from .api.app import create_api_app
 from .csrf import OriginCheckMiddleware
 from .data.instruments import set_instrument_definition_repo
+from .exception_handlers import install as install_exception_handlers
 from .middleware import AuthMiddleware
-from .repositories.base import ConflictError
 from .routes import admin, api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, runs, samples, validation, wizard
 from .security_headers import SecurityHeadersMiddleware
 from .services.log_capture import setup_log_capture
@@ -58,16 +58,6 @@ init_repos()
 _SESS_HTTPS_ONLY = os.environ.get("SEQSETUP_HTTPS_ONLY", "").lower() in ("1", "true", "yes")
 
 
-async def _conflict_handler(request, exc):
-    """Translate a ConflictError into a 409 response with the user-facing message.
-
-    The optimistic-locked save path on SequencingRun raises ConflictError when
-    a concurrent edit has bumped the stored updated_at. Without this handler
-    the response would be a 500 stack trace.
-    """
-    return PlainTextResponse(str(exc), status_code=409)
-
-
 # Disable FastAPI's built-in /docs, /redoc and /openapi.json at the root —
 # the JSON API has its own same-origin Swagger UI at /api/docs (with a
 # strict CSP) served by the mounted sub-app. A root-level Swagger would
@@ -77,7 +67,6 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
-    exception_handlers={ConflictError: _conflict_handler},
 )
 
 # Middleware ordering: Starlette's add_middleware prepends — the LAST
@@ -97,6 +86,11 @@ app.add_middleware(
 )
 app.add_middleware(OriginCheckMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Register HTML-aware exception handlers (HTTPException, RequestValidationError,
+# ConflictError). Must be registered AFTER middleware and BEFORE the /api sub-app
+# mount so that the sub-app can keep its own JSON-default handlers.
+install_exception_handlers(app)
 
 # Static asset mounts. The previous FastHTML host auto-mounted these by
 # scanning the static dir; FastAPI/Starlette needs each subdir mounted

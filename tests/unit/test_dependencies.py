@@ -1,0 +1,201 @@
+"""Unit tests for the new FastAPI deps + saving_run context manager.
+
+Replaces the existing ``test_route_utils.py::TestEditableRunHandlerDecorator``
+tests; the decorator goes away in Phase 4.
+"""
+
+import pytest
+from fastapi import HTTPException
+
+from seqsetup.models.sequencing_run import RunStatus, SequencingRun
+from seqsetup.models.user import UserRole
+from seqsetup.routes.dependencies import (
+    _load_and_check_editable,
+    is_htmx_request,
+    require_admin_dep,
+    saving_run,
+)
+
+
+# ---------------------------------------------------------------------------
+# Stubs
+# ---------------------------------------------------------------------------
+
+
+class _FakeUser:
+    def __init__(self, role=UserRole.STANDARD, username="u"):
+        self.role = role
+        self.username = username
+
+
+class _FakeRequest:
+    def __init__(self, auth=None, hx=False):
+        self.scope = {"auth": auth} if auth is not None else {}
+        self.headers = {"HX-Request": "true"} if hx else {}
+
+
+class _FakeRunRepo:
+    def __init__(self, runs=()):
+        self._runs = {r.id: r for r in runs}
+        self.save_calls = []
+
+    def get_by_id(self, run_id):
+        return self._runs.get(run_id)
+
+    def save(self, run):
+        self.save_calls.append(run.id)
+
+
+# ---------------------------------------------------------------------------
+# require_admin_dep
+# ---------------------------------------------------------------------------
+
+
+class TestRequireAdminDep:
+    def test_admin_user_passes(self):
+        req = _FakeRequest(auth=_FakeUser(role=UserRole.ADMIN))
+        # Returns None; the absence of an exception is success.
+        assert require_admin_dep(req) is None
+
+    def test_standard_user_raises_403(self):
+        req = _FakeRequest(auth=_FakeUser(role=UserRole.STANDARD))
+        with pytest.raises(HTTPException) as exc:
+            require_admin_dep(req)
+        assert exc.value.status_code == 403
+
+    def test_unauthenticated_raises_403(self):
+        req = _FakeRequest()
+        with pytest.raises(HTTPException) as exc:
+            require_admin_dep(req)
+        assert exc.value.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# _load_and_check_editable (the primitive both consumers share)
+# ---------------------------------------------------------------------------
+
+
+class TestLoadAndCheckEditable:
+    def _draft_run(self, run_id="r1"):
+        run = SequencingRun(status=RunStatus.DRAFT)
+        run.id = run_id
+        return run
+
+    def test_loads_draft_run(self):
+        run = self._draft_run()
+        repo = _FakeRunRepo([run])
+        result = _load_and_check_editable("r1", repo)
+        assert result is run
+
+    def test_missing_raises_404(self):
+        repo = _FakeRunRepo([])
+        with pytest.raises(HTTPException) as exc:
+            _load_and_check_editable("missing", repo)
+        assert exc.value.status_code == 404
+
+    def test_ready_raises_403(self):
+        run = SequencingRun(status=RunStatus.READY)
+        run.id = "r1"
+        repo = _FakeRunRepo([run])
+        with pytest.raises(HTTPException) as exc:
+            _load_and_check_editable("r1", repo)
+        assert exc.value.status_code == 403
+
+    def test_archived_raises_403(self):
+        run = SequencingRun(status=RunStatus.ARCHIVED)
+        run.id = "r1"
+        repo = _FakeRunRepo([run])
+        with pytest.raises(HTTPException) as exc:
+            _load_and_check_editable("r1", repo)
+        assert exc.value.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# saving_run context manager
+# ---------------------------------------------------------------------------
+
+
+class TestSavingRun:
+    def _setup(self):
+        run = SequencingRun(status=RunStatus.DRAFT)
+        run.id = "r1"
+        repo = _FakeRunRepo([run])
+
+        class _Ctx:
+            run_repo = repo
+
+        return run, _Ctx(), _FakeRequest(auth=_FakeUser(username="alice"))
+
+    def test_normal_exit_touches_and_saves(self):
+        run, ctx, req = self._setup()
+        before = run.updated_at
+        with saving_run(run, ctx, req) as r:
+            assert r is run
+            r.run_name = "new name"
+        # Touch bumps updated_at.
+        assert run.updated_at != before or before is None
+        # Save was called exactly once.
+        assert ctx.run_repo.save_calls == ["r1"]
+        # updated_by is set from the request's username.
+        assert run.updated_by == "alice"
+
+    def test_exception_skips_save(self):
+        run, ctx, req = self._setup()
+        before_updated_at = run.updated_at
+        with pytest.raises(RuntimeError):
+            with saving_run(run, ctx, req):
+                raise RuntimeError("boom")
+        # NOT saved.
+        assert ctx.run_repo.save_calls == []
+        # NOT touched.
+        assert run.updated_at == before_updated_at
+
+    def test_http_exception_propagates_and_skips_save(self):
+        """Critical: an HTTPException raised inside the handler must
+        propagate AND NOT trigger save. This is how the conditional-
+        save protection works."""
+        run, ctx, req = self._setup()
+        with pytest.raises(HTTPException):
+            with saving_run(run, ctx, req):
+                raise HTTPException(status_code=400, detail="bad input")
+        assert ctx.run_repo.save_calls == []
+
+    def test_reset_validation_default_true_clears_approval(self):
+        """Default behaviour: touch resets validation_approved → False.
+
+        This matches the existing touch() default and is correct for
+        mutations like sample edits where the prior validation no
+        longer applies.
+        """
+        run, ctx, req = self._setup()
+        run.validation_approved = True
+        with saving_run(run, ctx, req):
+            run.run_name = "edited"
+        assert run.validation_approved is False
+        assert ctx.run_repo.save_calls == ["r1"]
+
+    def test_reset_validation_false_preserves_approval(self):
+        """Status-only transitions (archive, status change, validation
+        approve/unapprove) MUST preserve validation_approved. Four
+        current callsites depend on this — wrapping them in saving_run
+        without the flag would silently wipe approval.
+        """
+        run, ctx, req = self._setup()
+        run.validation_approved = True
+        with saving_run(run, ctx, req, reset_validation=False):
+            run.status = RunStatus.ARCHIVED
+        assert run.validation_approved is True
+        assert ctx.run_repo.save_calls == ["r1"]
+
+
+# ---------------------------------------------------------------------------
+# is_htmx_request
+# ---------------------------------------------------------------------------
+
+
+class TestIsHtmxRequest:
+    def test_htmx_header_true(self):
+        assert is_htmx_request(_FakeRequest(hx=True)) is True
+
+    def test_no_htmx_header_false(self):
+        assert is_htmx_request(_FakeRequest(hx=False)) is False
