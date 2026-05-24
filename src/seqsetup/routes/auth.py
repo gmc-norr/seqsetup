@@ -1,77 +1,97 @@
 """Authentication routes for login/logout.
 
-Migrated off FastHTML to plain Starlette + Jinja2. No FT components, no
-@rt decorator — the ``register(app, auth_service)`` function appends
-Starlette Route objects directly. The middleware stack (security headers,
-CSRF, session) lives on the parent app and applies unchanged.
+Migrated to APIRouter via the make_router(auth_service) factory.
+auth_service is closed over because it's an app-singleton built at
+startup, not per-request DI. No AppContext dependency — auth routes
+only touch auth_service and request.session.
+
+Handlers are intentionally synchronous (def, not async def) because
+they call into bcrypt (a blocking C extension). Starlette runs sync
+handlers in a threadpool, isolating the blocking call from the event
+loop.
 """
 
-from starlette.requests import Request
-from starlette.responses import PlainTextResponse, RedirectResponse, Response
-from starlette.routing import Route
+from typing import Annotated
 
+from fastapi import APIRouter, Form, Request
+from pydantic import BaseModel, Field
+from pydantic.functional_validators import BeforeValidator
+from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+
+from ..forms.validators import strip_and_truncate
 from ..rate_limit import client_identity, get_login_limiter
 from ..services.audit_log import audit
 from ..services.auth import AuthenticationError
 from ..templating import render
 
 
+class LoginForm(BaseModel):
+    """Login credentials form.
+
+    username: CLAMP (strip + truncate to 64). Defensive length cap;
+        auth_service does the actual existence check.
+    password: PASS-THROUGH, REJECT if oversize. NOT stripped (whitespace
+        in a password may be intentional; silent strip would cause
+        lockouts), NOT truncated (silently chopping a password is wrong
+        — a 600-char password should fail, not log in with the first
+        256 chars). max_length=512 is a DoS guard; oversize → 422 not a
+        silent corruption. min_length=1 rejects empty submissions
+        (browser-side `required` already blocks the common case; this
+        handles scripted/bypassed posts).
+    """
+    username: Annotated[str, BeforeValidator(strip_and_truncate(64))]
+    password: str = Field(min_length=1, max_length=512)
+
+
 def _login_user(sess, user) -> None:
     """Apply the authenticated user to the session.
 
-    Clears any prior session contents first to defeat session fixation: an
-    attacker who plants a known session ID on a shared workstation must not
-    retain that session after a legitimate user logs in.
+    Clears any prior session contents first to defeat session fixation:
+    an attacker who plants a known session ID on a shared workstation
+    must not retain that session after a legitimate user logs in.
     """
     sess.clear()
     sess["user"] = user.to_dict()
 
 
-def register(app, auth_service) -> None:
-    """Register authentication routes on the parent Starlette app.
+def make_router(auth_service) -> APIRouter:
+    """Build the auth router. auth_service is closed over because it's
+    an app-singleton built at startup, not per-request DI."""
+    router = APIRouter(tags=["auth"])
 
-    Note the signature change: no ``rt`` parameter — Starlette routes
-    aren't registered via a decorator factory.
-
-    Handlers are intentionally synchronous (``def``, not ``async def``)
-    because they call into bcrypt (a blocking C extension) via
-    ``auth_service.authenticate``. Starlette runs sync handlers in a
-    threadpool, which is what we want; an ``async def`` handler that
-    calls bcrypt blocks the event loop and serialises every other
-    request behind it. Login traffic is low but rate-limited probes can
-    still saturate one thread per request without affecting the rest.
-
-    Requires ``app`` to have a mutable ``.routes`` list (Starlette/
-    FastHTML do — anything else does not).
-    """
-    if not hasattr(app, "routes") or not isinstance(app.routes, list):
-        raise TypeError(
-            f"auth.register requires a Starlette-style app with a mutable "
-            f"routes list, got {type(app).__name__}"
-        )
-
+    @router.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> Response:
-        """GET /login — render the login page."""
-        sess = request.session
-        if sess.get("user"):
+        """GET /login — render the login page, OR redirect to / if
+        already authenticated.
+
+        The redirect is load-bearing for session-fixation defence: a
+        user who hits /login after authenticating shouldn't get a
+        fresh form (which would invite re-submission with browser
+        autofill on a new session id).
+        """
+        if request.session.get("user"):
             return RedirectResponse("/", status_code=303)
         return render(request, "login.html", {"error_message": ""})
 
-    async def login_submit(request: Request) -> Response:
-        """POST /login/submit — process the login form.
+    @router.post("/login/submit")
+    def login_submit(
+        request: Request,
+        form: Annotated[LoginForm, Form()],
+    ) -> Response:
+        """POST /login/submit — validate, rate-limit, authenticate.
 
-        ``async def`` here only because we need ``await request.form()``
-        (Starlette's form parser is async). The auth call itself runs
-        bcrypt — for the same reason as ``login_page``, we keep the work
-        small here; the blocking step is unavoidable.
+        Sync def (not async) because bcrypt blocks; Starlette runs
+        sync handlers in a threadpool, isolating the blocking step.
+        FastAPI parses the Form into LoginForm before the body runs —
+        request.form() does NOT need to be awaited here.
         """
-        form = await request.form()
-        username = form.get("username", "")
-        password = form.get("password", "")
+        username = form.username
+        password = form.password
         sess = request.session
 
         # Truncate username for audit logging — protect against multi-MB
         # values landing in the audit stream from an automated probe.
+        # (Pydantic already clamped to 64, but be defensive.)
         actor = (username or "")[:128]
 
         # Rate-limit per IP and per username independently. A credential-
@@ -103,8 +123,9 @@ def register(app, auth_service) -> None:
             audit("login.success", actor=actor)
             return RedirectResponse("/", status_code=303)
         except AuthenticationError as e:
-            # Log the reason category but not the raw error text — it can
-            # echo back the supplied username and would inflate the log.
+            # Log the reason category but not the raw error text — it
+            # can echo back the supplied username and would inflate
+            # the log.
             audit("login.failure", actor=actor, outcome="failure")
             return render(
                 request,
@@ -113,16 +134,15 @@ def register(app, auth_service) -> None:
                 status_code=200,
             )
 
+    @router.get("/logout")
     def logout(request: Request) -> Response:
         """GET /logout — clear the session and redirect to /login."""
         sess = request.session
-        # Best-effort capture of who is logging out; sess may already be empty.
+        # Best-effort capture of who is logging out; sess may be empty.
         user_data = sess.get("user") or {}
         actor = (user_data.get("username") or "")[:128]
         sess.clear()
         audit("logout", actor=actor)
         return RedirectResponse("/login", status_code=303)
 
-    app.routes.append(Route("/login", login_page, methods=["GET"]))
-    app.routes.append(Route("/login/submit", login_submit, methods=["POST"]))
-    app.routes.append(Route("/logout", logout, methods=["GET"]))
+    return router

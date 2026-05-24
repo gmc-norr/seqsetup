@@ -129,7 +129,7 @@ app.mount("/api", _api_subapp)
 #   - /runs/new/* before /runs/{run_id}
 #   - /runs/{run_id}/validation, /runs/{run_id}/samples/... before /runs/{run_id}
 #   - /runs/{run_id} (edit page) registered LAST
-auth.register(app, auth_service)
+app.include_router(auth.make_router(auth_service))
 admin.register(app, _ctx)
 api_tokens.register(app, _ctx)
 local_users.register(app, _ctx)
