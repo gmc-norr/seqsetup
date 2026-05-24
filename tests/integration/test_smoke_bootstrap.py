@@ -137,3 +137,22 @@ def test_admin_sample_api_renders(logged_in_client):
 # no separate standard-user client fixture defined in conftest.py.
 # A standard_user_seeded fixture exists for user seeding but no TestClient
 # fixture builds a session for it. Adding one is out of scope for 2.3.
+
+
+def test_admin_logs_renders(logged_in_client):
+    """GET /admin/logs renders the empty-state page for admin."""
+    response = logged_in_client.get("/admin/logs")
+    assert response.status_code == 200
+    assert "Application Logs" in response.text
+    assert 'id="logs-page"' in response.text
+
+
+def test_admin_logs_htmx_returns_fragment(logged_in_client):
+    """GET /admin/logs with HX-Request returns just the fragment."""
+    response = logged_in_client.get(
+        "/admin/logs",
+        headers={"HX-Request": "true"},
+    )
+    assert response.status_code == 200
+    assert "<html" not in response.text
+    assert 'id="logs-page"' in response.text

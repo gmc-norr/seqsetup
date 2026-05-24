@@ -1,13 +1,14 @@
 """Admin settings routes.
 
 Migrated to Starlette ``Route(...)`` registration. Admin FT components
-(AuthenticationPage, LDAPConfigForm, ConfigSyncPage, LogsPage) are still
+(AuthenticationPage, LDAPConfigForm, ConfigSyncPage) are still
 rendered via the transitional ``ft_response`` / ``ft_page_response``
 helpers — a later cleanup converts them to Jinja2.
 
 The instruments page has been migrated to APIRouter + Jinja2 in
 ``routes/admin/instruments.py``. The sample-API page has been migrated to
-``routes/admin/sample_api.py``.
+``routes/admin/sample_api.py``. The logs page has been migrated to
+``routes/admin/logs.py``.
 """
 
 import logging
@@ -21,7 +22,6 @@ from ...components.admin import (
     ConfigSyncPage,
     LDAPConfigForm,
     LDAPTestResult,
-    LogsPage,
 )
 from ...context import AppContext
 from ...models.auth_config import AuthMethod, LDAPConfig, validate_user_dn_pattern
@@ -277,35 +277,3 @@ def register(app, ctx: AppContext) -> None:
         app.routes.append(Route("/admin/config-sync/config", update_config_sync_config, methods=["POST"]))
         app.routes.append(Route("/admin/config-sync/sync", trigger_manual_sync, methods=["POST"]))
 
-    # ---- Logs ----------------------------------------------------------
-
-    def admin_logs(request: Request) -> Response:
-        if err := require_admin(request):
-            return err
-        from ...services.log_capture import get_captured_logs, get_log_stats
-
-        level = request.query_params.get("level", "") or None
-        search = request.query_params.get("search", "") or None
-        entries = get_captured_logs(level=level, search=search, limit=200)
-        stats = get_log_stats()
-
-        # HTMX refresh: just the LogsPage fragment.
-        if request.headers.get("HX-Request"):
-            return ft_response(LogsPage(entries, stats, level or "", search or ""))
-        return ft_page_response(
-            request,
-            LogsPage(entries, stats, level or "", search or ""),
-            page_title="Logs",
-            active_route="/admin/logs",
-        )
-
-    def clear_logs(request: Request) -> Response:
-        if err := require_admin(request):
-            return err
-        from ...services.log_capture import clear_captured_logs, get_log_stats
-        clear_captured_logs()
-        audit("logs.cleared", actor=get_username(request), target="log_buffer")
-        return ft_response(LogsPage([], get_log_stats(), message="Logs cleared"))
-
-    app.routes.append(Route("/admin/logs", admin_logs, methods=["GET"]))
-    app.routes.append(Route("/admin/logs/clear", clear_logs, methods=["POST"]))
