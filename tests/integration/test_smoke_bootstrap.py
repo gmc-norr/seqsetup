@@ -124,6 +124,15 @@ def test_admin_instruments_renders(logged_in_client):
     assert 'id="instruments-page"' in response.text
 
 
+def test_admin_sample_api_renders(logged_in_client):
+    """GET /admin/sample-api renders for admin (LIMS repo seeded by fresh_app)."""
+    response = logged_in_client.get("/admin/sample-api")
+    assert response.status_code == 200
+    assert "LIMS Integration" in response.text
+    assert 'id="sample-api-page"' in response.text
+    assert 'id="sample-api-config-form"' in response.text
+
+
 # Non-admin rejection test omitted: logged_in_client IS admin and there is
 # no separate standard-user client fixture defined in conftest.py.
 # A standard_user_seeded fixture exists for user seeding but no TestClient

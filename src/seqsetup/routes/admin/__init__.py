@@ -1,12 +1,13 @@
 """Admin settings routes.
 
 Migrated to Starlette ``Route(...)`` registration. Admin FT components
-(AuthenticationPage, LDAPConfigForm, ConfigSyncPage, SampleApiConfigForm,
-LogsPage) are still rendered via the transitional ``ft_response`` /
-``ft_page_response`` helpers — a later cleanup converts them to Jinja2.
+(AuthenticationPage, LDAPConfigForm, ConfigSyncPage, LogsPage) are still
+rendered via the transitional ``ft_response`` / ``ft_page_response``
+helpers — a later cleanup converts them to Jinja2.
 
 The instruments page has been migrated to APIRouter + Jinja2 in
-``routes/admin/instruments.py``.
+``routes/admin/instruments.py``. The sample-API page has been migrated to
+``routes/admin/sample_api.py``.
 """
 
 import logging
@@ -21,12 +22,9 @@ from ...components.admin import (
     LDAPConfigForm,
     LDAPTestResult,
     LogsPage,
-    SampleApiConfigForm,
-    SampleApiPage,
 )
 from ...context import AppContext
 from ...models.auth_config import AuthMethod, LDAPConfig, validate_user_dn_pattern
-from ...models.sample_api_config import SampleApiConfig
 from ...rate_limit import client_identity, get_login_limiter
 from ...services.audit_log import audit
 from ...services.ldap import LDAPService, LDAPError
@@ -278,80 +276,6 @@ def register(app, ctx: AppContext) -> None:
         app.routes.append(Route("/admin/config-sync", admin_config_sync, methods=["GET"]))
         app.routes.append(Route("/admin/config-sync/config", update_config_sync_config, methods=["POST"]))
         app.routes.append(Route("/admin/config-sync/sync", trigger_manual_sync, methods=["POST"]))
-
-    # ---- Sample API (only if repo is available) -----------------------
-
-    if ctx.sample_api_config_repo is not None:
-
-        def admin_sample_api(request: Request) -> Response:
-            if err := require_admin(request):
-                return err
-            return ft_page_response(
-                request,
-                SampleApiPage(ctx.sample_api_config_repo.get()),
-                page_title="LIMS Integration",
-                active_route="/admin/sample-api",
-            )
-
-        async def update_sample_api_config(request: Request) -> Response:
-            if err := require_admin(request):
-                return err
-            form = await request.form()
-            existing = ctx.sample_api_config_repo.get()
-            base_url = sanitize_string(form.get("base_url", ""), 1024)
-            api_key = sanitize_string(form.get("api_key", ""), 512)
-            enabled = form.get("enabled", "") == "on"
-
-            field_mappings = {}
-            for key, field in (
-                ("worksheet_id", "field_worksheet_id"),
-                ("investigator", "field_investigator"),
-                ("updated_at", "field_updated_at"),
-                ("samples", "field_samples"),
-            ):
-                val = sanitize_string(form.get(field, ""), 256)
-                if val:
-                    field_mappings[key] = val
-
-            config = SampleApiConfig(
-                base_url=base_url,
-                api_key=api_key if api_key else existing.api_key,
-                enabled=enabled,
-                field_mappings=field_mappings,
-            )
-
-            if config.enabled and config.base_url:
-                from ...services.sample_api import check_connection
-                success, msg = check_connection(config)
-                if not success:
-                    config.enabled = False
-                    ctx.sample_api_config_repo.save(config)
-                    audit(
-                        "lims_config.updated",
-                        actor=get_username(request),
-                        target="sample_api_config",
-                        outcome="failure",
-                        base_url=config.base_url,
-                        enabled=False,
-                        reason="connection_failed",
-                    )
-                    return ft_response(SampleApiConfigForm(
-                        config,
-                        error=f"Connection failed: {msg}. Integration has been disabled.",
-                    ))
-
-            ctx.sample_api_config_repo.save(config)
-            audit(
-                "lims_config.updated",
-                actor=get_username(request),
-                target="sample_api_config",
-                base_url=config.base_url,
-                enabled=config.enabled,
-            )
-            return ft_response(SampleApiConfigForm(config, message="LIMS integration configuration saved"))
-
-        app.routes.append(Route("/admin/sample-api", admin_sample_api, methods=["GET"]))
-        app.routes.append(Route("/admin/settings/sample-api", update_sample_api_config, methods=["POST"]))
 
     # ---- Logs ----------------------------------------------------------
 

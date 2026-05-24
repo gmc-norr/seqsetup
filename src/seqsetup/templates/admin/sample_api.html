@@ -1,0 +1,90 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "LIMS Integration" %}
+{% set active_route = "/admin/sample-api" %}
+
+{% block content %}
+<div class="space-y-6" id="sample-api-page">
+    <h2 class="text-2xl font-semibold">LIMS Integration</h2>
+    <p class="text-slate-600">
+        Configure a connection to an external LIMS for fetching worklists and sample data.
+    </p>
+
+    {% block sample_api_config_form %}
+    <form id="sample-api-config-form"
+          hx-post="/admin/settings/sample-api"
+          hx-target="#sample-api-config-form"
+          hx-swap="outerHTML"
+          class="space-y-6 bg-white border rounded-lg p-6 shadow-sm">
+
+        {% if message %}
+            <div class="bg-green-100 border border-green-400 text-green-800 rounded px-3 py-2">{{ message }}</div>
+        {% endif %}
+        {% if error %}
+            <div class="bg-red-100 border border-red-400 text-red-800 rounded px-3 py-2">{{ error }}</div>
+        {% endif %}
+
+        {# API Endpoint #}
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">API Endpoint</legend>
+            <div>
+                <label for="base_url" class="block text-sm font-medium mb-1">Base URL</label>
+                <input type="text"
+                       name="base_url" id="base_url"
+                       value="{{ config.base_url }}"
+                       placeholder="https://lims.example.com/api"
+                       class="w-full border rounded px-3 py-2">
+                <p class="text-xs text-slate-500 mt-1">Base URL for the worksheet API. Endpoints used:</p>
+                <p class="text-xs text-slate-500"><code>{base_url}/worksheets?detail=true</code> — list available worksheets</p>
+                <p class="text-xs text-slate-500"><code>{base_url}/worksheets/{id}</code> — get samples for a worksheet</p>
+            </div>
+            <div>
+                <label for="api_key" class="block text-sm font-medium mb-1">API Key</label>
+                <input type="password"
+                       name="api_key" id="api_key"
+                       placeholder="Leave blank to keep existing key"
+                       class="w-full border rounded px-3 py-2">
+                <p class="text-xs text-slate-500 mt-1">
+                    Sent as 'api-key' header.{% if config.api_key %} Key is configured.{% endif %}
+                </p>
+            </div>
+        </fieldset>
+
+        {# Settings #}
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">Settings</legend>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" name="enabled" {% if config.enabled %}checked{% endif %}>
+                <span>Enable LIMS Integration</span>
+            </label>
+            <p class="text-xs text-slate-500">When enabled, a 'Fetch Worklist' option appears in sample forms.</p>
+        </fieldset>
+
+        {# Field mappings #}
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">Field Mappings</legend>
+            <p class="text-xs text-slate-500">Map API field names to SeqSetup fields. Leave blank to use defaults.</p>
+            {% for field_name, label, default_hint in [
+                ('field_worksheet_id', 'Worksheet ID field', "API field name for worksheet ID (default: 'id')."),
+                ('field_investigator', 'Investigator field', "API field name for investigator."),
+                ('field_updated_at', 'Updated timestamp field', "API field name for last updated timestamp."),
+                ('field_samples', 'Samples field', "API field name for embedded samples data."),
+            ] %}
+                {% set mapping_key = field_name.replace('field_', '') %}
+                <div>
+                    <label for="{{ field_name }}" class="block text-sm font-medium mb-1">{{ label }}</label>
+                    <input type="text"
+                           name="{{ field_name }}" id="{{ field_name }}"
+                           value="{{ config.field_mappings.get(mapping_key, '') }}"
+                           class="w-full border rounded px-3 py-2">
+                    <p class="text-xs text-slate-500 mt-1">{{ default_hint }}</p>
+                </div>
+            {% endfor %}
+        </fieldset>
+
+        <div>
+            <button type="submit" class="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700 transition">Save Configuration</button>
+        </div>
+    </form>
+    {% endblock %}
+</div>
+{% endblock %}
