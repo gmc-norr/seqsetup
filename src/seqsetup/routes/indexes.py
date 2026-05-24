@@ -1,40 +1,46 @@
-"""Index management routes for global index kits.
+"""Index kit management routes.
 
-Migrated to Starlette ``Route(...)`` registration. Index-panel FT
-components are still rendered via the transitional ``ft_response`` /
-``ft_page_response`` helpers — converted to Jinja2 in a later phase.
+Migrated to APIRouter. Three pages (list, import, detail) plus an
+upload action, a permission-gated delete, a wizard-side kit-content
+fragment, and a YAML download.
+
+Upload validation invariants (clinical-safety — never relaxed):
+  - 1 MB size cap (DoS guard)
+  - Binary magic-byte sniff rejects mis-uploaded PDFs/zips/exes/etc.
+  - NUL-byte sniff in first 8 KB
+  - UTF-8 decode check on sniff prefix
+  - Audit on every upload outcome (success AND failure)
+
+URL change in this commit:
+  POST /indexes/kits/{name}/{version}/delete →
+  DELETE /indexes/kits/{name}/{version}
 """
 
 import logging
 import re
-from typing import Optional
+from typing import Annotated, Optional
 
-from fasthtml.common import Div, H4, Li, P, Ul  # used by error fragments below
-from starlette.datastructures import UploadFile
-from starlette.requests import Request
-from starlette.responses import Response
-from starlette.routing import Route
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from starlette.responses import HTMLResponse, Response
 
-from ..components.index_panel import (
-    IndexKitDetailPage,
-    IndexKitImportPage,
-    IndexKitSummaryTable,
-    IndexKitsPage,
-    NoIndexKitsMessage,
-)
-from ..components.wizard import IndexKitPanel
 from ..context import AppContext
 from ..models.index import IndexMode
 from ..services.audit_log import audit
+from ..services.index_kit_yaml_exporter import IndexKitYamlExporter
 from ..services.index_parser import IndexParser
 from ..services.index_validator import IndexValidator
-from ..services.index_kit_yaml_exporter import IndexKitYamlExporter
-from ..templating import ft_page_response, ft_response
-from .utils import get_username, require_admin
+from ..templating import render
+from .dependencies import get_ctx, require_admin_dep
+from .utils import get_username
 
 
 logger = logging.getLogger("seqsetup")
 
+
+router = APIRouter(prefix="/indexes", tags=["indexes"])
+
+
+# ---- Validation helpers (PRESERVE VERBATIM from the previous handler) ----
 
 def _parse_index_override(pattern: str) -> Optional[int]:
     """Parse an index override pattern into a cycle count.
@@ -51,9 +57,6 @@ def _parse_index_override(pattern: str) -> Optional[int]:
     return None
 
 
-# Magic-byte prefixes that identify common binary formats. Index kit files
-# must be plain UTF-8 text (YAML/CSV/TSV); a file starting with any of these
-# was almost certainly mis-selected (PDF/Word/zip-of-spreadsheet/etc.).
 _BINARY_MAGIC_BYTES: tuple[bytes, ...] = (
     b"\x89PNG\r\n\x1a\n",   # PNG
     b"\xff\xd8\xff",         # JPEG
@@ -74,33 +77,21 @@ _BINARY_MAGIC_BYTES: tuple[bytes, ...] = (
 
 
 def _reject_binary_upload(content: bytes) -> Optional[str]:
-    """Return a rejection reason if ``content`` looks binary, else None.
-
-    Index kit files are YAML/CSV/TSV — all UTF-8 text. We reject by:
-      1. Known binary magic-byte prefixes (catches PDF/zip/exe mis-uploads).
-      2. NUL bytes in the first 8 KB (text rarely contains them, binaries often do).
-      3. UTF-8 decode failure on a sniff prefix (binary garbage decodes as
-         random bytes, valid UTF-8 doesn't).
-
-    Returns an admin-friendly message on rejection, or None to allow.
-    """
+    """Return a rejection reason if content looks binary, else None."""
     if not content:
-        return None  # empty content is handled by the upstream check
-
+        return None
     for prefix in _BINARY_MAGIC_BYTES:
         if content.startswith(prefix):
             return (
                 f"File looks like a binary format (magic bytes {prefix[:8]!r}). "
                 f"Index kits must be plain text (YAML, CSV, or TSV)."
             )
-
     sniff = content[:8192]
     if b"\x00" in sniff:
         return (
             "File contains NUL bytes in the first 8 KB. "
             "Index kits must be plain text (YAML, CSV, or TSV)."
         )
-
     try:
         sniff.decode("utf-8")
     except UnicodeDecodeError:
@@ -111,255 +102,273 @@ def _reject_binary_upload(content: bytes) -> Optional[str]:
     return None
 
 
-def register(app, ctx: AppContext) -> None:
-    """Register index routes."""
-    if not hasattr(app, "routes") or not isinstance(app.routes, list):
-        raise TypeError(
-            f"indexes.register requires a Starlette-style app with a mutable "
-            f"routes list, got {type(app).__name__}"
-        )
+# ---- Routes ----
 
-    def index_kits_page(request: Request) -> Response:
-        """GET /indexes — index kits management page."""
-        user = request.scope.get("auth")
-        return ft_page_response(
+@router.get("", response_class=HTMLResponse)
+def index_kits_page(
+    request: Request,
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /indexes — index kits list page."""
+    user = request.scope.get("auth")
+    return render(
+        request,
+        "indexes/list.html",
+        {"kits": ctx.index_kit_repo.list_all(), "user": user},
+    )
+
+
+@router.get("/import", response_class=HTMLResponse)
+def index_kit_import_page(request: Request) -> Response:
+    """GET /indexes/import — import form page."""
+    return render(request, "indexes/import.html", {"error_message": ""})
+
+
+@router.post("/upload", response_class=HTMLResponse, dependencies=[Depends(require_admin_dep)])
+async def upload_index_kit(
+    request: Request,
+    index_file: Annotated[UploadFile, File()],
+    index_mode: Annotated[str, Form()] = "unique_dual",
+    kit_name: Annotated[str, Form()] = "",
+    kit_version: Annotated[str, Form()] = "",
+    kit_description: Annotated[str, Form()] = "",
+    default_index1_override: Annotated[str, Form()] = "",
+    default_index2_override: Annotated[str, Form()] = "",
+    adapter_read1: Annotated[str, Form()] = "",
+    adapter_read2: Annotated[str, Form()] = "",
+    default_read1_override: Annotated[str, Form()] = "",
+    default_read2_override: Annotated[str, Form()] = "",
+    comments: Annotated[str, Form()] = "",
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """POST /indexes/upload — parse & save an uploaded index-kit file.
+
+    Multipart form; admin-only. HX-Redirect to /indexes on success;
+    returns an HTML error fragment on validation failure.
+    """
+    if not index_file or not index_file.filename:
+        return _error_fragment(request, "Please select a file to import.")
+
+    MAX_INDEX_FILE_SIZE = 1 * 1024 * 1024  # 1 MB DoS guard
+    file_content = await index_file.read()
+    if len(file_content) > MAX_INDEX_FILE_SIZE:
+        return _error_fragment(
             request,
-            IndexKitsPage(ctx.index_kit_repo.list_all(), user),
-            page_title="Index Kits",
-            active_route="/indexes",
+            f"File too large. Maximum size is {MAX_INDEX_FILE_SIZE // 1024} KB.",
         )
 
-    def index_kit_import_page(request: Request) -> Response:
-        """GET /indexes/import — import form page."""
-        return ft_page_response(
-            request,
-            IndexKitImportPage(),
-            page_title="Import Index Kit",
-            active_route="/indexes",
-        )
-
-    async def upload_index_kit(request: Request) -> Response:
-        """POST /indexes/upload — parse a YAML/CSV/TSV index kit file."""
-        if err := require_admin(request):
-            return err
-
-        form = await request.form()
-        index_file = form.get("index_file")
-        if not isinstance(index_file, UploadFile) or not index_file.filename:
-            return ft_response(Div("Please select a file to import.", cls="error-message"))
-
-        # Limit file size to prevent DoS (1 MB suffices for index kit files).
-        MAX_INDEX_FILE_SIZE = 1 * 1024 * 1024
-        file_content = await index_file.read()
-        if len(file_content) > MAX_INDEX_FILE_SIZE:
-            return ft_response(Div(
-                f"File too large. Maximum size is {MAX_INDEX_FILE_SIZE // 1024} KB.",
-                cls="error-message",
-            ))
-
-        # Reject obviously-binary uploads before parsing — extension is
-        # admin-supplied and unreliable; content sniff is the actual defence.
-        if reason := _reject_binary_upload(file_content):
-            audit(
-                "index_kit.upload",
-                actor=get_username(request),
-                target=index_file.filename or "",
-                outcome="failure",
-                reason="binary_content",
-            )
-            return ft_response(Div(reason, cls="error-message"))
-
-        user = request.scope.get("auth")
-        index_mode = form.get("index_mode", "unique_dual")
-        kit_name = form.get("kit_name", "")
-        kit_version = form.get("kit_version", "")
-        kit_description = form.get("kit_description", "")
-        default_index1_override = form.get("default_index1_override", "")
-        default_index2_override = form.get("default_index2_override", "")
-        adapter_read1 = form.get("adapter_read1", "")
-        adapter_read2 = form.get("adapter_read2", "")
-        default_read1_override = form.get("default_read1_override", "")
-        default_read2_override = form.get("default_read2_override", "")
-        comments = form.get("comments", "")
-
-        try:
-            mode = IndexMode(index_mode)
-            idx1_cycles = _parse_index_override(default_index1_override)
-            idx2_cycles = _parse_index_override(default_index2_override)
-
-            content = file_content.decode("utf-8")
-            kit = IndexParser.parse_from_content(
-                content,
-                index_file.filename,
-                index_mode=mode,
-                kit_name=kit_name.strip() if kit_name else None,
-                kit_version=kit_version.strip() if kit_version else None,
-                kit_description=kit_description.strip() if kit_description else None,
-            )
-
-            if idx1_cycles is not None:
-                kit.default_index1_cycles = idx1_cycles
-            if idx2_cycles is not None:
-                kit.default_index2_cycles = idx2_cycles
-
-            if adapter_read1.strip():
-                kit.adapter_read1 = adapter_read1.strip()
-            if adapter_read2.strip():
-                kit.adapter_read2 = adapter_read2.strip()
-
-            r1 = default_read1_override.strip().upper()
-            if r1 and r1 != "Y*":
-                kit.default_read1_override = r1
-            r2 = default_read2_override.strip().upper()
-            if r2 and r2 != "Y*":
-                kit.default_read2_override = r2
-
-            if comments.strip():
-                kit.comments = comments.strip()
-
-            kit.created_by = user.username if user else ""
-
-            validation = IndexValidator.validate(kit)
-            if not validation.is_valid:
-                error_list = Ul(*[Li(e) for e in validation.errors], cls="error-list")
-                return ft_response(Div(
-                    H4("Validation errors:"),
-                    error_list,
-                    cls="error-message",
-                ))
-
-            if ctx.index_kit_repo.exists(kit.name, kit.version):
-                return ft_response(Div(
-                    f"An index kit named '{kit.name}' version '{kit.version}' already exists.",
-                    cls="error-message",
-                ))
-
-            ctx.index_kit_repo.save(kit)
-        except Exception:
-            logger.exception("Failed to parse index kit file")
-            audit(
-                "index_kit.upload",
-                actor=get_username(request),
-                target=index_file.filename or "",
-                outcome="failure",
-            )
-            return ft_response(Div(
-                "Failed to parse file. Please check the format and try again.",
-                cls="error-message",
-            ))
-
+    if reason := _reject_binary_upload(file_content):
         audit(
             "index_kit.upload",
             actor=get_username(request),
-            target=kit.kit_id,
-            kit_name=kit.name,
-            kit_version=kit.version,
-            mode=kit.index_mode.value,
+            target=index_file.filename or "",
+            outcome="failure",
+            reason="binary_content",
+        )
+        return _error_fragment(request, reason)
+
+    user = request.scope.get("auth")
+    try:
+        mode = IndexMode(index_mode)
+        idx1_cycles = _parse_index_override(default_index1_override)
+        idx2_cycles = _parse_index_override(default_index2_override)
+
+        content = file_content.decode("utf-8")
+        kit = IndexParser.parse_from_content(
+            content,
+            index_file.filename,
+            index_mode=mode,
+            kit_name=kit_name.strip() if kit_name else None,
+            kit_version=kit_version.strip() if kit_version else None,
+            kit_description=kit_description.strip() if kit_description else None,
         )
 
-        # Success — HTMX redirect to the kits page.
-        return Response(
-            content="",
-            status_code=200,
-            headers={"HX-Redirect": "/indexes"},
-        )
+        if idx1_cycles is not None:
+            kit.default_index1_cycles = idx1_cycles
+        if idx2_cycles is not None:
+            kit.default_index2_cycles = idx2_cycles
+        if adapter_read1.strip():
+            kit.adapter_read1 = adapter_read1.strip()
+        if adapter_read2.strip():
+            kit.adapter_read2 = adapter_read2.strip()
+        r1 = default_read1_override.strip().upper()
+        if r1 and r1 != "Y*":
+            kit.default_read1_override = r1
+        r2 = default_read2_override.strip().upper()
+        if r2 and r2 != "Y*":
+            kit.default_read2_override = r2
+        if comments.strip():
+            kit.comments = comments.strip()
 
-    def remove_index_kit(request: Request) -> Response:
-        """POST /indexes/kits/{name}/{version}/delete — delete a kit."""
-        user = request.scope.get("auth")
-        if not user:
-            return Response("Forbidden: Authentication required", status_code=403)
+        kit.created_by = user.username if user else ""
 
-        name = request.path_params["name"]
-        version = request.path_params["version"]
+        validation = IndexValidator.validate(kit)
+        if not validation.is_valid:
+            return _error_fragment_list(request, "Validation errors:", validation.errors)
 
-        # Per-user permission: admin can delete any, others only their own.
-        if not user.is_admin:
-            kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
-            if not kit:
-                return ft_response(Div(
-                    Div(
-                        f"Index kit '{name}' version '{version}' not found.",
-                        cls="error-message",
-                    ),
-                ))
-            if kit.created_by != user.username:
-                return Response("Forbidden: You can only remove kits you created", status_code=403)
-
-        deleted = ctx.index_kit_repo.delete(name, version)
-        if deleted:
-            audit(
-                "index_kit.deleted",
-                actor=get_username(request),
-                target=f"{name}:{version}",
-                kit_name=name,
-                kit_version=version,
+        if ctx.index_kit_repo.exists(kit.name, kit.version):
+            return _error_fragment(
+                request,
+                f"An index kit named '{kit.name}' version '{kit.version}' already exists.",
             )
 
-        kits = ctx.index_kit_repo.list_all()
-        if not deleted:
-            return ft_response(Div(
-                IndexKitSummaryTable(kits, user=user) if kits else None,
-                Div(
-                    f"Index kit '{name}' version '{version}' not found.",
-                    cls="error-message",
-                ),
-            ))
-        if kits:
-            return ft_response(IndexKitSummaryTable(kits, user=user))
-        return ft_response(NoIndexKitsMessage(can_upload=True))
-
-    def index_kit_detail(request: Request) -> Response:
-        """GET /indexes/detail/{name}/{version} — single-kit detail page."""
-        name = request.path_params["name"]
-        version = request.path_params["version"]
-        user = request.scope.get("auth")
-
-        kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
-        if not kit:
-            return Response("Index kit not found", status_code=404)
-
-        return ft_page_response(
+        ctx.index_kit_repo.save(kit)
+    except Exception:
+        logger.exception("Failed to parse index kit file")
+        audit(
+            "index_kit.upload",
+            actor=get_username(request),
+            target=index_file.filename or "",
+            outcome="failure",
+        )
+        return _error_fragment(
             request,
-            IndexKitDetailPage(kit, user),
-            page_title=f"Index Kit: {name}",
-            active_route="/indexes",
+            "Failed to parse file. Please check the format and try again.",
         )
 
-    def get_kit_content(request: Request) -> Response:
-        """GET /indexes/kit-content — wizard dropdown content."""
-        selected_kit = request.query_params.get("selected_kit", "")
-        if not selected_kit:
-            return ft_response(P("Select an index kit", cls="no-kits-message"))
+    audit(
+        "index_kit.upload",
+        actor=get_username(request),
+        target=kit.kit_id,
+        kit_name=kit.name,
+        kit_version=kit.version,
+        mode=kit.index_mode.value,
+    )
+    # HTMX redirect to refresh the kits list page.
+    return Response(content="", status_code=200, headers={"HX-Redirect": "/indexes"})
 
-        kit = ctx.index_kit_repo.get_by_kit_id(selected_kit)
-        if not kit:
-            return ft_response(P(f"Index kit '{selected_kit}' not found", cls="error-message"))
 
-        return ft_response(IndexKitPanel(kit))
+@router.delete("/kits/{name}/{version}", response_class=HTMLResponse)
+def remove_index_kit(
+    request: Request,
+    name: str,
+    version: str,
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """DELETE /indexes/kits/{name}/{version} — delete a kit.
 
-    def download_index_kit(request: Request) -> Response:
-        """GET /indexes/download/{name}/{version} — download kit as YAML."""
-        name = request.path_params["name"]
-        version = request.path_params["version"]
+    Per-user permission: admin can delete any kit, others can only
+    delete kits they created. URL change in this commit (was POST .../delete).
+    """
+    user = request.scope.get("auth")
+    if not user:
+        raise HTTPException(status_code=403, detail="Authentication required")
+
+    if not user.is_admin:
         kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
         if not kit:
-            return Response("Index kit not found", status_code=404)
+            return _error_fragment(
+                request,
+                f"Index kit '{name}' version '{version}' not found.",
+            )
+        if kit.created_by != user.username:
+            raise HTTPException(status_code=403, detail="You can only remove kits you created")
 
-        return Response(
-            content=IndexKitYamlExporter.export(kit),
-            media_type="application/x-yaml",
-            headers={
-                "Content-Disposition": (
-                    f'attachment; filename="{IndexKitYamlExporter.get_filename(kit)}"'
-                ),
-            },
+    deleted = ctx.index_kit_repo.delete(name, version)
+    if deleted:
+        audit(
+            "index_kit.deleted",
+            actor=get_username(request),
+            target=f"{name}:{version}",
+            kit_name=name,
+            kit_version=version,
         )
 
-    app.routes.append(Route("/indexes", index_kits_page, methods=["GET"]))
-    app.routes.append(Route("/indexes/import", index_kit_import_page, methods=["GET"]))
-    app.routes.append(Route("/indexes/upload", upload_index_kit, methods=["POST"]))
-    app.routes.append(Route("/indexes/kits/{name}/{version}/delete", remove_index_kit, methods=["POST"]))
-    app.routes.append(Route("/indexes/detail/{name}/{version}", index_kit_detail, methods=["GET"]))
-    app.routes.append(Route("/indexes/kit-content", get_kit_content, methods=["GET"]))
-    app.routes.append(Route("/indexes/download/{name}/{version}", download_index_kit, methods=["GET"]))
+    kits = ctx.index_kit_repo.list_all()
+    if not deleted:
+        return render(
+            request,
+            "indexes/list.html",
+            {
+                "kits": kits,
+                "user": user,
+                "error_message": f"Index kit '{name}' version '{version}' not found.",
+            },
+            block_name="kit_list_section",
+        )
+    return render(
+        request,
+        "indexes/list.html",
+        {"kits": kits, "user": user, "error_message": ""},
+        block_name="kit_list_section",
+    )
+
+
+@router.get("/detail/{name}/{version}", response_class=HTMLResponse)
+def index_kit_detail(
+    request: Request,
+    name: str,
+    version: str,
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /indexes/detail/{name}/{version} — single-kit detail page."""
+    user = request.scope.get("auth")
+    kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
+    if not kit:
+        return Response("Index kit not found", status_code=404)
+    return render(
+        request,
+        "indexes/detail.html",
+        {"kit": kit, "user": user, "name": name, "version": version},
+    )
+
+
+@router.get("/kit-content", response_class=HTMLResponse)
+def get_kit_content(
+    request: Request,
+    selected_kit: str = "",
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /indexes/kit-content — wizard dropdown content fragment."""
+    # NOTE: The wizard-side IndexKitPanel FT component renders here for now.
+    # Phase 3 Task 3.2 ports it to a Jinja2 template; until then we keep
+    # the FT path so the wizard keeps working.
+    from ..components.wizard import IndexKitPanel
+    from ..templating import ft_response
+    from fasthtml.common import P
+
+    if not selected_kit:
+        return ft_response(P("Select an index kit", cls="no-kits-message"))
+    kit = ctx.index_kit_repo.get_by_kit_id(selected_kit)
+    if not kit:
+        return ft_response(P(f"Index kit '{selected_kit}' not found", cls="error-message"))
+    return ft_response(IndexKitPanel(kit))
+
+
+@router.get("/download/{name}/{version}")
+def download_index_kit(
+    name: str,
+    version: str,
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /indexes/download/{name}/{version} — YAML export."""
+    kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
+    if not kit:
+        return Response("Index kit not found", status_code=404)
+    return Response(
+        content=IndexKitYamlExporter.export(kit),
+        media_type="application/x-yaml",
+        headers={
+            "Content-Disposition": f'attachment; filename="{IndexKitYamlExporter.get_filename(kit)}"',
+        },
+    )
+
+
+# ---- Error-fragment helpers ----
+
+def _error_fragment(request: Request, message: str) -> Response:
+    """Render a simple error fragment for HTMX swap."""
+    return render(
+        request,
+        "indexes/_error_fragment.html",
+        {"messages": [message]},
+    )
+
+
+def _error_fragment_list(request: Request, title: str, errors: list[str]) -> Response:
+    """Render an error fragment with a title + list of messages."""
+    return render(
+        request,
+        "indexes/_error_fragment.html",
+        {"title": title, "messages": errors},
+    )

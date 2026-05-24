@@ -1,0 +1,12 @@
+<div class="bg-red-100 border border-red-400 text-red-800 rounded px-3 py-2">
+    {% if title is defined and title %}<div class="font-semibold mb-1">{{ title }}</div>{% endif %}
+    {% if messages|length == 1 %}
+        {{ messages[0] }}
+    {% else %}
+    <ul class="list-disc list-inside text-sm space-y-1">
+        {% for msg in messages %}
+        <li>{{ msg }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>

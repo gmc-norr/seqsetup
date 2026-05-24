@@ -1,0 +1,71 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Index Kits" %}
+{% set active_route = "/indexes" %}
+
+{% block content %}
+<div class="space-y-6" id="indexes-page">
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 class="text-2xl font-semibold">Index Kits</h2>
+            <p class="text-slate-600">Manage the library of indexing kits available to sequencing runs.</p>
+        </div>
+        {% if user and user.is_admin %}
+        <a href="/indexes/import" class="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">+ Import Index Kit</a>
+        {% endif %}
+    </div>
+
+    {% block kit_list_section %}
+    <div id="kit-list-section">
+        {% if error_message is defined and error_message %}
+            <div class="bg-red-100 border border-red-400 text-red-800 rounded px-3 py-2 mb-4">{{ error_message }}</div>
+        {% endif %}
+
+        {% if not kits %}
+            <div class="text-center py-12 text-slate-500">
+                <p class="mb-2">No index kits have been imported yet.</p>
+                {% if user and user.is_admin %}
+                <a href="/indexes/import" class="text-blue-600 hover:underline">Import the first kit &rarr;</a>
+                {% endif %}
+            </div>
+        {% else %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for kit in kits %}
+                {% set mode_label = {'unique_dual': 'Unique Dual', 'combinatorial': 'Combinatorial', 'single': 'Single'}.get(kit.index_mode.value, 'Unknown') %}
+                {% set mode_color = {'unique_dual': 'blue', 'combinatorial': 'purple', 'single': 'amber'}.get(kit.index_mode.value, 'slate') %}
+                {% set index_count = (kit.i7_indexes|length + kit.i5_indexes|length) if kit.is_combinatorial() else (kit.i7_indexes|length if kit.is_single() else kit.index_pairs|length) %}
+                <div class="bg-white border rounded-lg p-4 shadow-sm space-y-2">
+                    <div class="flex items-start justify-between gap-2">
+                        <a href="/indexes/detail/{{ kit.name|urlencode }}/{{ kit.version|urlencode }}" class="text-lg font-semibold text-blue-700 hover:underline truncate">{{ kit.name }}</a>
+                        <span class="text-xs px-2 py-0.5 rounded bg-{{ mode_color }}-100 text-{{ mode_color }}-800 border border-{{ mode_color }}-300 whitespace-nowrap">{{ mode_label }}</span>
+                    </div>
+                    <div class="text-sm text-slate-600 space-y-0.5">
+                        <div>Version: {{ kit.version }}</div>
+                        <div>{{ index_count }} index{{ "es" if index_count != 1 else "" }}</div>
+                        {% if kit.created_by %}<div>By: {{ kit.created_by }}</div>{% endif %}
+                    </div>
+                    <div class="flex gap-2 pt-2">
+                        <a href="/indexes/detail/{{ kit.name|urlencode }}/{{ kit.version|urlencode }}" class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-xs">View</a>
+                        <a href="/indexes/download/{{ kit.name|urlencode }}/{{ kit.version|urlencode }}" class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-xs">YAML</a>
+                        {% set can_delete = user and (user.is_admin or kit.created_by == user.username) %}
+                        {% if can_delete %}
+                        <button type="button"
+                                class="bg-red-600 hover:bg-red-700 text-white rounded px-2 py-1 text-xs"
+                                hx-delete="/indexes/kits/{{ kit.name|urlencode }}/{{ kit.version|urlencode }}"
+                                hx-target="#kit-list-section"
+                                hx-swap="outerHTML"
+                                hx-confirm="Delete index kit '{{ kit.name }}' version '{{ kit.version }}'? This cannot be undone.">
+                            Delete
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+    {% endblock %}
+</div>
+
+{# Tailwind dynamic-class pinning hint #}
+{# tailwind: bg-blue-100 text-blue-800 border-blue-300 bg-purple-100 text-purple-800 border-purple-300 bg-amber-100 text-amber-800 border-amber-300 bg-slate-100 text-slate-800 border-slate-300 #}
+{% endblock %}

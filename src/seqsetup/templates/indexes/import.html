@@ -1,0 +1,117 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Import Index Kit" %}
+{% set active_route = "/indexes" %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <a href="/indexes" class="text-sm text-blue-700 hover:underline">&larr; Back to Index Kits</a>
+        <h2 class="text-2xl font-semibold mt-2">Import Index Kit</h2>
+        <p class="text-slate-600">Import an index kit from a CSV, TSV, or YAML file.</p>
+    </div>
+
+    {% if error_message %}
+        <div class="bg-red-100 border border-red-400 text-red-800 rounded px-3 py-2">{{ error_message }}</div>
+    {% endif %}
+
+    {# Server posts an error fragment INTO this container on failure;
+       on success a 200 response with HX-Redirect header sends the browser
+       to /indexes. #}
+    <div id="import-message-container"></div>
+
+    <form class="bg-white border rounded-lg p-6 shadow-sm space-y-4"
+          hx-post="/indexes/upload"
+          hx-target="#import-message-container"
+          hx-encoding="multipart/form-data">
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">File</legend>
+            <div>
+                <label for="index_file" class="block text-sm font-medium mb-1">Index kit file (YAML, CSV, or TSV)</label>
+                <input type="file" name="index_file" id="index_file" required
+                       accept=".yaml,.yml,.csv,.tsv,.txt"
+                       class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label for="index_mode" class="block text-sm font-medium mb-1">Index mode</label>
+                <select name="index_mode" id="index_mode" class="w-full border rounded px-3 py-2">
+                    <option value="unique_dual">Unique Dual</option>
+                    <option value="combinatorial">Combinatorial</option>
+                    <option value="single">Single</option>
+                </select>
+            </div>
+        </fieldset>
+
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">Kit Metadata (optional &mdash; overrides file headers)</legend>
+            <div>
+                <label for="kit_name" class="block text-sm font-medium mb-1">Kit name</label>
+                <input type="text" name="kit_name" id="kit_name" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label for="kit_version" class="block text-sm font-medium mb-1">Kit version</label>
+                <input type="text" name="kit_version" id="kit_version" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label for="kit_description" class="block text-sm font-medium mb-1">Description</label>
+                <textarea name="kit_description" id="kit_description" rows="2" class="w-full border rounded px-3 py-2"></textarea>
+            </div>
+        </fieldset>
+
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">Adapter &amp; Override Settings (optional)</legend>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label for="adapter_read1" class="block text-sm font-medium mb-1">Adapter Read 1</label>
+                    <input type="text" name="adapter_read1" id="adapter_read1" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                </div>
+                <div>
+                    <label for="adapter_read2" class="block text-sm font-medium mb-1">Adapter Read 2</label>
+                    <input type="text" name="adapter_read2" id="adapter_read2" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                </div>
+                <div>
+                    <label for="default_index1_override" class="block text-sm font-medium mb-1">Default Index1 Override (e.g. I8, I*)</label>
+                    <input type="text" name="default_index1_override" id="default_index1_override" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                </div>
+                <div>
+                    <label for="default_index2_override" class="block text-sm font-medium mb-1">Default Index2 Override</label>
+                    <input type="text" name="default_index2_override" id="default_index2_override" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                </div>
+                <div>
+                    <label for="default_read1_override" class="block text-sm font-medium mb-1">Default Read1 Override (e.g. Y150, Y*)</label>
+                    <input type="text" name="default_read1_override" id="default_read1_override" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                </div>
+                <div>
+                    <label for="default_read2_override" class="block text-sm font-medium mb-1">Default Read2 Override</label>
+                    <input type="text" name="default_read2_override" id="default_read2_override" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                </div>
+            </div>
+            <div>
+                <label for="comments" class="block text-sm font-medium mb-1">Comments</label>
+                <textarea name="comments" id="comments" rows="2" class="w-full border rounded px-3 py-2"></textarea>
+            </div>
+        </fieldset>
+
+        <div>
+            <button type="submit" class="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">Upload Index Kit</button>
+        </div>
+    </form>
+
+    <details class="bg-slate-50 border rounded-lg p-4">
+        <summary class="font-medium cursor-pointer">File format help</summary>
+        <div class="mt-3 space-y-2 text-sm text-slate-700">
+            <p><strong>YAML</strong>: structured with <code>kit_name</code>, <code>kit_version</code>, <code>index_mode</code>, <code>indexes</code> or <code>index_pairs</code> sections.</p>
+            <p><strong>CSV/TSV</strong>: header row with columns like <code>name, sequence</code> (single) or <code>name, i7_sequence, i5_sequence</code> (dual) or <code>i7_name, i7_sequence, i5_name, i5_sequence</code> (combinatorial).</p>
+            <p>See the project documentation for examples.</p>
+        </div>
+    </details>
+
+    <details class="bg-slate-50 border rounded-lg p-4">
+        <summary class="font-medium cursor-pointer">Override cycles help</summary>
+        <div class="mt-3 space-y-2 text-sm text-slate-700">
+            <p>Index/read override patterns control how many cycles the sequencer dedicates to each read.</p>
+            <p><code>I8</code> = use 8 index cycles. <code>I*</code> (or blank) = use the actual sequence length.</p>
+            <p><code>Y150</code> = 150 read cycles. <code>Y*</code> (or blank) = use the run's default.</p>
+        </div>
+    </details>
+</div>
+{% endblock %}

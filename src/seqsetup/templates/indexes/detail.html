@@ -1,0 +1,96 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Index Kit: " ~ name %}
+{% set active_route = "/indexes" %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <a href="/indexes" class="text-sm text-blue-700 hover:underline">&larr; Back to Index Kits</a>
+        <h2 class="text-2xl font-semibold mt-2">{{ kit.name }} <span class="text-base text-slate-500 font-normal">v{{ kit.version }}</span></h2>
+        {% if kit.description %}<p class="text-slate-600">{{ kit.description }}</p>{% endif %}
+    </div>
+
+    <div class="bg-slate-50 border rounded p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div><div class="text-slate-500">Mode</div><div class="font-medium">{{ kit.index_mode.value }}</div></div>
+        <div><div class="text-slate-500">Created by</div><div class="font-medium">{{ kit.created_by or "&mdash;" }}</div></div>
+        <div><div class="text-slate-500">Adapter R1</div><div class="font-mono text-xs">{{ kit.adapter_read1 or "&mdash;" }}</div></div>
+        <div><div class="text-slate-500">Adapter R2</div><div class="font-mono text-xs">{{ kit.adapter_read2 or "&mdash;" }}</div></div>
+        <div><div class="text-slate-500">Default Index1</div><div class="font-mono text-xs">{{ kit.default_index1_cycles or "&mdash;" }}</div></div>
+        <div><div class="text-slate-500">Default Index2</div><div class="font-mono text-xs">{{ kit.default_index2_cycles or "&mdash;" }}</div></div>
+        <div><div class="text-slate-500">Default Read1</div><div class="font-mono text-xs">{{ kit.default_read1_override or "&mdash;" }}</div></div>
+        <div><div class="text-slate-500">Default Read2</div><div class="font-mono text-xs">{{ kit.default_read2_override or "&mdash;" }}</div></div>
+    </div>
+
+    {% if kit.is_combinatorial() %}
+        <section class="space-y-4">
+            <div>
+                <h3 class="text-xl font-semibold">i7 Indexes ({{ kit.i7_indexes|length }})</h3>
+                <table class="w-full border-collapse text-sm mt-2">
+                    <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left">Name</th><th class="border px-2 py-1 text-left">Sequence</th></tr></thead>
+                    <tbody>
+                    {% for idx in kit.i7_indexes %}
+                    <tr><td class="border px-2 py-1">{{ idx.name }}</td><td class="border px-2 py-1 font-mono">{{ idx.sequence }}</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div>
+                <h3 class="text-xl font-semibold">i5 Indexes ({{ kit.i5_indexes|length }})</h3>
+                <table class="w-full border-collapse text-sm mt-2">
+                    <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left">Name</th><th class="border px-2 py-1 text-left">Sequence</th></tr></thead>
+                    <tbody>
+                    {% for idx in kit.i5_indexes %}
+                    <tr><td class="border px-2 py-1">{{ idx.name }}</td><td class="border px-2 py-1 font-mono">{{ idx.sequence }}</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    {% elif kit.is_single() %}
+        <section>
+            <h3 class="text-xl font-semibold">Indexes ({{ kit.i7_indexes|length }})</h3>
+            <table class="w-full border-collapse text-sm mt-2">
+                <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left">Name</th><th class="border px-2 py-1 text-left">Sequence</th></tr></thead>
+                <tbody>
+                {% for idx in kit.i7_indexes %}
+                <tr><td class="border px-2 py-1">{{ idx.name }}</td><td class="border px-2 py-1 font-mono">{{ idx.sequence }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% else %}
+        <section>
+            <h3 class="text-xl font-semibold">Index Pairs ({{ kit.index_pairs|length }})</h3>
+            <table class="w-full border-collapse text-sm mt-2">
+                <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left">Name</th><th class="border px-2 py-1 text-left">i7 Sequence</th><th class="border px-2 py-1 text-left">i5 Sequence</th></tr></thead>
+                <tbody>
+                {% for pair in kit.index_pairs %}
+                <tr><td class="border px-2 py-1">{{ pair.name }}</td><td class="border px-2 py-1 font-mono">{{ pair.i7_sequence }}</td><td class="border px-2 py-1 font-mono">{{ pair.i5_sequence }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endif %}
+
+    {% if kit.comments %}
+    <section>
+        <h3 class="text-xl font-semibold">Comments</h3>
+        <pre class="bg-slate-50 border rounded p-3 text-sm whitespace-pre-wrap">{{ kit.comments }}</pre>
+    </section>
+    {% endif %}
+
+    <div class="flex gap-2">
+        <a href="/indexes/download/{{ name|urlencode }}/{{ version|urlencode }}" class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1">Download YAML</a>
+        {% set can_delete = user and (user.is_admin or kit.created_by == user.username) %}
+        {% if can_delete %}
+        <button type="button"
+                class="bg-red-600 hover:bg-red-700 text-white rounded px-3 py-1"
+                hx-delete="/indexes/kits/{{ name|urlencode }}/{{ version|urlencode }}"
+                hx-confirm="Delete this index kit?"
+                onclick="window.location='/indexes'">
+            Delete
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

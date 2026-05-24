@@ -275,3 +275,39 @@ def test_admin_users_last_admin_cannot_be_deleted(logged_in_client, fresh_app):
     )
     assert response.status_code == 200
     assert "last admin" in response.text.lower()
+
+
+def test_indexes_list_renders(logged_in_client):
+    """GET /indexes renders the empty-state page."""
+    response = logged_in_client.get("/indexes")
+    assert response.status_code == 200
+    assert "Index Kits" in response.text
+    assert 'id="indexes-page"' in response.text
+
+
+def test_indexes_import_renders(logged_in_client):
+    """GET /indexes/import renders the upload form."""
+    response = logged_in_client.get("/indexes/import")
+    assert response.status_code == 200
+    assert "Import Index Kit" in response.text
+    assert 'name="index_file"' in response.text
+
+
+def test_indexes_delete_uses_delete_method(logged_in_client):
+    """The DELETE endpoint responds (returns 200 with error fragment when kit missing)."""
+    response = logged_in_client.delete(
+        "/indexes/kits/nonexistent/1.0.0",
+        headers={"Origin": "http://testserver"},
+    )
+    # Either 200 (rendered "not found" fragment) or 404 are acceptable;
+    # the key signal is "not 405 method not allowed".
+    assert response.status_code in (200, 403, 404)
+
+
+def test_indexes_old_delete_url_rejected(logged_in_client):
+    """OLD POST .../delete must return 404/405 (URL cleanup regression)."""
+    response = logged_in_client.post(
+        "/indexes/kits/nonexistent/1.0.0/delete",
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code in (404, 405)
