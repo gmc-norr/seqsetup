@@ -1,38 +1,28 @@
 """Admin settings routes.
 
 Migrated to Starlette ``Route(...)`` registration. Admin FT components
-(AuthenticationPage, LDAPConfigForm, ConfigSyncPage) are still
-rendered via the transitional ``ft_response`` / ``ft_page_response``
-helpers — a later cleanup converts them to Jinja2.
+(ConfigSyncPage) are still rendered via the transitional
+``ft_response`` / ``ft_page_response`` helpers — a later cleanup
+converts them to Jinja2.
 
-The instruments page has been migrated to APIRouter + Jinja2 in
-``routes/admin/instruments.py``. The sample-API page has been migrated to
-``routes/admin/sample_api.py``. The logs page has been migrated to
-``routes/admin/logs.py``.
+The authentication page has been migrated to APIRouter + Jinja2 in
+``routes/admin/authentication.py``. The instruments page has been
+migrated to ``routes/admin/instruments.py``. The sample-API page has
+been migrated to ``routes/admin/sample_api.py``. The logs page has been
+migrated to ``routes/admin/logs.py``.
 """
-
-import logging
 
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
 from ...components.admin import (
-    AuthenticationPage,
     ConfigSyncPage,
-    LDAPConfigForm,
-    LDAPTestResult,
 )
 from ...context import AppContext
-from ...models.auth_config import AuthMethod, LDAPConfig, validate_user_dn_pattern
-from ...rate_limit import client_identity, get_login_limiter
 from ...services.audit_log import audit
-from ...services.ldap import LDAPService, LDAPError
 from ...templating import ft_page_response, ft_response
 from ..utils import get_username, require_admin, sanitize_string
-
-
-logger = logging.getLogger("seqsetup")
 
 
 def register(app, ctx: AppContext) -> None:
@@ -42,158 +32,6 @@ def register(app, ctx: AppContext) -> None:
             f"admin.register requires a Starlette-style app with a mutable "
             f"routes list, got {type(app).__name__}"
         )
-
-    # ---- Authentication settings ---------------------------------------
-
-    def admin_authentication(request: Request) -> Response:
-        if err := require_admin(request):
-            return err
-        return ft_page_response(
-            request,
-            AuthenticationPage(ctx.auth_config_repo.get()),
-            page_title="Authentication",
-            active_route="/admin/authentication",
-        )
-
-    async def update_auth_method(request: Request) -> Response:
-        if err := require_admin(request):
-            return err
-        form = await request.form()
-        auth_method = form.get("auth_method", "")
-        allow_local_fallback = form.get("allow_local_fallback", "")
-
-        config = ctx.auth_config_repo.get()
-        try:
-            config.auth_method = AuthMethod(auth_method)
-        except ValueError:
-            config.auth_method = AuthMethod.LOCAL
-        config.allow_local_fallback = allow_local_fallback == "on"
-        ctx.auth_config_repo.save(config)
-        audit(
-            "auth.method.changed",
-            actor=get_username(request),
-            target="auth_config",
-            method=config.auth_method.value,
-            allow_local_fallback=config.allow_local_fallback,
-        )
-        return ft_response(LDAPConfigForm(config, message="Authentication method updated"))
-
-    async def update_ldap_config(request: Request) -> Response:
-        if err := require_admin(request):
-            return err
-        form = await request.form()
-        user_dn_pattern = form.get("user_dn_pattern", "")
-
-        # Reject DN-template injection attempts before persisting.
-        try:
-            validate_user_dn_pattern(user_dn_pattern)
-        except ValueError as e:
-            return Response(str(e), status_code=400)
-
-        config = ctx.auth_config_repo.get()
-        bind_password = form.get("bind_password", "")
-        config.ldap_config = LDAPConfig(
-            server_url=form.get("server_url", ""),
-            use_ssl=form.get("use_ssl", "") == "on",
-            verify_ssl_cert=form.get("verify_ssl_cert", "on") == "on",
-            base_dn=form.get("base_dn", ""),
-            bind_dn=form.get("bind_dn", ""),
-            bind_password=bind_password if bind_password else config.ldap_config.bind_password,
-            user_search_base=form.get("user_search_base", ""),
-            user_search_filter=form.get("user_search_filter", "(sAMAccountName={username})"),
-            user_dn_pattern=user_dn_pattern,
-            username_attribute=form.get("username_attribute", "sAMAccountName"),
-            display_name_attribute=form.get("display_name_attribute", "displayName"),
-            email_attribute=form.get("email_attribute", "mail"),
-            admin_group_dn=form.get("admin_group_dn", ""),
-            user_group_dn=form.get("user_group_dn", ""),
-            group_membership_attribute=form.get("group_membership_attribute", "memberOf"),
-            connect_timeout=int(form.get("connect_timeout", "10") or 10),
-            receive_timeout=int(form.get("receive_timeout", "10") or 10),
-        )
-        config.ldap_configured = bool(config.ldap_config.server_url and config.ldap_config.base_dn)
-        config.ldap_tested = False
-        ctx.auth_config_repo.save(config)
-        audit(
-            "auth.ldap_config.updated",
-            actor=get_username(request),
-            target="ldap_config",
-            server_url=config.ldap_config.server_url,
-            base_dn=config.ldap_config.base_dn,
-            bind_dn=config.ldap_config.bind_dn,
-        )
-        return ft_response(LDAPConfigForm(config, message="LDAP configuration saved"))
-
-    def test_ldap_connection(request: Request) -> Response:
-        if err := require_admin(request):
-            return err
-        config = ctx.auth_config_repo.get()
-        if not config.ldap_config.server_url:
-            return ft_response(LDAPTestResult(False, "LDAP server URL is not configured"))
-        try:
-            ldap_service = LDAPService(config.ldap_config)
-            success, message = ldap_service.test_connection()
-            if success:
-                config.ldap_tested = True
-                ctx.auth_config_repo.save(config)
-            return ft_response(LDAPTestResult(success, message))
-        except LDAPError as e:
-            return ft_response(LDAPTestResult(False, str(e)))
-        except Exception:
-            logger.exception("LDAP connection test failed unexpectedly")
-            return ft_response(LDAPTestResult(False, "Connection test failed unexpectedly"))
-
-    async def test_ldap_auth(request: Request) -> Response:
-        """Same rate-limiting policy as /login/submit — this endpoint
-        triggers a real LDAP bind from admin-supplied credentials.
-        """
-        if err := require_admin(request):
-            return err
-        form = await request.form()
-        test_username = form.get("test_username", "")
-        test_password = form.get("test_password", "")
-
-        if not test_username or not test_password:
-            return ft_response(LDAPTestResult(False, "Please provide both username and password"))
-
-        limiter = get_login_limiter()
-        ip = client_identity(request)
-        actor_user = (test_username or "")[:128].lower()
-        ok_ip, retry_ip = limiter.allow(f"ldap-test-ip:{ip}")
-        ok_user, retry_user = limiter.allow(f"ldap-test-user:{actor_user}")
-        if not (ok_ip and ok_user):
-            retry = max(retry_ip, retry_user)
-            audit(
-                "ldap.test_auth.rate_limited",
-                actor=get_username(request),
-                outcome="denied",
-                ip=ip,
-                target_user=actor_user,
-                retry_after=retry,
-            )
-            return ft_response(LDAPTestResult(False, f"Too many test attempts. Retry after {retry}s."))
-
-        config = ctx.auth_config_repo.get()
-        if not config.ldap_config.server_url:
-            return ft_response(LDAPTestResult(False, "LDAP server URL is not configured"))
-        try:
-            ldap_service = LDAPService(config.ldap_config)
-            user = ldap_service.authenticate(test_username, test_password)
-            return ft_response(LDAPTestResult(
-                True,
-                f"Authentication successful! User: {user.display_name}, Role: {user.role.value}",
-            ))
-        except LDAPError as e:
-            return ft_response(LDAPTestResult(False, str(e)))
-        except Exception:
-            logger.exception("LDAP authentication test failed")
-            return ft_response(LDAPTestResult(False, "Authentication test failed"))
-
-    app.routes.append(Route("/admin/authentication", admin_authentication, methods=["GET"]))
-    app.routes.append(Route("/admin/settings/auth-method", update_auth_method, methods=["POST"]))
-    app.routes.append(Route("/admin/settings/ldap", update_ldap_config, methods=["POST"]))
-    app.routes.append(Route("/admin/settings/ldap/test", test_ldap_connection, methods=["POST"]))
-    app.routes.append(Route("/admin/settings/ldap/test-auth", test_ldap_auth, methods=["POST"]))
 
     # ---- Config Sync (only if repo is available) ----------------------
 

@@ -1,0 +1,236 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Authentication" %}
+{% set active_route = "/admin/authentication" %}
+
+{% block content %}
+<div class="space-y-6">
+    <h2 class="text-2xl font-semibold">Authentication</h2>
+
+    {% block ldap_config_form %}
+    <div id="ldap-config-form" class="space-y-4">
+        {% if message %}
+            <div class="bg-green-100 border border-green-400 text-green-800 rounded px-3 py-2">{{ message }}</div>
+        {% endif %}
+
+        {# Auth-method selector #}
+        <form class="bg-white border rounded-lg p-6 shadow-sm space-y-3">
+            <fieldset class="space-y-2">
+                <legend class="text-lg font-semibold">Authentication Method</legend>
+
+                {% for method_value, method_label, method_desc in [
+                    ('local', 'Local Authentication', 'Users are managed in the local user database.'),
+                    ('active_directory', 'Active Directory', 'Authenticate users against Microsoft Active Directory.'),
+                    ('ldap', 'LDAP', 'Authenticate users against a generic LDAP server.'),
+                ] %}
+                <div class="flex items-start gap-2">
+                    <input type="radio"
+                           name="auth_method"
+                           id="auth_method_{{ method_value }}"
+                           value="{{ method_value }}"
+                           class="mt-1"
+                           {% if config.auth_method.value == method_value %}checked{% endif %}
+                           hx-post="/admin/settings/auth-method"
+                           hx-trigger="change"
+                           hx-target="#ldap-config-form"
+                           hx-swap="outerHTML"
+                           hx-include="[name='allow_local_fallback']">
+                    <label for="auth_method_{{ method_value }}" class="flex-1">
+                        <span class="font-medium">{{ method_label }}</span>
+                        <p class="text-xs text-slate-500">{{ method_desc }}</p>
+                    </label>
+                </div>
+                {% endfor %}
+
+                <div class="border-t pt-3 mt-3">
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox"
+                               name="allow_local_fallback"
+                               {% if config.allow_local_fallback %}checked{% endif %}>
+                        <span class="font-medium">Allow local user fallback</span>
+                    </label>
+                    <p class="text-xs text-slate-500 mt-1">If LDAP authentication fails, try local authentication.</p>
+                </div>
+            </fieldset>
+        </form>
+
+        {# LDAP settings (only when LDAP or AD is selected) #}
+        {% if config.auth_method.value in ('ldap', 'active_directory') %}
+        {% set ldap = config.ldap_config %}
+        <form class="bg-white border rounded-lg p-6 shadow-sm space-y-4"
+              hx-post="/admin/settings/ldap"
+              hx-target="#ldap-config-form"
+              hx-swap="outerHTML">
+            <h3 class="text-xl font-semibold">LDAP/AD Connection Settings</h3>
+
+            <fieldset class="space-y-3">
+                <legend class="text-lg font-semibold">Server Connection</legend>
+                <div>
+                    <label for="server_url" class="block text-sm font-medium mb-1">Server URL</label>
+                    <input type="text" name="server_url" id="server_url"
+                           value="{{ ldap.server_url }}"
+                           placeholder="ldap://example.com:389"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" name="use_ssl" {% if ldap.use_ssl %}checked{% endif %}>
+                    <span>Use SSL/TLS (LDAPS)</span>
+                </label>
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" name="verify_ssl_cert" {% if ldap.verify_ssl_cert %}checked{% endif %}>
+                    <span>Verify SSL certificate</span>
+                </label>
+                <div>
+                    <label for="base_dn" class="block text-sm font-medium mb-1">Base DN</label>
+                    <input type="text" name="base_dn" id="base_dn"
+                           value="{{ ldap.base_dn }}"
+                           placeholder="dc=example,dc=com"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label for="bind_dn" class="block text-sm font-medium mb-1">Bind DN</label>
+                    <input type="text" name="bind_dn" id="bind_dn"
+                           value="{{ ldap.bind_dn }}"
+                           placeholder="cn=admin,dc=example,dc=com"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label for="bind_password" class="block text-sm font-medium mb-1">Bind Password</label>
+                    <input type="password" name="bind_password" id="bind_password"
+                           placeholder="Leave blank to keep existing"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+            </fieldset>
+
+            <fieldset class="space-y-3">
+                <legend class="text-lg font-semibold">User Search</legend>
+                <div>
+                    <label for="user_search_base" class="block text-sm font-medium mb-1">User Search Base</label>
+                    <input type="text" name="user_search_base" id="user_search_base"
+                           value="{{ ldap.user_search_base }}"
+                           placeholder="ou=users,dc=example,dc=com"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label for="user_search_filter" class="block text-sm font-medium mb-1">User Search Filter</label>
+                    <input type="text" name="user_search_filter" id="user_search_filter"
+                           value="{{ ldap.user_search_filter }}"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label for="user_dn_pattern" class="block text-sm font-medium mb-1">User DN Pattern (optional)</label>
+                    <input type="text" name="user_dn_pattern" id="user_dn_pattern"
+                           value="{{ ldap.user_dn_pattern }}"
+                           placeholder="uid={username},ou=users,dc=example,dc=com"
+                           class="w-full border rounded px-3 py-2">
+                    <p class="text-xs text-slate-500 mt-1">If set, used instead of search filter for direct bind.</p>
+                </div>
+            </fieldset>
+
+            <fieldset class="space-y-3">
+                <legend class="text-lg font-semibold">User Attributes</legend>
+                {% for field, label in [
+                    ('username_attribute', 'Username Attribute'),
+                    ('display_name_attribute', 'Display Name Attribute'),
+                    ('email_attribute', 'Email Attribute'),
+                ] %}
+                <div>
+                    <label for="{{ field }}" class="block text-sm font-medium mb-1">{{ label }}</label>
+                    <input type="text" name="{{ field }}" id="{{ field }}"
+                           value="{{ ldap|attr(field) }}"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+                {% endfor %}
+            </fieldset>
+
+            <fieldset class="space-y-3">
+                <legend class="text-lg font-semibold">Group-Based Roles</legend>
+                <div>
+                    <label for="admin_group_dn" class="block text-sm font-medium mb-1">Admin Group DN</label>
+                    <input type="text" name="admin_group_dn" id="admin_group_dn"
+                           value="{{ ldap.admin_group_dn }}"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label for="user_group_dn" class="block text-sm font-medium mb-1">User Group DN</label>
+                    <input type="text" name="user_group_dn" id="user_group_dn"
+                           value="{{ ldap.user_group_dn }}"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label for="group_membership_attribute" class="block text-sm font-medium mb-1">Group Membership Attribute</label>
+                    <input type="text" name="group_membership_attribute" id="group_membership_attribute"
+                           value="{{ ldap.group_membership_attribute }}"
+                           class="w-full border rounded px-3 py-2">
+                </div>
+            </fieldset>
+
+            <fieldset class="space-y-3">
+                <legend class="text-lg font-semibold">Timeouts</legend>
+                <div>
+                    <label for="connect_timeout" class="block text-sm font-medium mb-1">Connect Timeout (s)</label>
+                    <input type="number" name="connect_timeout" id="connect_timeout"
+                           value="{{ ldap.connect_timeout }}" min="1" max="300"
+                           class="w-32 border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label for="receive_timeout" class="block text-sm font-medium mb-1">Receive Timeout (s)</label>
+                    <input type="number" name="receive_timeout" id="receive_timeout"
+                           value="{{ ldap.receive_timeout }}" min="1" max="300"
+                           class="w-32 border rounded px-3 py-2">
+                </div>
+            </fieldset>
+
+            <div>
+                <button type="submit" class="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">Save LDAP Configuration</button>
+            </div>
+        </form>
+
+        {# Connection test #}
+        <div class="bg-white border rounded-lg p-6 shadow-sm space-y-3">
+            <h3 class="text-xl font-semibold">Test Connection</h3>
+            <p class="text-sm text-slate-600">Verify the server is reachable and bind credentials are valid.</p>
+            <button type="button"
+                    class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1"
+                    hx-post="/admin/settings/ldap/test"
+                    hx-target="#ldap-test-result"
+                    hx-swap="innerHTML">
+                Run Connection Test
+            </button>
+            <div id="ldap-test-result"></div>
+        </div>
+
+        {# Auth test #}
+        <form class="bg-white border rounded-lg p-6 shadow-sm space-y-3"
+              hx-post="/admin/settings/ldap/test-auth"
+              hx-target="#ldap-auth-test-result"
+              hx-swap="innerHTML">
+            <h3 class="text-xl font-semibold">Test User Authentication</h3>
+            <p class="text-sm text-slate-600">Try a real LDAP bind with these credentials (rate-limited).</p>
+            <div>
+                <label for="test_username" class="block text-sm font-medium mb-1">Test Username</label>
+                <input type="text" name="test_username" id="test_username" required
+                       class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label for="test_password" class="block text-sm font-medium mb-1">Test Password</label>
+                <input type="password" name="test_password" id="test_password" required
+                       class="w-full border rounded px-3 py-2">
+            </div>
+            <button type="submit" class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1">Run Auth Test</button>
+            <div id="ldap-auth-test-result"></div>
+        </form>
+        {% endif %}
+    </div>
+    {% endblock %}
+</div>
+
+{# Standalone test result block — rendered as innerHTML into #ldap-test-result or #ldap-auth-test-result #}
+{% block ldap_test_result %}
+{% if test_success %}
+<div class="bg-green-100 border border-green-400 text-green-800 rounded px-3 py-2 mt-2">{{ test_message }}</div>
+{% else %}
+<div class="bg-red-100 border border-red-400 text-red-800 rounded px-3 py-2 mt-2">{{ test_message }}</div>
+{% endif %}
+{% endblock %}
+
+{% endblock %}

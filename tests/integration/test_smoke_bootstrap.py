@@ -242,6 +242,17 @@ def test_admin_users_old_delete_url_rejected(logged_in_client):
     assert response.status_code in (404, 405)
 
 
+def test_admin_authentication_renders(logged_in_client):
+    """GET /admin/authentication renders for admin."""
+    response = logged_in_client.get("/admin/authentication")
+    assert response.status_code == 200
+    assert "Authentication" in response.text
+    assert 'id="ldap-config-form"' in response.text
+    # Auth-method radios present
+    assert 'name="auth_method"' in response.text
+    assert 'value="local"' in response.text
+
+
 def test_admin_users_last_admin_cannot_be_deleted(logged_in_client, fresh_app):
     """Last-admin guard preserved across the URL rewrite."""
     app, ctx, db = fresh_app
