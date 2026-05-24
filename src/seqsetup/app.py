@@ -33,6 +33,7 @@ from .data.instruments import set_instrument_definition_repo
 from .exception_handlers import install as install_exception_handlers
 from .middleware import AuthMiddleware
 from .routes import admin, api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, runs, samples, validation, wizard
+from .routes.admin import instruments as admin_instruments
 from .security_headers import SecurityHeadersMiddleware
 from .services.log_capture import setup_log_capture
 from .startup import (
@@ -131,6 +132,7 @@ app.mount("/api", _api_subapp)
 #   - /runs/{run_id} (edit page) registered LAST
 app.include_router(auth.make_router(auth_service))
 admin.register(app, _ctx)
+app.include_router(admin_instruments.router)
 api_tokens.register(app, _ctx)
 local_users.register(app, _ctx)
 app.include_router(dashboard.router)

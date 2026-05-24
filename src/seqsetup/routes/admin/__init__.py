@@ -2,9 +2,11 @@
 
 Migrated to Starlette ``Route(...)`` registration. Admin FT components
 (AuthenticationPage, LDAPConfigForm, ConfigSyncPage, SampleApiConfigForm,
-LogsPage, InstrumentsPage, SyncedInstrumentsSection) are still rendered
-via the transitional ``ft_response`` / ``ft_page_response`` helpers — a
-later cleanup converts them to Jinja2.
+LogsPage) are still rendered via the transitional ``ft_response`` /
+``ft_page_response`` helpers — a later cleanup converts them to Jinja2.
+
+The instruments page has been migrated to APIRouter + Jinja2 in
+``routes/admin/instruments.py``.
 """
 
 import logging
@@ -13,25 +15,23 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
-from ..components.admin import (
+from ...components.admin import (
     AuthenticationPage,
     ConfigSyncPage,
-    InstrumentsPage,
     LDAPConfigForm,
     LDAPTestResult,
     LogsPage,
     SampleApiConfigForm,
     SampleApiPage,
-    SyncedInstrumentsSection,
 )
-from ..context import AppContext
-from ..models.auth_config import AuthMethod, LDAPConfig, validate_user_dn_pattern
-from ..models.sample_api_config import SampleApiConfig
-from ..rate_limit import client_identity, get_login_limiter
-from ..services.audit_log import audit
-from ..services.ldap import LDAPService, LDAPError
-from ..templating import ft_page_response, ft_response
-from .utils import get_username, require_admin, sanitize_string
+from ...context import AppContext
+from ...models.auth_config import AuthMethod, LDAPConfig, validate_user_dn_pattern
+from ...models.sample_api_config import SampleApiConfig
+from ...rate_limit import client_identity, get_login_limiter
+from ...services.audit_log import audit
+from ...services.ldap import LDAPService, LDAPError
+from ...templating import ft_page_response, ft_response
+from ..utils import get_username, require_admin, sanitize_string
 
 
 logger = logging.getLogger("seqsetup")
@@ -197,21 +197,6 @@ def register(app, ctx: AppContext) -> None:
     app.routes.append(Route("/admin/settings/ldap/test", test_ldap_connection, methods=["POST"]))
     app.routes.append(Route("/admin/settings/ldap/test-auth", test_ldap_auth, methods=["POST"]))
 
-    # ---- Instruments page ---------------------------------------------
-
-    def admin_instruments(request: Request) -> Response:
-        if err := require_admin(request):
-            return err
-        synced = ctx.instrument_definition_repo.list_all() if ctx.instrument_definition_repo else []
-        return ft_page_response(
-            request,
-            InstrumentsPage(synced),
-            page_title="Instruments",
-            active_route="/admin/instruments",
-        )
-
-    app.routes.append(Route("/admin/instruments", admin_instruments, methods=["GET"]))
-
     # ---- Config Sync (only if repo is available) ----------------------
 
     if ctx.profile_sync_config_repo is not None:
@@ -282,7 +267,7 @@ def register(app, ctx: AppContext) -> None:
                 outcome="success" if success else "failure",
                 items_synced=count,
             )
-            from ..data.instruments import clear_synced_instruments_cache
+            from ...data.instruments import clear_synced_instruments_cache
             clear_synced_instruments_cache()
 
             config = ctx.profile_sync_config_repo.get()
@@ -336,7 +321,7 @@ def register(app, ctx: AppContext) -> None:
             )
 
             if config.enabled and config.base_url:
-                from ..services.sample_api import check_connection
+                from ...services.sample_api import check_connection
                 success, msg = check_connection(config)
                 if not success:
                     config.enabled = False
@@ -373,7 +358,7 @@ def register(app, ctx: AppContext) -> None:
     def admin_logs(request: Request) -> Response:
         if err := require_admin(request):
             return err
-        from ..services.log_capture import get_captured_logs, get_log_stats
+        from ...services.log_capture import get_captured_logs, get_log_stats
 
         level = request.query_params.get("level", "") or None
         search = request.query_params.get("search", "") or None
@@ -393,50 +378,10 @@ def register(app, ctx: AppContext) -> None:
     def clear_logs(request: Request) -> Response:
         if err := require_admin(request):
             return err
-        from ..services.log_capture import clear_captured_logs, get_log_stats
+        from ...services.log_capture import clear_captured_logs, get_log_stats
         clear_captured_logs()
         audit("logs.cleared", actor=get_username(request), target="log_buffer")
         return ft_response(LogsPage([], get_log_stats(), message="Logs cleared"))
 
     app.routes.append(Route("/admin/logs", admin_logs, methods=["GET"]))
     app.routes.append(Route("/admin/logs/clear", clear_logs, methods=["POST"]))
-
-    # ---- Synced Instruments (only if repo is available) ---------------
-
-    if ctx.instrument_definition_repo is not None:
-
-        async def toggle_synced_instrument(request: Request) -> Response:
-            if err := require_admin(request):
-                return err
-            form = await request.form()
-            instrument_id = form.get("instrument_id", "")
-            enabled = form.get("enabled", "true").lower() == "true"
-            if instrument_id:
-                ctx.instrument_definition_repo.set_enabled(instrument_id, enabled)
-                audit(
-                    "instrument.toggled",
-                    actor=get_username(request),
-                    target=instrument_id,
-                    enabled=enabled,
-                )
-            return ft_response(SyncedInstrumentsSection(ctx.instrument_definition_repo.list_all()))
-
-        def enable_all_synced_instruments(request: Request) -> Response:
-            if err := require_admin(request):
-                return err
-            repo = ctx.instrument_definition_repo
-            for inst in repo.list_all():
-                repo.set_enabled(inst.id, True)
-            return ft_response(SyncedInstrumentsSection(repo.list_all(), message="All instruments enabled"))
-
-        def disable_all_synced_instruments(request: Request) -> Response:
-            if err := require_admin(request):
-                return err
-            repo = ctx.instrument_definition_repo
-            for inst in repo.list_all():
-                repo.set_enabled(inst.id, False)
-            return ft_response(SyncedInstrumentsSection(repo.list_all(), message="All instruments disabled"))
-
-        app.routes.append(Route("/admin/instruments/synced/toggle", toggle_synced_instrument, methods=["POST"]))
-        app.routes.append(Route("/admin/instruments/synced/enable-all", enable_all_synced_instruments, methods=["POST"]))
-        app.routes.append(Route("/admin/instruments/synced/disable-all", disable_all_synced_instruments, methods=["POST"]))

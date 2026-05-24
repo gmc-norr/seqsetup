@@ -1,0 +1,96 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Instruments" %}
+{% set active_route = "/admin/instruments" %}
+
+{% block content %}
+<div class="space-y-6" id="instruments-page">
+    <h2 class="text-2xl font-semibold">Instruments</h2>
+    <p class="text-slate-600">
+        Configure which instruments are available when setting up a new run.
+    </p>
+
+    {% if message %}
+        <div class="bg-green-100 border border-green-400 text-green-800 rounded px-3 py-2">{{ message }}</div>
+    {% endif %}
+
+    {% if not synced_instruments %}
+        <div class="bg-blue-50 border border-blue-300 rounded px-3 py-2">
+            <strong>Note:</strong>
+            No instruments have been synced from GitHub.
+            Using local configuration file (<code>config/instruments.yaml</code>) as fallback.
+            <a href="/admin/config-sync" class="text-blue-700 hover:underline">Configure sync</a>
+            to enable instrument management.
+        </div>
+    {% else %}
+        {% block synced_instruments_section %}
+        <section id="synced-instruments-section" class="space-y-3">
+            <h3 class="text-xl font-semibold">Synced Instruments</h3>
+            {% if message %}
+                <div class="bg-green-100 border border-green-400 text-green-800 rounded px-3 py-2">{{ message }}</div>
+            {% endif %}
+            <p class="text-sm text-slate-600">
+                Instruments synced from GitHub. Enable or disable which ones are available for new runs.
+            </p>
+
+            {% for group_title, group in [("Two-Color SBS Instruments", two_color), ("Four-Color SBS Instruments", four_color)] %}
+                {% if group %}
+                <div class="space-y-2">
+                    <h4 class="font-medium">{{ group_title }}</h4>
+                    <table class="w-full border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-100">
+                                <th class="border px-2 py-1 text-left w-16">Enabled</th>
+                                <th class="border px-2 py-1 text-left">Name</th>
+                                <th class="border px-2 py-1 text-left">Version</th>
+                                <th class="border px-2 py-1 text-left">Chemistry</th>
+                                <th class="border px-2 py-1 text-left">Flowcells</th>
+                                <th class="border px-2 py-1 text-left">DRAGEN</th>
+                                <th class="border px-2 py-1 text-left">Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for inst in group %}
+                            <tr>
+                                <td class="border px-2 py-1">
+                                    <input type="checkbox"
+                                           {% if inst.enabled %}checked{% endif %}
+                                           hx-post="/admin/instruments/synced/toggle"
+                                           hx-vals='{"instrument_id": "{{ inst.id }}", "enabled": "{{ "false" if inst.enabled else "true" }}"}'
+                                           hx-target="#synced-instruments-section"
+                                           hx-swap="outerHTML">
+                                </td>
+                                <td class="border px-2 py-1">{{ inst.name }}</td>
+                                <td class="border px-2 py-1">{{ inst.version or "—" }}</td>
+                                <td class="border px-2 py-1">{{ inst.chemistry_type }}</td>
+                                <td class="border px-2 py-1">{{ inst.flowcells|map(attribute="name")|join(", ") if inst.flowcells else "None" }}</td>
+                                <td class="border px-2 py-1">{{ "Yes" if inst.has_dragen_onboard else "No" }}</td>
+                                <td class="border px-2 py-1">{{ inst.source_file }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            {% endfor %}
+
+            <div class="flex gap-2 pt-2">
+                <button type="button"
+                        class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1 text-sm"
+                        hx-post="/admin/instruments/synced/enable-all"
+                        hx-target="#synced-instruments-section"
+                        hx-swap="outerHTML">
+                    Enable All
+                </button>
+                <button type="button"
+                        class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1 text-sm"
+                        hx-post="/admin/instruments/synced/disable-all"
+                        hx-target="#synced-instruments-section"
+                        hx-swap="outerHTML">
+                    Disable All
+                </button>
+            </div>
+        </section>
+        {% endblock %}
+    {% endif %}
+</div>
+{% endblock %}

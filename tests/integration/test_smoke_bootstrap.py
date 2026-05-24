@@ -114,3 +114,17 @@ def test_dashboard_tab_swap_returns_fragment(logged_in_client):
     assert "<head" not in response.text
     # The #dashboard wrapper IS in the fragment (HTMX swap target).
     assert 'id="dashboard"' in response.text
+
+
+def test_admin_instruments_renders(logged_in_client):
+    """GET /admin/instruments renders for an admin."""
+    response = logged_in_client.get("/admin/instruments")
+    assert response.status_code == 200
+    assert "Instruments" in response.text
+    assert 'id="instruments-page"' in response.text
+
+
+# Non-admin rejection test omitted: logged_in_client IS admin and there is
+# no separate standard-user client fixture defined in conftest.py.
+# A standard_user_seeded fixture exists for user seeding but no TestClient
+# fixture builds a session for it. Adding one is out of scope for 2.3.
