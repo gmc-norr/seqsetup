@@ -32,8 +32,14 @@ from .csrf import OriginCheckMiddleware
 from .data.instruments import set_instrument_definition_repo
 from .exception_handlers import install as install_exception_handlers
 from .middleware import AuthMiddleware
-from .routes import admin, api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, runs, samples, validation, wizard
-from .routes.admin import authentication as admin_authentication, instruments as admin_instruments, logs as admin_logs, sample_api as admin_sample_api
+from .routes import api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, runs, samples, validation, wizard
+from .routes.admin import (
+    authentication as admin_authentication,
+    config_sync as admin_config_sync,
+    instruments as admin_instruments,
+    logs as admin_logs,
+    sample_api as admin_sample_api,
+)
 from .security_headers import SecurityHeadersMiddleware
 from .services.log_capture import setup_log_capture
 from .startup import (
@@ -131,8 +137,8 @@ app.mount("/api", _api_subapp)
 #   - /runs/{run_id}/validation, /runs/{run_id}/samples/... before /runs/{run_id}
 #   - /runs/{run_id} (edit page) registered LAST
 app.include_router(auth.make_router(auth_service))
-admin.register(app, _ctx)
 app.include_router(admin_authentication.router)
+app.include_router(admin_config_sync.router)
 app.include_router(admin_instruments.router)
 app.include_router(admin_logs.router)
 app.include_router(admin_sample_api.router)

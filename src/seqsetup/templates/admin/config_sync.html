@@ -1,0 +1,137 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Config Sync" %}
+{% set active_route = "/admin/config-sync" %}
+
+{% block content %}
+{% block config_sync_page %}
+<div id="config-sync-page" class="space-y-6">
+    <div>
+        <h2 class="text-2xl font-semibold">GitHub Config Sync</h2>
+        <p class="text-slate-600">
+            Sync application profiles, test profiles, instruments, and index kits from a GitHub repository.
+        </p>
+    </div>
+
+    {% if message %}
+        <div class="bg-green-100 border border-green-400 text-green-800 rounded px-3 py-2">{{ message }}</div>
+    {% endif %}
+
+    {# Status panel #}
+    <div class="bg-slate-100 border rounded p-4 space-y-1 text-sm">
+        <div><strong>Repo:</strong> {{ config.github_repo_url or "—" }}</div>
+        <div><strong>Branch:</strong> {{ config.github_branch or "—" }}</div>
+        <div><strong>Sync enabled:</strong> {{ "Yes" if config.sync_enabled else "No" }}</div>
+        <div><strong>Interval:</strong> every {{ config.sync_interval_minutes }} minutes</div>
+    </div>
+
+    {# Config form #}
+    <form class="bg-white border rounded-lg p-6 shadow-sm space-y-4"
+          hx-post="/admin/config-sync/config"
+          hx-target="#config-sync-page"
+          hx-swap="outerHTML">
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">Repository</legend>
+            <div>
+                <label for="github_repo_url" class="block text-sm font-medium mb-1">Repository URL</label>
+                <input type="text" name="github_repo_url" id="github_repo_url"
+                       value="{{ config.github_repo_url }}"
+                       placeholder="https://github.com/org/repo or org/repo"
+                       class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label for="github_branch" class="block text-sm font-medium mb-1">Branch</label>
+                <input type="text" name="github_branch" id="github_branch"
+                       value="{{ config.github_branch }}"
+                       class="w-full border rounded px-3 py-2">
+            </div>
+        </fieldset>
+
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">Paths</legend>
+            {% for field, label in [
+                ('test_profiles_path', 'Test Profiles Path'),
+                ('application_profiles_path', 'Application Profiles Path'),
+                ('instruments_path', 'Instruments Path'),
+                ('index_kits_path', 'Index Kits Path'),
+            ] %}
+            <div>
+                <label for="{{ field }}" class="block text-sm font-medium mb-1">{{ label }}</label>
+                <input type="text" name="{{ field }}" id="{{ field }}"
+                       value="{{ config|attr(field) }}"
+                       class="w-full border rounded px-3 py-2">
+            </div>
+            {% endfor %}
+        </fieldset>
+
+        <fieldset class="space-y-3">
+            <legend class="text-lg font-semibold">Sync Behaviour</legend>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" name="sync_enabled" {% if config.sync_enabled %}checked{% endif %}>
+                <span>Enable scheduled sync (profiles)</span>
+            </label>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" name="sync_instruments_enabled" {% if config.sync_instruments_enabled %}checked{% endif %}>
+                <span>Also sync instruments</span>
+            </label>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" name="sync_index_kits_enabled" {% if config.sync_index_kits_enabled %}checked{% endif %}>
+                <span>Also sync index kits</span>
+            </label>
+            <div>
+                <label for="sync_interval_minutes" class="block text-sm font-medium mb-1">Sync Interval (minutes)</label>
+                <input type="number" name="sync_interval_minutes" id="sync_interval_minutes"
+                       value="{{ config.sync_interval_minutes }}" min="1" max="1440"
+                       class="w-32 border rounded px-3 py-2">
+                <p class="text-xs text-slate-500 mt-1">Clamped to [1, 1440] minutes.</p>
+            </div>
+        </fieldset>
+
+        <div>
+            <button type="submit" class="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">Save Configuration</button>
+        </div>
+    </form>
+
+    {# Manual sync action #}
+    <div class="bg-white border rounded-lg p-6 shadow-sm space-y-3">
+        <h3 class="text-xl font-semibold">Manual Sync</h3>
+        <p class="text-sm text-slate-600">Pull from the configured repository now.</p>
+        <button type="button"
+                class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1"
+                hx-post="/admin/config-sync/sync"
+                hx-target="#config-sync-page"
+                hx-swap="outerHTML"
+                hx-confirm="Run manual sync now?">
+            Run Manual Sync
+        </button>
+    </div>
+
+    {# Synced profile lists #}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section class="bg-white border rounded-lg p-4 shadow-sm">
+            <h3 class="text-lg font-semibold mb-2">Application Profiles ({{ app_profiles|length }})</h3>
+            {% if app_profiles %}
+                <ul class="text-sm space-y-1">
+                    {% for ap in app_profiles %}
+                    <li>{{ ap.name }} v{{ ap.version }} — {{ ap.application_name }}</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-slate-500 italic text-sm">None synced yet.</p>
+            {% endif %}
+        </section>
+        <section class="bg-white border rounded-lg p-4 shadow-sm">
+            <h3 class="text-lg font-semibold mb-2">Test Profiles ({{ test_profiles|length }})</h3>
+            {% if test_profiles %}
+                <ul class="text-sm space-y-1">
+                    {% for tp in test_profiles %}
+                    <li>{{ tp.test_name }} v{{ tp.version }} — {{ tp.test_type }}</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-slate-500 italic text-sm">None synced yet.</p>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock %}
+{% endblock %}

@@ -242,6 +242,14 @@ def test_admin_users_old_delete_url_rejected(logged_in_client):
     assert response.status_code in (404, 405)
 
 
+def test_admin_config_sync_renders(logged_in_client):
+    """GET /admin/config-sync renders for admin."""
+    response = logged_in_client.get("/admin/config-sync")
+    assert response.status_code == 200
+    assert "Config Sync" in response.text or "GitHub Config Sync" in response.text
+    assert 'id="config-sync-page"' in response.text
+
+
 def test_admin_authentication_renders(logged_in_client):
     """GET /admin/authentication renders for admin."""
     response = logged_in_client.get("/admin/authentication")
