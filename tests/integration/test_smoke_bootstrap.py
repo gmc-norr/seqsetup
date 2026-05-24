@@ -156,3 +156,49 @@ def test_admin_logs_htmx_returns_fragment(logged_in_client):
     assert response.status_code == 200
     assert "<html" not in response.text
     assert 'id="logs-page"' in response.text
+
+
+def test_admin_api_tokens_renders(logged_in_client):
+    """GET /admin/api-tokens renders the empty-state page for admin."""
+    response = logged_in_client.get("/admin/api-tokens")
+    assert response.status_code == 200
+    assert "API Tokens" in response.text
+    assert 'id="api-tokens-page"' in response.text
+    assert "No API tokens have been created yet." in response.text
+
+
+def test_admin_api_tokens_revoke_uses_delete_method(logged_in_client):
+    """The new DELETE endpoint works (URL change from POST .../revoke)."""
+    create_response = logged_in_client.post(
+        "/admin/api-tokens/create",
+        data={"name": "test-revoke-token", "expiry_days": "30"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert create_response.status_code == 200
+
+    # Find the newly created token id via the list page
+    list_response = logged_in_client.get("/admin/api-tokens")
+    assert "test-revoke-token" in list_response.text
+    import re
+    m = re.search(r'hx-delete="/admin/api-tokens/([^"]+)"', list_response.text)
+    assert m, "DELETE URL with token id not found in rendered page"
+    token_id = m.group(1)
+
+    # DELETE the token
+    delete_response = logged_in_client.delete(
+        f"/admin/api-tokens/{token_id}",
+        headers={"Origin": "http://testserver"},
+    )
+    assert delete_response.status_code == 200
+    assert "revoked" in delete_response.text.lower()
+
+
+def test_admin_api_tokens_old_revoke_url_rejected(logged_in_client):
+    """The OLD POST .../revoke endpoint no longer exists (regression test
+    for the URL cleanup)."""
+    response = logged_in_client.post(
+        "/admin/api-tokens/some-id/revoke",
+        headers={"Origin": "http://testserver"},
+    )
+    # Either 404 (no route) or 405 (method not allowed) is acceptable.
+    assert response.status_code in (404, 405)
