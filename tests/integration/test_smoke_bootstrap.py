@@ -311,3 +311,39 @@ def test_indexes_old_delete_url_rejected(logged_in_client):
         headers={"Origin": "http://testserver"},
     )
     assert response.status_code in (404, 405)
+
+
+def test_validation_page_renders_with_alpine_tabs(logged_in_client, fresh_app):
+    """GET /runs/{id}/validation renders all tab contents in one response
+    and includes the Alpine tab switcher state."""
+    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    app, ctx, db = fresh_app
+    run = SequencingRun(
+        run_name="ValidationSmoke",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        created_by="admin",
+    )
+    ctx.run_repo.save(run)
+
+    response = logged_in_client.get(f"/runs/{run.id}/validation")
+    assert response.status_code == 200
+    assert "Validation: ValidationSmoke" in response.text
+    # Alpine tab state
+    assert 'x-data="{ activeTab: \'issues\' }"' in response.text
+    # All four tab content slots are present (pre-rendered)
+    assert "x-show=\"activeTab === 'issues'\"" in response.text
+    assert "x-show=\"activeTab === 'heatmaps'\"" in response.text
+    assert "x-show=\"activeTab === 'colorbalance'\"" in response.text
+    assert "x-show=\"activeTab === 'darkcycles'\"" in response.text
+    # Approval bar present
+    assert 'id="validation-approval-bar"' in response.text
+
+
+def test_validation_tab_swap_endpoint_removed(logged_in_client):
+    """The HTMX tab-swap endpoint /validation/tab/{tab} is REMOVED.
+    Alpine pre-renders all tabs; the swap endpoint no longer exists."""
+    response = logged_in_client.get(
+        "/runs/some-id/validation/tab/issues",
+    )
+    # Either 404 (no route) or some other non-200 — the key is "no HTMX swap path".
+    assert response.status_code in (404, 405)

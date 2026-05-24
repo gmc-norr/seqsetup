@@ -1,0 +1,100 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Validation - " ~ (run.run_name or run.id) %}
+{% set active_route = "/runs/" ~ run.id %}
+
+{% block content %}
+<div class="space-y-4" id="validation-page">
+    <div class="flex items-center gap-3">
+        <a href="/runs/{{ run.id }}" class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-sm">← Back to Run</a>
+        <h2 class="text-2xl font-semibold">Validation: {{ run.run_name or 'Unnamed Run' }}</h2>
+    </div>
+
+    {% block approval_bar %}
+    <div id="validation-approval-bar" class="bg-white border rounded p-3 flex items-center gap-3">
+        {% if run.validation_approved %}
+            <span class="font-semibold text-green-700">Validation approved</span>
+            <button type="button"
+                    class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1 text-sm"
+                    hx-post="/runs/{{ run.id }}/validation/unapprove"
+                    hx-target="#validation-approval-bar"
+                    hx-swap="outerHTML">
+                Revoke Approval
+            </button>
+        {% elif can_approve %}
+            <span class="text-green-700">Validation passed</span>
+            <button type="button"
+                    class="bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1 text-sm"
+                    hx-post="/runs/{{ run.id }}/validation/approve"
+                    hx-target="#validation-approval-bar"
+                    hx-swap="outerHTML">
+                Approve Validation
+            </button>
+        {% else %}
+            <span class="text-red-700">Validation has issues — resolve before approving</span>
+        {% endif %}
+    </div>
+    {% endblock %}
+
+    {# Alpine-driven tab switcher. All tab contents are pre-rendered;
+       Alpine toggles visibility via x-show. #}
+    {% block validation_tabs %}
+    <div id="validation-tabs" x-data="{ activeTab: 'issues' }">
+        <div class="flex gap-2 border-b">
+            <button type="button"
+                    class="px-4 py-2 -mb-px border-b-2"
+                    :class="activeTab === 'issues' ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-900'"
+                    x-on:click="activeTab = 'issues'">
+                {% if issue_count > 0 %}Issues ({{ issue_count }}){% else %}Issues{% endif %}
+            </button>
+
+            {% if has_matrices %}
+            <button type="button"
+                    class="px-4 py-2 -mb-px border-b-2"
+                    :class="activeTab === 'heatmaps' ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-900'"
+                    x-on:click="activeTab = 'heatmaps'">
+                Heatmaps
+            </button>
+            {% else %}
+            <button type="button" disabled class="px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400 cursor-not-allowed" title="No lanes with multiple indexed samples">
+                Heatmaps
+            </button>
+            {% endif %}
+
+            {% if color_balance_enabled and has_color_balance %}
+            <button type="button"
+                    class="px-4 py-2 -mb-px border-b-2"
+                    :class="activeTab === 'colorbalance' ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-900'"
+                    x-on:click="activeTab = 'colorbalance'">
+                {% if color_balance_issues > 0 %}Color Balance ({{ color_balance_issues }}){% else %}Color Balance{% endif %}
+            </button>
+            {% else %}
+            <button type="button" disabled class="px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400 cursor-not-allowed"
+                    title="{{ 'No indexed samples' if color_balance_enabled else 'Not applicable for this instrument' }}">
+                Color Balance
+            </button>
+            {% endif %}
+
+            {% if color_balance_enabled %}
+            <button type="button"
+                    class="px-4 py-2 -mb-px border-b-2"
+                    :class="activeTab === 'darkcycles' ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-900'"
+                    x-on:click="activeTab = 'darkcycles'">
+                {% if dark_cycle_count > 0 %}Dark Cycles ({{ dark_cycle_count }}){% else %}Dark Cycles{% endif %}
+            </button>
+            {% else %}
+            <button type="button" disabled class="px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400 cursor-not-allowed" title="Not applicable for this instrument">
+                Dark Cycles
+            </button>
+            {% endif %}
+        </div>
+
+        <div id="validation-tab-content" class="mt-4">
+            <div x-show="activeTab === 'issues'">{{ issues_html|safe }}</div>
+            <div x-show="activeTab === 'heatmaps'" x-cloak>{{ heatmaps_html|safe }}</div>
+            <div x-show="activeTab === 'colorbalance'" x-cloak>{{ color_balance_html|safe }}</div>
+            <div x-show="activeTab === 'darkcycles'" x-cloak>{{ dark_cycles_html|safe }}</div>
+        </div>
+    </div>
+    {% endblock %}
+</div>
+{% endblock %}

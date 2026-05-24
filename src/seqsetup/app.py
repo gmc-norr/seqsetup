@@ -151,7 +151,7 @@ wizard.register(app, _ctx)
 samples.register(app, _ctx)
 runs.register(app, _ctx)
 export.register(app, _ctx)
-validation.register(app, _ctx)
+app.include_router(validation.router)
 main.register(app, _ctx)
 
 
