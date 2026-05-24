@@ -115,6 +115,27 @@ def fresh_app(isolated_mongo, monkeypatch, tmp_path):
     yield app_module.app, app_module._ctx, isolated_mongo
 
 
+def disable_repos(ctx, *repo_keys: str) -> None:
+    """Null out repos on BOTH the test's ctx AND startup._repos.
+
+    Routes migrated to Depends(get_ctx) read from startup._repos
+    per-request — mutating only ctx.<repo> = None has no effect on
+    those routes. This helper does both mutations atomically.
+
+    Repo key examples: "test_profile", "app_profile", "run",
+    "index_kit", "local_user", "auth_config", "sample_api_config".
+    Mirrors the keys in startup._REPO_REGISTRY.
+    """
+    from seqsetup import startup
+    for key in repo_keys:
+        # Set the attribute name on the ctx (key + "_repo" — the convention)
+        setattr(ctx, f"{key}_repo", None)
+        # And null the startup module-level entry so get_app_context()
+        # rebuilds AppContext without the repo too.
+        if key in startup._repos:
+            startup._repos[key] = None
+
+
 @pytest.fixture
 def admin_user_seeded(fresh_app):
     """Insert a known-good admin into the LocalUser repo and return creds."""

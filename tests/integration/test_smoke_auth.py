@@ -60,9 +60,12 @@ class TestLogout:
         assert "/login" in response.headers.get("location", "")
 
 
-class TestSessionFixationDefense:
-    """The login handler clears the session before applying the new user —
-    a session ID an attacker pre-planted on a shared workstation is dropped.
+class TestAlreadyLoggedInRedirect:
+    """The /login GET redirects users who already have a valid session.
+
+    Note: this does NOT test the session-fixation defence (sess.clear()
+    inside _login_user). That unit-level coverage lives in
+    tests/unit/test_auth_session_fixation.py.
     """
 
     def test_login_page_redirects_already_logged_in_user(self, logged_in_client):

@@ -56,6 +56,16 @@
         </nav>
 
         <div class="main-content">
+            {# HTMX error-fragment landing slots — populated by the exception handlers:
+               - #form-errors:  RequestValidationError 422s (Pydantic Form failures)
+               - #error-banner: HTTPException 4xx (auth/permission/run-state)
+               The handlers use HX-Retarget to swap into these by id; without the
+               slots, HTMX silently drops the response. empty:hidden keeps the
+               wrappers invisible when empty.
+               tailwind: empty:hidden
+               #}
+            <div id="form-errors" class="empty:hidden"></div>
+            <div id="error-banner" class="empty:hidden"></div>
             {% block content %}{% endblock %}
         </div>
     </div>

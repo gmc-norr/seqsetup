@@ -74,23 +74,35 @@ These rules must NEVER be violated.
 ## Conventions
 
 ### Route handler pattern (follow this order)
+
+See `ARCHITECTURE.md` for the canonical patterns. Quick reference for
+run-editing handlers:
+
 ```python
-def handler(req, run_id: str, ...):
-    # 1. Validate and sanitize inputs
-    value = value.strip()[:256]
-    # 2. Load data from repository
-    run = ctx.run_repo.get_by_id(run_id)
-    if not run: return Response("Not found", status_code=404)
-    # 3. Check permissions and editable state
-    if err := check_run_editable(run): return err
-    # 4. Mutate model
-    run.add_sample(sample)
-    # 5. Touch and save
-    run.touch(updated_by=get_username(req))
-    ctx.run_repo.save(run)
-    # 6. Return FastHTML component
-    return SomeComponent(...)
+from typing import Annotated
+from fastapi import Depends, Form
+from .dependencies import get_editable_run, saving_run
+from ..models.sequencing_run import SequencingRun
+
+@router.post("/runs/{run_id}/samples", response_class=HTMLResponse)
+def add_sample(
+    request: Request,
+    form: Annotated[AddSampleForm, Form()],
+    run: SequencingRun = Depends(get_editable_run),
+    ctx: AppContext = Depends(get_ctx),
+):
+    # 1. Pydantic Form() already validated + sanitized the inputs
+    # 2. get_editable_run loaded the run AND raised 403 if not editable
+    # 3. Mutate the model, then touch+save inside the CM:
+    with saving_run(run, ctx, request):
+        run.add_sample(form.to_sample())
+    # 4. Return the rendered fragment (block_name="..." for HTMX swap):
+    return render(request, "runs/edit.html", {...}, block_name="sample_table")
 ```
+
+For admin-only routes, attach the dep at router level:
+`router = APIRouter(dependencies=[Depends(require_admin_dep)])`.
+
 
 ### Models
 - Python `@dataclass` with `to_dict()` / `from_dict()` for MongoDB serialization

@@ -277,6 +277,27 @@ def test_admin_users_last_admin_cannot_be_deleted(logged_in_client, fresh_app):
     assert "last admin" in response.text.lower()
 
 
+def test_admin_users_last_admin_cannot_be_demoted(logged_in_client, fresh_app):
+    """The last admin cannot have their role changed to STANDARD via edit."""
+    app, ctx, db = fresh_app
+    admins = [u for u in ctx.local_user_repo.list_all() if u.role.value == "admin"]
+    assert len(admins) >= 1
+    last_admin = admins[0]
+
+    response = logged_in_client.post(
+        f"/admin/users/{last_admin.username}/edit",
+        data={
+            "display_name": last_admin.display_name,
+            "email": last_admin.email or "",
+            "role": "standard",
+            "password": "",
+        },
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 200
+    assert "last admin" in response.text.lower()
+
+
 def test_indexes_list_renders(logged_in_client):
     """GET /indexes renders the empty-state page."""
     response = logged_in_client.get("/indexes")
@@ -294,14 +315,13 @@ def test_indexes_import_renders(logged_in_client):
 
 
 def test_indexes_delete_uses_delete_method(logged_in_client):
-    """The DELETE endpoint responds (returns 200 with error fragment when kit missing)."""
+    """The DELETE endpoint responds — the key signal is not 405 Method Not Allowed."""
     response = logged_in_client.delete(
         "/indexes/kits/nonexistent/1.0.0",
         headers={"Origin": "http://testserver"},
     )
-    # Either 200 (rendered "not found" fragment) or 404 are acceptable;
-    # the key signal is "not 405 method not allowed".
-    assert response.status_code in (200, 403, 404)
+    # Admin deleting a nonexistent kit now raises 404 (consistent with non-admin path).
+    assert response.status_code != 405
 
 
 def test_indexes_old_delete_url_rejected(logged_in_client):

@@ -15,7 +15,7 @@ Look at these first when adding new code in their category:
 |---|---|
 | Standalone page (GET only) | `src/seqsetup/routes/profiles.py` + `src/seqsetup/templates/profiles.html` |
 | Page with HTMX swap fragments | `src/seqsetup/routes/dashboard.py` + `src/seqsetup/templates/dashboard.html` |
-| Admin form with Pydantic + router-level admin guard | `src/seqsetup/routes/local_users.py` + `src/seqsetup/templates/admin/users.html` |
+| Admin form with Pydantic + router-level admin guard | `src/seqsetup/routes/local_users.py` + `src/seqsetup/templates/admin/local_users.html` |
 | Run-editing handler (load + check + mutate + save) | `src/seqsetup/routes/runs.py:update_run_name` |
 | Alpine multi-select with bulk HTMX action | `src/seqsetup/templates/runs/edit.html` (sample-table section) |
 

@@ -257,9 +257,9 @@ def remove_index_kit(
     if not user.is_admin:
         kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
         if not kit:
-            return _error_fragment(
-                request,
-                f"Index kit '{name}' version '{version}' not found.",
+            raise HTTPException(
+                status_code=404,
+                detail=f"Index kit '{name}' version '{version}' not found.",
             )
         if kit.created_by != user.username:
             raise HTTPException(status_code=403, detail="You can only remove kits you created")
@@ -274,18 +274,12 @@ def remove_index_kit(
             kit_version=version,
         )
 
-    kits = ctx.index_kit_repo.list_all()
     if not deleted:
-        return render(
-            request,
-            "indexes/list.html",
-            {
-                "kits": kits,
-                "user": user,
-                "error_message": f"Index kit '{name}' version '{version}' not found.",
-            },
-            block_name="kit_list_section",
+        raise HTTPException(
+            status_code=404,
+            detail=f"Index kit '{name}' version '{version}' not found.",
         )
+    kits = ctx.index_kit_repo.list_all()
     return render(
         request,
         "indexes/list.html",

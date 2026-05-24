@@ -10,6 +10,7 @@ These cover the clinically-sensitive paths:
 
 import pytest
 
+from .conftest import disable_repos
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (
@@ -36,14 +37,7 @@ def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
     # Strip the profile repos so the application-profile validator and the
     # missing_test_id check both short-circuit. Tests that want to exercise
     # the profile-driven path should seed TestProfile + ApplicationProfile.
-    ctx.test_profile_repo = None
-    ctx.app_profile_repo = None
-    # Also null the startup-level repo cache so that routes using
-    # Depends(get_ctx) — which call get_app_context() each request — also
-    # receive None for these repos.
-    import seqsetup.startup as _startup
-    _startup._repos["test_profile"] = None
-    _startup._repos["app_profile"] = None
+    disable_repos(ctx, "test_profile", "app_profile")
 
     run = SequencingRun(
         id=run_id or "smoke-validation-run",
