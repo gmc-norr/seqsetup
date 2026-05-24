@@ -202,3 +202,57 @@ def test_admin_api_tokens_old_revoke_url_rejected(logged_in_client):
     )
     # Either 404 (no route) or 405 (method not allowed) is acceptable.
     assert response.status_code in (404, 405)
+
+
+def test_admin_users_renders(logged_in_client):
+    """GET /admin/users renders for admin (shows seeded admin user)."""
+    response = logged_in_client.get("/admin/users")
+    assert response.status_code == 200
+    assert "Local Users" in response.text
+    assert 'id="local-users-page"' in response.text
+    # The conftest admin user should be in the table.
+    assert "x-data=\"{ editing: false }\"" in response.text
+
+
+def test_admin_users_delete_uses_delete_method(logged_in_client, fresh_app):
+    """The new DELETE endpoint works (URL change from POST .../delete)."""
+    from seqsetup.models.local_user import LocalUser
+    from seqsetup.models.user import UserRole
+    app, ctx, db = fresh_app
+
+    # Seed a deletable standard user (the admin can't be deleted — last admin guard).
+    target = LocalUser(username="todelete", display_name="To Delete", role=UserRole.STANDARD)
+    target.set_password("Str0ngPassw0rd!2024")
+    ctx.local_user_repo.save(target)
+
+    response = logged_in_client.delete(
+        "/admin/users/todelete",
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 200
+    assert "deleted" in response.text.lower()
+
+
+def test_admin_users_old_delete_url_rejected(logged_in_client):
+    """OLD POST /admin/users/{u}/delete must return 404/405 (URL cleanup)."""
+    response = logged_in_client.post(
+        "/admin/users/some-user/delete",
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code in (404, 405)
+
+
+def test_admin_users_last_admin_cannot_be_deleted(logged_in_client, fresh_app):
+    """Last-admin guard preserved across the URL rewrite."""
+    app, ctx, db = fresh_app
+    # The conftest seeds exactly one admin. Try to delete them.
+    admins = [u for u in ctx.local_user_repo.list_all() if u.role.value == "admin"]
+    assert len(admins) >= 1
+    last_admin = admins[0]
+
+    response = logged_in_client.delete(
+        f"/admin/users/{last_admin.username}",
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 200
+    assert "last admin" in response.text.lower()

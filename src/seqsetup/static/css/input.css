@@ -4,3 +4,7 @@
 /* Legacy custom CSS — kept during the migration, deleted in Phase 4 once no template
    references the legacy class names. */
 @import "./legacy.css";
+
+[x-cloak] {
+    display: none !important;
+}
