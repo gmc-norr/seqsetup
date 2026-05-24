@@ -11,6 +11,7 @@ from seqsetup.models.sequencing_run import RunStatus, SequencingRun
 from seqsetup.models.user import UserRole
 from seqsetup.routes.dependencies import (
     _load_and_check_editable,
+    get_archivable_run,
     is_htmx_request,
     require_admin_dep,
     saving_run,
@@ -186,6 +187,52 @@ class TestSavingRun:
             run.status = RunStatus.ARCHIVED
         assert run.validation_approved is True
         assert ctx.run_repo.save_calls == ["r1"]
+
+
+# ---------------------------------------------------------------------------
+# get_archivable_run
+# ---------------------------------------------------------------------------
+
+
+class TestGetArchivableRun:
+    """get_archivable_run loads any run regardless of status; 404 if missing."""
+
+    def _make_run(self, status, run_id="r1"):
+        run = SequencingRun(status=status)
+        run.id = run_id
+        return run
+
+    def _ctx_with(self, runs=()):
+        repo = _FakeRunRepo(runs)
+
+        class _Ctx:
+            run_repo = repo
+
+        return _Ctx()
+
+    def test_missing_run_raises_404(self):
+        ctx = self._ctx_with([])
+        with pytest.raises(HTTPException) as exc:
+            get_archivable_run("missing", ctx)
+        assert exc.value.status_code == 404
+
+    def test_draft_run_returned(self):
+        run = self._make_run(RunStatus.DRAFT)
+        ctx = self._ctx_with([run])
+        result = get_archivable_run("r1", ctx)
+        assert result is run
+
+    def test_ready_run_returned(self):
+        run = self._make_run(RunStatus.READY)
+        ctx = self._ctx_with([run])
+        result = get_archivable_run("r1", ctx)
+        assert result is run
+
+    def test_archived_run_returned(self):
+        run = self._make_run(RunStatus.ARCHIVED)
+        ctx = self._ctx_with([run])
+        result = get_archivable_run("r1", ctx)
+        assert result is run
 
 
 # ---------------------------------------------------------------------------

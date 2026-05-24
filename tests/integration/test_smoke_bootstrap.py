@@ -90,3 +90,27 @@ def test_profiles_page_renders_populated(fresh_app, logged_in_client):
     assert "Whole Genome" in response.text
     # The settings-summary cell with Foo: bar (SoftwareVersion is excluded)
     assert "Foo: bar" in response.text
+
+
+def test_dashboard_renders(logged_in_client):
+    """GET / renders the dashboard page (empty-state path)."""
+    response = logged_in_client.get("/", follow_redirects=False)
+    assert response.status_code == 200
+    # Empty state — no runs seeded
+    assert "No Runs Yet" in response.text
+    assert 'id="dashboard"' in response.text
+
+
+def test_dashboard_tab_swap_returns_fragment(logged_in_client):
+    """GET /dashboard/tab/ready with HX-Request returns a block fragment,
+    not the full app shell."""
+    response = logged_in_client.get(
+        "/dashboard/tab/ready",
+        headers={"HX-Request": "true"},
+    )
+    assert response.status_code == 200
+    # Fragment: NO <html>, NO <head> — just the dashboard_content block.
+    assert "<html" not in response.text
+    assert "<head" not in response.text
+    # The #dashboard wrapper IS in the fragment (HTMX swap target).
+    assert 'id="dashboard"' in response.text

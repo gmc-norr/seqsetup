@@ -83,6 +83,24 @@ def get_editable_run(
     return _load_and_check_editable(run_id, ctx.run_repo)
 
 
+def get_archivable_run(
+    run_id: str,
+    ctx: AppContext = Depends(get_ctx),
+) -> SequencingRun:
+    """Load a run for archive/delete; raise 404 if missing.
+
+    Unlike `get_editable_run` (which requires DRAFT), this dep does NOT
+    check status — archive is valid from DRAFT and READY, and delete is
+    valid from ARCHIVED. The handler is responsible for the state-machine
+    check (`check_status_transition` for archive, explicit status guard
+    for delete).
+    """
+    run = ctx.run_repo.get_by_id(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run
+
+
 @contextmanager
 def saving_run(
     run: SequencingRun,
