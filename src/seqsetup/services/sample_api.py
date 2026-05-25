@@ -1,5 +1,6 @@
 """Service for fetching worksheets and samples from an external API."""
 
+import http.client
 import ipaddress
 import json
 import logging
@@ -8,8 +9,6 @@ import socket
 import ssl
 import threading
 import time
-import urllib.request
-import urllib.error
 from urllib.parse import urlparse
 from typing import Optional, Tuple
 
@@ -66,27 +65,45 @@ class SampleApiError(Exception):
     pass
 
 
+# Extra IPv4 ranges that ``ipaddress.is_private`` does NOT cover but should
+# never be reachable from a clinical app: CGNAT (RFC 6598) and IETF protocol
+# assignments (RFC 6890). Cloud-host neighbors can sit on CGNAT; protocol-
+# assignment space leaks across cloud tenancy boundaries in known cases.
+_EXTRA_BLOCKED_V4 = (
+    ipaddress.ip_network("100.64.0.0/10"),    # RFC 6598 CGNAT
+    ipaddress.ip_network("192.0.0.0/24"),     # RFC 6890 protocol assignments
+)
+
+
 def _is_private_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True if ``ip`` is loopback, link-local, private, multicast, reserved,
-    or unspecified — i.e. anything that points at the host's own networks
-    rather than the public internet.
+    unspecified, or in one of the extra-blocked ranges (CGNAT, IETF protocol
+    assignments) — i.e. anything that points at the host's own networks or
+    at infrastructure that should never carry LIMS traffic.
 
     Used by ``_validate_url`` to refuse SSRF targets: even with admin auth,
-    the LIMS URL must not be able to address the host's loopback (127.0.0.0/8,
-    ::1), link-local (169.254.0.0/16, fe80::/10), or RFC1918 private ranges.
+    the LIMS URL must not be able to address the host's loopback
+    (127.0.0.0/8, ::1), link-local (169.254.0.0/16, fe80::/10), RFC1918
+    private, or CGNAT ranges.
     """
-    return (
+    if (
         ip.is_loopback
         or ip.is_link_local
         or ip.is_private
         or ip.is_multicast
         or ip.is_reserved
         or ip.is_unspecified
-    )
+    ):
+        return True
+    if isinstance(ip, ipaddress.IPv4Address):
+        return any(ip in net for net in _EXTRA_BLOCKED_V4)
+    return False
 
 
-def _resolve_hostname_ips(hostname: str) -> list[ipaddress._BaseAddress]:
-    """Resolve ``hostname`` to all of its A/AAAA records.
+def _resolve_hostname_ips(
+    hostname: str,
+) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Resolve ``hostname`` to all of its A/AAAA records (deduplicated).
 
     Raises ``SampleApiError`` if resolution fails — we cannot validate a
     target we cannot resolve, and proceeding would leak the API key to an
@@ -96,10 +113,14 @@ def _resolve_hostname_ips(hostname: str) -> list[ipaddress._BaseAddress]:
         infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
     except OSError as exc:
         raise SampleApiError(f"Cannot resolve LIMS hostname {hostname!r}: {exc}")
-    ips: list[ipaddress._BaseAddress] = []
+    seen: set[str] = set()
+    ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     for info in infos:
         sockaddr = info[4]
         ip_text = sockaddr[0]
+        if ip_text in seen:
+            continue
+        seen.add(ip_text)
         try:
             ips.append(ipaddress.ip_address(ip_text))
         except ValueError:
@@ -108,9 +129,14 @@ def _resolve_hostname_ips(hostname: str) -> list[ipaddress._BaseAddress]:
     return ips
 
 
-def _validate_url(url: str) -> None:
-    """Validate that a URL uses HTTP(S), has a hostname, and resolves only to
-    public IPs.
+def _validate_url(
+    url: str,
+) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Validate the URL and return the resolved+validated IPs.
+
+    Returns the IPs the caller MUST pin its connection to. This single
+    resolve-and-validate pass is the trust boundary: any subsequent code
+    that re-resolves the hostname re-opens a DNS rebinding window.
 
     Two independent restrictions:
 
@@ -118,13 +144,13 @@ def _validate_url(url: str) -> None:
        in via ``SEQSETUP_LIMS_ALLOW_HTTP=1`` — plain HTTP would leak the
        configured api-key on the wire.
 
-    2. Address: the hostname must resolve to public addresses only. Loopback,
-       link-local, RFC1918, multicast, reserved, and unspecified ranges are
-       refused after DNS resolution to prevent the LIMS URL from being used
-       as an SSRF pivot into the host's own networks. The
-       ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1`` env opt-in disables this check
-       for dev/test environments that point at the mock-LIMS on localhost.
-       Production deployments MUST NOT set that variable.
+    2. Address: the hostname must resolve to public addresses only.
+       Loopback, link-local, RFC1918 private, multicast, reserved,
+       unspecified, CGNAT, and IETF protocol-assignment ranges are refused
+       after DNS resolution. Operators whose LIMS lives on a private
+       corporate network opt in via ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1``
+       — a deliberate per-deployment decision that disables only the
+       private-range check, not the pinning that follows.
     """
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
@@ -142,30 +168,80 @@ def _validate_url(url: str) -> None:
                 f"Use HTTPS, or set SEQSETUP_LIMS_ALLOW_HTTP=1 to opt in (not for production)."
             )
 
-    allow_private = os.environ.get("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", "").lower() in ("1", "true", "yes")
-    if allow_private:
-        return
-
     resolved = _resolve_hostname_ips(hostname)
     if not resolved:
         raise SampleApiError(f"Hostname {hostname!r} resolved to no addresses")
-    for ip in resolved:
-        if _is_private_address(ip):
-            raise SampleApiError(
-                f"Refusing to call LIMS at {hostname!r} ({ip}): address is "
-                f"loopback/private/link-local. SSRF is blocked by policy. "
-                f"For dev/test against a mock LIMS, set "
-                f"SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1 (must not be set in production)."
-            )
+
+    allow_private = os.environ.get("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", "").lower() in ("1", "true", "yes")
+    if not allow_private:
+        for ip in resolved:
+            if _is_private_address(ip):
+                raise SampleApiError(
+                    f"Refusing to call LIMS at {hostname!r} ({ip}): address is "
+                    f"loopback/private/link-local/CGNAT. SSRF is blocked by policy. "
+                    f"For dev/test against a mock LIMS or a corporate-network LIMS, "
+                    f"set SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1."
+                )
+
+    return resolved
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """``HTTPSConnection`` that connects to a pre-validated IP, not whatever
+    the OS DNS resolves at connect time. Closes the DNS rebinding TOCTOU
+    where validation and ``urlopen`` would each resolve the hostname
+    independently. The hostname is kept for the ``Host:`` header and TLS
+    SNI / certificate validation.
+    """
+
+    def __init__(self, *args, pinned_ip: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        self.sock = socket.create_connection(
+            (self._pinned_ip, self.port), self.timeout, self.source_address
+        )
+        if self._tunnel_host:
+            self._tunnel()
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """Plain-HTTP analogue of ``_PinnedHTTPSConnection``."""
+
+    def __init__(self, *args, pinned_ip: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        self.sock = socket.create_connection(
+            (self._pinned_ip, self.port), self.timeout, self.source_address
+        )
 
 
 def _api_get(url: str, api_key: str = "") -> dict | list:
-    """Make a GET request to the API and return parsed JSON."""
-    _validate_url(url)
+    """Make a GET request to the API and return parsed JSON.
+
+    Connection is pinned to the IP returned by ``_validate_url`` so the
+    actual TCP destination matches the address we validated — no DNS
+    rebinding window between validate and connect.
+    """
+    resolved_ips = _validate_url(url)
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
 
     # Per-host throttle. A bulk import that hits the same LIMS host many times
     # will be paced; calls to different hosts run independently.
-    _throttle(urlparse(url).hostname or "")
+    _throttle(hostname)
+
+    # Prefer IPv4 if any resolved address is IPv4 (broader interop with
+    # LIMS hosts behind v4-only middleboxes). Single attempt — operators
+    # whose LIMS is multi-IP load-balanced should rely on the LB upstream.
+    v4 = [ip for ip in resolved_ips if isinstance(ip, ipaddress.IPv4Address)]
+    pinned = v4[0] if v4 else resolved_ips[0]
+    pinned_ip = str(pinned)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
     headers = {
         "Accept": "application/json",
@@ -174,23 +250,46 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
     if api_key:
         headers["api-key"] = api_key
 
-    request = urllib.request.Request(url, headers=headers)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
 
-    # Use default SSL context for certificate verification
-    ssl_context = ssl.create_default_context()
+    if parsed.scheme == "https":
+        ssl_context = ssl.create_default_context()
+        conn: http.client.HTTPConnection = _PinnedHTTPSConnection(
+            host=hostname,
+            port=port,
+            timeout=30,
+            context=ssl_context,
+            pinned_ip=pinned_ip,
+        )
+    else:
+        conn = _PinnedHTTPConnection(
+            host=hostname,
+            port=port,
+            timeout=30,
+            pinned_ip=pinned_ip,
+        )
 
     try:
-        with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
-            data = response.read(_MAX_RESPONSE_SIZE + 1)
-            if len(data) > _MAX_RESPONSE_SIZE:
-                raise SampleApiError("API response exceeds maximum size limit")
+        try:
+            conn.request("GET", path, headers=headers)
+            response = conn.getresponse()
+        except (socket.error, http.client.HTTPException, ssl.SSLError) as exc:
+            raise SampleApiError(f"Network error: {exc}")
+
+        if response.status >= 400:
+            raise SampleApiError(f"API error: {response.status} {response.reason}")
+
+        data = response.read(_MAX_RESPONSE_SIZE + 1)
+        if len(data) > _MAX_RESPONSE_SIZE:
+            raise SampleApiError("API response exceeds maximum size limit")
+        try:
             return json.loads(data.decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        raise SampleApiError(f"API error: {e.code} {e.reason}")
-    except urllib.error.URLError as e:
-        raise SampleApiError(f"Network error: {e.reason}")
-    except json.JSONDecodeError:
-        raise SampleApiError("API response is not valid JSON")
+        except json.JSONDecodeError:
+            raise SampleApiError("API response is not valid JSON")
+    finally:
+        conn.close()
 
 
 def _get_field_value(item: dict, field_name: str, config: SampleApiConfig) -> str:

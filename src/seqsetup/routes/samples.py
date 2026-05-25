@@ -1039,9 +1039,11 @@ async def update_sample_settings(
 ) -> Response:
     """POST /runs/{run_id}/samples/{sample_id}/settings — update override cycles + mismatches.
 
-    Per-field partial update: each settings input on the row posts on its own
-    via hx-include="this", so the form contains only the field that changed.
-    The handler updates exactly that field; any setting *not* present in the
+    Per-field partial update: each settings input on the row carries its own
+    ``hx-post`` and lives outside any ``<form>`` (see
+    ``templates/wizard/_sample_row.html`` and ``templates/runs/_sample_section.html``),
+    so HTMX's default include behavior posts only the triggering element. The
+    handler updates exactly that field; any setting *not* present in the
     submission is left untouched. A field that IS present but empty is treated
     as "clear/reset" (auto-recompute for override_cycles, ``None`` for the
     mismatch overrides). This prevents silent data loss across siblings.

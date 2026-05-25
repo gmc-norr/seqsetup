@@ -504,6 +504,35 @@ class TestSampleStringFields:
         sample = Sample(override_cycles="")
         assert sample.override_cycles == ""
 
+    def test_override_cycles_validates_on_post_construction_assignment(self):
+        """The model invariant must survive direct attribute writes, not just
+        construction-time validation. Without the ``__setattr__`` interception
+        a malformed string would be persisted and break ``from_dict()`` on
+        the next load — see the routes that do ``sample.override_cycles = …``.
+        """
+        sample = Sample(override_cycles=None)
+        with pytest.raises(ValueError, match="override_cycles"):
+            sample.override_cycles = "Y151,injected"
+
+    def test_override_cycles_normalises_on_post_construction_assignment(self):
+        """Assignment of a lowercase value uppercases it, matching the
+        construction-time behavior."""
+        sample = Sample(override_cycles=None)
+        sample.override_cycles = "y8n2y*"
+        assert sample.override_cycles == "Y8N2Y*"
+
+    def test_override_cycles_can_be_cleared_post_construction(self):
+        sample = Sample(override_cycles="Y8N2Y*")
+        sample.override_cycles = None
+        assert sample.override_cycles is None
+
+    def test_other_field_assignments_still_pass_through(self):
+        """``__setattr__`` should only special-case ``override_cycles``;
+        other field assignments behave as for a plain dataclass."""
+        sample = Sample(sample_id="A")
+        sample.sample_name = "renamed"
+        assert sample.sample_name == "renamed"
+
     def test_index1_override_pattern_none(self):
         sample = Sample(index1_override_pattern=None)
         assert sample.index1_override_pattern is None

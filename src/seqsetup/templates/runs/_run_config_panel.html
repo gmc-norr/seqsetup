@@ -18,15 +18,26 @@
                 {% with run=run %}
                 {% include "runs/_run_name_display.html" %}
                 {% endwith %}
-                <div class="config-item uuid-item" x-data='{ "copied": false, "uuid": {{ run.id | tojson }} }'>
+                <div class="config-item uuid-item"
+                     x-data='{ "copied": false, "failed": false, "uuid": {{ run.id | tojson }} }'>
                     <span class="config-label">UUID: </span>
                     <span class="config-value uuid-value" title="{{ run.id }}">{{ run.id }}</span>
                     <button type="button"
                             class="uuid-copy-btn"
                             title="Copy UUID"
-                            @click="navigator.clipboard.writeText(uuid); copied = true; setTimeout(() => copied = false, 1500)">
-                        <span x-show="!copied">Copy</span>
+                            @click="
+                                copied = false; failed = false;
+                                const reset = () => setTimeout(() => { copied = false; failed = false; }, 1500);
+                                if (navigator.clipboard && navigator.clipboard.writeText) {
+                                    navigator.clipboard.writeText(uuid)
+                                        .then(() => { copied = true; reset(); })
+                                        .catch(() => { failed = true; reset(); });
+                                } else {
+                                    failed = true; reset();
+                                }">
+                        <span x-show="!copied && !failed">Copy</span>
                         <span x-show="copied" x-cloak>Copied</span>
+                        <span x-show="failed" x-cloak>Copy failed</span>
                     </button>
                 </div>
                 <div class="config-item">

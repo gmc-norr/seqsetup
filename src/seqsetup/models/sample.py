@@ -74,33 +74,42 @@ class Sample:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        # Clamp barcode mismatches to 0-3 range
-        if self.barcode_mismatches_index1 is not None:
-            self.barcode_mismatches_index1 = max(0, min(3, self.barcode_mismatches_index1))
-        if self.barcode_mismatches_index2 is not None:
-            self.barcode_mismatches_index2 = max(0, min(3, self.barcode_mismatches_index2))
-        # Clamp index cycles to positive values if set
-        if self.index1_cycles is not None:
-            self.index1_cycles = max(1, self.index1_cycles)
-        if self.index2_cycles is not None:
-            self.index2_cycles = max(1, self.index2_cycles)
-        # Filter lanes to only positive integers
-        if self.lanes:
-            self.lanes = [lane for lane in self.lanes if isinstance(lane, int) and not isinstance(lane, bool) and lane > 0]
-        # override_cycles is validated and normalized in __setattr__ so direct
-        # assignment after construction is safe; nothing to do here.
+        # All clamping is in ``__setattr__`` so it covers both construction
+        # (dataclass-generated ``__init__`` uses setattr per field) and direct
+        # attribute assignment from route handlers.
+        pass
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Enforce override_cycles invariants on every assignment.
+        """Enforce model invariants on every assignment — construction AND
+        post-construction mutation.
 
-        Dataclasses run __post_init__ only at construction, so attribute
-        assignments after the object exists would otherwise bypass validation
-        and let malformed strings reach SampleSheet output or break later
-        reloads. We intercept ``override_cycles`` here so the invariant holds
-        whether the value arrives via the constructor or a later mutation.
+        Dataclasses run ``__post_init__`` only at construction time, so
+        attribute assignments after the object exists would otherwise bypass
+        the checks below. Routes do ``sample.override_cycles = ...`` and
+        ``sample.barcode_mismatches_index1 = ...`` directly; pushing the
+        validation here is what makes the project's "self-validating on every
+        assignment" Hard Rule actually true for this model.
+
+        Invariants enforced (matches the previous ``__post_init__`` set):
+          - ``barcode_mismatches_index1`` / ``barcode_mismatches_index2``
+            clamped to [0, 3].
+          - ``index1_cycles`` / ``index2_cycles`` clamped to >= 1.
+          - ``lanes`` filtered to positive non-bool ints.
+          - ``override_cycles`` uppercased + rejected if outside the
+            override-notation alphabet.
         """
-        if name == "override_cycles" and value is not None:
-            value = self._normalize_override_cycles(value)
+        if value is not None:
+            if name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
+                value = max(0, min(3, value))
+            elif name in ("index1_cycles", "index2_cycles"):
+                value = max(1, value)
+            elif name == "override_cycles":
+                value = self._normalize_override_cycles(value)
+            elif name == "lanes" and value:
+                value = [
+                    lane for lane in value
+                    if isinstance(lane, int) and not isinstance(lane, bool) and lane > 0
+                ]
         object.__setattr__(self, name, value)
 
     @staticmethod

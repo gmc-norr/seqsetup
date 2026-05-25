@@ -67,7 +67,7 @@ a model or service layer where it cannot be forgotten.
 ### Data integrity
 - Validation services are **read-only** — they must never mutate run state.
 - Repositories contain **no business logic** — they are thin data access layers.
-- Models are **self-validating on every assignment, not just construction.** Use `__setattr__` or property setters when invariants must survive direct attribute writes (the routes do `sample.override_cycles = …` and similar patterns).
+- Models are **self-validating on every assignment, not just construction**, for any non-trivial invariant they declare. `Sample.__setattr__` enforces `barcode_mismatches_*` (clamp 0–3), `index*_cycles` (clamp >=1), `lanes` (filter positive ints), and `override_cycles` (regex). When adding a model field whose validity is anything more than "any string of any length", enforce it in `__setattr__` (or a property setter) so the rule survives direct attribute writes from route handlers — `__post_init__` alone is insufficient. String length and character-set sanitization for free-form fields lives at the ingest layer (route forms via `sanitize_string`, parsers via `[:N]`), since silently clamping in the model would surprise readers more than it would protect them.
 - **Validation cache coherence:** `ValidationService` memoizes results by `(run.id, run.updated_at, repo identity)`. Any mutation that changes validation *inputs* without bumping `run.updated_at` (GitHub config sync, index-kit save/delete, instrument enable/disable, etc.) MUST call `clear_validation_cache()`. See `services/validation.py` and existing call sites in `services/github_sync.py`, `routes/indexes.py`, `routes/admin/instruments.py`.
 - **Partial updates update only what was submitted.** Handlers serving per-field HTMX inputs (e.g. `update_sample_settings`) MUST check `field in form` before writing — defaulting missing fields to empty and writing them back silently destroys sibling values.
 - Never silently discard data. If input is invalid, reject it (raise `HTTPException(400)` or let model `ValueError` propagate) or clamp it visibly.
@@ -186,11 +186,19 @@ src/seqsetup/
 ```bash
 pixi install          # Install dependencies
 pixi run serve        # Run the application (localhost:5001)
-pixi run test         # Run tests (916 unit + integration tests; pytest)
+pixi run test         # Run tests (~920 unit + integration tests; pytest)
 pixi run smoke-browser  # 3 Playwright browser smoke tests
 pixi run mock-api     # Start mock LIMS API server (localhost:8100)
 pixi add <pkg>        # Add dependency
 pixi add --feature dev <pkg>  # Add dev dependency
+```
+
+To point the app at the mock LIMS in dev, set both opt-ins (production must
+not set either):
+
+```bash
+export SEQSETUP_LIMS_ALLOW_HTTP=1            # mock LIMS speaks plain HTTP
+export SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1    # mock LIMS lives on localhost
 ```
 
 ## Run Status State Machine

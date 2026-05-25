@@ -36,47 +36,60 @@ from .validation_utils import hamming_distance
 logger = logging.getLogger(__name__)
 
 
-# Memoize validation results keyed on (run.id, run.updated_at).
-# `run.touch()` always bumps `updated_at` on mutation, so the cache
-# invalidates naturally. Bounded to MAX entries (LRU eviction);
-# protected with a lock because Starlette runs sync handlers in a
-# threadpool and validate_run is called from those handlers.
+# Memoize validation results keyed on (run.id, run.updated_at,
+# validation_input_version). `run.touch()` always bumps `updated_at` on
+# mutation, so per-run state changes invalidate naturally. The version
+# counter covers mutations to *external* inputs (test profiles, app
+# profiles, instruments, index kits) that don't change `run.updated_at`;
+# `clear_validation_cache()` bumps it so all previously cached entries
+# become unreachable. Bounded LRU (eviction handles unbounded growth from
+# version churn). Protected with a lock because Starlette's threadpool
+# may call validate_run concurrently.
 _CACHE_MAX_SIZE = 64
 _VALIDATION_CACHE: "OrderedDict[tuple, ValidationResult]" = OrderedDict()
 _VALIDATION_CACHE_LOCK = Lock()
+_VALIDATION_INPUT_VERSION: int = 0
 
 
 def _validation_cache_key(
     run: "SequencingRun",
-    test_profile_repo,
-    app_profile_repo,
-    instrument_config,
+    version: int,
 ) -> tuple:
     """Build the cache key.
 
-    Includes run.id + run.updated_at (covers run-state changes), the
-    id() of each repo and the instrument_config (covers process-level
-    swaps; safe-ish because repos are app-singletons). The repo id()
-    inclusion is defensive — different repo instances may have
-    different content in tests.
+    Includes ``run.id`` + ``run.updated_at`` (covers run-state changes)
+    and the global ``validation_input_version`` (covers profile /
+    instrument / index-kit mutations that don't touch the run). We do NOT
+    key on repo identity — ``ctx.instrument_config`` is a property that
+    returns a freshly constructed object on every access, which would
+    make any ``id()``-based key change on every call and defeat the
+    cache entirely.
     """
-    return (
-        run.id,
-        run.updated_at,
-        id(test_profile_repo) if test_profile_repo is not None else None,
-        id(app_profile_repo) if app_profile_repo is not None else None,
-        id(instrument_config) if instrument_config is not None else None,
-    )
+    return (run.id, run.updated_at, version)
 
 
 def clear_validation_cache() -> None:
-    """Clear the validation memoization cache.
+    """Invalidate every previously cached validation result.
 
-    Useful in tests when the cache key components (repo identity)
-    change in ways the production code doesn't anticipate.
+    Called by every mutation path that changes validation inputs without
+    bumping any specific run's ``updated_at``: GitHub config sync,
+    instrument toggle/enable-all/disable-all, index-kit save/delete.
+    Increments the global version under the lock so concurrent
+    ``validate_run`` callers either (a) read the old version and store
+    under the now-unreachable key, or (b) read the new version and miss,
+    recomputing. Either outcome is safe — no thread can read a hit
+    against the post-mutation key with pre-mutation content.
     """
+    global _VALIDATION_INPUT_VERSION
     with _VALIDATION_CACHE_LOCK:
+        _VALIDATION_INPUT_VERSION += 1
         _VALIDATION_CACHE.clear()
+
+
+def _current_validation_input_version() -> int:
+    """Snapshot of the version counter for a single ``validate_run`` call."""
+    with _VALIDATION_CACHE_LOCK:
+        return _VALIDATION_INPUT_VERSION
 
 
 class ValidationService:
@@ -94,13 +107,15 @@ class ValidationService:
         app_profile_repo=None,
         instrument_config=None,
     ) -> ValidationResult:
-        """Validate a run. Memoized on (run.id, run.updated_at + repo ids).
+        """Validate a run. Memoized on (run.id, run.updated_at, input_version).
 
-        Cache invalidates naturally on every mutation because run.touch()
-        bumps updated_at. The cache is bounded (LRU); locked because
+        Per-run state changes invalidate via ``run.touch()`` bumping
+        ``updated_at``. External-input mutations (profiles / instruments /
+        kits) invalidate via ``clear_validation_cache()`` bumping the
+        version counter. The cache is bounded (LRU); locked because
         Starlette's threadpool may call this concurrently.
         """
-        key = _validation_cache_key(run, test_profile_repo, app_profile_repo, instrument_config)
+        key = _validation_cache_key(run, _current_validation_input_version())
         with _VALIDATION_CACHE_LOCK:
             if key in _VALIDATION_CACHE:
                 _VALIDATION_CACHE.move_to_end(key)

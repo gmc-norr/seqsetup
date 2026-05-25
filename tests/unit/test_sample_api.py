@@ -177,3 +177,119 @@ class TestThrottle:
         mod._throttle("lims.example.com")
         mod._throttle("lims.example.com")
         assert sleep_calls == []
+
+
+class TestValidateUrl:
+    """``_validate_url`` enforces SSRF policy via DNS resolution.
+
+    These tests stub ``socket.getaddrinfo`` so they're deterministic and
+    don't actually touch the network. Each case mocks the resolution that
+    a real DNS lookup would return, then asserts the policy decision.
+    """
+
+    @staticmethod
+    def _stub_resolve(monkeypatch, ips):
+        """Make ``socket.getaddrinfo`` return the given IP strings."""
+        import socket
+        from seqsetup.services import sample_api as mod
+
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            return [
+                # (family, type, proto, canonname, (ip, port))
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, port or 0))
+                for ip in ips
+            ]
+        monkeypatch.setattr(mod.socket, "getaddrinfo", fake_getaddrinfo)
+
+    def test_blocks_loopback_v4(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        self._stub_resolve(monkeypatch, ["127.0.0.1"])
+        with pytest.raises(SampleApiError, match="loopback"):
+            _validate_url("https://attacker.example/api")
+
+    def test_blocks_loopback_v6(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        self._stub_resolve(monkeypatch, ["::1"])
+        with pytest.raises(SampleApiError, match="loopback"):
+            _validate_url("https://attacker.example/api")
+
+    def test_blocks_rfc1918(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        self._stub_resolve(monkeypatch, ["10.0.0.5"])
+        with pytest.raises(SampleApiError, match="loopback/private"):
+            _validate_url("https://internal.corp/api")
+
+    def test_blocks_link_local(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        self._stub_resolve(monkeypatch, ["169.254.169.254"])
+        with pytest.raises(SampleApiError, match="loopback/private"):
+            # The AWS instance metadata service IP.
+            _validate_url("https://metadata.local/")
+
+    def test_blocks_cgnat(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        self._stub_resolve(monkeypatch, ["100.64.0.10"])
+        with pytest.raises(SampleApiError, match="loopback/private"):
+            _validate_url("https://cgnat-neighbor.example/")
+
+    def test_blocks_when_any_resolved_ip_is_private(self, monkeypatch):
+        """Multi-record DNS: if *any* answer is private, refuse the whole
+        request — otherwise an attacker could serve a mixed answer and
+        rely on the OS to pick the private one at connect time."""
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        self._stub_resolve(monkeypatch, ["1.2.3.4", "10.0.0.5"])
+        with pytest.raises(SampleApiError, match="loopback/private"):
+            _validate_url("https://mixed.example/")
+
+    def test_allows_public_ip(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url
+        import ipaddress
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        self._stub_resolve(monkeypatch, ["8.8.8.8"])
+        ips = _validate_url("https://lims.example.com/api")
+        # Returns the resolved IPs so the caller can pin its connection.
+        assert ipaddress.IPv4Address("8.8.8.8") in ips
+
+    def test_private_allowed_when_env_opt_in(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url
+        monkeypatch.setenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", "1")
+        self._stub_resolve(monkeypatch, ["127.0.0.1"])
+        # No exception; private IP is permitted with explicit opt-in.
+        ips = _validate_url("https://mock-lims.local/")
+        assert len(ips) == 1
+
+    def test_rejects_unresolvable_hostname(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        from seqsetup.services import sample_api as mod
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+
+        def raise_oserror(*args, **kwargs):
+            raise OSError("Name or service not known")
+        monkeypatch.setattr(mod.socket, "getaddrinfo", raise_oserror)
+
+        with pytest.raises(SampleApiError, match="Cannot resolve"):
+            _validate_url("https://does-not-exist.invalid/")
+
+    def test_rejects_http_without_opt_in(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_HTTP", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        self._stub_resolve(monkeypatch, ["8.8.8.8"])
+        with pytest.raises(SampleApiError, match="HTTP"):
+            _validate_url("http://lims.example.com/api")
+
+    def test_rejects_unsupported_scheme(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        with pytest.raises(SampleApiError, match="Unsupported URL scheme"):
+            _validate_url("ftp://host.example/path")
+
+    def test_rejects_missing_hostname(self, monkeypatch):
+        from seqsetup.services.sample_api import _validate_url, SampleApiError
+        with pytest.raises(SampleApiError, match="no hostname"):
+            _validate_url("https:///path")
