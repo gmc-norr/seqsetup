@@ -28,7 +28,10 @@
         <nav class="sidebar">
             <a href="/" class="nav-item{% if active_route == '/' %} active{% endif %}">Dashboard</a>
             <form method="post" action="/runs/new" class="sidebar-form">
-                <button type="submit" class="btn btn-primary sidebar-btn">+ New Run</button>
+                <button type="submit" class="sidebar-btn">
+                    <span class="sidebar-btn-icon" aria-hidden="true">+</span>
+                    <span>New Run</span>
+                </button>
             </form>
 
             <hr class="sidebar-divider">
