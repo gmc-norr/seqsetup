@@ -380,26 +380,6 @@ def validation_page(
     return render(request, "validation/page.html", ctx_dict)
 
 
-@router.get("/runs/{run_id}/validation/errors", response_class=HTMLResponse)
-def get_validation_errors(
-    request: Request,
-    run_id: str,
-    ctx: AppContext = Depends(get_ctx),
-) -> Response:
-    """GET /runs/{run_id}/validation/errors — errors-list refresh."""
-    run = ctx.run_repo.get_by_id(run_id)
-    if not run:
-        return HTMLResponse(
-            templates.env.get_template("_messages.html").render(
-                messages=[{"text": "Run not found", "kind": "error"}]
-            ),
-            status_code=404,
-            headers={"Cache-Control": "no-store"},
-        )
-    result = _validate_run(run, ctx)
-    return render(request, "validation/_error_list.html", {"result": result})
-
-
 @router.post("/runs/{run_id}/validation/approve", response_class=HTMLResponse)
 def approve_validation(
     request: Request,
