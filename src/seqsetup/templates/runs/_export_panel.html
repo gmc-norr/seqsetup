@@ -1,0 +1,38 @@
+{#
+   Export panel — download buttons for sample sheets and reports.
+   When rendered OOB by update_status, the caller adds hx-swap-oob.
+
+   Inputs:
+     run:    SequencingRun
+     has_v1: bool — SampleSheetV1Exporter.supports(run.instrument_platform)
+     oob:    bool (default False) — when True, add hx-swap-oob="true"
+#}
+{% set is_ready = run.status.value == 'ready' %}
+{% set all_have_indexes = run.all_samples_have_indexes if run.has_samples else False %}
+{% set ss_enabled = is_ready and all_have_indexes %}
+{% set json_enabled = is_ready %}
+{% set val_json_enabled = is_ready %}
+{% set val_pdf_enabled = is_ready %}
+{% set v1_enabled = is_ready and all_have_indexes %}
+<fieldset id="export-panel" class="config-panel export-display" {% if oob %}hx-swap-oob="true"{% endif %}>
+    <legend>Export</legend>
+    <div class="export-panel-content">
+        <div class="export-buttons">
+            <a class="btn btn-primary btn-small export-btn{% if not ss_enabled %} disabled{% endif %}"
+               {% if ss_enabled %}href="/runs/{{ run.id }}/export/samplesheet-v2"{% endif %}>Download Sample Sheet v2</a>
+            {% if has_v1 %}
+            <a class="btn btn-primary btn-small export-btn{% if not v1_enabled %} disabled{% endif %}"
+               {% if v1_enabled %}href="/runs/{{ run.id }}/export/samplesheet-v1"{% endif %}>Download Sample Sheet v1</a>
+            {% endif %}
+            <a class="btn btn-secondary btn-small export-btn{% if not json_enabled %} disabled{% endif %}"
+               {% if json_enabled %}href="/runs/{{ run.id }}/export/json"{% endif %}>Download JSON</a>
+            <a class="btn btn-secondary btn-small export-btn{% if not val_json_enabled %} disabled{% endif %}"
+               {% if val_json_enabled %}href="/runs/{{ run.id }}/export/validation-report"{% endif %}>Download Validation Report (JSON)</a>
+            <a class="btn btn-secondary btn-small export-btn{% if not val_pdf_enabled %} disabled{% endif %}"
+               {% if val_pdf_enabled %}href="/runs/{{ run.id }}/export/validation-pdf"{% endif %}>Download Validation Report (PDF)</a>
+        </div>
+        {% if not is_ready %}
+        <p class="export-warning">Run must be marked as ready to enable exports</p>
+        {% endif %}
+    </div>
+</fieldset>

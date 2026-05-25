@@ -1,0 +1,43 @@
+{#
+   Run status bar — HTMX target #run-status-bar.
+   Inputs: run
+#}
+{% set status_value = run.status.value %}
+{% set label_map = {'draft': ('Draft', 'status-draft'), 'ready': ('Ready', 'status-ready'), 'archived': ('Archived', 'status-archived')} %}
+{% set label, badge_cls = label_map.get(status_value, ('Draft', 'status-draft')) %}
+<div id="run-status-bar" class="run-status-bar">
+    <div class="run-status-info">
+        <span class="status-label">Status: </span>
+        <span class="run-status-badge {{ badge_cls }}">{{ label }}</span>
+    </div>
+    <div class="run-status-actions">
+        {% if status_value == 'draft' %}
+            {% if run.validation_approved %}
+            <form class="status-form"
+                  hx-post="/runs/{{ run.id }}/status/ready"
+                  hx-target="#run-status-bar"
+                  hx-swap="outerHTML"
+                  hx-disabled-elt="find button">
+                <button type="submit" class="btn btn-primary btn-small btn-with-spinner">
+                    <span class="btn-text">Mark Ready</span>
+                    <span class="btn-loading-text">Preparing...</span>
+                    <span class="spinner"></span>
+                </button>
+            </form>
+            {% else %}
+            <button class="btn btn-primary btn-small" disabled title="Validation must be approved first">Mark Ready</button>
+            {% endif %}
+        {% elif status_value == 'ready' %}
+            <form hx-post="/runs/{{ run.id }}/status/draft" hx-target="#run-status-bar" hx-swap="outerHTML">
+                <button type="submit" class="btn btn-secondary btn-small">Return to Draft</button>
+            </form>
+            <form hx-post="/runs/{{ run.id }}/status/archived" hx-target="#run-status-bar" hx-swap="outerHTML">
+                <button type="submit" class="btn btn-secondary btn-small">Archive</button>
+            </form>
+        {% elif status_value == 'archived' %}
+            <form hx-post="/runs/{{ run.id }}/status/draft" hx-target="#run-status-bar" hx-swap="outerHTML">
+                <button type="submit" class="btn btn-secondary btn-small">Reset to Draft</button>
+            </form>
+        {% endif %}
+    </div>
+</div>

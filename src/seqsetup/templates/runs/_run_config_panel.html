@@ -1,0 +1,42 @@
+{#
+   Run config panel — read-only display of run metadata + instrument + cycles.
+   Three columns. Embeds the un-ported FT helpers from run_config.py
+   via pre-rendered HTML strings. Phase 4 / follow-up ports those.
+
+   Inputs:
+     run:                          SequencingRun
+     run_name_display_html:        str — ft_to_html(RunNameDisplay(run))
+     instrument_config_display_html: str — ft_to_html(InstrumentConfigDisplay(run))
+     cycle_config_display_html:    str — ft_to_html(CycleConfigDisplay(run))
+#}
+{% set created_at_str = run.created_at.strftime("%Y-%m-%d %H:%M") if run.created_at else "—" %}
+{% set updated_at_str = run.updated_at.strftime("%Y-%m-%d %H:%M") if run.updated_at else "—" %}
+{% set created_by_str = run.created_by or "—" %}
+<div id="run-config-panel" class="run-config-horizontal">
+    <div class="config-columns">
+        <div class="config-column">
+            <fieldset class="config-panel details-display">
+                <legend>Details</legend>
+                {{ run_name_display_html | safe }}
+                <div class="config-item">
+                    <span class="config-label">UUID: </span>
+                    <span class="config-value uuid-value" title="{{ run.id }}">{{ run.id }}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Created by: </span>
+                    <span class="config-value">{{ created_by_str }}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Created: </span>
+                    <span class="config-value">{{ created_at_str }}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Updated: </span>
+                    <span class="config-value">{{ updated_at_str }}</span>
+                </div>
+            </fieldset>
+        </div>
+        <div class="config-column">{{ instrument_config_display_html | safe }}</div>
+        <div class="config-column">{{ cycle_config_display_html | safe }}</div>
+    </div>
+</div>

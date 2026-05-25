@@ -1,0 +1,32 @@
+{% extends "_app_shell.html" %}
+{% set page_title = run.run_name or "Edit Run" %}
+{% set active_route = "/runs/" ~ run.id %}
+
+{% block content %}
+<div class="edit-run-layout" id="edit-run-page">
+    {% block run_status_bar %}
+        {% with run=run %}
+        {% include "runs/_run_status_bar.html" %}
+        {% endwith %}
+    {% endblock %}
+
+    {% with run=run, validation_result=validation_result, has_v1=has_v1 %}
+    {% include "runs/_top_bar.html" %}
+    {% endwith %}
+
+    {% with run=run,
+            run_name_display_html=run_name_display_html,
+            instrument_config_display_html=instrument_config_display_html,
+            cycle_config_display_html=cycle_config_display_html %}
+    {% include "runs/_run_config_panel.html" %}
+    {% endwith %}
+
+    <fieldset class="config-panel samples-display">
+        <legend>Samples</legend>
+        {% with run=run, index_kits=index_kits, test_profiles=test_profiles,
+                num_lanes=num_lanes, is_editable=is_editable, oob=False %}
+        {% include "runs/_sample_section.html" %}
+        {% endwith %}
+    </fieldset>
+</div>
+{% endblock %}

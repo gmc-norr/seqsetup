@@ -152,7 +152,7 @@ samples.register(app, _ctx)
 runs.register(app, _ctx)
 export.register(app, _ctx)
 app.include_router(validation.router)
-main.register(app, _ctx)
+app.include_router(main.router)
 
 
 def main_func():

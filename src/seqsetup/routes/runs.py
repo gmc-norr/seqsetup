@@ -7,9 +7,8 @@ are progressively ported.
 
 import logging
 
-from fasthtml.common import Div
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import HTMLResponse, Response
 from starlette.routing import Route
 
 from ..components.wizard import (
@@ -21,6 +20,7 @@ from ..context import AppContext
 from ..data.instruments import (
     get_default_cycles,
     get_flowcells_for_instrument,
+    get_lanes_for_flowcell,
     get_reagent_kits_for_flowcell,
 )
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus
@@ -31,7 +31,7 @@ from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
-from ..templating import ft_response, render
+from ..templating import ft_response, render, templates
 from .utils import check_run_editable, check_status_transition, get_username, sanitize_string
 
 logger = logging.getLogger(__name__)
@@ -265,8 +265,8 @@ def register(app, ctx: AppContext) -> None:
                 reason="validation_not_approved",
                 attempted_status=new_status.value,
             )
-            from ..components.edit_run import RunStatusBar
-            return ft_response(RunStatusBar(run))
+            status_html = templates.env.get_template("runs/_run_status_bar.html").render(run=run)
+            return HTMLResponse(status_html, headers={"Cache-Control": "no-store"})
 
         previous_status = run.status.value
         run.status = new_status
@@ -310,20 +310,22 @@ def register(app, ctx: AppContext) -> None:
             to_status=new_status.value,
         )
 
-        from ..components.edit_run import RunStatusBar, SampleTableSectionForRun, ExportPanelForRun
-
         test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+        index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
+        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
+        is_editable = run.status == RunStatus.DRAFT
+        has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
 
         # Out-of-band swaps update the export panel and sample table without a
         # full page reload. HTMX needs the hx-swap-oob attribute on the
         # response fragments themselves.
-        export_panel = ExportPanelForRun(run)
-        export_panel.attrs["hx-swap-oob"] = "true"
-
-        sample_section = SampleTableSectionForRun(run, ctx.index_kit_repo.list_all(), test_profiles)
-        sample_section.attrs["hx-swap-oob"] = "true"
-
-        return ft_response(Div(RunStatusBar(run), export_panel, sample_section))
+        status_html = templates.env.get_template("runs/_run_status_bar.html").render(run=run)
+        export_html = templates.env.get_template("runs/_export_panel.html").render(run=run, has_v1=has_v1, oob=True)
+        section_html = templates.env.get_template("runs/_sample_section.html").render(
+            run=run, index_kits=index_kits, test_profiles=test_profiles,
+            num_lanes=num_lanes, is_editable=is_editable, oob=True,
+        )
+        return HTMLResponse(status_html + export_html + section_html, headers={"Cache-Control": "no-store"})
 
     app.routes.append(Route("/runs/{run_id}/name", update_run_name, methods=["POST"]))
     app.routes.append(Route("/runs/{run_id}/instrument", update_instrument, methods=["POST"]))

@@ -410,3 +410,22 @@ def test_add_samples_step2_renders(logged_in_client, fresh_app):
     assert response.status_code == 200
     assert "Step 2: Assign Indexes" in response.text
     assert 'id="add-samples-nav"' in response.text
+
+
+def test_edit_run_page_renders(logged_in_client, fresh_app):
+    """GET /runs/{id} renders the edit-run page (Jinja2)."""
+    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    app, ctx, db = fresh_app
+    run = SequencingRun(
+        run_name="EditRunSmoke",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        created_by="admin",
+    )
+    ctx.run_repo.save(run)
+
+    response = logged_in_client.get(f"/runs/{run.id}")
+    assert response.status_code == 200
+    assert "EditRunSmoke" in response.text
+    assert 'id="run-status-bar"' in response.text
+    assert 'id="export-panel"' in response.text
+    assert 'id="sample-section"' in response.text

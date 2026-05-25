@@ -1,0 +1,27 @@
+{#
+   Sample table section for the edit-run page.
+
+   Inputs:
+     run:                SequencingRun
+     index_kits:         list[IndexKit]
+     test_profiles:      list[TestProfile]
+     num_lanes:          int
+     is_editable:        bool — run.status.value == 'draft'
+     oob:                bool (default False) — add hx-swap-oob when True
+#}
+<div id="sample-section" {% if oob %}hx-swap-oob="true"{% endif %}>
+    {% if is_editable %}
+    <div class="add-samples-btn">
+        <a href="/runs/{{ run.id }}/samples/add/step/1" class="btn btn-primary btn-small">+ Add Samples</a>
+    </div>
+    {% else %}
+    <div class="add-samples-btn">
+        <p class="locked-message">Run is locked for editing. Return to Draft to make changes.</p>
+    </div>
+    {% endif %}
+    {% with run=run, show_drop_zones=True, index_kits=index_kits,
+            num_lanes=num_lanes, show_bulk_actions=True, context='',
+            test_profiles=test_profiles, editable=is_editable %}
+    {% include "wizard/_sample_table.html" %}
+    {% endwith %}
+</div>
