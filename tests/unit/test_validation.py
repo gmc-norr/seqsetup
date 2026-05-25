@@ -1339,5 +1339,56 @@ class TestValidationServiceEdgeCases:
         errors = ValidationService.validate_sample_ids(run)
         assert len(errors) == 0
 
+
+class TestValidationCache:
+    """Tests for ValidationService.validate_run memoization."""
+
+    def test_validate_run_is_memoized_for_same_updated_at(self, monkeypatch):
+        """Two consecutive validate_run calls on the same run state hit the cache."""
+        from seqsetup.services.validation import ValidationService, clear_validation_cache
+
+        clear_validation_cache()
+
+        run = SequencingRun(
+            run_name="MemoSmoke",
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        )
+
+        call_count = {"n": 0}
+        original_uncached = ValidationService._validate_run_uncached
+        def _spy(cls, *args, **kwargs):
+            call_count["n"] += 1
+            return original_uncached.__func__(cls, *args, **kwargs)
+        monkeypatch.setattr(ValidationService, "_validate_run_uncached", classmethod(_spy))
+
+        ValidationService.validate_run(run)
+        ValidationService.validate_run(run)
+        ValidationService.validate_run(run)
+        assert call_count["n"] == 1, "Cache should serve subsequent calls"
+
+    def test_validate_run_cache_invalidates_on_updated_at_change(self, monkeypatch):
+        """A mutation bumps updated_at; cache invalidates."""
+        from datetime import datetime, timezone, timedelta
+        from seqsetup.services.validation import ValidationService, clear_validation_cache
+
+        clear_validation_cache()
+        run = SequencingRun(
+            run_name="MemoInvalidate",
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        )
+
+        call_count = {"n": 0}
+        original_uncached = ValidationService._validate_run_uncached
+        def _spy(cls, *args, **kwargs):
+            call_count["n"] += 1
+            return original_uncached.__func__(cls, *args, **kwargs)
+        monkeypatch.setattr(ValidationService, "_validate_run_uncached", classmethod(_spy))
+
+        ValidationService.validate_run(run)
+        # Simulate a mutation by bumping updated_at
+        run.updated_at = datetime.now(timezone.utc) + timedelta(seconds=1)
+        ValidationService.validate_run(run)
+        assert call_count["n"] == 2, "Different updated_at must re-validate"
+
         collisions = ValidationService.validate_index_collisions(run)
         assert len(collisions) == 0

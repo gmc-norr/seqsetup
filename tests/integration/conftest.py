@@ -23,6 +23,15 @@ from seqsetup.models.local_user import LocalUser
 from seqsetup.models.user import UserRole
 
 
+@pytest.fixture(autouse=True)
+def _clear_validation_cache():
+    """Ensure each test starts with a fresh validation cache."""
+    from seqsetup.services.validation import clear_validation_cache
+    clear_validation_cache()
+    yield
+    clear_validation_cache()
+
+
 @pytest.fixture
 def isolated_mongo(monkeypatch):
     """A fresh mongomock database per test."""
@@ -98,6 +107,11 @@ def fresh_app(isolated_mongo, monkeypatch, tmp_path):
     # into this one. Without this, tests that do many requests trip 429.
     from seqsetup.rate_limit import reset_all_limiters
     reset_all_limiters()
+
+    # Clear the validation memoization cache so a previous test's run
+    # (potentially sharing the same run.id) can't leak stale results.
+    from seqsetup.services.validation import clear_validation_cache
+    clear_validation_cache()
 
     # Reload the app module to re-run the bootstrap wiring against mongomock.
     if "seqsetup.app" in sys.modules:

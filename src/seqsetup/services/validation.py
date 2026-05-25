@@ -11,7 +11,8 @@ specialized validator modules:
 
 import logging
 import re
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
+from threading import Lock
 
 from ..data.instruments import (
     get_channel_config,
@@ -35,6 +36,49 @@ from .validation_utils import hamming_distance
 logger = logging.getLogger(__name__)
 
 
+# Memoize validation results keyed on (run.id, run.updated_at).
+# `run.touch()` always bumps `updated_at` on mutation, so the cache
+# invalidates naturally. Bounded to MAX entries (LRU eviction);
+# protected with a lock because Starlette runs sync handlers in a
+# threadpool and validate_run is called from those handlers.
+_CACHE_MAX_SIZE = 64
+_VALIDATION_CACHE: "OrderedDict[tuple, ValidationResult]" = OrderedDict()
+_VALIDATION_CACHE_LOCK = Lock()
+
+
+def _validation_cache_key(
+    run: "SequencingRun",
+    test_profile_repo,
+    app_profile_repo,
+    instrument_config,
+) -> tuple:
+    """Build the cache key.
+
+    Includes run.id + run.updated_at (covers run-state changes), the
+    id() of each repo and the instrument_config (covers process-level
+    swaps; safe-ish because repos are app-singletons). The repo id()
+    inclusion is defensive — different repo instances may have
+    different content in tests.
+    """
+    return (
+        run.id,
+        run.updated_at,
+        id(test_profile_repo) if test_profile_repo is not None else None,
+        id(app_profile_repo) if app_profile_repo is not None else None,
+        id(instrument_config) if instrument_config is not None else None,
+    )
+
+
+def clear_validation_cache() -> None:
+    """Clear the validation memoization cache.
+
+    Useful in tests when the cache key components (repo identity)
+    change in ways the production code doesn't anticipate.
+    """
+    with _VALIDATION_CACHE_LOCK:
+        _VALIDATION_CACHE.clear()
+
+
 class ValidationService:
     """Service for validating sequencing run configuration.
 
@@ -50,17 +94,34 @@ class ValidationService:
         app_profile_repo=None,
         instrument_config=None,
     ) -> ValidationResult:
+        """Validate a run. Memoized on (run.id, run.updated_at + repo ids).
+
+        Cache invalidates naturally on every mutation because run.touch()
+        bumps updated_at. The cache is bounded (LRU); locked because
+        Starlette's threadpool may call this concurrently.
         """
-        Perform complete validation of a sequencing run.
+        key = _validation_cache_key(run, test_profile_repo, app_profile_repo, instrument_config)
+        with _VALIDATION_CACHE_LOCK:
+            if key in _VALIDATION_CACHE:
+                _VALIDATION_CACHE.move_to_end(key)
+                return _VALIDATION_CACHE[key]
+        result = cls._validate_run_uncached(run, test_profile_repo, app_profile_repo, instrument_config)
+        with _VALIDATION_CACHE_LOCK:
+            _VALIDATION_CACHE[key] = result
+            if len(_VALIDATION_CACHE) > _CACHE_MAX_SIZE:
+                _VALIDATION_CACHE.popitem(last=False)
+        return result
 
-        Args:
-            run: Sequencing run to validate
-            test_profile_repo: Optional TestProfileRepository for profile validation
-            app_profile_repo: Optional ApplicationProfileRepository for profile validation
-            instrument_config: Optional InstrumentConfig for DB overrides
-
-        Returns:
-            ValidationResult with all errors and per-lane distance matrices
+    @classmethod
+    def _validate_run_uncached(
+        cls,
+        run: SequencingRun,
+        test_profile_repo=None,
+        app_profile_repo=None,
+        instrument_config=None,
+    ) -> ValidationResult:
+        """The original validate_run logic, now wrapped by the cached
+        public method above. Do not call directly outside the class.
         """
         # Sample ID validation
         duplicate_errors = cls.validate_sample_ids(run)
