@@ -1,0 +1,11 @@
+{#
+   Single dark cycle error detail.
+   Inputs: error: DarkCycleError
+#}
+<div class="dark-cycle-detail">
+    <span class="error-type">Dark cycle: </span>
+    <span class="collision-sample">{{ error.sample_name }}</span>
+    <span class="collision-vs"> — {{ error.index_type }} index </span>
+    <code class="sequence">{{ error.sequence }}</code>
+    <span class="collision-distance"> starts with two dark bases ({{ error.dark_base }}{{ error.dark_base }})</span>
+</div>

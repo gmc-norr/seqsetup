@@ -1,0 +1,17 @@
+{#
+   Single index collision detail.
+   Inputs: collision: IndexCollision
+#}
+<div class="collision-detail">
+    <span class="collision-lane">Lane {{ collision.lane }}: </span>
+    <span class="collision-sample">{{ collision.sample1_name }}</span>
+    <span class="collision-vs"> vs </span>
+    <span class="collision-sample">{{ collision.sample2_name }}</span>
+    <div class="collision-sequences">
+        <span class="collision-index-type">{{ collision.index_type }}: </span>
+        <code class="sequence">{{ collision.sequence1 }}</code>
+        <span class="collision-sep"> / </span>
+        <code class="sequence">{{ collision.sequence2 }}</code>
+        <span class="collision-distance"> (distance: {{ collision.hamming_distance }})</span>
+    </div>
+</div>

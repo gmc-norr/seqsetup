@@ -1,0 +1,73 @@
+{#
+   Issues tab content — full content of the validation page's "Issues" tab.
+   Inputs: result: ValidationResult
+#}
+{# Pre-compute the error + warning lists using namespace() for safe mutation #}
+{% set ns = namespace(errors=[], warnings=[]) %}
+{% for sample_id in result.duplicate_sample_ids %}
+    {% set ns.errors = ns.errors + [('duplicate', sample_id)] %}
+{% endfor %}
+{% for collision in result.index_collisions %}
+    {% set ns.errors = ns.errors + [('collision', collision)] %}
+{% endfor %}
+{% for dark_err in result.dark_cycle_errors %}
+    {% set ns.errors = ns.errors + [('dark_cycle', dark_err)] %}
+{% endfor %}
+{% for app_err in result.application_errors %}
+    {% set ns.errors = ns.errors + [('application', app_err)] %}
+{% endfor %}
+{% for cfg_err in result.configuration_errors %}
+    {% if cfg_err.severity.value == 'error' %}
+        {% set ns.errors = ns.errors + [('config', cfg_err)] %}
+    {% endif %}
+{% endfor %}
+{% for cfg_err in result.configuration_errors %}
+    {% if cfg_err.severity.value == 'warning' %}
+        {% set ns.warnings = ns.warnings + [('config_warning', cfg_err)] %}
+    {% endif %}
+{% endfor %}
+
+{% if not ns.errors and not ns.warnings %}
+<div class="issues-tab-content">
+    <div class="validation-ok">
+        <span class="status-icon ok">&#10003;</span>
+        <span class="status-text">No validation issues detected</span>
+    </div>
+</div>
+{% else %}
+<div class="issues-tab-content{% if ns.errors %} has-errors{% endif %}">
+    {% if ns.errors %}
+    <h3>Errors ({{ ns.errors|length }})</h3>
+    <div class="validation-error-list">
+        {% for err_type, err in ns.errors %}
+            <div class="validation-error-item">
+                {% if err_type == 'duplicate' %}
+                    <span class="error-type">Duplicate ID: </span>
+                    <span>{{ err }}</span>
+                {% elif err_type == 'collision' %}
+                    {% with collision=err %}{% include "validation/_collision_detail.html" %}{% endwith %}
+                {% elif err_type == 'dark_cycle' %}
+                    {% with error=err %}{% include "validation/_dark_cycle_detail.html" %}{% endwith %}
+                {% elif err_type == 'application' %}
+                    {% with error=err %}{% include "validation/_application_error_detail.html" %}{% endwith %}
+                {% elif err_type == 'config' %}
+                    {% with error=err %}{% include "validation/_configuration_error_detail.html" %}{% endwith %}
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if ns.warnings %}
+    <h3 style="margin-top: 1rem;">Warnings ({{ ns.warnings|length }})</h3>
+    <div class="validation-warning-list">
+        {% for err_type, err in ns.warnings %}
+            <div class="validation-warning-item">
+                {% if err_type == 'config_warning' %}
+                    {% with error=err %}{% include "validation/_configuration_error_detail.html" %}{% endwith %}
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}

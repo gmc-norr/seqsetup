@@ -50,8 +50,8 @@ def _render_tab_contents(run_id, result, index_type="i7"):
         ColorBalanceTabContent,
         DarkCyclesTabContent,
         HeatmapsTabContent,
-        IssuesTabContent,
     )
+    from ..templating import templates
 
     def _to_str(ft):
         # Render the FT component to its HTML string.
@@ -59,7 +59,7 @@ def _render_tab_contents(run_id, result, index_type="i7"):
         return to_xml(ft)
 
     return {
-        "issues_html": _to_str(IssuesTabContent(result)),
+        "issues_html": templates.env.get_template("validation/_issues_tab.html").render(result=result),
         "heatmaps_html": _to_str(HeatmapsTabContent(run_id, result, index_type)),
         "color_balance_html": _to_str(ColorBalanceTabContent(run_id, result)),
         "dark_cycles_html": _to_str(DarkCyclesTabContent(run_id, result)),
@@ -153,13 +153,12 @@ def get_validation_errors(
 ) -> Response:
     """GET /runs/{run_id}/validation/errors — errors-list refresh."""
     from fasthtml.common import Div, P
-    from ..components.validation import ValidationErrorList
 
     run = ctx.run_repo.get_by_id(run_id)
     if not run:
         return ft_response(Div(P("Run not found"), cls="error"), status_code=404)
     result = _validate_run(run, ctx)
-    return ft_response(ValidationErrorList(result))
+    return render(request, "validation/_error_list.html", {"result": result})
 
 
 @router.post("/runs/{run_id}/validation/approve", response_class=HTMLResponse)

@@ -1,0 +1,19 @@
+{#
+   Single configuration error/warning detail.
+   Inputs: error: ConfigurationError
+#}
+{% set category_labels = {
+    'lane_out_of_range': 'Lane out of range',
+    'index_length_mismatch': 'Index length mismatch',
+    'mixed_indexing': 'Mixed indexing mode',
+    'invalid_sample_id': 'Invalid sample ID',
+    'index_exceeds_cycles': 'Index exceeds cycles',
+    'duplicate_index_pair': 'Duplicate indexes',
+    'no_lane_assignment': 'No lane assignment',
+    'mismatch_threshold_risk': 'Mismatch threshold',
+} %}
+{% set label = category_labels.get(error.category, error.category.replace('_', ' ').title()) %}
+<div class="configuration-error-detail">
+    <span class="error-type">{{ label }}: </span>
+    <span>{{ error.message }}</span>
+</div>

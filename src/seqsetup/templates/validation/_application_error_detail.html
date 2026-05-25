@@ -1,0 +1,18 @@
+{#
+   Single application-profile validation error detail.
+   Inputs: error: ApplicationValidationError
+#}
+{% set type_labels = {
+    'app_not_available': 'Application not available',
+    'version_not_available': 'Version mismatch',
+    'version_conflict': 'Version conflict',
+    'profile_not_found': 'Profile not found',
+    'test_profile_not_found': 'Test profile not found',
+} %}
+{% set label = type_labels.get(error.error_type, 'Application error') %}
+{% set show_sample = error.error_type not in ('test_profile_not_found', 'version_conflict') and error.sample_name %}
+<div class="application-error-detail">
+    <span class="error-type">{{ label }}: </span>
+    <span>{{ error.detail }}</span>
+    {% if show_sample %}<span class="collision-distance"> (sample: {{ error.sample_name }})</span>{% endif %}
+</div>
