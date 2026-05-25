@@ -178,8 +178,30 @@ class ValidationService:
             List of ConfigurationError (errors and warnings)
         """
         errors: list[ConfigurationError] = []
+
+        # Prerequisite: at least one sample
         if not run.samples:
-            return errors
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="prerequisite_no_samples",
+                message="Run has no samples; add samples before marking the run as ready.",
+            ))
+            return errors  # No samples — skip the rest, they all assume samples exist
+
+        # Prerequisite: every sample has an index assigned
+        unindexed = [s for s in run.samples if not s.has_index]
+        if unindexed:
+            names = [s.sample_id for s in unindexed]
+            msg = f"{len(unindexed)} sample(s) have no index assigned: {', '.join(names[:5])}"
+            if len(unindexed) > 5:
+                msg += f", and {len(unindexed) - 5} more"
+            msg += "."
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="prerequisite_missing_indexes",
+                message=msg,
+                sample_names=names,
+            ))
 
         total_lanes = get_lanes_for_flowcell(
             run.instrument_platform, run.flowcell_type, instrument_config

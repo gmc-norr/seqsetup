@@ -685,8 +685,24 @@ class TestValidateRun:
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
             flowcell_type="10B",
             samples=[
-                Sample(sample_id="S1"),
-                Sample(sample_id="S2"),
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="pair_S1",
+                        name="pair1",
+                        index1=Index(name="i7_S1", sequence="ATCGATCG", index_type=IndexType.I7),
+                        index2=Index(name="i5_S1", sequence="GCTAGCTA", index_type=IndexType.I5),
+                    ),
+                ),
+                Sample(
+                    sample_id="S2",
+                    index_pair=IndexPair(
+                        id="pair_S2",
+                        name="pair2",
+                        index1=Index(name="i7_S2", sequence="TTAGCCGA", index_type=IndexType.I7),
+                        index2=Index(name="i5_S2", sequence="CGATTCGA", index_type=IndexType.I5),
+                    ),
+                ),
             ],
         )
 

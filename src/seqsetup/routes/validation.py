@@ -337,11 +337,7 @@ def _render_tab_contents(run_id, result):
 
 def _approval_state(run, result) -> dict:
     """Compute the approval-bar state."""
-    can_approve = (
-        result.error_count == 0
-        and run.has_samples
-        and run.all_samples_have_indexes
-    )
+    can_approve = result.error_count == 0
     return {
         "run": run,
         "result": result,
@@ -422,11 +418,7 @@ def approve_validation(
         return Response("Validation can only be approved on draft runs", status_code=400)
 
     result = _validate_run(run, ctx)
-    can_approve = (
-        result.error_count == 0
-        and run.has_samples
-        and run.all_samples_have_indexes
-    )
+    can_approve = result.error_count == 0
     if can_approve:
         run.validation_approved = True
         run.touch(reset_validation=False, updated_by=get_username(request))
