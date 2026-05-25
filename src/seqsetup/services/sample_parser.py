@@ -8,6 +8,11 @@ from dataclasses import dataclass
 # DNA sequence validation pattern (compiled once at module level)
 _VALID_DNA_RE = re.compile(r'^[ACGTN]*$')
 
+# Per-cell character cap. Matches the 256 limit applied by routes' sanitize_string()
+# on form-submitted fields, so pasted/imported values arrive at the model layer
+# already bounded.
+_MAX_CELL_LEN = 256
+
 
 @dataclass
 class ParsedSample:
@@ -154,7 +159,10 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
     for raw in reader:
         if not any(cell.strip() for cell in raw):
             continue  # skip wholly blank rows
-        rows.append([cell.strip() for cell in raw])
+        # Clamp each cell to MAX_CELL_LEN per the CLAUDE.md input-sanitization
+        # rule; downstream code assumes bounded strings (model invariants, DB
+        # field widths, render budgets).
+        rows.append([cell.strip()[:_MAX_CELL_LEN] for cell in raw])
 
     # Default column mapping (no header)
     column_mapping = {"sample_id": 0, "test_id": 1, "index1": 2, "index2": 3}

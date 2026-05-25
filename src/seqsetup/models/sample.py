@@ -87,17 +87,38 @@ class Sample:
         # Filter lanes to only positive integers
         if self.lanes:
             self.lanes = [lane for lane in self.lanes if isinstance(lane, int) and not isinstance(lane, bool) and lane > 0]
-        # override_cycles: uppercase + restrict to override-notation characters.
-        # Free-form text would flow into the Sample Sheet and shift columns.
-        if self.override_cycles is not None:
-            self.override_cycles = self.override_cycles.upper()
-            if not _VALID_OVERRIDE_CYCLES_RE.match(self.override_cycles):
-                bad = sorted(set(self.override_cycles) - set("YIUN0123456789*;,"))
-                raise ValueError(
-                    f"Invalid characters in override_cycles "
-                    f"({''.join(repr(c) for c in bad)}). "
-                    f"Allowed: Y, I, U, N, digits, '*', ';', ','."
-                )
+        # override_cycles is validated and normalized in __setattr__ so direct
+        # assignment after construction is safe; nothing to do here.
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Enforce override_cycles invariants on every assignment.
+
+        Dataclasses run __post_init__ only at construction, so attribute
+        assignments after the object exists would otherwise bypass validation
+        and let malformed strings reach SampleSheet output or break later
+        reloads. We intercept ``override_cycles`` here so the invariant holds
+        whether the value arrives via the constructor or a later mutation.
+        """
+        if name == "override_cycles" and value is not None:
+            value = self._normalize_override_cycles(value)
+        object.__setattr__(self, name, value)
+
+    @staticmethod
+    def _normalize_override_cycles(value: str) -> str:
+        """Uppercase + reject any character outside the override-cycle alphabet.
+
+        Free-form text would flow into the Sample Sheet and shift columns,
+        so we refuse it at the model boundary regardless of ingest path.
+        """
+        upper = value.upper()
+        if not _VALID_OVERRIDE_CYCLES_RE.match(upper):
+            bad = sorted(set(upper) - set("YIUN0123456789*;,"))
+            raise ValueError(
+                f"Invalid characters in override_cycles "
+                f"({''.join(repr(c) for c in bad)}). "
+                f"Allowed: Y, I, U, N, digits, '*', ';', ','."
+            )
+        return upper
 
     @property
     def index1_sequence(self) -> Optional[str]:

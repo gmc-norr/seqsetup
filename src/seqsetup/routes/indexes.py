@@ -29,6 +29,7 @@ from ..services.audit_log import audit
 from ..services.index_kit_yaml_exporter import IndexKitYamlExporter
 from ..services.index_parser import IndexParser
 from ..services.index_validator import IndexValidator
+from ..services.validation import clear_validation_cache
 from ..templating import render
 from .dependencies import get_ctx, require_admin_dep
 from .utils import get_username
@@ -213,6 +214,10 @@ async def upload_index_kit(
             )
 
         ctx.index_kit_repo.save(kit)
+        # Index-kit content changes can flip per-sample index-collision and
+        # color-balance outcomes; invalidate validation cache so any future
+        # validate_run() recomputes against the new kit set.
+        clear_validation_cache()
     except Exception:
         logger.exception("Failed to parse index kit file")
         audit(
@@ -266,6 +271,8 @@ def remove_index_kit(
 
     deleted = ctx.index_kit_repo.delete(name, version)
     if deleted:
+        # See save() above — removing a kit can also change validation outcomes.
+        clear_validation_cache()
         audit(
             "index_kit.deleted",
             actor=get_username(request),

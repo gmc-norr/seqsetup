@@ -1,8 +1,10 @@
 """Service for fetching worksheets and samples from an external API."""
 
+import ipaddress
 import json
 import logging
 import os
+import socket
 import ssl
 import threading
 import time
@@ -17,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 # Maximum API response size (10 MB)
 _MAX_RESPONSE_SIZE = 10 * 1024 * 1024
+
+# Per-field character cap on values extracted from LIMS payloads. Matches the
+# 256-char limit applied by form-submission paths so model invariants never
+# see an unbounded string regardless of which ingest route was taken.
+_MAX_FIELD_LEN = 256
 
 
 # Minimum interval between consecutive LIMS API calls (per host). Defends
@@ -59,12 +66,65 @@ class SampleApiError(Exception):
     pass
 
 
-def _validate_url(url: str) -> None:
-    """Validate that a URL uses HTTP(S) and has a hostname.
+def _is_private_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True if ``ip`` is loopback, link-local, private, multicast, reserved,
+    or unspecified — i.e. anything that points at the host's own networks
+    rather than the public internet.
 
-    HTTPS is required unless ``SEQSETUP_LIMS_ALLOW_HTTP=1`` is set — clear-text
-    LIMS communication would expose the configured api-key on the wire.
-    Localhost/private IPs are still allowed (needed for the mock API in tests).
+    Used by ``_validate_url`` to refuse SSRF targets: even with admin auth,
+    the LIMS URL must not be able to address the host's loopback (127.0.0.0/8,
+    ::1), link-local (169.254.0.0/16, fe80::/10), or RFC1918 private ranges.
+    """
+    return (
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_private
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _resolve_hostname_ips(hostname: str) -> list[ipaddress._BaseAddress]:
+    """Resolve ``hostname`` to all of its A/AAAA records.
+
+    Raises ``SampleApiError`` if resolution fails — we cannot validate a
+    target we cannot resolve, and proceeding would leak the API key to an
+    unknown destination.
+    """
+    try:
+        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise SampleApiError(f"Cannot resolve LIMS hostname {hostname!r}: {exc}")
+    ips: list[ipaddress._BaseAddress] = []
+    for info in infos:
+        sockaddr = info[4]
+        ip_text = sockaddr[0]
+        try:
+            ips.append(ipaddress.ip_address(ip_text))
+        except ValueError:
+            # getaddrinfo handed back something we can't parse — refuse.
+            raise SampleApiError(f"Unparseable resolved address for {hostname!r}: {ip_text!r}")
+    return ips
+
+
+def _validate_url(url: str) -> None:
+    """Validate that a URL uses HTTP(S), has a hostname, and resolves only to
+    public IPs.
+
+    Two independent restrictions:
+
+    1. Scheme: ``https`` always allowed; ``http`` only if the operator opts
+       in via ``SEQSETUP_LIMS_ALLOW_HTTP=1`` — plain HTTP would leak the
+       configured api-key on the wire.
+
+    2. Address: the hostname must resolve to public addresses only. Loopback,
+       link-local, RFC1918, multicast, reserved, and unspecified ranges are
+       refused after DNS resolution to prevent the LIMS URL from being used
+       as an SSRF pivot into the host's own networks. The
+       ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1`` env opt-in disables this check
+       for dev/test environments that point at the mock-LIMS on localhost.
+       Production deployments MUST NOT set that variable.
     """
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
@@ -74,16 +134,28 @@ def _validate_url(url: str) -> None:
         raise SampleApiError(f"Unsupported URL scheme: {parsed.scheme}")
 
     if parsed.scheme == "http":
-        # Allow plain HTTP only for localhost (dev/test) or when explicitly
-        # opted in via env var. Production deployments MUST use HTTPS so
-        # the api-key isn't sent in clear.
-        is_local = hostname in ("localhost", "127.0.0.1", "::1") or hostname.startswith("127.")
-        opt_in = os.environ.get("SEQSETUP_LIMS_ALLOW_HTTP", "").lower() in ("1", "true", "yes")
-        if not (is_local or opt_in):
+        opt_in_http = os.environ.get("SEQSETUP_LIMS_ALLOW_HTTP", "").lower() in ("1", "true", "yes")
+        if not opt_in_http:
             raise SampleApiError(
                 f"Refusing to call LIMS over plain HTTP at {hostname!r}: "
                 f"the configured api-key would be sent in clear text. "
                 f"Use HTTPS, or set SEQSETUP_LIMS_ALLOW_HTTP=1 to opt in (not for production)."
+            )
+
+    allow_private = os.environ.get("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", "").lower() in ("1", "true", "yes")
+    if allow_private:
+        return
+
+    resolved = _resolve_hostname_ips(hostname)
+    if not resolved:
+        raise SampleApiError(f"Hostname {hostname!r} resolved to no addresses")
+    for ip in resolved:
+        if _is_private_address(ip):
+            raise SampleApiError(
+                f"Refusing to call LIMS at {hostname!r} ({ip}): address is "
+                f"loopback/private/link-local. SSRF is blocked by policy. "
+                f"For dev/test against a mock LIMS, set "
+                f"SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1 (must not be set in production)."
             )
 
 
@@ -138,21 +210,21 @@ def _get_field_value(item: dict, field_name: str, config: SampleApiConfig) -> st
     # Try exact match first
     if api_field in item:
         val = item[api_field]
-        return str(val).strip() if val is not None else ""
+        return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
 
     # Try case-insensitive match
     lower_item = {k.lower(): v for k, v in item.items()}
     if api_field.lower() in lower_item:
         val = lower_item[api_field.lower()]
-        return str(val).strip() if val is not None else ""
+        return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
 
     # Try the original field name as fallback
     if field_name in item:
         val = item[field_name]
-        return str(val).strip() if val is not None else ""
+        return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
     if field_name.lower() in lower_item:
         val = lower_item[field_name.lower()]
-        return str(val).strip() if val is not None else ""
+        return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
 
     return ""
 
@@ -430,7 +502,9 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
             for alias in aliases:
                 if alias in lower_item and lower_item[alias] is not None:
                     val = lower_item[alias]
-                    sample[field] = str(val).strip() if val else ""
+                    # Strip + length-clamp per CLAUDE.md input-sanitization rule.
+                    # LIMS payloads aren't trusted to honor field widths.
+                    sample[field] = str(val).strip()[:_MAX_FIELD_LEN] if val else ""
                     break
 
         # Must have at least sample_id

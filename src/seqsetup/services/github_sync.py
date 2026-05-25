@@ -22,6 +22,7 @@ from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
 from .instrument_validator import validate_instrument_yaml, ValidationResult
+from .validation import clear_validation_cache
 
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,14 @@ class GitHubSyncService:
             if config.sync_index_kits_enabled and self.index_kit_repo:
                 self.index_kit_repo.delete_synced()
                 self.index_kit_repo.bulk_save(index_kits)
+
+            # Invalidate cached validation results. ValidationService memoizes
+            # by (run.id, run.updated_at, repo identity), but a bulk_save into
+            # an existing repo changes content without changing repo identity
+            # or any run's updated_at — so a stale cache entry could mark a
+            # run Ready against the *previous* profile set. Clear the cache so
+            # the next validate_run() re-computes against the new content.
+            clear_validation_cache()
 
             count = len(app_profiles) + len(test_profiles)
             instruments_count = len(instruments)

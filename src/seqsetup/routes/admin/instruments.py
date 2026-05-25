@@ -22,6 +22,7 @@ from starlette.responses import HTMLResponse, Response
 from ...context import AppContext
 from ...forms.validators import strip_and_truncate
 from ...services.audit_log import audit
+from ...services.validation import clear_validation_cache
 from ...templating import render
 from ..dependencies import get_ctx, require_admin_dep
 from ..utils import get_username
@@ -73,6 +74,9 @@ def toggle_synced_instrument(
     if ctx.instrument_definition_repo is None:
         return Response("Instrument repo not configured", status_code=404)
     ctx.instrument_definition_repo.set_enabled(form.instrument_id, form.enabled)
+    # Instrument enable/disable changes which color-chemistry rules apply at
+    # validation time; invalidate the cache so stale results don't survive.
+    clear_validation_cache()
     audit(
         "instrument.toggled",
         actor=get_username(request),
@@ -112,6 +116,8 @@ def _bulk_set(request: Request, ctx: AppContext, *, enabled: bool, message: str)
     repo = ctx.instrument_definition_repo
     for inst in repo.list_all():
         repo.set_enabled(inst.id, enabled)
+    # See toggle_synced_instrument — invalidate stale validation results.
+    clear_validation_cache()
     audit(
         "instrument.bulk_toggled",
         actor=get_username(request),

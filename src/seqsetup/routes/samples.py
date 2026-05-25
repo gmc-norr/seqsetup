@@ -6,8 +6,9 @@ Depends(get_editable_run) + with saving_run(...).
 
 import json
 import logging
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
@@ -717,18 +718,23 @@ async def set_override_cycles_bulk(
     override_cycles = sanitize_string(override_cycles_str, 256) if override_cycles_str else None
     override_cycles = override_cycles or None  # empty string -> None for the recalculate path
 
-    with saving_run(run, ctx, request):
-        for sample in run.samples:
-            if sample.id in sample_ids:
-                if override_cycles:
-                    sample.override_cycles = override_cycles
-                else:
-                    if run.run_cycles and sample.has_index:
-                        sample.override_cycles = CycleCalculator.calculate_override_cycles(
-                            sample, run.run_cycles
-                        )
+    try:
+        with saving_run(run, ctx, request):
+            for sample in run.samples:
+                if sample.id in sample_ids:
+                    if override_cycles:
+                        sample.override_cycles = override_cycles
                     else:
-                        sample.override_cycles = None
+                        if run.run_cycles and sample.has_index:
+                            sample.override_cycles = CycleCalculator.calculate_override_cycles(
+                                sample, run.run_cycles
+                            )
+                        else:
+                            sample.override_cycles = None
+    except ValueError as exc:
+        # Sample model rejected an invariant violation; refuse the bulk save
+        # so a single bad value does not invalidate every selected row.
+        raise HTTPException(status_code=400, detail=str(exc))
 
     audit(
         "sample.bulk_override_cycles_set",
@@ -1031,49 +1037,67 @@ async def update_sample_settings(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/samples/{sample_id}/settings — update override cycles + mismatches."""
+    """POST /runs/{run_id}/samples/{sample_id}/settings — update override cycles + mismatches.
+
+    Per-field partial update: each settings input on the row posts on its own
+    via hx-include="this", so the form contains only the field that changed.
+    The handler updates exactly that field; any setting *not* present in the
+    submission is left untouched. A field that IS present but empty is treated
+    as "clear/reset" (auto-recompute for override_cycles, ``None`` for the
+    mismatch overrides). This prevents silent data loss across siblings.
+    """
     run_id = run.id
     sample_id_path = sample_id
     form = await request.form()
-    override_cycles = form.get("override_cycles", "")
-    barcode_mismatches_index1 = form.get("barcode_mismatches_index1", "")
-    barcode_mismatches_index2 = form.get("barcode_mismatches_index2", "")
 
     sample = run.get_sample(sample_id_path)
     if not sample:
         return Response("Sample not found", status_code=404)
 
-    override_cycles = sanitize_string(override_cycles, 256)
+    has_override = "override_cycles" in form
+    has_bmi1 = "barcode_mismatches_index1" in form
+    has_bmi2 = "barcode_mismatches_index2" in form
 
-    bmi1 = None
-    bmi1_str = barcode_mismatches_index1.strip()
-    if bmi1_str:
-        try:
-            bmi1 = max(0, min(3, int(bmi1_str)))
-        except ValueError:
-            bmi1 = None
+    override_cycles = sanitize_string(form.get("override_cycles", ""), 256) if has_override else None
 
-    bmi2 = None
-    bmi2_str = barcode_mismatches_index2.strip()
-    if bmi2_str:
-        try:
-            bmi2 = max(0, min(3, int(bmi2_str)))
-        except ValueError:
-            bmi2 = None
+    bmi1: Optional[int] = None
+    if has_bmi1:
+        bmi1_str = form.get("barcode_mismatches_index1", "").strip()
+        if bmi1_str:
+            try:
+                bmi1 = max(0, min(3, int(bmi1_str)))
+            except ValueError:
+                bmi1 = None
 
-    with saving_run(run, ctx, request):
-        if override_cycles:
-            sample.override_cycles = override_cycles
-        else:
-            if run.run_cycles and sample.has_index:
-                sample.override_cycles = CycleCalculator.calculate_override_cycles(
-                    sample, run.run_cycles
-                )
-            else:
-                sample.override_cycles = None
+    bmi2: Optional[int] = None
+    if has_bmi2:
+        bmi2_str = form.get("barcode_mismatches_index2", "").strip()
+        if bmi2_str:
+            try:
+                bmi2 = max(0, min(3, int(bmi2_str)))
+            except ValueError:
+                bmi2 = None
 
-        sample.barcode_mismatches_index1 = bmi1
-        sample.barcode_mismatches_index2 = bmi2
+    try:
+        with saving_run(run, ctx, request):
+            if has_override:
+                if override_cycles:
+                    sample.override_cycles = override_cycles
+                elif run.run_cycles and sample.has_index:
+                    sample.override_cycles = CycleCalculator.calculate_override_cycles(
+                        sample, run.run_cycles
+                    )
+                else:
+                    sample.override_cycles = None
+            if has_bmi1:
+                sample.barcode_mismatches_index1 = bmi1
+            if has_bmi2:
+                sample.barcode_mismatches_index2 = bmi2
+    except ValueError as exc:
+        # Sample model rejected an invariant violation (e.g. malformed
+        # override_cycles characters). Surface as a 400 so the run is not
+        # persisted into an invalid state.
+        raise HTTPException(status_code=400, detail=str(exc))
 
     audit(
         "sample.settings.updated",
