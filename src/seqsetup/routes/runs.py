@@ -269,19 +269,25 @@ def register(app, ctx: AppContext) -> None:
             return HTMLResponse(status_html, headers={"Cache-Control": "no-store"})
 
         previous_status = run.status.value
-        run.status = new_status
 
+        # Pre-compute exports BEFORE touching run.status so that a failure
+        # leaves the run in its current state (no half-mutated READY run persisted).
+        new_ss_v2 = None
+        new_json = None
+        new_ss_v1 = None
+        new_val_json = None
+        new_val_pdf = None
         if new_status == RunStatus.READY:
             try:
-                run.generated_samplesheet_v2 = SampleSheetV2Exporter.export(
+                new_ss_v2 = SampleSheetV2Exporter.export(
                     run,
                     test_profile_repo=ctx.test_profile_repo,
                     app_profile_repo=ctx.app_profile_repo,
                 )
-                run.generated_json = JSONExporter.export(run)
+                new_json = JSONExporter.export(run)
 
                 if SampleSheetV1Exporter.supports(run.instrument_platform):
-                    run.generated_samplesheet_v1 = SampleSheetV1Exporter.export(run)
+                    new_ss_v1 = SampleSheetV1Exporter.export(run)
 
                 # Generate validation JSON + PDF reports. Pre-generating the PDF
                 # here (rather than lazy on first download) keeps READY/ARCHIVED
@@ -293,11 +299,21 @@ def register(app, ctx: AppContext) -> None:
                     app_profile_repo=ctx.app_profile_repo,
                     instrument_config=ctx.instrument_config,
                 )
-                run.generated_validation_json = ValidationReportJSON.export(run, result)
-                run.generated_validation_pdf = ValidationReportPDF.export(run, result)
+                new_val_json = ValidationReportJSON.export(run, result)
+                new_val_pdf = ValidationReportPDF.export(run, result)
             except Exception:
                 logger.error(f"Failed to generate exports for run {run_id}", exc_info=True)
                 return Response("Failed to generate exports", status_code=500)
+
+        # All exports succeeded (or transition doesn't need them). Apply now.
+        run.status = new_status
+        if new_status == RunStatus.READY:
+            run.generated_samplesheet_v2 = new_ss_v2
+            run.generated_json = new_json
+            if new_ss_v1 is not None:
+                run.generated_samplesheet_v1 = new_ss_v1
+            run.generated_validation_json = new_val_json
+            run.generated_validation_pdf = new_val_pdf
 
         run.touch(reset_validation=False, updated_by=get_username(request))
         ctx.run_repo.save(run)

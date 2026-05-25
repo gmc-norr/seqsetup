@@ -33,7 +33,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic.functional_validators import BeforeValidator
 from starlette.responses import HTMLResponse, Response
 
@@ -104,12 +104,12 @@ class LDAPConfigFormModel(BaseModel):
 class LDAPTestAuthForm(BaseModel):
     """LDAP auth test (admin verifies a real user's credentials).
 
-    Both fields CLAMP; test_password is NOT truncated beyond the DoS
-    guard max_length 512 — silent truncation would change what the
-    user typed.
+    test_username is stripped and clamped. test_password is NOT stripped
+    or truncated beyond the DoS guard max_length 512 — silent changes
+    would alter what the user typed.
     """
     test_username: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
-    test_password: Annotated[str, BeforeValidator(strip_and_truncate(512))] = ""
+    test_password: str = Field(default="", max_length=512)
 
 
 # ---------------------------------------------------------------------

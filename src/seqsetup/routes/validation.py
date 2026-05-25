@@ -16,13 +16,11 @@ run.validation_approved through the same touch+save pattern as
 before; both audit events preserved verbatim.
 """
 
-from typing import Annotated
-
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
-from ..models.sequencing_run import RunStatus, SequencingRun
+from ..models.sequencing_run import RunStatus
 from ..services.audit_log import audit
 from ..services.validation import ValidationService
 from ..templating import ft_response, render

@@ -55,7 +55,7 @@
                                     <input type="checkbox"
                                            {% if inst.enabled %}checked{% endif %}
                                            hx-post="/admin/instruments/synced/toggle"
-                                           hx-vals='{"instrument_id": "{{ inst.id }}", "enabled": "{{ "false" if inst.enabled else "true" }}"}'
+                                           hx-vals='{"instrument_id": {{ inst.id | tojson }}, "enabled": {{ (not inst.enabled) | tojson }}}'
                                            hx-target="#synced-instruments-section"
                                            hx-swap="outerHTML">
                                 </td>

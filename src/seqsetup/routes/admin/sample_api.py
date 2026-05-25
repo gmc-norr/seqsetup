@@ -17,7 +17,7 @@ Save flow:
 Admin-only via router-level require_admin_dep.
 """
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
 from pydantic import BaseModel

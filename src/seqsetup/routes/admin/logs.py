@@ -12,7 +12,7 @@ This is the canonical jinja2-fragments dual-render pattern.
 Admin-only via router-level require_admin_dep.
 """
 
-from typing import Annotated, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import HTMLResponse, Response
