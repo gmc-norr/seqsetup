@@ -146,14 +146,18 @@ tracking:
    sample.bulk_mismatches_set, sample.bulk_override_cycles_set,
    sample.bulk_test_id_set, sample.bulk_deleted).
 
-2. **APIRouter pattern not yet adopted by `routes/samples.py`,
+2. ~~**APIRouter pattern not yet adopted by `routes/samples.py`,
    `routes/wizard.py`, `routes/runs.py`, `routes/export.py`.**
    These four modules still use the legacy `register(app, ctx)`
    pattern with closure-captured `ctx` and manual `run.touch() +
    ctx.run_repo.save()` calls instead of `Depends(get_ctx)` +
-   `with saving_run(run, ctx, request):`. Behaviour is correct
-   today but new contributors copying these files as references
-   will perpetuate the legacy pattern. A follow-up should convert
-   each to the canonical APIRouter shape (the admin/* modules,
-   profiles, dashboard, auth, indexes, validation, local_users,
-   api_tokens are already canonical).
+   `with saving_run(run, ctx, request):`.~~
+   **CLOSED** — All four migrated:
+   - `routes/export.py` → `Depends(get_exportable_run)` + APIRouter
+   - `routes/wizard.py` → APIRouter + `Depends(get_ctx)` (GET-only)
+   - `routes/runs.py` → `Depends(get_editable_run)` /
+     `Depends(get_archivable_run)` + `with saving_run(...)`
+   - `routes/samples.py` → `Depends(get_editable_run)` +
+     `with saving_run(...)` for every mutation; the 15 audit events
+     from follow-up #1 are preserved verbatim
+   ZERO `register(app, ctx)` closures remain in `src/seqsetup/routes/`.
