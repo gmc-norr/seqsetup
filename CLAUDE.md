@@ -56,7 +56,7 @@ These rules must NEVER be violated.
 
 ### Authentication and authorization
 - All non-public routes require authentication — never add unprotected routes
-- Admin routes must check `require_admin(req)` and return the error response if non-None
+- Admin routes must use `require_admin_dep` (from `routes/dependencies.py`) as a router-level dependency — it raises HTTP 403 for non-admin users
 - Index kit upload requires admin — standard users cannot upload index kits
 - API routes require Bearer token auth — tokens stored as bcrypt hashes, never log or expose plaintext
 - Access the authenticated user via `req.scope.get("auth")`, API token via `req.scope.get("api_token")`
@@ -131,15 +131,22 @@ For admin-only routes, attach the dep at router level:
 src/seqsetup/
 ├── app.py              # FastAPI app creation, route registration
 ├── startup.py          # Repo initialization, service factories, DI setup
-├── middleware.py        # Auth beforeware (session + Bearer token)
+├── middleware.py        # AuthMiddleware (Starlette BaseHTTPMiddleware) — session + redirect on unauthenticated
 ├── context.py          # AppContext dataclass (dependency injection)
 ├── openapi.py          # OpenAPI spec for the JSON API
+├── templates/         # Jinja2 templates
+│   ├── admin/         # Admin pages (auth, config-sync, instruments, logs, sample-api, users, api-tokens)
+│   ├── runs/          # Edit-run page + per-section partials
+│   ├── validation/    # Validation page + tab content partials
+│   ├── wizard/        # New-run wizard + add-samples wizard partials
+│   ├── indexes/       # Index kits list/import/detail
+│   └── _app_shell.html, _base.html, _messages.html, etc.
 ├── models/             # Dataclasses — self-validating, with to_dict/from_dict
 ├── repositories/       # MongoDB access — thin, no business logic
 │   └── base.py         # BaseRepository[T], SingletonConfigRepository[C]
 ├── routes/             # Request handlers — follow the pattern above
 │   ├── utils.py        # Guards: check_run_editable, check_status_transition,
-│   │                   #   check_run_exportable, require_admin, get_username, sanitize_*
+│   │                   #   check_run_exportable, get_username, sanitize_*
 │   └── api.py          # JSON API (ready/archived runs only)
 ├── services/           # Business logic — validation, export, LDAP, LIMS API
 │   ├── validation.py   # Read-only validation orchestrator
@@ -156,7 +163,8 @@ src/seqsetup/
 
 | File | Purpose |
 |------|---------|
-| `routes/utils.py` | `check_run_editable()`, `check_status_transition()`, `check_run_exportable()`, `require_admin()`, `get_username()`, `sanitize_*()` |
+| `routes/utils.py` | `check_run_editable()`, `check_status_transition()`, `check_run_exportable()`, `get_username()`, `sanitize_string()`, `sanitize_filename()` |
+| `routes/dependencies.py` | `get_ctx`, `get_editable_run`, `get_archivable_run`, `require_admin_dep`, `saving_run`, `is_htmx_request` |
 | `utils/html.py` | `escape_js_string()`, `escape_html_attr()` — use these for all user data in HTML/JS |
 | `models/sequencing_run.py` | `SequencingRun`, `RunStatus`, `RunCycles` — central data model |
 | `models/sample.py` | `Sample` — DNA sequences validated here |
@@ -173,7 +181,8 @@ src/seqsetup/
 ```bash
 pixi install          # Install dependencies
 pixi run serve        # Run the application (localhost:5001)
-pixi run test         # Run tests (607 unit tests)
+pixi run test         # Run tests (916 unit + integration tests; pytest)
+pixi run smoke-browser  # 3 Playwright browser smoke tests
 pixi run mock-api     # Start mock LIMS API server (localhost:8100)
 pixi add <pkg>        # Add dependency
 pixi add --feature dev <pkg>  # Add dev dependency

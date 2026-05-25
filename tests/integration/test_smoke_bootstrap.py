@@ -513,3 +513,12 @@ def test_tests_page_renders(logged_in_client):
     # The empty-state message — load-bearing assertion that the
     # tests.html template (not the old FT path) is what renders.
     assert "No tests configured yet" in response.text
+
+
+def test_indexes_upload_rejects_standard_user(logged_in_standard_client):
+    """Index kit upload is admin-only. POST /indexes/upload returns 403 for a non-admin."""
+    response = logged_in_standard_client.post(
+        "/indexes/upload",
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 403

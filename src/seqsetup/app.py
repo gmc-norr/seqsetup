@@ -6,11 +6,9 @@ surface is a FastAPI sub-app mounted at /api. FastAPI is used purely as
 a Starlette-with-decorator-sugar host for the HTML side — the JSON API
 uses its full Pydantic/OpenAPI toolkit.
 
-FT components (``fasthtml.common``) remain as a templating DSL and are
-rendered to HTML strings via the helpers in ``seqsetup.templating``.
-They are progressively being ported to Jinja2 templates under
-``templates/``; this is independent of the routing/middleware framework
-choice.
+All HTML rendering is via Jinja2 + jinja2-fragments through the
+``render()`` helper in ``seqsetup.templating``. Templates live under
+``src/seqsetup/templates/``.
 
 Middleware order (outermost → innermost):
     SecurityHeadersMiddleware  ← response-header decorator

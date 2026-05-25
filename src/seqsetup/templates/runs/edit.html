@@ -4,11 +4,9 @@
 
 {% block content %}
 <div class="edit-run-layout" id="edit-run-page">
-    {% block run_status_bar %}
-        {% with run=run %}
-        {% include "runs/_run_status_bar.html" %}
-        {% endwith %}
-    {% endblock %}
+    {% with run=run %}
+    {% include "runs/_run_status_bar.html" %}
+    {% endwith %}
 
     {% with run=run, validation_result=validation_result, has_v1=has_v1 %}
     {% include "runs/_top_bar.html" %}

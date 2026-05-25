@@ -119,3 +119,34 @@ ad-hoc styling, alongside a hand-written component stylesheet at
 tables, form rows, heatmap cells, status badges, the app shell, etc.).
 The two layers are imported together in `static/css/input.css`. This
 is a standard Tailwind+CSS pattern, not a migration carry-over.
+
+## Known follow-ups
+
+These items were noted during reviews and are NOT regressions from
+the migration, but represent real gaps in the codebase that warrant
+tracking:
+
+1. **`routes/samples.py` mutation audit logging gap.** Per CLAUDE.md
+   "Audit logging" hard rule, every state-changing route should emit
+   an audit record. `samples.py` has ~17 mutation handlers
+   (add_sample, add_bulk_samples, assign_index, clear_index,
+   update_sample, delete_sample, bulk-delete, set_lanes_bulk,
+   set_mismatches_bulk, set_override_cycles_bulk, set_test_id_bulk,
+   import_worklist_samples, ...) and currently emits ZERO audit
+   events. This pre-dates the redesign but became more visible after
+   the migration. Adding audit calls is a follow-up: each mutation
+   should emit `sample.added` / `sample.deleted` / `sample.index.assigned`
+   / `sample.index.cleared` / etc., with `actor`, `target` (run_id +
+   sample_id), and `outcome` where applicable.
+
+2. **APIRouter pattern not yet adopted by `routes/samples.py`,
+   `routes/wizard.py`, `routes/runs.py`, `routes/export.py`.**
+   These four modules still use the legacy `register(app, ctx)`
+   pattern with closure-captured `ctx` and manual `run.touch() +
+   ctx.run_repo.save()` calls instead of `Depends(get_ctx)` +
+   `with saving_run(run, ctx, request):`. Behaviour is correct
+   today but new contributors copying these files as references
+   will perpetuate the legacy pattern. A follow-up should convert
+   each to the canonical APIRouter shape (the admin/* modules,
+   profiles, dashboard, auth, indexes, validation, local_users,
+   api_tokens are already canonical).
