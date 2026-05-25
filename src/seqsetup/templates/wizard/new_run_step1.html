@@ -1,0 +1,32 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "New Run - Configuration" %}
+{% set active_route = "/" %}
+
+{% block content %}
+<div class="wizard-container">
+    {% include "wizard/_progress.html" %}
+    <div class="wizard-content">
+        <h2>Step 1: Run Configuration</h2>
+        <p>Configure the sequencing instrument and cycle settings for this run.</p>
+
+        {% include "wizard/_run_metadata.html" %}
+
+        <div class="wizard-form">
+            {% include "wizard/_run_name_form.html" %}
+            {% with run=run, instruments=instruments,
+                    current_flowcells=current_flowcells,
+                    current_reagent_kits=current_reagent_kits %}
+            {% include "wizard/_instrument_config.html" %}
+            {% endwith %}
+            {% with run=run, cycles=cycles, index_cycle_options=index_cycle_options %}
+            {% include "wizard/_cycle_config_form.html" %}
+            {% endwith %}
+        </div>
+
+        {# Wizard step 1 navigation — Cancel + Continue to Run (no Back). #}
+        {% with step=1, run_id=run.id, can_proceed=True, oob=False %}
+        {% include "wizard/_navigation.html" %}
+        {% endwith %}
+    </div>
+</div>
+{% endblock %}

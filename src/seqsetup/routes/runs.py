@@ -1,8 +1,6 @@
 """Run configuration routes.
 
-Migrated to Starlette ``Route(...)`` registration. The wizard FT
-components are still returned via ``ft_response`` while the templates
-are progressively ported.
+Migrated to Starlette ``Route(...)`` registration.
 """
 
 import logging
@@ -11,11 +9,6 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response
 from starlette.routing import Route
 
-from ..components.wizard import (
-    CycleConfigFormWizard,
-    FlowcellSelectWizard,
-    ReagentKitSelectWizard,
-)
 from ..context import AppContext
 from ..data.instruments import (
     get_default_cycles,
@@ -31,7 +24,7 @@ from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
-from ..templating import ft_response, render, templates
+from ..templating import render, templates
 from .utils import check_run_editable, check_status_transition, get_username, sanitize_string
 
 logger = logging.getLogger(__name__)
@@ -121,7 +114,11 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
-        return ft_response(FlowcellSelectWizard(run_id, run.flowcell_type, flowcells))
+        return render(request, "wizard/_flowcell_select.html", {
+            "run_id": run_id,
+            "current": run.flowcell_type,
+            "flowcells": flowcells,
+        })
 
     async def update_flowcell(request: Request) -> Response:
         """POST /runs/{run_id}/flowcell — change flowcell; return new reagent kit options."""
@@ -147,7 +144,11 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
-        return ft_response(ReagentKitSelectWizard(run_id, run.reagent_cycles, reagent_kits))
+        return render(request, "wizard/_reagent_kit_select.html", {
+            "run_id": run_id,
+            "current": run.reagent_cycles,
+            "reagent_kits": reagent_kits,
+        })
 
     async def update_reagent_kit(request: Request) -> Response:
         """POST /runs/{run_id}/reagent-kit — change reagent kit; reset cycles to defaults."""
@@ -176,7 +177,13 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
-        return ft_response(CycleConfigFormWizard(run))
+        from ..data.instruments import get_index_cycle_options
+        index_cycle_options = get_index_cycle_options()
+        return render(request, "wizard/_cycle_config_form.html", {
+            "run": run,
+            "cycles": run.run_cycles,
+            "index_cycle_options": index_cycle_options,
+        })
 
     async def update_cycles(request: Request) -> Response:
         """POST /runs/{run_id}/cycles — update cycle configuration."""

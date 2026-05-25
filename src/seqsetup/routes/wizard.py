@@ -9,9 +9,6 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
-from ..components.wizard import (
-    WizardStep1,
-)
 from ..context import AppContext
 from ..templating import ft_page_response, ft_to_html, render as render_jinja, templates
 
@@ -48,11 +45,37 @@ def register(app, ctx: AppContext) -> None:
         if not run:
             return RedirectResponse("/", status_code=303)
 
-        return ft_page_response(
-            request,
-            WizardStep1(run),
-            page_title="New Run - Configuration",
+        from ..data.instruments import (
+            get_enabled_instruments,
+            get_flowcells_for_instrument,
+            get_index_cycle_options,
+            get_reagent_kits_for_flowcell,
         )
+        from ..models.sequencing_run import RunCycles
+        from ..startup import get_instrument_config_repo
+
+        instrument_config = get_instrument_config_repo().get()
+        instruments = get_enabled_instruments(instrument_config)
+        current_flowcells = get_flowcells_for_instrument(run.instrument_platform)
+        current_reagent_kits = get_reagent_kits_for_flowcell(
+            run.instrument_platform, run.flowcell_type
+        )
+        cycles = run.run_cycles or RunCycles(150, 150, 10, 10)
+        index_cycle_options = get_index_cycle_options()
+
+        return render_jinja(request, "wizard/new_run_step1.html", {
+            "run": run,
+            "instruments": instruments,
+            "current_flowcells": current_flowcells,
+            "current_reagent_kits": current_reagent_kits,
+            "cycles": cycles,
+            "index_cycle_options": index_cycle_options,
+            "steps": [
+                {"number": "1", "label": "Run Configuration",
+                 "href": f"/runs/new/step/1?run_id={run.id}",
+                 "is_active": True, "is_completed": False},
+            ],
+        })
 
     # =========================================================================
     # Add Samples Wizard (2 steps - add samples, then assign indexes)

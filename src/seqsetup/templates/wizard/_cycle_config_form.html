@@ -1,0 +1,50 @@
+{#
+   Cycle-config fieldset (Read1/Read2/Index1/Index2 + Apply).
+   HTMX attributes are on the <fieldset> element, matching the FT structure
+   (CycleConfigFormWizard uses Fieldset with hx_post/hx_target/hx_swap).
+
+   Inputs:
+     run:                  SequencingRun
+     cycles:               RunCycles
+     index_cycle_options:  list[int]
+#}
+<fieldset class="cycle-config" id="cycle-config"
+          hx-post="/runs/{{ run.id }}/cycles"
+          hx-target="#sample-table"
+          hx-swap="outerHTML">
+    <legend>Run Cycle Configuration</legend>
+    <div class="cycle-row">
+        <div class="form-group">
+            <label for="read1_cycles">Read 1</label>
+            <input type="number" name="read1_cycles" id="read1_cycles"
+                   value="{{ cycles.read1_cycles }}" min="1" max="{{ run.reagent_cycles }}">
+        </div>
+        <div class="form-group">
+            <label for="read2_cycles">Read 2</label>
+            <input type="number" name="read2_cycles" id="read2_cycles"
+                   value="{{ cycles.read2_cycles }}" min="0" max="{{ run.reagent_cycles }}">
+        </div>
+    </div>
+    <div class="cycle-row">
+        <div class="form-group">
+            <label for="index1_cycles">Index 1</label>
+            <select name="index1_cycles" id="index1_cycles">
+                {% for v in index_cycle_options %}
+                <option value="{{ v }}" {% if cycles.index1_cycles == v %}selected{% endif %}>{{ v }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="index2_cycles">Index 2</label>
+            <select name="index2_cycles" id="index2_cycles">
+                {% for v in index_cycle_options %}
+                <option value="{{ v }}" {% if cycles.index2_cycles == v %}selected{% endif %}>{{ v }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="cycle-total">
+        <span>Total: {{ cycles.total_cycles }} / {{ run.reagent_cycles }} cycles</span>
+    </div>
+    <button type="submit" class="btn-primary btn-small">Apply Cycles</button>
+</fieldset>

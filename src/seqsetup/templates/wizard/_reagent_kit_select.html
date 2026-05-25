@@ -1,0 +1,14 @@
+{#
+   Reagent-kit <select>. Inputs:
+     run_id:       str
+     current:      int       — currently-selected reagent_cycles value
+     reagent_kits: list[int] — available cycle counts
+#}
+<select name="reagent_cycles" id="reagent-kit-select"
+        hx-post="/runs/{{ run_id }}/reagent-kit"
+        hx-target="#cycle-config"
+        hx-swap="outerHTML">
+    {% for kit in reagent_kits %}
+    <option value="{{ kit }}" {% if current == kit %}selected{% endif %}>{{ kit }} cycles</option>
+    {% endfor %}
+</select>

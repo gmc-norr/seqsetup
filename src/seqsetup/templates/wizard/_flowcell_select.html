@@ -1,0 +1,17 @@
+{#
+   Flowcell <select>. Rendered both inside the instrument config form
+   (initial page) and as an HTMX outerHTML swap target (after platform change).
+
+   Inputs:
+     run_id:    str
+     current:   str    — currently-selected flowcell key
+     flowcells: dict[str, {"description": str, ...}]
+#}
+<select name="flowcell_type" id="flowcell-select"
+        hx-post="/runs/{{ run_id }}/flowcell"
+        hx-target="#reagent-kit-select"
+        hx-swap="outerHTML">
+    {% for fc, info in flowcells.items() %}
+    <option value="{{ fc }}" {% if current == fc %}selected{% endif %}>{{ fc }} - {{ info["description"] }}</option>
+    {% endfor %}
+</select>

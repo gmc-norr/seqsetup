@@ -429,3 +429,25 @@ def test_edit_run_page_renders(logged_in_client, fresh_app):
     assert 'id="run-status-bar"' in response.text
     assert 'id="export-panel"' in response.text
     assert 'id="sample-section"' in response.text
+
+
+def test_new_run_wizard_step1_renders(logged_in_client, fresh_app):
+    """GET /runs/new/step/1?run_id=... renders the Jinja2 wizard page."""
+    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    app, ctx, db = fresh_app
+    run = SequencingRun(
+        run_name="WizardStep1Smoke",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        created_by="admin",
+    )
+    ctx.run_repo.save(run)
+
+    response = logged_in_client.get(f"/runs/new/step/1?run_id={run.id}")
+    assert response.status_code == 200
+    assert "Step 1: Run Configuration" in response.text
+    assert 'id="flowcell-select"' in response.text
+    assert 'id="reagent-kit-select"' in response.text
+    assert 'id="cycle-config"' in response.text
+    assert 'name="run_name"' in response.text
+    # progress bar present
+    assert "wizard-progress" in response.text

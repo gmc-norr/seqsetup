@@ -1,0 +1,36 @@
+{#
+   Instrument config: platform select + flowcell select + reagent-kit select.
+
+   Inputs:
+     run:                  SequencingRun
+     instruments:          list[dict{"name": str, "platform": Enum}]
+     current_flowcells:    dict — passed through to _flowcell_select.html
+     current_reagent_kits: list[int] — passed through to _reagent_kit_select.html
+#}
+<fieldset class="instrument-config">
+    <legend>Instrument</legend>
+    <div class="form-group">
+        <label for="instrument_platform">Platform</label>
+        <select name="instrument_platform" id="instrument_platform"
+                hx-post="/runs/{{ run.id }}/instrument"
+                hx-target="#flowcell-select"
+                hx-swap="outerHTML">
+            {% for inst in instruments %}
+            <option value="{{ inst["platform"].value }}"
+                    {% if run.instrument_platform == inst["platform"] %}selected{% endif %}>{{ inst["name"] }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="flowcell_type">Flowcell</label>
+        {% with run_id=run.id, current=run.flowcell_type, flowcells=current_flowcells %}
+        {% include "wizard/_flowcell_select.html" %}
+        {% endwith %}
+    </div>
+    <div class="form-group">
+        <label for="reagent_cycles">Reagent Kit (cycles)</label>
+        {% with run_id=run.id, current=run.reagent_cycles, reagent_kits=current_reagent_kits %}
+        {% include "wizard/_reagent_kit_select.html" %}
+        {% endwith %}
+    </div>
+</fieldset>
