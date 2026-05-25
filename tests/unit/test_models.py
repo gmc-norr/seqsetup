@@ -569,20 +569,32 @@ class TestSampleIndexMutations:
 
     def test_add_and_get_analysis(self):
         """add_analysis and get_analysis work together."""
-        from seqsetup.models.analysis import Analysis, AnalysisType
+        from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
 
         run = SequencingRun()
-        analysis = Analysis(id="a1", name="Test", analysis_type=AnalysisType.DRAGEN_ONBOARD)
+        # DRAGEN_ONBOARD requires a pipeline per the model invariant; the test
+        # is exercising add/get, not pipeline omission.
+        analysis = Analysis(
+            id="a1",
+            name="Test",
+            analysis_type=AnalysisType.DRAGEN_ONBOARD,
+            dragen_pipeline=DRAGENPipeline.GERMLINE,
+        )
         run.add_analysis(analysis)
         assert len(run.analyses) == 1
         assert run.get_analysis("a1") is analysis
 
     def test_remove_analysis(self):
         """remove_analysis removes by ID."""
-        from seqsetup.models.analysis import Analysis, AnalysisType
+        from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
 
         run = SequencingRun()
-        analysis = Analysis(id="a1", name="Test", analysis_type=AnalysisType.DRAGEN_ONBOARD)
+        analysis = Analysis(
+            id="a1",
+            name="Test",
+            analysis_type=AnalysisType.DRAGEN_ONBOARD,
+            dragen_pipeline=DRAGENPipeline.GERMLINE,
+        )
         run.add_analysis(analysis)
         run.remove_analysis("a1")
         assert len(run.analyses) == 0

@@ -67,14 +67,19 @@ class RunCycles:
     index2_cycles: int
 
     def __post_init__(self):
-        # Clamp all cycle counts to a sane range. Lower bound 0 (some
-        # workflows legitimately set read2=0 for single-end). Upper bound
-        # 1000 — generously above current Illumina chemistry max (~500)
-        # while still catching obviously-bogus stored values.
-        self.read1_cycles = max(0, min(1000, self.read1_cycles))
-        self.read2_cycles = max(0, min(1000, self.read2_cycles))
-        self.index1_cycles = max(0, min(1000, self.index1_cycles))
-        self.index2_cycles = max(0, min(1000, self.index2_cycles))
+        # Invariant enforcement lives in __setattr__ so both construction
+        # and direct attribute writes from routes go through the same
+        # clamping.
+        pass
+
+    def __setattr__(self, name, value):
+        # Clamp every cycle count to a sane range on every assignment.
+        # Lower bound 0 (some workflows legitimately set read2=0 for
+        # single-end). Upper bound 1000 — generously above current Illumina
+        # chemistry max (~500) while still catching obviously-bogus values.
+        if name in ("read1_cycles", "read2_cycles", "index1_cycles", "index2_cycles"):
+            value = max(0, min(1000, value))
+        object.__setattr__(self, name, value)
 
     @property
     def total_cycles(self) -> int:
@@ -174,11 +179,19 @@ class SequencingRun:
     )
 
     def __post_init__(self):
-        # Clamp reagent_cycles to positive
-        self.reagent_cycles = max(1, self.reagent_cycles)
-        # Clamp barcode mismatches to 0-3
-        self.barcode_mismatches_index1 = max(0, min(3, self.barcode_mismatches_index1))
-        self.barcode_mismatches_index2 = max(0, min(3, self.barcode_mismatches_index2))
+        # Invariants live in __setattr__ so direct attribute writes from
+        # route handlers can't bypass them.
+        pass
+
+    def __setattr__(self, name, value):
+        # Clamp on every assignment, not just construction. Routes do
+        # ``run.barcode_mismatches_index1 = …`` directly; without this the
+        # clamps in __post_init__ wouldn't re-fire.
+        if name == "reagent_cycles":
+            value = max(1, value)
+        elif name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
+            value = max(0, min(3, value))
+        object.__setattr__(self, name, value)
 
     def add_sample(self, sample: Sample) -> None:
         """Add a sample to the run."""

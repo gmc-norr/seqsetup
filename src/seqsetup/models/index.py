@@ -169,11 +169,15 @@ class IndexKit:
     source: str = "user"  # "user" for uploaded kits, "github" for synced kits
 
     def __post_init__(self):
-        # Clamp default index cycles to positive values if set
-        if self.default_index1_cycles is not None:
-            self.default_index1_cycles = max(1, self.default_index1_cycles)
-        if self.default_index2_cycles is not None:
-            self.default_index2_cycles = max(1, self.default_index2_cycles)
+        # Invariants live in __setattr__ so direct attribute writes from
+        # route handlers (e.g. routes/indexes.py) can't bypass them.
+        pass
+
+    def __setattr__(self, name, value):
+        # Clamp default index cycles to positive on every assignment.
+        if name in ("default_index1_cycles", "default_index2_cycles") and value is not None:
+            value = max(1, value)
+        object.__setattr__(self, name, value)
 
     @property
     def kit_id(self) -> str:

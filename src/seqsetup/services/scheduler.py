@@ -5,6 +5,7 @@ import threading
 import time
 from datetime import datetime
 
+from .audit_log import audit
 from .github_sync import GitHubSyncService
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 
@@ -93,12 +94,37 @@ class ProfileSyncScheduler:
 
         # Perform sync
         logger.info("Scheduled sync starting...")
+        # Capture the configured repo URL for the audit trail so a post-hoc
+        # reader knows which reference-data source was applied. The interactive
+        # /admin/config-sync trigger already audits via the route; the cron
+        # path was unaudited prior to this — clinical reference data is being
+        # replaced by a non-interactive job and that has to leave a record.
+        audit(
+            "config_sync.scheduled.started",
+            actor="scheduler",
+            target=config.github_repo_url,
+        )
         success, message, count = self.sync_service.sync()
 
         if success:
             logger.info(f"Scheduled sync completed: {message}")
+            audit(
+                "config_sync.scheduled.completed",
+                actor="scheduler",
+                target=config.github_repo_url,
+                outcome="success",
+                items=count,
+                message=message,
+            )
         else:
             logger.error(f"Scheduled sync failed: {message}")
+            audit(
+                "config_sync.scheduled.completed",
+                actor="scheduler",
+                target=config.github_repo_url,
+                outcome="failure",
+                message=message,
+            )
 
     def _should_sync(self, config) -> bool:
         """Check if enough time has passed since last sync."""

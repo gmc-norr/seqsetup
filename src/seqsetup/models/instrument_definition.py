@@ -106,6 +106,28 @@ class InstrumentDefinition:
     synced_at: Optional[datetime] = None
     enabled: bool = True  # Whether this instrument is available for use
 
+    # Validated enums — string fields used by validators via equality. Keeping
+    # them as plain ``str`` for serialization simplicity, but enforced on every
+    # assignment so a future caller can't silently store "5-color" or
+    # "reverseComplement" and have the color-balance / orientation checks
+    # silently mis-classify the instrument.
+    _ALLOWED_CHEMISTRY_TYPES = ("2-color", "4-color")
+    _ALLOWED_I5_ORIENTATIONS = ("forward", "reverse-complement")
+
+    def __setattr__(self, name, value):
+        if name == "chemistry_type" and value not in self._ALLOWED_CHEMISTRY_TYPES:
+            raise ValueError(
+                f"InstrumentDefinition.chemistry_type must be one of "
+                f"{self._ALLOWED_CHEMISTRY_TYPES}, got {value!r}"
+            )
+        if name in ("i5_read_orientation", "samplesheet_v2_i5_orientation") \
+                and value not in self._ALLOWED_I5_ORIENTATIONS:
+            raise ValueError(
+                f"InstrumentDefinition.{name} must be one of "
+                f"{self._ALLOWED_I5_ORIENTATIONS}, got {value!r}"
+            )
+        object.__setattr__(self, name, value)
+
     def to_dict(self) -> dict:
         """Convert to dictionary for MongoDB storage."""
         return {

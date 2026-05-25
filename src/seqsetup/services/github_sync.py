@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import yaml
 
+from ..utils.yaml_safety import safe_load_strict
 from ..models.application_profile import ApplicationProfile
 from ..models.index import IndexKit
 from ..models.instrument_definition import InstrumentDefinition
@@ -183,7 +184,22 @@ class GitHubSyncService:
             self.test_profile_repo.bulk_save(test_profiles)
 
             if config.sync_instruments_enabled and self.instrument_definition_repo:
+                # Preserve the operator-set ``enabled`` flag across the
+                # delete+replace. Without this, an admin who disables (say)
+                # the HiSeq instrument loses that setting on every scheduled
+                # sync because ``bulk_save`` writes fresh records that default
+                # to ``enabled=True`` and with regenerated UUIDs. Match by
+                # ``samplesheet_name`` (stable across syncs, unique per
+                # instrument) rather than ``id`` (regenerated).
+                disabled_keys = {
+                    inst.samplesheet_name
+                    for inst in self.instrument_definition_repo.list_all()
+                    if not inst.enabled and inst.samplesheet_name
+                }
                 self.instrument_definition_repo.delete_all()
+                for inst in instruments:
+                    if inst.samplesheet_name in disabled_keys:
+                        inst.enabled = False
                 self.instrument_definition_repo.bulk_save(instruments)
 
             # For index kits, only delete synced ones (preserve user-uploaded)
@@ -373,7 +389,7 @@ class GitHubSyncService:
                 if download_url:
                     try:
                         content = self._fetch_file_content(download_url)
-                        yaml_data = yaml.safe_load(content)
+                        yaml_data = safe_load_strict(content)
                         if yaml_data:
                             profile = parser(yaml_data, item_name)
                             profiles.append(profile)
@@ -435,7 +451,7 @@ class GitHubSyncService:
                 if download_url:
                     try:
                         content = self._fetch_file_content(download_url)
-                        yaml_data = yaml.safe_load(content)
+                        yaml_data = safe_load_strict(content)
                         if yaml_data:
                             parsed = self._parse_instruments_yaml(yaml_data, item_name)
                             instruments.extend(parsed)

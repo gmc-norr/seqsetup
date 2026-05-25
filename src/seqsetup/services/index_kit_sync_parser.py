@@ -5,6 +5,8 @@ from typing import Optional
 
 import yaml
 
+from ..utils.yaml_safety import safe_load_strict
+
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,7 @@ class IndexKitSyncParser:
             IndexKit if parsing succeeds, None otherwise
         """
         try:
-            data = yaml.safe_load(yaml_content)
+            data = safe_load_strict(yaml_content)
             if not data:
                 logger.warning(f"Empty YAML content in {source_file}")
                 return None

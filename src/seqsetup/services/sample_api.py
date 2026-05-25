@@ -65,6 +65,16 @@ class SampleApiError(Exception):
     pass
 
 
+class LimsUrlValidationError(SampleApiError):
+    """The configured LIMS URL was refused by ``_validate_url``.
+
+    Subclass of ``SampleApiError`` so existing broad exception handling
+    keeps working; callers that need to distinguish a policy refusal (for
+    auditing) from a generic network failure catch this type specifically.
+    """
+    pass
+
+
 # Extra IPv4 ranges that ``ipaddress.is_private`` does NOT cover but should
 # never be reachable from a clinical app: CGNAT (RFC 6598) and IETF protocol
 # assignments (RFC 6890). Cloud-host neighbors can sit on CGNAT; protocol-
@@ -112,7 +122,7 @@ def _resolve_hostname_ips(
     try:
         infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
     except OSError as exc:
-        raise SampleApiError(f"Cannot resolve LIMS hostname {hostname!r}: {exc}")
+        raise LimsUrlValidationError(f"Cannot resolve LIMS hostname {hostname!r}: {exc}")
     seen: set[str] = set()
     ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     for info in infos:
@@ -125,7 +135,7 @@ def _resolve_hostname_ips(
             ips.append(ipaddress.ip_address(ip_text))
         except ValueError:
             # getaddrinfo handed back something we can't parse — refuse.
-            raise SampleApiError(f"Unparseable resolved address for {hostname!r}: {ip_text!r}")
+            raise LimsUrlValidationError(f"Unparseable resolved address for {hostname!r}: {ip_text!r}")
     return ips
 
 
@@ -155,14 +165,14 @@ def _validate_url(
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
     if not hostname:
-        raise SampleApiError("URL has no hostname")
+        raise LimsUrlValidationError("URL has no hostname")
     if parsed.scheme not in ("http", "https"):
-        raise SampleApiError(f"Unsupported URL scheme: {parsed.scheme}")
+        raise LimsUrlValidationError(f"Unsupported URL scheme: {parsed.scheme}")
 
     if parsed.scheme == "http":
         opt_in_http = os.environ.get("SEQSETUP_LIMS_ALLOW_HTTP", "").lower() in ("1", "true", "yes")
         if not opt_in_http:
-            raise SampleApiError(
+            raise LimsUrlValidationError(
                 f"Refusing to call LIMS over plain HTTP at {hostname!r}: "
                 f"the configured api-key would be sent in clear text. "
                 f"Use HTTPS, or set SEQSETUP_LIMS_ALLOW_HTTP=1 to opt in (not for production)."
@@ -170,13 +180,13 @@ def _validate_url(
 
     resolved = _resolve_hostname_ips(hostname)
     if not resolved:
-        raise SampleApiError(f"Hostname {hostname!r} resolved to no addresses")
+        raise LimsUrlValidationError(f"Hostname {hostname!r} resolved to no addresses")
 
     allow_private = os.environ.get("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", "").lower() in ("1", "true", "yes")
     if not allow_private:
         for ip in resolved:
             if _is_private_address(ip):
-                raise SampleApiError(
+                raise LimsUrlValidationError(
                     f"Refusing to call LIMS at {hostname!r} ({ip}): address is "
                     f"loopback/private/link-local/CGNAT. SSRF is blocked by policy. "
                     f"For dev/test against a mock LIMS or a corporate-network LIMS, "
@@ -227,7 +237,21 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
     actual TCP destination matches the address we validated — no DNS
     rebinding window between validate and connect.
     """
-    resolved_ips = _validate_url(url)
+    try:
+        resolved_ips = _validate_url(url)
+    except LimsUrlValidationError as exc:
+        # SSRF / URL-policy refusal. Leave a forensic breadcrumb regardless
+        # of who initiated the request — the api-key was about to be sent.
+        # Imported lazily to keep this module decoupled from the audit
+        # service (which lives in the same services package).
+        from .audit_log import audit
+        audit(
+            "lims.url_blocked",
+            actor="lims_client",
+            target=url,
+            reason=str(exc),
+        )
+        raise
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
 

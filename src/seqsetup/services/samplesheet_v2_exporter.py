@@ -309,10 +309,25 @@ class SampleSheetV2Exporter:
     def _escape_csv(cls, value: str) -> str:
         """Escape a value for CSV output.
 
-        Lone CR is quoted as well as LF — a Mac-style line ending pasted from
-        an upstream source would otherwise write a literal \\r mid-row and split
-        the Sample Sheet into the wrong number of columns.
+        Two independent concerns:
+
+        1. Structural: lone CR is quoted as well as LF — a Mac-style line
+           ending pasted from an upstream source would otherwise write a
+           literal \\r mid-row and split the Sample Sheet into the wrong
+           number of columns. Embedded ``,`` and ``"`` are also quoted.
+
+        2. Spreadsheet formula injection: Excel / LibreOffice / Sheets treat
+           cells beginning with ``=``, ``+``, ``-``, ``@``, TAB, or CR as
+           formulas. A lab operator who opens a Sample Sheet that round-
+           tripped a sample_id like ``=cmd|'/c calc.exe'!A1`` would trigger
+           code execution. Per the CLAUDE.md input-sanitization rule we
+           neutralize these cells by prefixing a single quote (the universal
+           "this is text, not a formula" escape) before applying the regular
+           CSV quoting. The quote becomes part of the cell text, visible to
+           humans but inert to formula parsers.
         """
+        if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
+            value = "'" + value
         if "," in value or '"' in value or "\n" in value or "\r" in value:
             return '"' + value.replace('"', '""') + '"'
         return value

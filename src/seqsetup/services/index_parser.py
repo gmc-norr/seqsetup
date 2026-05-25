@@ -8,6 +8,8 @@ from typing import Optional
 
 import yaml
 
+from ..utils.yaml_safety import safe_load_strict
+
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 
 
@@ -152,7 +154,7 @@ class IndexParser:
         # Check for YAML indicators
         if content.startswith("---") or ":" in content.split("\n")[0]:
             try:
-                yaml.safe_load(content)
+                safe_load_strict(content)
                 return "yaml"
             except yaml.YAMLError:
                 pass
@@ -193,7 +195,7 @@ class IndexParser:
              i7Index1:
                D701: "ATTACTCG"
         """
-        data = yaml.safe_load(content)
+        data = safe_load_strict(content)
 
         if not data:
             raise ValueError("Empty or invalid YAML content")

@@ -42,6 +42,25 @@ class Analysis:
     # Assigned sample IDs
     sample_ids: list[str] = field(default_factory=list)
 
+    def __post_init__(self):
+        """Reject inconsistent (analysis_type, dragen_pipeline) combinations.
+
+        - ``DRAGEN_ONBOARD`` requires a ``dragen_pipeline``; without one the
+          Sample Sheet export would write an empty pipeline name into the
+          [DragenGermline_Data] / equivalent section.
+        - ``DOWNSTREAM`` must not carry a ``dragen_pipeline``; the field is
+          meaningless there and a stored value would mislead future readers
+          and exporters.
+        """
+        if self.analysis_type == AnalysisType.DRAGEN_ONBOARD and self.dragen_pipeline is None:
+            raise ValueError(
+                "Analysis.dragen_pipeline is required when analysis_type is DRAGEN_ONBOARD"
+            )
+        if self.analysis_type == AnalysisType.DOWNSTREAM and self.dragen_pipeline is not None:
+            raise ValueError(
+                "Analysis.dragen_pipeline must be None when analysis_type is DOWNSTREAM"
+            )
+
     def add_sample(self, sample_id: str) -> None:
         """Add a sample to this analysis."""
         if sample_id not in self.sample_ids:
