@@ -429,22 +429,13 @@ def test_indexes_kit_content_empty_selection(logged_in_client):
     assert 'id="index-kit-panel"' in response.text
 
 
-def test_add_samples_step1_renders(logged_in_client, fresh_app):
-    """GET /runs/{id}/samples/add/step/1 renders the new Jinja2 template."""
-    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
-    app, ctx, db = fresh_app
-    run = SequencingRun(
-        run_name="AddSamplesSmoke",
-        instrument_platform=InstrumentPlatform.NOVASEQ_X,
-        created_by="admin",
+def test_add_samples_step1_endpoint_gone(logged_in_client):
+    """Add-Samples wizard URL is gone — inlined into the run-edit page."""
+    response = logged_in_client.get(
+        "/runs/some-id/samples/add/step/1",
+        follow_redirects=False,
     )
-    ctx.run_repo.save(run)
-
-    response = logged_in_client.get(f"/runs/{run.id}/samples/add/step/1")
-    assert response.status_code == 200
-    assert "Step 1: Add Samples" in response.text
-    assert 'id="add-samples-nav"' in response.text
-    assert 'id="add-samples-result"' in response.text
+    assert response.status_code in (404, 405)
 
 
 def test_runs_new_get_does_not_create_run(logged_in_client, fresh_app):
@@ -465,43 +456,32 @@ def test_runs_new_get_does_not_create_run(logged_in_client, fresh_app):
     assert len(ctx.run_repo.list_all()) == before
 
 
-def test_add_samples_step2_auto_skips_when_no_unindexed(logged_in_client, fresh_app):
-    """If no samples need indexes, step 2 redirects to the run-edit page."""
-    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
-    app, ctx, db = fresh_app
-    run = SequencingRun(
-        run_name="AutoSkipSmoke",
-        instrument_platform=InstrumentPlatform.NOVASEQ_X,
-        created_by="admin",
-    )
-    ctx.run_repo.save(run)
-
+def test_add_samples_step2_endpoint_gone(logged_in_client):
+    """Add-Samples wizard step 2 URL is gone — inlined into the run-edit page."""
     response = logged_in_client.get(
-        f"/runs/{run.id}/samples/add/step/2",
+        "/runs/some-id/samples/add/step/2",
         follow_redirects=False,
     )
-    assert response.status_code == 303
-    assert response.headers["location"] == f"/runs/{run.id}"
+    assert response.status_code in (404, 405)
 
 
-def test_add_samples_step2_renders(logged_in_client, fresh_app):
-    """GET /runs/{id}/samples/add/step/2 renders the new Jinja2 template."""
+def test_edit_run_page_has_paste_section_when_draft(logged_in_client, fresh_app):
+    """The run-edit page now has the bulk-paste affordance inline when DRAFT."""
     from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
-    from seqsetup.models.sample import Sample
     app, ctx, db = fresh_app
     run = SequencingRun(
-        run_name="AddSamplesSmoke2",
+        run_name="InlinePasteSmoke",
         instrument_platform=InstrumentPlatform.NOVASEQ_X,
         created_by="admin",
     )
-    # Seed one sample WITHOUT an index so step 2 has something to do.
-    run.add_sample(Sample(sample_id="S1", test_id="WGS", lanes=[1]))
     ctx.run_repo.save(run)
 
-    response = logged_in_client.get(f"/runs/{run.id}/samples/add/step/2")
+    response = logged_in_client.get(f"/runs/{run.id}")
     assert response.status_code == 200
-    assert "Step 2: Assign Indexes" in response.text
-    assert 'id="add-samples-nav"' in response.text
+    # Paste form HTMX target is present
+    assert 'hx-post="/runs/{}/samples/bulk"'.format(run.id) in response.text
+    # Sample table is also there
+    assert 'id="sample-section"' in response.text
 
 
 def test_edit_run_page_renders(logged_in_client, fresh_app):
@@ -524,7 +504,7 @@ def test_edit_run_page_renders(logged_in_client, fresh_app):
 
 
 def test_new_run_wizard_step1_renders(logged_in_client, fresh_app):
-    """GET /runs/new/step/1?run_id=... renders the Jinja2 wizard page."""
+    """GET /runs/new/step/1?run_id=... renders the new-run configuration page."""
     from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
     app, ctx, db = fresh_app
     run = SequencingRun(
@@ -536,13 +516,13 @@ def test_new_run_wizard_step1_renders(logged_in_client, fresh_app):
 
     response = logged_in_client.get(f"/runs/new/step/1?run_id={run.id}")
     assert response.status_code == 200
-    assert "Step 1: Run Configuration" in response.text
+    assert "New Run Configuration" in response.text
     assert 'id="flowcell-select"' in response.text
     assert 'id="reagent-kit-select"' in response.text
     assert 'id="cycle-config"' in response.text
     assert 'name="run_name"' in response.text
-    # progress bar present
-    assert "wizard-progress" in response.text
+    # progress bar is gone — no "Step 1 of 1" wizard framing
+    assert "wizard-progress" not in response.text
 
 
 def test_tests_page_renders(logged_in_client):

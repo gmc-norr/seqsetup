@@ -323,6 +323,8 @@ async def update_status(
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
     is_editable = run.status == RunStatus.DRAFT
     has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
+    sample_api_cfg = ctx.sample_api_config
+    sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
 
     # Out-of-band swaps update the export panel and sample table without a
     # full page reload. HTMX needs the hx-swap-oob attribute on the
@@ -331,6 +333,7 @@ async def update_status(
     export_html = templates.env.get_template("runs/_export_panel.html").render(run=run, has_v1=has_v1, oob=True)
     section_html = templates.env.get_template("runs/_sample_section.html").render(
         run=run, index_kits=index_kits, test_profiles=test_profiles,
-        num_lanes=num_lanes, is_editable=is_editable, oob=True,
+        num_lanes=num_lanes, is_editable=is_editable,
+        sample_api_enabled=sample_api_enabled, oob=True,
     )
     return HTMLResponse(status_html + export_html + section_html, headers={"Cache-Control": "no-store"})

@@ -36,6 +36,8 @@ def edit_run(
     index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
     is_editable = run.status == RunStatus.DRAFT
+    sample_api_cfg = ctx.sample_api_config
+    sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
 
     # Pre-compute validation result for the validate panel.
     validation_result = ValidationService.validate_run(run)
@@ -54,6 +56,7 @@ def edit_run(
         "test_profiles": test_profiles,
         "num_lanes": num_lanes,
         "is_editable": is_editable,
+        "sample_api_enabled": sample_api_enabled,
         "validation_result": validation_result,
         "has_v1": has_v1,
         "flowcell_desc": flowcell_desc,

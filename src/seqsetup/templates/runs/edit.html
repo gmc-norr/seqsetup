@@ -19,7 +19,8 @@
     <fieldset class="config-panel samples-display">
         <legend>Samples</legend>
         {% with run=run, index_kits=index_kits, test_profiles=test_profiles,
-                num_lanes=num_lanes, is_editable=is_editable, oob=False %}
+                num_lanes=num_lanes, is_editable=is_editable,
+                sample_api_enabled=sample_api_enabled, oob=False %}
         {% include "runs/_sample_section.html" %}
         {% endwith %}
     </fieldset>

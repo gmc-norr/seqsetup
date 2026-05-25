@@ -33,30 +33,26 @@ router = APIRouter(tags=["samples"])
 # ---------------------------------------------------------------------------
 
 
-def _sample_table_with_nav(run, request: Request) -> HTMLResponse:
-    """Return sample table + step-2 navigation as a combined response.
+def _render_sample_section(run, request: Request, ctx: AppContext) -> HTMLResponse:
+    """Render the run-edit page's sample section (paste box + index panel + table).
 
-    Both pieces are Jinja2 templates. The table fragment is rendered
-    directly via the template environment; the nav carries hx-swap-oob
-    so HTMX swaps the matching nav element out-of-band.
+    Used by mutation handlers that need to refresh the inline UI after
+    a sample is added/removed/edited. The new section HTML re-targets
+    #sample-section outerHTML.
     """
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-    can_proceed = run.has_samples and run.all_samples_have_indexes
-    table_html = templates.env.get_template("wizard/_sample_table.html").render(
-        request=request,
-        run=run,
-        show_drop_zones=True,
-        index_kits=None,
-        num_lanes=num_lanes,
-        show_bulk_actions=True,
-        context="",
-        test_profiles=None,
-        editable=True,
+    is_editable = run.status.value == "draft"
+    sample_api_cfg = ctx.sample_api_config
+    sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
+    index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
+    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+
+    html = templates.env.get_template("runs/_sample_section.html").render(
+        run=run, index_kits=index_kits, test_profiles=test_profiles,
+        num_lanes=num_lanes, is_editable=is_editable,
+        sample_api_enabled=sample_api_enabled, oob=False,
     )
-    nav_html = templates.env.get_template("wizard/_navigation.html").render(
-        step=2, run_id=run.id, can_proceed=can_proceed, oob=True,
-    )
-    return HTMLResponse(table_html + nav_html, headers={"Cache-Control": "no-store"})
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
 def _messages_only(request, messages) -> HTMLResponse:
@@ -64,15 +60,6 @@ def _messages_only(request, messages) -> HTMLResponse:
     html = templates.env.get_template("_messages.html").render(messages=messages)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
-
-def _messages_with_nav(request, run, messages, *, step) -> HTMLResponse:
-    """Render messages + the wizard nav (OOB-flagged) as one response."""
-    nav_html = templates.env.get_template("wizard/_add_samples_nav.html").render(
-        step=step, run_id=run.id, can_proceed=run.has_samples,
-        oob=True,
-    )
-    messages_html = templates.env.get_template("_messages.html").render(messages=messages)
-    return HTMLResponse(messages_html + nav_html, headers={"Cache-Control": "no-store"})
 
 
 def _update_override_cycles(sample, run) -> None:
@@ -277,36 +264,7 @@ async def add_bulk_samples(
             skipped_within_paste_count=len(skipped_within_paste),
         )
 
-    if context == "add_step1":
-        messages = []
-
-        if added_count == 0:
-            if not parsed:
-                messages.append({"text": "No samples found in pasted data.", "kind": "warning"})
-            else:
-                messages.append({"text": "No new samples added.", "kind": "warning"})
-        elif added_count == 1:
-            messages.append({"text": "Added 1 sample.", "kind": "success"})
-        else:
-            messages.append({"text": f"Added {added_count} samples.", "kind": "success"})
-
-        if skipped_duplicates:
-            if len(skipped_duplicates) <= 3:
-                dup_list = ", ".join(skipped_duplicates)
-            else:
-                dup_list = ", ".join(skipped_duplicates[:3]) + f" and {len(skipped_duplicates) - 3} more"
-            messages.append({"text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run: {dup_list}", "kind": "warning"})
-
-        if skipped_within_paste:
-            if len(skipped_within_paste) <= 3:
-                dup_list = ", ".join(skipped_within_paste)
-            else:
-                dup_list = ", ".join(skipped_within_paste[:3]) + f" and {len(skipped_within_paste) - 3} more"
-            messages.append({"text": f"Skipped {len(skipped_within_paste)} duplicate(s) in pasted data: {dup_list}", "kind": "warning"})
-
-        return _messages_with_nav(request, run, messages, step=1)
-
-    return _sample_table_with_nav(run, request)
+    return _render_sample_section(run, request, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -480,10 +438,7 @@ async def import_worklist_samples(
     if skipped_duplicates:
         messages.append({"text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.", "kind": "warning"})
 
-    if context == "add_step1":
-        return _messages_with_nav(request, run, messages, step=1)
-
-    return _sample_table_with_nav(run, request)
+    return _render_sample_section(run, request, ctx)
 
 
 @router.post("/runs/{run_id}/samples/assign-indexes-bulk", response_class=HTMLResponse)
@@ -573,17 +528,7 @@ async def assign_indexes_bulk(
         kit_name=kit.name if resolved_assignments else "",
     )
 
-    if context == "add_step2":
-        samples_needing_indexes = [s for s in run.samples if not s.has_index]
-        return render(request, "wizard/_new_samples_table.html", {
-            "run": run,
-            "samples": samples_needing_indexes,
-            "index_kits": None,
-            "context": context,
-            "existing_ids": "",
-        })
-
-    return _sample_table_with_nav(run, request)
+    return _render_sample_section(run, request, ctx)
 
 
 @router.post("/runs/{run_id}/samples/assign-index-to-selected", response_class=HTMLResponse)
@@ -648,17 +593,7 @@ async def assign_index_to_selected(
         sample_count=len(sample_ids),
     )
 
-    if context == "add_step2":
-        samples_needing_indexes = [s for s in run.samples if not s.has_index]
-        return render(request, "wizard/_new_samples_table.html", {
-            "run": run,
-            "samples": samples_needing_indexes,
-            "index_kits": None,
-            "context": context,
-            "existing_ids": "",
-        })
-
-    return _sample_table_with_nav(run, request)
+    return _render_sample_section(run, request, ctx)
 
 
 @router.post("/runs/{run_id}/samples/set-lanes", response_class=HTMLResponse)
@@ -705,7 +640,7 @@ async def set_lanes_bulk(
         lanes=",".join(str(l) for l in normalized_lanes),
     )
 
-    return _sample_table_with_nav(run, request)
+    return _render_sample_section(run, request, ctx)
 
 
 @router.post("/runs/{run_id}/samples/set-mismatches", response_class=HTMLResponse)
@@ -756,7 +691,7 @@ async def set_mismatches_bulk(
         mismatch_index2=mismatch_index2,
     )
 
-    return _sample_table_with_nav(run, request)
+    return _render_sample_section(run, request, ctx)
 
 
 @router.post("/runs/{run_id}/samples/set-override-cycles", response_class=HTMLResponse)
@@ -803,7 +738,7 @@ async def set_override_cycles_bulk(
         override_cycles=override_cycles or "auto",
     )
 
-    return _sample_table_with_nav(run, request)
+    return _render_sample_section(run, request, ctx)
 
 
 @router.post("/runs/{run_id}/samples/set-test-id", response_class=HTMLResponse)
@@ -839,7 +774,7 @@ async def set_test_id_bulk(
         test_id=test_id,
     )
 
-    return _sample_table_with_nav(run, request)
+    return _render_sample_section(run, request, ctx)
 
 
 @router.post("/runs/{run_id}/samples/bulk-delete", response_class=HTMLResponse)
@@ -909,20 +844,7 @@ def delete_sample(
         sample_id=sample_id,
     )
 
-    if context == "add_step2":
-        return Response("")
-
-    num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-    return render(request, "wizard/_sample_table.html", {
-        "run": run,
-        "show_drop_zones": True,
-        "index_kits": None,
-        "num_lanes": num_lanes,
-        "show_bulk_actions": True,
-        "context": "",
-        "test_profiles": None,
-        "editable": True,
-    })
+    return _render_sample_section(run, request, ctx)
 
 
 @router.post("/runs/{run_id}/samples/{sample_id}", response_class=HTMLResponse)
@@ -1040,8 +962,6 @@ async def assign_index(
     )
 
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-    show_bulk = context != "add_step2"
-    show_cb = True if context == "add_step2" else None
     return render(request, "wizard/_sample_row.html", {
         "sample": sample,
         "run_id": run_id,
@@ -1049,10 +969,10 @@ async def assign_index(
         "show_drop_zones": True,
         "show_i5_column": True,
         "num_lanes": num_lanes,
-        "show_bulk_actions": show_bulk,
-        "context": context,
+        "show_bulk_actions": True,
+        "context": "",
         "editable": True,
-        "show_checkboxes": show_cb,
+        "show_checkboxes": None,
     })
 
 
@@ -1088,8 +1008,6 @@ async def clear_index(
             index_type=index_type,
         )
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        show_bulk = context != "add_step2"
-        show_cb = True if context == "add_step2" else None
         return render(request, "wizard/_sample_row.html", {
             "sample": sample,
             "run_id": run_id,
@@ -1097,10 +1015,10 @@ async def clear_index(
             "show_drop_zones": True,
             "show_i5_column": True,
             "num_lanes": num_lanes,
-            "show_bulk_actions": show_bulk,
-            "context": context,
+            "show_bulk_actions": True,
+            "context": "",
             "editable": True,
-            "show_checkboxes": show_cb,
+            "show_checkboxes": None,
         })
 
     return Response("")

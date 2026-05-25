@@ -1,27 +1,97 @@
 {#
    Sample table section for the edit-run page.
 
+   When the run is in DRAFT (is_editable=True):
+     - shows the bulk-paste import section above the table
+     - shows the index-kit side panel (drag sources) when there's at
+       least one un-indexed sample
+     - shows the sample table with drop zones + bulk-action panel
+
+   When the run is locked (READY/ARCHIVED), shows the locked-message
+   + a read-only sample table (no paste, no drop zones, no bulk
+   actions).
+
    Inputs:
-     run:                SequencingRun
-     index_kits:         list[IndexKit]
-     test_profiles:      list[TestProfile]
-     num_lanes:          int
-     is_editable:        bool — run.status.value == 'draft'
-     oob:                bool (default False) — add hx-swap-oob when True
+     run:              SequencingRun
+     index_kits:       list[IndexKit]
+     test_profiles:    list[TestProfile]
+     num_lanes:        int
+     is_editable:      bool — run.status.value == 'draft'
+     sample_api_enabled: bool — LIMS-API integration toggle
+     oob:              bool (default False) — add hx-swap-oob when True
 #}
+{% set has_unindexed = is_editable and run.samples and run.samples|rejectattr('has_index')|list %}
 <div id="sample-section" {% if oob %}hx-swap-oob="true"{% endif %}>
     {% if is_editable %}
-    <div class="add-samples-btn">
-        <a href="/runs/{{ run.id }}/samples/add/step/1" class="btn btn-primary btn-small">+ Add Samples</a>
-    </div>
+        {# Bulk paste section — always available in DRAFT, collapsed by default if there are already samples #}
+        <details class="paste-section" {% if not run.samples %}open{% endif %}>
+            <summary class="paste-section-summary">+ Add Samples (paste or import)</summary>
+            <div class="paste-section-content">
+                {% include "wizard/_sample_paste_format_help.html" %}
+                <form hx-post="/runs/{{ run.id }}/samples/bulk"
+                      hx-target="#sample-section"
+                      hx-swap="outerHTML"
+                      hx-encoding="multipart/form-data">
+                    <textarea name="paste_data" id="paste_data" class="paste-textarea" rows="6"
+                              placeholder="sample_id&#9;test_id&#9;index_i7&#9;index_i5&#10;Sample001&#9;WGS&#9;ATTACTCG&#9;TATAGCCT"></textarea>
+                    <div class="file-upload-row">
+                        <span class="file-upload-label">or import from file:</span>
+                        <input type="file" name="sample_file" id="sample_file" accept=".csv,.tsv,.txt" class="sample-file-input">
+                    </div>
+                    <div class="paste-buttons">
+                        <button type="submit" class="btn btn-primary">Add Samples</button>
+                        <button type="button" class="btn btn-secondary"
+                                onclick="document.getElementById('paste_data').value=''; document.getElementById('sample_file').value=''">Clear</button>
+                    </div>
+                </form>
+                {% if sample_api_enabled %}
+                    {% with context='', existing_ids='' %}
+                    {% include "wizard/_fetch_from_api_section.html" %}
+                    {% endwith %}
+                {% endif %}
+            </div>
+        </details>
+
+        <div id="add-samples-result"></div>
+
+        {% if has_unindexed %}
+        <div class="run-page-with-index-panel">
+            <aside class="wizard-index-panel">
+                <h3>Available Indexes</h3>
+                {% set default_kit = index_kits[0] if index_kits else None %}
+                {% with index_kits=index_kits, selected_kit_id=(default_kit.kit_id if default_kit else '') %}
+                {% include "wizard/_index_kit_dropdown.html" %}
+                {% endwith %}
+                <div class="index-kits-compact" id="index-list-container">
+                    {% with kit=default_kit %}
+                    {% include "wizard/_index_kit_panel_compact.html" %}
+                    {% endwith %}
+                </div>
+            </aside>
+            <div class="run-page-sample-panel">
+                {% with run=run, show_drop_zones=True, index_kits=index_kits,
+                        num_lanes=num_lanes, show_bulk_actions=True, context='',
+                        test_profiles=test_profiles, editable=is_editable %}
+                {% include "wizard/_sample_table.html" %}
+                {% endwith %}
+            </div>
+        </div>
+        {% else %}
+        {% with run=run, show_drop_zones=True, index_kits=index_kits,
+                num_lanes=num_lanes, show_bulk_actions=True, context='',
+                test_profiles=test_profiles, editable=is_editable %}
+        {% include "wizard/_sample_table.html" %}
+        {% endwith %}
+        {% endif %}
     {% else %}
-    <div class="add-samples-btn">
-        <p class="locked-message">Run is locked for editing. Return to Draft to make changes.</p>
-    </div>
+        {# Read-only locked view #}
+        <div class="add-samples-btn">
+            <p class="locked-message">Run is locked for editing. Return to Draft to make changes.</p>
+        </div>
+        {% with run=run, show_drop_zones=False, index_kits=index_kits,
+                num_lanes=num_lanes, show_bulk_actions=False, context='',
+                test_profiles=test_profiles, editable=is_editable %}
+        {% include "wizard/_sample_table.html" %}
+        {% endwith %}
     {% endif %}
-    {% with run=run, show_drop_zones=True, index_kits=index_kits,
-            num_lanes=num_lanes, show_bulk_actions=True, context='',
-            test_profiles=test_profiles, editable=is_editable %}
-    {% include "wizard/_sample_table.html" %}
-    {% endwith %}
 </div>
