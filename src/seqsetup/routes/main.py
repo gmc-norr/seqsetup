@@ -1,10 +1,6 @@
 """Edit run page route.
 
 The composed edit-run page is a Jinja2 template at templates/runs/edit.html.
-RunConfigPanelHorizontal's three nested helpers (CycleConfigDisplay,
-InstrumentConfigDisplay, RunNameDisplay) live in components/run_config.py
-and are still FT-rendered — Phase 4 ports them. They're pre-rendered
-to HTML strings here and embedded via |safe.
 
 Must be registered LAST among /runs/... routes because {run_id} is a
 path catch-all.
@@ -14,11 +10,11 @@ from fastapi import APIRouter, Depends, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..context import AppContext
-from ..data.instruments import get_lanes_for_flowcell
-from ..models.sequencing_run import RunStatus
+from ..data.instruments import get_flowcells_for_instrument, get_lanes_for_flowcell
+from ..models.sequencing_run import RunCycles, RunStatus
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
-from ..templating import ft_to_html, render
+from ..templating import render
 from .dependencies import get_ctx
 
 
@@ -45,13 +41,12 @@ def edit_run(
     validation_result = ValidationService.validate_run(run)
     has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
 
-    # Pre-render the three run-config helpers (still FT — Phase 4 ports them).
-    from ..components.run_config import (
-        CycleConfigDisplay, InstrumentConfigDisplay, RunNameDisplay,
-    )
-    run_name_display_html = ft_to_html(RunNameDisplay(run))
-    instrument_config_display_html = ft_to_html(InstrumentConfigDisplay(run))
-    cycle_config_display_html = ft_to_html(CycleConfigDisplay(run))
+    # Resolve flowcell description for the Jinja2 template.
+    flowcells = get_flowcells_for_instrument(run.instrument_platform)
+    flowcell_info = flowcells.get(run.flowcell_type, {})
+    flowcell_desc = flowcell_info.get("description", run.flowcell_type)
+
+    cycles = run.run_cycles or RunCycles(150, 150, 10, 10)
 
     return render(request, "runs/edit.html", {
         "run": run,
@@ -61,7 +56,6 @@ def edit_run(
         "is_editable": is_editable,
         "validation_result": validation_result,
         "has_v1": has_v1,
-        "run_name_display_html": run_name_display_html,
-        "instrument_config_display_html": instrument_config_display_html,
-        "cycle_config_display_html": cycle_config_display_html,
+        "flowcell_desc": flowcell_desc,
+        "cycles": cycles,
     })

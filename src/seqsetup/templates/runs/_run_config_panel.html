@@ -1,13 +1,11 @@
 {#
    Run config panel — read-only display of run metadata + instrument + cycles.
-   Three columns. Embeds the un-ported FT helpers from run_config.py
-   via pre-rendered HTML strings. Phase 4 / follow-up ports those.
+   Three columns.
 
    Inputs:
-     run:                          SequencingRun
-     run_name_display_html:        str — ft_to_html(RunNameDisplay(run))
-     instrument_config_display_html: str — ft_to_html(InstrumentConfigDisplay(run))
-     cycle_config_display_html:    str — ft_to_html(CycleConfigDisplay(run))
+     run:           SequencingRun
+     flowcell_desc: str — pre-resolved flowcell description
+     cycles:        RunCycles
 #}
 {% set created_at_str = run.created_at.strftime("%Y-%m-%d %H:%M") if run.created_at else "—" %}
 {% set updated_at_str = run.updated_at.strftime("%Y-%m-%d %H:%M") if run.updated_at else "—" %}
@@ -17,7 +15,9 @@
         <div class="config-column">
             <fieldset class="config-panel details-display">
                 <legend>Details</legend>
-                {{ run_name_display_html | safe }}
+                {% with run=run %}
+                {% include "runs/_run_name_display.html" %}
+                {% endwith %}
                 <div class="config-item">
                     <span class="config-label">UUID: </span>
                     <span class="config-value uuid-value" title="{{ run.id }}">{{ run.id }}</span>
@@ -36,7 +36,15 @@
                 </div>
             </fieldset>
         </div>
-        <div class="config-column">{{ instrument_config_display_html | safe }}</div>
-        <div class="config-column">{{ cycle_config_display_html | safe }}</div>
+        <div class="config-column">
+            {% with run=run, flowcell_desc=flowcell_desc %}
+            {% include "runs/_instrument_config_display.html" %}
+            {% endwith %}
+        </div>
+        <div class="config-column">
+            {% with run=run, cycles=cycles %}
+            {% include "runs/_cycle_config_display.html" %}
+            {% endwith %}
+        </div>
     </div>
 </div>

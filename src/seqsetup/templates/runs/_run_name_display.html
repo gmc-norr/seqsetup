@@ -1,0 +1,16 @@
+{#
+   Read-only display of run name + description (edit-run page).
+   Inputs: run
+#}
+<div class="run-name-display">
+    <div class="config-item">
+        <span class="config-label">Run Name: </span>
+        <span class="config-value">{{ run.run_name or "—" }}</span>
+    </div>
+    {% if run.run_description %}
+    <div class="config-item">
+        <span class="config-label">Description: </span>
+        <span class="config-value">{{ run.run_description or "—" }}</span>
+    </div>
+    {% endif %}
+</div>

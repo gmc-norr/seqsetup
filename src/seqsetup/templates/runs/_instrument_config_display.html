@@ -1,0 +1,24 @@
+{#
+   Read-only instrument configuration display (Platform + Flowcell + Reagent Kit).
+
+   Inputs:
+     run:           SequencingRun
+     flowcell_desc: str — pre-resolved flowcell description, falls back to run.flowcell_type if not found
+#}
+<fieldset class="config-panel instrument-config-display">
+    <legend>Instrument</legend>
+    <div class="instrument-display">
+        <div class="config-item">
+            <span class="config-label">Platform: </span>
+            <span class="config-value">{{ run.instrument_platform.value }}</span>
+        </div>
+        <div class="config-item">
+            <span class="config-label">Flowcell: </span>
+            <span class="config-value">{{ run.flowcell_type }} - {{ flowcell_desc }}</span>
+        </div>
+        <div class="config-item">
+            <span class="config-label">Reagent Kit: </span>
+            <span class="config-value">{{ run.reagent_cycles }} cycles</span>
+        </div>
+    </div>
+</fieldset>

@@ -14,10 +14,7 @@
     {% include "runs/_top_bar.html" %}
     {% endwith %}
 
-    {% with run=run,
-            run_name_display_html=run_name_display_html,
-            instrument_config_display_html=instrument_config_display_html,
-            cycle_config_display_html=cycle_config_display_html %}
+    {% with run=run, flowcell_desc=flowcell_desc, cycles=cycles %}
     {% include "runs/_run_config_panel.html" %}
     {% endwith %}
 
