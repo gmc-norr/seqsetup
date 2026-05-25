@@ -1,0 +1,29 @@
+{#
+   Draggable unique-dual index pair row (wizard compact variant).
+
+   Inputs:
+     pair: IndexPair — has .id, .name, .index1, .index2,
+                       .index1_sequence, .index2_sequence, .well_position
+#}
+{% set i7_name = pair.index1.name if pair.index1 else '' %}
+{% set i5_name = pair.index2.name if pair.index2 else '' %}
+<div class="draggable-index-compact draggable-pair"
+     draggable="true"
+     data-index-pair-id="{{ pair.id | e }}"
+     data-index-name="{{ pair.name | e }}"
+     data-index-type="pair"
+     data-well="{{ pair.well_position or '' | e }}"
+     onclick="handleIndexClick(event, this.dataset.indexPairId, 'pair')"
+     ondragstart="handleDragStart(event, this.dataset.indexPairId, 'pair')"
+     title="Pair: {{ pair.name | e }}&#10;i7: {{ i7_name | e }} ({{ pair.index1_sequence | e }})&#10;i5: {{ i5_name | e }} ({{ pair.index2_sequence or 'N/A' | e }})&#10;Well: {{ pair.well_position or 'N/A' | e }}">
+    <span class="index-name-compact">{{ pair.name | e }}</span>
+    {%- if i7_name and i7_name != pair.name %}
+    <span class="index-i7-name-compact">{{ i7_name | e }}</span>
+    {%- endif %}
+    {%- if i5_name and i5_name != pair.name %}
+    <span class="index-i5-name-compact">{{ i5_name | e }}</span>
+    {%- endif %}
+    {%- if pair.well_position %}
+    <span class="index-well-compact">{{ pair.well_position | e }}</span>
+    {%- endif %}
+</div>

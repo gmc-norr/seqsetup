@@ -1,0 +1,49 @@
+{#
+   Index list — three branches on kit.index_mode. Each branch sets
+   id="index-list-items" on its outermost wrapper so the global
+   filterIndexesWizard / handleIndexClick / handleDragStart functions
+   from app.js can locate it.
+
+   Inputs:
+     kit: IndexKit (non-None — caller guarded)
+#}
+{% if kit.is_combinatorial() %}
+<div id="index-list-items" class="combinatorial-content">
+    <div class="index-subsection i7-section">
+        <strong class="index-subsection-header">i7 Indexes</strong>
+        <div class="index-list">
+            {% for idx in kit.i7_indexes %}
+                {% with index=idx, kit_name=kit.name, index_type='i7' %}
+                {% include "wizard/_draggable_index_compact.html" %}
+                {% endwith %}
+            {% endfor %}
+        </div>
+    </div>
+    <div class="index-subsection i5-section">
+        <strong class="index-subsection-header">i5 Indexes</strong>
+        <div class="index-list">
+            {% for idx in kit.i5_indexes %}
+                {% with index=idx, kit_name=kit.name, index_type='i5' %}
+                {% include "wizard/_draggable_index_compact.html" %}
+                {% endwith %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% elif kit.is_single() %}
+<div id="index-list-items" class="index-list">
+    {% for idx in kit.i7_indexes %}
+        {% with index=idx, kit_name=kit.name, index_type='i7' %}
+        {% include "wizard/_draggable_index_compact.html" %}
+        {% endwith %}
+    {% endfor %}
+</div>
+{% else %}
+<div id="index-list-items" class="index-list">
+    {% for pair in kit.index_pairs %}
+        {% with pair=pair %}
+        {% include "wizard/_draggable_index_pair_compact.html" %}
+        {% endwith %}
+    {% endfor %}
+</div>
+{% endif %}

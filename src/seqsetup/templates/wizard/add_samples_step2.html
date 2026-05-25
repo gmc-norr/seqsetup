@@ -18,9 +18,13 @@
             {% if new_samples and not all_have_indexes %}
             <aside class="wizard-index-panel">
                 <h3>Available Indexes</h3>
-                {{ index_kit_dropdown_html | safe }}
+                {% with index_kits=index_kits, selected_kit_id=(default_kit.kit_id if default_kit else '') %}
+                {% include "wizard/_index_kit_dropdown.html" %}
+                {% endwith %}
                 <div class="index-kits-compact" id="index-list-container">
-                    {{ index_kit_panel_html | safe }}
+                    {% with kit=default_kit %}
+                    {% include "wizard/_index_kit_panel_compact.html" %}
+                    {% endwith %}
                 </div>
             </aside>
             {% endif %}

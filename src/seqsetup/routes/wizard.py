@@ -131,18 +131,6 @@ def register(app, ctx: AppContext) -> None:
         index_kits = ctx.index_kit_repo.list_all()
         default_kit = index_kits[0] if index_kits else None
 
-        from ..components.wizard.index_panel import IndexKitDropdown, IndexKitPanel
-        from fasthtml.common import P
-
-        index_kit_dropdown_html = ft_to_html(
-            IndexKitDropdown(index_kits, default_kit.name if default_kit else None)
-        )
-        index_kit_panel_html = ft_to_html(
-            IndexKitPanel(default_kit)
-            if default_kit
-            else P("No index kits available.", cls="no-kits-message")
-        )
-
         steps_for_progress = [
             {"number": "1", "label": "Add Samples",
              "href": f"/runs/{run.id}/samples/add/step/1", "is_active": False, "is_completed": True},
@@ -154,9 +142,8 @@ def register(app, ctx: AppContext) -> None:
             "existing_ids_param": existing_ids_param,
             "new_samples": new_samples,
             "all_have_indexes": all_have_indexes,
-            "index_kit_dropdown_html": index_kit_dropdown_html,
-            "index_kit_panel_html": index_kit_panel_html,
             "index_kits": index_kits,
+            "default_kit": default_kit,
             "steps": steps_for_progress,
         })
 

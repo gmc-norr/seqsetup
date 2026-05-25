@@ -1,0 +1,45 @@
+{#
+   Wizard variant of the index kit panel — compact single-column layout
+   with a filter input. Distinct from templates/wizard/_index_kit_panel.html
+   which is the route-side (broader-grid) variant used by /indexes/kit-content.
+
+   Inputs:
+     kit: IndexKit or None
+#}
+{% if kit is none %}
+<p class="no-kits-message">Select an index kit</p>
+{% else %}
+<div class="index-kit-panel">
+    <div class="kit-details">
+        <div class="kit-detail-item">
+            <span class="kit-detail-label">Mode: </span>
+            <span class="kit-detail-value">
+                {%- if kit.is_combinatorial() %}Combinatorial
+                {%- elif kit.is_single() %}Single (i7 only)
+                {%- else %}Unique Dual
+                {%- endif %}
+            </span>
+        </div>
+        <div class="kit-detail-item">
+            <span class="kit-detail-label">Indexes: </span>
+            <span class="kit-detail-value">
+                {%- if kit.is_combinatorial() %}{{ (kit.i7_indexes | length) + (kit.i5_indexes | length) }}
+                {%- elif kit.is_single() %}{{ kit.i7_indexes | length }}
+                {%- else %}{{ kit.index_pairs | length }}
+                {%- endif %}
+            </span>
+        </div>
+        {%- if kit.description %}
+        <div class="kit-detail-item">
+            <span class="kit-description">{{ kit.description | e }}</span>
+        </div>
+        {%- endif %}
+    </div>
+    <div class="index-filter-section">
+        <input type="text" id="index-filter-input" class="index-filter-input"
+               placeholder="Filter indexes..."
+               oninput="filterIndexesWizard(this.value)">
+    </div>
+    {% include "wizard/_index_list_compact.html" %}
+</div>
+{% endif %}

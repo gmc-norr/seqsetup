@@ -1,0 +1,23 @@
+{#
+   Wizard <select> for picking an index kit. HTMX-fetches the kit
+   content into #index-list-container on change.
+
+   Inputs:
+     index_kits:       list[IndexKit]
+     selected_kit_id:  str — kit_id of the initially-selected option
+                            (falsy → first option is implicitly selected)
+
+   Renders nothing if index_kits is empty.
+#}
+{% if index_kits %}
+<select name="selected_kit" id="index-kit-dropdown" class="index-kit-dropdown"
+        hx-get="/indexes/kit-content"
+        hx-target="#index-list-container"
+        hx-swap="innerHTML"
+        hx-trigger="change">
+    {% for kit in index_kits %}
+    {% if kit.is_combinatorial() %}{% set count = kit.i7_indexes|length + kit.i5_indexes|length %}{% elif kit.is_single() %}{% set count = kit.i7_indexes|length %}{% else %}{% set count = kit.index_pairs|length %}{% endif %}
+    <option value="{{ kit.kit_id | e }}" {% if kit.kit_id == selected_kit_id %}selected{% endif %}>{{ kit.name | e }} v{{ kit.version | e }} ({{ count }} indexes)</option>
+    {% endfor %}
+</select>
+{% endif %}

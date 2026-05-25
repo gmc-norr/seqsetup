@@ -1,0 +1,29 @@
+{#
+   Draggable single i7/i5 index row (wizard compact variant).
+
+   Inputs:
+     index:       Index — has .name, .sequence, .well_position
+     kit_name:    str
+     index_type:  str — 'i7' or 'i5'
+
+   Uses the global handleIndexClick / handleDragStart from app.js.
+   data-* attributes carry the payload; inline onclick/ondragstart
+   pass the index_id + index_type. The JS reads the rest via
+   this.dataset.*.
+#}
+{% set index_id = kit_name ~ '_' ~ index_type ~ '_' ~ index.name %}
+<div class="draggable-index-compact draggable-single {{ index_type | e }}-index"
+     draggable="true"
+     data-index-id="{{ index_id | e }}"
+     data-index-name="{{ index.name | e }}"
+     data-index-type="{{ index_type | e }}"
+     data-kit-name="{{ kit_name | e }}"
+     data-well="{{ index.well_position or '' | e }}"
+     onclick="handleIndexClick(event, this.dataset.indexId, this.dataset.indexType)"
+     ondragstart="handleDragStart(event, this.dataset.indexId, this.dataset.indexType)"
+     title="{{ index.name | e }}&#10;Well: {{ index.well_position or 'N/A' | e }}&#10;Sequence: {{ index.sequence | e }}">
+    <span class="index-name-compact">{{ index.name | e }}</span>
+    {%- if index.well_position %}
+    <span class="index-well-compact">{{ index.well_position | e }}</span>
+    {%- endif %}
+</div>
