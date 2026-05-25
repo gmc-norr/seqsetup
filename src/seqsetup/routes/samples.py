@@ -17,8 +17,6 @@ from ..components.wizard import (
     NewSamplesTableWizard,
     SampleRowWizard,
     SampleTableWizard,
-    WorklistPreview,
-    WorklistSelector,
 )
 from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
@@ -28,7 +26,7 @@ from ..services.cycle_calculator import CycleCalculator
 from ..services.sample_parser import parse_pasted_samples
 from starlette.responses import HTMLResponse
 
-from ..templating import ft_response, ft_to_html, templates
+from ..templating import ft_response, ft_to_html, render, templates
 from .utils import check_run_editable, get_username, sanitize_string
 
 logger = logging.getLogger(__name__)
@@ -290,7 +288,12 @@ def register(app, ctx: AppContext) -> None:
         if not success:
             return ft_response(P(f"Failed to load worklists: {message}", cls="error-message"))
 
-        return ft_response(WorklistSelector(run_id, worklists, context=context, existing_ids=existing_ids))
+        return render(request, "wizard/_worklist_selector.html", {
+            "run_id": run_id,
+            "worklists": worklists,
+            "context": context,
+            "existing_ids": existing_ids,
+        })
 
     def preview_worklist(request: Request) -> Response:
         """GET /runs/{run_id}/samples/preview-worklist — preview samples in a worklist."""
@@ -312,7 +315,10 @@ def register(app, ctx: AppContext) -> None:
         if not success:
             return ft_response(P(f"Failed to fetch worksheet samples: {message}", cls="error-message"))
 
-        return ft_response(WorklistPreview(raw_data, worklist_id))
+        return render(request, "wizard/_worklist_preview.html", {
+            "samples": raw_data,
+            "worklist_id": worklist_id,
+        })
 
     async def import_worklist_samples(request: Request) -> Response:
         """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist."""

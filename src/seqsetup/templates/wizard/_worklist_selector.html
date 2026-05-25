@@ -1,0 +1,45 @@
+{#
+   LIMS worklist selector — dropdown + Preview/Import buttons.
+   Renders the partial returned by GET /runs/{run_id}/samples/worklists.
+
+   Inputs:
+     run_id:       str
+     worklists:    list[dict] — each has 'id', optional 'investigator', optional 'updated_at'
+     context:      str — "add_step1" routes import to #worklist-import-result innerHTML,
+                          else to #sample-table outerHTML
+     existing_ids: str — comma-separated sample ids that already existed pre-wizard
+#}
+{% set params = [] %}
+{% if context %}{% set _ = params.append('context=' ~ context) %}{% endif %}
+{% if existing_ids %}{% set _ = params.append('existing_ids=' ~ existing_ids) %}{% endif %}
+{% set query_string = ('?' ~ params|join('&')) if params else '' %}
+{% set import_target = '#worklist-import-result' if context == 'add_step1' else '#sample-table' %}
+{% set import_swap = 'innerHTML' if context == 'add_step1' else 'outerHTML' %}
+<div>
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
+        <select name="worklist_id" id="worklist-select" class="index-kit-dropdown" style="min-width:400px; display:inline-block;">
+            {% for wl in worklists %}
+                {% set parts = [wl['id']] %}
+                {% if wl.get('investigator') %}{% set _ = parts.append('(' ~ wl['investigator'] ~ ')') %}{% endif %}
+                {% if wl.get('updated_at') %}
+                    {% set ts = wl['updated_at'] %}
+                    {% set date_part = ts.split('T')[0] if 'T' in ts else ts %}
+                    {% set _ = parts.append('[' ~ date_part ~ ']') %}
+                {% endif %}
+                <option value="{{ wl['id'] }}">{{ parts|join(' ') }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="btn-secondary"
+                hx-get="/runs/{{ run_id }}/samples/preview-worklist"
+                hx-include="#worklist-select"
+                hx-target="#worklist-preview"
+                hx-swap="innerHTML">Preview</button>
+        <button type="button" class="btn-primary"
+                hx-post="/runs/{{ run_id }}/samples/fetch-worklist{{ query_string }}"
+                hx-include="#worklist-select"
+                hx-target="{{ import_target }}"
+                hx-swap="{{ import_swap }}">Import Samples</button>
+    </div>
+    <div id="worklist-preview" class="worklist-preview"></div>
+    <div id="worklist-import-result"></div>
+</div>
