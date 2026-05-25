@@ -12,6 +12,7 @@ from seqsetup.models.user import UserRole
 from seqsetup.routes.dependencies import (
     _load_and_check_editable,
     get_archivable_run,
+    get_exportable_run,
     is_htmx_request,
     require_admin_dep,
     saving_run,
@@ -232,6 +233,53 @@ class TestGetArchivableRun:
         run = self._make_run(RunStatus.ARCHIVED)
         ctx = self._ctx_with([run])
         result = get_archivable_run("r1", ctx)
+        assert result is run
+
+
+# ---------------------------------------------------------------------------
+# get_exportable_run
+# ---------------------------------------------------------------------------
+
+
+class TestGetExportableRun:
+    """get_exportable_run: 404 if missing, 403 if DRAFT, returned if READY/ARCHIVED."""
+
+    def _make_run(self, status, run_id="r1"):
+        run = SequencingRun(status=status)
+        run.id = run_id
+        return run
+
+    def _ctx_with(self, runs=()):
+        repo = _FakeRunRepo(runs)
+
+        class _Ctx:
+            run_repo = repo
+
+        return _Ctx()
+
+    def test_missing_run_raises_404(self):
+        ctx = self._ctx_with([])
+        with pytest.raises(HTTPException) as exc:
+            get_exportable_run("missing", ctx)
+        assert exc.value.status_code == 404
+
+    def test_draft_run_raises_403(self):
+        run = self._make_run(RunStatus.DRAFT)
+        ctx = self._ctx_with([run])
+        with pytest.raises(HTTPException) as exc:
+            get_exportable_run("r1", ctx)
+        assert exc.value.status_code == 403
+
+    def test_ready_run_returned(self):
+        run = self._make_run(RunStatus.READY)
+        ctx = self._ctx_with([run])
+        result = get_exportable_run("r1", ctx)
+        assert result is run
+
+    def test_archived_run_returned(self):
+        run = self._make_run(RunStatus.ARCHIVED)
+        ctx = self._ctx_with([run])
+        result = get_exportable_run("r1", ctx)
         assert result is run
 
 

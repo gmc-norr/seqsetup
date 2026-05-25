@@ -101,6 +101,28 @@ def get_archivable_run(
     return run
 
 
+def get_exportable_run(
+    run_id: str,
+    ctx: AppContext = Depends(get_ctx),
+) -> SequencingRun:
+    """Load a run that's eligible for export.
+
+    Raises HTTPException(404) if the run doesn't exist.
+    Raises HTTPException(403) if the run is in DRAFT status — exports
+    only available for READY and ARCHIVED runs (mirrors the legacy
+    `check_run_exportable(run)` guard from routes/utils.py).
+    """
+    run = ctx.run_repo.get_by_id(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status not in (RunStatus.READY, RunStatus.ARCHIVED):
+        raise HTTPException(
+            status_code=403,
+            detail="Exports are only available for ready or archived runs",
+        )
+    return run
+
+
 @contextmanager
 def saving_run(
     run: SequencingRun,

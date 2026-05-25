@@ -148,7 +148,7 @@ app.include_router(profiles.router)
 wizard.register(app, _ctx)
 samples.register(app, _ctx)
 runs.register(app, _ctx)
-export.register(app, _ctx)
+app.include_router(export.router)
 app.include_router(validation.router)
 app.include_router(main.router)
 
