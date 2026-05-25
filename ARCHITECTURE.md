@@ -101,41 +101,17 @@ Each form model picks per field. Switching a field clamp→reject is a deliberat
 - Every new page gets a smoke test asserting the page renders.
 - Every new form route gets a 422 test asserting Pydantic validation errors render as HTML fragments with `HX-Retarget`/`HX-Reswap` for HTMX clients.
 
-## Migration status (as of HEAD; updated 2026-05-25)
+## Migration history
 
-The HTMX best-practices redesign migrated the routing surface to
-APIRouter + Jinja2 + Tailwind + Alpine + Pydantic across Phases 0–3
-(23 commits). Some FT components still render route fragments via
-`ft_to_html` / `ft_response`. They will be ported in follow-up
-commits before the `python-fasthtml` dependency can be removed.
+The HTMX best-practices redesign (2026-05-24 plan, ~30 commits, May 2026)
+moved this codebase from a half-FastHTML legacy state to FastAPI +
+APIRouter + Jinja2 + jinja2-fragments + Tailwind v4 + Alpine.js +
+Pydantic v2. The `python-fasthtml` dependency was removed in roadmap
+step 8.
 
-**Still FT-rendered (deferred from Phase 4):**
-
-| File | Used by | Notes |
-|---|---|---|
-| `components/wizard/steps.py` | `routes/wizard.py:wizard_step1` (new-run step 1 page); HTMX form-update endpoints in `routes/runs.py` (FlowcellSelectWizard, ReagentKitSelectWizard, CycleConfigFormWizard) | Several composers; biggest deferred chunk |
-| `components/wizard/index_panel.py` | `routes/wizard.py:add_samples_step2` (IndexKitPanel + IndexKitDropdown embedded via `ft_to_html`); FT-internal callers in `add_samples.py` and `steps.py` | The /indexes/kit-content route already uses the Jinja2 partial |
-| `components/wizard/sample_table.py` | Internal callers from `steps.py:WizardStep2` and `add_samples.py:AddSamplesStep2` (only matters while those are still FT) | All route callsites already on Jinja2 |
-| `components/wizard/add_samples.py` | No route callers (after Phase 3.3); only internal FT chain | Effectively orphaned — can be deleted once steps.py/sample_table.py are |
-| `components/run_config.py` | `routes/main.py:edit_run` embeds three Display helpers via `ft_to_html` | Read-only display panel |
-| `components/edit_run.py` | No route callers (after Phase 3.5); only the layout import remains | Effectively orphaned |
-| `components/validation/{issues,heatmaps,color_balance,page}.py` | `routes/validation.py` heatmap-refresh + errors-refresh endpoints; tab contents pre-rendered into the page via `ft_to_html` (Task 2.11) | Largest remaining surface |
-| `components/admin/{instruments,sample_api,logs,authentication,config_sync}.py` | No route callers (all admin pages migrated in Phase 2) | Effectively orphaned |
-| `components/{api_tokens,dashboard,local_users,profiles,index_panel}.py` | No route callers | Effectively orphaned |
-| `components/export_panel.py`, `components/sample_table.py`, `components/layout.py` | Internal FT chain only | Orphaned |
-| `templating.py:ft_to_html/ft_response/ft_page_response` | Routes listed above | Removable once routes stop using them |
-| `static/css/legacy.css` | Multiple Jinja2 templates still use legacy class names | Each template's Tailwind conversion was scoped to the most-visible cells; many legacy class names linger |
-
-**To finish the migration:**
-
-1. Port `components/wizard/steps.py` to Jinja2 (the new-run wizard step 1 + the HTMX form-update partials it uses). Update `routes/wizard.py:wizard_step1` and the 3 form-update endpoints in `routes/runs.py`.
-2. Port `components/run_config.py` to Jinja2 partials and stop embedding via `ft_to_html` in `routes/main.py:edit_run`.
-3. Port `components/wizard/index_panel.py` (or the small bits still embedded by `routes/wizard.py:add_samples_step2`).
-4. Port `components/validation/{issues,heatmaps,color_balance}.py` to Jinja2 partials so `routes/validation.py` no longer needs `ft_response`. The page-level template is already Jinja2.
-5. Port the small inline error fragments in `routes/samples.py` (`P("...", cls="error-message")`) to a shared `templates/_error_fragment.html` rendered via `render(...)`.
-6. Delete every FT component file.
-7. Delete `ft_to_html`, `ft_response`, `ft_page_response` from `templating.py`.
-8. Remove `python-fasthtml` from `pixi.toml`.
-9. Audit `legacy.css` against the templates that still cite its class names; drop the `@import "./legacy.css"` once everything is Tailwind.
-
-Each of the above is a separate commit; together they're roughly equivalent in scope to a sixth migration phase.
+A small number of legacy CSS class names from `static/css/legacy.css`
+still appear in Jinja2 templates (e.g., `.btn`, `.config-panel`,
+`.sample-table`). Switching the remaining templates to pure Tailwind
+utility classes is a follow-up of indeterminate priority — visual
+parity is preserved while legacy.css stays imported via
+`static/css/input.css`.

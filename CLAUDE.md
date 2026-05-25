@@ -9,9 +9,7 @@ identity, index assignment, or export output can lead to incorrect clinical resu
 **Correctness and safety are non-negotiable. When in doubt, do less, not more.**
 
 Technology: Python, FastAPI, Jinja2 (with jinja2-fragments), Tailwind v4,
-Alpine.js, Pydantic v2, MongoDB, HTMX. A handful of FastHTML (FT)
-components remain as transitional render helpers — see `ARCHITECTURE.md`
-section "Migration status" for the cleanup roadmap. Environment managed with Pixi.
+Alpine.js, Pydantic v2, MongoDB, HTMX. Environment managed with Pixi.
 
 ## Architecture reference
 
@@ -131,15 +129,11 @@ For admin-only routes, attach the dep at router level:
 
 ```
 src/seqsetup/
-├── app.py              # FastHTML app creation, route registration
+├── app.py              # FastAPI app creation, route registration
 ├── startup.py          # Repo initialization, service factories, DI setup
 ├── middleware.py        # Auth beforeware (session + Bearer token)
 ├── context.py          # AppContext dataclass (dependency injection)
 ├── openapi.py          # OpenAPI spec for the JSON API
-├── components/         # UI components (FastHTML/HTMX)
-│   ├── wizard/         # Run creation wizard (steps, sample table, indexes)
-│   ├── admin/          # Admin pages (auth, instruments, sync, API config)
-│   └── validation/     # Validation page (issues, heatmaps, color balance)
 ├── models/             # Dataclasses — self-validating, with to_dict/from_dict
 ├── repositories/       # MongoDB access — thin, no business logic
 │   └── base.py         # BaseRepository[T], SingletonConfigRepository[C]

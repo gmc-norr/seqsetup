@@ -50,7 +50,6 @@ matplotlib = ">=3.10.8,<4"
 reportlab = ">=4.4.9,<5"
 
 [pypi-dependencies]
-python-fasthtml = ">=0.12"
 python-multipart = ">=0.0.9"
 bcrypt = ">=4.0"
 pymongo = ">=4.6"
@@ -64,3 +63,5 @@ mongomock = ">=4.3.0, <5"
 jinja2-fragments = ">=1.4,<2"
 pydantic = { version = ">=2.7,<3", extras = ["email"] }
 pytest-playwright = ">=0.5,<1"
+httpx = ">=0.28.1, <0.29"
+itsdangerous = ">=2.2.0, <3"
