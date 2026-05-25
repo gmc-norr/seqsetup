@@ -1,0 +1,58 @@
+{#
+   New-samples table (variant of _sample_table.html for the Add-Samples
+   wizard step 2). Renders only the provided `samples` list — not all
+   of run.samples. No bulk-action panel; per-row show_bulk_actions=False
+   so no lanes/override/mismatch columns. Per-row show_checkboxes=True
+   (kept for visual parity with the FT version; checkbox JS still hooks
+   in via select-all-checkbox in the header).
+
+   Inputs:
+     run:          SequencingRun (used for run_id, run_cycles)
+     samples:      list[Sample] — the NEW samples (filtered by caller)
+     index_kits:   list[IndexKit] | None — used only to derive show_i5_column
+     context:      str — passed through to per-row HTMX endpoints
+                          (typically "add_step2")
+     existing_ids: str — comma-separated pre-wizard sample ids; survives
+                          on the wrapper's data-existing-ids for any
+                          JS that re-checks ownership across HTMX swaps
+#}
+{% if not samples %}
+<div id="sample-table" class="empty-message" data-existing-ids="{{ existing_ids }}">
+    <p>No new samples to display.</p>
+</div>
+{% else %}
+    {% set show_i5_column = True %}
+    {% if index_kits %}
+        {% set ns = namespace(any_non_single=False) %}
+        {% for kit in index_kits %}
+            {% if not kit.is_single() %}{% set ns.any_non_single = True %}{% endif %}
+        {% endfor %}
+        {% set show_i5_column = ns.any_non_single %}
+    {% endif %}
+<div id="sample-table" data-existing-ids="{{ existing_ids }}">
+    <table class="sample-table">
+        <thead>
+            <tr>
+                <th class="checkbox-cell"><input type="checkbox" class="select-all-checkbox" onclick="toggleSelectAllSamples(this)"></th>
+                <th>Sample ID</th>
+                <th>Test ID</th>
+                <th>Worksheet</th>
+                <th>Index Kit</th>
+                <th>Index (i7)</th>
+                {% if show_i5_column %}<th>Index (i5)</th>{% endif %}
+                <th class="actions-col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sample in samples %}
+                {% with sample=sample, run_id=run.id, run_cycles=run.run_cycles,
+                        show_drop_zones=True, show_i5_column=show_i5_column,
+                        num_lanes=1, show_bulk_actions=False,
+                        context=context, editable=True, show_checkboxes=True %}
+                {% include "wizard/_sample_row.html" %}
+                {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

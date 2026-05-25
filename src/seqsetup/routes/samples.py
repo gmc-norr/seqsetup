@@ -12,9 +12,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
-from ..components.wizard import (
-    NewSamplesTableWizard,
-)
 from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
@@ -530,9 +527,13 @@ def register(app, ctx: AppContext) -> None:
                 if existing_ids else set()
             )
             new_samples = [s for s in run.samples if s.id not in existing_ids_set]
-            return ft_response(
-                NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
-            )
+            return render(request, "wizard/_new_samples_table.html", {
+                "run": run,
+                "samples": new_samples,
+                "index_kits": None,
+                "context": context,
+                "existing_ids": existing_ids,
+            })
 
         return _sample_table_with_nav(run, request)
 
@@ -602,9 +603,13 @@ def register(app, ctx: AppContext) -> None:
                 if existing_ids else set()
             )
             new_samples = [s for s in run.samples if s.id not in existing_ids_set]
-            return ft_response(
-                NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
-            )
+            return render(request, "wizard/_new_samples_table.html", {
+                "run": run,
+                "samples": new_samples,
+                "index_kits": None,
+                "context": context,
+                "existing_ids": existing_ids,
+            })
 
         return _sample_table_with_nav(run, request)
 

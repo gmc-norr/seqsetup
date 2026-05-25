@@ -31,7 +31,9 @@
                     <p class="all-indexed-message">All samples have indexes assigned.</p>
                 {% endif %}
                 {% if new_samples %}
-                    {{ new_samples_table_html | safe }}
+                    {% with run=run, samples=new_samples, index_kits=index_kits, context='add_step2', existing_ids=existing_ids_param %}
+                    {% include "wizard/_new_samples_table.html" %}
+                    {% endwith %}
                 {% endif %}
             </div>
         </div>
