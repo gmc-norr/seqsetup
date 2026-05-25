@@ -117,7 +117,6 @@ class SequencingRun:
 
     # Status and tracking
     status: RunStatus = RunStatus.DRAFT
-    validation_approved: bool = False
     created_by: str = ""
     updated_by: str = ""
     created_at: datetime = field(default_factory=datetime.now)
@@ -184,12 +183,10 @@ class SequencingRun:
     def add_sample(self, sample: Sample) -> None:
         """Add a sample to the run."""
         self.samples.append(sample)
-        self.validation_approved = False
 
     def remove_sample(self, sample_id: str) -> None:
         """Remove a sample by ID."""
         self.samples = [s for s in self.samples if s.id != sample_id]
-        self.validation_approved = False
 
     def get_sample(self, sample_id: str) -> Optional[Sample]:
         """Get a sample by ID."""
@@ -204,48 +201,33 @@ class SequencingRun:
             raise ValueError(f"Sample {sample_id!r} not found in run")
         return sample
 
-    # Index mutations on a sample invalidate any prior validation approval.
-    # Routing all index changes through these run-level methods (instead of
-    # calling Sample.assign_*/clear_* directly) enforces the invariant at the
-    # model layer rather than relying on every caller to remember run.touch().
-
     def assign_index_pair_to_sample(self, sample_id: str, index_pair) -> None:
         self._require_sample(sample_id).assign_index(index_pair)
-        self.validation_approved = False
 
     def assign_index1_to_sample(self, sample_id: str, index) -> None:
         self._require_sample(sample_id).assign_index1(index)
-        self.validation_approved = False
 
     def assign_index2_to_sample(self, sample_id: str, index) -> None:
         self._require_sample(sample_id).assign_index2(index)
-        self.validation_approved = False
 
     def clear_sample_index(self, sample_id: str) -> None:
         self._require_sample(sample_id).clear_index()
-        self.validation_approved = False
 
     def clear_sample_index1(self, sample_id: str) -> None:
         self._require_sample(sample_id).clear_index1()
-        self.validation_approved = False
 
     def clear_sample_index2(self, sample_id: str) -> None:
         self._require_sample(sample_id).clear_index2()
-        self.validation_approved = False
 
-    def touch(self, reset_validation: bool = True, updated_by: str = "") -> None:
+    def touch(self, updated_by: str = "") -> None:
         """Update the updated_at timestamp.
 
         Args:
-            reset_validation: If True, resets validation_approved to False.
-                Set to False for status-only changes.
             updated_by: Username of the user making the change.
         """
         self.updated_at = datetime.now()
         if updated_by:
             self.updated_by = updated_by
-        if reset_validation:
-            self.validation_approved = False
 
     def add_analysis(self, analysis: Analysis) -> None:
         """Add an analysis."""
@@ -280,7 +262,6 @@ class SequencingRun:
             "run_name": self.run_name,
             "run_description": self.run_description,
             "status": self.status.value,
-            "validation_approved": self.validation_approved,
             "created_by": self.created_by,
             "updated_by": self.updated_by,
             "created_at": self.created_at.isoformat(),
@@ -360,7 +341,6 @@ class SequencingRun:
             run_name=data.get("run_name", ""),
             run_description=data.get("run_description", ""),
             status=status,
-            validation_approved=data.get("validation_approved", False),
             created_by=data.get("created_by", ""),
             updated_by=data.get("updated_by", ""),
             created_at=created_at,

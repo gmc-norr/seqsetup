@@ -4,14 +4,6 @@ and run archive/delete actions.
 Migrated to APIRouter. The page returns the full Jinja2 shell;
 the HTMX swap targets (tab/archive/delete) re-render just the
 {% block dashboard_content %} fragment via block_name="dashboard_content".
-
-archive_run is the canonical reference for state-machine mutations:
-  - load via get_archivable_run (no DRAFT-only check)
-  - check_status_transition before mutating
-  - `with saving_run(run, ctx, request, reset_validation=False)`:
-    archiving a READY run preserves its validation_approved flag
-    so the archived record retains its prior approval. Default True
-    would wipe approval, breaking the archived-run audit trail.
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -81,11 +73,7 @@ def archive_run(
     previous_status = run.status.value
     previous_tab = "ready" if run.status == RunStatus.READY else "draft"
 
-    # reset_validation=False: archiving a READY run preserves its
-    # validation_approved flag — the run was validated before, and
-    # archiving doesn't invalidate that prior approval. Default True
-    # would wipe approval, breaking the archived-run audit trail.
-    with saving_run(run, ctx, request, reset_validation=False):
+    with saving_run(run, ctx, request):
         run.status = RunStatus.ARCHIVED
 
     audit(

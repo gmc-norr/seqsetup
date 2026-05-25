@@ -52,7 +52,6 @@ class ValidationReportJSON:
             "instrument": run.instrument_platform.value,
             "flowcell": run.flowcell_type,
             "timestamp": datetime.now().isoformat(),
-            "validation_approved": run.validation_approved,
             "summary": {
                 "error_count": result.error_count,
                 "warning_count": result.warning_count,
@@ -194,7 +193,6 @@ class ValidationReportPDF:
             ["Instrument", run.instrument_platform.value],
             ["Flowcell", run.flowcell_type or "—"],
             ["Report Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
-            ["Validation Approved", "Yes" if run.validation_approved else "No"],
         ]
         info_table = Table(run_info, colWidths=[5 * cm, 12 * cm])
         info_table.setStyle(TableStyle([

@@ -378,13 +378,8 @@ class TestSequencingRun:
         assert d["generated_validation_pdf"] == base64.b64encode(b"%PDF-test").decode("ascii")
 
 
-class TestSampleIndexMutationResetsApproval:
-    """Index assignment/clearing must reset validation_approved at the model layer.
-
-    Approval implies "the indexes I've validated produce a safe demultiplex" —
-    any subsequent change to those indexes invalidates that promise. Relying on
-    every call-site to remember run.touch() is brittle for clinical software.
-    """
+class TestSampleIndexMutations:
+    """Index assignment and clearing via run-level methods route through the model correctly."""
 
     def _make_sample(self, sample_id="S1"):
         return Sample(sample_id=sample_id)
@@ -402,65 +397,53 @@ class TestSampleIndexMutationResetsApproval:
     def _make_i5(self):
         return Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5)
 
-    def _run_with_approved_sample(self):
+    def _run_with_sample(self):
         run = SequencingRun(
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
             flowcell_type="10B",
         )
         sample = self._make_sample()
         run.add_sample(sample)
-        run.validation_approved = True
         return run, sample
 
-    def test_assign_index_pair_resets_approval(self):
-        run, sample = self._run_with_approved_sample()
+    def test_assign_index_pair(self):
+        run, sample = self._run_with_sample()
         run.assign_index_pair_to_sample(sample.id, self._make_index_pair())
-        assert run.validation_approved is False
         assert run.get_sample(sample.id).index_pair is not None
 
-    def test_assign_index1_resets_approval(self):
-        run, sample = self._run_with_approved_sample()
+    def test_assign_index1(self):
+        run, sample = self._run_with_sample()
         run.assign_index1_to_sample(sample.id, self._make_i7())
-        assert run.validation_approved is False
         assert run.get_sample(sample.id).index1 is not None
 
-    def test_assign_index2_resets_approval(self):
-        run, sample = self._run_with_approved_sample()
+    def test_assign_index2(self):
+        run, sample = self._run_with_sample()
         run.assign_index2_to_sample(sample.id, self._make_i5())
-        assert run.validation_approved is False
         assert run.get_sample(sample.id).index2 is not None
 
-    def test_clear_index_resets_approval(self):
-        run, sample = self._run_with_approved_sample()
+    def test_clear_index(self):
+        run, sample = self._run_with_sample()
         sample.assign_index(self._make_index_pair())
-        run.validation_approved = True  # reset after the unsafe path
         run.clear_sample_index(sample.id)
-        assert run.validation_approved is False
         assert run.get_sample(sample.id).index_pair is None
 
-    def test_clear_index1_resets_approval(self):
-        run, sample = self._run_with_approved_sample()
+    def test_clear_index1(self):
+        run, sample = self._run_with_sample()
         sample.assign_index1(self._make_i7())
-        run.validation_approved = True
         run.clear_sample_index1(sample.id)
-        assert run.validation_approved is False
         assert run.get_sample(sample.id).index1 is None
 
-    def test_clear_index2_resets_approval(self):
-        run, sample = self._run_with_approved_sample()
+    def test_clear_index2(self):
+        run, sample = self._run_with_sample()
         sample.assign_index2(self._make_i5())
-        run.validation_approved = True
         run.clear_sample_index2(sample.id)
-        assert run.validation_approved is False
         assert run.get_sample(sample.id).index2 is None
 
     def test_assign_to_missing_sample_raises(self):
-        run, _ = self._run_with_approved_sample()
+        run, _ = self._run_with_sample()
         import pytest
         with pytest.raises(ValueError, match="not found"):
             run.assign_index_pair_to_sample("nonexistent-id", self._make_index_pair())
-        # Approval is unchanged because no mutation happened.
-        assert run.validation_approved is True
 
     def test_to_dict_generated_fields_none(self, sample_run):
         """Test that None generated fields serialize as None."""
@@ -532,19 +515,16 @@ class TestSampleIndexMutationResetsApproval:
 
     # --- Mutation invariants ---
 
-    def test_add_sample_resets_validation(self):
-        """Adding a sample must reset validation_approved."""
-        run = SequencingRun(validation_approved=True)
+    def test_add_sample_appends_to_list(self):
+        """Adding a sample appends it to the samples list."""
+        run = SequencingRun()
         run.add_sample(Sample(sample_id="New"))
-        assert run.validation_approved is False
         assert len(run.samples) == 1
 
-    def test_remove_sample_resets_validation(self, sample_run):
-        """Removing a sample must reset validation_approved."""
-        sample_run.validation_approved = True
+    def test_remove_sample_removes_from_list(self, sample_run):
+        """Removing a sample by ID removes it from the list."""
         sample_id = sample_run.samples[0].id
         sample_run.remove_sample(sample_id)
-        assert run.validation_approved is False if (run := sample_run) else True
         assert len(sample_run.samples) == 0
 
     def test_remove_sample_nonexistent_id(self, sample_run):
@@ -566,18 +546,6 @@ class TestSampleIndexMutationResetsApproval:
 
     # --- touch() ---
 
-    def test_touch_resets_validation_by_default(self):
-        """touch() resets validation_approved by default."""
-        run = SequencingRun(validation_approved=True)
-        run.touch()
-        assert run.validation_approved is False
-
-    def test_touch_preserves_validation_when_told(self):
-        """touch(reset_validation=False) keeps validation_approved."""
-        run = SequencingRun(validation_approved=True)
-        run.touch(reset_validation=False)
-        assert run.validation_approved is True
-
     def test_touch_sets_updated_by(self):
         """touch() records who made the change."""
         run = SequencingRun()
@@ -590,6 +558,12 @@ class TestSampleIndexMutationResetsApproval:
         before = run.updated_at
         run.touch()
         assert run.updated_at >= before
+
+    def test_from_dict_ignores_legacy_validation_approved(self):
+        """from_dict silently drops the legacy validation_approved field from old documents."""
+        data = {"id": "test-id", "validation_approved": True}
+        run = SequencingRun.from_dict(data)
+        assert not hasattr(run, "validation_approved")
 
     # --- Analysis management ---
 

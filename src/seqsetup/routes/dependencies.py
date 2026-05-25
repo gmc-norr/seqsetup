@@ -128,22 +128,10 @@ def saving_run(
     run: SequencingRun,
     ctx: AppContext,
     request: Request,
-    *,
-    reset_validation: bool = True,
 ) -> Iterator[SequencingRun]:
     """Context manager: on successful exit, ``touch + save`` the run.
     On exception, do NOT save — the exception propagates as the
     response and the run stays untouched in the repo.
-
-    Args:
-        reset_validation: forwarded to ``run.touch(...)``. Default True
-            because most mutations (sample edits, name change, etc.)
-            invalidate any prior validation approval. Pass False for
-            status-only transitions (archive, status change,
-            validation approve/unapprove) where preserving
-            ``validation_approved`` is the whole point of the touch
-            call. Four current callsites use False — preserved by
-            opting in.
 
     Single audit point for the load→check→mutate→touch→save invariant.
     Reviewers grep ``with saving_run(`` to enumerate every mutation
@@ -154,7 +142,7 @@ def saving_run(
     except BaseException:
         raise
     else:
-        run.touch(reset_validation=reset_validation, updated_by=get_username(request))
+        run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
 

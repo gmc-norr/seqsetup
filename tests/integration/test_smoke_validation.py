@@ -1,9 +1,8 @@
-"""Smoke tests for validation, approval, and status transitions.
+"""Smoke tests for validation and status transitions.
 
 These cover the clinically-sensitive paths:
-- Approve refuses a run with errors (e.g., missing indexes).
-- Transition to READY refuses without validation_approved.
-- Transition to READY pre-generates exports.
+- Mark Ready refuses a run with validation errors (live check).
+- Mark Ready succeeds and pre-generates exports for a clean run.
 - Optimistic locking surfaces as 409.
 - ARCHIVED is terminal.
 """
@@ -26,7 +25,7 @@ def _origin() -> dict:
 
 
 def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
-    """Set up a run that should be approvable: has samples, all have indexes.
+    """Set up a run that should be mark-ready eligible: has samples, all have indexes.
 
     Samples have no test_id, and we null the profile repos on ctx AND on
     the startup module's repo cache — this forces validation to use the
@@ -34,9 +33,6 @@ def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
     would otherwise fail with test_profile_not_found for un-seeded test
     types.
     """
-    # Strip the profile repos so the application-profile validator and the
-    # missing_test_id check both short-circuit. Tests that want to exercise
-    # the profile-driven path should seed TestProfile + ApplicationProfile.
     disable_repos(ctx, "test_profile", "app_profile")
 
     run = SequencingRun(
@@ -75,22 +71,11 @@ class TestValidationPage:
         assert response.status_code == 200
 
 
-class TestApproval:
-    def test_approve_succeeds_for_clean_run(self, logged_in_client, fresh_app):
+class TestMarkReady:
+    def test_mark_ready_refuses_run_with_no_samples(self, logged_in_client, fresh_app):
+        """Mark Ready refuses an empty run with a real-time validation error."""
         _app, ctx, _db = fresh_app
-        run_id = _make_ready_eligible_run(ctx)
-
-        response = logged_in_client.post(
-            f"/runs/{run_id}/validation/approve",
-            headers=_origin(),
-        )
-        assert response.status_code == 200
-
-        updated = ctx.run_repo.get_by_id(run_id)
-        assert updated.validation_approved is True
-
-    def test_approve_refuses_run_with_no_samples(self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
         run = SequencingRun(
             id="empty-run",
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
@@ -99,49 +84,23 @@ class TestApproval:
         ctx.run_repo.save(run)
 
         response = logged_in_client.post(
-            f"/runs/empty-run/validation/approve",
-            headers=_origin(),
-        )
-        # Route returns the bar component (200) but approval is NOT set.
-        assert response.status_code == 200
-        updated = ctx.run_repo.get_by_id("empty-run")
-        assert updated.validation_approved is False
-
-    def test_unapprove_clears_approval(self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
-        run_id = _make_ready_eligible_run(ctx)
-
-        # Approve, then unapprove.
-        logged_in_client.post(f"/runs/{run_id}/validation/approve", headers=_origin())
-        response = logged_in_client.post(
-            f"/runs/{run_id}/validation/unapprove",
+            "/runs/empty-run/status/ready",
             headers=_origin(),
         )
         assert response.status_code == 200
-        assert ctx.run_repo.get_by_id(run_id).validation_approved is False
+        # Body contains an error about samples or validation
+        body_lower = response.text.lower()
+        assert "sample" in body_lower or "error" in body_lower
+        # HX-Retarget is set so the message lands in #error-banner
+        assert response.headers.get("HX-Retarget") == "#error-banner"
+        # Status stays DRAFT
+        assert ctx.run_repo.get_by_id("empty-run").status == RunStatus.DRAFT
 
-
-class TestStatusTransition:
-    def test_transition_to_ready_refused_without_approval(
-        self, logged_in_client, fresh_app
-    ):
+    def test_mark_ready_succeeds_for_clean_run(self, logged_in_client, fresh_app):
+        """Mark Ready transitions status and pre-generates exports for a valid run."""
         _app, ctx, _db = fresh_app
         run_id = _make_ready_eligible_run(ctx)
 
-        response = logged_in_client.post(
-            f"/runs/{run_id}/status/ready",
-            headers=_origin(),
-        )
-        # Route returns the bar (200) but status stays DRAFT.
-        assert response.status_code == 200
-        assert ctx.run_repo.get_by_id(run_id).status == RunStatus.DRAFT
-
-    def test_transition_to_ready_after_approval(self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
-        run_id = _make_ready_eligible_run(ctx)
-
-        # Approve first, then transition.
-        logged_in_client.post(f"/runs/{run_id}/validation/approve", headers=_origin())
         response = logged_in_client.post(
             f"/runs/{run_id}/status/ready",
             headers=_origin(),
@@ -155,6 +114,8 @@ class TestStatusTransition:
         assert "[BCLConvert_Data]" in updated.generated_samplesheet_v2
         assert updated.generated_json is not None
 
+
+class TestStatusTransition:
     def test_archived_is_terminal(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run = SequencingRun(
@@ -167,7 +128,7 @@ class TestStatusTransition:
 
         # Try to bring it back to DRAFT.
         response = logged_in_client.post(
-            f"/runs/archived-run/status/draft",
+            "/runs/archived-run/status/draft",
             headers=_origin(),
         )
         assert response.status_code == 400
@@ -185,19 +146,12 @@ class TestOptimisticLockRealPath:
         _app, ctx, _db = fresh_app
         run_id = _make_ready_eligible_run(ctx)
 
-        # The route loads the run, captures _loaded_updated_at, then mutates
-        # and calls run.save(). We simulate a concurrent edit by mutating
-        # the stored updated_at *between* load and save. Achieved by
-        # overriding `get_by_id` to mutate the stored doc after returning
-        # the loaded copy.
         original_get = ctx.run_repo.get_by_id
         mutated = {"done": False}
 
         def get_then_mutate(rid):
             run = original_get(rid)
             if not mutated["done"] and run is not None and rid == run_id:
-                # Mutate the stored doc so the load-time updated_at no
-                # longer matches what's in MongoDB.
                 from datetime import datetime, timedelta
                 future = (datetime.now() + timedelta(minutes=1)).isoformat()
                 ctx.run_repo.collection.update_one(
@@ -225,15 +179,7 @@ class TestOptimisticLockRealPath:
 
 
 class TestOptimisticLockConflict:
-    """ConflictError raised during a route's save() must surface as 409.
-
-    A natural concurrent-edit between two web requests is hard to simulate
-    in a single TestClient — each handler loads its own copy of the run, so
-    the load-time updated_at they capture matches the stored value. We
-    inject the error directly at the repo layer to verify the exception
-    handler wiring; the lock behaviour itself is covered by the repo's
-    unit tests (test_run_repo_optimistic_locking.py).
-    """
+    """ConflictError raised during a route's save() must surface as 409."""
 
     def test_conflict_error_surfaces_as_409(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app

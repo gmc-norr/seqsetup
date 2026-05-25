@@ -11,26 +11,12 @@
 
     {% block approval_bar %}
     <div id="validation-approval-bar" class="bg-white border rounded p-3 flex items-center gap-3">
-        {% if run.validation_approved %}
-            <span class="font-semibold text-green-700">Validation approved</span>
-            <button type="button"
-                    class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1 text-sm"
-                    hx-post="/runs/{{ run.id }}/validation/unapprove"
-                    hx-target="#validation-approval-bar"
-                    hx-swap="outerHTML">
-                Revoke Approval
-            </button>
-        {% elif can_approve %}
-            <span class="text-green-700">Validation passed</span>
-            <button type="button"
-                    class="bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1 text-sm"
-                    hx-post="/runs/{{ run.id }}/validation/approve"
-                    hx-target="#validation-approval-bar"
-                    hx-swap="outerHTML">
-                Approve Validation
-            </button>
+        {% if can_mark_ready %}
+            <span class="font-semibold text-green-700">Validation passed — ready to mark this run as Ready.</span>
+            <a href="/runs/{{ run.id }}" class="ml-auto bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1 text-sm">Back to run</a>
         {% else %}
-            <span class="text-red-700">Validation has issues — resolve before approving</span>
+            <span class="text-red-700">Validation has {{ result.error_count }} error(s) — resolve before marking ready.</span>
+            <a href="/runs/{{ run.id }}" class="ml-auto bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1 text-sm">Back to run</a>
         {% endif %}
     </div>
     {% endblock %}

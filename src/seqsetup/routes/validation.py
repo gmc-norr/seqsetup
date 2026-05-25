@@ -1,32 +1,24 @@
-"""Validation routes — page render + approve/unapprove.
+"""Validation routes — page render only.
 
 Migrated to APIRouter. The four tab contents (Issues, Heatmaps,
 Color Balance, Dark Cycles) are pre-rendered to HTML strings by
 Jinja2 partial templates and injected into the page template via
 |safe. Alpine x-shows the active tab — no network round-trip per tab.
 
-The HTMX tab-swap endpoint /validation/tab/{tab} is GONE; Alpine
-replaces it. The /validation/heatmap endpoint (single-lane FT
-fragment for index-type switching) is also GONE — Alpine state now
-controls index-type switching client-side with all three matrices
-pre-rendered into the page.
-
-Validation services remain READ-ONLY. Approve/unapprove mutate
-run.validation_approved through the same touch+save pattern as
-before; both audit events preserved verbatim.
+Validation services are READ-ONLY. The approve/unapprove endpoints
+have been removed — Mark Ready in the run status bar performs
+validation in real time and refuses with an error message if any
+errors are present.
 """
 
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
-from ..models.sequencing_run import RunStatus
 from ..models.validation import ColorBalanceStatus
-from ..services.audit_log import audit
 from ..services.validation import ValidationService
 from ..templating import render, templates
 from .dependencies import get_ctx
-from .utils import get_username
 
 
 router = APIRouter(tags=["validation"])
@@ -335,16 +327,6 @@ def _render_tab_contents(run_id, result):
     }
 
 
-def _approval_state(run, result) -> dict:
-    """Compute the approval-bar state."""
-    can_approve = result.error_count == 0
-    return {
-        "run": run,
-        "result": result,
-        "can_approve": can_approve,
-    }
-
-
 @router.get("/runs/{run_id}/validation", response_class=HTMLResponse)
 def validation_page(
     request: Request,
@@ -368,82 +350,14 @@ def validation_page(
     ctx_dict = {
         "run": run,
         "run_id": run_id,
+        "result": result,
         "issue_count": issue_count,
         "color_balance_enabled": color_balance_enabled,
         "color_balance_issues": color_balance_issues,
         "dark_cycle_count": dark_cycle_count,
         "has_matrices": has_matrices,
         "has_color_balance": bool(result.color_balance),
-        **_approval_state(run, result),
+        "can_mark_ready": result.error_count == 0,
         **_render_tab_contents(run_id, result),
     }
     return render(request, "validation/page.html", ctx_dict)
-
-
-@router.post("/runs/{run_id}/validation/approve", response_class=HTMLResponse)
-def approve_validation(
-    request: Request,
-    run_id: str,
-    ctx: AppContext = Depends(get_ctx),
-) -> Response:
-    """POST /runs/{run_id}/validation/approve — approve validation if eligible.
-
-    Returns the {% block approval_bar %} fragment from validation/page.html
-    so HTMX outerHTML-swaps into #validation-approval-bar.
-    """
-    run = ctx.run_repo.get_by_id(run_id)
-    if not run:
-        return Response("Run not found", status_code=404)
-    if run.status != RunStatus.DRAFT:
-        return Response("Validation can only be approved on draft runs", status_code=400)
-
-    result = _validate_run(run, ctx)
-    can_approve = result.error_count == 0
-    if can_approve:
-        run.validation_approved = True
-        run.touch(reset_validation=False, updated_by=get_username(request))
-        ctx.run_repo.save(run)
-        audit("validation.approved", actor=get_username(request), target=run_id)
-    else:
-        audit(
-            "validation.approve.denied",
-            actor=get_username(request),
-            target=run_id,
-            outcome="denied",
-            error_count=result.error_count,
-            has_samples=run.has_samples,
-            all_samples_have_indexes=run.all_samples_have_indexes,
-        )
-    return render(
-        request,
-        "validation/page.html",
-        {"run_id": run_id, **_approval_state(run, result)},
-        block_name="approval_bar",
-    )
-
-
-@router.post("/runs/{run_id}/validation/unapprove", response_class=HTMLResponse)
-def unapprove_validation(
-    request: Request,
-    run_id: str,
-    ctx: AppContext = Depends(get_ctx),
-) -> Response:
-    """POST /runs/{run_id}/validation/unapprove — revoke approval."""
-    run = ctx.run_repo.get_by_id(run_id)
-    if not run:
-        return Response("Run not found", status_code=404)
-    if run.status == RunStatus.ARCHIVED:
-        return Response("Cannot modify archived runs", status_code=400)
-
-    run.validation_approved = False
-    run.touch(reset_validation=False, updated_by=get_username(request))
-    ctx.run_repo.save(run)
-    audit("validation.unapproved", actor=get_username(request), target=run_id)
-
-    result = _validate_run(run, ctx)
-    return render(
-        request,
-        "validation/page.html",
-        {"run_id": run_id, **_approval_state(run, result)},
-        block_name="approval_bar",
-    )

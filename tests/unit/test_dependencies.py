@@ -162,32 +162,6 @@ class TestSavingRun:
                 raise HTTPException(status_code=400, detail="bad input")
         assert ctx.run_repo.save_calls == []
 
-    def test_reset_validation_default_true_clears_approval(self):
-        """Default behaviour: touch resets validation_approved → False.
-
-        This matches the existing touch() default and is correct for
-        mutations like sample edits where the prior validation no
-        longer applies.
-        """
-        run, ctx, req = self._setup()
-        run.validation_approved = True
-        with saving_run(run, ctx, req):
-            run.run_name = "edited"
-        assert run.validation_approved is False
-        assert ctx.run_repo.save_calls == ["r1"]
-
-    def test_reset_validation_false_preserves_approval(self):
-        """Status-only transitions (archive, status change, validation
-        approve/unapprove) MUST preserve validation_approved. Four
-        current callsites depend on this — wrapping them in saving_run
-        without the flag would silently wipe approval.
-        """
-        run, ctx, req = self._setup()
-        run.validation_approved = True
-        with saving_run(run, ctx, req, reset_validation=False):
-            run.status = RunStatus.ARCHIVED
-        assert run.validation_approved is True
-        assert ctx.run_repo.save_calls == ["r1"]
 
 
 # ---------------------------------------------------------------------------

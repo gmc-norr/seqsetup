@@ -40,7 +40,6 @@ def _seed_ready_run(ctx, run_id: str = "api-ready-run", status: RunStatus = RunS
         flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8),
         status=status,
-        validation_approved=True,
         generated_samplesheet_v2="[Header]\nFileFormatVersion,2\n\n[Reads]\nRead1Cycles,151\n",
         generated_json='{"run_name": "API Test Run"}',
     )

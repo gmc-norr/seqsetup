@@ -49,10 +49,9 @@ These rules must NEVER be violated.
 - Never expose draft runs via the API — only `ready` and `archived`
 - Always call `run.touch(updated_by=get_username(req))` before saving after mutations
 - Pre-generate all exports (samplesheet v2, v1, JSON, validation) when transitioning to Ready — the API serves pre-generated content, not live exports
-- Modifying samples or indexes must reset `validation_approved` (the model handles this via `add_sample`/`remove_sample`, but verify if bypassing those methods)
 - Enforce state machine transitions via `check_status_transition()`: DRAFT→READY, READY→DRAFT, READY→ARCHIVED. ARCHIVED is terminal.
 - Exports are only available for READY and ARCHIVED runs — enforce via `check_run_exportable()`
-- Validation approval is only allowed on DRAFT runs; unapproval is blocked on ARCHIVED runs
+- Transition to READY runs validation in real time via `ValidationService.validate_run()` and refuses if `error_count > 0`
 
 ### Authentication and authorization
 - All non-public routes require authentication — never add unprotected routes
@@ -197,8 +196,7 @@ Draft ──→ Ready ──→ Archived (terminal)
 ```
 
 - **Draft**: Editable. Validation not required.
-- **Ready**: Locked. Validation must be approved. All exports pre-generated. Accessible via API.
+- **Ready**: Locked. All exports pre-generated. Accessible via API.
 - **Archived**: Read-only historical record. Accessible via API. No transitions out.
 
-Transition to Ready requires `validation_approved == True` and triggers export generation.
-Transition is enforced by `check_status_transition()` in `routes/utils.py`.
+Transition to Ready runs `ValidationService.validate_run()` inline and refuses if any errors are present. Export generation follows on success. Transition is enforced by `check_status_transition()` in `routes/utils.py`.

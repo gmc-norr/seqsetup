@@ -243,9 +243,9 @@ async def update_status(
     leaves the run in its current state, no half-mutated READY run
     persists.
 
-    `reset_validation=False` on saving_run because status transitions
-    preserve the prior validation_approved flag (archive shouldn't
-    wipe the approval audit trail).
+    For DRAFT->READY, validation is run in real time. If errors are
+    present the transition is refused with an inline error message
+    returned via HX-Retarget to #error-banner.
     """
     try:
         new_status = RunStatus(status)
@@ -255,17 +255,47 @@ async def update_status(
     if err := check_status_transition(run.status, new_status):
         return err
 
-    if new_status == RunStatus.READY and not run.validation_approved:
-        audit(
-            "run.status.denied",
-            actor=get_username(request),
-            target=run.id,
-            outcome="denied",
-            reason="validation_not_approved",
-            attempted_status=new_status.value,
+    if new_status == RunStatus.READY:
+        validation_result = ValidationService.validate_run(
+            run,
+            test_profile_repo=ctx.test_profile_repo,
+            app_profile_repo=ctx.app_profile_repo,
+            instrument_config=ctx.instrument_config,
         )
-        status_html = templates.env.get_template("runs/_run_status_bar.html").render(run=run)
-        return HTMLResponse(status_html, headers={"Cache-Control": "no-store"})
+        if validation_result.error_count > 0:
+            first_messages = []
+            for err in validation_result.configuration_errors[:3]:
+                if err.severity.value == "error":
+                    first_messages.append(err.message)
+            if not first_messages and validation_result.index_collisions:
+                first_messages.append(
+                    f"Index collisions in {len(validation_result.index_collisions)} lane(s)."
+                )
+            more = validation_result.error_count - len(first_messages)
+            suffix = f" (+ {more} more)" if more > 0 else ""
+            denial_message = (
+                f"Cannot mark ready — {validation_result.error_count} validation "
+                f"error(s):\n" + "\n".join(f"• {m}" for m in first_messages) + suffix
+            )
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="validation_failed",
+                attempted_status=new_status.value,
+                error_count=validation_result.error_count,
+            )
+            return HTMLResponse(
+                templates.env.get_template("_messages.html").render(
+                    messages=[{"text": denial_message, "kind": "error"}]
+                ),
+                headers={
+                    "Cache-Control": "no-store",
+                    "HX-Retarget": "#error-banner",
+                    "HX-Reswap": "innerHTML",
+                },
+            )
 
     previous_status = run.status.value
 
@@ -300,7 +330,7 @@ async def update_status(
             logger.error(f"Failed to generate exports for run {run.id}", exc_info=True)
             return Response("Failed to generate exports", status_code=500)
 
-    with saving_run(run, ctx, request, reset_validation=False):
+    with saving_run(run, ctx, request):
         run.status = new_status
         if new_status == RunStatus.READY:
             run.generated_samplesheet_v2 = new_ss_v2

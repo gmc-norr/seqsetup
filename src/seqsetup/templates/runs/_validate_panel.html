@@ -1,5 +1,5 @@
 {#
-   Validate panel — shows samples/indexes/errors/approval status badges
+   Validate panel — shows samples/indexes/errors status badges
    and a link to the validation review page.
 
    Inputs:
@@ -40,14 +40,9 @@
             {% if color_balance_issues > 0 %}
                 <span class="status-warning">Color balance: {{ color_balance_issues }} lane(s)</span>
             {% endif %}
-            {% if run.validation_approved %}
-                <span class="status-ok">Approved</span>
-            {% else %}
-                <span class="status-warning">Not approved</span>
-            {% endif %}
         </div>
         <div class="validate-footer">
-            <a href="/runs/{{ run.id }}/validation" class="validate-details-link">Review &amp; Approve</a>
+            <a href="/runs/{{ run.id }}/validation" class="validate-details-link">Review Validation</a>
         </div>
     </div>
 </fieldset>
