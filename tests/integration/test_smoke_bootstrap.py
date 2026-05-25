@@ -133,10 +133,55 @@ def test_admin_sample_api_renders(logged_in_client):
     assert 'id="sample-api-config-form"' in response.text
 
 
-# Non-admin rejection test omitted: logged_in_client IS admin and there is
-# no separate standard-user client fixture defined in conftest.py.
-# A standard_user_seeded fixture exists for user seeding but no TestClient
-# fixture builds a session for it. Adding one is out of scope for 2.3.
+def test_admin_instruments_rejects_standard_user(logged_in_standard_client):
+    """Non-admin GET /admin/instruments returns 403."""
+    response = logged_in_standard_client.get("/admin/instruments")
+    assert response.status_code == 403
+
+
+def test_admin_sample_api_rejects_standard_user(logged_in_standard_client):
+    """Non-admin GET /admin/sample-api returns 403."""
+    response = logged_in_standard_client.get("/admin/sample-api")
+    assert response.status_code == 403
+
+
+def test_admin_logs_rejects_standard_user(logged_in_standard_client):
+    """Non-admin GET /admin/logs returns 403."""
+    response = logged_in_standard_client.get("/admin/logs")
+    assert response.status_code == 403
+
+
+def test_admin_authentication_rejects_standard_user(logged_in_standard_client):
+    """Non-admin GET /admin/authentication returns 403."""
+    response = logged_in_standard_client.get("/admin/authentication")
+    assert response.status_code == 403
+
+
+def test_admin_config_sync_rejects_standard_user(logged_in_standard_client):
+    """Non-admin GET /admin/config-sync returns 403."""
+    response = logged_in_standard_client.get("/admin/config-sync")
+    assert response.status_code == 403
+
+
+def test_admin_users_rejects_standard_user(logged_in_standard_client):
+    """Non-admin GET /admin/users returns 403."""
+    response = logged_in_standard_client.get("/admin/users")
+    assert response.status_code == 403
+
+
+def test_admin_api_tokens_rejects_standard_user(logged_in_standard_client):
+    """Non-admin GET /admin/api-tokens returns 403."""
+    response = logged_in_standard_client.get("/admin/api-tokens")
+    assert response.status_code == 403
+
+
+def test_admin_users_delete_rejects_standard_user(logged_in_standard_client, fresh_app):
+    """Non-admin DELETE on /admin/users/{username} returns 403."""
+    response = logged_in_standard_client.delete(
+        "/admin/users/some-user",
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 403
 
 
 def test_admin_logs_renders(logged_in_client):

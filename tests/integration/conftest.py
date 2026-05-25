@@ -200,3 +200,28 @@ def logged_in_client(fresh_app, admin_user_seeded):
         f"Login failed (status={response.status_code}); body={response.text[:300]}"
     )
     return c
+
+
+@pytest.fixture
+def logged_in_standard_client(fresh_app, standard_user_seeded):
+    """A TestClient logged in as a non-admin standard user.
+
+    Use this fixture to verify admin routes return 403 to non-admins,
+    or that role-gated branches behave correctly for the standard role.
+    """
+    app, _ctx, _db = fresh_app
+    c = TestClient(app, base_url="http://testserver")
+    response = c.post(
+        "/login/submit",
+        data={
+            "username": standard_user_seeded["username"],
+            "password": standard_user_seeded["password"],
+        },
+        headers={"Origin": "http://testserver"},
+        follow_redirects=False,
+    )
+    # Login should 303 to /
+    assert response.status_code == 303, (
+        f"Standard-user login failed (status={response.status_code}); body={response.text[:300]}"
+    )
+    return c
