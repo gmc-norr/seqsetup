@@ -10,12 +10,10 @@ from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
 from ..components.wizard import (
-    AddSamplesStep1,
-    AddSamplesStep2,
     WizardStep1,
 )
 from ..context import AppContext
-from ..templating import ft_page_response
+from ..templating import ft_page_response, ft_to_html, render as render_jinja, templates
 
 
 def register(app, ctx: AppContext) -> None:
@@ -71,14 +69,31 @@ def register(app, ctx: AppContext) -> None:
 
         existing_sample_ids = (
             [sid.strip() for sid in existing.split(",") if sid.strip()]
-            if existing else None
+            if existing else [s.id for s in run.samples]
+        )
+        existing_ids_param = ",".join(existing_sample_ids) if existing_sample_ids else ""
+
+        from ..components.wizard.sample_table import SamplePasteFormatHelp, FetchFromApiSection
+        paste_format_help_html = ft_to_html(SamplePasteFormatHelp())
+        fetch_from_api_html = (
+            ft_to_html(FetchFromApiSection(run.id, target="#add-samples-result",
+                                           context="add_step1", existing_ids=existing_ids_param))
+            if _sample_api_enabled() else ""
         )
 
-        return ft_page_response(
-            request,
-            AddSamplesStep1(run, existing_sample_ids, sample_api_enabled=_sample_api_enabled()),
-            page_title="Add Samples - Enter Sample Info",
-        )
+        steps_for_progress = [
+            {"number": "1", "label": "Add Samples",
+             "href": f"/runs/{run.id}/samples/add/step/1", "is_active": True, "is_completed": False},
+            {"number": "2", "label": "Assign Indexes",
+             "href": f"/runs/{run.id}/samples/add/step/2", "is_active": False, "is_completed": False},
+        ]
+        return render_jinja(request, "wizard/add_samples_step1.html", {
+            "run": run,
+            "existing_ids_param": existing_ids_param,
+            "paste_format_help_html": paste_format_help_html,
+            "fetch_from_api_html": fetch_from_api_html,
+            "steps": steps_for_progress,
+        })
 
     def add_samples_step2(request: Request) -> Response:
         """GET /runs/{run_id}/samples/add/step/2 — assign indexes to samples."""
@@ -93,12 +108,48 @@ def register(app, ctx: AppContext) -> None:
             [sid.strip() for sid in existing.split(",") if sid.strip()]
             if existing else []
         )
+        existing_ids_param = ",".join(existing_sample_ids)
+        existing_ids_set = set(existing_sample_ids)
+        new_samples = [s for s in run.samples if s.id not in existing_ids_set]
+        samples_without_indexes = [s for s in new_samples if not s.has_index]
+        all_have_indexes = len(samples_without_indexes) == 0
 
-        return ft_page_response(
-            request,
-            AddSamplesStep2(run, ctx.index_kit_repo.list_all(), existing_sample_ids),
-            page_title="Add Samples - Assign Indexes",
+        index_kits = ctx.index_kit_repo.list_all()
+        default_kit = index_kits[0] if index_kits else None
+
+        from ..components.wizard.index_panel import IndexKitDropdown, IndexKitPanel
+        from ..components.wizard.sample_table import NewSamplesTableWizard
+        from fasthtml.common import P
+
+        index_kit_dropdown_html = ft_to_html(
+            IndexKitDropdown(index_kits, default_kit.name if default_kit else None)
         )
+        index_kit_panel_html = ft_to_html(
+            IndexKitPanel(default_kit)
+            if default_kit
+            else P("No index kits available.", cls="no-kits-message")
+        )
+        new_samples_table_html = ft_to_html(
+            NewSamplesTableWizard(run, new_samples, index_kits,
+                                  context="add_step2", existing_ids=existing_ids_param)
+        ) if new_samples else ""
+
+        steps_for_progress = [
+            {"number": "1", "label": "Add Samples",
+             "href": f"/runs/{run.id}/samples/add/step/1", "is_active": False, "is_completed": True},
+            {"number": "2", "label": "Assign Indexes",
+             "href": f"/runs/{run.id}/samples/add/step/2", "is_active": True, "is_completed": False},
+        ]
+        return render_jinja(request, "wizard/add_samples_step2.html", {
+            "run": run,
+            "existing_ids_param": existing_ids_param,
+            "new_samples": new_samples,
+            "all_have_indexes": all_have_indexes,
+            "index_kit_dropdown_html": index_kit_dropdown_html,
+            "index_kit_panel_html": index_kit_panel_html,
+            "new_samples_table_html": new_samples_table_html,
+            "steps": steps_for_progress,
+        })
 
     def tests_page(request: Request) -> Response:
         """GET /tests — tests management page."""

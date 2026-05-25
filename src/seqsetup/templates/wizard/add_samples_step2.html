@@ -1,0 +1,44 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Add Samples - Assign Indexes" %}
+{% set active_route = "/runs/" ~ run.id %}
+
+{% block content %}
+<div class="wizard-container">
+    {% include "wizard/_progress.html" %}
+    <div class="wizard-content">
+        <h2>Step 2: Assign Indexes</h2>
+        {% if new_samples and not all_have_indexes %}
+            <p>Assign indexes to {{ new_samples|length }} new sample(s).</p>
+        {% endif %}
+        {% if not new_samples %}
+            <p>No new samples to assign indexes to.</p>
+        {% endif %}
+
+        <div class="{{ 'wizard-step3-layout' if new_samples and not all_have_indexes else 'wizard-sample-only' }}">
+            {% if new_samples and not all_have_indexes %}
+            <aside class="wizard-index-panel">
+                <h3>Available Indexes</h3>
+                {{ index_kit_dropdown_html | safe }}
+                <div class="index-kits-compact" id="index-list-container">
+                    {{ index_kit_panel_html | safe }}
+                </div>
+            </aside>
+            {% endif %}
+
+            <div class="wizard-sample-panel">
+                {% if new_samples %}<h3>Samples ({{ new_samples|length }})</h3>{% endif %}
+                {% if all_have_indexes and new_samples %}
+                    <p class="all-indexed-message">All samples have indexes assigned.</p>
+                {% endif %}
+                {% if new_samples %}
+                    {{ new_samples_table_html | safe }}
+                {% endif %}
+            </div>
+        </div>
+
+        {% with step=2, can_proceed=True, oob=False %}
+        {% include "wizard/_add_samples_nav.html" %}
+        {% endwith %}
+    </div>
+</div>
+{% endblock %}

@@ -14,7 +14,6 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from ..components.wizard import (
-    AddSamplesNavigation,
     NewSamplesTableWizard,
     SampleRowWizard,
     SampleTableWizard,
@@ -262,11 +261,12 @@ def register(app, ctx: AppContext) -> None:
                     dup_list = ", ".join(skipped_within_paste[:3]) + f" and {len(skipped_within_paste) - 3} more"
                 messages.append(P(f"Skipped {len(skipped_within_paste)} duplicate(s) in pasted data: {dup_list}", cls="warning-message"))
 
-            return ft_response(
-                Div(
-                    Div(*messages),
-                    AddSamplesNavigation(1, run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids),
-                )
+            nav_html = templates.env.get_template("wizard/_add_samples_nav.html").render(
+                step=1, run_id=run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids,
+            )
+            return HTMLResponse(
+                ft_to_html(Div(*messages)) + nav_html,
+                headers={"Cache-Control": "no-store"},
             )
 
         return _sample_table_with_nav(run)
@@ -410,11 +410,12 @@ def register(app, ctx: AppContext) -> None:
             messages.append(P(f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.", cls="warning-message"))
 
         if context == "add_step1":
-            return ft_response(
-                Div(
-                    Div(*messages),
-                    AddSamplesNavigation(1, run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids),
-                )
+            nav_html = templates.env.get_template("wizard/_add_samples_nav.html").render(
+                step=1, run_id=run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids,
+            )
+            return HTMLResponse(
+                ft_to_html(Div(*messages)) + nav_html,
+                headers={"Cache-Control": "no-store"},
             )
 
         return _sample_table_with_nav(run)

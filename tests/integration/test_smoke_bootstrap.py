@@ -375,3 +375,38 @@ def test_indexes_kit_content_empty_selection(logged_in_client):
     assert response.status_code == 200
     assert "Select an index kit" in response.text
     assert 'id="index-kit-panel"' in response.text
+
+
+def test_add_samples_step1_renders(logged_in_client, fresh_app):
+    """GET /runs/{id}/samples/add/step/1 renders the new Jinja2 template."""
+    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    app, ctx, db = fresh_app
+    run = SequencingRun(
+        run_name="AddSamplesSmoke",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        created_by="admin",
+    )
+    ctx.run_repo.save(run)
+
+    response = logged_in_client.get(f"/runs/{run.id}/samples/add/step/1")
+    assert response.status_code == 200
+    assert "Step 1: Add Samples" in response.text
+    assert 'id="add-samples-nav"' in response.text
+    assert 'id="add-samples-result"' in response.text
+
+
+def test_add_samples_step2_renders(logged_in_client, fresh_app):
+    """GET /runs/{id}/samples/add/step/2 renders the new Jinja2 template."""
+    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    app, ctx, db = fresh_app
+    run = SequencingRun(
+        run_name="AddSamplesSmoke2",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        created_by="admin",
+    )
+    ctx.run_repo.save(run)
+
+    response = logged_in_client.get(f"/runs/{run.id}/samples/add/step/2")
+    assert response.status_code == 200
+    assert "Step 2: Assign Indexes" in response.text
+    assert 'id="add-samples-nav"' in response.text

@@ -1,0 +1,15 @@
+{#
+   Wizard progress indicator. Reusable across wizards.
+
+   Inputs:
+     steps:        list[dict{number, label, href, is_active, is_completed}]
+#}
+<div class="wizard-progress">
+{% for step in steps %}
+    <a href="{{ step.href }}"
+       class="wizard-step{% if step.is_active %} active{% endif %}{% if step.is_completed %} completed{% endif %}">
+        <span class="step-number">{{ step.number }}</span>
+        <span class="step-label">{{ step.label }}</span>
+    </a>
+{% endfor %}
+</div>

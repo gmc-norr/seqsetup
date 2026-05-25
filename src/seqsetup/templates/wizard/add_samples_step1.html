@@ -1,0 +1,45 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Add Samples - Enter Sample Info" %}
+{% set active_route = "/runs/" ~ run.id %}
+
+{% block content %}
+<div class="wizard-container">
+    {% include "wizard/_progress.html" %}
+    <div class="wizard-content">
+        <h2>Step 1: Add Samples</h2>
+        <p class="step-description">Paste or import samples from a spreadsheet. Optionally include index sequences.</p>
+
+        <div class="paste-section">
+            <h3>Import Samples</h3>
+            {{ paste_format_help_html | safe }}
+            <form hx-post="/runs/{{ run.id }}/samples/bulk?context=add_step1&existing_ids={{ existing_ids_param }}"
+                  hx-target="#add-samples-result"
+                  hx-swap="innerHTML"
+                  hx-encoding="multipart/form-data">
+                <textarea name="paste_data" id="paste_data" class="paste-textarea" rows="8"
+                          placeholder="sample_id&#9;test_id&#9;index_i7&#9;index_i5&#10;Sample001&#9;WGS&#9;ATTACTCG&#9;TATAGCCT&#10;Sample002&#9;RNA&#9;TCCGGAGA&#9;ATAGAGGC&#10;Sample003&#9;WGS&#9;CGCTCATT&#9;CCTATCCT"></textarea>
+                <div class="file-upload-row">
+                    <span class="file-upload-label">or import from file:</span>
+                    <input type="file" name="sample_file" id="sample_file_step1" accept=".csv,.tsv,.txt" class="sample-file-input">
+                </div>
+                <div class="paste-buttons">
+                    <button type="submit" class="btn btn-primary">Add Samples</button>
+                    <button type="button" class="btn btn-secondary"
+                            onclick="document.getElementById('paste_data').value=''; document.getElementById('sample_file_step1').value=''">Clear</button>
+                </div>
+            </form>
+            {% if fetch_from_api_html %}
+                {{ fetch_from_api_html | safe }}
+            {% endif %}
+        </div>
+
+        <div id="add-samples-result">
+            <p class="hint-message">Paste sample data above and click 'Add Samples'.</p>
+        </div>
+
+        {% with step=1, can_proceed=True, oob=False %}
+        {% include "wizard/_add_samples_nav.html" %}
+        {% endwith %}
+    </div>
+</div>
+{% endblock %}
