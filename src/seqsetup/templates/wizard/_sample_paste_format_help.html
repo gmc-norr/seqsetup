@@ -1,0 +1,41 @@
+{#
+   Collapsible paste-format help. Pure presentational.
+   Renders inside a wizard form (no Inputs needed).
+#}
+<details class="format-help-section">
+    <summary class="format-help-summary">Paste Format Help</summary>
+    <div class="format-help-content">
+        <div class="format-block">
+            <strong class="format-type-header">Basic</strong>
+            <p class="format-desc">sample_id and test_id columns. Tab or comma-separated.</p>
+            <pre class="format-example">sample_id&#9;test_id
+Sample001&#9;WGS
+Sample002&#9;RNA
+Sample003&#9;WGS</pre>
+            <p class="format-note">A header row is auto-detected and used for column mapping. Without a header, columns default to: sample_id, test_id, index_i7, index_i5. Name columns require a header row.</p>
+        </div>
+        <div class="format-block">
+            <strong class="format-type-header">With Indexes</strong>
+            <p class="format-desc">Include index_i7 and/or index_i5 sequences to auto-assign indexes on paste.</p>
+            <pre class="format-example">sample_id&#9;test_id&#9;index_i7&#9;index_i5
+Sample001&#9;WGS&#9;ATTACTCG&#9;TATAGCCT
+Sample002&#9;RNA&#9;TCCGGAGA&#9;ATAGAGGC
+Sample003&#9;WGS&#9;CGCTCATT&#9;CCTATCCT</pre>
+        </div>
+        <div class="format-block">
+            <strong class="format-type-header">With Index Names</strong>
+            <p class="format-desc">Optionally include index_pair_name, i7_name, and i5_name columns.</p>
+            <pre class="format-example">sample_id&#9;test_id&#9;index_i7&#9;index_i5&#9;index_pair_name&#9;i7_name&#9;i5_name
+Sample001&#9;WGS&#9;ATTACTCG&#9;TATAGCCT&#9;UDP0001&#9;D701&#9;D501
+Sample002&#9;RNA&#9;TCCGGAGA&#9;ATAGAGGC&#9;UDP0002&#9;D702&#9;D502</pre>
+            <p class="format-note">All name columns are optional. Without names, sequences are used as index names and 'Pasted' as the kit name.</p>
+        </div>
+        <div class="format-block">
+            <strong class="format-type-header">Minimal</strong>
+            <p class="format-desc">Single column with just sample_ids.</p>
+            <pre class="format-example">Sample001
+Sample002
+Sample003</pre>
+        </div>
+    </div>
+</details>

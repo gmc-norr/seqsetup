@@ -1,0 +1,24 @@
+{#
+   "Load Worklists" button — fetches the LIMS worklist selector via HTMX.
+   The `target` argument from the FT version is a no-op leftover and dropped here.
+
+   Inputs:
+     run_id:       str
+     context:      str — passed to /samples/worklists (e.g. "add_step1")
+     existing_ids: str — comma-separated pre-wizard sample ids
+#}
+{% set params = [] %}
+{% if context %}{% set _ = params.append('context=' ~ context) %}{% endif %}
+{% if existing_ids %}{% set _ = params.append('existing_ids=' ~ existing_ids) %}{% endif %}
+{% set query_string = ('?' ~ params|join('&')) if params else '' %}
+<div>
+    <hr style="margin: 0.75rem 0; border-color: var(--border);">
+    <div style="display:flex; align-items:center; gap:0.5rem;">
+        <button type="button" class="btn-primary"
+                hx-get="/runs/{{ run_id }}/samples/worklists{{ query_string }}"
+                hx-target="#worklist-select-area"
+                hx-swap="innerHTML">Load Worklists</button>
+    </div>
+    <p class="field-hint" style="margin-top:0.25rem;">Fetch a worklist of samples from the configured external API.</p>
+    <div id="worklist-select-area"></div>
+</div>

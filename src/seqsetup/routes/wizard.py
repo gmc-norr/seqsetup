@@ -73,14 +73,6 @@ def register(app, ctx: AppContext) -> None:
         )
         existing_ids_param = ",".join(existing_sample_ids) if existing_sample_ids else ""
 
-        from ..components.wizard.sample_table import SamplePasteFormatHelp, FetchFromApiSection
-        paste_format_help_html = ft_to_html(SamplePasteFormatHelp())
-        fetch_from_api_html = (
-            ft_to_html(FetchFromApiSection(run.id, target="#add-samples-result",
-                                           context="add_step1", existing_ids=existing_ids_param))
-            if _sample_api_enabled() else ""
-        )
-
         steps_for_progress = [
             {"number": "1", "label": "Add Samples",
              "href": f"/runs/{run.id}/samples/add/step/1", "is_active": True, "is_completed": False},
@@ -90,8 +82,7 @@ def register(app, ctx: AppContext) -> None:
         return render_jinja(request, "wizard/add_samples_step1.html", {
             "run": run,
             "existing_ids_param": existing_ids_param,
-            "paste_format_help_html": paste_format_help_html,
-            "fetch_from_api_html": fetch_from_api_html,
+            "sample_api_enabled": _sample_api_enabled(),
             "steps": steps_for_progress,
         })
 

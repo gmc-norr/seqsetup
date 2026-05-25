@@ -11,7 +11,7 @@
 
         <div class="paste-section">
             <h3>Import Samples</h3>
-            {{ paste_format_help_html | safe }}
+            {% include "wizard/_sample_paste_format_help.html" %}
             <form hx-post="/runs/{{ run.id }}/samples/bulk?context=add_step1&existing_ids={{ existing_ids_param }}"
                   hx-target="#add-samples-result"
                   hx-swap="innerHTML"
@@ -28,8 +28,10 @@
                             onclick="document.getElementById('paste_data').value=''; document.getElementById('sample_file_step1').value=''">Clear</button>
                 </div>
             </form>
-            {% if fetch_from_api_html %}
-                {{ fetch_from_api_html | safe }}
+            {% if sample_api_enabled %}
+                {% with context='add_step1', existing_ids=existing_ids_param %}
+                {% include "wizard/_fetch_from_api_section.html" %}
+                {% endwith %}
             {% endif %}
         </div>
 
