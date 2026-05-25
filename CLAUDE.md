@@ -34,42 +34,48 @@ to copy.
 
 ## Hard Rules
 
-These rules must NEVER be violated.
+These rules must NEVER be violated. Each rule states the invariant and the
+mechanism that enforces it; if you find yourself relying on "remembering"
+to call something at every ingest point, prefer pushing the check down to
+a model or service layer where it cannot be forgotten.
 
 ### Input sanitization
-- Strip and length-limit all string inputs: `.strip()[:N]` (typically 256 for short fields, 4096 for descriptions)
-- Clamp all numeric inputs to valid ranges: `max(low, min(high, value))`
-- Validate DNA sequences against `^[ACGTN]*$` after uppercasing
-- Use `escape_js_string()` and `escape_html_attr()` from `utils/html.py` when embedding user data in HTML or JavaScript — never raw f-strings
-- Use `sanitize_filename()` from `routes/utils.py` for Content-Disposition headers
-- Use `_escape_csv()` for all user-supplied values in SampleSheet output (BCLConvert, DRAGEN, and Cloud sections)
+- **Bound every string at the model boundary.** Model fields (e.g. `Sample.sample_id`, `Run.run_name`) own their length and character constraints, validated both on construction (`__post_init__`) AND on later attribute assignment (`__setattr__` or property setter). Route handlers may use `sanitize_string(value, N)` (typically `N=256` for identifiers, `4096` for descriptions) as a fast clamp at the edge, but they MUST NOT be the only line of defense.
+- **Bound every string at every ingest point.** Bulk-paste, LIMS import, and any other parser that strips cells must also clamp them — see `_MAX_CELL_LEN` / `_MAX_FIELD_LEN` in `services/sample_parser.py` and `services/sample_api.py`.
+- Clamp all numeric inputs to valid ranges: `max(low, min(high, value))`. Apply at the model layer so re-assignment can't bypass it.
+- Validate DNA sequences against `^[ACGTN]*$` after uppercasing — at the model layer.
+- Use `escape_js_string()` and `escape_html_attr()` from `utils/html.py` when embedding values in HTML or JavaScript. For JS string literals in Alpine/HTMX attributes, the project's canonical pattern is `{{ value | tojson }}` inside a single-quoted attribute (see `templates/admin/instruments.html`).
+- Use `sanitize_filename()` from `routes/utils.py` for Content-Disposition headers.
+- Use `_escape_csv()` for all user-supplied values in SampleSheet output (BCLConvert, DRAGEN, and Cloud sections).
 
 ### Run state integrity
-- Never allow mutations to a run unless `check_run_editable(run)` passes (returns None)
-- Never expose draft runs via the API — only `ready` and `archived`
-- Always call `run.touch(updated_by=get_username(req))` before saving after mutations
-- Pre-generate all exports (samplesheet v2, v1, JSON, validation) when transitioning to Ready — the API serves pre-generated content, not live exports
+- Never allow mutations to a run unless `check_run_editable(run)` passes (returns None).
+- Never expose draft runs via the API — only `ready` and `archived`.
+- Always call `run.touch(updated_by=get_username(req))` before saving after mutations. The `saving_run(...)` context manager does this for you — prefer it over manual save calls so reviewers can grep `with saving_run(` to enumerate every mutation handler.
+- Pre-generate all exports (samplesheet v2, v1, JSON, validation) when transitioning to Ready — the API serves pre-generated content, not live exports. The UI export routes share this guarantee; they fall back to live generation only for runs created before pre-generation existed, and any new code path that mutates a Ready/Archived run must re-pre-generate.
 - Enforce state machine transitions via `check_status_transition()`: DRAFT→READY, READY→DRAFT, READY→ARCHIVED. ARCHIVED is terminal.
-- Exports are only available for READY and ARCHIVED runs — enforce via `check_run_exportable()`
-- Transition to READY runs validation in real time via `ValidationService.validate_run()` and refuses if `error_count > 0`
+- Exports are only available for READY and ARCHIVED runs — enforce via `check_run_exportable()`.
+- Transition to READY runs validation in real time via `ValidationService.validate_run()` and refuses if `error_count > 0`.
 
 ### Authentication and authorization
-- All non-public routes require authentication — never add unprotected routes
-- Admin routes must use `require_admin_dep` (from `routes/dependencies.py`) as a router-level dependency — it raises HTTP 403 for non-admin users
-- Index kit upload requires admin — standard users cannot upload index kits
-- API routes require Bearer token auth — tokens stored as bcrypt hashes, never log or expose plaintext
-- Access the authenticated user via `req.scope.get("auth")`, API token via `req.scope.get("api_token")`
+- All non-public routes require authentication — never add unprotected routes.
+- Admin routes must use `require_admin_dep` (from `routes/dependencies.py`) as a router-level dependency — it raises HTTP 403 for non-admin users.
+- Index kit upload requires admin — standard users cannot upload index kits.
+- API routes require Bearer token auth — tokens stored as bcrypt hashes, never log or expose plaintext.
+- Access the authenticated user via `req.scope.get("auth")`, API token via `req.scope.get("api_token")`.
 
 ### Data integrity
-- Validation services are **read-only** — they must never mutate run state
-- Repositories contain **no business logic** — they are thin data access layers
-- Models are **self-validating** — invariants enforced in `__post_init__`
-- Never silently discard data. If input is invalid, reject it or clamp it visibly.
+- Validation services are **read-only** — they must never mutate run state.
+- Repositories contain **no business logic** — they are thin data access layers.
+- Models are **self-validating on every assignment, not just construction.** Use `__setattr__` or property setters when invariants must survive direct attribute writes (the routes do `sample.override_cycles = …` and similar patterns).
+- **Validation cache coherence:** `ValidationService` memoizes results by `(run.id, run.updated_at, repo identity)`. Any mutation that changes validation *inputs* without bumping `run.updated_at` (GitHub config sync, index-kit save/delete, instrument enable/disable, etc.) MUST call `clear_validation_cache()`. See `services/validation.py` and existing call sites in `services/github_sync.py`, `routes/indexes.py`, `routes/admin/instruments.py`.
+- **Partial updates update only what was submitted.** Handlers serving per-field HTMX inputs (e.g. `update_sample_settings`) MUST check `field in form` before writing — defaulting missing fields to empty and writing them back silently destroys sibling values.
+- Never silently discard data. If input is invalid, reject it (raise `HTTPException(400)` or let model `ValueError` propagate) or clamp it visibly.
 
 ### External API safety
-- The LIMS API client (`services/sample_api.py`) uses SSL certificate verification via `ssl.create_default_context()`
-- URLs are validated before fetching — localhost and loopback addresses are blocked to prevent SSRF
-- API responses are size-limited (10 MB) to prevent memory exhaustion
+- The LIMS API client (`services/sample_api.py`) uses SSL certificate verification via `ssl.create_default_context()`.
+- **URLs are validated before fetching.** Hostnames are DNS-resolved and any resolved IP that is loopback, link-local, RFC1918 private, multicast, reserved, or unspecified is refused — this blocks SSRF pivots into the host's own networks. Operators whose LIMS lives on a private corporate network must explicitly opt in via `SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1`; this is a deliberate, audited decision per deployment, not a default. Plain HTTP is similarly gated by `SEQSETUP_LIMS_ALLOW_HTTP=1`; production uses HTTPS exclusively so the api-key is not sent in clear.
+- API responses are size-limited (10 MB) to prevent memory exhaustion.
 
 ## Conventions
 
