@@ -522,3 +522,67 @@ def test_indexes_upload_rejects_standard_user(logged_in_standard_client):
         headers={"Origin": "http://testserver"},
     )
     assert response.status_code == 403
+
+
+def test_sample_add_emits_audit(logged_in_client, fresh_app, monkeypatch):
+    """POST /runs/{id}/samples emits sample.added audit event."""
+    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    import seqsetup.routes.samples as samples_module
+
+    captured: list[dict] = []
+
+    def _capture(event, **kwargs):
+        captured.append({"event": event, **kwargs})
+
+    monkeypatch.setattr(samples_module, "audit", _capture)
+
+    app, ctx, db = fresh_app
+    run = SequencingRun(
+        run_name="AuditSmoke",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        created_by="admin",
+    )
+    ctx.run_repo.save(run)
+
+    response = logged_in_client.post(
+        f"/runs/{run.id}/samples",
+        data={"sample_id": "S1", "test_id": "WGS"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 200
+    assert any(c.get("event") == "sample.added" for c in captured), (
+        f"Expected sample.added in audit; got events: {[c.get('event') for c in captured]}"
+    )
+
+
+def test_sample_delete_emits_audit(logged_in_client, fresh_app, monkeypatch):
+    """DELETE /runs/{id}/samples/{sample_id} emits sample.deleted audit event."""
+    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    from seqsetup.models.sample import Sample
+    import seqsetup.routes.samples as samples_module
+
+    captured: list[dict] = []
+
+    def _capture(event, **kwargs):
+        captured.append({"event": event, **kwargs})
+
+    monkeypatch.setattr(samples_module, "audit", _capture)
+
+    app, ctx, db = fresh_app
+    run = SequencingRun(
+        run_name="AuditDeleteSmoke",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        created_by="admin",
+    )
+    sample = Sample(sample_id="S1", test_id="WGS", lanes=[1])
+    run.add_sample(sample)
+    ctx.run_repo.save(run)
+
+    response = logged_in_client.delete(
+        f"/runs/{run.id}/samples/{sample.id}",
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 200
+    assert any(c.get("event") == "sample.deleted" for c in captured), (
+        f"Expected sample.deleted in audit; got events: {[c.get('event') for c in captured]}"
+    )

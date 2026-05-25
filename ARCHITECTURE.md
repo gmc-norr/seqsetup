@@ -126,7 +126,7 @@ These items were noted during reviews and are NOT regressions from
 the migration, but represent real gaps in the codebase that warrant
 tracking:
 
-1. **`routes/samples.py` mutation audit logging gap.** Per CLAUDE.md
+1. ~~**`routes/samples.py` mutation audit logging gap.** Per CLAUDE.md
    "Audit logging" hard rule, every state-changing route should emit
    an audit record. `samples.py` has ~17 mutation handlers
    (add_sample, add_bulk_samples, assign_index, clear_index,
@@ -137,7 +137,14 @@ tracking:
    the migration. Adding audit calls is a follow-up: each mutation
    should emit `sample.added` / `sample.deleted` / `sample.index.assigned`
    / `sample.index.cleared` / etc., with `actor`, `target` (run_id +
-   sample_id), and `outcome` where applicable.
+   sample_id), and `outcome` where applicable.~~
+   **CLOSED** — All 15 mutation handlers now emit audit events
+   (sample.added, sample.updated, sample.deleted, sample.index.assigned,
+   sample.index.cleared, sample.settings.updated, sample.bulk_added,
+   sample.worklist_imported, sample.bulk_index_assigned,
+   sample.bulk_index_assigned_selected, sample.bulk_lanes_set,
+   sample.bulk_mismatches_set, sample.bulk_override_cycles_set,
+   sample.bulk_test_id_set, sample.bulk_deleted).
 
 2. **APIRouter pattern not yet adopted by `routes/samples.py`,
    `routes/wizard.py`, `routes/runs.py`, `routes/export.py`.**

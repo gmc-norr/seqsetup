@@ -19,6 +19,7 @@ from ..services.cycle_calculator import CycleCalculator
 from ..services.sample_parser import parse_pasted_samples
 from starlette.responses import HTMLResponse
 
+from ..services.audit_log import audit
 from ..templating import render, templates
 from .utils import check_run_editable, get_username, sanitize_string
 
@@ -161,6 +162,13 @@ def register(app, ctx: AppContext) -> None:
         run.add_sample(sample)
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.added",
+            actor=get_username(request),
+            target=run_id,
+            sample_id=sample.id,
+            test_id=sample.test_id,
+        )
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         return render(request, "wizard/_sample_row.html", {
@@ -255,6 +263,14 @@ def register(app, ctx: AppContext) -> None:
         if added_count > 0:
             run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
+            audit(
+                "sample.bulk_added",
+                actor=get_username(request),
+                target=run_id,
+                added_count=added_count,
+                skipped_duplicates_count=len(skipped_duplicates),
+                skipped_within_paste_count=len(skipped_within_paste),
+            )
 
         if context == "add_step1":
             messages = []
@@ -421,6 +437,14 @@ def register(app, ctx: AppContext) -> None:
         if added_count > 0:
             run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
+            audit(
+                "sample.worklist_imported",
+                actor=get_username(request),
+                target=run_id,
+                worklist_id=worklist_id,
+                added_count=added_count,
+                skipped_duplicates_count=len(skipped_duplicates),
+            )
 
         messages = []
         if added_count == 0:
@@ -521,6 +545,13 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.bulk_index_assigned",
+            actor=get_username(request),
+            target=run_id,
+            sample_count=min(len(resolved_assignments), len(run.samples) - start_idx),
+            kit_name=kit.name if resolved_assignments else "",
+        )
 
         if context == "add_step2":
             existing_ids_set = (
@@ -597,6 +628,12 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.bulk_index_assigned_selected",
+            actor=get_username(request),
+            target=run_id,
+            sample_count=len(sample_ids),
+        )
 
         if context == "add_step2":
             existing_ids_set = (
@@ -653,6 +690,13 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.bulk_lanes_set",
+            actor=get_username(request),
+            target=run_id,
+            sample_count=len(selected_ids),
+            lanes=",".join(str(l) for l in normalized_lanes),
+        )
 
         return _sample_table_with_nav(run, request)
 
@@ -698,6 +742,14 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.bulk_mismatches_set",
+            actor=get_username(request),
+            target=run_id,
+            sample_count=len(sample_ids),
+            mismatch_index1=mismatch_index1,
+            mismatch_index2=mismatch_index2,
+        )
 
         return _sample_table_with_nav(run, request)
 
@@ -740,6 +792,13 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.bulk_override_cycles_set",
+            actor=get_username(request),
+            target=run_id,
+            sample_count=len(sample_ids),
+            override_cycles=override_cycles or "auto",
+        )
 
         return _sample_table_with_nav(run, request)
 
@@ -771,6 +830,13 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.bulk_test_id_set",
+            actor=get_username(request),
+            target=run_id,
+            sample_count=len(sample_ids),
+            test_id=test_id,
+        )
 
         return _sample_table_with_nav(run, request)
 
@@ -793,11 +859,18 @@ def register(app, ctx: AppContext) -> None:
         except json.JSONDecodeError:
             return Response("Invalid request data", status_code=400)
 
+        deleted_ids = [sid for sid in sample_ids if run.get_sample(str(sid))]
         for sample_id in sample_ids:
             run.remove_sample(sample_id)
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.bulk_deleted",
+            actor=get_username(request),
+            target=run_id,
+            sample_count=len(deleted_ids),
+        )
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         return render(request, "wizard/_sample_table.html", {
@@ -827,6 +900,12 @@ def register(app, ctx: AppContext) -> None:
         run.remove_sample(sample_id)
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.deleted",
+            actor=get_username(request),
+            target=run_id,
+            sample_id=sample_id,
+        )
 
         if context == "add_step2":
             return Response("")
@@ -875,6 +954,12 @@ def register(app, ctx: AppContext) -> None:
             sample.project = project
             run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
+            audit(
+                "sample.updated",
+                actor=get_username(request),
+                target=run_id,
+                sample_id=sample.id,
+            )
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
             return render(request, "wizard/_sample_row.html", {
                 "sample": sample,
@@ -940,6 +1025,14 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.index.assigned",
+            actor=get_username(request),
+            target=run_id,
+            sample_id=sample_id_path,
+            index_type="pair" if index_pair_id else index_type,
+            kit_name=kit.name if kit else "",
+        )
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         show_bulk = context != "add_step2"
@@ -983,6 +1076,13 @@ def register(app, ctx: AppContext) -> None:
 
             run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
+            audit(
+                "sample.index.cleared",
+                actor=get_username(request),
+                target=run_id,
+                sample_id=sample.id,
+                index_type=index_type,
+            )
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
             show_bulk = context != "add_step2"
             show_cb = True if context == "add_step2" else None
@@ -1052,6 +1152,12 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
+        audit(
+            "sample.settings.updated",
+            actor=get_username(request),
+            target=run_id,
+            sample_id=sample.id,
+        )
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         return render(request, "wizard/_sample_row.html", {
