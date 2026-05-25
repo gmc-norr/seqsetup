@@ -1,3 +1,19 @@
+/* SeqSetup component stylesheet.
+ *
+ * Shared component-level CSS classes used across Jinja2 templates:
+ *   - .btn / .btn-primary / .btn-secondary / .btn-tiny etc. — buttons
+ *   - .sample-table — the main run/wizard sample table styling
+ *   - .config-panel / .config-label / .config-value — form rows
+ *   - .heatmap-cell .dist-N — index-distance heatmap cell coloring
+ *   - .status-ok / .status-warning / .status-error — status badges
+ *   - .run-status-bar / .run-status-badge — run-status pill rendering
+ *   - .sidebar / .topbar / .navigation — app shell
+ *
+ * Templates use Tailwind utilities for layout and ad-hoc styling
+ * (margins, flexbox, grid, colors) and these classes for the
+ * project's shared visual components. This file is not a
+ * transitional artifact — it's part of the steady-state stack.
+ */
 :root {
     --primary: #2563eb;
     --primary-hover: #1d4ed8;

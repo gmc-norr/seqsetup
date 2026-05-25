@@ -89,7 +89,11 @@ Each form model picks per field. Switching a field clamp→reject is a deliberat
 ## CSS
 
 - Tailwind v4 utility classes inline in templates.
-- Hand-written CSS in `static/css/input.css` only — Tailwind directives + occasional `@layer components` rules.
+- `static/css/components.css` contains shared component-level styles
+  (`.btn` family, `.sample-table`, `.config-panel`, etc.). Used by
+  templates that need consistent component appearance across pages.
+- `static/css/input.css` is the Tailwind entry point — imports
+  `tailwindcss` and `components.css`.
 - Output `static/css/app.css` is gitignored; built by `pixi run css`.
 - `pixi run serve` builds CSS first (Phase 0 wiring).
 
@@ -109,9 +113,9 @@ APIRouter + Jinja2 + jinja2-fragments + Tailwind v4 + Alpine.js +
 Pydantic v2. The `python-fasthtml` dependency was removed in roadmap
 step 8.
 
-A small number of legacy CSS class names from `static/css/legacy.css`
-still appear in Jinja2 templates (e.g., `.btn`, `.config-panel`,
-`.sample-table`). Switching the remaining templates to pure Tailwind
-utility classes is a follow-up of indeterminate priority — visual
-parity is preserved while legacy.css stays imported via
-`static/css/input.css`.
+The project uses Tailwind v4 utility classes inline for layout and
+ad-hoc styling, alongside a hand-written component stylesheet at
+`static/css/components.css` for shared visual components (buttons,
+tables, form rows, heatmap cells, status badges, the app shell, etc.).
+The two layers are imported together in `static/css/input.css`. This
+is a standard Tailwind+CSS pattern, not a migration carry-over.
