@@ -496,3 +496,13 @@ def test_new_run_wizard_step1_renders(logged_in_client, fresh_app):
     assert 'name="run_name"' in response.text
     # progress bar present
     assert "wizard-progress" in response.text
+
+
+def test_tests_page_renders(logged_in_client):
+    """GET /tests renders the tests-management page (empty-state default)."""
+    response = logged_in_client.get("/tests")
+    assert response.status_code == 200
+    assert "Tests Management" in response.text
+    # The empty-state message — load-bearing assertion that the
+    # tests.html template (not the old FT path) is what renders.
+    assert "No tests configured yet" in response.text

@@ -1,0 +1,24 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Tests" %}
+{% set active_route = "/tests" %}
+
+{% block content %}
+<div class="tests-page">
+    <h2>Tests Management</h2>
+    <p class="page-description">Manage sequencing tests and assays.</p>
+    <div class="tests-list">
+        {% if tests %}
+            {% for test in tests %}
+            <div class="test-card">
+                <h3>{{ test.name }}</h3>
+                {% if test.description %}
+                <p>{{ test.description }}</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="empty-message">No tests configured yet.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
