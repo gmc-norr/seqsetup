@@ -1,0 +1,97 @@
+{#
+   Dark Cycles tab content.
+
+   Inputs:
+     color_balance_enabled: bool
+     desc_text:             str | None    (description paragraph)
+     summary:               list[dict]    (each: {text, cls})
+     dark_base:             str | None    (e.g. "G")
+     legend_dark_base:      str | None
+     rows:                  list[dict]    (one per sample; empty when disabled/no samples)
+       Each row dict:
+         sample_name:     str
+         row_cls:         str            (e.g. "dc-row" or "dc-row dc-row-error")
+         i7_viz:          list[dict] | None   (None means no index)
+           Each viz dict: {base, cls}
+         i7_status_text:  str | None
+         i7_status_cls:   str | None
+         i5_viz:          list[dict] | None
+         i5_status_text:  str | None
+         i5_status_cls:   str | None
+#}
+<div class="darkcycles-tab-content">
+    {% if not color_balance_enabled %}
+    <div class="instrument-not-supported-info">
+        <p class="info-message">Dark cycle analysis is not applicable for this instrument.</p>
+        <p class="info-details">Dark cycle analysis is only relevant for 2-color chemistry instruments where a dark base (producing no signal in either channel) can cause issues if the first two bases of an index are both dark.</p>
+    </div>
+    {% elif not rows %}
+    <p class="no-data-message">No indexed samples to analyze</p>
+    {% else %}
+    <div class="darkcycles-header">
+        <p class="darkcycles-description">{{ desc_text }}</p>
+        <div class="dc-summary">
+            {% for item in summary %}
+            <span class="{{ item.cls }}">{{ item.text }}</span>
+            {% endfor %}
+        </div>
+        {% if legend_dark_base %}
+        <div class="darkcycles-legend">
+            <div class="legend-section">
+                <span class="legend-label">Base colors: </span>
+                <span class="legend-item dc-legend-dark">{{ legend_dark_base }} (dark)</span>
+                <span class="legend-item dc-legend-normal">Other bases</span>
+            </div>
+            <div class="legend-section">
+                <span class="legend-label">Status: </span>
+                <span class="legend-item dc-status-ok">OK</span>
+                <span class="legend-item dc-status-warning">OK &#8212; one dark leading</span>
+                <span class="legend-item dc-status-error">Error &#8212; two dark leading</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    <table class="darkcycles-table">
+        <tr class="dc-header-row">
+            <th class="dc-header">Sample</th>
+            <th class="dc-header">i7 Index</th>
+            <th class="dc-header">i7 Status</th>
+            <th class="dc-header">i5 Index</th>
+            <th class="dc-header">i5 Status</th>
+        </tr>
+        {% for row in rows %}
+        <tr class="{{ row.row_cls }}">
+            <td class="dc-cell dc-sample">{{ row.sample_name }}</td>
+            <td class="dc-cell dc-sequence">
+                {% if row.i7_viz is not none %}
+                <span class="dc-sequence-viz">{% for b in row.i7_viz %}<span class="{{ b.cls }}">{{ b.base }}</span>{% endfor %}</span>
+                {% else %}
+                <span class="no-index">&#8212;</span>
+                {% endif %}
+            </td>
+            <td class="dc-cell dc-status">
+                {% if row.i7_status_text is not none %}
+                <span class="{{ row.i7_status_cls }}">{{ row.i7_status_text }}</span>
+                {% else %}
+                <span class="no-index">&#8212;</span>
+                {% endif %}
+            </td>
+            <td class="dc-cell dc-sequence">
+                {% if row.i5_viz is not none %}
+                <span class="dc-sequence-viz">{% for b in row.i5_viz %}<span class="{{ b.cls }}">{{ b.base }}</span>{% endfor %}</span>
+                {% else %}
+                <span class="no-index">&#8212;</span>
+                {% endif %}
+            </td>
+            <td class="dc-cell dc-status">
+                {% if row.i5_status_text is not none %}
+                <span class="{{ row.i5_status_cls }}">{{ row.i5_status_text }}</span>
+                {% else %}
+                <span class="no-index">&#8212;</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+</div>

@@ -2,14 +2,14 @@
 
 Migrated to APIRouter. The four tab contents (Issues, Heatmaps,
 Color Balance, Dark Cycles) are pre-rendered to HTML strings by
-the existing FT components and injected into the Jinja2 page
-template via |safe. Alpine then x-shows the active tab — no
-network round-trip per tab.
+Jinja2 partial templates and injected into the page template via
+|safe. Alpine x-shows the active tab — no network round-trip per tab.
 
 The HTMX tab-swap endpoint /validation/tab/{tab} is GONE; Alpine
-replaces it. The heatmap and errors refresh endpoints stay as
-narrower fallbacks (index-type switching within the heatmap tab,
-errors-list refresh after dismissals).
+replaces it. The /validation/heatmap endpoint (single-lane FT
+fragment for index-type switching) is also GONE — Alpine state now
+controls index-type switching client-side with all three matrices
+pre-rendered into the page.
 
 Validation services remain READ-ONLY. Approve/unapprove mutate
 run.validation_approved through the same touch+save pattern as
@@ -21,9 +21,10 @@ from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus
+from ..models.validation import ColorBalanceStatus
 from ..services.audit_log import audit
 from ..services.validation import ValidationService
-from ..templating import ft_response, render
+from ..templating import render, templates
 from .dependencies import get_ctx
 from .utils import get_username
 
@@ -40,29 +41,297 @@ def _validate_run(run, ctx):
     )
 
 
-def _render_tab_contents(run_id, result, index_type="i7"):
-    """Pre-render each tab's FT body to an HTML string.
+# ---------------------------------------------------------------------------
+# Per-cell data builders for Jinja2 templates
+# ---------------------------------------------------------------------------
 
-    Returns a dict {issues_html, heatmaps_html, color_balance_html,
-    dark_cycles_html} suitable for Jinja2 |safe interpolation.
-    """
-    from ..components.validation import (
-        ColorBalanceTabContent,
-        DarkCyclesTabContent,
-        HeatmapsTabContent,
-    )
-    from ..templating import templates
+def _build_heatmap_lanes(result):
+    """Build the lanes list for _heatmaps_tab.html."""
+    lanes = []
+    for lane in sorted(result.distance_matrices.keys()):
+        matrix = result.distance_matrices[lane]
+        if len(matrix.sample_names) < 2:
+            continue
+        n = len(matrix.sample_names)
+        names = [name[:8] + ".." if len(name) > 8 else name for name in matrix.sample_names]
+        full_names = list(matrix.sample_names)
 
-    def _to_str(ft):
-        # Render the FT component to its HTML string.
-        from fasthtml.common import to_xml
-        return to_xml(ft)
+        def _cells_for(distances):
+            rows = []
+            for i in range(n):
+                row = []
+                for j in range(n):
+                    dist = distances[i][j]
+                    if i == j:
+                        row.append({"content": "-", "class": "heatmap-cell diagonal", "title": "Distance: None"})
+                    elif dist is None:
+                        row.append({"content": "N/A", "class": "heatmap-cell no-data", "title": "Distance: None"})
+                    else:
+                        dist_class = min(dist, 10)
+                        row.append({
+                            "content": str(dist),
+                            "class": f"heatmap-cell dist-{dist_class}",
+                            "title": f"Distance: {dist}",
+                        })
+                rows.append(row)
+            return rows
+
+        lanes.append({
+            "lane": lane,
+            "names": names,
+            "full_names": full_names,
+            "cells": {
+                "i7": _cells_for(matrix.i7_distances),
+                "i5": _cells_for(matrix.i5_distances),
+                "combined": _cells_for(matrix.combined_distances),
+            },
+        })
+    return lanes
+
+
+def _channel_class(percent: float) -> str:
+    """CSS class for a channel percentage value."""
+    if percent >= 50:
+        return "channel-high"
+    elif percent >= 25:
+        return "channel-medium"
+    elif percent > 0:
+        return "channel-low"
+    return "channel-zero"
+
+
+def _build_color_balance_ctx(result):
+    """Build context dict for _color_balance_tab.html."""
+    if not result.color_balance_enabled:
+        return {
+            "color_balance_enabled": False,
+            "color_balance_desc": None,
+            "legend": None,
+            "lanes": [],
+        }
+
+    if not result.color_balance:
+        return {
+            "color_balance_enabled": True,
+            "color_balance_desc": None,
+            "legend": None,
+            "lanes": [],
+        }
+
+    cc = result.channel_config
+    if cc:
+        ch1_name = cc["channel1_name"]
+        ch1_bases = ", ".join(cc["channel1_bases"])
+        ch2_name = cc["channel2_name"]
+        ch2_bases = ", ".join(cc["channel2_bases"])
+        dark = cc.get("dark_base", "G")
+        desc_text = (
+            f"This instrument uses {ch1_name} ({ch1_bases}) and {ch2_name} ({ch2_bases}) channels. "
+            f"{dark} bases are dark (neither channel). Good color balance requires signals "
+            f"in both channels at each position."
+        )
+        legend = {
+            "ch1_name": ch1_name,
+            "ch1_bases": "+".join(cc["channel1_bases"]),
+            "ch2_name": ch2_name,
+            "ch2_bases": "+".join(cc["channel2_bases"]),
+        }
+    else:
+        desc_text = (
+            "2-color chemistry requires signals in both channels at each position. "
+            "Good color balance ensures accurate base calling."
+        )
+        legend = {
+            "ch1_name": "Channel 1",
+            "ch1_bases": "A+C",
+            "ch2_name": "Channel 2",
+            "ch2_bases": "C+T",
+        }
+
+    lanes = []
+    for lane in sorted(result.color_balance.keys()):
+        lb = result.color_balance[lane]
+        tables = []
+
+        for index_balance in [lb.i7_balance, lb.i5_balance]:
+            if not index_balance or not index_balance.positions:
+                continue
+            first_pos = index_balance.positions[0]
+            rows = []
+            for pos in index_balance.positions:
+                status_cls = f"status-{pos.status.value}"
+                if pos.status == ColorBalanceStatus.OK:
+                    status_icon = "✓"
+                elif pos.status == ColorBalanceStatus.WARNING:
+                    status_icon = "⚠"
+                else:
+                    status_icon = "✗"
+                rows.append({
+                    "position": pos.position,
+                    "a_count": pos.a_count,
+                    "c_count": pos.c_count,
+                    "g_count": pos.g_count,
+                    "t_count": pos.t_count,
+                    "channel1_pct": f"{pos.channel1_percent:.0f}%",
+                    "channel1_class": _channel_class(pos.channel1_percent),
+                    "channel2_pct": f"{pos.channel2_percent:.0f}%",
+                    "channel2_class": _channel_class(pos.channel2_percent),
+                    "status_icon": status_icon,
+                    "status_cls": status_cls,
+                    "row_cls": f"cb-row {status_cls}",
+                })
+            tables.append({
+                "index_type": index_balance.index_type,
+                "ch1_name": first_pos.channel1_name,
+                "ch2_name": first_pos.channel2_name,
+                "rows": rows,
+            })
+
+        lanes.append({
+            "lane": lb.lane,
+            "sample_count": lb.sample_count,
+            "has_issues": lb.has_issues,
+            "tables": tables,
+        })
 
     return {
-        "issues_html": templates.env.get_template("validation/_issues_tab.html").render(result=result),
-        "heatmaps_html": _to_str(HeatmapsTabContent(run_id, result, index_type)),
-        "color_balance_html": _to_str(ColorBalanceTabContent(run_id, result)),
-        "dark_cycles_html": _to_str(DarkCyclesTabContent(run_id, result)),
+        "color_balance_enabled": True,
+        "color_balance_desc": desc_text,
+        "legend": legend,
+        "lanes": lanes,
+    }
+
+
+def _build_dark_cycles_ctx(result):
+    """Build context dict for _dark_cycles_tab.html."""
+    if not result.color_balance_enabled:
+        return {
+            "color_balance_enabled": False,
+            "desc_text": None,
+            "summary": [],
+            "dark_base": None,
+            "legend_dark_base": None,
+            "rows": [],
+        }
+
+    samples = result.dark_cycle_samples
+    if not samples:
+        return {
+            "color_balance_enabled": True,
+            "desc_text": None,
+            "summary": [],
+            "dark_base": None,
+            "legend_dark_base": None,
+            "rows": [],
+        }
+
+    dark_base = samples[0].dark_base
+    cc = result.channel_config
+    if cc:
+        desc_text = (
+            f"Dark base for this chemistry: {dark_base} (no signal in either channel). "
+            f"Two consecutive dark bases at the start of an index prevent reliable detection "
+            f"of the index read start. One dark base in the first two positions is acceptable."
+        )
+    else:
+        desc_text = (
+            f"Dark base: {dark_base}. Two consecutive dark bases at the start of an index "
+            f"prevent reliable detection of the index read start."
+        )
+
+    error_count = sum(1 for s in samples if s.i7_leading_dark >= 2 or s.i5_leading_dark >= 2)
+    warning_count = sum(
+        1 for s in samples
+        if (s.i7_leading_dark == 1 or s.i5_leading_dark == 1)
+        and s.i7_leading_dark < 2 and s.i5_leading_dark < 2
+    )
+
+    summary = []
+    if error_count > 0:
+        summary.append({"text": f"{error_count} error(s)", "cls": "dc-summary-error"})
+    if warning_count > 0:
+        summary.append({"text": f"{warning_count} warning(s)", "cls": "dc-summary-warning"})
+    if not summary:
+        summary.append({"text": "No dark cycle issues", "cls": "dc-summary-ok"})
+
+    def _viz(sequence):
+        if not sequence:
+            return None
+        bases = []
+        for i, base in enumerate(sequence):
+            is_dark = base.upper() == dark_base.upper()
+            is_leading = i < 2
+            cls_parts = ["dc-base"]
+            if is_dark:
+                cls_parts.append("dc-dark")
+            if is_leading:
+                cls_parts.append("dc-leading")
+            if is_dark and is_leading:
+                cls_parts.append("dc-dark-leading")
+            bases.append({"base": base.upper(), "cls": " ".join(cls_parts)})
+        return bases
+
+    def _status(leading_dark):
+        if leading_dark >= 2:
+            return "Error — two dark", "dc-status-error"
+        elif leading_dark == 1:
+            return "OK — one dark", "dc-status-warning"
+        return "OK", "dc-status-ok"
+
+    rows = []
+    for sample in samples:
+        has_error = sample.i7_leading_dark >= 2 or sample.i5_leading_dark >= 2
+        has_warning = (
+            not has_error
+            and (sample.i7_leading_dark == 1 or sample.i5_leading_dark == 1)
+        )
+        row_cls = "dc-row"
+        if has_error:
+            row_cls += " dc-row-error"
+        elif has_warning:
+            row_cls += " dc-row-warning"
+
+        i7_viz = _viz(sample.i7_sequence) if sample.i7_sequence else None
+        i7_status_text, i7_status_cls = _status(sample.i7_leading_dark) if sample.i7_sequence else (None, None)
+
+        i5_viz = _viz(sample.i5_read_sequence) if sample.i5_sequence else None
+        i5_status_text, i5_status_cls = _status(sample.i5_leading_dark) if sample.i5_sequence else (None, None)
+
+        rows.append({
+            "sample_name": sample.sample_name,
+            "row_cls": row_cls,
+            "i7_viz": i7_viz,
+            "i7_status_text": i7_status_text,
+            "i7_status_cls": i7_status_cls,
+            "i5_viz": i5_viz,
+            "i5_status_text": i5_status_text,
+            "i5_status_cls": i5_status_cls,
+        })
+
+    return {
+        "color_balance_enabled": True,
+        "desc_text": desc_text,
+        "summary": summary,
+        "dark_base": dark_base,
+        "legend_dark_base": dark_base,
+        "rows": rows,
+    }
+
+
+def _render_tab_contents(run_id, result):
+    """Pre-render each tab's body to an HTML string for Jinja2 |safe interpolation."""
+    env = templates.env
+    return {
+        "issues_html": env.get_template("validation/_issues_tab.html").render(result=result),
+        "heatmaps_html": env.get_template("validation/_heatmaps_tab.html").render(
+            lanes=_build_heatmap_lanes(result),
+        ),
+        "color_balance_html": env.get_template("validation/_color_balance_tab.html").render(
+            **_build_color_balance_ctx(result),
+        ),
+        "dark_cycles_html": env.get_template("validation/_dark_cycles_tab.html").render(
+            **_build_dark_cycles_ctx(result),
+        ),
     }
 
 
@@ -115,36 +384,6 @@ def validation_page(
     return render(request, "validation/page.html", ctx_dict)
 
 
-@router.get("/runs/{run_id}/validation/heatmap", response_class=HTMLResponse)
-def get_heatmap(
-    request: Request,
-    run_id: str,
-    lane: int = 1,
-    ctx: AppContext = Depends(get_ctx),
-    type: str = "i7",
-) -> Response:
-    """GET /runs/{run_id}/validation/heatmap — single-lane heatmap refresh.
-
-    Used when the user switches index-type (i7/i5) inside the heatmap
-    tab. Keeps the existing FT renderer.
-    """
-    from fasthtml.common import Div, P
-    from ..components.validation import LaneHeatmapContent
-
-    if type not in ("i7", "i5"):
-        type = "i7"
-
-    run = ctx.run_repo.get_by_id(run_id)
-    if not run:
-        return ft_response(Div(P("Run not found"), cls="error"), status_code=404)
-
-    result = _validate_run(run, ctx)
-    matrix = result.distance_matrices.get(lane)
-    if matrix and len(matrix.sample_names) >= 2:
-        return ft_response(LaneHeatmapContent(run_id, lane, matrix, index_type=type))
-    return ft_response(Div(P(f"No samples in lane {lane}"), cls="info"))
-
-
 @router.get("/runs/{run_id}/validation/errors", response_class=HTMLResponse)
 def get_validation_errors(
     request: Request,
@@ -152,11 +391,15 @@ def get_validation_errors(
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET /runs/{run_id}/validation/errors — errors-list refresh."""
-    from fasthtml.common import Div, P
-
     run = ctx.run_repo.get_by_id(run_id)
     if not run:
-        return ft_response(Div(P("Run not found"), cls="error"), status_code=404)
+        return HTMLResponse(
+            templates.env.get_template("_messages.html").render(
+                messages=[{"text": "Run not found", "kind": "error"}]
+            ),
+            status_code=404,
+            headers={"Cache-Control": "no-store"},
+        )
     result = _validate_run(run, ctx)
     return render(request, "validation/_error_list.html", {"result": result})
 

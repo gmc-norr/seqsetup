@@ -414,6 +414,13 @@ def test_validation_tab_swap_endpoint_removed(logged_in_client):
     assert response.status_code in (404, 405)
 
 
+def test_validation_heatmap_endpoint_removed(logged_in_client):
+    """Old GET /runs/{id}/validation/heatmap (single-lane FT fragment) is gone.
+    Alpine pre-renders all three index types into the page; no HTMX needed."""
+    response = logged_in_client.get("/runs/some-id/validation/heatmap")
+    assert response.status_code in (404, 405)
+
+
 def test_indexes_kit_content_empty_selection(logged_in_client):
     """GET /indexes/kit-content with no selection returns the empty panel."""
     response = logged_in_client.get("/indexes/kit-content")

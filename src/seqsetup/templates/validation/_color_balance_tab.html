@@ -1,0 +1,104 @@
+{#
+   Color Balance tab content.
+
+   Inputs:
+     color_balance_enabled: bool
+     color_balance_desc:    str | None   (description paragraph text; None when disabled)
+     legend:                dict | None  (ch1_name, ch1_bases, ch2_name, ch2_bases; None when disabled)
+     lanes:                 list[dict]   (empty when disabled or no indexed samples)
+       Each lane dict:
+         lane:          int
+         sample_count:  int
+         has_issues:    bool
+         tables:        list[dict]  (one per index type present; may be empty)
+           Each table dict:
+             index_type:  str          ("i7" / "i5")
+             ch1_name:    str
+             ch2_name:    str
+             rows:        list[dict]
+               Each row dict:
+                 position:         int
+                 a_count:          int
+                 c_count:          int
+                 g_count:          int
+                 t_count:          int
+                 channel1_pct:     str   (e.g. "42%")
+                 channel1_class:   str   (CSS class suffix: channel-high/medium/low/zero)
+                 channel2_pct:     str
+                 channel2_class:   str
+                 status_icon:      str   (✓ / ⚠ / ✗)
+                 status_cls:       str   (e.g. "status-ok")
+                 row_cls:          str   (e.g. "cb-row status-ok")
+#}
+<div class="colorbalance-tab-content">
+    {% if not color_balance_enabled %}
+    <div class="instrument-not-supported-info">
+        <p class="info-message">Color balance analysis is not applicable for this instrument.</p>
+        <p class="info-details">Color balance analysis is only enabled for modern 2-color chemistry instruments (e.g., NovaSeq X) where it is critical for successful sequencing. It is disabled for older instruments and 4-color chemistry platforms.</p>
+    </div>
+    {% elif not lanes %}
+    <p class="no-data-message">No indexed samples to analyze</p>
+    {% else %}
+    <div class="colorbalance-header">
+        <p class="colorbalance-description">{{ color_balance_desc }}</p>
+        {% if legend %}
+        <div class="colorbalance-legend">
+            <div class="legend-section">
+                <span class="legend-label">Channels: </span>
+                <span class="legend-item channel-1-demo">{{ legend.ch1_name }} ({{ legend.ch1_bases }})</span>
+                <span class="legend-item channel-2-demo">{{ legend.ch2_name }} ({{ legend.ch2_bases }})</span>
+            </div>
+            <div class="legend-section">
+                <span class="legend-label">Status: </span>
+                <span class="legend-item status-ok">&#10003; OK</span>
+                <span class="legend-item status-warning">&#9888; Warning (&lt;25%)</span>
+                <span class="legend-item status-error">&#10007; Error (0%)</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="lane-colorbalance-sections">
+        {% for lane in lanes %}
+        <div class="lane-colorbalance-section {{ 'has-issues' if lane.has_issues else 'ok' }}">
+            <h4 class="lane-header">Lane {{ lane.lane }}</h4>
+            <span class="lane-sample-count">({{ lane.sample_count }} samples)</span>
+            <div class="lane-colorbalance-content">
+                {% if lane.tables %}
+                    {% for table in lane.tables %}
+                    <div class="index-colorbalance">
+                        <h5 class="index-type-header">{{ table.index_type|upper }} Index</h5>
+                        <table class="colorbalance-table">
+                            <tr class="cb-header-row">
+                                <th class="cb-header">Pos</th>
+                                <th class="cb-header base-a">A</th>
+                                <th class="cb-header base-c">C</th>
+                                <th class="cb-header base-g">G</th>
+                                <th class="cb-header base-t">T</th>
+                                <th class="cb-header channel-1">{{ table.ch1_name }} %</th>
+                                <th class="cb-header channel-2">{{ table.ch2_name }} %</th>
+                                <th class="cb-header">Status</th>
+                            </tr>
+                            {% for row in table.rows %}
+                            <tr class="{{ row.row_cls }}">
+                                <td class="cb-cell position">{{ row.position }}</td>
+                                <td class="cb-cell base-a">{{ row.a_count }}</td>
+                                <td class="cb-cell base-c">{{ row.c_count }}</td>
+                                <td class="cb-cell base-g">{{ row.g_count }}</td>
+                                <td class="cb-cell base-t">{{ row.t_count }}</td>
+                                <td class="cb-cell channel-1 {{ row.channel1_class }}">{{ row.channel1_pct }}</td>
+                                <td class="cb-cell channel-2 {{ row.channel2_class }}">{{ row.channel2_pct }}</td>
+                                <td class="cb-cell status {{ row.status_cls }}">{{ row.status_icon }}</td>
+                            </tr>
+                            {% endfor %}
+                        </table>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <p class="no-data-message">No indexed samples in this lane</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>

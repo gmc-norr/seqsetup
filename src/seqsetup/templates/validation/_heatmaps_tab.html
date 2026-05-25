@@ -1,0 +1,65 @@
+{#
+   Heatmaps tab content.
+
+   Inputs:
+     lanes:  list[dict] — each lane has:
+               lane:       int
+               names:      list[str]      (display sample names, truncated for header)
+               full_names: list[str]      (full sample names for cell titles)
+               cells:      dict[str, list[list[dict]]] keyed by 'i7'/'i5'/'combined';
+                           each cell dict: {content, class, title}
+#}
+<div class="heatmaps-tab-content" x-data="{ heatmapType: 'i7' }">
+    {% if not lanes %}
+    <p class="no-data-message">No lanes with multiple indexed samples</p>
+    {% else %}
+    <div class="global-heatmap-controls">
+        <span class="heatmap-type-label">Show distances for: </span>
+        {% for label, key in [('i7', 'i7'), ('i5', 'i5'), ('i7+i5', 'combined')] %}
+        <button type="button"
+                class="heatmap-toggle"
+                :class="heatmapType === '{{ key }}' && 'active'"
+                x-on:click="heatmapType = '{{ key }}'">{{ label }}</button>
+        {% endfor %}
+    </div>
+    <p class="heatmap-description">Lower values (red) indicate potential collision risk.</p>
+    <div class="lane-heatmaps">
+        {% for lane in lanes %}
+        <div class="lane-heatmap-simple">
+            <h4 class="lane-header">Lane {{ lane.lane }}</h4>
+            <span class="lane-sample-count">({{ lane.names|length }} samples)</span>
+            {% for key in ['i7', 'i5', 'combined'] %}
+            <div x-show="heatmapType === '{{ key }}'"{% if key != 'i7' %} x-cloak{% endif %}>
+                <table class="heatmap-table">
+                    <tr class="heatmap-header-row">
+                        <th class="heatmap-corner"></th>
+                        {% for i in range(lane.names|length) %}
+                        <th class="heatmap-header" title="{{ lane.full_names[i] }}">{{ lane.names[i] }}</th>
+                        {% endfor %}
+                    </tr>
+                    {% for i in range(lane.names|length) %}
+                    <tr>
+                        <th class="heatmap-row-header" title="{{ lane.full_names[i] }}">{{ lane.names[i] }}</th>
+                        {% for cell in lane.cells[key][i] %}
+                        <td class="{{ cell.class }}" title="{{ cell.title }}">{{ cell.content }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+    <div class="heatmap-legend">
+        <span class="legend-label">Distance: </span>
+        <span class="legend-item dist-0">0</span>
+        <span class="legend-item dist-1">1</span>
+        <span class="legend-item dist-2">2</span>
+        <span class="legend-item dist-3">3</span>
+        <span class="legend-item dist-4">4+</span>
+    </div>
+    {% endif %}
+</div>
+
+{# tailwind: dist-0 dist-1 dist-2 dist-3 dist-4 dist-5 dist-6 dist-7 dist-8 dist-9 dist-10 #}
