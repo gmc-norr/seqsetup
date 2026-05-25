@@ -6,18 +6,16 @@
      run_id:       str
      can_proceed:  bool (currently informational — links always rendered)
      oob:          bool — true to add hx-swap-oob for OOB swap
-     existing_ids: str — comma-separated pre-wizard sample ids for back/forward nav
 #}
-{% set existing_param = '?existing=' ~ existing_ids if existing_ids else '' %}
 <div id="add-samples-nav"
      class="wizard-nav"
      {% if oob %}hx-swap-oob="true"{% endif %}>
 {% if step == 1 %}
     <a href="/runs/{{ run_id }}" class="btn btn-secondary">Cancel</a>
-    <a href="/runs/{{ run_id }}/samples/add/step/2{{ existing_param }}"
+    <a href="/runs/{{ run_id }}/samples/add/step/2"
        class="btn btn-primary{% if not can_proceed %} disabled{% endif %}">Next: Assign Indexes</a>
 {% else %}
-    <a href="/runs/{{ run_id }}/samples/add/step/1{{ existing_param }}" class="btn btn-secondary">Back</a>
+    <a href="/runs/{{ run_id }}/samples/add/step/1" class="btn btn-secondary">Back</a>
     <a href="/runs/{{ run_id }}" class="btn btn-primary">Finish</a>
 {% endif %}
 </div>

@@ -447,15 +447,55 @@ def test_add_samples_step1_renders(logged_in_client, fresh_app):
     assert 'id="add-samples-result"' in response.text
 
 
+def test_runs_new_get_does_not_create_run(logged_in_client, fresh_app):
+    """GET /runs/new must not create a run row (unsafe mutation via GET).
+    The route is now POST-only; GET falls through to the catch-all which
+    returns a redirect to the dashboard, not a new-run redirect.
+    Regression pin for the route-method tightening."""
+    _app, ctx, _db = fresh_app
+    before = len(ctx.run_repo.list_all())
+
+    response = logged_in_client.get("/runs/new", follow_redirects=False)
+    # Must NOT redirect to /runs/new/step/1 — that would mean a run was created.
+    location = response.headers.get("location", "")
+    assert "/runs/new/step/1" not in location, (
+        "GET /runs/new must not create a run and redirect to step 1"
+    )
+    # Run count must be unchanged.
+    assert len(ctx.run_repo.list_all()) == before
+
+
+def test_add_samples_step2_auto_skips_when_no_unindexed(logged_in_client, fresh_app):
+    """If no samples need indexes, step 2 redirects to the run-edit page."""
+    from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    app, ctx, db = fresh_app
+    run = SequencingRun(
+        run_name="AutoSkipSmoke",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        created_by="admin",
+    )
+    ctx.run_repo.save(run)
+
+    response = logged_in_client.get(
+        f"/runs/{run.id}/samples/add/step/2",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/runs/{run.id}"
+
+
 def test_add_samples_step2_renders(logged_in_client, fresh_app):
     """GET /runs/{id}/samples/add/step/2 renders the new Jinja2 template."""
     from seqsetup.models.sequencing_run import SequencingRun, InstrumentPlatform
+    from seqsetup.models.sample import Sample
     app, ctx, db = fresh_app
     run = SequencingRun(
         run_name="AddSamplesSmoke2",
         instrument_platform=InstrumentPlatform.NOVASEQ_X,
         created_by="admin",
     )
+    # Seed one sample WITHOUT an index so step 2 has something to do.
+    run.add_sample(Sample(sample_id="S1", test_id="WGS", lanes=[1]))
     ctx.run_repo.save(run)
 
     response = logged_in_client.get(f"/runs/{run.id}/samples/add/step/2")

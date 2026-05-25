@@ -27,7 +27,9 @@
     <div class="app-shell">
         <nav class="sidebar">
             <a href="/" class="nav-item{% if active_route == '/' %} active{% endif %}">Dashboard</a>
-            <a href="/runs/new" class="btn btn-primary sidebar-btn">+ New Run</a>
+            <form method="post" action="/runs/new" class="sidebar-form">
+                <button type="submit" class="btn btn-primary sidebar-btn">+ New Run</button>
+            </form>
 
             <hr class="sidebar-divider">
 

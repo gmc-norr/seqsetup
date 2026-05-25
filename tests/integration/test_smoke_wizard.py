@@ -17,7 +17,11 @@ def _origin() -> dict:
 
 def _create_run(logged_in_client) -> str:
     """Create a fresh run via the wizard and return its id."""
-    response = logged_in_client.get("/runs/new", follow_redirects=False)
+    response = logged_in_client.post(
+        "/runs/new",
+        follow_redirects=False,
+        headers={"Origin": "http://testserver"},
+    )
     assert response.status_code == 303, response.text[:300]
     location = response.headers["location"]
     # Format: /runs/new/step/1?run_id=<uuid>
@@ -30,7 +34,11 @@ class TestRunCreation:
         _app, ctx, _db = fresh_app
         before = len(ctx.run_repo.list_all())
 
-        response = logged_in_client.get("/runs/new", follow_redirects=False)
+        response = logged_in_client.post(
+            "/runs/new",
+            follow_redirects=False,
+            headers={"Origin": "http://testserver"},
+        )
         assert response.status_code == 303
 
         after = len(ctx.run_repo.list_all())

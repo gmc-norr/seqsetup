@@ -65,11 +65,11 @@ def _messages_only(request, messages) -> HTMLResponse:
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
-def _messages_with_nav(request, run, messages, *, step, existing_ids) -> HTMLResponse:
+def _messages_with_nav(request, run, messages, *, step) -> HTMLResponse:
     """Render messages + the wizard nav (OOB-flagged) as one response."""
     nav_html = templates.env.get_template("wizard/_add_samples_nav.html").render(
         step=step, run_id=run.id, can_proceed=run.has_samples,
-        oob=True, existing_ids=existing_ids,
+        oob=True,
     )
     messages_html = templates.env.get_template("_messages.html").render(messages=messages)
     return HTMLResponse(messages_html + nav_html, headers={"Cache-Control": "no-store"})
@@ -196,7 +196,6 @@ async def add_bulk_samples(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
     context: str = "",
-    existing_ids: str = "",
 ) -> Response:
     """POST /runs/{run_id}/samples/bulk — add multiple samples from paste/file."""
     run_id = run.id
@@ -305,7 +304,7 @@ async def add_bulk_samples(
                 dup_list = ", ".join(skipped_within_paste[:3]) + f" and {len(skipped_within_paste) - 3} more"
             messages.append({"text": f"Skipped {len(skipped_within_paste)} duplicate(s) in pasted data: {dup_list}", "kind": "warning"})
 
-        return _messages_with_nav(request, run, messages, step=1, existing_ids=existing_ids)
+        return _messages_with_nav(request, run, messages, step=1)
 
     return _sample_table_with_nav(run, request)
 
@@ -320,7 +319,6 @@ def list_worklists(
     request: Request,
     run_id: str,
     context: str = "",
-    existing_ids: str = "",
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET /runs/{run_id}/samples/worklists — list available worklists."""
@@ -341,7 +339,7 @@ def list_worklists(
         "run_id": run_id,
         "worklists": worklists,
         "context": context,
-        "existing_ids": existing_ids,
+        "existing_ids": "",
     })
 
 
@@ -387,7 +385,6 @@ async def import_worklist_samples(
     ctx: AppContext = Depends(get_ctx),
     worklist_id: str = "",
     context: str = "",
-    existing_ids: str = "",
 ) -> Response:
     """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist."""
     run_id = run.id
@@ -484,7 +481,7 @@ async def import_worklist_samples(
         messages.append({"text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.", "kind": "warning"})
 
     if context == "add_step1":
-        return _messages_with_nav(request, run, messages, step=1, existing_ids=existing_ids)
+        return _messages_with_nav(request, run, messages, step=1)
 
     return _sample_table_with_nav(run, request)
 
@@ -502,7 +499,6 @@ async def assign_indexes_bulk(
     start_sample_id = form.get("start_sample_id", "")
     indexes_json = form.get("indexes_json", "")
     context = form.get("context", "")
-    existing_ids = form.get("existing_ids", "")
 
     if not start_sample_id:
         return Response("Missing start_sample_id", status_code=400)
@@ -578,17 +574,13 @@ async def assign_indexes_bulk(
     )
 
     if context == "add_step2":
-        existing_ids_set = (
-            {sid.strip() for sid in existing_ids.split(",") if sid.strip()}
-            if existing_ids else set()
-        )
-        new_samples = [s for s in run.samples if s.id not in existing_ids_set]
+        samples_needing_indexes = [s for s in run.samples if not s.has_index]
         return render(request, "wizard/_new_samples_table.html", {
             "run": run,
-            "samples": new_samples,
+            "samples": samples_needing_indexes,
             "index_kits": None,
             "context": context,
-            "existing_ids": existing_ids,
+            "existing_ids": "",
         })
 
     return _sample_table_with_nav(run, request)
@@ -608,7 +600,6 @@ async def assign_index_to_selected(
     index_id = form.get("index_id", "")
     index_type = form.get("index_type", "")
     context = form.get("context", "")
-    existing_ids = form.get("existing_ids", "")
 
     if not sample_ids_json:
         return Response("Missing sample_ids", status_code=400)
@@ -658,17 +649,13 @@ async def assign_index_to_selected(
     )
 
     if context == "add_step2":
-        existing_ids_set = (
-            {sid.strip() for sid in existing_ids.split(",") if sid.strip()}
-            if existing_ids else set()
-        )
-        new_samples = [s for s in run.samples if s.id not in existing_ids_set]
+        samples_needing_indexes = [s for s in run.samples if not s.has_index]
         return render(request, "wizard/_new_samples_table.html", {
             "run": run,
-            "samples": new_samples,
+            "samples": samples_needing_indexes,
             "index_kits": None,
             "context": context,
-            "existing_ids": existing_ids,
+            "existing_ids": "",
         })
 
     return _sample_table_with_nav(run, request)

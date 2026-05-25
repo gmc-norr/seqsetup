@@ -28,12 +28,12 @@ def _sample_api_enabled(ctx: AppContext) -> bool:
     return bool(cfg and cfg.enabled and cfg.base_url)
 
 
-@router.get("/runs/new")
+@router.post("/runs/new")
 def wizard_new(
     request: Request,
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """GET /runs/new — create the run row and redirect to step 1."""
+    """POST /runs/new — create the run row and redirect to step 1."""
     user = request.scope.get("auth")
     run = ctx.run_repo.create_run(user.username if user else "")
     return RedirectResponse(f"/runs/new/step/1?run_id={run.id}", status_code=303)
@@ -78,19 +78,12 @@ def wizard_step1(
 def add_samples_step1(
     request: Request,
     run_id: str,
-    existing: str = "",
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET /runs/{run_id}/samples/add/step/1 — enter sample/test info."""
     run = ctx.run_repo.get_by_id(run_id)
     if not run:
         return RedirectResponse("/", status_code=303)
-
-    existing_sample_ids = (
-        [sid.strip() for sid in existing.split(",") if sid.strip()]
-        if existing else [s.id for s in run.samples]
-    )
-    existing_ids_param = ",".join(existing_sample_ids) if existing_sample_ids else ""
 
     steps_for_progress = [
         {"number": "1", "label": "Add Samples",
@@ -100,7 +93,7 @@ def add_samples_step1(
     ]
     return render(request, "wizard/add_samples_step1.html", {
         "run": run,
-        "existing_ids_param": existing_ids_param,
+        "existing_ids_param": "",
         "sample_api_enabled": _sample_api_enabled(ctx),
         "steps": steps_for_progress,
     })
@@ -110,7 +103,6 @@ def add_samples_step1(
 def add_samples_step2(
     request: Request,
     run_id: str,
-    existing: str = "",
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET /runs/{run_id}/samples/add/step/2 — assign indexes to samples."""
@@ -118,15 +110,13 @@ def add_samples_step2(
     if not run:
         return RedirectResponse("/", status_code=303)
 
-    existing_sample_ids = (
-        [sid.strip() for sid in existing.split(",") if sid.strip()]
-        if existing else []
-    )
-    existing_ids_param = ",".join(existing_sample_ids)
-    existing_ids_set = set(existing_sample_ids)
-    new_samples = [s for s in run.samples if s.id not in existing_ids_set]
-    samples_without_indexes = [s for s in new_samples if not s.has_index]
-    all_have_indexes = len(samples_without_indexes) == 0
+    samples_needing_indexes = [s for s in run.samples if not s.has_index]
+
+    # If nothing left to index, the wizard has nothing to do — skip to
+    # the run-edit page. This handles both "run has no samples" and
+    # "user pasted samples with index columns; all already indexed".
+    if not samples_needing_indexes:
+        return RedirectResponse(f"/runs/{run.id}", status_code=303)
 
     index_kits = ctx.index_kit_repo.list_all()
     default_kit = index_kits[0] if index_kits else None
@@ -139,9 +129,7 @@ def add_samples_step2(
     ]
     return render(request, "wizard/add_samples_step2.html", {
         "run": run,
-        "existing_ids_param": existing_ids_param,
-        "new_samples": new_samples,
-        "all_have_indexes": all_have_indexes,
+        "samples_needing_indexes": samples_needing_indexes,
         "index_kits": index_kits,
         "default_kit": default_kit,
         "steps": steps_for_progress,

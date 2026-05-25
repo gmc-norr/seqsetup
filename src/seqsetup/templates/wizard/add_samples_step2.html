@@ -7,15 +7,9 @@
     {% include "wizard/_progress.html" %}
     <div class="wizard-content">
         <h2>Step 2: Assign Indexes</h2>
-        {% if new_samples and not all_have_indexes %}
-            <p>Assign indexes to {{ new_samples|length }} new sample(s).</p>
-        {% endif %}
-        {% if not new_samples %}
-            <p>No new samples to assign indexes to.</p>
-        {% endif %}
+        <p>Assign indexes to {{ samples_needing_indexes|length }} sample(s).</p>
 
-        <div class="{{ 'wizard-step3-layout' if new_samples and not all_have_indexes else 'wizard-sample-only' }}">
-            {% if new_samples and not all_have_indexes %}
+        <div class="wizard-step3-layout">
             <aside class="wizard-index-panel">
                 <h3>Available Indexes</h3>
                 {% with index_kits=index_kits, selected_kit_id=(default_kit.kit_id if default_kit else '') %}
@@ -27,18 +21,12 @@
                     {% endwith %}
                 </div>
             </aside>
-            {% endif %}
 
             <div class="wizard-sample-panel">
-                {% if new_samples %}<h3>Samples ({{ new_samples|length }})</h3>{% endif %}
-                {% if all_have_indexes and new_samples %}
-                    <p class="all-indexed-message">All samples have indexes assigned.</p>
-                {% endif %}
-                {% if new_samples %}
-                    {% with run=run, samples=new_samples, index_kits=index_kits, context='add_step2', existing_ids=existing_ids_param %}
-                    {% include "wizard/_new_samples_table.html" %}
-                    {% endwith %}
-                {% endif %}
+                <h3>Samples ({{ samples_needing_indexes|length }})</h3>
+                {% with run=run, samples=samples_needing_indexes, index_kits=index_kits, context='add_step2', existing_ids='' %}
+                {% include "wizard/_new_samples_table.html" %}
+                {% endwith %}
             </div>
         </div>
 

@@ -13,7 +13,11 @@ def test_runs_new_step1_resolves_to_wizard(logged_in_client, fresh_app):
     NOT a 'Run not found' from the catch-all."""
     _app, ctx, _db = fresh_app
     # Create a run via the wizard's create endpoint.
-    create_response = logged_in_client.get("/runs/new", follow_redirects=False)
+    create_response = logged_in_client.post(
+        "/runs/new",
+        follow_redirects=False,
+        headers={"Origin": "http://testserver"},
+    )
     assert create_response.status_code == 303
     # Extract the run_id from the redirect location.
     location = create_response.headers.get("location", "")

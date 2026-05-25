@@ -80,7 +80,11 @@ class TestHtmxResponseHeaders:
 
     def test_instrument_update_returns_swappable_fragment(self, logged_in_client):
         # Create a draft run.
-        response = logged_in_client.get("/runs/new", follow_redirects=False)
+        response = logged_in_client.post(
+            "/runs/new",
+            follow_redirects=False,
+            headers={"Origin": "http://testserver"},
+        )
         run_id = response.headers["location"].split("run_id=", 1)[1]
 
         # Update instrument — response should be a fragment ready for hx-swap.
@@ -98,7 +102,11 @@ class TestHtmxResponseHeaders:
 
     def test_unknown_instrument_returns_400_not_silent_keep(self, logged_in_client):
         """B1 fix: unknown platform must 400, not silently keep the old value."""
-        response = logged_in_client.get("/runs/new", follow_redirects=False)
+        response = logged_in_client.post(
+            "/runs/new",
+            follow_redirects=False,
+            headers={"Origin": "http://testserver"},
+        )
         run_id = response.headers["location"].split("run_id=", 1)[1]
 
         response = logged_in_client.post(
