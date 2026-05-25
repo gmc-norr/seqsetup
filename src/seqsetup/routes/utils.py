@@ -19,7 +19,6 @@ import re
 from starlette.responses import Response
 
 from ..models.sequencing_run import RunStatus
-from ..models.user import UserRole
 
 
 def get_username(req) -> str:
@@ -75,14 +74,6 @@ def check_run_exportable(run) -> Response | None:
     """
     if run.status not in (RunStatus.READY, RunStatus.ARCHIVED):
         return Response("Exports are only available for ready or archived runs", status_code=403)
-    return None
-
-
-def require_admin(req) -> Response | None:
-    """Check if user is admin, return error response if not."""
-    user = req.scope.get("auth")
-    if not user or user.role != UserRole.ADMIN:
-        return Response("Admin access required", status_code=403)
     return None
 
 

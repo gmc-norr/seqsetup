@@ -8,7 +8,10 @@ identity, index assignment, or export output can lead to incorrect clinical resu
 
 **Correctness and safety are non-negotiable. When in doubt, do less, not more.**
 
-Technology: Python, FastHTML, MongoDB, HTMX. Environment managed with Pixi.
+Technology: Python, FastAPI, Jinja2 (with jinja2-fragments), Tailwind v4,
+Alpine.js, Pydantic v2, MongoDB, HTMX. A handful of FastHTML (FT)
+components remain as transitional render helpers — see `ARCHITECTURE.md`
+section "Migration status" for the cleanup roadmap. Environment managed with Pixi.
 
 ## Architecture reference
 

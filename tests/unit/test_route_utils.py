@@ -6,7 +6,6 @@ from seqsetup.models.sequencing_run import RunStatus, SequencingRun
 from seqsetup.routes.utils import (
     check_run_editable,
     get_username,
-    require_admin,
     sanitize_filename,
     sanitize_string,
 )
@@ -89,33 +88,6 @@ class TestCheckRunEditable:
     def test_archived_run_is_not_editable(self):
         run = SequencingRun(status=RunStatus.ARCHIVED)
         resp = check_run_editable(run)
-        assert resp is not None
-        assert resp.status_code == 403
-
-
-# ---------------------------------------------------------------------------
-# require_admin
-# ---------------------------------------------------------------------------
-
-
-class TestRequireAdmin:
-    """Tests for require_admin()."""
-
-    def test_admin_user_allowed(self):
-        from seqsetup.models.user import UserRole
-        req = _FakeRequest(auth=_FakeUser(role=UserRole.ADMIN))
-        assert require_admin(req) is None
-
-    def test_standard_user_rejected(self):
-        from seqsetup.models.user import UserRole
-        req = _FakeRequest(auth=_FakeUser(role=UserRole.STANDARD))
-        resp = require_admin(req)
-        assert resp is not None
-        assert resp.status_code == 403
-
-    def test_no_auth_rejected(self):
-        req = _FakeRequest()
-        resp = require_admin(req)
         assert resp is not None
         assert resp.status_code == 403
 
