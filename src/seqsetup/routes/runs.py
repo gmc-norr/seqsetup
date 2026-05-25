@@ -16,7 +16,6 @@ from ..components.wizard import (
     CycleConfigFormWizard,
     FlowcellSelectWizard,
     ReagentKitSelectWizard,
-    SampleTableWizard,
 )
 from ..context import AppContext
 from ..data.instruments import (
@@ -32,7 +31,7 @@ from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
-from ..templating import ft_response
+from ..templating import ft_response, render
 from .utils import check_run_editable, check_status_transition, get_username, sanitize_string
 
 logger = logging.getLogger(__name__)
@@ -206,7 +205,16 @@ def register(app, ctx: AppContext) -> None:
 
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
-        return ft_response(SampleTableWizard(run, show_drop_zones=False))
+        return render(request, "wizard/_sample_table.html", {
+            "run": run,
+            "show_drop_zones": False,
+            "index_kits": None,
+            "num_lanes": 1,
+            "show_bulk_actions": True,
+            "context": "",
+            "test_profiles": None,
+            "editable": True,
+        })
 
     async def update_bclconvert(request: Request) -> Response:
         """POST /runs/{run_id}/bclconvert — update BCLConvert settings."""

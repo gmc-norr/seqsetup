@@ -1,8 +1,7 @@
 """Sample management routes.
 
 Migrated to Starlette ``Route(...)`` registration. Wizard FT components
-are returned via ``ft_response`` because they have not yet been ported
-to Jinja2 templates.
+are progressively ported to Jinja2 templates (Phase 3.4).
 """
 
 import json
@@ -15,7 +14,6 @@ from starlette.routing import Route
 
 from ..components.wizard import (
     NewSamplesTableWizard,
-    SampleTableWizard,
 )
 from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
@@ -87,18 +85,26 @@ def register(app, ctx: AppContext) -> None:
             f"routes list, got {type(app).__name__}"
         )
 
-    def _sample_table_with_nav(run):
+    def _sample_table_with_nav(run, request: Request):
         """Return sample table + step-2 navigation as a combined response.
 
-        SampleTableWizard still renders via FT (Phase 3.4 ports it).
-        WizardNavigation is now a Jinja2 template — concatenate the two
-        HTML strings into a single HTMLResponse with HTMX-friendly headers.
-        The hx-swap-oob attribute on the nav div tells HTMX to also swap
-        the matching element on the page out-of-band.
+        Both pieces are Jinja2 templates. The table fragment is rendered
+        directly via the template environment; the nav carries hx-swap-oob
+        so HTMX swaps the matching nav element out-of-band.
         """
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         can_proceed = run.has_samples and run.all_samples_have_indexes
-        table_html = ft_to_html(SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes))
+        table_html = templates.env.get_template("wizard/_sample_table.html").render(
+            request=request,
+            run=run,
+            show_drop_zones=True,
+            index_kits=None,
+            num_lanes=num_lanes,
+            show_bulk_actions=True,
+            context="",
+            test_profiles=None,
+            editable=True,
+        )
         nav_html = templates.env.get_template("wizard/_navigation.html").render(
             step=2, run_id=run.id, can_proceed=can_proceed, oob=True,
         )
@@ -275,7 +281,7 @@ def register(app, ctx: AppContext) -> None:
                 headers={"Cache-Control": "no-store"},
             )
 
-        return _sample_table_with_nav(run)
+        return _sample_table_with_nav(run, request)
 
     def list_worklists(request: Request) -> Response:
         """GET /runs/{run_id}/samples/worklists — list available worklists."""
@@ -432,7 +438,7 @@ def register(app, ctx: AppContext) -> None:
                 headers={"Cache-Control": "no-store"},
             )
 
-        return _sample_table_with_nav(run)
+        return _sample_table_with_nav(run, request)
 
     async def assign_indexes_bulk(request: Request) -> Response:
         """POST /runs/{run_id}/samples/assign-indexes-bulk — assign indexes to consecutive samples."""
@@ -528,7 +534,7 @@ def register(app, ctx: AppContext) -> None:
                 NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
             )
 
-        return _sample_table_with_nav(run)
+        return _sample_table_with_nav(run, request)
 
     async def assign_index_to_selected(request: Request) -> Response:
         """POST /runs/{run_id}/samples/assign-index-to-selected — assign one index to selected samples."""
@@ -600,7 +606,7 @@ def register(app, ctx: AppContext) -> None:
                 NewSamplesTableWizard(run, new_samples, context=context, existing_ids=existing_ids)
             )
 
-        return _sample_table_with_nav(run)
+        return _sample_table_with_nav(run, request)
 
     async def set_lanes_bulk(request: Request) -> Response:
         """POST /runs/{run_id}/samples/set-lanes — set lanes for selected samples."""
@@ -642,7 +648,7 @@ def register(app, ctx: AppContext) -> None:
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        return _sample_table_with_nav(run)
+        return _sample_table_with_nav(run, request)
 
     async def set_mismatches_bulk(request: Request) -> Response:
         """POST /runs/{run_id}/samples/set-mismatches — set barcode mismatches for selected samples."""
@@ -687,7 +693,7 @@ def register(app, ctx: AppContext) -> None:
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        return _sample_table_with_nav(run)
+        return _sample_table_with_nav(run, request)
 
     async def set_override_cycles_bulk(request: Request) -> Response:
         """POST /runs/{run_id}/samples/set-override-cycles — set override cycles for selected samples."""
@@ -729,7 +735,7 @@ def register(app, ctx: AppContext) -> None:
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        return _sample_table_with_nav(run)
+        return _sample_table_with_nav(run, request)
 
     async def set_test_id_bulk(request: Request) -> Response:
         """POST /runs/{run_id}/samples/set-test-id — set test ID for selected samples."""
@@ -760,7 +766,7 @@ def register(app, ctx: AppContext) -> None:
         run.touch(updated_by=get_username(request))
         ctx.run_repo.save(run)
 
-        return _sample_table_with_nav(run)
+        return _sample_table_with_nav(run, request)
 
     async def delete_samples_bulk(request: Request) -> Response:
         """POST /runs/{run_id}/samples/bulk-delete — delete multiple selected samples."""
@@ -788,7 +794,16 @@ def register(app, ctx: AppContext) -> None:
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return ft_response(SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes))
+        return render(request, "wizard/_sample_table.html", {
+            "run": run,
+            "show_drop_zones": True,
+            "index_kits": None,
+            "num_lanes": num_lanes,
+            "show_bulk_actions": True,
+            "context": "",
+            "test_profiles": None,
+            "editable": True,
+        })
 
     def delete_sample(request: Request) -> Response:
         """DELETE /runs/{run_id}/samples/{id} — delete a single sample."""
@@ -811,7 +826,16 @@ def register(app, ctx: AppContext) -> None:
             return Response("")
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return ft_response(SampleTableWizard(run, show_drop_zones=True, num_lanes=num_lanes))
+        return render(request, "wizard/_sample_table.html", {
+            "run": run,
+            "show_drop_zones": True,
+            "index_kits": None,
+            "num_lanes": num_lanes,
+            "show_bulk_actions": True,
+            "context": "",
+            "test_profiles": None,
+            "editable": True,
+        })
 
     async def update_sample(request: Request) -> Response:
         """POST /runs/{run_id}/samples/{id} — update an existing sample."""

@@ -1,0 +1,70 @@
+{#
+   Sample table — wizard contexts.
+
+   Inputs:
+     run:                SequencingRun
+     show_drop_zones:    bool
+     index_kits:         list[IndexKit] | None
+     num_lanes:          int (default 1)
+     show_bulk_actions:  bool (default True)
+     context:            str (default "")
+     test_profiles:      list[TestProfile] | None
+     editable:           bool (default True)
+#}
+{% if not run.samples %}
+<div id="sample-table" class="empty-message">
+    <p>No samples added yet. Use the paste function above to add samples.</p>
+</div>
+{% else %}
+    {# Determine if any kit is non-single — if all kits are single, hide i5 column #}
+    {% set show_i5_column = True %}
+    {% if index_kits %}
+        {% set ns = namespace(any_non_single=False) %}
+        {% for kit in index_kits %}
+            {% if not kit.is_single() %}{% set ns.any_non_single = True %}{% endif %}
+        {% endfor %}
+        {% set show_i5_column = ns.any_non_single %}
+    {% endif %}
+    {% set effective_bulk_actions = show_bulk_actions and editable %}
+<div id="sample-table">
+    {% if effective_bulk_actions %}
+        {% include "wizard/_bulk_lane_panel.html" %}
+    {% endif %}
+    <table class="sample-table">
+        <thead>
+            <tr>
+                {% if effective_bulk_actions %}
+                <th class="checkbox-cell"><input type="checkbox" class="select-all-checkbox" onclick="toggleSelectAllSamples(this)"></th>
+                {% endif %}
+                <th>Sample ID</th>
+                <th>Test ID</th>
+                <th>Worksheet</th>
+                {% if show_drop_zones %}
+                    <th>Index Kit</th>
+                    <th>Index (i7)</th>
+                    {% if show_i5_column %}<th>Index (i5)</th>{% endif %}
+                    {% if show_bulk_actions %}
+                    <th>Lanes</th>
+                    <th>Override Cycles</th>
+                    <th title="Barcode Mismatches Index 1">MM i7</th>
+                    <th title="Barcode Mismatches Index 2">MM i5</th>
+                    {% endif %}
+                {% endif %}
+                {% if editable %}
+                <th class="actions-col"></th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for sample in run.samples %}
+                {% with sample=sample, run_id=run.id, run_cycles=run.run_cycles,
+                        show_drop_zones=show_drop_zones, show_i5_column=show_i5_column,
+                        num_lanes=num_lanes, show_bulk_actions=show_bulk_actions,
+                        context=context, editable=editable, show_checkboxes=None %}
+                {% include "wizard/_sample_row.html" %}
+                {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

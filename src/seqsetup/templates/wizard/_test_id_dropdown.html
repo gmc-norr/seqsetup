@@ -1,0 +1,21 @@
+{#
+   Test-id dropdown for bulk-action panel.
+   Inputs:
+     test_profiles: list[TestProfile] | None
+#}
+{% if not test_profiles %}
+<select id="bulk-test-id-input" class="test-id-input bulk-test-id-input" disabled>
+    <option value="" disabled selected>No test profiles available</option>
+</select>
+{% else %}
+<select id="bulk-test-id-input" class="test-id-input bulk-test-id-input">
+    <option value="" selected>Select a test...</option>
+    {% for tp in test_profiles %}
+        {% if tp.test_name and tp.test_name != tp.test_type %}
+        <option value="{{ tp.test_type }}">{{ tp.test_type }} ({{ tp.test_name }})</option>
+        {% else %}
+        <option value="{{ tp.test_type }}">{{ tp.test_type }}</option>
+        {% endif %}
+    {% endfor %}
+</select>
+{% endif %}
