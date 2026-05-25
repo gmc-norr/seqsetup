@@ -7,7 +7,6 @@ are progressively ported to Jinja2 templates (Phase 3.4).
 import json
 import logging
 
-from fasthtml.common import Div, P
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
@@ -20,7 +19,7 @@ from ..services.cycle_calculator import CycleCalculator
 from ..services.sample_parser import parse_pasted_samples
 from starlette.responses import HTMLResponse
 
-from ..templating import ft_response, ft_to_html, render, templates
+from ..templating import render, templates
 from .utils import check_run_editable, get_username, sanitize_string
 
 logger = logging.getLogger(__name__)
@@ -106,6 +105,20 @@ def register(app, ctx: AppContext) -> None:
             step=2, run_id=run.id, can_proceed=can_proceed, oob=True,
         )
         return HTMLResponse(table_html + nav_html, headers={"Cache-Control": "no-store"})
+
+    def _messages_only(request, messages):
+        """Render the _messages.html partial as the entire response."""
+        html = templates.env.get_template("_messages.html").render(messages=messages)
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    def _messages_with_nav(request, run, messages, *, step, existing_ids):
+        """Render messages + the wizard nav (OOB-flagged) as one response."""
+        nav_html = templates.env.get_template("wizard/_add_samples_nav.html").render(
+            step=step, run_id=run.id, can_proceed=run.has_samples,
+            oob=True, existing_ids=existing_ids,
+        )
+        messages_html = templates.env.get_template("_messages.html").render(messages=messages)
+        return HTMLResponse(messages_html + nav_html, headers={"Cache-Control": "no-store"})
 
     def _update_override_cycles(sample, run):
         """Recalculate override cycles for a sample from run configuration."""
@@ -248,35 +261,29 @@ def register(app, ctx: AppContext) -> None:
 
             if added_count == 0:
                 if not parsed:
-                    messages.append(P("No samples found in pasted data.", cls="warning-message"))
+                    messages.append({"text": "No samples found in pasted data.", "kind": "warning"})
                 else:
-                    messages.append(P("No new samples added.", cls="warning-message"))
+                    messages.append({"text": "No new samples added.", "kind": "warning"})
             elif added_count == 1:
-                messages.append(P("Added 1 sample.", cls="success-message"))
+                messages.append({"text": "Added 1 sample.", "kind": "success"})
             else:
-                messages.append(P(f"Added {added_count} samples.", cls="success-message"))
+                messages.append({"text": f"Added {added_count} samples.", "kind": "success"})
 
             if skipped_duplicates:
                 if len(skipped_duplicates) <= 3:
                     dup_list = ", ".join(skipped_duplicates)
                 else:
                     dup_list = ", ".join(skipped_duplicates[:3]) + f" and {len(skipped_duplicates) - 3} more"
-                messages.append(P(f"Skipped {len(skipped_duplicates)} duplicate(s) already in run: {dup_list}", cls="warning-message"))
+                messages.append({"text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run: {dup_list}", "kind": "warning"})
 
             if skipped_within_paste:
                 if len(skipped_within_paste) <= 3:
                     dup_list = ", ".join(skipped_within_paste)
                 else:
                     dup_list = ", ".join(skipped_within_paste[:3]) + f" and {len(skipped_within_paste) - 3} more"
-                messages.append(P(f"Skipped {len(skipped_within_paste)} duplicate(s) in pasted data: {dup_list}", cls="warning-message"))
+                messages.append({"text": f"Skipped {len(skipped_within_paste)} duplicate(s) in pasted data: {dup_list}", "kind": "warning"})
 
-            nav_html = templates.env.get_template("wizard/_add_samples_nav.html").render(
-                step=1, run_id=run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids,
-            )
-            return HTMLResponse(
-                ft_to_html(Div(*messages)) + nav_html,
-                headers={"Cache-Control": "no-store"},
-            )
+            return _messages_with_nav(request, run, messages, step=1, existing_ids=existing_ids)
 
         return _sample_table_with_nav(run, request)
 
@@ -287,17 +294,17 @@ def register(app, ctx: AppContext) -> None:
         existing_ids = request.query_params.get("existing_ids", "")
 
         if ctx.sample_api_config_repo is None:
-            return ft_response(P("Sample API is not configured.", cls="error-message"))
+            return _messages_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
 
         from ..services.sample_api import fetch_worklists
 
         api_config = ctx.sample_api_config
         if not api_config.enabled or not api_config.base_url:
-            return ft_response(P("Sample API is not enabled or base URL is not configured.", cls="error-message"))
+            return _messages_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
 
         success, message, worklists = fetch_worklists(api_config)
         if not success:
-            return ft_response(P(f"Failed to load worklists: {message}", cls="error-message"))
+            return _messages_only(request, [{"text": f"Failed to load worklists: {message}", "kind": "error"}])
 
         return render(request, "wizard/_worklist_selector.html", {
             "run_id": run_id,
@@ -311,20 +318,20 @@ def register(app, ctx: AppContext) -> None:
         worklist_id = request.query_params.get("worklist_id", "")
 
         if ctx.sample_api_config_repo is None:
-            return ft_response(P("Sample API is not configured.", cls="error-message"))
+            return _messages_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
 
         if not worklist_id:
-            return ft_response(P("No worksheet selected.", cls="error-message"))
+            return _messages_only(request, [{"text": "No worksheet selected.", "kind": "error"}])
 
         from ..services.sample_api import fetch_worklist_samples
 
         api_config = ctx.sample_api_config
         if not api_config.enabled or not api_config.base_url:
-            return ft_response(P("Sample API is not enabled or base URL is not configured.", cls="error-message"))
+            return _messages_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
 
         success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
         if not success:
-            return ft_response(P(f"Failed to fetch worksheet samples: {message}", cls="error-message"))
+            return _messages_only(request, [{"text": f"Failed to fetch worksheet samples: {message}", "kind": "error"}])
 
         return render(request, "wizard/_worklist_preview.html", {
             "samples": raw_data,
@@ -339,24 +346,24 @@ def register(app, ctx: AppContext) -> None:
         existing_ids = request.query_params.get("existing_ids", "")
 
         if ctx.sample_api_config_repo is None:
-            return ft_response(P("Sample API is not configured.", cls="error-message"))
+            return _messages_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
 
         if not worklist_id:
-            return ft_response(P("No worklist selected.", cls="error-message"))
+            return _messages_only(request, [{"text": "No worklist selected.", "kind": "error"}])
 
         from ..services.sample_api import fetch_worklist_samples, parse_api_samples
 
         api_config = ctx.sample_api_config
         if not api_config.enabled or not api_config.base_url:
-            return ft_response(P("Sample API is not enabled or base URL is not configured.", cls="error-message"))
+            return _messages_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
 
         success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
         if not success:
-            return ft_response(P(f"Failed to fetch worklist samples: {message}", cls="error-message"))
+            return _messages_only(request, [{"text": f"Failed to fetch worklist samples: {message}", "kind": "error"}])
 
         api_samples = parse_api_samples(raw_data, api_config)
         if not api_samples:
-            return ft_response(P("No valid samples found in worklist.", cls="warning-message"))
+            return _messages_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
 
         run = ctx.run_repo.get_by_id(run_id)
         if not run:
@@ -417,23 +424,17 @@ def register(app, ctx: AppContext) -> None:
 
         messages = []
         if added_count == 0:
-            messages.append(P("No new samples added from worklist.", cls="warning-message"))
+            messages.append({"text": "No new samples added from worklist.", "kind": "warning"})
         elif added_count == 1:
-            messages.append(P("Added 1 sample from worklist.", cls="success-message"))
+            messages.append({"text": "Added 1 sample from worklist.", "kind": "success"})
         else:
-            messages.append(P(f"Added {added_count} samples from worklist.", cls="success-message"))
+            messages.append({"text": f"Added {added_count} samples from worklist.", "kind": "success"})
 
         if skipped_duplicates:
-            messages.append(P(f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.", cls="warning-message"))
+            messages.append({"text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.", "kind": "warning"})
 
         if context == "add_step1":
-            nav_html = templates.env.get_template("wizard/_add_samples_nav.html").render(
-                step=1, run_id=run.id, can_proceed=run.has_samples, oob=True, existing_ids=existing_ids,
-            )
-            return HTMLResponse(
-                ft_to_html(Div(*messages)) + nav_html,
-                headers={"Cache-Control": "no-store"},
-            )
+            return _messages_with_nav(request, run, messages, step=1, existing_ids=existing_ids)
 
         return _sample_table_with_nav(run, request)
 

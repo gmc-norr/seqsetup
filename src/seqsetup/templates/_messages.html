@@ -1,0 +1,15 @@
+{#
+   Shared message fragment.
+
+   Inputs:
+     messages: list[dict] — each dict has:
+                              text: str
+                              kind: "success" | "warning" | "error" (default "error")
+
+   Output: <p class="{kind}-message">text</p> per entry, wrapped in a single <div>.
+#}
+<div>
+{%- for msg in messages %}
+    <p class="{{ msg.kind | default('error') }}-message">{{ msg.text }}</p>
+{%- endfor %}
+</div>
