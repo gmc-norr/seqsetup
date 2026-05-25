@@ -1,0 +1,169 @@
+{#
+   Sample row — wizard contexts.
+
+   Inputs:
+     sample:             Sample
+     run_id:             str
+     run_cycles:         RunCycles (used for context; not directly rendered)
+     show_drop_zones:    bool   — full row with drop zones; False = simple row
+     show_i5_column:     bool   — default True
+     num_lanes:          int    — informational (not rendered here; bulk panel uses it)
+     show_bulk_actions:  bool   — toggles lanes/override/mismatches cells (drop-zones branch)
+     context:            str    — passed through to mutation endpoints ("" or "add_step2")
+     editable:           bool   — toggles input vs read-only displays; toggles delete button
+     show_checkboxes:    bool|None — override; None derives from show_bulk_actions and editable
+
+   The drag-DROP zones use inline ondragover/ondrop calling the global
+   handleIndexDrop from app.js (unchanged protocol). The Alpine
+   indexDragZone component is pre-positioned but NOT used here yet —
+   that switch needs app.js coordination and is deferred.
+#}
+{% set has_index = sample.has_index %}
+{% set has_i7 = sample.index1_sequence is not none %}
+{% set has_i5 = sample.index2_sequence is not none %}
+{% set ctx_param = ('?context=' ~ context) if context else '' %}
+{% set row_class = 'sample-row has-index' if has_index else 'sample-row' %}
+{% if show_checkboxes is none %}
+    {% set effective_checkboxes = show_bulk_actions and editable %}
+{% else %}
+    {% set effective_checkboxes = show_checkboxes %}
+{% endif %}
+<tr id="sample-row-{{ sample.id }}" class="{{ row_class }}">
+{%- if effective_checkboxes %}
+    <td class="checkbox-cell">
+        <input type="checkbox" class="sample-checkbox"
+               data-sample-id="{{ sample.id }}"
+               onclick="handleSampleCheckboxClick(event)">
+    </td>
+{%- endif %}
+{%- if show_drop_zones %}
+    <td>{{ sample.sample_id }}</td>
+    <td>{{ sample.test_id }}</td>
+    <td class="worksheet-cell">{{ sample.worksheet_id or '-' }}</td>
+    <td class="kit-name-cell">
+        {% if sample.index_kit_name %}
+            <span class="kit-name-display">{{ sample.index_kit_name }}</span>
+        {% else %}
+            <span class="kit-name-empty">-</span>
+        {% endif %}
+    </td>
+    {%- if has_i7 %}
+        <td class="index-cell">
+            <div class="index-assigned">
+                {% if sample.index1_name %}<span class="index-name-display">{{ sample.index1_name }}</span>{% endif %}
+                {% if sample.index1_well_position %}<span class="index-well-display">{{ sample.index1_well_position }}</span>{% endif %}
+                <span class="assigned-index i7">{{ sample.index1_sequence[:8] }}{{ '...' if sample.index1_sequence | length > 8 else '' }}</span>
+                {%- if not show_bulk_actions %}
+                <button type="button" class="btn-tiny btn-clear"
+                        title="Clear i7 index"
+                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/clear-index?index_type=i7{% if context %}&context={{ context }}{% endif %}"
+                        hx-target="#sample-row-{{ sample.id }}"
+                        hx-swap="outerHTML">x</button>
+                {%- endif %}
+            </div>
+        </td>
+    {%- elif editable %}
+        <td>
+            <div class="drop-zone i7-drop"
+                 data-context="{{ context }}"
+                 ondragover="event.preventDefault(); this.classList.add('drag-over')"
+                 ondragleave="this.classList.remove('drag-over')"
+                 ondrop="handleIndexDrop(event, '{{ sample.id }}', '{{ run_id }}', 'i7')">Drop i7</div>
+        </td>
+    {%- else %}
+        <td class="index-cell"><span class="no-index">-</span></td>
+    {%- endif %}
+    {%- if show_i5_column %}
+        {%- if has_i5 %}
+            <td class="index-cell">
+                <div class="index-assigned">
+                    {% if sample.index2_name %}<span class="index-name-display">{{ sample.index2_name }}</span>{% endif %}
+                    {% if sample.index2_well_position %}<span class="index-well-display">{{ sample.index2_well_position }}</span>{% endif %}
+                    <span class="assigned-index i5">{{ sample.index2_sequence[:8] }}{{ '...' if sample.index2_sequence | length > 8 else '' }}</span>
+                    {%- if not show_bulk_actions %}
+                    <button type="button" class="btn-tiny btn-clear"
+                            title="Clear i5 index"
+                            hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/clear-index?index_type=i5{% if context %}&context={{ context }}{% endif %}"
+                            hx-target="#sample-row-{{ sample.id }}"
+                            hx-swap="outerHTML">x</button>
+                    {%- endif %}
+                </div>
+            </td>
+        {%- elif editable %}
+            <td>
+                <div class="drop-zone i5-drop"
+                     data-context="{{ context }}"
+                     ondragover="event.preventDefault(); this.classList.add('drag-over')"
+                     ondragleave="this.classList.remove('drag-over')"
+                     ondrop="handleIndexDrop(event, '{{ sample.id }}', '{{ run_id }}', 'i5')">Drop i5</div>
+            </td>
+        {%- else %}
+            <td class="index-cell"><span class="no-index">-</span></td>
+        {%- endif %}
+    {%- endif %}
+    {%- if show_bulk_actions %}
+        <td class="lane-cell"><span class="lanes-display">{{ sample.lanes_display }}</span></td>
+        {%- if editable %}
+            <td class="override-cell">
+                <input type="text" name="override_cycles"
+                       value="{{ sample.override_cycles or '' }}"
+                       placeholder="Auto"
+                       class="override-cycles-input"
+                       hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
+                       hx-target="#sample-row-{{ sample.id }}"
+                       hx-swap="outerHTML"
+                       hx-trigger="change">
+            </td>
+            <td class="mismatch-cell">
+                <input type="number" name="barcode_mismatches_index1"
+                       value="{{ sample.barcode_mismatches_index1 if sample.barcode_mismatches_index1 is not none else '' }}"
+                       placeholder="-" min="0" max="2"
+                       class="mismatch-input"
+                       hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
+                       hx-target="#sample-row-{{ sample.id }}"
+                       hx-swap="outerHTML"
+                       hx-trigger="change">
+            </td>
+            <td class="mismatch-cell">
+                <input type="number" name="barcode_mismatches_index2"
+                       value="{{ sample.barcode_mismatches_index2 if sample.barcode_mismatches_index2 is not none else '' }}"
+                       placeholder="-" min="0" max="2"
+                       class="mismatch-input"
+                       hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
+                       hx-target="#sample-row-{{ sample.id }}"
+                       hx-swap="outerHTML"
+                       hx-trigger="change">
+            </td>
+        {%- else %}
+            <td class="override-cell"><span class="override-cycles-display">{{ sample.override_cycles or 'Auto' }}</span></td>
+            <td class="mismatch-cell"><span class="mismatch-display">{{ sample.barcode_mismatches_index1 if sample.barcode_mismatches_index1 is not none else '-' }}</span></td>
+            <td class="mismatch-cell"><span class="mismatch-display">{{ sample.barcode_mismatches_index2 if sample.barcode_mismatches_index2 is not none else '-' }}</span></td>
+        {%- endif %}
+    {%- endif %}
+    {%- if editable %}
+        {% set delete_target = '#sample-row-' ~ sample.id if context == 'add_step2' else '#sample-table' %}
+        <td class="actions">
+            <button type="button" class="btn-tiny btn-danger"
+                    title="Delete sample"
+                    hx-delete="/runs/{{ run_id }}/samples/{{ sample.id }}{{ ctx_param }}"
+                    hx-target="{{ delete_target }}"
+                    hx-swap="outerHTML"
+                    hx-confirm="Delete this sample?">&times;</button>
+        </td>
+    {%- endif %}
+{%- else %}
+    <td>{{ sample.sample_id }}</td>
+    <td>{{ sample.test_id }}</td>
+    <td class="worksheet-cell">{{ sample.worksheet_id or '-' }}</td>
+    {%- if editable %}
+        <td class="actions">
+            <button type="button" class="btn-tiny btn-danger"
+                    title="Delete sample"
+                    hx-delete="/runs/{{ run_id }}/samples/{{ sample.id }}"
+                    hx-target="#sample-row-{{ sample.id }}"
+                    hx-swap="outerHTML"
+                    hx-confirm="Delete this sample?">&times;</button>
+        </td>
+    {%- endif %}
+{%- endif %}
+</tr>

@@ -15,7 +15,6 @@ from starlette.routing import Route
 
 from ..components.wizard import (
     NewSamplesTableWizard,
-    SampleRowWizard,
     SampleTableWizard,
 )
 from ..context import AppContext
@@ -148,9 +147,18 @@ def register(app, ctx: AppContext) -> None:
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return ft_response(
-            SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=False, num_lanes=num_lanes)
-        )
+        return render(request, "wizard/_sample_row.html", {
+            "sample": sample,
+            "run_id": run_id,
+            "run_cycles": run.run_cycles,
+            "show_drop_zones": False,
+            "show_i5_column": True,
+            "num_lanes": num_lanes,
+            "show_bulk_actions": True,
+            "context": "",
+            "editable": True,
+            "show_checkboxes": None,
+        })
 
     async def add_bulk_samples(request: Request) -> Response:
         """POST /runs/{run_id}/samples/bulk — add multiple samples from paste/file."""
@@ -838,9 +846,18 @@ def register(app, ctx: AppContext) -> None:
             run.touch(updated_by=get_username(request))
             ctx.run_repo.save(run)
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-            return ft_response(
-                SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=False, num_lanes=num_lanes)
-            )
+            return render(request, "wizard/_sample_row.html", {
+                "sample": sample,
+                "run_id": run_id,
+                "run_cycles": run.run_cycles,
+                "show_drop_zones": False,
+                "show_i5_column": True,
+                "num_lanes": num_lanes,
+                "show_bulk_actions": True,
+                "context": "",
+                "editable": True,
+                "show_checkboxes": None,
+            })
 
         return Response("")
 
@@ -897,13 +914,18 @@ def register(app, ctx: AppContext) -> None:
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
         show_bulk = context != "add_step2"
         show_cb = True if context == "add_step2" else None
-        return ft_response(
-            SampleRowWizard(
-                sample, run_id, run.run_cycles,
-                show_drop_zones=True, num_lanes=num_lanes,
-                show_bulk_actions=show_bulk, context=context, show_checkboxes=show_cb,
-            )
-        )
+        return render(request, "wizard/_sample_row.html", {
+            "sample": sample,
+            "run_id": run_id,
+            "run_cycles": run.run_cycles,
+            "show_drop_zones": True,
+            "show_i5_column": True,
+            "num_lanes": num_lanes,
+            "show_bulk_actions": show_bulk,
+            "context": context,
+            "editable": True,
+            "show_checkboxes": show_cb,
+        })
 
     async def clear_index(request: Request) -> Response:
         """POST /runs/{run_id}/samples/{id}/clear-index — clear assigned index(es)."""
@@ -934,13 +956,18 @@ def register(app, ctx: AppContext) -> None:
             num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
             show_bulk = context != "add_step2"
             show_cb = True if context == "add_step2" else None
-            return ft_response(
-                SampleRowWizard(
-                    sample, run_id, run.run_cycles,
-                    show_drop_zones=True, num_lanes=num_lanes,
-                    show_bulk_actions=show_bulk, context=context, show_checkboxes=show_cb,
-                )
-            )
+            return render(request, "wizard/_sample_row.html", {
+                "sample": sample,
+                "run_id": run_id,
+                "run_cycles": run.run_cycles,
+                "show_drop_zones": True,
+                "show_i5_column": True,
+                "num_lanes": num_lanes,
+                "show_bulk_actions": show_bulk,
+                "context": context,
+                "editable": True,
+                "show_checkboxes": show_cb,
+            })
 
         return Response("")
 
@@ -997,9 +1024,18 @@ def register(app, ctx: AppContext) -> None:
         ctx.run_repo.save(run)
 
         num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return ft_response(
-            SampleRowWizard(sample, run_id, run.run_cycles, show_drop_zones=True, num_lanes=num_lanes)
-        )
+        return render(request, "wizard/_sample_row.html", {
+            "sample": sample,
+            "run_id": run_id,
+            "run_cycles": run.run_cycles,
+            "show_drop_zones": True,
+            "show_i5_column": True,
+            "num_lanes": num_lanes,
+            "show_bulk_actions": True,
+            "context": "",
+            "editable": True,
+            "show_checkboxes": None,
+        })
 
     # Order matters: specific paths before {id} captures.
     app.routes.append(Route("/runs/{run_id}/samples", add_sample, methods=["POST"]))
