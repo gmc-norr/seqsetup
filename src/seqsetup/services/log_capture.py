@@ -197,6 +197,55 @@ def get_log_capture_handler() -> LogCaptureHandler:
     return _log_capture_handler
 
 
+class ScrubbingFilter(logging.Filter):
+    """Logging filter that pre-formats every record and scrubs likely secrets
+    before any handler sees the message.
+
+    Attaching this to the seqsetup root logger means stdout/file/syslog
+    handlers all see the same scrubbed output the admin log viewer sees.
+    Without this filter a careless ``logger.debug(config.to_dict())`` would
+    leak the bind password to disk even though the in-memory viewer
+    rendered ``***``.
+
+    The filter rewrites ``record.msg`` to the fully-formatted-then-scrubbed
+    string and clears ``record.args`` so downstream handlers' ``format()``
+    calls don't re-interpolate the original arguments (which could
+    re-introduce the secret).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            full = record.getMessage()
+        except Exception:
+            # Don't drop the record on a formatting bug; let the original
+            # handler render it as-is (the in-memory viewer also still has
+            # its emit-time scrub as a second line of defense).
+            return True
+        record.msg = scrub_log_message(full)
+        record.args = ()
+        return True
+
+
+_SCRUBBING_FILTER: Optional[ScrubbingFilter] = None
+
+
+def install_scrubbing_filter(logger_names: Optional[list[str]] = None) -> ScrubbingFilter:
+    """Attach the global scrubbing filter to ``seqsetup`` (or a custom set).
+
+    Idempotent: re-calling with the same logger names doesn't add a second
+    filter instance.
+    """
+    global _SCRUBBING_FILTER
+    if _SCRUBBING_FILTER is None:
+        _SCRUBBING_FILTER = ScrubbingFilter()
+    targets = logger_names if logger_names is not None else ["seqsetup"]
+    for name in targets:
+        logger = logging.getLogger(name)
+        if _SCRUBBING_FILTER not in logger.filters:
+            logger.addFilter(_SCRUBBING_FILTER)
+    return _SCRUBBING_FILTER
+
+
 def setup_log_capture(logger_names: Optional[list[str]] = None) -> LogCaptureHandler:
     """Set up log capture for specified loggers.
 
@@ -215,6 +264,11 @@ def setup_log_capture(logger_names: Optional[list[str]] = None) -> LogCaptureHan
         for name in logger_names:
             logger = logging.getLogger(name)
             logger.addHandler(handler)
+
+    # Always also install the scrubbing filter so stdout / file handlers
+    # see the same redacted message the in-memory viewer does. This filter
+    # mutates the record in place — it must run before any handler emits.
+    install_scrubbing_filter(logger_names)
 
     return handler
 

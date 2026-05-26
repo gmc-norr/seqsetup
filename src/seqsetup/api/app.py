@@ -267,7 +267,11 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         if not run.generated_samplesheet_v2:
             raise HTTPException(status_code=404, detail="SampleSheet v2 not yet generated")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="samplesheet_v2")
-        return Response(content=run.generated_samplesheet_v2, media_type="text/csv")
+        return Response(
+            content=run.generated_samplesheet_v2,
+            media_type="text/csv",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @api.get(
         "/runs/{run_id}/samplesheet-v1",
@@ -290,7 +294,11 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         if not run.generated_samplesheet_v1:
             raise HTTPException(status_code=404, detail="SampleSheet v1 not available for this run")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="samplesheet_v1")
-        return Response(content=run.generated_samplesheet_v1, media_type="text/csv")
+        return Response(
+            content=run.generated_samplesheet_v1,
+            media_type="text/csv",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @api.get(
         "/runs/{run_id}/json",
@@ -311,7 +319,11 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         if not run.generated_json:
             raise HTTPException(status_code=404, detail="JSON metadata not yet generated")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="json")
-        return Response(content=run.generated_json, media_type="application/json")
+        return Response(
+            content=run.generated_json,
+            media_type="application/json",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @api.get(
         "/runs/{run_id}/validation-report",
@@ -332,7 +344,11 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         if not run.generated_validation_json:
             raise HTTPException(status_code=404, detail="Validation report not yet generated")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="validation_json")
-        return Response(content=run.generated_validation_json, media_type="application/json")
+        return Response(
+            content=run.generated_validation_json,
+            media_type="application/json",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @api.get(
         "/runs/{run_id}/validation-pdf",
@@ -354,6 +370,10 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         if not run.generated_validation_pdf:
             raise HTTPException(status_code=404, detail="Validation PDF not yet generated")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="validation_pdf")
-        return Response(content=run.generated_validation_pdf, media_type="application/pdf")
+        return Response(
+            content=run.generated_validation_pdf,
+            media_type="application/pdf",
+            headers={"Cache-Control": "no-store"},
+        )
 
     return api

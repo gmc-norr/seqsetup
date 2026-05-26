@@ -79,10 +79,6 @@ app = FastAPI(
 # wrap order documented in the module docstring (Security → Origin →
 # Session → Auth → app).
 app.add_middleware(AuthMiddleware)
-# Cookie name is Starlette's default ``session`` (was ``session_`` under the
-# previous FastHTML host). Sessions from the old host can't be read by the
-# new host and vice-versa — operators upgrading from a FastHTML deployment
-# should expect every user to be silently logged out once.
 # Sliding-window session lifetime: 8 hours. Starlette's default is 14 days,
 # which is far too long for a shared clinical workstation — an unattended
 # browser would stay authenticated across multiple shifts. 8 hours matches
@@ -92,12 +88,18 @@ _SESSION_MAX_AGE = int(
     os.environ.get("SEQSETUP_SESSION_MAX_AGE_SECONDS", str(8 * 3600))
 )
 
+# Project-specific cookie name. Starlette's default ``session`` would
+# collide with other Starlette apps that happen to share a host (an
+# operator running seqsetup behind a reverse proxy alongside an unrelated
+# Starlette dashboard would see cookies overwrite each other). Pinning a
+# distinct name eliminates that surprise.
 app.add_middleware(
     SessionMiddleware,
     secret_key=_SESSION_SECRET,
     same_site="strict",
     https_only=_SESS_HTTPS_ONLY,
     max_age=_SESSION_MAX_AGE,
+    session_cookie="seqsetup_session",
 )
 app.add_middleware(OriginCheckMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)

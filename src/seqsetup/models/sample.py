@@ -291,11 +291,39 @@ class Sample:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Sample":
-        """Create from dictionary."""
+        """Create from dictionary.
+
+        Legacy-data recovery: ``override_cycles`` is now regex-enforced on
+        every assignment. Historical records may contain values that were
+        accepted under earlier (more permissive) code. Rather than make
+        the entire run unloadable in that case, we catch the ``ValueError``
+        on the field-specific assignment, log the corruption (so it leaves
+        a forensic trail), drop it to ``None`` (the safe default that
+        triggers auto-recomputation downstream), and continue. Routes that
+        later overwrite the field still validate via ``__setattr__``.
+        """
         # Handle backward compatibility: old 'lane' field -> new 'lanes' list
         lanes = data.get("lanes", [])
         if not lanes and data.get("lane") is not None:
             lanes = [data["lane"]]
+
+        stored_override_cycles = data.get("override_cycles")
+        try:
+            override_cycles = stored_override_cycles
+            if stored_override_cycles is not None:
+                # Probe the invariant once so we can recover gracefully on
+                # legacy bad data. ``_normalize_override_cycles`` raises on
+                # any character outside the allowed alphabet.
+                cls._normalize_override_cycles(stored_override_cycles)
+        except ValueError:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Sample %r has invalid override_cycles %r in stored data; "
+                "loading with override_cycles=None. Re-save the run to drop "
+                "the corruption from the document.",
+                data.get("id"), stored_override_cycles,
+            )
+            override_cycles = None
 
         return cls(
             id=data["id"],
@@ -309,7 +337,7 @@ class Sample:
             index1=Index.from_dict(data["index1"]) if data.get("index1") else None,
             index2=Index.from_dict(data["index2"]) if data.get("index2") else None,
             index_kit_name=data.get("index_kit_name"),
-            override_cycles=data.get("override_cycles"),
+            override_cycles=override_cycles,
             barcode_mismatches_index1=data["barcode_mismatches_index1"] if "barcode_mismatches_index1" in data else 1,
             barcode_mismatches_index2=data["barcode_mismatches_index2"] if "barcode_mismatches_index2" in data else 1,
             index1_cycles=data.get("index1_cycles"),

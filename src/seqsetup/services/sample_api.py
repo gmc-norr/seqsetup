@@ -255,10 +255,6 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
 
-    # Per-host throttle. A bulk import that hits the same LIMS host many times
-    # will be paced; calls to different hosts run independently.
-    _throttle(hostname)
-
     # Prefer IPv4 if any resolved address is IPv4 (broader interop with
     # LIMS hosts behind v4-only middleboxes). Single attempt — operators
     # whose LIMS is multi-IP load-balanced should rely on the LB upstream.
@@ -266,6 +262,12 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
     pinned = v4[0] if v4 else resolved_ips[0]
     pinned_ip = str(pinned)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+    # Per-host throttle, keyed on ``(hostname, port)`` so two LIMS endpoints
+    # on the same host but different ports (e.g. ``:443`` and ``:8443``) get
+    # independent budgets. A bulk import that hits the same endpoint many
+    # times is paced; calls to different endpoints run independently.
+    _throttle(f"{hostname}:{port}")
 
     headers = {
         "Accept": "application/json",

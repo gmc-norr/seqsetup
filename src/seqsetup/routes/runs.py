@@ -10,6 +10,8 @@ which calls run.touch(updated_by=...) before ctx.run_repo.save(run)
 and skips touch+save if the body raises.
 """
 
+import hashlib
+import json
 import logging
 
 from fastapi import APIRouter, Depends, Request
@@ -24,6 +26,7 @@ from ..data.instruments import (
     get_reagent_kits_for_flowcell,
 )
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from ..repositories.base import ConflictError
 from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
 from ..services.json_exporter import JSONExporter
@@ -37,6 +40,48 @@ from .utils import check_status_transition, get_username, sanitize_string
 
 
 logger = logging.getLogger(__name__)
+
+
+# Fields that are run *outputs* or per-touch metadata, not inputs to export
+# generation. Excluded from the fingerprint below so a concurrent edit that
+# only bumps ``updated_at`` (e.g. a different code path calling ``touch()``
+# without changing any export-relevant field) doesn't cause a false refusal.
+_FINGERPRINT_IGNORED_KEYS = (
+    "updated_at",
+    "updated_by",
+    "_loaded_updated_at",
+    "generated_samplesheet_v2",
+    "generated_samplesheet_v1",
+    "generated_json",
+    "generated_validation_json",
+    "generated_validation_pdf",
+)
+
+
+def _export_input_fingerprint(run: SequencingRun) -> str:
+    """Stable hash of every run field that affects export output.
+
+    DRAFT→READY pre-generates exports against the run state at the start of
+    the request — that takes seconds (validation PDF). If a concurrent edit
+    lands during that window we use this fingerprint to distinguish:
+
+      * Trivial touch (only ``updated_at`` / ``updated_by`` changed) — the
+        exports we just generated are still valid; apply them to the fresh
+        instance and save against its own optimistic-lock token.
+      * Material edit (a sample was added, run_cycles changed, …) — the
+        exports are stale; refuse the transition with a clear message so the
+        user can retry without an unexpected 409.
+
+    Stripping the ``generated_*`` blobs is what keeps the fingerprint about
+    *inputs* — those fields are output of the very transition we're trying
+    to commit, so including them would always fingerprint-differ.
+    """
+    d = run.to_dict()
+    for key in _FINGERPRINT_IGNORED_KEYS:
+        d.pop(key, None)
+    return hashlib.sha256(
+        json.dumps(d, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
 
 
 router = APIRouter(tags=["runs"])
@@ -329,6 +374,40 @@ async def update_status(
         except Exception:
             logger.error(f"Failed to generate exports for run {run.id}", exc_info=True)
             return Response("Failed to generate exports", status_code=500)
+
+    # On DRAFT→READY, re-fetch the run right before save so the optimistic-
+    # lock token reflects the freshest version. Export generation above
+    # took multiple seconds; without this refresh, any unrelated touch
+    # during that window (background sync, another tab) turns the user's
+    # multi-second action into a 409. The fingerprint comparison ensures
+    # we only carry forward exports onto fresh state if the fresh state
+    # would have produced byte-identical exports — anything that affects
+    # export output is refused with a specific message instead.
+    if new_status == RunStatus.READY:
+        fingerprint_initial = _export_input_fingerprint(run)
+        fresh = ctx.run_repo.get_by_id(run.id)
+        if fresh is None:
+            raise ConflictError(
+                f"Run {run.id} was deleted while its exports were being "
+                "generated. The Mark Ready transition has been refused."
+            )
+        if _export_input_fingerprint(fresh) != fingerprint_initial:
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="concurrent_edit_during_export",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(
+                "This run was edited by another user (or session) while its "
+                "exports were being generated. The Mark Ready transition was "
+                "refused so the saved snapshot would not reflect stale state. "
+                "Refresh the page and try again."
+            )
+        # Same content, possibly newer token — adopt the fresh instance.
+        run = fresh
 
     with saving_run(run, ctx, request):
         run.status = new_status

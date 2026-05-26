@@ -6,6 +6,38 @@ from ..models.auth_config import AuthConfig, LDAPConfig
 from ..models.user import User, UserRole
 
 
+def _normalize_dn(dn: str) -> str:
+    """Lowercase + collapse-whitespace canonicalisation for DN comparison.
+
+    LDAP DNs are case-insensitive for both attribute names and (in most
+    practical AD/OpenLDAP setups) the RDN values we care about for the
+    base-tree check. We compare suffixes after stripping leading/trailing
+    whitespace from each comma-delimited RDN. Anything that wants real
+    RFC 4514 parsing should use ldap3.utils.dn.parse_dn; the structural
+    check we need here is "does ``dn`` end with ``base``", which the
+    lowercased suffix comparison handles correctly across whitespace
+    variants.
+    """
+    return ",".join(rdn.strip().lower() for rdn in dn.split(","))
+
+
+def _dn_is_within(dn: str, base: str) -> bool:
+    """True if ``dn`` is the same as ``base`` or a descendant of it.
+
+    Used to refuse a directory entry whose DN points outside the
+    configured search base. Both sides are normalised before comparison.
+    Empty ``base`` is treated as "no constraint" (the LDAP root); the
+    caller should pass the actual configured base_dn, not "".
+    """
+    if not base:
+        return True
+    dn_n = _normalize_dn(dn)
+    base_n = _normalize_dn(base)
+    if dn_n == base_n:
+        return True
+    return dn_n.endswith("," + base_n)
+
+
 class LDAPError(Exception):
     """Raised when LDAP operations fail."""
 
@@ -146,7 +178,20 @@ class LDAPService:
         )
 
         if conn.entries:
-            return conn.entries[0].entry_dn
+            entry_dn = conn.entries[0].entry_dn
+            # Pin the discovered DN below the configured search base so a
+            # malicious directory entry cannot point us at a DN outside the
+            # tree we're authorized to bind into. The check is structural,
+            # not authenticating: a directory that returns an out-of-tree
+            # DN for a search query is misconfigured (or compromised) and
+            # we should refuse to bind as it.
+            if not _dn_is_within(entry_dn, search_base):
+                raise LDAPError(
+                    f"LDAP search returned a DN outside the configured "
+                    f"search base ({search_base!r}); refusing to bind as "
+                    f"{entry_dn!r}"
+                )
+            return entry_dn
 
         return None
 

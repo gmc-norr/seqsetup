@@ -33,7 +33,13 @@ router = APIRouter(tags=["export"])
 
 
 def _attachment_headers(filename: str) -> dict:
-    return {"Content-Disposition": f'attachment; filename="{filename}"'}
+    # ``no-store`` blocks corporate caching proxies from holding onto a
+    # clinical Sample Sheet / validation report. The body identifies a
+    # specific run and is not safe to re-serve from an intermediary.
+    return {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store",
+    }
 
 
 def _run_validation(run, ctx: AppContext):
