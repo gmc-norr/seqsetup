@@ -19,7 +19,10 @@
         {% if user %}
         <div class="user-info">
             <span class="username">Logged in as: {{ user.display_name }}</span>
-            <a href="/logout">Logout</a>
+            {# POST so OriginCheckMiddleware can defend against CSRF-driven logouts. #}
+            <form method="post" action="/logout" class="logout-form">
+                <button type="submit" class="logout-btn">Logout</button>
+            </form>
         </div>
         {% endif %}
     </header>

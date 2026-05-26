@@ -134,9 +134,16 @@ def make_router(auth_service) -> APIRouter:
                 status_code=200,
             )
 
-    @router.get("/logout")
+    @router.post("/logout")
     def logout(request: Request) -> Response:
-        """GET /logout — clear the session and redirect to /login."""
+        """POST /logout — clear the session and redirect to /login.
+
+        Method intentionally restricted to POST so the
+        ``OriginCheckMiddleware`` (which only inspects state-changing
+        methods) can defend against cross-site logout triggers. A GET
+        endpoint would be CSRF-actuatable by any same-site context
+        despite the SameSite=Strict cookie.
+        """
         sess = request.session
         # Best-effort capture of who is logging out; sess may be empty.
         user_data = sess.get("user") or {}

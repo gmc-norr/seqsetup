@@ -32,16 +32,6 @@ def get_username(req) -> str:
     return ""
 
 
-def check_run_editable(run) -> Response | None:
-    """Check if run is in DRAFT status (editable).
-
-    Returns error Response if not editable, None if OK.
-    """
-    if run.status != RunStatus.DRAFT:
-        return Response("Run is not in draft status and cannot be edited", status_code=403)
-    return None
-
-
 # Valid state transitions: source -> set of allowed targets
 _VALID_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
     RunStatus.DRAFT: {RunStatus.READY},
@@ -64,16 +54,6 @@ def check_status_transition(current: RunStatus, target: RunStatus) -> Response |
             f"Invalid status transition: {current.value} → {target.value}",
             status_code=400,
         )
-    return None
-
-
-def check_run_exportable(run) -> Response | None:
-    """Check if run is in an exportable state (READY or ARCHIVED).
-
-    Returns error Response if not exportable, None if OK.
-    """
-    if run.status not in (RunStatus.READY, RunStatus.ARCHIVED):
-        return Response("Exports are only available for ready or archived runs", status_code=403)
     return None
 
 

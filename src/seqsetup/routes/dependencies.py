@@ -1,9 +1,4 @@
-"""FastAPI dependencies — the DI-native replacements for the old
-function-style guards in ``utils.py``.
-
-The old shapes (``require_admin(req) -> Response | None``,
-``check_run_editable(run) -> Response | None``) coexist in ``utils.py``
-until Phase 4 — per-route migrations switch to these as they happen.
+"""FastAPI dependencies — load + check guards consumed via ``Depends(...)``.
 
 Clinical-safety contract (codified per Section 7 of the design spec):
 
@@ -12,10 +7,13 @@ Clinical-safety contract (codified per Section 7 of the design spec):
   short-circuit. The HTML-aware ``HTTPException`` handler renders the
   403 as an HTML fragment, not the FastAPI default JSON.
 
-* ``get_editable_run`` is the load + check half of the old
-  ``editable_run_handler`` decorator. The save half is the
-  ``saving_run`` context manager — handlers explicitly enter the
-  ``with`` block to persist mutations.
+* ``get_editable_run`` loads + checks an editable run. Mutation
+  handlers then enter the ``saving_run`` context manager to persist;
+  reviewers grep ``with saving_run(`` to enumerate every mutation
+  handler.
+
+* ``get_exportable_run`` allows access for export endpoints; READY +
+  ARCHIVED only.
 
 * ``_load_and_check_editable`` is the shared primitive; the dep wraps
   it for FastAPI use. Both call the same function so unit tests on the
@@ -109,8 +107,7 @@ def get_exportable_run(
 
     Raises HTTPException(404) if the run doesn't exist.
     Raises HTTPException(403) if the run is in DRAFT status — exports
-    only available for READY and ARCHIVED runs (mirrors the legacy
-    `check_run_exportable(run)` guard from routes/utils.py).
+    only available for READY and ARCHIVED runs.
     """
     run = ctx.run_repo.get_by_id(run_id)
     if not run:

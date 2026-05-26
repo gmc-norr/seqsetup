@@ -79,3 +79,63 @@ class TestParseSampleMixUpClassBugs:
         result = parse_pasted_samples(data)
         assert len(result) == 1
         assert result[0].sample_id == 'Patient "A"'
+
+
+class TestRejectMissingSampleId:
+    """A row with content but no sample_id is a data error — silent skip
+    would route the dropped sample's reads to the Undetermined bucket."""
+
+    def test_row_with_index_but_no_sample_id_rejects(self):
+        data = "Sample_ID,Index_I7,Index_I5\n"
+        data += "S1,ATTACTCG,TATAGCCT\n"
+        data += ",ATTACTCG,TATAGCCT\n"  # missing sample_id
+        with pytest.raises(ValueError, match="sample_id is required"):
+            parse_pasted_samples(data)
+
+    def test_error_message_names_the_row_number(self):
+        data = "Sample_ID,Index_I7,Index_I5\n"  # header = line 1
+        data += "S1,ATTACTCG,TATAGCCT\n"        # line 2 (valid)
+        data += ",ATTACTCG,TATAGCCT\n"          # line 3 (bad)
+        data += ",ATTACTCG,TATAGCCT\n"          # line 4 (bad)
+        with pytest.raises(ValueError) as excinfo:
+            parse_pasted_samples(data)
+        # 1-based, includes the header line. Lines 3 and 4 should be named.
+        assert "3" in str(excinfo.value)
+        assert "4" in str(excinfo.value)
+
+    def test_wholly_blank_rows_still_skipped(self):
+        """A blank line is intentional (trailing newline, paragraph break) —
+        only rows with ACTUAL content but missing sample_id are an error."""
+        data = "Sample_ID,Index_I7,Index_I5\n"
+        data += "S1,ATTACTCG,TATAGCCT\n"
+        data += "\n\n"  # blank lines — should be silently dropped
+        result = parse_pasted_samples(data)
+        assert len(result) == 1
+
+
+class TestBomStripping:
+    """Excel and many LIMS exports prepend a UTF-8 BOM; without stripping
+    it the first header cell becomes "﻿sample_id" and breaks the
+    header mapping — column order silently shifts."""
+
+    def test_bom_prefix_stripped_when_header_present(self):
+        data = "﻿Sample_ID,Test_ID,Index_I7,Index_I5\n"
+        data += "S1,WGS,ATTACTCG,TATAGCCT\n"
+        result = parse_pasted_samples(data)
+        assert len(result) == 1
+        assert result[0].sample_id == "S1"
+        assert result[0].test_id == "WGS"
+        assert result[0].index1_sequence == "ATTACTCG"
+
+    def test_bom_prefix_does_not_break_non_default_column_order(self):
+        """Regression: a BOM in front of a non-default column order would,
+        without the strip, fall back to default mapping (sample_id=col0,
+        test_id=col1, index1=col2, index2=col3) — feeding the test_id
+        column's values into sample_id, etc."""
+        # Columns: sample_id, index_i7, index_i5, test_id (NOT default order)
+        data = "﻿Sample_ID,Index_I7,Index_I5,Test_ID\n"
+        data += "S1,ATTACTCG,TATAGCCT,WGS\n"
+        result = parse_pasted_samples(data)
+        assert result[0].sample_id == "S1"
+        assert result[0].index1_sequence == "ATTACTCG"
+        assert result[0].test_id == "WGS"

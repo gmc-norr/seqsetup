@@ -49,12 +49,13 @@ a model or service layer where it cannot be forgotten.
 - Use `_escape_csv()` for all user-supplied values in SampleSheet output (BCLConvert, DRAGEN, and Cloud sections).
 
 ### Run state integrity
-- Never allow mutations to a run unless `check_run_editable(run)` passes (returns None).
+- Never allow mutations to a run unless it passes the `Depends(get_editable_run)` guard — DRAFT-only, raises HTTP 403 otherwise (see `routes/dependencies.py`).
 - Never expose draft runs via the API — only `ready` and `archived`.
 - Always call `run.touch(updated_by=get_username(req))` before saving after mutations. The `saving_run(...)` context manager does this for you — prefer it over manual save calls so reviewers can grep `with saving_run(` to enumerate every mutation handler.
 - Pre-generate all exports (samplesheet v2, v1, JSON, validation) when transitioning to Ready — the API serves pre-generated content, not live exports. The UI export routes share this guarantee; they fall back to live generation only for runs created before pre-generation existed, and any new code path that mutates a Ready/Archived run must re-pre-generate.
+- READY→DRAFT clears the pre-generated exports so a subsequent re-promotion never adopts blobs from before the edit cycle. READY→ARCHIVED retains them — archived runs serve those bytes via the API.
 - Enforce state machine transitions via `check_status_transition()`: DRAFT→READY, READY→DRAFT, READY→ARCHIVED. ARCHIVED is terminal.
-- Exports are only available for READY and ARCHIVED runs — enforce via `check_run_exportable()`.
+- Exports are only available for READY and ARCHIVED runs — enforce via `Depends(get_exportable_run)` (`routes/dependencies.py`).
 - Transition to READY runs validation in real time via `ValidationService.validate_run()` and refuses if `error_count > 0`.
 
 ### Authentication and authorization
@@ -67,9 +68,10 @@ a model or service layer where it cannot be forgotten.
 ### Data integrity
 - Validation services are **read-only** — they must never mutate run state.
 - Repositories contain **no business logic** — they are thin data access layers.
-- Models are **self-validating on every assignment, not just construction**, for any non-trivial invariant they declare. `Sample.__setattr__` enforces `barcode_mismatches_*` (clamp 0–3), `index*_cycles` (clamp >=1), `lanes` (filter positive ints), and `override_cycles` (regex). When adding a model field whose validity is anything more than "any string of any length", enforce it in `__setattr__` (or a property setter) so the rule survives direct attribute writes from route handlers — `__post_init__` alone is insufficient. String length and character-set sanitization for free-form fields lives at the ingest layer (route forms via `sanitize_string`, parsers via `[:N]`), since silently clamping in the model would surprise readers more than it would protect them.
-- **Validation cache coherence:** `ValidationService` memoizes results by `(run.id, run.updated_at, repo identity)`. Any mutation that changes validation *inputs* without bumping `run.updated_at` (GitHub config sync, index-kit save/delete, instrument enable/disable, etc.) MUST call `clear_validation_cache()`. See `services/validation.py` and existing call sites in `services/github_sync.py`, `routes/indexes.py`, `routes/admin/instruments.py`.
-- **Partial updates update only what was submitted.** Handlers serving per-field HTMX inputs (e.g. `update_sample_settings`) MUST check `field in form` before writing — defaulting missing fields to empty and writing them back silently destroys sibling values.
+- Models are **self-validating on every assignment, not just construction**, for any non-trivial invariant they declare. `Sample.__setattr__` enforces `barcode_mismatches_*` (clamp 0–3), `index*_cycles` (clamp >=1), `lanes` (filter positive ints), `override_cycles` (regex), free-form string identifiers (256-char cap), and `description` (4096). `SequencingRun.__setattr__` clamps `run_name` (256, no CR/LF), `run_description` (4096), and `barcode_mismatches_*`. When adding a model field whose validity is anything more than "any string of any length", enforce it in `__setattr__` (or a property setter) so the rule survives direct attribute writes from route handlers — `__post_init__` alone is insufficient. Routes still call `sanitize_string` at the boundary for trim semantics and visible 400s on oversize input; the model is the load-bearing backstop.
+- **Validation cache coherence:** `ValidationService` memoizes results by `(run.id, run.updated_at, _VALIDATION_INPUT_VERSION)` — the version counter is bumped by `clear_validation_cache()`. Any mutation that changes validation *inputs* without bumping `run.updated_at` (GitHub config sync, index-kit save/delete, instrument enable/disable, etc.) MUST call `clear_validation_cache()`. See `services/validation.py` and existing call sites in `services/github_sync.py`, `routes/indexes.py`, `routes/admin/instruments.py`.
+- **Partial updates update only what was submitted.** Handlers serving per-field HTMX inputs (e.g. `update_sample_settings`, `update_sample`) MUST check `field in form` before writing — defaulting missing fields to empty and writing them back silently destroys sibling values.
+- **Never silently discard rows.** Parsers that receive a worklist (`services/sample_parser.parse_pasted_samples`, `services/sample_api.parse_api_samples`) MUST raise `ValueError` listing the source line numbers of any row with content but no `sample_id`. Reject-the-whole-import is the clinical default — silently dropping a row routes that patient's reads into the Undetermined bucket. The bulk-paste route renders the parser's message in a banner; the worklist-import route surfaces it as an error message.
 - Never silently discard data. If input is invalid, reject it (raise `HTTPException(400)` or let model `ValueError` propagate) or clamp it visibly.
 
 ### External API safety
@@ -138,38 +140,44 @@ src/seqsetup/
 ├── startup.py          # Repo initialization, service factories, DI setup
 ├── middleware.py        # AuthMiddleware (Starlette BaseHTTPMiddleware) — session + redirect on unauthenticated
 ├── context.py          # AppContext dataclass (dependency injection)
-├── openapi.py          # OpenAPI spec for the JSON API
-├── templates/         # Jinja2 templates
-│   ├── admin/         # Admin pages (auth, config-sync, instruments, logs, sample-api, users, api-tokens)
-│   ├── runs/          # Edit-run page + per-section partials
-│   ├── validation/    # Validation page + tab content partials
-│   ├── wizard/        # New-run wizard + add-samples wizard partials
-│   ├── indexes/       # Index kits list/import/detail
+├── templating.py        # Jinja2 environment + render() helper
+├── csrf.py              # OriginCheckMiddleware (state-changing requests)
+├── rate_limit.py        # Token-bucket login limiter
+├── security_headers.py  # CSP/X-Frame-Options/etc. response headers
+├── exception_handlers.py # HTML/HTMX-aware HTTPException + 422 handlers
+├── api/                 # FastAPI sub-app for /api/* (Bearer-auth JSON API + Swagger)
+├── forms/               # Pydantic Form() validators (shared across routes)
+├── templates/           # Jinja2 templates
+│   ├── admin/           # Admin pages (auth, config-sync, instruments, logs, sample-api, users, api-tokens)
+│   ├── runs/            # Edit-run page + per-section partials
+│   ├── validation/      # Validation page + tab content partials
+│   ├── wizard/          # New-run wizard + add-samples wizard partials
+│   ├── indexes/         # Index kits list/import/detail
 │   └── _app_shell.html, _base.html, _messages.html, etc.
-├── models/             # Dataclasses — self-validating, with to_dict/from_dict
-├── repositories/       # MongoDB access — thin, no business logic
-│   └── base.py         # BaseRepository[T], SingletonConfigRepository[C]
-├── routes/             # Request handlers — follow the pattern above
-│   ├── utils.py        # Guards: check_run_editable, check_status_transition,
-│   │                   #   check_run_exportable, get_username, sanitize_*
-│   └── api.py          # JSON API (ready/archived runs only)
-├── services/           # Business logic — validation, export, LDAP, LIMS API
-│   ├── validation.py   # Read-only validation orchestrator
-│   ├── sample_api.py   # External LIMS API client (SSL verified, SSRF protected)
-│   └── database.py     # MongoDB connection (timeout + health check on init)
+├── models/              # Dataclasses — self-validating, with to_dict/from_dict
+├── repositories/        # MongoDB access — thin, no business logic
+│   └── base.py          # BaseRepository[T], SingletonConfigRepository[C]
+├── routes/              # Request handlers — follow the pattern above
+│   ├── utils.py         # Guards: check_status_transition, get_username, sanitize_*
+│   ├── dependencies.py  # get_editable_run, get_exportable_run, require_admin_dep, saving_run
+│   └── api.py           # legacy JSON API surface (mostly superseded by api/)
+├── services/            # Business logic — validation, export, LDAP, LIMS API
+│   ├── validation.py    # Read-only validation orchestrator
+│   ├── sample_api.py    # External LIMS API client (SSL verified, SSRF protected)
+│   └── database.py      # MongoDB connection (timeout + health check on init)
 ├── data/
-│   └── instruments.py  # Instrument definitions (YAML + synced DB)
+│   └── instruments.py   # Instrument definitions (YAML + synced DB)
 ├── utils/
-│   └── html.py         # escape_js_string, escape_html_attr
-└── static/             # CSS, JS, images
+│   └── html.py          # escape_js_string, escape_html_attr
+└── static/              # CSS, JS, images
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `routes/utils.py` | `check_run_editable()`, `check_status_transition()`, `check_run_exportable()`, `get_username()`, `sanitize_string()`, `sanitize_filename()` |
-| `routes/dependencies.py` | `get_ctx`, `get_editable_run`, `get_archivable_run`, `require_admin_dep`, `saving_run`, `is_htmx_request` |
+| `routes/utils.py` | `check_status_transition()`, `get_username()`, `sanitize_string()`, `sanitize_filename()` |
+| `routes/dependencies.py` | `get_ctx`, `get_editable_run`, `get_exportable_run`, `get_archivable_run`, `require_admin_dep`, `saving_run`, `is_htmx_request` |
 | `utils/html.py` | `escape_js_string()`, `escape_html_attr()` — use these for all user data in HTML/JS |
 | `models/sequencing_run.py` | `SequencingRun`, `RunStatus`, `RunCycles` — central data model |
 | `models/sample.py` | `Sample` — DNA sequences validated here |
@@ -180,6 +188,7 @@ src/seqsetup/
 | `startup.py` | Application initialization, repository registry, `get_app_context()` |
 | `context.py` | `AppContext` — all repos and service factories in one dataclass |
 | `repositories/base.py` | `BaseRepository[T]` and `SingletonConfigRepository[C]` base classes |
+| `csrf.py` | `OriginCheckMiddleware` — Origin/Host check on POST/PUT/PATCH/DELETE |
 
 ## Commands
 

@@ -97,6 +97,10 @@ class Sample:
           - ``lanes`` filtered to positive non-bool ints.
           - ``override_cycles`` uppercased + rejected if outside the
             override-notation alphabet.
+          - ``description`` capped at 4096 chars; ``metadata`` rejected if
+            not a dict (defense-in-depth: free-form fields could otherwise
+            balloon the document).
+          - Free-form string identifiers capped at 256.
         """
         if value is not None:
             if name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
@@ -110,6 +114,19 @@ class Sample:
                     lane for lane in value
                     if isinstance(lane, int) and not isinstance(lane, bool) and lane > 0
                 ]
+            elif name == "description" and isinstance(value, str):
+                value = value[:4096]
+            elif name == "metadata":
+                if not isinstance(value, dict):
+                    raise ValueError(
+                        "Sample.metadata must be a dict; got "
+                        f"{type(value).__name__}"
+                    )
+            elif name in (
+                "sample_id", "sample_name", "project", "test_id",
+                "worksheet_id", "index_kit_name",
+            ) and isinstance(value, str):
+                value = value[:256]
         object.__setattr__(self, name, value)
 
     @staticmethod
@@ -243,16 +260,6 @@ class Sample:
         self.index2_override_pattern = None
         if not self.index1:
             self.index_kit_name = None
-
-    def add_analysis(self, analysis_id: str) -> None:
-        """Add an analysis to this sample."""
-        if analysis_id not in self.analyses:
-            self.analyses.append(analysis_id)
-
-    def remove_analysis(self, analysis_id: str) -> None:
-        """Remove an analysis from this sample."""
-        if analysis_id in self.analyses:
-            self.analyses.remove(analysis_id)
 
     @property
     def lanes_display(self) -> str:

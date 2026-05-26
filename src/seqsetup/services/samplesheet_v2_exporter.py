@@ -5,7 +5,6 @@ from typing import TextIO, Optional, TYPE_CHECKING
 
 from ..data.instruments import (
     get_bclconvert_software_version,
-    get_i5_read_orientation,
     get_samplesheet_platform_name,
     get_samplesheet_v2_i5_orientation,
 )
@@ -120,6 +119,17 @@ class SampleSheetV2Exporter:
             output.write(f"SoftwareVersion,{software_version}\n")
         output.write("FastqCompressionFormat,gzip\n")
 
+        # Run-level BCL Convert flags carried on the SequencingRun model. Per
+        # the Illumina v2 spec these belong in [BCLConvert_Settings]:
+        #   NoLaneSplitting,true|false        (concat per-lane FASTQs)
+        #   CreateFastqForIndexReads,0|1      (emit FASTQs for index reads)
+        #   AdapterBehavior,trim|mask|none    (adapter trimming behaviour)
+        # We emit them unconditionally so a toggled value in the model
+        # always reaches the demultiplexer — silent drop would diverge
+        # operator expectation from sequencer behaviour.
+        for line in cls._format_bclconvert_run_settings(run):
+            output.write(line)
+
         # Global override cycles (if all samples have same index lengths)
         global_override = CycleCalculator.infer_global_override_cycles(run)
         if global_override:
@@ -129,6 +139,27 @@ class SampleSheetV2Exporter:
             output.write(f"OverrideCycles,{global_override}\n")
 
         output.write("\n")
+
+    @classmethod
+    def _format_bclconvert_run_settings(cls, run: SequencingRun) -> list[str]:
+        """Render the run-level BCL Convert v2 settings as ``key,value\\n`` lines.
+
+        Returns a list of pre-newline-terminated lines so callers can emit
+        them into either the fallback section (above) or a profile-driven
+        section (see ``_write_application_profile_section``). Centralising
+        the format avoids drift between the two paths.
+        """
+        adapter = (run.adapter_behavior or "").strip().lower()
+        lines: list[str] = [
+            f"NoLaneSplitting,{'true' if run.no_lane_splitting else 'false'}\n",
+            f"CreateFastqForIndexReads,{1 if run.create_fastq_for_index_reads else 0}\n",
+        ]
+        # AdapterBehavior is omitted when the model is at its default "trim"
+        # to keep the sheet minimal — BCL Convert applies "trim" implicitly.
+        # Mask/None must be opted into explicitly.
+        if adapter and adapter != "trim":
+            lines.append(f"AdapterBehavior,{adapter}\n")
+        return lines
 
     @classmethod
     def _write_bclconvert_data(cls, output: TextIO, run: SequencingRun):
@@ -157,16 +188,11 @@ class SampleSheetV2Exporter:
 
         output.write(",".join(columns) + "\n")
 
-        # Determine if i5 needs reverse-complement for BCL Convert
-        v2_i5_orientation = get_samplesheet_v2_i5_orientation(run.instrument_platform)
-        rc_i5 = v2_i5_orientation == "reverse-complement"
-
         # Data rows - output one row per sample per lane
         for sample in run.samples:
-            # Get i5 sequence, applying RC if BCL Convert expects it
-            i5_seq = sample.index2_sequence or ""
-            if rc_i5 and i5_seq:
-                i5_seq = _reverse_complement(i5_seq)
+            # i5 sequence in sample-sheet orientation (RC applied for
+            # instruments where the sample sheet expects RC).
+            i5_seq = cls._resolve_i5(sample, run)
 
             # Calculate per-sample override cycles if needed
             override = None
@@ -280,11 +306,20 @@ class SampleSheetV2Exporter:
     def _adjust_override_cycles_for_instrument(
         cls, override_cycles: str, run: SequencingRun
     ) -> str:
-        """Adjust override cycles for instrument i5 read orientation.
+        """Adjust override cycles for the sample-sheet i5 orientation.
 
-        Override cycles are always stored in forward orientation. For instruments
-        that read i5 in reverse-complement, the Index2 segment (3rd part) must
-        be reversed before writing to the samplesheet.
+        Override cycles are always stored in forward orientation. The Index2
+        segment must match the orientation of the i5 sequence as it appears
+        IN THE SAMPLE SHEET (not the physical-read orientation): per the
+        Illumina BCL Convert guidance, when the sample sheet specifies the
+        i5 sequence in reverse-complement orientation the N mask is at the
+        beginning of the Index2 token (e.g. ``N2I8``); when the sample
+        sheet expects forward i5 (NovaSeq X / X Plus, NextSeq 1000/2000,
+        MiSeq), the Index2 token stays forward (``I8N2``).
+
+        Previously this keyed off ``get_i5_read_orientation`` (physical),
+        which produced ``N2I8`` for NovaSeq X — diverging from the forward
+        i5 sequence and corrupting demultiplexing for asymmetric tokens.
 
         Args:
             override_cycles: Full override cycles string (e.g., "Y151;I8N2;I8N2;Y151")
@@ -293,7 +328,7 @@ class SampleSheetV2Exporter:
         Returns:
             Adjusted override cycles string
         """
-        orientation = get_i5_read_orientation(run.instrument_platform)
+        orientation = get_samplesheet_v2_i5_orientation(run.instrument_platform)
         if orientation != "reverse-complement":
             return override_cycles
 
@@ -304,6 +339,23 @@ class SampleSheetV2Exporter:
         # Reverse the Index2 segment (3rd part, index 2)
         parts[2] = CycleCalculator.reverse_override_segment(parts[2])
         return ";".join(parts)
+
+    @classmethod
+    def _resolve_i5(cls, sample, run: Optional[SequencingRun]) -> str:
+        """Return the i5 sequence in the orientation that should appear in the
+        sample sheet, applying instrument-specific RC where needed.
+
+        Centralised to keep the RC decision in one place. Previously the
+        ``_write_application_profile_section`` dispatcher repeated this
+        block twice (once for ``Index2``, once for the profile-translated
+        ``Index2``), each open to drift.
+        """
+        i5 = sample.index2_sequence or ""
+        if not i5 or run is None:
+            return i5
+        if get_samplesheet_v2_i5_orientation(run.instrument_platform) == "reverse-complement":
+            return _reverse_complement(i5)
+        return i5
 
     @classmethod
     def _escape_csv(cls, value: str) -> str:
@@ -403,6 +455,21 @@ class SampleSheetV2Exporter:
 
         # Write Settings section
         output.write(f"[{app_name}_Settings]\n")
+
+        # For the BCLConvert profile specifically, inject the per-run BCL
+        # Convert flags (no_lane_splitting, create_fastq_for_index_reads,
+        # adapter_behavior). A profile-defined key wins — admin profiles
+        # are the source of truth for fixed-per-test-type settings, but
+        # per-run toggles must flow through when the profile doesn't
+        # explicitly pin them. Without this the operator's "No lane
+        # splitting" tick in the wizard would be silently dropped.
+        if app_name == "BCLConvert" and run is not None:
+            profile_keys = {str(k) for k in profile.settings.keys()}
+            for line in cls._format_bclconvert_run_settings(run):
+                key = line.split(",", 1)[0]
+                if key not in profile_keys:
+                    output.write(line)
+
         for key, value in profile.settings.items():
             output.write(
                 f"{cls._escape_csv(str(key))},{cls._escape_csv(str(value))}\n"
@@ -433,25 +500,15 @@ class SampleSheetV2Exporter:
                     # i7 index sequence (model-validated against [ACGTN], but escape defensively)
                     row.append(cls._escape_csv(sample.index1_sequence or ""))
                 elif field == "Index2":
-                    # i5 index sequence, with RC handling for instrument
-                    i5 = sample.index2_sequence or ""
-                    if i5 and run:
-                        v2_orient = get_samplesheet_v2_i5_orientation(run.instrument_platform)
-                        if v2_orient == "reverse-complement":
-                            i5 = _reverse_complement(i5)
-                    row.append(cls._escape_csv(i5))
+                    # i5 sequence in sample-sheet orientation.
+                    row.append(cls._escape_csv(cls._resolve_i5(sample, run)))
                 elif field in profile.translate:
                     # Handle translated fields (e.g., IndexI7 -> Index)
                     original = profile.translate[field]
                     if original == "Index":
                         row.append(cls._escape_csv(sample.index1_sequence or ""))
                     elif original == "Index2":
-                        i5 = sample.index2_sequence or ""
-                        if i5 and run:
-                            v2_orient = get_samplesheet_v2_i5_orientation(run.instrument_platform)
-                            if v2_orient == "reverse-complement":
-                                i5 = _reverse_complement(i5)
-                        row.append(cls._escape_csv(i5))
+                        row.append(cls._escape_csv(cls._resolve_i5(sample, run)))
                     else:
                         row.append(cls._escape_csv(str(profile.data.get(field, ""))))
                 elif field == "BarcodeMismatchesIndex1":

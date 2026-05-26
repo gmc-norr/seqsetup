@@ -3,7 +3,8 @@
 Uses APIRouter + Depends(get_editable_run) for the six simple
 mutation handlers (DRAFT-only). update_status uses
 Depends(get_archivable_run) because status transitions cross the
-editable boundary (READY->DRAFT, ARCHIVED->DRAFT).
+editable boundary (DRAFT->READY, READY->DRAFT, READY->ARCHIVED).
+ARCHIVED is terminal — no transition out.
 
 All persistence goes through `with saving_run(run, ctx, request):`
 which calls run.touch(updated_by=...) before ctx.run_repo.save(run)
@@ -56,6 +57,38 @@ _FINGERPRINT_IGNORED_KEYS = (
     "generated_validation_json",
     "generated_validation_pdf",
 )
+
+
+def _pregenerate_exports(run: SequencingRun, ctx: AppContext) -> tuple:
+    """Generate all run exports against the current state snapshot.
+
+    Returns ``(samplesheet_v2, samplesheet_v1, json_export, validation_json,
+    validation_pdf)``. The v1 entry is ``None`` for platforms that don't
+    support the legacy IEM format. Raises on any export failure so the
+    caller can refuse the status transition without persisting half-mutated
+    state — the responsibility for converting that to a 500 lives at the
+    handler boundary, not here.
+    """
+    ss_v2 = SampleSheetV2Exporter.export(
+        run,
+        test_profile_repo=ctx.test_profile_repo,
+        app_profile_repo=ctx.app_profile_repo,
+    )
+    json_export = JSONExporter.export(run)
+
+    ss_v1 = None
+    if SampleSheetV1Exporter.supports(run.instrument_platform):
+        ss_v1 = SampleSheetV1Exporter.export(run)
+
+    result = ValidationService.validate_run(
+        run,
+        test_profile_repo=ctx.test_profile_repo,
+        app_profile_repo=ctx.app_profile_repo,
+        instrument_config=ctx.instrument_config,
+    )
+    val_json = ValidationReportJSON.export(run, result)
+    val_pdf = ValidationReportPDF.export(run, result)
+    return ss_v2, ss_v1, json_export, val_json, val_pdf
 
 
 def _export_input_fingerprint(run: SequencingRun) -> str:
@@ -353,24 +386,9 @@ async def update_status(
     new_val_pdf = None
     if new_status == RunStatus.READY:
         try:
-            new_ss_v2 = SampleSheetV2Exporter.export(
-                run,
-                test_profile_repo=ctx.test_profile_repo,
-                app_profile_repo=ctx.app_profile_repo,
+            new_ss_v2, new_ss_v1, new_json, new_val_json, new_val_pdf = (
+                _pregenerate_exports(run, ctx)
             )
-            new_json = JSONExporter.export(run)
-
-            if SampleSheetV1Exporter.supports(run.instrument_platform):
-                new_ss_v1 = SampleSheetV1Exporter.export(run)
-
-            result = ValidationService.validate_run(
-                run,
-                test_profile_repo=ctx.test_profile_repo,
-                app_profile_repo=ctx.app_profile_repo,
-                instrument_config=ctx.instrument_config,
-            )
-            new_val_json = ValidationReportJSON.export(run, result)
-            new_val_pdf = ValidationReportPDF.export(run, result)
         except Exception:
             logger.error(f"Failed to generate exports for run {run.id}", exc_info=True)
             return Response("Failed to generate exports", status_code=500)
@@ -418,6 +436,18 @@ async def update_status(
                 run.generated_samplesheet_v1 = new_ss_v1
             run.generated_validation_json = new_val_json
             run.generated_validation_pdf = new_val_pdf
+        elif new_status == RunStatus.DRAFT:
+            # READY→DRAFT puts the run back into the editable pool. Clear
+            # pre-generated exports so a subsequent re-promotion never
+            # adopts blobs from before the edit cycle that brought the
+            # run back to DRAFT. READY→ARCHIVED retains the exports —
+            # archived runs are read-only snapshots whose exports must
+            # remain accessible via the API surface.
+            run.generated_samplesheet_v2 = None
+            run.generated_samplesheet_v1 = None
+            run.generated_json = None
+            run.generated_validation_json = None
+            run.generated_validation_pdf = None
 
     audit(
         "run.status.changed",

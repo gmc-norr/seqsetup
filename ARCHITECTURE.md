@@ -49,7 +49,7 @@ Look at these first when adding new code in their category:
 | Pages extend `_app_shell.html` (or `_base.html` for un-shelled pages) | `{% extends "_app_shell.html" %}` |
 | HTMX swap targets are `{% block %}` regions inside the page | `{% block dashboard_content %}…{% endblock %}` |
 | Block names match the swap target's role | `dashboard_content`, `validation_tabs` — not `block1` |
-| Shared partials (≥2 pages) live in `templates/partials/` with `_` prefix | `partials/_error_banner.html` |
+| Shared partials (≥2 pages) belong under a `templates/partials/` directory with `_` prefix | (none currently — all partials are page-local; add `partials/` if a true cross-page partial appears) |
 | Page-specific helpers are local includes inside the page directory | `wizard/_flowcell_select.html` |
 | Pages set `page_title` and `active_route` via `{% set %}` | `{% set page_title = "Dashboard" %}` |
 | Templates contain NO Python logic beyond filters/iteration | Route builds `kit_rows: list[dict]` → template loops |
@@ -152,7 +152,7 @@ tracking:
    pattern with closure-captured `ctx` and manual `run.touch() +
    ctx.run_repo.save()` calls instead of `Depends(get_ctx)` +
    `with saving_run(run, ctx, request):`.~~
-   **CLOSED** — All four migrated:
+   **PARTIALLY CLOSED** — All four migrated to APIRouter and `saving_run`:
    - `routes/export.py` → `Depends(get_exportable_run)` + APIRouter
    - `routes/wizard.py` → APIRouter + `Depends(get_ctx)` (GET-only)
    - `routes/runs.py` → `Depends(get_editable_run)` /
@@ -161,3 +161,15 @@ tracking:
      `with saving_run(...)` for every mutation; the 15 audit events
      from follow-up #1 are preserved verbatim
    ZERO `register(app, ctx)` closures remain in `src/seqsetup/routes/`.
+
+   **Remaining gap:** `routes/samples.py` and parts of `routes/runs.py`
+   still parse form data manually (`form = await request.form()`)
+   instead of declaring `Annotated[FooForm, Form()]` per rule 6 of the
+   routing conventions. The manual pattern is deliberate for
+   per-field HTMX endpoints such as `update_sample_settings` and
+   `update_sample`, which need to detect which keys are present in
+   the submission (partial-update semantics). For the simpler bulk
+   handlers (`set_test_id_bulk`, `set_lanes_bulk`, etc.) migration to
+   Pydantic Form models would be a consistency-only change with no
+   security or correctness impact — the load-bearing input bounds
+   live in the Sample/SequencingRun model `__setattr__`s.

@@ -34,12 +34,24 @@ router = APIRouter(tags=["samples"])
 # ---------------------------------------------------------------------------
 
 
-def _render_sample_section(run, request: Request, ctx: AppContext) -> HTMLResponse:
+def _render_sample_section(
+    run,
+    request: Request,
+    ctx: AppContext,
+    *,
+    messages: Optional[list[dict]] = None,
+) -> HTMLResponse:
     """Render the run-edit page's sample section (paste box + index panel + table).
 
     Used by mutation handlers that need to refresh the inline UI after
     a sample is added/removed/edited. The new section HTML re-targets
     #sample-section outerHTML.
+
+    If ``messages`` is provided, an out-of-band fragment targeting
+    ``#error-banner`` is prepended so the user sees toast-style feedback
+    (e.g. duplicate-skip counts during a worklist import) alongside the
+    refreshed section. The handler is responsible for choosing kinds —
+    "success" / "warning" / "error".
     """
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
     is_editable = run.status.value == "draft"
@@ -48,18 +60,57 @@ def _render_sample_section(run, request: Request, ctx: AppContext) -> HTMLRespon
     index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
     test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
 
-    html = templates.env.get_template("runs/_sample_section.html").render(
+    section_html = templates.env.get_template("runs/_sample_section.html").render(
         run=run, index_kits=index_kits, test_profiles=test_profiles,
         num_lanes=num_lanes, is_editable=is_editable,
         sample_api_enabled=sample_api_enabled, oob=False,
     )
-    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+    body = section_html
+    if messages:
+        msg_html = templates.env.get_template("_messages.html").render(messages=messages)
+        # Wrap the messages fragment with the OOB target so HTMX swaps it
+        # into the persistent #error-banner slot in _app_shell.html.
+        oob_html = (
+            f'<div id="error-banner" hx-swap-oob="innerHTML">{msg_html}</div>'
+        )
+        body = oob_html + section_html
+    return HTMLResponse(body, headers={"Cache-Control": "no-store"})
 
 
 def _messages_only(request, messages) -> HTMLResponse:
     """Render the _messages.html partial as the entire response."""
     html = templates.env.get_template("_messages.html").render(messages=messages)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+def _render_sample_row(
+    request: Request,
+    sample: Sample,
+    run: SequencingRun,
+    *,
+    show_drop_zones: bool,
+) -> HTMLResponse:
+    """Render one ``wizard/_sample_row.html`` fragment with the canonical
+    kwarg shape used after a per-sample mutation.
+
+    Previously this dict appeared verbatim in five handlers; a new template
+    parameter (e.g. when a new column ships) had to be added in each. The
+    only per-callsite axis was ``show_drop_zones`` (false on the initial
+    add/update, true after an index assign/clear).
+    """
+    num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
+    return render(request, "wizard/_sample_row.html", {
+        "sample": sample,
+        "run_id": run.id,
+        "run_cycles": run.run_cycles,
+        "show_drop_zones": show_drop_zones,
+        "show_i5_column": True,
+        "num_lanes": num_lanes,
+        "show_bulk_actions": True,
+        "context": "",
+        "editable": True,
+        "show_checkboxes": None,
+    })
 
 
 
@@ -163,19 +214,7 @@ async def add_sample(
         test_id=sample.test_id,
     )
 
-    num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-    return render(request, "wizard/_sample_row.html", {
-        "sample": sample,
-        "run_id": run_id,
-        "run_cycles": run.run_cycles,
-        "show_drop_zones": False,
-        "show_i5_column": True,
-        "num_lanes": num_lanes,
-        "show_bulk_actions": True,
-        "context": "",
-        "editable": True,
-        "show_checkboxes": None,
-    })
+    return _render_sample_row(request, sample, run, show_drop_zones=False)
 
 
 @router.post("/runs/{run_id}/samples/bulk", response_class=HTMLResponse)
@@ -201,11 +240,22 @@ async def add_bulk_samples(
             return Response("File must be UTF-8 encoded", status_code=400)
     else:
         content = form.get("paste_data", "")
+        # Mirror the 10 MB cap from the file-upload branch — without this an
+        # authenticated user can post unbounded paste_data and balloon the
+        # run document past MongoDB's 16 MB BSON limit on save.
+        if len(content) > 10 * 1024 * 1024:
+            return Response("Pasted data too large (max 10 MB)", status_code=400)
 
     try:
         parsed = parse_pasted_samples(content)
     except ValueError as e:
-        return Response(f"Validation error: {str(e)}", status_code=400)
+        # Reject the whole import — silent partial drops would land
+        # patient samples in the Undetermined bucket. Surface the parse
+        # error as a banner so the operator can fix the source and retry.
+        return _render_sample_section(
+            run, request, ctx,
+            messages=[{"text": f"Bulk import rejected: {e}", "kind": "error"}],
+        )
 
     existing_sample_ids = {s.sample_id for s in run.samples}
 
@@ -265,7 +315,26 @@ async def add_bulk_samples(
             skipped_within_paste_count=len(skipped_within_paste),
         )
 
-    return _render_sample_section(run, request, ctx)
+    # Surface per-import feedback so duplicate-skips aren't silent.
+    messages: list[dict] = []
+    if added_count == 1:
+        messages.append({"text": "Added 1 sample.", "kind": "success"})
+    elif added_count > 1:
+        messages.append({"text": f"Added {added_count} samples.", "kind": "success"})
+    elif not parsed:
+        messages.append({"text": "No samples found in input.", "kind": "warning"})
+    if skipped_duplicates:
+        messages.append({
+            "text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.",
+            "kind": "warning",
+        })
+    if skipped_within_paste:
+        messages.append({
+            "text": f"Skipped {len(skipped_within_paste)} duplicate(s) within the pasted data.",
+            "kind": "warning",
+        })
+
+    return _render_sample_section(run, request, ctx, messages=messages or None)
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +433,14 @@ async def import_worklist_samples(
     if not success:
         return _messages_only(request, [{"text": f"Failed to fetch worklist samples: {message}", "kind": "error"}])
 
-    api_samples = parse_api_samples(raw_data, api_config)
+    try:
+        api_samples = parse_api_samples(raw_data, api_config)
+    except ValueError as e:
+        # parse_api_samples raises if any LIMS row is missing sample_id —
+        # reject the whole import rather than silently routing patient
+        # reads to Undetermined.
+        return _messages_only(request, [{"text": f"Worklist import rejected: {e}", "kind": "error"}])
+
     if not api_samples:
         return _messages_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
 
@@ -375,6 +451,8 @@ async def import_worklist_samples(
 
     for api_sample in api_samples:
         sample_id = api_sample.get("sample_id", "")
+        # parse_api_samples guarantees a non-empty sample_id; this is
+        # defensive against a future code path that bypasses the parser.
         if not sample_id:
             continue
         if sample_id in existing_sample_ids:
@@ -428,7 +506,7 @@ async def import_worklist_samples(
             skipped_duplicates_count=len(skipped_duplicates),
         )
 
-    messages = []
+    messages: list[dict] = []
     if added_count == 0:
         messages.append({"text": "No new samples added from worklist.", "kind": "warning"})
     elif added_count == 1:
@@ -439,7 +517,7 @@ async def import_worklist_samples(
     if skipped_duplicates:
         messages.append({"text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.", "kind": "warning"})
 
-    return _render_sample_section(run, request, ctx)
+    return _render_sample_section(run, request, ctx, messages=messages)
 
 
 @router.post("/runs/{run_id}/samples/assign-indexes-bulk", response_class=HTMLResponse)
@@ -464,9 +542,9 @@ async def assign_indexes_bulk(
     try:
         indexes_data = json.loads(indexes_json)
     except json.JSONDecodeError:
-        return Response("Invalid request data", status_code=400)
+        return Response("Invalid indexes_json: not valid JSON", status_code=400)
     if not isinstance(indexes_data, list):
-        return Response("Invalid request data", status_code=400)
+        return Response("Invalid indexes_json: expected a JSON array", status_code=400)
 
     start_idx = None
     for i, sample in enumerate(run.samples):
@@ -482,13 +560,13 @@ async def assign_indexes_bulk(
     resolved_assignments = []
     for idx_data in indexes_data:
         if not isinstance(idx_data, dict):
-            return Response("Invalid request data", status_code=400)
+            return Response("Invalid indexes_json entry: expected an object", status_code=400)
 
         idx_id = idx_data.get("id")
         idx_type = idx_data.get("type", "pair")
 
         if not isinstance(idx_id, str) or not idx_id:
-            return Response("Invalid request data", status_code=400)
+            return Response("Invalid indexes_json entry: missing 'id'", status_code=400)
 
         if idx_type == "pair":
             index_pair, kit = ctx.index_kit_repo.find_index_pair_with_kit(idx_id)
@@ -614,9 +692,9 @@ async def set_lanes_bulk(
         sample_ids = json.loads(sample_ids_json)
         lanes = json.loads(lanes_json)
     except json.JSONDecodeError:
-        return Response("Invalid request data", status_code=400)
+        return Response("Invalid sample_ids or lanes JSON", status_code=400)
     if not isinstance(sample_ids, list):
-        return Response("Invalid request data", status_code=400)
+        return Response("Invalid sample_ids: expected a JSON array", status_code=400)
 
     max_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
     normalized_lanes = _normalize_lane_selection(lanes, max_lanes)
@@ -661,7 +739,7 @@ async def set_mismatches_bulk(
     try:
         sample_ids = json.loads(sample_ids_json)
     except json.JSONDecodeError:
-        return Response("Invalid request data", status_code=400)
+        return Response("Invalid sample_ids: not valid JSON", status_code=400)
 
     mismatch_index1 = None
     if mismatch_index1_str.strip():
@@ -711,7 +789,7 @@ async def set_override_cycles_bulk(
     try:
         sample_ids = json.loads(sample_ids_json)
     except json.JSONDecodeError:
-        return Response("Invalid request data", status_code=400)
+        return Response("Invalid sample_ids: not valid JSON", status_code=400)
 
     # Length-limit defensively — the model regex restricts characters but
     # a multi-megabyte all-`Y` string would still match and balloon the doc.
@@ -763,7 +841,7 @@ async def set_test_id_bulk(
     try:
         sample_ids = json.loads(sample_ids_json)
     except json.JSONDecodeError:
-        return Response("Invalid request data", status_code=400)
+        return Response("Invalid sample_ids: not valid JSON", status_code=400)
 
     test_id = sanitize_string(test_id_str, 256)
 
@@ -798,7 +876,7 @@ async def delete_samples_bulk(
     try:
         sample_ids = json.loads(sample_ids_json)
     except json.JSONDecodeError:
-        return Response("Invalid request data", status_code=400)
+        return Response("Invalid sample_ids: not valid JSON", status_code=400)
 
     deleted_ids = [sid for sid in sample_ids if run.get_sample(str(sid))]
     with saving_run(run, ctx, request):
@@ -860,48 +938,51 @@ async def update_sample(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/samples/{sample_id} — update an existing sample."""
+    """POST /runs/{run_id}/samples/{sample_id} — update an existing sample.
+
+    Partial update: each row input posts only its own field (HTMX default
+    include behaviour). The handler updates exactly what was submitted —
+    a key NOT present in the form is left untouched. Without the
+    ``in form`` guards below, a request that posts only ``sample_id``
+    would silently wipe ``sample_name`` and ``project`` on that row.
+    """
     run_id = run.id
     sample_id_path = sample_id
     form = await request.form()
-    sample_id_field = form.get("sample_id", "")
-    sample_name = form.get("sample_name", "")
-    project = form.get("project", "")
 
-    # Reject blank sample_id before any mutation — mirrors add_sample.
-    # Blanking sample_id would silently break demultiplexing for that sample.
-    if not sample_id_field or not sample_id_field.strip():
-        return Response("sample_id is required", status_code=400)
-    sample_id_field = sanitize_string(sample_id_field, 256)
-    sample_name = sanitize_string(sample_name, 256)
-    project = sanitize_string(project, 256)
+    has_sample_id = "sample_id" in form
+    has_sample_name = "sample_name" in form
+    has_project = "project" in form
+
+    # Reject blank sample_id when it IS being updated — blanking it would
+    # silently break demultiplexing for that sample.
+    sample_id_field: str | None = None
+    if has_sample_id:
+        raw = form.get("sample_id", "")
+        if not raw or not raw.strip():
+            return Response("sample_id is required", status_code=400)
+        sample_id_field = sanitize_string(raw, 256)
+
+    sample_name = sanitize_string(form.get("sample_name", ""), 256) if has_sample_name else None
+    project = sanitize_string(form.get("project", ""), 256) if has_project else None
 
     sample = run.get_sample(sample_id_path)
 
     if sample:
         with saving_run(run, ctx, request):
-            sample.sample_id = sample_id_field
-            sample.sample_name = sample_name
-            sample.project = project
+            if has_sample_id and sample_id_field is not None:
+                sample.sample_id = sample_id_field
+            if has_sample_name:
+                sample.sample_name = sample_name
+            if has_project:
+                sample.project = project
         audit(
             "sample.updated",
             actor=get_username(request),
             target=run_id,
             sample_id=sample.id,
         )
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return render(request, "wizard/_sample_row.html", {
-            "sample": sample,
-            "run_id": run_id,
-            "run_cycles": run.run_cycles,
-            "show_drop_zones": False,
-            "show_i5_column": True,
-            "num_lanes": num_lanes,
-            "show_bulk_actions": True,
-            "context": "",
-            "editable": True,
-            "show_checkboxes": None,
-        })
+        return _render_sample_row(request, sample, run, show_drop_zones=False)
 
     return Response("")
 
@@ -967,19 +1048,7 @@ async def assign_index(
         kit_name=kit.name if kit else "",
     )
 
-    num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-    return render(request, "wizard/_sample_row.html", {
-        "sample": sample,
-        "run_id": run_id,
-        "run_cycles": run.run_cycles,
-        "show_drop_zones": True,
-        "show_i5_column": True,
-        "num_lanes": num_lanes,
-        "show_bulk_actions": True,
-        "context": "",
-        "editable": True,
-        "show_checkboxes": None,
-    })
+    return _render_sample_row(request, sample, run, show_drop_zones=True)
 
 
 @router.post("/runs/{run_id}/samples/{sample_id}/clear-index", response_class=HTMLResponse)
@@ -1013,19 +1082,7 @@ async def clear_index(
             sample_id=sample.id,
             index_type=index_type,
         )
-        num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-        return render(request, "wizard/_sample_row.html", {
-            "sample": sample,
-            "run_id": run_id,
-            "run_cycles": run.run_cycles,
-            "show_drop_zones": True,
-            "show_i5_column": True,
-            "num_lanes": num_lanes,
-            "show_bulk_actions": True,
-            "context": "",
-            "editable": True,
-            "show_checkboxes": None,
-        })
+        return _render_sample_row(request, sample, run, show_drop_zones=True)
 
     return Response("")
 
@@ -1108,16 +1165,4 @@ async def update_sample_settings(
         sample_id=sample.id,
     )
 
-    num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-    return render(request, "wizard/_sample_row.html", {
-        "sample": sample,
-        "run_id": run_id,
-        "run_cycles": run.run_cycles,
-        "show_drop_zones": True,
-        "show_i5_column": True,
-        "num_lanes": num_lanes,
-        "show_bulk_actions": True,
-        "context": "",
-        "editable": True,
-        "show_checkboxes": None,
-    })
+    return _render_sample_row(request, sample, run, show_drop_zones=True)

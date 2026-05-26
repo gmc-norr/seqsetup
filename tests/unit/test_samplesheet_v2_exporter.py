@@ -56,11 +56,16 @@ class TestSampleSheetV2Exporter:
         assert "Sample_001,ATTACTCG,TATAGCCT" in output
 
     def test_export_override_cycles_global(self, sample_run):
-        """Test global OverrideCycles when all indexes same length."""
-        output = SampleSheetV2Exporter.export(sample_run)
+        """Test global OverrideCycles when all indexes same length.
 
-        # NovaSeq X reads i5 in reverse-complement, so Index2 segment is reversed
-        assert "OverrideCycles,Y151;I8N2;N2I8;Y151" in output
+        Per Illumina BCL Convert: the OverrideCycles Index2 segment matches
+        the orientation of the i5 sequence as it appears in the sample
+        sheet (not the physical-read orientation). NovaSeq X sample sheets
+        carry i5 in FORWARD orientation, so the Index2 token stays forward
+        (``I8N2``), not reversed.
+        """
+        output = SampleSheetV2Exporter.export(sample_run)
+        assert "OverrideCycles,Y151;I8N2;I8N2;Y151" in output
 
     def test_export_override_cycles_global_forward_instrument(self):
         """Test global OverrideCycles for a forward-orientation instrument."""
@@ -84,8 +89,58 @@ class TestSampleSheetV2Exporter:
 
         output = SampleSheetV2Exporter.export(run)
 
-        # MiSeq i100 reads i5 in forward orientation, so Index2 segment is NOT reversed
+        # MiSeq i100 sample sheet carries i5 in forward orientation; Index2 forward too.
         assert "OverrideCycles,Y150;I8N2;I8N2;Y150" in output
+
+    def test_export_override_cycles_global_rc_instrument(self):
+        """For instruments whose sample sheet specifies i5 in reverse-complement
+        orientation (e.g. NextSeq 500/550, NovaSeq 6000), the OverrideCycles
+        Index2 token must also be reversed — N at the beginning per Illumina
+        BCL Convert guidance.
+        """
+        run = SequencingRun(
+            run_name="NextSeq Run",
+            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
+            flowcell_type="High",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        output = SampleSheetV2Exporter.export(run)
+        # NextSeq 500/550 sample sheet carries i5 in RC → Index2 token reversed.
+        assert "OverrideCycles,Y151;I8N2;N2I8;Y151" in output
+
+    def test_export_bclconvert_runtime_settings_emitted(self, sample_run):
+        """no_lane_splitting / create_fastq_for_index_reads / adapter_behavior
+        on the run model must appear in [BCLConvert_Settings]; silent drop
+        would mean a clinician's toggle in the UI never reaches BCL Convert.
+        """
+        sample_run.no_lane_splitting = True
+        sample_run.create_fastq_for_index_reads = True
+        sample_run.adapter_behavior = "mask"
+        output = SampleSheetV2Exporter.export(sample_run)
+        assert "NoLaneSplitting,true" in output
+        assert "CreateFastqForIndexReads,1" in output
+        assert "AdapterBehavior,mask" in output
+
+    def test_export_bclconvert_default_lane_split_emitted_as_false(self, sample_run):
+        """Defaults still go on the wire so the value is deterministic — BCL
+        Convert would otherwise apply its own default and the operator can't
+        tell from the artifact what the run was configured for."""
+        output = SampleSheetV2Exporter.export(sample_run)
+        assert "NoLaneSplitting,false" in output
+        assert "CreateFastqForIndexReads,0" in output
+        # AdapterBehavior is omitted when "trim" (default) — see
+        # _format_bclconvert_run_settings docstring.
+        assert "AdapterBehavior" not in output
 
     def test_export_override_cycles_per_sample(self, sample_run):
         """Test per-sample OverrideCycles when indexes differ."""

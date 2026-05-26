@@ -29,6 +29,7 @@ from ..models.validation import (
 )
 from .application_profile_validator import ApplicationProfileValidator
 from .color_analysis_validator import ColorAnalysisValidator
+from .cycle_calculator import CycleCalculator
 from .index_collision_validator import IndexCollisionValidator
 from .validation_utils import hamming_distance
 
@@ -392,7 +393,14 @@ class ValidationService:
         run: SequencingRun,
         all_lanes: list[int],
     ) -> list[ConfigurationError]:
-        """Check that all samples in a lane have consistent index lengths."""
+        """Check that all samples in a lane have consistent EFFECTIVE index lengths.
+
+        Uses the kit-effective cycle count (``CycleCalculator._get_effective_index_length``)
+        rather than the raw stored sequence length. A kit with
+        ``default_index1_cycles=8`` and a 10bp sequence demuxes as 8 cycles —
+        comparing the raw sequence length here would falsely report a mismatch
+        against an 8bp sample that shares the same effective length.
+        """
         errors: list[ConfigurationError] = []
         lane_samples = cls._group_samples_by_lane(run, all_lanes)
 
@@ -401,13 +409,13 @@ class ValidationService:
             if len(indexed) < 2:
                 continue
 
-            # Check i7 lengths
+            # Check i7 effective lengths
             i7_lengths: dict[int, list[str]] = defaultdict(list)
             for s in indexed:
-                seq = s.index1_sequence
-                if seq:
+                if s.index1_sequence:
                     display = s.sample_id or s.sample_name or s.id
-                    i7_lengths[len(seq)].append(display)
+                    eff = CycleCalculator._get_effective_index_length(s, 1)
+                    i7_lengths[eff].append(display)
 
             if len(i7_lengths) > 1:
                 length_detail = ", ".join(
@@ -426,13 +434,13 @@ class ValidationService:
                     )
                 )
 
-            # Check i5 lengths (only among samples that have i5)
+            # Check i5 effective lengths (only among samples that have i5)
             i5_lengths: dict[int, list[str]] = defaultdict(list)
             for s in indexed:
-                seq = s.index2_sequence
-                if seq:
+                if s.index2_sequence:
                     display = s.sample_id or s.sample_name or s.id
-                    i5_lengths[len(seq)].append(display)
+                    eff = CycleCalculator._get_effective_index_length(s, 2)
+                    i5_lengths[eff].append(display)
 
             if len(i5_lengths) > 1:
                 length_detail = ", ".join(
@@ -502,7 +510,15 @@ class ValidationService:
         cls,
         run: SequencingRun,
     ) -> list[ConfigurationError]:
-        """Check that run index cycles are >= each sample's index sequence length."""
+        """Check that run index cycles are >= each sample's EFFECTIVE index length.
+
+        Uses the kit-effective cycle count (``CycleCalculator._get_effective_index_length``)
+        rather than the raw stored sequence length. The export pipeline builds
+        OverrideCycles segments from the effective length; comparing the raw
+        sequence length would refuse legitimate "10bp sequence, 8 effective
+        cycles" kit configurations even though the resulting Sample Sheet is
+        valid (e.g. ``I8N2`` against 8 run cycles).
+        """
         errors: list[ConfigurationError] = []
         if not run.run_cycles:
             return errors
@@ -510,37 +526,39 @@ class ValidationService:
         for sample in run.samples:
             display_name = sample.sample_id or sample.sample_name or sample.id
 
-            # Check i7: run index1_cycles must be >= actual i7 sequence length
-            i7_seq = sample.index1_sequence
-            if i7_seq and run.run_cycles.index1_cycles < len(i7_seq):
-                errors.append(
-                    ConfigurationError(
-                        severity=ValidationSeverity.ERROR,
-                        category="index_exceeds_cycles",
-                        message=(
-                            f"Sample '{display_name}': i7 index length ({len(i7_seq)}bp) "
-                            f"exceeds run index1 cycles ({run.run_cycles.index1_cycles}). "
-                            f"Index cycles must be >= index length."
-                        ),
-                        sample_names=[display_name],
+            # Check i7: run index1_cycles must be >= effective i7 length
+            if sample.index1_sequence:
+                eff_i7 = CycleCalculator._get_effective_index_length(sample, 1)
+                if eff_i7 and run.run_cycles.index1_cycles < eff_i7:
+                    errors.append(
+                        ConfigurationError(
+                            severity=ValidationSeverity.ERROR,
+                            category="index_exceeds_cycles",
+                            message=(
+                                f"Sample '{display_name}': i7 index length ({eff_i7}bp) "
+                                f"exceeds run index1 cycles ({run.run_cycles.index1_cycles}). "
+                                f"Index cycles must be >= index length."
+                            ),
+                            sample_names=[display_name],
+                        )
                     )
-                )
 
-            # Check i5: run index2_cycles must be >= actual i5 sequence length
-            i5_seq = sample.index2_sequence
-            if i5_seq and run.run_cycles.index2_cycles < len(i5_seq):
-                errors.append(
-                    ConfigurationError(
-                        severity=ValidationSeverity.ERROR,
-                        category="index_exceeds_cycles",
-                        message=(
-                            f"Sample '{display_name}': i5 index length ({len(i5_seq)}bp) "
-                            f"exceeds run index2 cycles ({run.run_cycles.index2_cycles}). "
-                            f"Index cycles must be >= index length."
-                        ),
-                        sample_names=[display_name],
+            # Check i5: run index2_cycles must be >= effective i5 length
+            if sample.index2_sequence:
+                eff_i5 = CycleCalculator._get_effective_index_length(sample, 2)
+                if eff_i5 and run.run_cycles.index2_cycles < eff_i5:
+                    errors.append(
+                        ConfigurationError(
+                            severity=ValidationSeverity.ERROR,
+                            category="index_exceeds_cycles",
+                            message=(
+                                f"Sample '{display_name}': i5 index length ({eff_i5}bp) "
+                                f"exceeds run index2 cycles ({run.run_cycles.index2_cycles}). "
+                                f"Index cycles must be >= index length."
+                            ),
+                            sample_names=[display_name],
+                        )
                     )
-                )
 
         return errors
 

@@ -153,22 +153,40 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
     if not paste_data or not paste_data.strip():
         return samples
 
+    # Strip a leading UTF-8 BOM (﻿). Excel and many LIMS exports prepend
+    # one; without this it would embed in the first header cell (e.g.
+    # "﻿sample_id"), break header detection, and cause the column
+    # mapping to silently fall back to default order — routing the wrong
+    # values into the wrong fields.
+    if paste_data.startswith("﻿"):
+        paste_data = paste_data[1:]
+
     delimiter = _detect_delimiter(paste_data)
     reader = csv.reader(io.StringIO(paste_data), delimiter=delimiter)
-    rows: list[list[str]] = []
+    # Capture (file_line_no, clamped_parts) per non-blank row so error
+    # messages can name the actual source line the user can find in their
+    # file. csv.reader.line_num is 1-based and tracks the input stream
+    # position regardless of blank-row filtering.
+    rows: list[tuple[int, list[str]]] = []
     for raw in reader:
         if not any(cell.strip() for cell in raw):
             continue  # skip wholly blank rows
         # Clamp each cell to MAX_CELL_LEN per the CLAUDE.md input-sanitization
         # rule; downstream code assumes bounded strings (model invariants, DB
         # field widths, render budgets).
-        rows.append([cell.strip()[:_MAX_CELL_LEN] for cell in raw])
+        rows.append((reader.line_num, [cell.strip()[:_MAX_CELL_LEN] for cell in raw]))
 
     # Default column mapping (no header)
     column_mapping = {"sample_id": 0, "test_id": 1, "index1": 2, "index2": 3}
     header_detected = False
 
-    for i, parts in enumerate(rows):
+    # Track row numbers that had content but no sample_id, so the caller can
+    # see exactly which rows were rejected. Silent drop is a clinical-safety
+    # smell — a 96-sample worklist missing one row would silently produce a
+    # 95-sample run with no indication anything was lost.
+    rows_missing_sample_id: list[int] = []
+
+    for i, (source_line, parts) in enumerate(rows):
         # Check first non-empty line for header
         if i == 0 and _is_header_row(parts):
             column_mapping = _detect_column_mapping(parts)
@@ -214,33 +232,47 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
         if "index2_name" in column_mapping and len(parts) > column_mapping["index2_name"]:
             index2_name = parts[column_mapping["index2_name"]]
 
-        if sample_id:
-            # Validate DNA sequences (allow empty, but reject invalid chars)
-            index1_upper = index1.upper() if index1 else ""
-            index2_upper = index2.upper() if index2 else ""
+        if not sample_id:
+            # A row with content in any column but no sample_id is a data
+            # error — silently skipping would land that lab sample in the
+            # demultiplexer's "Undetermined" bucket. Record the row and
+            # reject the whole import after the loop.
+            rows_missing_sample_id.append(source_line)
+            continue
 
-            # Check for invalid DNA characters
-            if index1_upper and not _VALID_DNA_RE.match(index1_upper):
-                invalid_chars = set(index1_upper) - set("ACGTN")
-                raise ValueError(
-                    f"Invalid characters in index1 for sample '{sample_id}': {invalid_chars}. "
-                    f"Only A, C, G, T, N are allowed."
-                )
-            if index2_upper and not _VALID_DNA_RE.match(index2_upper):
-                invalid_chars = set(index2_upper) - set("ACGTN")
-                raise ValueError(
-                    f"Invalid characters in index2 for sample '{sample_id}': {invalid_chars}. "
-                    f"Only A, C, G, T, N are allowed."
-                )
+        # Validate DNA sequences (allow empty, but reject invalid chars)
+        index1_upper = index1.upper() if index1 else ""
+        index2_upper = index2.upper() if index2 else ""
 
-            samples.append(ParsedSample(
-                sample_id=sample_id,
-                test_id=test_id,
-                index1_sequence=index1_upper,
-                index2_sequence=index2_upper,
-                index_pair_name=index_pair_name,
-                index1_name=index1_name,
-                index2_name=index2_name,
-            ))
+        # Check for invalid DNA characters
+        if index1_upper and not _VALID_DNA_RE.match(index1_upper):
+            invalid_chars = set(index1_upper) - set("ACGTN")
+            raise ValueError(
+                f"Invalid characters in index1 for sample '{sample_id}': {invalid_chars}. "
+                f"Only A, C, G, T, N are allowed."
+            )
+        if index2_upper and not _VALID_DNA_RE.match(index2_upper):
+            invalid_chars = set(index2_upper) - set("ACGTN")
+            raise ValueError(
+                f"Invalid characters in index2 for sample '{sample_id}': {invalid_chars}. "
+                f"Only A, C, G, T, N are allowed."
+            )
+
+        samples.append(ParsedSample(
+            sample_id=sample_id,
+            test_id=test_id,
+            index1_sequence=index1_upper,
+            index2_sequence=index2_upper,
+            index_pair_name=index_pair_name,
+            index1_name=index1_name,
+            index2_name=index2_name,
+        ))
+
+    if rows_missing_sample_id:
+        rows_str = ", ".join(str(n) for n in rows_missing_sample_id)
+        raise ValueError(
+            f"Row(s) {rows_str}: sample_id is required. "
+            f"Either supply a sample_id or remove the row entirely."
+        )
 
     return samples

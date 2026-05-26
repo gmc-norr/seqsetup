@@ -263,11 +263,14 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
     pinned_ip = str(pinned)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
-    # Per-host throttle, keyed on ``(hostname, port)`` so two LIMS endpoints
-    # on the same host but different ports (e.g. ``:443`` and ``:8443``) get
-    # independent budgets. A bulk import that hits the same endpoint many
-    # times is paced; calls to different endpoints run independently.
-    _throttle(f"{hostname}:{port}")
+    # Per-host throttle, keyed on the validated IP + port (not hostname).
+    # Without this canonicalisation an admin who points the LIMS at
+    # ``https://10.0.0.5/...`` sometimes and ``https://lims.example.com/...``
+    # other times — both resolving to the same target — would get
+    # independent budgets and double the outbound rate. Multi-process /
+    # multi-replica deployments still need an external load-balancer for
+    # global throttling; this key is per-process.
+    _throttle(f"{pinned_ip}:{port}")
 
     headers = {
         "Accept": "application/json",
@@ -615,8 +618,11 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
                 field_aliases[seqsetup_field] = [api_field.lower()]
 
     results = []
-    for item in data:
+    rows_missing_sample_id: list[int] = []  # 1-based positions of dropped rows
+
+    for index, item in enumerate(data, start=1):
         if not isinstance(item, dict):
+            rows_missing_sample_id.append(index)
             continue
 
         # Build a lowercase key lookup
@@ -632,10 +638,20 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
                     sample[field] = str(val).strip()[:_MAX_FIELD_LEN] if val else ""
                     break
 
-        # Must have at least sample_id
+        # Must have at least sample_id. Silent skip would route the dropped
+        # sample's reads into the demultiplexer's "Undetermined" bucket,
+        # making it impossible to report on the patient sample.
         if "sample_id" not in sample or not sample["sample_id"]:
+            rows_missing_sample_id.append(index)
             continue
 
         results.append(sample)
+
+    if rows_missing_sample_id:
+        rows_str = ", ".join(str(n) for n in rows_missing_sample_id)
+        raise ValueError(
+            f"LIMS row(s) {rows_str}: sample_id is missing or empty. "
+            f"Fix the upstream record(s) before retrying."
+        )
 
     return results

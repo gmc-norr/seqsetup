@@ -2,9 +2,7 @@
 
 import pytest
 
-from seqsetup.models.sequencing_run import RunStatus, SequencingRun
 from seqsetup.routes.utils import (
-    check_run_editable,
     get_username,
     sanitize_filename,
     sanitize_string,
@@ -65,31 +63,6 @@ class TestGetUsername:
     def test_returns_empty_when_no_auth(self):
         req = _FakeRequest()
         assert get_username(req) == ""
-
-
-# ---------------------------------------------------------------------------
-# check_run_editable
-# ---------------------------------------------------------------------------
-
-
-class TestCheckRunEditable:
-    """Tests for check_run_editable()."""
-
-    def test_draft_run_is_editable(self):
-        run = SequencingRun(status=RunStatus.DRAFT)
-        assert check_run_editable(run) is None
-
-    def test_ready_run_is_not_editable(self):
-        run = SequencingRun(status=RunStatus.READY)
-        resp = check_run_editable(run)
-        assert resp is not None
-        assert resp.status_code == 403
-
-    def test_archived_run_is_not_editable(self):
-        run = SequencingRun(status=RunStatus.ARCHIVED)
-        resp = check_run_editable(run)
-        assert resp is not None
-        assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------

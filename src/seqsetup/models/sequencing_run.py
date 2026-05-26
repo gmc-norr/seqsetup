@@ -191,6 +191,16 @@ class SequencingRun:
             value = max(1, value)
         elif name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
             value = max(0, min(3, value))
+        elif name == "run_name" and isinstance(value, str):
+            # CR/LF in run_name would land verbatim in the Sample Sheet
+            # [Header] section and split the line into two — strip them
+            # before clamping. 256 char cap matches the route-level
+            # sanitize_string limit.
+            value = value.replace("\r", " ").replace("\n", " ")[:256]
+        elif name == "run_description" and isinstance(value, str):
+            value = value.replace("\r", " ").replace("\n", " ")[:4096]
+        elif name in ("created_by", "updated_by", "flowcell_type", "reagent_cycles_kit") and isinstance(value, str):
+            value = value[:256]
         object.__setattr__(self, name, value)
 
     def add_sample(self, sample: Sample) -> None:

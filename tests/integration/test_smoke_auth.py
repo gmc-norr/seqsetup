@@ -45,19 +45,48 @@ class TestLogin:
 
 class TestLogout:
     def test_logout_redirects_to_login(self, logged_in_client):
-        response = logged_in_client.get(
+        response = logged_in_client.post(
             "/logout",
+            headers={"Origin": "http://testserver"},
             follow_redirects=False,
         )
         assert response.status_code == 303
         assert response.headers["location"] == "/login"
 
     def test_after_logout_protected_routes_redirect_to_login(self, logged_in_client):
-        logged_in_client.get("/logout", follow_redirects=False)
+        logged_in_client.post(
+            "/logout",
+            headers={"Origin": "http://testserver"},
+            follow_redirects=False,
+        )
         response = logged_in_client.get("/", follow_redirects=False)
         # Old TestClient retains the cookie; should now be cleared by logout.
         assert response.status_code in (302, 303)
         assert "/login" in response.headers.get("location", "")
+
+    def test_logout_get_is_rejected(self, logged_in_client):
+        """GET /logout must not work — a CSRF-actuatable GET logout would
+        let any same-site context log the user out without consent."""
+        response = logged_in_client.get("/logout", follow_redirects=False)
+        # FastAPI returns 405 Method Not Allowed for unmapped methods.
+        assert response.status_code == 405
+
+    def test_logout_post_without_origin_is_rejected(self, logged_in_client):
+        """POST /logout without an Origin header is refused by the CSRF
+        middleware — same defense that protects every other state-changing
+        endpoint."""
+        response = logged_in_client.post("/logout", follow_redirects=False)
+        assert response.status_code == 403
+
+    def test_logout_post_with_foreign_origin_is_rejected(self, logged_in_client):
+        """A cross-site Origin header is refused — exact defense-in-depth
+        the migration to POST was added to provide."""
+        response = logged_in_client.post(
+            "/logout",
+            headers={"Origin": "http://attacker.example"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
 
 
 class TestAlreadyLoggedInRedirect:

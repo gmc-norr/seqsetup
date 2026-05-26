@@ -75,6 +75,14 @@
         </div>
 
         <div id="validation-tab-content" class="mt-4">
+            {# `|safe` is used here because each *_html context value is itself
+               server-rendered Jinja output (see routes/validation.py), already
+               passed through the autoescaped environment. The wrapping
+               templates contain only validation results derived from the run's
+               own model fields — there is no path for raw user-controlled
+               markup to reach this slot. If a future change passes
+               user-controlled HTML through one of these dicts, this becomes
+               an XSS sink: switch to autoescape or `escape_html_attr` first. #}
             <div x-show="activeTab === 'issues'">{{ issues_html|safe }}</div>
             <div x-show="activeTab === 'heatmaps'" x-cloak>{{ heatmaps_html|safe }}</div>
             <div x-show="activeTab === 'colorbalance'" x-cloak>{{ color_balance_html|safe }}</div>

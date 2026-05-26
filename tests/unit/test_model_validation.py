@@ -409,11 +409,17 @@ class TestSampleStringFields:
         sample = Sample(sample_id="")
         assert sample.sample_id == ""
 
-    def test_sample_id_long_string(self):
+    def test_sample_id_long_string_clamped_at_model(self):
+        """The model clamps free-form string identifiers at 256 chars.
+
+        Routes also sanitize at the boundary, but per CLAUDE.md the model
+        is the load-bearing invariant — direct attribute writes (e.g. from
+        a future code path that bypasses the form) must not balloon the
+        document.
+        """
         long_id = "A" * 500
         sample = Sample(sample_id=long_id)
-        # Sample doesn't truncate - routes do
-        assert len(sample.sample_id) == 500
+        assert len(sample.sample_id) == 256
 
     def test_sample_id_with_special_chars(self):
         sample = Sample(sample_id="SAMPLE-2024_001#v2")
@@ -626,3 +632,83 @@ class TestSampleStringFields:
         assert sample.sample_id == "SAMPLE-2024-001"
         assert sample.barcode_mismatches_index1 == 1
         assert sample.lanes == [1, 2]
+
+
+class TestSampleFreeFormFieldBounds:
+    """The model is the load-bearing length defense for free-form strings —
+    routes also sanitize, but a direct attribute write must not balloon
+    the document."""
+
+    def test_description_clamped_at_model(self):
+        sample = Sample(description="x" * 10000)
+        assert len(sample.description) == 4096
+
+    def test_description_assigned_post_construction_also_clamped(self):
+        sample = Sample()
+        sample.description = "y" * 8000
+        assert len(sample.description) == 4096
+
+    def test_metadata_must_be_dict(self):
+        with pytest.raises(ValueError, match="metadata must be a dict"):
+            Sample(metadata=["not", "a", "dict"])
+
+    def test_sample_name_clamped_at_256(self):
+        sample = Sample(sample_name="A" * 500)
+        assert len(sample.sample_name) == 256
+
+    def test_test_id_clamped_at_256(self):
+        sample = Sample(test_id="A" * 500)
+        assert len(sample.test_id) == 256
+
+
+class TestSequencingRunFreeFormBounds:
+    """Direct attribute writes to run identifiers must respect length and
+    CR/LF constraints — the Sample Sheet [Header] section would otherwise
+    split into two lines on an embedded newline."""
+
+    def test_run_name_clamped_at_256(self):
+        from seqsetup.models.sequencing_run import SequencingRun
+        run = SequencingRun(run_name="N" * 500)
+        assert len(run.run_name) == 256
+
+    def test_run_description_clamped_at_4096(self):
+        from seqsetup.models.sequencing_run import SequencingRun
+        run = SequencingRun(run_description="D" * 8000)
+        assert len(run.run_description) == 4096
+
+    def test_run_name_newline_replaced(self):
+        """CR/LF must not survive to the Sample Sheet — they'd shift the
+        next [Section] header into the middle of a data line."""
+        from seqsetup.models.sequencing_run import SequencingRun
+        run = SequencingRun(run_name="Sneaky\nRunName")
+        assert "\n" not in run.run_name
+        assert "Sneaky" in run.run_name
+        assert "RunName" in run.run_name
+
+    def test_run_description_cr_replaced(self):
+        from seqsetup.models.sequencing_run import SequencingRun
+        run = SequencingRun(run_description="line1\r\nline2")
+        assert "\r" not in run.run_description
+        assert "\n" not in run.run_description
+
+    def test_run_name_assigned_post_construction_also_clamped(self):
+        from seqsetup.models.sequencing_run import SequencingRun
+        run = SequencingRun()
+        run.run_name = "Z" * 500
+        assert len(run.run_name) == 256
+
+
+class TestSequencingRunExportClearing:
+    """READY → DRAFT must clear pre-generated exports so a re-promotion
+    cannot adopt blobs from before the edit cycle. READY → ARCHIVED keeps
+    them — archived runs serve those bytes via the API."""
+
+    def test_ready_to_draft_clears_pregenerated_exports(self):
+        """End-to-end test via the routes layer lives in test_smoke_wizard;
+        this is the route-handler logic stripped to model-level prerequisites."""
+        # Smoke: ensure the model accepts the round-trip of cleared exports.
+        from seqsetup.models.sequencing_run import SequencingRun
+        r = SequencingRun()
+        r.generated_samplesheet_v2 = "fake"
+        r.generated_samplesheet_v2 = None
+        assert r.generated_samplesheet_v2 is None

@@ -35,6 +35,13 @@ _MAX_PAGE_SIZE = 200
 _SWAGGER_VERSION = "5.17.14"
 _SWAGGER_BASE = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{_SWAGGER_VERSION}"
 
+# SRI hashes pinned for Swagger UI 5.17.14. If a future version-bump replaces
+# _SWAGGER_VERSION, regenerate these (e.g.
+# ``curl -sL $URL | openssl dgst -sha384 -binary | openssl base64 -A``)
+# or the browser will refuse to execute the script.
+_SWAGGER_CSS_SRI = "sha384-wxLW6kwyHktdDGr6Pv1zgm/VGJh99lfUbzSn6HNHBENZlCN7W602k9VkGdxuFvPn"
+_SWAGGER_JS_SRI = "sha384-wmyclcVGX/WhUkdkATwhaK1X1JtiNrr2EoYJ+diV3vj4v6OC5yCeSu+yW13SYJep"
+
 _SWAGGER_CSP = (
     "default-src 'none'; "
     f"script-src 'self' {_SWAGGER_BASE}; "
@@ -53,7 +60,8 @@ _SWAGGER_HTML = f"""<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SeqSetup API Documentation</title>
-    <link rel="stylesheet" type="text/css" href="{_SWAGGER_BASE}/swagger-ui.css">
+    <link rel="stylesheet" type="text/css" href="{_SWAGGER_BASE}/swagger-ui.css"
+          integrity="{_SWAGGER_CSS_SRI}" crossorigin="anonymous">
     <style>
         html {{ box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }}
         *, *:before, *:after {{ box-sizing: inherit; }}
@@ -65,7 +73,8 @@ _SWAGGER_HTML = f"""<!DOCTYPE html>
 </head>
 <body>
     <div id="swagger-ui"></div>
-    <script src="{_SWAGGER_BASE}/swagger-ui-bundle.js"></script>
+    <script src="{_SWAGGER_BASE}/swagger-ui-bundle.js"
+            integrity="{_SWAGGER_JS_SRI}" crossorigin="anonymous"></script>
     <script src="/api/docs/init.js"></script>
 </body>
 </html>"""

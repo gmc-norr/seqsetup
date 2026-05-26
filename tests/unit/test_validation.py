@@ -6,6 +6,7 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (
     InstrumentPlatform,
+    RunCycles,
     SequencingRun,
 )
 from seqsetup.services.validation import ValidationService
@@ -1392,3 +1393,90 @@ class TestValidationCache:
 
         collisions = ValidationService.validate_index_collisions(run)
         assert len(collisions) == 0
+
+
+class TestRunCyclesVsIndexLengthUsesEffectiveLength:
+    """The cycle validator must compare against the kit-effective index
+    length, not the raw stored sequence length. A 10bp sequence whose
+    kit sets ``default_index1_cycles=8`` demuxes at 8 cycles — the
+    Sample Sheet exports ``I8N2`` against 8 run cycles, which is valid.
+    Comparing the raw 10bp length would block legitimate clinical
+    configurations from going Ready.
+    """
+
+    def _build_run(self, *, index_cycles: int, seq_len: int, eff_cycles: int):
+        from seqsetup.models.index import Index, IndexPair, IndexType
+        run = SequencingRun(
+            run_name="EffLen",
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="1.5B",
+            run_cycles=RunCycles(151, 151, index_cycles, index_cycles),
+        )
+        seq = "A" * seq_len
+        pair = IndexPair(
+            id="p1", name="p1",
+            index1=Index(name="i7", sequence=seq, index_type=IndexType.I7),
+            index2=Index(name="i5", sequence=seq, index_type=IndexType.I5),
+        )
+        s = Sample(
+            sample_id="S1",
+            lanes=[1],
+            index_pair=pair,
+            index1_cycles=eff_cycles,
+            index2_cycles=eff_cycles,
+        )
+        run.add_sample(s)
+        return run
+
+    def test_long_seq_short_effective_no_error(self):
+        """10bp sequence + index1_cycles=8 + run.index1_cycles=8 → no error."""
+        from seqsetup.services.validation import ValidationService
+        run = self._build_run(index_cycles=8, seq_len=10, eff_cycles=8)
+        errors = ValidationService._validate_run_cycles_vs_index_length(run)
+        assert errors == [], f"Effective length should suppress error; got {errors}"
+
+    def test_effective_exceeds_run_cycles_errors(self):
+        """Effective length 12 against run.index1_cycles=8 → error reports 12bp, not raw length."""
+        from seqsetup.services.validation import ValidationService
+        run = self._build_run(index_cycles=8, seq_len=10, eff_cycles=12)
+        errors = ValidationService._validate_run_cycles_vs_index_length(run)
+        assert len(errors) == 2  # i7 + i5
+        # Error message must use the effective length, not the stored sequence length.
+        assert any("12bp" in e.message for e in errors)
+        assert not any("10bp" in e.message for e in errors)
+
+
+class TestIndexLengthConsistencyUsesEffectiveLength:
+    """Lane-consistency check compares effective lengths so two samples
+    sharing a kit with `default_index1_cycles=8` are consistent even if
+    their raw sequence lengths differ (e.g. one 8bp, one 10bp pad)."""
+
+    def test_same_effective_length_is_consistent(self):
+        from seqsetup.models.index import Index, IndexPair, IndexType
+        from seqsetup.services.validation import ValidationService
+        run = SequencingRun(
+            run_name="Mixed",
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="1.5B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+        )
+        pair_a = IndexPair(
+            id="pa", name="pa",
+            index1=Index(name="i7a", sequence="A" * 8, index_type=IndexType.I7),
+            index2=Index(name="i5a", sequence="C" * 8, index_type=IndexType.I5),
+        )
+        pair_b = IndexPair(
+            id="pb", name="pb",
+            index1=Index(name="i7b", sequence="A" * 10, index_type=IndexType.I7),
+            index2=Index(name="i5b", sequence="C" * 10, index_type=IndexType.I5),
+        )
+        run.add_sample(Sample(
+            sample_id="S1", lanes=[1], index_pair=pair_a,
+            index1_cycles=8, index2_cycles=8,
+        ))
+        run.add_sample(Sample(
+            sample_id="S2", lanes=[1], index_pair=pair_b,
+            index1_cycles=8, index2_cycles=8,
+        ))
+        errors = ValidationService._validate_index_length_consistency(run, [1])
+        assert errors == []
