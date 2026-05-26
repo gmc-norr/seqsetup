@@ -119,9 +119,15 @@ def index_kits_page(
     )
 
 
-@router.get("/import", response_class=HTMLResponse)
+@router.get("/import", response_class=HTMLResponse, dependencies=[Depends(require_admin_dep)])
 def index_kit_import_page(request: Request) -> Response:
-    """GET /indexes/import — import form page."""
+    """GET /indexes/import — import form page (admin-only).
+
+    The corresponding ``POST /indexes/upload`` is already admin-gated, but
+    showing the form to non-admins would invite them to fill it in and
+    bounce off the 403 at submit — inconsistent with the documented
+    "index-kit upload requires admin" invariant.
+    """
     return render(request, "indexes/import.html", {"error_message": ""})
 
 
@@ -151,12 +157,24 @@ async def upload_index_kit(
         return _error_fragment(request, "Please select a file to import.")
 
     MAX_INDEX_FILE_SIZE = 1 * 1024 * 1024  # 1 MB DoS guard
-    file_content = await index_file.read()
-    if len(file_content) > MAX_INDEX_FILE_SIZE:
-        return _error_fragment(
-            request,
-            f"File too large. Maximum size is {MAX_INDEX_FILE_SIZE // 1024} KB.",
-        )
+    # Stream-read in chunks so a multi-GB POST can't exhaust memory before
+    # the size check fires. ``UploadFile.read()`` with no argument buffers
+    # the entire body first; we instead pull bounded chunks until we've
+    # exceeded the cap (and short-circuit) or hit EOF.
+    chunks: list[bytes] = []
+    bytes_so_far = 0
+    while True:
+        chunk = await index_file.read(64 * 1024)
+        if not chunk:
+            break
+        bytes_so_far += len(chunk)
+        if bytes_so_far > MAX_INDEX_FILE_SIZE:
+            return _error_fragment(
+                request,
+                f"File too large. Maximum size is {MAX_INDEX_FILE_SIZE // 1024} KB.",
+            )
+        chunks.append(chunk)
+    file_content = b"".join(chunks)
 
     if reason := _reject_binary_upload(file_content):
         audit(

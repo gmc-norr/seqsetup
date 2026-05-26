@@ -9,6 +9,7 @@ To sync instruments from GitHub, configure the repository in Admin > Profiles.
 
 import logging
 import os
+import threading
 from enum import Enum
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -32,6 +33,12 @@ class ChemistryType(Enum):
 # Module-level reference to instrument definition repository (set at app startup)
 _instrument_definition_repo: Optional["InstrumentDefinitionRepository"] = None
 _synced_instruments_cache: Optional[dict] = None  # Cache synced instruments
+# Starlette runs sync handlers in a threadpool; the cache is read by
+# validation paths and mutated by the admin / cron-sync paths. Without this
+# lock the swap window (assignment of a freshly-built dict) can briefly
+# expose ``None`` to a concurrent reader, or two readers can both rebuild
+# in parallel.
+_synced_instruments_lock = threading.Lock()
 
 
 def set_instrument_definition_repo(repo: "InstrumentDefinitionRepository") -> None:
@@ -40,8 +47,9 @@ def set_instrument_definition_repo(repo: "InstrumentDefinitionRepository") -> No
     Call this at app startup to enable synced instrument support.
     """
     global _instrument_definition_repo, _synced_instruments_cache
-    _instrument_definition_repo = repo
-    _synced_instruments_cache = None  # Clear cache when repo changes
+    with _synced_instruments_lock:
+        _instrument_definition_repo = repo
+        _synced_instruments_cache = None  # Clear cache when repo changes
 
 
 def clear_synced_instruments_cache() -> None:
@@ -50,7 +58,8 @@ def clear_synced_instruments_cache() -> None:
     Call this after a sync operation to pick up new instruments.
     """
     global _synced_instruments_cache
-    _synced_instruments_cache = None
+    with _synced_instruments_lock:
+        _synced_instruments_cache = None
 
 
 def _get_synced_instruments() -> dict:
@@ -60,24 +69,25 @@ def _get_synced_instruments() -> dict:
     """
     global _synced_instruments_cache
 
-    if _synced_instruments_cache is not None:
-        return _synced_instruments_cache
-
-    if _instrument_definition_repo is None:
-        return {}
-
-    try:
-        instruments = _instrument_definition_repo.list_all()
-        if instruments:
-            _synced_instruments_cache = {
-                inst.name: inst for inst in instruments
-            }
+    with _synced_instruments_lock:
+        if _synced_instruments_cache is not None:
             return _synced_instruments_cache
-    except Exception:
-        # Silently fall back to YAML if DB unavailable
-        pass
 
-    return {}
+        if _instrument_definition_repo is None:
+            return {}
+
+        try:
+            instruments = _instrument_definition_repo.list_all()
+            if instruments:
+                _synced_instruments_cache = {
+                    inst.name: inst for inst in instruments
+                }
+                return _synced_instruments_cache
+        except Exception:
+            # Silently fall back to YAML if DB unavailable
+            pass
+
+        return {}
 
 
 def has_synced_instruments() -> bool:

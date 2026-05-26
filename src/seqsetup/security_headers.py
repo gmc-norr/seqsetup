@@ -8,15 +8,43 @@ Sets headers that defend against common browser-side attacks:
 - Strict-Transport-Security — pins HTTPS (only when served over TLS)
 - Cross-Origin-Opener-Policy: same-origin — isolates browsing context
 - Cross-Origin-Resource-Policy: same-origin — restricts cross-origin loads
+- Content-Security-Policy — defense-in-depth against XSS
 
-These cover the audit's H5 finding without being intrusive to existing
-in-app behaviour (no Content-Security-Policy added here — that would
-require a separate inventory of inline-script use in components/).
+The CSP allows scripts only from the same origin (no remote CDNs, no
+inline ``<script>`` blocks), forbids ``<object>``/``<embed>``/``<applet>``,
+restricts ``<base>``, forbids framing entirely (in addition to the legacy
+XFO header), and restricts form submission to the same origin. Inline
+styles are permitted because Tailwind utilities compile to a same-origin
+stylesheet but a few component templates rely on ``style=`` attributes.
+
+``'unsafe-eval'`` is regrettably required for Alpine.js: the framework
+compiles directives like ``x-data``, ``@click``, ``x-show`` via
+``new Function()`` and silently breaks every interactive component
+without it. This is documented behavior of Alpine v3 — a CSP-only build
+exists but requires every directive to be rewritten as imported JS, an
+order-of-magnitude refactor. The exposure ``'unsafe-eval'`` adds to
+``script-src`` is bounded by the rest of the policy (only same-origin
+scripts can call ``eval``-equivalents at all) and is the standard
+trade-off accepted by every Alpine-based app.
 """
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+
+
+_CSP = "; ".join((
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+))
 
 
 _SECURITY_HEADERS = {
@@ -25,6 +53,7 @@ _SECURITY_HEADERS = {
     "Referrer-Policy": "same-origin",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
+    "Content-Security-Policy": _CSP,
 }
 
 

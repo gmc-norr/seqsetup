@@ -181,25 +181,43 @@ class TestApiReadyOnly:
         assert "[Header]" in response.text
 
 
-class TestSwaggerPublic:
-    """The auto-generated /api/docs and /api/openapi.json are intentionally
-    reachable without a token — pin this as a contract so a future "harden
-    everything" PR doesn't silently break the published API surface."""
+class TestSwaggerGated:
+    """``/api/docs`` and ``/api/openapi.json`` are Bearer-token gated.
 
-    def test_openapi_json_reachable_without_token(self, client):
+    Unauthenticated visitors should see the same 401 they get for every
+    other API surface — disclosing the endpoint schema anonymously is
+    unnecessary for a clinical-tenant deployment. The contract pinned
+    below is "must require a token", not "must be public" (which was the
+    earlier wording the audit flagged)."""
+
+    def test_openapi_json_requires_token(self, client):
         response = client.get("/api/openapi.json")
+        assert response.status_code == 401
+
+    def test_openapi_json_reachable_with_token(self, client, fresh_app):
+        _app, ctx, _db = fresh_app
+        plaintext = _seed_api_token(ctx)
+        response = client.get(
+            "/api/openapi.json",
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
         assert response.status_code == 200
         spec = response.json()
         assert spec["info"]["title"] == "SeqSetup API"
         assert "/runs" in spec["paths"]
 
-    def test_docs_page_reachable_without_token(self, client):
+    def test_docs_page_requires_token(self, client):
         response = client.get("/api/docs")
-        assert response.status_code == 200
+        assert response.status_code == 401
 
-    def test_docs_page_has_csp_header_and_no_inline_script(self, client):
+    def test_docs_page_has_csp_header_and_no_inline_script(self, client, fresh_app):
         """Audit C5: the Swagger UI page must have a CSP and no inline script."""
-        response = client.get("/api/docs")
+        _app, ctx, _db = fresh_app
+        plaintext = _seed_api_token(ctx)
+        response = client.get(
+            "/api/docs",
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
         assert response.status_code == 200
         csp = response.headers.get("content-security-policy", "")
         assert csp, "Swagger UI page must set Content-Security-Policy"

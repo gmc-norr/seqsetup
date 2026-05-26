@@ -6,6 +6,7 @@ declared here are relative — e.g. ``@api.get("/runs")`` is reachable at
 ``/api/runs``.
 """
 
+import json
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, status
@@ -124,9 +125,11 @@ def create_api_app(ctx: AppContext) -> FastAPI:
             "drafts are never returned via the API."
         ),
         version="2.0",
-        openapi_url="/openapi.json",
-        # FastAPI's built-in /docs loads Swagger from cdn.jsdelivr.net with inline
-        # script — we replace it with a same-origin, CSP-hardened page below.
+        # Disable FastAPI's public openapi.json + /docs. We re-serve both
+        # behind Bearer auth below — disclosing the API schema (endpoint
+        # names, parameter shapes, status codes) anonymously is unnecessary
+        # for a clinical-tenant deployment.
+        openapi_url=None,
         docs_url=None,
         redoc_url=None,
     )
@@ -134,12 +137,28 @@ def create_api_app(ctx: AppContext) -> FastAPI:
     bearer_auth = make_bearer_auth(ctx)
     AuthToken = Annotated[ApiToken, Depends(bearer_auth)]
 
+    @api.get("/openapi.json", include_in_schema=False)
+    def openapi_schema(_token: AuthToken) -> Response:
+        """OpenAPI schema, Bearer-token gated.
+
+        FastAPI's default ``/openapi.json`` is anonymous. For a clinical
+        deployment we treat schema disclosure as a low-value but
+        unnecessary exposure and gate it behind the same Bearer auth that
+        protects every other API surface.
+        """
+        return Response(
+            content=json.dumps(api.openapi()),
+            media_type="application/json",
+        )
+
     @api.get("/docs", include_in_schema=False)
-    def swagger_ui_html() -> Response:
+    def swagger_ui_html(_token: AuthToken) -> Response:
         """Serve a same-origin Swagger UI page with a strict CSP.
 
         Replaces FastAPI's built-in /docs (which loads from cdn.jsdelivr.net
-        with inline script and no CSP — see audit finding C5).
+        with inline script and no CSP — see audit finding C5). Also
+        Bearer-token gated so an unauthenticated visitor doesn't see the
+        full endpoint surface rendered interactively.
         """
         return Response(
             content=_SWAGGER_HTML,
@@ -148,7 +167,7 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         )
 
     @api.get("/docs/init.js", include_in_schema=False)
-    def swagger_ui_init_js() -> Response:
+    def swagger_ui_init_js(_token: AuthToken) -> Response:
         """Same-origin Swagger UI init script (no inline JS in the page)."""
         return Response(content=_SWAGGER_INIT_JS, media_type="application/javascript")
 

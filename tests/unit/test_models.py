@@ -614,12 +614,15 @@ class TestSampleIndexMutations:
         assert run.status == RunStatus.ARCHIVED
 
     def test_from_dict_unknown_status_falls_back_safely(self):
-        """An unknown status string must not crash from_dict — losing access to
-        archived runs because of a renamed enum is a clinical traceability bug.
-        Unknown values map to ARCHIVED (the terminal, read-only state)."""
+        """An unknown status string must not crash from_dict — losing access
+        to runs because of a renamed enum is a clinical traceability bug.
+        Unknown values map to DRAFT, which keeps the run editable and *out*
+        of the API + export pipeline (which only expose Ready/Archived)
+        until an admin re-examines it. ARCHIVED would silently elevate a
+        corrupted record into the API surface."""
         data = {"id": "test-id", "status": "renamed_in_future_version"}
         run = SequencingRun.from_dict(data)
-        assert run.status == RunStatus.ARCHIVED
+        assert run.status == RunStatus.DRAFT
 
     def test_from_dict_unknown_platform_falls_back_safely(self):
         """An unknown instrument_platform must not crash from_dict."""

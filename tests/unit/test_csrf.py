@@ -54,9 +54,11 @@ class TestCheckOriginAgainstHost:
         assert ok is False
         assert "Missing Origin" in reason
 
-    def test_api_routes_exempt(self):
+    def test_api_routes_exempt_when_bearer_present(self):
         """Bearer-token API surface isn't cookie-driven; non-browser clients
-        legitimately omit Origin."""
+        legitimately omit Origin. Exemption is gated on the Authorization
+        header so a future ``/api/*`` route that ever consults the session
+        cookie without a Bearer header still gets CSRF protection."""
         ok, _ = check_origin_against_host(
             method="POST",
             path="/api/runs/abc/import",
@@ -64,8 +66,25 @@ class TestCheckOriginAgainstHost:
             host_header="seqsetup.example.com",
             request_scheme="https",
             trusted_origins=set(),
+            authorization_header="Bearer some-token",
         )
         assert ok is True
+
+    def test_api_routes_not_exempt_without_bearer(self):
+        """An ``/api/*`` request without a Bearer token doesn't get the
+        cookie-driven CSRF exemption — falls through to the standard
+        Origin/Host check like any other state-changing request."""
+        ok, reason = check_origin_against_host(
+            method="POST",
+            path="/api/runs/abc/import",
+            origin_header="",
+            host_header="seqsetup.example.com",
+            request_scheme="https",
+            trusted_origins=set(),
+            authorization_header="",
+        )
+        assert ok is False
+        assert "Missing Origin" in reason
 
     def test_trusted_origin_allowed(self):
         ok, _ = check_origin_against_host(

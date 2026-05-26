@@ -65,6 +65,7 @@ def check_origin_against_host(
     host_header: str,
     request_scheme: str,
     trusted_origins: set[str],
+    authorization_header: str = "",
 ) -> tuple[bool, str]:
     """Pure-function core: should this request be allowed?
 
@@ -73,8 +74,13 @@ def check_origin_against_host(
     if method not in _STATE_CHANGING_METHODS:
         return True, ""
 
-    # API surface is Bearer-token authenticated and not cookie-driven.
-    if path.startswith("/api/"):
+    # API surface is Bearer-token authenticated and not cookie-driven, so
+    # CSRF doesn't apply when a Bearer token is being presented. We exempt
+    # ``/api/*`` only in that case — a future ``/api/*`` route that ever
+    # touched the session cookie without a Bearer header would otherwise
+    # silently inherit the bypass. With this gate, such a route would be
+    # protected by the standard Origin check.
+    if path.startswith("/api/") and authorization_header.lower().startswith("bearer "):
         return True, ""
 
     if not origin_header:
@@ -115,6 +121,7 @@ class OriginCheckMiddleware(BaseHTTPMiddleware):
             host_header=request.headers.get("host", ""),
             request_scheme=request.url.scheme,
             trusted_origins=self._trusted_origins,
+            authorization_header=request.headers.get("authorization", ""),
         )
         if not allowed:
             logger.warning(

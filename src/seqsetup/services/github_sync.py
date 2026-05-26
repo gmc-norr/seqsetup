@@ -29,13 +29,66 @@ from .validation import clear_validation_cache
 logger = logging.getLogger(__name__)
 
 
-# Hostnames the file-fetch path is allowed to talk to. raw.githubusercontent.com
-# is what api.github.com returns for public repo files; the *.githubusercontent.com
-# wildcard also covers some redirect cases.
-_GITHUB_CONTENT_HOSTS = (
-    "raw.githubusercontent.com",
-    ".githubusercontent.com",  # suffix-match for any subdomain
-)
+class GitHubSyncError(Exception):
+    """Error during GitHub sync operation."""
+    pass
+
+
+# Hostnames the file-fetch path is allowed to talk to. Strict exact-match
+# allowlist: ``raw.githubusercontent.com`` for repo file content,
+# ``api.github.com`` for directory listings. We deliberately do NOT allow a
+# ``*.githubusercontent.com`` suffix-match: that would tolerate
+# ``evil.githubusercontent.com`` if GitHub ever introduces user-controlled
+# subdomain space (Pages did, historically). Redirects are forbidden by
+# ``_GITHUB_OPENER`` below, so we don't need a wildcard to follow them.
+_GITHUB_CONTENT_HOSTS = ("raw.githubusercontent.com",)
+_GITHUB_API_HOST = "api.github.com"
+
+# Per-fetch response size cap. YAML config files are kilobytes in practice;
+# a multi-MB body suggests a malicious payload (anchor amplification before
+# parse, or a redirected target). 10 MB matches the LIMS-API cap shape.
+_MAX_GITHUB_RESPONSE_SIZE = 10 * 1024 * 1024
+
+
+class _NoRedirectHTTPSHandler(urllib.request.HTTPSHandler):
+    """HTTPS handler that refuses 3xx redirects.
+
+    Following redirects would re-resolve the URL through ``urllib`` and
+    bypass ``_validate_github_content_host`` on subsequent hops. We validate
+    only the initial URL; refusing redirects keeps that single validation
+    load-bearing.
+    """
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Raise on any 3xx response instead of following it."""
+
+    def http_error_301(self, req, fp, code, msg, headers):  # noqa: D401
+        raise GitHubSyncError(
+            f"Refusing to follow {code} redirect from {req.full_url!r}: "
+            "GitHub-content fetches must not redirect off-host."
+        )
+
+    http_error_302 = http_error_301
+    http_error_303 = http_error_301
+    http_error_307 = http_error_301
+    http_error_308 = http_error_301
+
+
+def _build_github_opener() -> urllib.request.OpenerDirector:
+    """Build a urllib opener with HTTPS only and no redirect handling.
+
+    Strips the default opener's ``HTTPHandler``, ``FileHandler``,
+    ``FTPHandler`` and ``HTTPRedirectHandler`` so a malicious URL or
+    redirect chain cannot escape the HTTPS+allowlist envelope.
+    """
+    opener = urllib.request.OpenerDirector()
+    opener.add_handler(_NoRedirectHTTPSHandler())
+    opener.add_handler(_NoRedirectHandler())
+    return opener
+
+
+_GITHUB_OPENER = _build_github_opener()
 
 
 def _validate_github_content_host(url: str) -> None:
@@ -48,21 +101,42 @@ def _validate_github_content_host(url: str) -> None:
     host = (parsed.hostname or "").lower()
     if not host:
         raise GitHubSyncError(f"Refused to fetch GitHub content with empty host: {url!r}")
-    for allowed in _GITHUB_CONTENT_HOSTS:
-        if allowed.startswith("."):
-            if host.endswith(allowed) and len(host) > len(allowed):
-                return
-        elif host == allowed:
-            return
+    if host in _GITHUB_CONTENT_HOSTS:
+        return
     raise GitHubSyncError(
         f"Refused to fetch from non-GitHub host {host!r}. "
         f"Expected one of: {', '.join(_GITHUB_CONTENT_HOSTS)}"
     )
 
 
-class GitHubSyncError(Exception):
-    """Error during GitHub sync operation."""
-    pass
+def _validate_github_api_host(url: str) -> None:
+    """Raise GitHubSyncError if ``url`` doesn't target ``api.github.com``."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise GitHubSyncError(
+            f"Refused to call GitHub API over non-HTTPS scheme: {parsed.scheme!r}"
+        )
+    host = (parsed.hostname or "").lower()
+    if host != _GITHUB_API_HOST:
+        raise GitHubSyncError(
+            f"Refused to call non-GitHub API host {host!r}. Expected: {_GITHUB_API_HOST}"
+        )
+
+
+def _read_bounded(response, label: str) -> bytes:
+    """Read at most ``_MAX_GITHUB_RESPONSE_SIZE`` bytes from ``response``.
+
+    The ``read(N + 1)`` pattern lets us detect over-cap without first
+    buffering an unbounded body. Used by the directory-listing and file-
+    fetch helpers so a malicious or compromised endpoint cannot OOM the
+    process with an arbitrarily large response.
+    """
+    data = response.read(_MAX_GITHUB_RESPONSE_SIZE + 1)
+    if len(data) > _MAX_GITHUB_RESPONSE_SIZE:
+        raise GitHubSyncError(
+            f"GitHub {label} response exceeds {_MAX_GITHUB_RESPONSE_SIZE} bytes"
+        )
+    return data
 
 
 class GitHubSyncService:
@@ -289,6 +363,7 @@ class GitHubSyncService:
         path = path.strip("/")
 
         api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={branch}"
+        _validate_github_api_host(api_url)
 
         try:
             request = urllib.request.Request(
@@ -299,9 +374,12 @@ class GitHubSyncService:
                 },
             )
 
-            ssl_context = ssl.create_default_context()
-            with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
-                data = json.loads(response.read().decode("utf-8"))
+            # ``_GITHUB_OPENER`` is HTTPS-only and refuses 3xx redirects so a
+            # malicious or compromised endpoint cannot steer the request off
+            # the validated host. Size-capped read protects against OOM from
+            # a huge response (anchor-amplification YAML before parse, etc).
+            with _GITHUB_OPENER.open(request, timeout=30) as response:
+                data = json.loads(_read_bounded(response, "API").decode("utf-8"))
 
             # Ensure we have a list
             if isinstance(data, dict):
@@ -331,9 +409,11 @@ class GitHubSyncService:
                 headers={"User-Agent": "SeqSetup-ProfileSync"},
             )
 
-            ssl_context = ssl.create_default_context()
-            with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
-                return response.read().decode("utf-8")
+            # See ``_fetch_directory_contents`` for the opener + size-cap
+            # rationale. Same envelope: no redirects, no non-HTTPS handlers,
+            # bounded read.
+            with _GITHUB_OPENER.open(request, timeout=30) as response:
+                return _read_bounded(response, "file").decode("utf-8")
 
         except urllib.error.HTTPError as e:
             raise GitHubSyncError(f"Failed to fetch file: {e.code} {e.reason}")

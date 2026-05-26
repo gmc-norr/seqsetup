@@ -333,10 +333,15 @@ class SequencingRun:
         except ValueError:
             import logging
             logging.getLogger(__name__).warning(
-                "Unknown RunStatus %r in stored run %r — falling back to ARCHIVED",
+                "Unknown RunStatus %r in stored run %r — falling back to DRAFT",
                 raw_status, data.get("_id") or data.get("id"),
             )
-            status = RunStatus.ARCHIVED
+            # Falling back to DRAFT (not ARCHIVED) keeps the run out of the
+            # JSON API surface (which exposes only Ready + Archived) and out
+            # of the export pipeline until an admin re-examines it. A
+            # corrupted status field should never silently become a clinical
+            # snapshot.
+            status = RunStatus.DRAFT
 
         raw_platform = data.get("instrument_platform", "NovaSeq X Series")
         try:

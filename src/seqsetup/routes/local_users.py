@@ -39,6 +39,9 @@ router = APIRouter(
 )
 
 
+_USERNAME_RE = r"^[A-Za-z0-9._@\-]{1,128}$"
+
+
 class CreateUserForm(BaseModel):
     """Create-local-user form.
 
@@ -46,9 +49,21 @@ class CreateUserForm(BaseModel):
     set_password() rejects weak passwords; we let an empty password
     fail-fast at the form-validation boundary).
 
+    ``username`` is also character-restricted: it appears as a URL path
+    parameter in ``DELETE /admin/users/{username}`` and as an HTML ``id``
+    attribute (``user-row-{{ user.username }}``). A username containing
+    ``/`` would make the row undeletable via the UI; HTML metacharacters
+    would couple the form value to template safety. Pinning to
+    ``[A-Za-z0-9._@-]`` (the common admin-username alphabet) eliminates
+    that class of problem at the form-validation boundary.
+
     role: Pydantic rejects unknown enum values automatically (422).
     """
-    username: Annotated[str, BeforeValidator(strip_and_truncate(256)), Field(min_length=1)]
+    username: Annotated[
+        str,
+        BeforeValidator(strip_and_truncate(128)),
+        Field(min_length=1, pattern=_USERNAME_RE),
+    ]
     display_name: Annotated[str, BeforeValidator(strip_and_truncate(256)), Field(min_length=1)]
     email: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
     role: UserRole = UserRole.STANDARD

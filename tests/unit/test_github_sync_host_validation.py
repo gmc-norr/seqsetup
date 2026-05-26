@@ -20,10 +20,20 @@ class TestValidateGithubContentHost:
             "https://raw.githubusercontent.com/owner/repo/main/profiles/x.yaml"
         )
 
-    def test_subdomain_of_githubusercontent_allowed(self):
-        _validate_github_content_host(
-            "https://media.githubusercontent.com/some/path.yaml"
-        )
+    def test_other_githubusercontent_subdomain_rejected(self):
+        """Only ``raw.githubusercontent.com`` is allowed for content fetches.
+
+        A wildcard ``*.githubusercontent.com`` rule would tolerate any
+        subdomain GitHub introduces in the future (Pages did, historically,
+        with user-controlled subdomain space). Strict exact-match
+        eliminates that class of regression — redirects are forbidden by
+        the opener, so we don't need the wildcard to follow off-host
+        redirect chains.
+        """
+        with pytest.raises(GitHubSyncError, match="Refused to fetch"):
+            _validate_github_content_host(
+                "https://media.githubusercontent.com/some/path.yaml"
+            )
 
     def test_arbitrary_host_rejected(self):
         with pytest.raises(GitHubSyncError, match="Refused to fetch"):

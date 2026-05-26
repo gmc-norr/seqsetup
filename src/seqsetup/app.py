@@ -83,11 +83,21 @@ app.add_middleware(AuthMiddleware)
 # previous FastHTML host). Sessions from the old host can't be read by the
 # new host and vice-versa — operators upgrading from a FastHTML deployment
 # should expect every user to be silently logged out once.
+# Sliding-window session lifetime: 8 hours. Starlette's default is 14 days,
+# which is far too long for a shared clinical workstation — an unattended
+# browser would stay authenticated across multiple shifts. 8 hours matches
+# a typical workday; operators who walk away for lunch will re-auth on
+# return. Override with ``SEQSETUP_SESSION_MAX_AGE_SECONDS`` if needed.
+_SESSION_MAX_AGE = int(
+    os.environ.get("SEQSETUP_SESSION_MAX_AGE_SECONDS", str(8 * 3600))
+)
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=_SESSION_SECRET,
     same_site="strict",
     https_only=_SESS_HTTPS_ONLY,
+    max_age=_SESSION_MAX_AGE,
 )
 app.add_middleware(OriginCheckMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
