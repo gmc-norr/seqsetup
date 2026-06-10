@@ -6,7 +6,25 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from seqsetup.models.sample_api_config import SampleApiConfig
-from seqsetup.services.sample_api import check_connection, SampleApiError
+from seqsetup.services import sample_api as sample_api_module
+from seqsetup.services.sample_api import check_connection, parse_api_samples, SampleApiError
+
+
+class TestParseApiSamplesCap:
+    """The LIMS import parser is an ingest point and must enforce the same
+    per-run sample cap as the paste parser (DoS / 16MB-BSON guard)."""
+
+    def test_exceeding_cap_raises(self, monkeypatch):
+        monkeypatch.setattr(sample_api_module, "MAX_SAMPLES_PER_RUN", 4)
+        data = [{"sample_id": f"S{i}"} for i in range(5)]
+        with pytest.raises(ValueError, match="maximum"):
+            parse_api_samples(data)
+
+    def test_at_cap_succeeds(self, monkeypatch):
+        monkeypatch.setattr(sample_api_module, "MAX_SAMPLES_PER_RUN", 4)
+        data = [{"sample_id": f"S{i}"} for i in range(4)]
+        result = parse_api_samples(data)
+        assert len(result) == 4
 
 
 class TestCheckConnection:

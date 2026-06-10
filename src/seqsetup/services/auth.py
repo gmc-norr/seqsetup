@@ -12,6 +12,23 @@ from ..models.auth_config import AuthConfig, AuthMethod
 from ..models.user import User, UserRole
 
 
+# Sentinel bcrypt hash for timing equalisation. Computed once on first use so
+# an unknown-username login still incurs a bcrypt comparison (no enumeration
+# via response timing). Lazy so module import stays cheap and bcrypt-free.
+_DUMMY_BCRYPT_HASH: Optional[str] = None
+
+
+def _dummy_bcrypt_hash() -> str:
+    global _DUMMY_BCRYPT_HASH
+    if _DUMMY_BCRYPT_HASH is None:
+        import bcrypt
+
+        _DUMMY_BCRYPT_HASH = bcrypt.hashpw(
+            b"seqsetup-timing-sentinel", bcrypt.gensalt(rounds=12)
+        ).decode("utf-8")
+    return _DUMMY_BCRYPT_HASH
+
+
 class AuthenticationError(Exception):
     """Raised when authentication fails."""
 
@@ -143,13 +160,21 @@ class AuthService:
         Raises:
             AuthenticationError: If credentials are invalid
         """
+        # Track whether any real bcrypt comparison ran. If the username is
+        # unknown, we still run one comparison against a sentinel hash before
+        # failing so response timing doesn't reveal account existence (user
+        # enumeration). Mirrors ApiTokenRepository.verify_token's sentinel.
+        did_verify = False
+
         # Try MongoDB users first
         if self._get_local_user_repo:
             try:
                 repo = self._get_local_user_repo()
                 local_user = repo.get_by_username(username)
-                if local_user and local_user.verify_password(password):
-                    return local_user.to_user()
+                if local_user:
+                    did_verify = True
+                    if local_user.verify_password(password):
+                        return local_user.to_user()
             except (ConnectionError, OSError) as e:
                 logger.warning("Local user database unavailable, falling back to YAML auth: %s", e)
             except Exception as e:
@@ -160,24 +185,26 @@ class AuthService:
             users = self._load_users()
         except (FileNotFoundError, ValueError, yaml.YAMLError):
             logger.error("Invalid YAML user configuration in %s", self.config_path)
-            raise AuthenticationError("Invalid username or password")
+            users = {}
 
-        if username not in users:
-            raise AuthenticationError("Invalid username or password")
+        user_data = users.get(username)
+        if user_data is not None:
+            did_verify = True
+            stored_hash = user_data.get("password_hash", "")
+            if self._verify_password(password, stored_hash):
+                return User(
+                    username=username,
+                    display_name=user_data.get("display_name", username),
+                    role=UserRole(user_data.get("role", "standard")),
+                    email=user_data.get("email"),
+                )
 
-        user_data = users[username]
-        stored_hash = user_data.get("password_hash", "")
-
-        # Verify password using bcrypt
-        if not self._verify_password(password, stored_hash):
-            raise AuthenticationError("Invalid username or password")
-
-        return User(
-            username=username,
-            display_name=user_data.get("display_name", username),
-            role=UserRole(user_data.get("role", "standard")),
-            email=user_data.get("email"),
-        )
+        # Authentication failed. If we never ran a real bcrypt comparison
+        # (unknown username on every source), run one against a sentinel hash
+        # so the unknown-user path costs the same as wrong-password.
+        if not did_verify:
+            self._verify_password(password, _dummy_bcrypt_hash())
+        raise AuthenticationError("Invalid username or password")
 
     def _verify_password(self, password: str, stored_hash: str) -> bool:
         """Verify password against stored hash."""

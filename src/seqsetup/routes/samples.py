@@ -15,13 +15,14 @@ from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
 from ..models.sample import Sample
+from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import SequencingRun
 from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
 from ..services.sample_parser import parse_pasted_samples
 from ..templating import render, templates
 from .dependencies import get_ctx, get_editable_run, saving_run
-from .utils import get_username, sanitize_string
+from .utils import UploadTooLargeError, get_username, read_upload_capped, sanitize_string
 
 logger = logging.getLogger(__name__)
 
@@ -231,8 +232,12 @@ async def add_bulk_samples(
 
     sample_file = form.get("sample_file")
     if sample_file and hasattr(sample_file, "read") and sample_file.filename:
-        raw_bytes = await sample_file.read()
-        if len(raw_bytes) > 10 * 1024 * 1024:  # 10 MB limit
+        # Stream-read in bounded chunks so a multi-GB POST can't exhaust
+        # memory before the size check fires (the index-kit upload path uses
+        # the same shared helper).
+        try:
+            raw_bytes = await read_upload_capped(sample_file, 10 * 1024 * 1024)
+        except UploadTooLargeError:
             return Response("File too large (max 10 MB)", status_code=400)
         try:
             content = raw_bytes.decode("utf-8")
@@ -301,6 +306,22 @@ async def add_bulk_samples(
 
             new_samples.append(sample)
             added_count += 1
+
+    # Refuse before mutating if the additions would push the run past the
+    # per-run cap (the model's add_sample backstop would otherwise raise
+    # mid-loop and surface as a 500). Surface a clean banner instead.
+    cap = sequencing_run_module.MAX_SAMPLES_PER_RUN
+    if len(run.samples) + len(new_samples) > cap:
+        return _render_sample_section(
+            run, request, ctx,
+            messages=[{
+                "text": (
+                    f"Bulk import rejected: a run accepts a maximum of {cap} "
+                    f"samples (run already has {len(run.samples)})."
+                ),
+                "kind": "error",
+            }],
+        )
 
     if added_count > 0:
         with saving_run(run, ctx, request):
@@ -492,6 +513,16 @@ async def import_worklist_samples(
 
         new_samples.append(sample)
         added_count += 1
+
+    cap = sequencing_run_module.MAX_SAMPLES_PER_RUN
+    if len(run.samples) + len(new_samples) > cap:
+        return _messages_only(request, [{
+            "text": (
+                f"Worklist import rejected: a run accepts a maximum of {cap} "
+                f"samples (run already has {len(run.samples)})."
+            ),
+            "kind": "error",
+        }])
 
     if added_count > 0:
         with saving_run(run, ctx, request):

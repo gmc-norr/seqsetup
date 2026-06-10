@@ -40,6 +40,55 @@ def group_samples_by_lane(
     return lane_samples
 
 
+def effective_index_read_length(sample: Sample, index_num: int, run=None) -> int:
+    """Number of index cycles actually READ for this sample's i7/i5.
+
+    Demultiplexing matches an index only over the cycles it reads, not the
+    full stored sequence. That count is the sample's effective index length
+    (``index{n}_cycles`` if set, else the sequence length — see
+    ``CycleCalculator._get_effective_index_length``), further bounded by the
+    run's configured index read cycles when a run is supplied. Comparing
+    indexes over MORE bases than this misses collisions between samples whose
+    masked tails differ but whose read cycles are identical.
+
+    Args:
+        sample: Sample whose index is being measured.
+        index_num: 1 for index1 (i7), 2 for index2 (i5).
+        run: Optional SequencingRun; when present, the run's index read
+            cycles further cap the effective length.
+
+    Returns:
+        Effective index read length in cycles.
+    """
+    # Imported lazily to avoid any import-order coupling between the two
+    # services modules (cycle_calculator imports models only, so no cycle).
+    from .cycle_calculator import CycleCalculator
+
+    eff = CycleCalculator._get_effective_index_length(sample, index_num)
+    run_cycles = getattr(run, "run_cycles", None) if run is not None else None
+    if run_cycles is not None:
+        configured = (
+            run_cycles.index1_cycles if index_num == 1 else run_cycles.index2_cycles
+        )
+        if configured is not None:
+            eff = min(eff, configured)
+    return eff
+
+
+def effective_index_sequence(sample: Sample, index_num: int, run=None) -> str:
+    """The sample's i7 (index_num=1) or i5 (2) sequence truncated to the
+    cycles actually read — i.e. the barcode demultiplexing compares.
+
+    Returns "" when the sample has no such index. Truncation is from the
+    start of the stored sequence, matching how ``hamming_distance`` and the
+    OverrideCycles ``I{n}N{mask}`` segment treat the read cycles.
+    """
+    seq = sample.index1_sequence if index_num == 1 else sample.index2_sequence
+    if not seq:
+        return ""
+    return seq[: effective_index_read_length(sample, index_num, run)]
+
+
 def hamming_distance(seq1: str, seq2: str) -> int:
     """Calculate Hamming distance between two sequences.
 

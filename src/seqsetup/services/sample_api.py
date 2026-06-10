@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 from ..models.sample_api_config import SampleApiConfig
+from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
 logger = logging.getLogger(__name__)
 
@@ -644,6 +645,15 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         if "sample_id" not in sample or not sample["sample_id"]:
             rows_missing_sample_id.append(index)
             continue
+
+        if len(results) >= MAX_SAMPLES_PER_RUN:
+            # Same per-run cap the paste parser enforces — refuse an oversized
+            # LIMS worklist rather than building an unbounded list (DoS /
+            # 16MB-BSON guard).
+            raise ValueError(
+                f"Too many samples: a run accepts a maximum of {MAX_SAMPLES_PER_RUN}. "
+                f"Reduce the worklist or split it across runs."
+            )
 
         results.append(sample)
 

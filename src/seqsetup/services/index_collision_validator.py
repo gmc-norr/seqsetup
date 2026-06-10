@@ -1,5 +1,6 @@
 """Index collision detection and distance calculation for sequencing runs."""
 
+import logging
 from collections import defaultdict
 from typing import Optional
 
@@ -7,7 +8,19 @@ from ..data.instruments import get_lanes_for_flowcell
 from ..models.sample import Sample
 from ..models.sequencing_run import SequencingRun
 from ..models.validation import IndexCollision, IndexDistanceMatrix
-from .validation_utils import hamming_distance
+from .validation_utils import effective_index_sequence, hamming_distance
+
+
+logger = logging.getLogger(__name__)
+
+# Upper bound on the per-lane all-vs-all distance MATRIX (heatmap
+# visualisation). The matrix is three n x n structures plus an n x n grid of
+# rendered cells; building it for a lane of thousands of samples would exhaust
+# memory/CPU. Collision DETECTION (validate_index_collisions) is a separate,
+# memory-light O(n^2) scan that always runs — skipping the heatmap above this
+# size does not weaken safety, only the visual aid. A heatmap larger than this
+# is unreadable anyway.
+MAX_HEATMAP_SAMPLES = 200
 
 
 class IndexCollisionValidator:
@@ -138,8 +151,21 @@ class IndexCollisionValidator:
 
         for lane in sorted(lane_samples.keys()):
             samples = lane_samples[lane]
-            if len(samples) >= 2:
-                matrices[lane] = cls._calculate_lane_distances(samples)
+            if len(samples) < 2:
+                continue
+            # Skip the heatmap for very large lanes — the matrix is O(n^2)
+            # memory and unreadable at that size; collision detection still
+            # runs via validate_index_collisions. The bare module global is
+            # read at call time so the cap stays tunable/testable.
+            if len(samples) > MAX_HEATMAP_SAMPLES:
+                logger.warning(
+                    "Skipping index-distance heatmap for lane %s: %d samples "
+                    "exceeds MAX_HEATMAP_SAMPLES (%d). Collisions are still "
+                    "validated; only the visual heatmap is omitted.",
+                    lane, len(samples), MAX_HEATMAP_SAMPLES,
+                )
+                continue
+            matrices[lane] = cls._calculate_lane_distances(samples)
 
         return matrices
 
@@ -210,10 +236,14 @@ class IndexCollisionValidator:
         Returns:
             IndexCollision if collision detected, None otherwise
         """
-        i7_seq1 = sample1.index1_sequence
-        i7_seq2 = sample2.index1_sequence
-        i5_seq1 = sample1.index2_sequence
-        i5_seq2 = sample2.index2_sequence
+        # Compare the indexes over the cycles actually READ at demultiplexing,
+        # not the full stored sequences. Two indexes identical over their read
+        # cycles but differing in a masked tail (OverrideCycles I{n}N{mask})
+        # demultiplex to the same barcode and MUST be flagged as colliding.
+        i7_seq1 = effective_index_sequence(sample1, 1, run)
+        i7_seq2 = effective_index_sequence(sample2, 1, run)
+        i5_seq1 = effective_index_sequence(sample1, 2, run)
+        i5_seq2 = effective_index_sequence(sample2, 2, run)
 
         # Skip if either sample lacks i7 index
         if not i7_seq1 or not i7_seq2:

@@ -69,6 +69,22 @@ class LDAPService:
         value = value.replace("\x00", "\\00")
         return value
 
+    @staticmethod
+    def _escape_dn_value(value: str) -> str:
+        """Escape a value for safe substitution into a DN's RDN (RFC 4514).
+
+        The login username flows into ``user_dn_pattern`` as an RDN value, so
+        DN metacharacters (',', '+', '=', '"', '\\', '<', '>', ';', leading/
+        trailing space, leading '#') must be escaped or a crafted username
+        could relocate/restructure the bind DN (LDAP/DN injection, CWE-90).
+        This is distinct from ``_escape_ldap_filter`` (RFC 4515 *filter*
+        escaping) — using the filter escaper on a DN leaves commas/equals
+        unescaped.
+        """
+        from ldap3.utils.dn import escape_rdn
+
+        return escape_rdn(value)
+
     def __init__(self, ldap_config: LDAPConfig):
         """
         Initialize LDAP service.
@@ -154,14 +170,15 @@ class LDAPService:
         except ImportError:
             raise LDAPError("ldap3 package is not installed")
 
-        # Escape username to prevent LDAP injection
-        safe_username = self._escape_ldap_filter(username)
-
-        # If direct DN pattern is configured, use it
+        # If direct DN pattern is configured, use it — the username becomes an
+        # RDN value, so escape it for DN context (RFC 4514), not filter context.
         if self.config.user_dn_pattern:
-            return self.config.user_dn_pattern.replace("{username}", safe_username)
+            return self.config.user_dn_pattern.replace(
+                "{username}", self._escape_dn_value(username)
+            )
 
-        # Otherwise search for the user
+        # Otherwise search for the user — escape for LDAP filter context (RFC 4515).
+        safe_username = self._escape_ldap_filter(username)
         search_filter = self.config.user_search_filter.replace("{username}", safe_username)
         search_base = self.config.user_search_base or self.config.base_dn
 
@@ -281,8 +298,10 @@ class LDAPService:
         # bind; pattern-based lookup does not — defer the service bind until
         # after we know we'll need it.
         if self.config.user_dn_pattern:
-            safe_username = self._escape_ldap_filter(username)
-            user_dn = self.config.user_dn_pattern.replace("{username}", safe_username)
+            # RDN-value substitution → escape for DN context (RFC 4514).
+            user_dn = self.config.user_dn_pattern.replace(
+                "{username}", self._escape_dn_value(username)
+            )
         else:
             conn = self._bind_connection()
             try:

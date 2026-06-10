@@ -199,18 +199,24 @@ def get_log_capture_handler() -> LogCaptureHandler:
 
 class ScrubbingFilter(logging.Filter):
     """Logging filter that pre-formats every record and scrubs likely secrets
-    before any handler sees the message.
+    before a handler emits it.
 
-    Attaching this to the seqsetup root logger means stdout/file/syslog
-    handlers all see the same scrubbed output the admin log viewer sees.
-    Without this filter a careless ``logger.debug(config.to_dict())`` would
-    leak the bind password to disk even though the in-memory viewer
-    rendered ``***``.
+    IMPORTANT — attach this to HANDLERS, not loggers. Python only consults a
+    logger's own filters for records logged *directly* to that logger; records
+    that PROPAGATE UP from child loggers (every module here uses
+    ``logging.getLogger(__name__)`` → ``seqsetup.services.*``,
+    ``seqsetup.audit``) reach ancestor *handlers* without re-running the
+    ancestor logger's filters. A filter on the ``seqsetup`` logger therefore
+    would NOT scrub those propagated records on an operator's root file/syslog
+    handler. ``attach_scrubbing_filter_to_handler`` / ``setup_log_capture``
+    install this on the handlers so it fires for propagated records too.
 
     The filter rewrites ``record.msg`` to the fully-formatted-then-scrubbed
     string and clears ``record.args`` so downstream handlers' ``format()``
     calls don't re-interpolate the original arguments (which could
-    re-introduce the secret).
+    re-introduce the secret). It is idempotent — running twice on the same
+    record (e.g. via filters on multiple handlers) re-scrubs an
+    already-scrubbed string with no change.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -229,21 +235,55 @@ class ScrubbingFilter(logging.Filter):
 _SCRUBBING_FILTER: Optional[ScrubbingFilter] = None
 
 
-def install_scrubbing_filter(logger_names: Optional[list[str]] = None) -> ScrubbingFilter:
-    """Attach the global scrubbing filter to ``seqsetup`` (or a custom set).
-
-    Idempotent: re-calling with the same logger names doesn't add a second
-    filter instance.
-    """
+def _get_scrubbing_filter() -> ScrubbingFilter:
     global _SCRUBBING_FILTER
     if _SCRUBBING_FILTER is None:
         _SCRUBBING_FILTER = ScrubbingFilter()
+    return _SCRUBBING_FILTER
+
+
+def attach_scrubbing_filter_to_handler(handler: logging.Handler) -> ScrubbingFilter:
+    """Attach the global scrubbing filter to a HANDLER (idempotent).
+
+    Handler-level filters run for every record the handler processes,
+    including those propagated up from child loggers — which is why this,
+    not a logger-level filter, is the mechanism that actually protects
+    external file/stdout/syslog handlers. Operators who add their own root
+    handler after startup should call this on it.
+    """
+    flt = _get_scrubbing_filter()
+    if flt not in handler.filters:
+        handler.addFilter(flt)
+    return flt
+
+
+def install_scrubbing_filter(logger_names: Optional[list[str]] = None) -> ScrubbingFilter:
+    """Attach the scrubbing filter to handlers so secrets are redacted before
+    they reach disk/syslog.
+
+    Covers the handlers we control (the in-memory capture handler) plus any
+    handlers already attached to the root logger at startup (the common case:
+    an operator configured stdout/file logging via ``logging.basicConfig`` or
+    the container runtime before importing the app). Also keeps a copy on the
+    named loggers for records logged directly to them. Idempotent.
+
+    NOTE: a logger-level filter does NOT fire for records propagated from
+    child loggers; the handler-level attachment below is what makes the
+    redaction effective for ``seqsetup.services.*`` / ``seqsetup.audit``.
+    """
+    flt = _get_scrubbing_filter()
+    # Handler-level: the load-bearing attachment (covers propagated records).
+    attach_scrubbing_filter_to_handler(get_log_capture_handler())
+    for handler in list(logging.getLogger().handlers):
+        attach_scrubbing_filter_to_handler(handler)
+    # Logger-level: harmless extra coverage for records logged directly to
+    # these loggers (not their children).
     targets = logger_names if logger_names is not None else ["seqsetup"]
     for name in targets:
         logger = logging.getLogger(name)
-        if _SCRUBBING_FILTER not in logger.filters:
-            logger.addFilter(_SCRUBBING_FILTER)
-    return _SCRUBBING_FILTER
+        if flt not in logger.filters:
+            logger.addFilter(flt)
+    return flt
 
 
 def setup_log_capture(logger_names: Optional[list[str]] = None) -> LogCaptureHandler:

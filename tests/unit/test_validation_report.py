@@ -256,3 +256,21 @@ class TestValidationReportPDF:
             ValidationResult(duplicate_sample_ids=[], index_collisions=[], distance_matrices={}),
         )
         assert len(result) > len(empty_result)
+
+    def test_render_heatmap_skips_oversized_matrix(self, monkeypatch):
+        """Defensive guard: the matplotlib heatmap (n^2 text artists) must not
+        be rendered for an oversized matrix even if one reaches the PDF path."""
+        from seqsetup.services import validation_report as vr
+
+        monkeypatch.setattr(vr, "MAX_HEATMAP_SAMPLES", 3)
+        n = 4
+        names = [f"S{i}" for i in range(n)]
+        zeros = [[0 for _ in range(n)] for _ in range(n)]
+        big = IndexDistanceMatrix(
+            sample_ids=names,
+            sample_names=names,
+            i7_distances=zeros,
+            i5_distances=zeros,
+            combined_distances=zeros,
+        )
+        assert ValidationReportPDF._render_heatmap(big) is None

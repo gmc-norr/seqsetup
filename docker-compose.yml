@@ -1,6 +1,15 @@
 services:
   app:
     build: .
+    # Run unprivileged and drop all Linux capabilities — the app needs none.
+    # Mirrors the non-root USER baked into the image; stated here so the
+    # hardening is explicit at the deployment layer and survives a base-image
+    # change. no-new-privileges blocks setuid escalation inside the container.
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
       - "5001:5001"
     environment:

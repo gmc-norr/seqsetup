@@ -8,7 +8,25 @@ sample-identity errors.
 
 import pytest
 
+from seqsetup.services import sample_parser as sample_parser_module
 from seqsetup.services.sample_parser import parse_pasted_samples
+
+
+class TestSampleCountCap:
+    """The parser must refuse a paste with more rows than the per-run cap,
+    rather than building millions of objects and deferring the failure."""
+
+    def test_exceeding_cap_raises(self, monkeypatch):
+        monkeypatch.setattr(sample_parser_module, "MAX_SAMPLES_PER_RUN", 5)
+        data = "\n".join(f"S{i},WGS,ATTACTCG,TATAGCCT" for i in range(6))
+        with pytest.raises(ValueError, match="maximum"):
+            parse_pasted_samples(data)
+
+    def test_at_cap_succeeds(self, monkeypatch):
+        monkeypatch.setattr(sample_parser_module, "MAX_SAMPLES_PER_RUN", 5)
+        data = "\n".join(f"S{i},WGS,ATTACTCG,TATAGCCT" for i in range(5))
+        samples = parse_pasted_samples(data)
+        assert len(samples) == 5
 
 
 class TestParseBasicShape:

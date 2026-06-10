@@ -5,7 +5,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-_VALID_DNA_RE = re.compile(r'^[ACGTN]*$')
+# Anchor with \Z (not $): in Python $ also matches just before a trailing
+# newline, so "ACGT\n" would wrongly pass and leave a newline in the sequence
+# that later splits a Sample Sheet row. \Z matches only the true end of string.
+_VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 
 
 class IndexType(Enum):
@@ -38,8 +41,10 @@ class Index:
         return len(self.sequence)
 
     def __post_init__(self):
-        # Normalize sequence to uppercase
-        self.sequence = self.sequence.upper()
+        # Normalize to uppercase and strip surrounding whitespace (a YAML
+        # literal-block scalar appends a trailing newline; spreadsheet cells
+        # can carry stray spaces). Internal whitespace is then rejected below.
+        self.sequence = self.sequence.upper().strip()
         # Validate DNA characters
         if self.sequence and not _VALID_DNA_RE.match(self.sequence):
             invalid = set(self.sequence) - set("ACGTN")

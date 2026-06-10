@@ -5,8 +5,13 @@ import io
 import re
 from dataclasses import dataclass
 
-# DNA sequence validation pattern (compiled once at module level)
-_VALID_DNA_RE = re.compile(r'^[ACGTN]*$')
+from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
+
+# DNA sequence validation pattern (compiled once at module level).
+# \Z (not $) so a trailing newline can't slip through — $ also matches just
+# before a final newline. Cells are stripped before this runs, but keep the
+# anchor strict for defense in depth and consistency with models/index.py.
+_VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 
 # Per-cell character cap. Matches the 256 limit applied by routes' sanitize_string()
 # on form-submitted fields, so pasted/imported values arrive at the model layer
@@ -256,6 +261,15 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
             raise ValueError(
                 f"Invalid characters in index2 for sample '{sample_id}': {invalid_chars}. "
                 f"Only A, C, G, T, N are allowed."
+            )
+
+        if len(samples) >= MAX_SAMPLES_PER_RUN:
+            # Stop as soon as the cap is exceeded rather than materialising
+            # millions of rows from a huge paste (a DoS vector) and deferring
+            # the failure. Reject the whole import per the clinical default.
+            raise ValueError(
+                f"Too many samples: a run accepts a maximum of {MAX_SAMPLES_PER_RUN}. "
+                f"Reduce the worklist or split it across runs."
             )
 
         samples.append(ParsedSample(

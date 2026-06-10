@@ -32,6 +32,24 @@ Look at these first when adding new code in their category:
 7. Every HTML route: `response_class=HTMLResponse`.
 8. HTMX swap fragments share URLs with their full-page counterparts — `Depends(is_htmx_request)` distinguishes.
 
+## Authorization & access model
+
+SeqSetup is **single-tenant by design**: any authenticated user with the
+`standard` role may view, edit, export, validate, and (when archived) delete
+**any** run in the system, addressed by `run_id`. There is no per-resource
+owner field and no per-run ACL — the only authorization boundary is the
+`admin` role, which gates configuration and user management (instruments,
+auth, LIMS, index-kit upload, local users, API tokens) via
+`require_admin_dep`. This is an accepted decision for a trusted clinical
+operator team that collaborates on shared runs; it is documented as a hard
+contract in the module docstring of `routes/utils.py` (audit L1).
+
+This is a security review decision (2026-06-10): the shared-access model was
+reviewed and **kept intentionally**. Introducing per-user run ownership is a
+multi-tenant change that must be coordinated across the whole route surface,
+the model layer, the JSON API, and the UI — implement it consistently or not
+at all. Do not add a one-off ownership check to a single route.
+
 ## URL conventions
 
 | Pattern | Example | Counter-example |
