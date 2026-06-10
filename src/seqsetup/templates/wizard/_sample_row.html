@@ -65,10 +65,17 @@
     {%- elif editable %}
         <td>
             <div class="drop-zone i7-drop"
+                 tabindex="0"
+                 role="button"
+                 aria-label="Assign selected index to {{ sample.sample_id | e }}"
                  data-context="{{ context }}"
+                 data-sample-id="{{ sample.id | e }}"
+                 data-run-id="{{ run_id | e }}"
+                 data-drop-zone-type="i7"
                  ondragover="event.preventDefault(); this.classList.add('drag-over')"
                  ondragleave="this.classList.remove('drag-over')"
-                 ondrop="handleIndexDrop(event, '{{ sample.id }}', '{{ run_id }}', 'i7')">Drop i7</div>
+                 ondrop="handleIndexDrop(event, '{{ sample.id }}', '{{ run_id }}', 'i7')"
+                 onkeydown="handleIndexAssignKeydown(event, '{{ sample.id }}', '{{ run_id }}', 'i7')">Drop i7 <span aria-hidden="true">⌖</span></div>
         </td>
     {%- else %}
         <td class="index-cell"><span class="no-index">-</span></td>
@@ -92,10 +99,17 @@
         {%- elif editable %}
             <td>
                 <div class="drop-zone i5-drop"
+                     tabindex="0"
+                     role="button"
+                     aria-label="Assign selected index to {{ sample.sample_id | e }}"
                      data-context="{{ context }}"
+                     data-sample-id="{{ sample.id | e }}"
+                     data-run-id="{{ run_id | e }}"
+                     data-drop-zone-type="i5"
                      ondragover="event.preventDefault(); this.classList.add('drag-over')"
                      ondragleave="this.classList.remove('drag-over')"
-                     ondrop="handleIndexDrop(event, '{{ sample.id }}', '{{ run_id }}', 'i5')">Drop i5</div>
+                     ondrop="handleIndexDrop(event, '{{ sample.id }}', '{{ run_id }}', 'i5')"
+                     onkeydown="handleIndexAssignKeydown(event, '{{ sample.id }}', '{{ run_id }}', 'i5')">Drop i5 <span aria-hidden="true">⌖</span></div>
             </td>
         {%- else %}
             <td class="index-cell"><span class="no-index">-</span></td>

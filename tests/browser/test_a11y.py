@@ -39,3 +39,22 @@ def _check(page, key):
 @pytest.mark.browser
 def test_axe_dashboard(logged_in_page):
     _check(logged_in_page, "dashboard")
+
+
+@pytest.mark.browser
+def test_index_keyboard_assign(logged_in_page, base_url, seeded_ids):
+    page = logged_in_page
+    page.goto(base_url + f"/runs/{seeded_ids['draft_run_id']}")
+    page.wait_for_load_state("networkidle")
+    before = page.locator(".sample-row.has-index").count()
+    chip = page.locator(".draggable-index-compact").first
+    chip.focus()
+    assert chip.evaluate("el => el.tabIndex") == 0
+    page.keyboard.press("Enter")                                  # select
+    assert page.locator(".draggable-index-compact.index-selected").count() >= 1
+    zone = page.locator(".drop-zone").first
+    zone.focus()
+    assert zone.evaluate("el => el.tabIndex") == 0
+    page.keyboard.press("Enter")                                  # assign selected → this sample
+    page.wait_for_function(f"document.querySelectorAll('.sample-row.has-index').length === {before + 1}")
+    assert page.locator(".sample-row.has-index").count() == before + 1

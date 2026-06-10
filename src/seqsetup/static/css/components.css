@@ -1865,6 +1865,16 @@ body {
     background: rgba(234, 88, 12, 0.08);
 }
 
+/* Keyboard-operable index chips + drop zones (Task 3.3) */
+.draggable-index:focus-visible, .draggable-index-compact:focus-visible,
+.drop-zone:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.index-type-pill { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); padding: 0 .3rem; border-radius: var(--radius-sm); color: #fff; }
+.index-type-pill.i7 { background: var(--accent-i7); }
+.index-type-pill.i5 { background: var(--accent-i5); }
+.index-type-pill.pair { background: var(--accent-pair); }
+.drop-zone { border-radius: var(--radius-sm); }
+.drop-zone.drag-over { box-shadow: var(--shadow-md); }
+
 /* Index assigned display with clear button */
 .index-assigned {
     display: flex;

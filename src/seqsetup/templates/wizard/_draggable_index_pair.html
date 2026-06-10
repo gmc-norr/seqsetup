@@ -10,13 +10,18 @@
 #}
 <div class="draggable-index-compact draggable-pair"
      draggable="true"
+     tabindex="0"
+     role="button"
      data-index-pair-id="{{ pair.id | e }}"
      data-index-name="{{ pair.name | e }}"
      data-index-type="pair"
      data-well="{{ pair.well_position or '' | e }}"
      onclick="handleIndexClick(event, this.dataset.indexPairId, 'pair')"
      ondragstart="handleDragStart(event, this.dataset.indexPairId, 'pair')"
+     onkeydown="handleIndexKeydown(event)"
+     aria-label="{{ pair.name | e }} pair sequence {{ pair.index1_sequence | e }}"
      title="{{ pair.name | e }}&#10;i7: {{ pair.index1_sequence | e }}&#10;i5: {{ pair.index2_sequence or 'N/A' | e }}&#10;Well: {{ pair.well_position or 'N/A' | e }}">
+    <span class="index-type-pill pair">pair</span>
     <span class="index-name-compact">{{ pair.name | e }}</span>
     {%- if pair.index1 and pair.index1.name != pair.name %}
     <span class="index-i7-name-compact">{{ pair.index1.name | e }}</span>

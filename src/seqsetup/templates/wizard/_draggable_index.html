@@ -14,6 +14,8 @@
 {% set _index_id = kit.name ~ '_' ~ _index_type ~ '_' ~ idx.name %}
 <div class="draggable-index-compact draggable-single {{ _index_type }}-index"
      draggable="true"
+     tabindex="0"
+     role="button"
      data-index-id="{{ _index_id | e }}"
      data-index-name="{{ idx.name | e }}"
      data-index-type="{{ _index_type | e }}"
@@ -21,7 +23,10 @@
      data-well="{{ idx.well_position or '' | e }}"
      onclick="handleIndexClick(event, this.dataset.indexId, '{{ _index_type | e }}')"
      ondragstart="handleDragStart(event, this.dataset.indexId, '{{ _index_type | e }}')"
+     onkeydown="handleIndexKeydown(event)"
+     aria-label="{{ idx.name | e }} {{ _index_type | e }} sequence {{ idx.sequence | e }}"
      title="{{ idx.name | e }}&#10;Well: {{ idx.well_position or 'N/A' | e }}&#10;Sequence: {{ idx.sequence | e }}">
+    <span class="index-type-pill {{ _index_type | e }}">{{ _index_type | e }}</span>
     <span class="index-name-compact">{{ idx.name | e }}</span>
     {%- if idx.well_position %}
     <span class="index-well-compact">{{ idx.well_position | e }}</span>

@@ -201,17 +201,92 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     clearIndexSelection();
 }
 
-// Clear selection when clicking outside indexes
+function handleIndexKeydown(event) {                 // chip: Enter/Space = select
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        const el = event.currentTarget || event.target.closest('.draggable-index, .draggable-index-compact');
+        if (!el) return;
+        const indexId = el.dataset.indexPairId || el.dataset.indexId;
+        const indexType = el.dataset.indexType || 'pair';
+        // Synthesize a plain object matching what handleIndexClick expects
+        handleIndexClick({ target: el, currentTarget: el, defaultPrevented: false,
+            ctrlKey: false, metaKey: false, shiftKey: false,
+            stopPropagation: () => {} }, indexId, indexType);
+    }
+}
+
+function assignSelectedIndexToSample(sampleId, runId, dropZoneType, dropZoneEl) {
+    if (selectedIndexes.length === 0) return false;  // nothing selected → no-op
+    const idx = selectedIndexes[0];                  // keyboard path = single assign
+    if ((idx.type === 'i7' || idx.type === 'i5') && dropZoneType && dropZoneType !== idx.type) return false;
+    const context = dropZoneEl && dropZoneEl.dataset ? (dropZoneEl.dataset.context || '') : '';
+    const sampleTable = document.getElementById('sample-table');
+    const existingIds = sampleTable ? (sampleTable.dataset.existingIds || '') : '';
+    const values = { context: context, existing_ids: existingIds };
+    if (idx.type === 'pair') { values.index_pair_id = idx.id; }
+    else { values.index_id = idx.id; values.index_type = idx.type; }
+    htmx.ajax('POST', `/runs/${runId}/samples/${sampleId}/assign-index`, {
+        target: `#sample-row-${sampleId}`, swap: 'outerHTML', values: values
+    });
+    clearIndexSelection();
+    return true;
+}
+
+function handleIndexAssignKeydown(event, sampleId, runId, dropZoneType) {  // drop zone: Enter/Space = assign
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        assignSelectedIndexToSample(sampleId, runId, dropZoneType, event.currentTarget || event.target);
+    }
+}
+
+// Delegated click handler for index chips.
+// Inline onclick attributes are blocked by CSP (script-src 'self' without 'unsafe-inline').
+// This delegated listener replaces them and also handles the "clear on outside click" rule.
 document.addEventListener('click', function(event) {
-    if (!event.target.closest('.draggable-index') && !event.target.closest('.draggable-index-compact') && !event.target.closest('.selection-controls')) {
+    const chip = event.target.closest('.draggable-index, .draggable-index-compact');
+    if (chip) {
+        const indexId = chip.dataset.indexPairId || chip.dataset.indexId;
+        const indexType = chip.dataset.indexType || 'pair';
+        handleIndexClick(event, indexId, indexType);
+        return;
+    }
+    if (!event.target.closest('.selection-controls')) {
         clearIndexSelection();
     }
 });
 
-// Keyboard shortcut to clear selection
+// Keyboard shortcut to clear selection + keyboard navigation for chips/drop-zones
+// (event delegation replaces inline onkeydown attributes, which are blocked by CSP)
 document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape') {
         clearIndexSelection();
+        return;
+    }
+
+    // Chip keydown: Enter/Space selects the chip (same as click)
+    const chip = event.target.closest('.draggable-index, .draggable-index-compact');
+    if (chip && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        const indexId = chip.dataset.indexPairId || chip.dataset.indexId;
+        const indexType = chip.dataset.indexType || 'pair';
+        // Call handleIndexClick with a plain event-like object (currentTarget = chip)
+        handleIndexClick({ target: chip, currentTarget: chip, defaultPrevented: false,
+            ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey,
+            stopPropagation: () => {} }, indexId, indexType);
+        return;
+    }
+
+    // Drop-zone keydown: Enter/Space assigns the selected index
+    const zone = event.target.closest('.drop-zone');
+    if (zone && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        // Read assignment params from data attributes set by the template
+        const sampleId = zone.dataset.sampleId;
+        const runId = zone.dataset.runId;
+        const dropZoneType = zone.dataset.dropZoneType;
+        if (sampleId && runId) {
+            assignSelectedIndexToSample(sampleId, runId, dropZoneType, zone);
+        }
     }
 });
 
