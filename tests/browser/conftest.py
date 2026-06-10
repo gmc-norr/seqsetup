@@ -26,6 +26,7 @@ from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexTy
 from seqsetup.models.local_user import LocalUser
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from seqsetup.models.test_profile import TestProfile
 from seqsetup.models.user import UserRole
 
 # Fixed IDs used by screenshot/a11y tests for stable, deterministic URLs.
@@ -105,13 +106,19 @@ def app_server(tmp_path_factory):
             pass
 
     # --- Seed an admin user for login tests ---
+    _t_admin = datetime(2026, 1, 10, 7, 0, 0)
     admin = LocalUser(
         username=BROWSER_ADMIN["username"],
         display_name="Browser Admin",
         email="browser@test.local",
         role=UserRole.ADMIN,
+        created_at=_t_admin,
+        updated_at=_t_admin,
     )
     admin.set_password(BROWSER_ADMIN["password"])
+    # set_password() bumps updated_at to datetime.now(); pin it back to the
+    # fixed value so admin-users.html renders a deterministic timestamp.
+    admin.updated_at = _t_admin
     ctx.local_user_repo.save(admin)
 
     # --- Seed one DRAFT run so the dashboard tabs render. ---
@@ -119,6 +126,7 @@ def app_server(tmp_path_factory):
     # buttons; the HTMX swap test needs the tabs to exist so it can
     # click "Ready" and exercise the hx-get. One minimal draft is
     # enough — its content doesn't matter; only its presence does.
+    _t_seed = datetime(2026, 1, 10, 8, 0, 0)
     seed_run = SequencingRun(
         run_name="Browser smoke seed run",
         instrument_platform=InstrumentPlatform.NOVASEQ_X,
@@ -126,6 +134,8 @@ def app_server(tmp_path_factory):
         run_cycles=RunCycles(151, 151, 8, 8),
         status=RunStatus.DRAFT,
         created_by=BROWSER_ADMIN["username"],
+        created_at=_t_seed,
+        updated_at=_t_seed,
     )
     ctx.run_repo.save(seed_run)
 
@@ -164,6 +174,17 @@ def app_server(tmp_path_factory):
         created_by=BROWSER_ADMIN["username"],
     )
     ctx.index_kit_repo.save(screenshot_kit)
+
+    # --- Seed one test profile so the run-editor test-id dropdown is non-empty. ---
+    screenshot_profile = TestProfile(
+        id="screenshot-wgs-profile",
+        test_type="WGS",
+        test_name="Whole Genome Sequencing",
+        description="WGS test profile for screenshot tests",
+        version="1.0.0",
+        synced_at=datetime(2026, 1, 10, 7, 0, 0),
+    )
+    ctx.test_profile_repo.save(screenshot_profile)
 
     # --- Seed a representative DRAFT run with ~6 samples (some indexed, some not). ---
     _t_draft = datetime(2026, 1, 10, 9, 0, 0)
