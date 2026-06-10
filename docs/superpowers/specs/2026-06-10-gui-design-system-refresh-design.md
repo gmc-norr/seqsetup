@@ -62,10 +62,17 @@ table column, input, and control is preserved.
 Per CLAUDE.md "do less, not more", the **only** behavior/markup changes allowed are
 this explicit list (everything else is visual-only):
 
-1. **Keyboard operability** of the click-to-assign index chips and drop zones: add
-   `tabindex="0"` + an `onkeydown` that invokes the **existing** `handleIndexClick`
-   on Enter/Space, plus `aria-label`. No new assign logic — it mirrors the current
-   `onclick` path.
+1. **Keyboard-operable index assignment.** Today assignment is **drag-only** — the
+   chip `onclick` (`handleIndexClick`) merely *selects* (highlights); the actual
+   assign happens in `handleIndexDrop` on the drop zone. So genuine keyboard
+   operability is a real (small) new interaction, not just ARIA: (a) chips get
+   `tabindex="0"` + Enter/Space → the existing `handleIndexClick` (select) +
+   `aria-label`; (b) **drop zones** get `tabindex="0"` + `role="button"` +
+   `aria-label` + Enter/Space → a new `assignSelectedIndexToSample(...)` that POSTs
+   to the **existing** single-assign endpoint with the currently-selected index.
+   `handleIndexDrop` is left untouched (the new function is parallel, not a refactor).
+   Multi-index assignment stays drag-/bulk-panel-only. This is the one genuine
+   behavior addition in the refresh.
 2. **Accessible names:** add/extend `title=` and add `aria-label` carrying the full
    index sequence (the compact chip already has a `title=`); add `title=` to
    truncated sample-table cells; add `sr-only` state words to glyph-only status.
@@ -277,10 +284,11 @@ Each keeps its class names, IDs, markup structure, and JS/HTMX hooks.
 - **Drag/drop zones + index chips:** keep all `ondragstart/over/drop/onclick` hooks
   and the i7/i5 split, now from `--accent-i7/i5/pair`. Upgrade dashed boxes
   (`--radius-sm`, target icon, `--shadow-md` on drag-over). Add an `i7`/`i5` **text**
-  pill so type is never color-only. **Genuine keyboard operability** (§1.1 #1):
-  `tabindex="0"` + `onkeydown` (Enter/Space → existing `handleIndexClick`) +
-  `aria-label` (full sequence) + focus ring. `title=` stays as a mouse supplement,
-  not the sole affordance.
+  pill so type is never color-only. **Genuine keyboard operability** per §1.1 #1:
+  chips get focusability + Enter/Space-to-select; **drop zones** get focusability +
+  Enter/Space-to-assign-the-selected-index (new parallel function, existing endpoint);
+  both get `aria-label` + the focus ring. `title=` stays a mouse supplement, not the
+  sole affordance.
 - **Toasts:** move inline markup to `.toast`/`.toast--*` classes from the same tokens;
   add `role=status`/`aria-live=polite`. Keep `toastStack()`, `x-for`/`:key`, the
   4000ms lifetime, the 500-char clamp. **No dismiss button.** Define the missing

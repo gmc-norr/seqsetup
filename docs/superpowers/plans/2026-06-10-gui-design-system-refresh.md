@@ -112,10 +112,18 @@ git add tests/browser/conftest.py && git commit -m "test: seed representative ru
 - [ ] **Step 1: Write** `tests/browser/test_screenshots.py`. Validation tabs are Alpine `x-show` (no URL param) and the dashboard status tabs are HTMX fragments — both must be captured by **clicking**, not by navigating. Use two tests: simple navigations, and interaction-based captures.
 
 ```python
+import re
+import shutil
 import pytest
 from pathlib import Path
 
 OUT = Path(__file__).parent / "screenshots" / "current"
+
+@pytest.fixture(scope="session", autouse=True)
+def _clear_current():
+    # Wipe stale PNGs so a removed/renamed page can't leave a ghost behind.
+    shutil.rmtree(OUT, ignore_errors=True)
+    OUT.mkdir(parents=True, exist_ok=True)
 
 # Plain full-page navigations (real, confirmed routes).
 NAV_PAGES = [
@@ -145,7 +153,7 @@ def test_capture_dashboard_tabs(logged_in_page, base_url):
     page = logged_in_page
     page.goto(base_url + "/")
     for label in ("Ready", "Archived"):
-        page.get_by_role("button", name=lambda n, l=label: n.startswith(l)).first.click()
+        page.get_by_role("button", name=re.compile(rf"^{re.escape(label)}")).first.click()
         _shoot(page, f"dashboard-{label.lower()}")
 
 @pytest.mark.browser
@@ -170,21 +178,31 @@ from PIL import Image, ImageChops
 
 root = Path("tests/browser/screenshots")
 base, cur = root / "baseline", root / "current"
-worst = 0
-for img in sorted(cur.glob("*.png")):
-    b = base / img.name
-    if not b.exists():
-        print(f"NEW (no baseline): {img.name}"); worst = max(worst, 1); continue
-    a, c = Image.open(b).convert("RGB"), Image.open(img).convert("RGB")
+fail = False
+base_names = {p.name for p in base.glob("*.png")}
+cur_names = {p.name for p in cur.glob("*.png")}
+
+for name in sorted(base_names - cur_names):          # baseline image not re-captured
+    print(f"MISSING from current/: {name}"); fail = True
+for name in sorted(cur_names - base_names):          # new image with no baseline
+    print(f"NEW (no baseline): {name}"); fail = True
+
+for name in sorted(base_names & cur_names):
+    a = Image.open(base / name).convert("RGB")
+    c = Image.open(cur / name).convert("RGB")
     if a.size != c.size:
-        print(f"SIZE CHANGED: {img.name} {a.size} -> {c.size}"); worst = max(worst, 2); continue
-    diff = ImageChops.difference(a, c).getbbox()
-    n = 0 if diff is None else sum(1 for px in ImageChops.difference(a, c).getdata() if px != (0, 0, 0))
-    print(f"{img.name}: {n} changed px")
-print(f"worst={worst}")
+        print(f"SIZE CHANGED: {name} {a.size} -> {c.size}"); fail = True; continue
+    bbox = ImageChops.difference(a, c).getbbox()
+    if bbox is None:
+        print(f"{name}: 0 changed px"); continue
+    n = sum(1 for px in ImageChops.difference(a, c).getdata() if px != (0, 0, 0))
+    print(f"{name}: {n} changed px  bbox={bbox}"); fail = True
+
+print("FAIL — visual diff detected" if fail else "PASS — no visual diff")
+sys.exit(1 if fail else 0)   # non-zero so CI / the gate actually catches regressions
 ```
 
-  (Add `pillow` as a dev dep: `pixi add --feature dev pillow`.)
+  (Add `pillow` as a dev dep: `pixi add --feature dev pillow`.) "Zero unintended diff" for a task = run this, and for every image that legitimately changed, **review it**, then re-copy that one PNG from `current/` into `baseline/` so the next task starts from a clean `PASS`.
 
 - [ ] **Step 3: Capture the baseline.** Run the screenshot test, then promote `current/` → `baseline/`:
 
@@ -205,38 +223,50 @@ git commit -m "test: screenshot regression oracle with committed baseline"
 
 **Files:** Create `tests/browser/test_a11y.py`.
 
-- [ ] **Step 1: Write** an axe-core-injecting test that loads `/` and the run editor and asserts **zero serious/critical** violations as a *baseline snapshot* (record current count; the goal is "no regressions" now and "improves by Phase 4"):
+- [ ] **Step 1: Vendor axe-core locally.** The app's CSP is `script-src 'self' 'unsafe-eval'`, so a CDN `<script>` (`add_script_tag(url=…)`) is **blocked**. Download axe-core ~4.9 to `src/seqsetup/static/js/vendor/axe.min.js` (it is injected via `page.evaluate`, which runs through CDP and is not subject to page CSP; `'unsafe-eval'` covers it regardless). If the box is offline, copy it from a machine that has it; do not rely on the CDN.
+
+- [ ] **Step 2: Write** a real *no-new-violations* gate (subset-of-committed-baseline, not a no-op assert):
 
 ```python
-import pytest
+import json, pytest
+from pathlib import Path
 
-AXE_CDN = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js"
+AXE = (Path(__file__).parents[2] / "src/seqsetup/static/js/vendor/axe.min.js").read_text()
+BASELINE = Path(__file__).parent / "a11y_baseline.json"   # committed; never allowed to grow
+
+def _serious_ids(page):
+    page.wait_for_load_state("networkidle")
+    page.evaluate(AXE)  # defines window.axe; CDP eval bypasses CSP
+    res = page.evaluate("async () => await axe.run(document, {resultTypes:['violations']})")
+    return sorted({v["id"] for v in res["violations"] if v["impact"] in ("serious", "critical")})
+
+def _check(page, key):
+    ids = _serious_ids(page)
+    data = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
+    if key not in data:
+        data[key] = ids
+        BASELINE.write_text(json.dumps(data, indent=2, sort_keys=True))
+        pytest.skip(f"recorded a11y baseline for {key}: {ids}")
+    new = set(ids) - set(data[key])
+    assert not new, f"NEW serious/critical a11y violations on {key}: {sorted(new)}"
 
 @pytest.mark.browser
-def test_axe_baseline_dashboard(logged_in_page):
-    page = logged_in_page
-    page.wait_for_load_state("networkidle")
-    page.add_script_tag(url=AXE_CDN)
-    res = page.evaluate("async () => await axe.run(document, {resultTypes:['violations']})")
-    serious = [v for v in res["violations"] if v["impact"] in ("serious", "critical")]
-    # Baseline snapshot — tighten to == 0 in Phase 4.
-    assert isinstance(serious, list)
-    print("serious/critical violations:", [v["id"] for v in serious])
+def test_axe_dashboard(logged_in_page):
+    _check(logged_in_page, "dashboard")
 ```
 
-  (If the test environment has no network, vendor `axe.min.js` into `static/js/vendor/` and inject via local path instead of CDN. Confirm before relying on CDN.)
-
-- [ ] **Step 2: Run + record** the current violation list (it's the "before" number):
+- [ ] **Step 3: Run twice** — first run records & commits `a11y_baseline.json` (skips), second run enforces it:
 
 ```bash
-pixi run smoke-browser
+pixi run smoke-browser   # run 1: records baseline (test skips)
+pixi run smoke-browser   # run 2: PASS (no new violations)
 ```
-Expected: PASS; note the printed violation ids.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add tests/browser/test_a11y.py && git commit -m "test: axe-core a11y baseline snapshot"
+git add tests/browser/test_a11y.py tests/browser/a11y_baseline.json src/seqsetup/static/js/vendor/axe.min.js
+git commit -m "test: axe-core no-new-a11y-violations gate (vendored, CSP-safe)"
 ```
 
 ---
@@ -411,11 +441,16 @@ Pale one-off tints (`#fee2e2`, `#fef3c7`, `#dcfce7`, `#fffbeb`, `#f0f9ff`, …) 
 .sample-row:hover { background: var(--surface-sunken); }
 .index-seqs, .index-seqs-inline, .index-seq-compact { font-size: var(--fs-xs); }
 .index-cell, .lanes-display { font-variant-numeric: tabular-nums; }
+/* Sticky header so column meaning stays visible on long sample lists.
+   Sticks within the table's scroll region; the existing `#sample-section
+   { overflow-x: auto }` makes that region a scroll container — verify the
+   header stays pinned and bump top/z-index if it detaches. */
+.sample-table th { position: sticky; top: 0; z-index: 2; background: var(--surface-sunken); }
 ```
 
-- [ ] **Step 2: CSS gate + screenshot diff.** Expected delta: index sequences render larger (≥13px) and tables gain row-hover. Review run-editor + validation screenshots; re-baseline the intended ones.
+- [ ] **Step 2: CSS gate + screenshot diff.** Expected delta: index sequences render larger (≥13px), tables gain row-hover, and the header pins on scroll. Manually scroll a long sample table to confirm the header stays put and nothing overlaps. Review run-editor + validation screenshots; re-baseline the intended ones.
 
-- [ ] **Step 3: Commit** `style(table,index): tabular nums, raised sequence font floor, row hover`.
+- [ ] **Step 3: Commit** `style(table,index): tabular nums, raised sequence font floor, row hover, sticky header`.
 
 ---
 
@@ -545,24 +580,30 @@ Pale one-off tints (`#fee2e2`, `#fef3c7`, `#dcfce7`, `#fffbeb`, `#f0f9ff`, …) 
 
 **Files:** Modify `components.css` (`.heatmap-cell.dist-*` 2584-2594, `.legend-item.dist-*` 2616-2620); modify `templates/validation/_heatmaps_tab.html` (legend markup) and `_color_balance_tab.html` (channel-demo classes).
 
-- [ ] **Step 1: Replace** the jet ramp with a single-hue sequential scale (dark teal = dangerous/low-distance → pale = safe), keep `color:white` where contrast needs it, and **make the legend chips equal the cell colors**:
+- [ ] **Step 1: Replace** the diverging jet ramp with a **genuinely single-hue (red) sequential** scale — only lightness varies, so it is colour-blind-safe — darker = closer indices = higher collision risk, and **make the legend chips equal the cell colours**. Add a **real** non-colour glyph rule (not just a comment):
 
 ```css
-/* Sequential danger ramp: dist 0 (collision) = darkest, climbing to safe pale */
+/* Single-hue red sequential ramp; numeric distance stays in every cell as the
+   load-bearing datum, colour is risk magnitude (dark = riskiest). */
 .heatmap-cell.dist-0,.legend-item.dist-0 { background-color:#7f1d1d; color:#fff; }
-.heatmap-cell.dist-1,.legend-item.dist-1 { background-color:#b91c1c; color:#fff; }
-.heatmap-cell.dist-2,.legend-item.dist-2 { background-color:#dc2626; color:#fff; }
-.heatmap-cell.dist-3,.legend-item.dist-3 { background-color:#f59e0b; color:#1e293b; }
-.heatmap-cell.dist-4,.legend-item.dist-4 { background-color:#fcd34d; color:#1e293b; }
-.heatmap-cell.dist-5,.legend-item.dist-5 { background-color:#a7f3d0; color:#065f46; }
-.heatmap-cell.dist-6,.legend-item.dist-6,
-.heatmap-cell.dist-7,.legend-item.dist-7,
-.heatmap-cell.dist-8,.heatmap-cell.dist-9,.heatmap-cell.dist-10 { background-color:#34d399; color:#064e3b; }
-/* Non-color cue: dangerous cells get a heavy ring + a ⚠ marker via ::after */
-.heatmap-cell.dist-0, .heatmap-cell.dist-1, .heatmap-cell.dist-2 { outline: 2px solid #450a0a; outline-offset: -2px; }
+.heatmap-cell.dist-1,.legend-item.dist-1 { background-color:#991b1b; color:#fff; }
+.heatmap-cell.dist-2,.legend-item.dist-2 { background-color:#b91c1c; color:#fff; }
+.heatmap-cell.dist-3,.legend-item.dist-3 { background-color:#dc2626; color:#fff; }
+.heatmap-cell.dist-4,.legend-item.dist-4 { background-color:#ef4444; color:#fff; }
+.heatmap-cell.dist-5,.legend-item.dist-5 { background-color:#f87171; color:#450a0a; }
+.heatmap-cell.dist-6,.legend-item.dist-6 { background-color:#fca5a5; color:#450a0a; }
+.heatmap-cell.dist-7,.legend-item.dist-7 { background-color:#fecaca; color:#450a0a; }
+.heatmap-cell.dist-8 { background-color:#fee2e2; color:#450a0a; }
+.heatmap-cell.dist-9 { background-color:#fef2f2; color:#450a0a; }
+.heatmap-cell.dist-10 { background-color:#fff5f5; color:#450a0a; }
+/* Non-colour danger cue: ⚠ glyph + heavy ring on the closest (riskiest) cells. */
+.heatmap-cell.dist-0::after,
+.heatmap-cell.dist-1::after,
+.heatmap-cell.dist-2::after { content:" ⚠"; font-size:.7em; }
+.heatmap-cell.dist-0,.heatmap-cell.dist-1,.heatmap-cell.dist-2 { outline:2px solid #450a0a; outline-offset:-2px; }
 ```
 
-- [ ] **Step 2: Fix the legend markup** in `_heatmaps_tab.html` so it renders chips for the full bucketed range (0,1,2,3,4,5,6+) matching the CSS above, and add a `⚠` glyph + `sr-only` "collision risk" to the dangerous legend entries. **Rename** the color-balance CSS `.channel-green-demo`/`.channel-red-demo` (2789/2794) to `.channel-1-demo`/`.channel-2-demo` to match `_color_balance_tab.html:48-49`.
+- [ ] **Step 2: Fix the legend markup** in `_heatmaps_tab.html` so it renders `.legend-item.dist-N` chips for the full bucketed range (0,1,2,3,4,5,6,7+) matching the CSS above (the old markup stopped at dist-4), and add a `⚠` glyph + `sr-only` "collision risk" to the dist-0/1/2 legend entries. Also add a **`title`** to every heatmap cell naming **both** samples and the distance — read `_heatmaps_tab.html` for the actual row/col loop vars and add `title="{{ row_label }} × {{ col_label }}: distance {{ dist }}"`. **Rename** the color-balance CSS `.channel-green-demo`/`.channel-red-demo` (2789/2794) to `.channel-1-demo`/`.channel-2-demo` to match `_color_balance_tab.html:48-49`.
 
 - [ ] **Step 3: CSS gate + screenshot diff.** Review `validation-heatmaps.png` and `validation-colorbalance.png`: legend chips now match cells, danger cells have a ring/glyph, color-balance legend swatches render. Re-baseline.
 
@@ -575,14 +616,17 @@ Pale one-off tints (`#fee2e2`, `#fef3c7`, `#dcfce7`, `#fffbeb`, `#f0f9ff`, …) 
 - [ ] **Step 1: Re-verify zero references** (class **and** id) for each block, then delete:
 
 ```bash
-for c in wizard-progress wizard-step login-card login-header login-subtitle btn-login \
-         run-list-row run-list-header-row rl-link rl-actions settings-tabs tab-btn tab-content; do
+# Every token below is a selector the deletion step removes — grep them all.
+for c in wizard-progress wizard-step wizard-nav \
+         login-container login-card login-header login-subtitle login-form btn-login \
+         run-list run-list-row run-list-header-row run-list-item run-list-empty rl-link rl-actions \
+         settings-tabs tab-buttons tab-btn tab-content; do
   echo "== $c =="; grep -rn "$c" src/seqsetup/templates src/seqsetup/static/js src/seqsetup/routes;
 done
 ```
-Expected: only matches inside `components.css` itself (and the audit's known-dead set). Anything referenced elsewhere is **kept**.
+Expected: zero hits outside `components.css`. **If any token shows an external hit, drop it from the deletion list and keep its block.** (`.wizard-nav` and `.tab-buttons` are included defensively — verify before deleting.)
 
-- [ ] **Step 2: Delete** the confirmed-dead blocks: `.wizard-progress`/`.wizard-step*` (~1683-1739), `.login-container`/`.login-card`/`.login-header`/`.login-subtitle`/`.btn-login` (~1324-1377), `.run-list-row`/`.run-list-header-row`/`.rl-link`/`.rl-actions` (the `.run-list-*` block), `.settings-tabs`/`.tab-btn`/`.tab-content` (~2189-2223) **only if** Step 1 showed zero external refs.
+- [ ] **Step 2: Delete** only the blocks whose selectors Step 1 proved unreferenced: `.wizard-progress`/`.wizard-step*` (~1683-1739), the `.login-container`/`.login-card`/`.login-header`/`.login-subtitle`/`.login-form*`/`.btn-login` block (~1324-1377), the `.run-list*`/`.rl-*` block, and `.settings-tabs`/`.tab-buttons`/`.tab-btn`/`.tab-content` (~2189-2223). The deletion set must equal the grep set from Step 1.
 
 - [ ] **Step 3: CSS gate + screenshot diff.** Expected: **zero** visual change (the blocks were unused). `worst=0`.
 
@@ -604,13 +648,19 @@ Expected: only matches inside `components.css` itself (and the audit's known-dea
   --color-slate-300: #cbd5e1; --color-slate-400: #94a3b8; --color-slate-500: #64748b;
   --color-slate-600: #475569; --color-slate-700: #334155; --color-slate-800: #1e293b;
   --color-slate-900: #0f172a;
-  /* Semantic, used by Phase-3 markup (bg-primary, text-primary, …) */
-  --color-primary:      #2563eb;  /* flips to #0e7490 in Phase 4 */
-  --color-primary-fg:   #ffffff;
-  --color-surface:      #ffffff;
-  --color-surface-sunken:#f1f5f9;
-  --color-success:      #16a34a; --color-warning: #b45309;
-  --color-danger:       #dc2626; --color-info:    #2563eb;
+  /* Semantic, used by Phase-3 markup (bg-primary, text-info-fg, …). The full
+     fill/soft-bg/on-bg triad must exist so the brand-utility migration maps
+     1:1 — e.g. status-ready's soft bg-blue-100/text-blue-800 → bg-info-bg/
+     text-info-fg, and bg-blue-600 hover → hover:bg-primary-hover. */
+  --color-primary:       #2563eb;  /* flips to #0e7490 in Phase 4 */
+  --color-primary-hover: #1d4ed8;  /* flips to #155e75 in Phase 4 */
+  --color-primary-fg:    #ffffff;
+  --color-surface:        #ffffff;
+  --color-surface-sunken: #f1f5f9;
+  --color-success: #16a34a; --color-success-bg: #dcfce7; --color-success-fg: #166534;
+  --color-warning: #b45309; --color-warning-bg: #fef3c7; --color-warning-fg: #92400e;
+  --color-danger:  #dc2626; --color-danger-bg:  #fef2f2; --color-danger-fg:  #991b1b;
+  --color-info:    #2563eb; --color-info-bg:    #dbeafe; --color-info-fg:    #1e40af;  /* info trio flips to teal in Phase 4 */
 }
 ```
 
@@ -632,12 +682,23 @@ Expected: only matches inside `components.css` itself (and the audit's known-dea
 grep -rn 'blue-\(50\|100\|300\|600\|700\|800\)' src/seqsetup/templates/
 ```
 
-- [ ] **Step 2: Replace** per the map (brand/primary intent only — leave any genuinely-informational blue as `info`):
-  `bg-blue-600`/`bg-blue-700` → `bg-primary hover:bg-primary` (or keep a hover utility), `text-blue-700`/`text-blue-600` → `text-primary`, `border-blue-300`/`-600` → `border-primary`, `ring-blue-300` → `ring-primary`, `bg-blue-100`/`text-blue-800` (status-ready) → `bg-info`/`text-info-fg` equivalents. Do **one page at a time**, screenshot after each.
+- [ ] **Step 2: Replace** per this map (every right-hand utility is defined by the Task 2.1 `@theme` triad, so each maps 1:1 with no value change today):
+  - `bg-blue-600` → `bg-primary`; the paired hover `bg-blue-700` → `hover:bg-primary-hover`
+  - `text-blue-700`/`text-blue-600` → `text-primary`
+  - `border-blue-300`/`border-blue-600` → `border-primary`
+  - `ring-blue-300` → `ring-primary`
+  - status-ready soft chip `bg-blue-100` → `bg-info-bg`, `text-blue-800` → `text-info-fg`
+  - `bg-blue-50` (subtle info wells) → `bg-info-bg`
 
-- [ ] **Step 3: CSS gate + screenshot diff** per page. Expected: **zero** change now (semantic tokens still resolve to blue until Phase 4). `worst=0`.
+  Do **one page at a time**, screenshot after each.
 
-- [ ] **Step 4: Commit** per page, e.g. `refactor(dashboard): brand utilities → semantic classes`.
+- [ ] **Step 3: Tokenize the login card** (`login.html`). Keep the centered-card layout and all form hooks; on the card div add `shadow-lg rounded-md`, migrate the submit button's `bg-blue-600`/`hover:bg-blue-700` per the map, and ensure the inputs' focus uses the ring (they pick it up from the Task 1c.4 `a:focus-visible`/input rules once the page's inputs are plain `border` — add `focus-visible:ring` utilities if needed). Re-skin the error placeholder via the danger tokens.
+
+- [ ] **Step 4: Tab count badges.** In `dashboard.html`, the status tabs render the count as inline `({{ counts[key] }})` text — wrap it in `<span class="badge badge--neutral">{{ counts[key] }}</span>` (the primitive from Task 1b.2). Do the same for any count shown on the validation tab buttons.
+
+- [ ] **Step 5: CSS gate + screenshot diff** per page. Expected: badge pills replace `(N)` text and the login card gains elevation; brand colors stay blue (flip is Phase 4). Review + re-baseline the intended deltas.
+
+- [ ] **Step 6: Commit** per page, e.g. `refactor(dashboard): brand utilities → semantic classes + count badges` / `style(login): tokenized card`.
 
 ### Task 3.2: Toasts → component classes + `aria-live`
 
@@ -659,63 +720,131 @@ grep -rn 'blue-\(50\|100\|300\|600\|700\|800\)' src/seqsetup/templates/
 
 - [ ] **Step 4: Commit** `refactor(toasts): token-driven .toast classes + aria-live`.
 
-### Task 3.3: Keyboard-operable index assignment
+### Task 3.3: Keyboard-operable index **assignment** (chip selects + drop zone assigns)
 
-**Files:** Modify `app.js` (add helper); modify `wizard/_draggable_index_compact.html`, `_draggable_index.html`, `_draggable_index_pair*.html`, and the drop-zone partials.
+Assignment is drag-only today: the chip `onclick`/`handleIndexClick` merely *selects* (highlights); the assign happens in `handleIndexDrop` on the **drop zone**. So keyboard parity needs BOTH: chips focusable + Enter→select, and **drop zones focusable + Enter→assign the selected index**. `handleIndexDrop` is left untouched; a parallel single-assign function hits the same endpoint. Multi-index assignment stays drag-/bulk-only.
 
-- [ ] **Step 1: Write the failing test** in `tests/browser/test_a11y.py`:
+**Files:** Modify `app.js` (add 3 helpers, no edits to `handleIndexDrop`); modify `wizard/_draggable_index*.html` (chips) and the drop-zone markup in `wizard/_sample_table.html` / `_sample_row.html` (read them first to find the `.drop-zone` elements and their `ondrop="handleIndexDrop(event,'<sample>','<run>','<type>')"` args). **Prereq:** Task 0.2 seed includes a standard **pair** index kit so the first chip's type matches the first drop zone.
+
+- [ ] **Step 1: Write the failing test** in `tests/browser/test_a11y.py` — assert a real **assignment**, not just selection:
 
 ```python
 @pytest.mark.browser
-def test_index_chip_keyboard_assign(logged_in_page, base_url, seeded_ids):
+def test_index_keyboard_assign(logged_in_page, base_url, seeded_ids):
     page = logged_in_page
     page.goto(base_url + f"/runs/{seeded_ids['draft_run_id']}")
     page.wait_for_load_state("networkidle")
+    before = page.locator(".sample-row.has-index").count()
     chip = page.locator(".draggable-index-compact").first
     chip.focus()
-    assert chip.evaluate("el => el.tabIndex") == 0          # focusable
-    page.keyboard.press("Enter")                            # activates selection
+    assert chip.evaluate("el => el.tabIndex") == 0
+    page.keyboard.press("Enter")                                  # select
     assert page.locator(".draggable-index-compact.index-selected").count() >= 1
+    zone = page.locator(".drop-zone").first
+    zone.focus()
+    assert zone.evaluate("el => el.tabIndex") == 0
+    page.keyboard.press("Enter")                                  # assign selected → this sample
+    page.wait_for_function(f"document.querySelectorAll('.sample-row.has-index').length === {before + 1}")
+    assert page.locator(".sample-row.has-index").count() == before + 1
 ```
 
-- [ ] **Step 2: Run it** — Expected: FAIL (chips have no `tabindex`, Enter does nothing).
+- [ ] **Step 2: Run it** — Expected: FAIL (chips/zones not focusable; Enter does nothing).
 
-- [ ] **Step 3: Add** the helper to `app.js`:
+- [ ] **Step 3: Add** the three helpers to `app.js` (do NOT modify `handleIndexDrop`):
 
 ```javascript
-function handleIndexKeydown(event) {
+function handleIndexKeydown(event) {                 // chip: Enter/Space = select
     if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        event.currentTarget.click();   // reuse the exact existing onclick path
+        event.currentTarget.click();                 // → handleIndexClick (highlight)
+    }
+}
+
+function assignSelectedIndexToSample(sampleId, runId, dropZoneType, dropZoneEl) {
+    if (selectedIndexes.length === 0) return false;  // nothing selected → no-op
+    const idx = selectedIndexes[0];                  // keyboard path = single assign
+    if ((idx.type === 'i7' || idx.type === 'i5') && dropZoneType && dropZoneType !== idx.type) return false;
+    const context = dropZoneEl && dropZoneEl.dataset ? (dropZoneEl.dataset.context || '') : '';
+    const sampleTable = document.getElementById('sample-table');
+    const existingIds = sampleTable ? (sampleTable.dataset.existingIds || '') : '';
+    const values = { context: context, existing_ids: existingIds };
+    if (idx.type === 'pair') { values.index_pair_id = idx.id; }
+    else { values.index_id = idx.id; values.index_type = idx.type; }
+    htmx.ajax('POST', `/runs/${runId}/samples/${sampleId}/assign-index`, {
+        target: `#sample-row-${sampleId}`, swap: 'outerHTML', values: values
+    });
+    clearIndexSelection();
+    return true;
+}
+
+function handleIndexAssignKeydown(event, sampleId, runId, dropZoneType) {  // drop zone: Enter/Space = assign
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        assignSelectedIndexToSample(sampleId, runId, dropZoneType, event.currentTarget);
     }
 }
 ```
 
-- [ ] **Step 4: Edit** each draggable partial: add `tabindex="0"`, `role="button"`, `onkeydown="handleIndexKeydown(event)"`, and `aria-label="{{ index.name }} {{ index_type }} sequence {{ index.sequence }}"`. Keep `draggable`, `onclick`, `ondragstart`, `title`, all `data-*`.
+- [ ] **Step 4: Edit the chip partials** (`_draggable_index_compact.html`, `_draggable_index.html`, `_draggable_index_pair*.html`): add `tabindex="0"`, `role="button"`, `onkeydown="handleIndexKeydown(event)"`, `aria-label="{{ index.name }} {{ index_type }} sequence {{ index.sequence }}"`, and an **i7/i5 text pill** `<span class="index-type-pill {{ index_type|e }}">{{ index_type|e }}</span>`. Keep `draggable`, `onclick`, `ondragstart`, `title`, all `data-*`.
 
-- [ ] **Step 5: Run the test** — Expected: PASS. Then `pixi run smoke-browser` green.
+- [ ] **Step 5: Edit the drop-zone markup**: on each `.drop-zone` add `tabindex="0"`, `role="button"`, `aria-label="Assign selected index to {{ sample.sample_id }}"`, `onkeydown="handleIndexAssignKeydown(event, '{{ sample.id }}', '{{ run.id }}', '{{ drop_zone_type }}')"` (match the exact args the element's existing `ondrop` passes), and a small target glyph (e.g. `<span aria-hidden="true">⌖</span>`). Keep `ondrop`, `ondragover`, `data-context`.
 
-- [ ] **Step 6: Commit** `a11y(index): keyboard-operable click-to-assign (Enter/Space) + aria-label`.
+- [ ] **Step 6: Add focus + pill CSS** to `components.css`:
+
+```css
+.draggable-index:focus-visible, .draggable-index-compact:focus-visible,
+.drop-zone:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.index-type-pill { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); padding: 0 .3rem; border-radius: var(--radius-sm); color: #fff; }
+.index-type-pill.i7 { background: var(--accent-i7); }
+.index-type-pill.i5 { background: var(--accent-i5); }
+.index-type-pill.pair { background: var(--accent-pair); }
+.drop-zone { border-radius: var(--radius-sm); }
+.drop-zone.drag-over { box-shadow: var(--shadow-md); }
+```
+
+- [ ] **Step 7: Run the test** — Expected: PASS. Then `pixi run smoke-browser` green and a manual drag-drop still assigns (regression check on the untouched `handleIndexDrop`).
+
+- [ ] **Step 8: Commit** `a11y(index): keyboard-operable assignment (chip select + drop-zone assign), type pills, focus rings`.
 
 ### Task 3.4: Wide-table scroll wrappers + sample-table cell titles
 
 **Files:** Modify `indexes/detail.html`, `admin/logs.html`, validation table partials, `wizard/_sample_row.html`.
 
-- [ ] **Step 1: Wrap** each wide table in `<div class="table-scroll">…</div>` and add to `components.css`: `.table-scroll { overflow-x: auto; }`. Add `title="{{ value }}"` to the truncated `.sample-table` cells (Sample-ID, Test-ID, Worksheet, kit) in `_sample_row.html`.
+- [ ] **Step 1: Wrap** each wide table (`indexes/detail.html`, `admin/logs.html`, the validation heatmap/color-balance/dark-cycle tables) in `<div class="table-scroll">…</div>` and add to `components.css`: `.table-scroll { overflow-x: auto; }`. Add `title="{{ value }}"` to the truncated `.sample-table` cells (Sample-ID, Test-ID, Worksheet, kit) in `_sample_row.html`.
 
-- [ ] **Step 2: CSS gate + screenshot diff.** Expected: no resting-state change at desktop width; horizontal scroll appears only when narrow. Confirm titles via hover.
+- [ ] **Step 2: Add `scope`** to every data-table header cell: `scope="col"` on column headers, `scope="row"` on the heatmap/dark-cycle row-label `th`s (screen-reader association). For the heatmap, make the **first column sticky** so row labels stay visible while scrolling horizontally — add to `components.css`:
 
-- [ ] **Step 3: Commit** `a11y(tables): horizontal-scroll wrappers + truncated-cell titles`.
+```css
+.heatmap-table .heatmap-row-header { position: sticky; left: 0; z-index: 1; background: var(--surface-sunken); }
+```
+
+- [ ] **Step 3: CSS gate + screenshot diff.** Expected: no resting-state change at desktop width; horizontal scroll + sticky first column appear when narrow. Confirm titles via hover and `scope` in the DOM.
+
+- [ ] **Step 4: Commit** `a11y(tables): scroll wrappers, scope on headers, sticky heatmap first column, cell titles`.
 
 ### Task 3.5: Shell polish — skip-link, SVG chevron, aria-current, admin fieldset boxing
 
 **Files:** Modify `_app_shell.html`; `admin/authentication.html` (and other admin pages with bare `<fieldset>`).
 
-- [ ] **Step 1: Add** a skip-link as the first child of `<body>`'s main region and `id="main"` on `.main-content`; replace the `<details><summary>` `▶` (CSS triangle) with an inline SVG chevron; add `aria-current="page"` to the active `.nav-item`. Box bare admin `<fieldset>`s with `class="config-panel"`.
+- [ ] **Step 1: Markup** (`_app_shell.html`): add `<a href="#main" class="skip-link">Skip to main content</a>` as the first child inside `<main class="app-container">`; add `id="main"` to the `.main-content` div; inside each settings/admin `<summary>` add an inline SVG chevron `<svg class="nav-chevron" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 5l6 5-6 5z"/></svg>`; add `aria-current="page"` to the active `.nav-item` (the `{% if active_route == ... %}` branch).
 
-- [ ] **Step 2: CSS gate + screenshot diff.** Expected: chevron icon instead of the `▶` glyph; boxed admin fieldsets. Re-baseline admin pages.
+- [ ] **Step 2: CSS** (`components.css`) — **remove the old CSS triangle so it doesn't double** with the SVG, rotate the SVG on open, and style the skip-link:
 
-- [ ] **Step 3: Commit** `a11y(shell): skip-link, SVG chevron, aria-current, boxed admin fieldsets`.
+```css
+.settings-section summary::before { content: none; }   /* kill the old ▶ (\25B6) so only the SVG renders */
+.nav-chevron { width: .7rem; height: .7rem; margin-right: .5rem; transition: transform .2s; vertical-align: middle; }
+.settings-section[open] > summary .nav-chevron { transform: rotate(90deg); }
+.skip-link { position: absolute; left: -9999px; top: 0; z-index: 100;
+    background: var(--surface); color: var(--primary);
+    padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); }
+.skip-link:focus { left: var(--space-2); box-shadow: var(--focus-ring); }
+```
+
+- [ ] **Step 3: Box admin fieldsets.** Add `class="config-panel"` to the bare `<fieldset>`s in `admin/authentication.html` and any other admin page rendering unboxed fieldsets.
+
+- [ ] **Step 4: CSS gate + screenshot diff.** Expected: a single SVG chevron (not two markers), Tab-from-top reveals the skip-link, boxed admin fieldsets. Re-baseline admin + shell pages.
+
+- [ ] **Step 5: Commit** `a11y(shell): skip-link, SVG chevron (old triangle removed), aria-current, boxed admin fieldsets`.
 
 ---
 
@@ -734,9 +863,10 @@ function handleIndexKeydown(event) {
 ```
 ```css
 /* input.css @theme */
---color-primary: #0e7490; --color-info: #0e7490;
+--color-primary: #0e7490; --color-primary-hover: #155e75;
+--color-info: #0e7490; --color-info-bg: #cff5fb; --color-info-fg: #155e75;
 ```
-  Leave `--accent-i7: #2563eb` untouched (index blue stays blue — the whole point).
+  Leave `--accent-i7: #2563eb` untouched (index blue stays blue — the whole point). Grep `input.css`/`components.css` after editing to confirm no stray `#2563eb`/`#1d4ed8` brand literal was missed.
 
 - [ ] **Step 2: CSS gate + full screenshot diff.** Every primary button/link/active-tab/active-nav/focus-ring becomes teal; i7 index coding stays blue; the "ready" badge moves to the teal info family. **Review every screenshot**; re-baseline the whole set after confirming each delta is intended.
 
@@ -763,7 +893,8 @@ function handleIndexKeydown(event) {
 
 ## Self-review notes
 
-- **Spec coverage:** every §5 component spec maps to a task (buttons 1b.1; badges 1b.2; cards/.config-panel 1c.1; sample table 1b.3/3.4; forms 1c.4; sidebar/header 1c.5/3.5; tabs — native, no task needed beyond focus-ring in 1c.4; wizard stepper delete 1c.7; heatmap 1c.6; drag/drop+chips 1b.3/3.3; toasts 3.2; login — dead CSS deleted 1c.7, login uses Tailwind so it re-skins via 3.1). §6 phases map 1:1. §1.1 approved exceptions: keyboard (3.3), titles/aria (3.3/3.4), toasts (3.2), heatmap cue (1c.6), per-page markup (3.x), `:user-invalid` (1c.4).
+- **Spec coverage:** buttons 1b.1; badges + count-pills 1b.2/3.1; cards/.config-panel 1c.1; sample table type/sticky-header 1b.3, cell titles/scope 3.4; forms/focus/`:user-invalid` 1c.4; sidebar/header 1c.5, chevron/skip-link/aria-current 3.5; tabs — native `<button>`s + focus ring 1c.4, count badges 3.1; wizard stepper delete 1c.7; heatmap legend/ramp/glyph/titles/sticky-first-col 1c.6+3.4; drag-drop + i7/i5 pills + focus rings + **keyboard assignment** 3.3; toasts 3.2; login card tokenization 3.1 Step 3 + dead-CSS delete 1c.7. §6 phases map 1:1.
+- **Round-2 review fixes applied:** screenshot diff now `sys.exit`s non-zero + checks both directions + clears `current/` (0.3); axe is vendored + `evaluate`-injected (CSP-safe) with a real subset-of-baseline gate (0.4); Phase 2 `@theme` defines the full `*-bg`/`*-fg`/`primary-hover` triad so 3.1 maps 1:1; **keyboard work assigns via drop zones, not just selects** (3.3, with a test asserting a real assignment); heatmap ramp is genuinely single-hue + has a real `::after` glyph (1c.6); chevron removes the old `summary::before` (3.5); skip-link has hidden/focus CSS (3.5); dead-CSS grep covers every deleted selector incl. `.login-container`/`.login-form` (1c.7).
 - **Sequencing invariant:** brand is blue until Task 4.1; all earlier "zero-diff" gates assume that. Do not change `--primary`/`--color-primary` before Phase 4.
 - **Re-verify-before-delete:** Task 1c.7 Step 1 must show zero external refs before any deletion; the audit's "dead" list is re-checked, not trusted.
 - **Routes/URLs (verified):** validation page is `GET /runs/{run_id}/validation`; its four tabs and the dashboard status tabs are client-toggled (Alpine `x-show` / HTMX fragments), so Task 0.3 captures them by clicking, not by URL. Pixi tasks live in `pixi.toml` (Tasks 0.1, 2.1). Confirm exact tab-button selectors against the templates before running 0.3.
