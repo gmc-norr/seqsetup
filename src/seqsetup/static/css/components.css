@@ -1081,6 +1081,21 @@ body {
     border-left: 3px solid var(--accent-i5);
 }
 
+/* Config panel — used by run-editor fieldsets */
+.config-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xs);
+    background: var(--surface);
+    padding: var(--space-4);
+    margin: 0 0 var(--space-4);
+}
+.config-panel > legend {
+    font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
+    text-transform: uppercase; letter-spacing: .03em;
+    color: var(--text-muted); padding: 0 var(--space-2);
+}
+
 /* Run config panel */
 .run-config-panel h3 {
     margin-top: 0;
