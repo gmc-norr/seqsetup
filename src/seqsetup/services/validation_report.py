@@ -25,6 +25,7 @@ from reportlab.platypus import (
 )
 
 from ..models.sequencing_run import SequencingRun
+from .index_collision_validator import MAX_HEATMAP_SAMPLES
 from ..models.validation import (
     ColorBalanceStatus,
     IndexColorBalance,
@@ -328,6 +329,12 @@ class ValidationReportPDF:
         """Render a combined distance heatmap as an embedded image."""
         n = len(matrix.sample_names)
         if n < 2:
+            return None
+        # Defensive bound: the n x n grid of text annotations below is the
+        # cost driver. calculate_index_distances already withholds matrices
+        # for oversized lanes, but never render an unbounded heatmap even if
+        # one reaches this path.
+        if n > MAX_HEATMAP_SAMPLES:
             return None
 
         # Use combined distances

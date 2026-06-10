@@ -4,8 +4,47 @@ import logging
 
 from seqsetup.services.log_capture import (
     LogCaptureHandler,
+    attach_scrubbing_filter_to_handler,
     scrub_log_message,
 )
+
+
+class _CapturingHandler(logging.Handler):
+    """Records the (post-filter) formatted message of each record it sees."""
+
+    def __init__(self):
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record):
+        self.messages.append(record.getMessage())
+
+
+class TestScrubbingFilterOnHandler:
+    """The scrubbing filter must run for records that PROPAGATE UP from child
+    loggers (seqsetup.services.*) to a handler. A logger-level filter does not
+    fire for propagated records — only a handler-level filter does — so the
+    filter must be attachable to the handler.
+    """
+
+    def test_filter_on_handler_scrubs_propagated_child_logger_record(self):
+        handler = _CapturingHandler()
+        attach_scrubbing_filter_to_handler(handler)
+        root = logging.getLogger()
+        root.addHandler(handler)
+        child = logging.getLogger("seqsetup.services.scrub_propagation_demo")
+        prev_level = child.level
+        child.setLevel(logging.DEBUG)
+        try:
+            child.warning("bind attempt bind_password='hunter2-secret'")
+        finally:
+            root.removeHandler(handler)
+            child.setLevel(prev_level)
+
+        assert handler.messages, "handler never received the propagated record"
+        last = handler.messages[-1]
+        assert "hunter2-secret" not in last
+        assert "***" in last
 
 
 class TestScrubLogMessage:

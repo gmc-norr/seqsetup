@@ -1,6 +1,7 @@
 """Sequencing run configuration models."""
 
 import base64
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -9,6 +10,27 @@ import uuid
 
 from .sample import Sample
 from .analysis import Analysis
+
+
+def _resolve_max_samples_per_run() -> int:
+    """Hard upper bound on samples added to a single run.
+
+    Per-lane index-collision/distance validation is O(n^2); without a cap an
+    authenticated user could paste an unbounded number of samples and turn a
+    plain validation GET into a memory/CPU denial-of-service on the shared
+    clinical app. The default is generous for real clinical multiplexing;
+    operators with exceptionally high-plex needs can raise it via
+    SEQSETUP_MAX_SAMPLES_PER_RUN, accepting the higher validation cost.
+    """
+    raw = os.environ.get("SEQSETUP_MAX_SAMPLES_PER_RUN", "")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 5000
+    return value if value > 0 else 5000
+
+
+MAX_SAMPLES_PER_RUN = _resolve_max_samples_per_run()
 
 
 class RunStatus(Enum):
@@ -204,7 +226,19 @@ class SequencingRun:
         object.__setattr__(self, name, value)
 
     def add_sample(self, sample: Sample) -> None:
-        """Add a sample to the run."""
+        """Add a sample to the run.
+
+        Refuses once the run is at ``MAX_SAMPLES_PER_RUN`` — the load-bearing
+        backstop against unbounded sample counts (which would make the
+        O(n^2) index validation a DoS vector). Read the module global at call
+        time so the cap can be tuned/tested without re-import.
+        """
+        if len(self.samples) >= MAX_SAMPLES_PER_RUN:
+            raise ValueError(
+                f"Run already has the maximum of {MAX_SAMPLES_PER_RUN} samples; "
+                f"refusing to add more. Split the work across runs or raise "
+                f"SEQSETUP_MAX_SAMPLES_PER_RUN."
+            )
         self.samples.append(sample)
 
     def remove_sample(self, sample_id: str) -> None:

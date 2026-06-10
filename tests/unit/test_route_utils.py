@@ -1,12 +1,58 @@
 """Tests for route utility functions."""
 
+import asyncio
+
 import pytest
 
 from seqsetup.routes.utils import (
+    UploadTooLargeError,
     get_username,
+    read_upload_capped,
     sanitize_filename,
     sanitize_string,
 )
+
+
+class _FakeUpload:
+    """Minimal Starlette-UploadFile stand-in that serves ``total`` bytes in
+    ``read(size)`` chunks and records how many bytes were actually read."""
+
+    def __init__(self, total: int):
+        self._remaining = total
+        self.bytes_read = 0
+
+    async def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            size = self._remaining
+        n = min(size, self._remaining)
+        self._remaining -= n
+        self.bytes_read += n
+        return b"x" * n
+
+
+class TestReadUploadCapped:
+    """The capped reader must stream in bounded chunks and short-circuit
+    BEFORE buffering an oversized body (the DoS the index-kit path already
+    avoids and the bulk-sample path did not)."""
+
+    def test_under_cap_returns_full_content(self):
+        up = _FakeUpload(1000)
+        data = asyncio.run(read_upload_capped(up, max_bytes=10_000))
+        assert data == b"x" * 1000
+
+    def test_over_cap_raises(self):
+        up = _FakeUpload(3 * 1024 * 1024)
+        with pytest.raises(UploadTooLargeError):
+            asyncio.run(read_upload_capped(up, max_bytes=1024 * 1024))
+
+    def test_over_cap_short_circuits_without_reading_whole_body(self):
+        total = 50 * 1024 * 1024  # 50 MB
+        up = _FakeUpload(total)
+        with pytest.raises(UploadTooLargeError):
+            asyncio.run(read_upload_capped(up, max_bytes=1024 * 1024))
+        # Stopped well before consuming the whole 50 MB body — at most the cap
+        # plus one chunk should have been read.
+        assert up.bytes_read <= 1024 * 1024 + 64 * 1024
 
 
 # ---------------------------------------------------------------------------

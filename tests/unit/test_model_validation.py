@@ -4,7 +4,45 @@ import pytest
 
 from seqsetup.models.index import Index, IndexKit, IndexType, IndexMode
 from seqsetup.models.sample import Sample
+from seqsetup.models import sequencing_run as sequencing_run_module
 from seqsetup.models.sequencing_run import RunCycles, SequencingRun
+
+
+class TestSampleCountCap:
+    """A run must reject samples beyond a hard per-run cap.
+
+    Without a cap, an authenticated user can paste/import an unbounded number
+    of samples, and the per-lane O(n^2) index-distance validation becomes a
+    memory/CPU denial-of-service on the shared clinical app.
+    """
+
+    def test_add_sample_raises_at_cap(self, monkeypatch):
+        monkeypatch.setattr(sequencing_run_module, "MAX_SAMPLES_PER_RUN", 3)
+        run = SequencingRun()
+        for i in range(3):
+            run.add_sample(Sample(sample_id=f"S{i}"))
+        with pytest.raises(ValueError, match="maximum"):
+            run.add_sample(Sample(sample_id="S_over"))
+        assert len(run.samples) == 3
+
+    def test_add_sample_below_cap_succeeds(self, monkeypatch):
+        monkeypatch.setattr(sequencing_run_module, "MAX_SAMPLES_PER_RUN", 3)
+        run = SequencingRun()
+        run.add_sample(Sample(sample_id="S1"))
+        run.add_sample(Sample(sample_id="S2"))
+        assert len(run.samples) == 2
+
+    def test_from_dict_does_not_enforce_cap_on_existing_runs(self, monkeypatch):
+        """Loading a pre-existing run with more samples than the cap must not
+        fail — the cap guards new ingest, not historical documents."""
+        monkeypatch.setattr(sequencing_run_module, "MAX_SAMPLES_PER_RUN", 2)
+        data = {
+            "id": "legacy-run",
+            "run_name": "legacy",
+            "samples": [{"id": f"id{i}", "sample_id": f"S{i}"} for i in range(5)],
+        }
+        run = SequencingRun.from_dict(data)
+        assert len(run.samples) == 5
 
 
 class TestIndexDNAValidation:
@@ -25,6 +63,21 @@ class TestIndexDNAValidation:
     def test_empty_sequence_allowed(self):
         index = Index(name="test", sequence="", index_type=IndexType.I7)
         assert index.sequence == ""
+
+    def test_trailing_newline_is_stripped_not_stored(self):
+        """A YAML literal-block scalar yields a trailing newline; the regex
+        anchor ``$`` used to accept it, leaving a newline in the sequence that
+        would later split a Sample Sheet row. Normalise it away."""
+        index = Index(name="test", sequence="ATCGATCG\n", index_type=IndexType.I7)
+        assert index.sequence == "ATCGATCG"
+
+    def test_surrounding_whitespace_stripped(self):
+        index = Index(name="test", sequence="  ATCGATCG\t\n", index_type=IndexType.I7)
+        assert index.sequence == "ATCGATCG"
+
+    def test_embedded_newline_raises(self):
+        with pytest.raises(ValueError, match="invalid characters"):
+            Index(name="test", sequence="ATCG\nATCG", index_type=IndexType.I7)
 
     def test_invalid_dna_characters_raises(self):
         with pytest.raises(ValueError, match="invalid characters"):

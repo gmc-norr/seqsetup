@@ -74,12 +74,48 @@ def sanitize_filename(name: str, default: str = "export") -> str:
 
 def sanitize_string(value: str, max_len: int = 256) -> str:
     """Sanitize user input string: strip whitespace and limit length.
-    
+
     Args:
         value: String to sanitize
         max_len: Maximum length after stripping (default: 256)
-    
+
     Returns:
         Stripped and length-limited string
     """
     return value.strip()[:max_len] if value else ""
+
+
+class UploadTooLargeError(Exception):
+    """Raised by ``read_upload_capped`` when an upload exceeds the byte cap."""
+
+    def __init__(self, max_bytes: int):
+        self.max_bytes = max_bytes
+        super().__init__(f"Upload exceeds maximum size of {max_bytes} bytes")
+
+
+async def read_upload_capped(
+    upload, max_bytes: int, chunk_size: int = 64 * 1024
+) -> bytes:
+    """Read an UploadFile in bounded chunks, refusing oversize bodies early.
+
+    ``UploadFile.read()`` with no argument buffers the ENTIRE body into memory
+    before any size check can run — a multi-GB POST then spikes RAM regardless
+    of the cap. Reading fixed-size chunks and short-circuiting as soon as the
+    cumulative size exceeds ``max_bytes`` bounds the worst-case allocation to
+    roughly ``max_bytes + chunk_size``.
+
+    Raises ``UploadTooLargeError`` once the cap is exceeded (before reading the
+    rest of the stream). Shared by every multipart upload route so the bound
+    cannot be forgotten on one of them.
+    """
+    chunks: list[bytes] = []
+    bytes_so_far = 0
+    while True:
+        chunk = await upload.read(chunk_size)
+        if not chunk:
+            break
+        bytes_so_far += len(chunk)
+        if bytes_so_far > max_bytes:
+            raise UploadTooLargeError(max_bytes)
+        chunks.append(chunk)
+    return b"".join(chunks)

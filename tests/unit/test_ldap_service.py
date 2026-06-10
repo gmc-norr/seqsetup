@@ -82,6 +82,34 @@ def _build_config() -> LDAPConfig:
     )
 
 
+class TestUserDnPatternEscaping:
+    """A login username substituted into user_dn_pattern must be escaped for
+    the DN (RFC 4514) context, not the search-filter (RFC 4515) context.
+
+    The login form does not constrain the username's character set, so DN
+    metacharacters (',', '=', '+') would otherwise pass through unescaped and
+    relocate/alter the bind DN (CWE-90).
+    """
+
+    def test_dn_metacharacters_in_username_are_escaped(self):
+        service = LDAPService(_build_config())
+        user_dn = service._get_user_dn("eviluser,OU=Admins", conn=None)
+        # The injected RDN separator/assignment must be escaped so it can't
+        # relocate the bind DN; the configured suffix stays intact.
+        assert "eviluser\\,OU\\=Admins" in user_dn
+        assert user_dn.endswith(",OU=Users,DC=example,DC=com")
+
+    def test_plus_in_username_is_escaped(self):
+        service = LDAPService(_build_config())
+        user_dn = service._get_user_dn("a+b", conn=None)
+        assert "a\\+b" in user_dn
+
+    def test_plain_username_unchanged(self):
+        service = LDAPService(_build_config())
+        user_dn = service._get_user_dn("jdoe", conn=None)
+        assert user_dn == "CN=jdoe,OU=Users,DC=example,DC=com"
+
+
 class TestLdapAuthOrderingInvariant:
     """The user-bind that verifies the password must precede any conn.search()
     used to derive the user's role.

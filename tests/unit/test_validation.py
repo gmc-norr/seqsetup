@@ -278,6 +278,46 @@ class TestIndexCollisions:
         collisions = ValidationService.validate_index_collisions(run)
         assert len(collisions) == 0
 
+    def test_collision_over_effective_index_cycles_not_full_sequence(self):
+        """Two i7 indexes that are identical over the cycles actually READ
+        collide at demultiplexing even if their full stored sequences differ.
+
+        Demultiplexing reads only ``index1_cycles`` cycles (the documented
+        "read 7bp of a 10bp index" / OverrideCycles I7N3 feature). Two 10bp
+        indexes identical in their first 7 bases but differing in the masked
+        tail demultiplex to the SAME barcode and MUST be flagged. Comparing
+        the full 10bp sequences (distance 3) would wrongly pass them.
+        """
+        s1 = self._make_sample_with_indexes("PATIENT_A", "AAAAAAAGGT", "", lanes=[1])
+        s2 = self._make_sample_with_indexes("PATIENT_B", "AAAAAAACCA", "", lanes=[1])
+        s1.index1_cycles = 7  # only 7 of 10 cycles are read
+        s2.index1_cycles = 7
+
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[s1, s2],
+        )
+
+        collisions = ValidationService.validate_index_collisions(run)
+        assert len(collisions) == 1
+        assert collisions[0].index_type == "i7"
+        # Effective Hamming over the 7 read cycles is 0 (identical barcode).
+        assert collisions[0].hamming_distance == 0
+
+    def test_no_collision_when_full_cycles_read_distinguishes(self):
+        """The same two indexes do NOT collide when all 10 cycles are read."""
+        s1 = self._make_sample_with_indexes("S1", "AAAAAAAGGT", "", lanes=[1])
+        s2 = self._make_sample_with_indexes("S2", "AAAAAAACCA", "", lanes=[1])
+        # index1_cycles unset → full sequence length (10) is read; distance 3.
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[s1, s2],
+        )
+        collisions = ValidationService.validate_index_collisions(run)
+        assert len(collisions) == 0
+
     def test_collision_empty_lanes_means_all(self):
         """Samples with empty lanes appear in all lanes."""
         run = SequencingRun(
@@ -516,6 +556,45 @@ class TestDistanceMatrix:
         matrix = matrices[1]
         assert matrix.i7_distances[0][1] == matrix.i7_distances[1][0]
         assert matrix.i5_distances[0][1] == matrix.i5_distances[1][0]
+
+    def test_oversized_lane_heatmap_is_skipped(self, monkeypatch):
+        """The O(n^2) distance matrix is for VISUALISATION; building it for a
+        lane with thousands of samples would exhaust memory. Lanes beyond the
+        heatmap cap are skipped (collision DETECTION still runs separately).
+        """
+        from seqsetup.services import index_collision_validator as icv
+
+        monkeypatch.setattr(icv, "MAX_HEATMAP_SAMPLES", 3)
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[
+                self._make_sample_with_indexes("S1", "AAAA", "CCCC", lanes=[1]),
+                self._make_sample_with_indexes("S2", "TTTT", "GGGG", lanes=[1]),
+                self._make_sample_with_indexes("S3", "ACAC", "GTGT", lanes=[1]),
+                self._make_sample_with_indexes("S4", "GTGT", "ACAC", lanes=[1]),
+            ],
+        )
+
+        matrices = ValidationService.calculate_index_distances(run)
+        assert 1 not in matrices  # 4 > cap 3 → no heatmap matrix built
+
+    def test_lane_at_heatmap_cap_still_built(self, monkeypatch):
+        from seqsetup.services import index_collision_validator as icv
+
+        monkeypatch.setattr(icv, "MAX_HEATMAP_SAMPLES", 3)
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[
+                self._make_sample_with_indexes("S1", "AAAA", "CCCC", lanes=[1]),
+                self._make_sample_with_indexes("S2", "TTTT", "GGGG", lanes=[1]),
+                self._make_sample_with_indexes("S3", "ACAC", "GTGT", lanes=[1]),
+            ],
+        )
+        matrices = ValidationService.calculate_index_distances(run)
+        assert 1 in matrices
+        assert len(matrices[1].sample_names) == 3
 
     def test_matrix_diagonal_is_none(self):
         """Diagonal entries are None (no self-comparison)."""

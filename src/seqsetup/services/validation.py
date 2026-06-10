@@ -31,7 +31,7 @@ from .application_profile_validator import ApplicationProfileValidator
 from .color_analysis_validator import ColorAnalysisValidator
 from .cycle_calculator import CycleCalculator
 from .index_collision_validator import IndexCollisionValidator
-from .validation_utils import hamming_distance
+from .validation_utils import effective_index_sequence, hamming_distance
 
 
 logger = logging.getLogger(__name__)
@@ -576,8 +576,12 @@ class ValidationService:
             # Build a key of (i7_seq, i5_seq) for each sample
             seen: dict[tuple, list[str]] = defaultdict(list)
             for s in samples:
-                i7 = s.index1_sequence or ""
-                i5 = s.index2_sequence or ""
+                # Key on the bases actually READ at demultiplexing (effective
+                # index cycles), not the full stored sequence — two samples
+                # whose masked tails differ but whose read cycles match
+                # demultiplex identically and must be reported as duplicates.
+                i7 = effective_index_sequence(s, 1, run)
+                i5 = effective_index_sequence(s, 2, run)
                 if not i7:
                     continue
                 key = (i7, i5)
@@ -625,7 +629,12 @@ class ValidationService:
                 for j in range(i + 1, len(indexed)):
                     s1, s2 = indexed[i], indexed[j]
                     if s1.index1_sequence and s2.index1_sequence:
-                        d = hamming_distance(s1.index1_sequence, s2.index1_sequence)
+                        # Distance over the cycles actually read, not the
+                        # full stored sequence (see _check_sample_pair_collision).
+                        d = hamming_distance(
+                            effective_index_sequence(s1, 1, run),
+                            effective_index_sequence(s2, 1, run),
+                        )
                         if min_i7_dist is None or d < min_i7_dist:
                             min_i7_dist = d
 
