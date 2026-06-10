@@ -11,7 +11,7 @@ test = "PYTHONPATH=src pytest tests/unit tests/integration"
 docs = "sphinx-build -b html docs docs/_build/html"
 mock-api = "uvicorn tools.mock_igene_api:app --port 8100"
 playwright-install = "playwright install chromium"
-smoke-browser = "PYTHONPATH=src pytest tests/browser -v"
+smoke-browser = { cmd = "PYTHONPATH=src pytest tests/browser -v", depends-on = ["css"] }
 tailwind-install = { cmd = """bash -c '
 VERSION=$(cat tools/tailwind-version.txt)
 DEST=.pixi/bin/tailwindcss
