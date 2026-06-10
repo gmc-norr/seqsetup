@@ -1799,6 +1799,18 @@ body {
     border-top: 1px solid var(--border);
 }
 
+/* Run-editor index panel layout (index palette beside sample table) */
+.run-page-with-index-panel {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: var(--space-4);
+    align-items: start;
+}
+.run-page-sample-panel { min-width: 0; overflow-x: auto; }
+@media (max-width: 1000px) {
+    .run-page-with-index-panel { grid-template-columns: 1fr; }
+}
+
 /* Wizard Step 2 (Samples & Indexes) layout */
 .wizard-step3-layout {
     display: grid;
