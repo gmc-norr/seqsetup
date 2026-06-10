@@ -1553,20 +1553,19 @@ body {
 }
 
 /* Status badge colors (shared by dashboard + run page) */
-.status-draft {
-    background: #fef3c7;
-    color: #92400e;
+.badge, .status-draft, .status-ready, .status-archived, .run-status-badge {
+    display: inline-flex; align-items: center; gap: .35rem;
+    padding: .15rem .55rem; border-radius: var(--radius-pill);
+    font-size: var(--fs-2xs); font-weight: var(--fw-semibold); line-height: 1.4;
 }
-
-.status-ready {
-    background: #dbeafe;
-    color: #1e40af;
-}
-
-.status-archived {
-    background: #e5e7eb;
-    color: #374151;
-}
+.status-draft    { background: var(--warning-bg); color: var(--warning-fg); }
+.status-ready    { background: var(--info-bg);    color: var(--info-fg); }
+.status-archived { background: var(--surface-sunken); color: var(--text-muted); }
+.badge--success { background: var(--success-bg); color: var(--success-fg); }
+.badge--warning { background: var(--warning-bg); color: var(--warning-fg); }
+.badge--danger  { background: var(--danger-bg);  color: var(--danger-fg); }
+.badge--info    { background: var(--info-bg);    color: var(--info-fg); }
+.badge--neutral { background: var(--surface-sunken); color: var(--text-muted); }
 
 .locked-message {
     background: #fef3c7;
@@ -1659,13 +1658,7 @@ body {
     color: var(--text-muted);
 }
 
-.run-status-badge {
-    display: inline-block;
-    padding: 0.2rem 0.6rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
+/* .run-status-badge shape is inherited from the .badge primitive above */
 
 .run-status-actions {
     display: flex;
