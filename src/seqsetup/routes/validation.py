@@ -55,15 +55,15 @@ def _build_heatmap_lanes(result):
                 for j in range(n):
                     dist = distances[i][j]
                     if i == j:
-                        row.append({"content": "-", "class": "heatmap-cell diagonal", "title": "Distance: None"})
+                        row.append({"content": "-", "class": "heatmap-cell diagonal", "title": f"{full_names[i]} (self)"})
                     elif dist is None:
-                        row.append({"content": "N/A", "class": "heatmap-cell no-data", "title": "Distance: None"})
+                        row.append({"content": "N/A", "class": "heatmap-cell no-data", "title": f"{full_names[i]} × {full_names[j]}: no distance data"})
                     else:
                         dist_class = min(dist, 10)
                         row.append({
                             "content": str(dist),
                             "class": f"heatmap-cell dist-{dist_class}",
-                            "title": f"Distance: {dist}",
+                            "title": f"{full_names[i]} × {full_names[j]}: distance {dist}",
                         })
                 rows.append(row)
             return rows
