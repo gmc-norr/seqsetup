@@ -397,48 +397,26 @@ body {
 
 /* Buttons */
 .btn, button {
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    font-size: 0.875rem;
-    cursor: pointer;
-    border: none;
-    transition: background 0.2s;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-sm);
+    cursor: pointer; border: none;
+    transition: background .15s, box-shadow .15s;
 }
-
-.btn-primary {
-    background: var(--primary);
-    color: white;
-}
-
-.btn-primary:hover {
-    background: var(--primary-hover);
-}
-
-.btn-secondary {
-    background: var(--secondary);
-    color: white;
-}
-
-.btn-danger {
-    background: var(--danger);
-    color: white;
-}
-
-.btn-warning {
-    background: var(--warning, #f0ad4e);
-    color: white;
-}
+.btn-primary   { background: var(--primary);   color: var(--primary-fg); }
+.btn-primary:hover   { background: var(--primary-hover); box-shadow: var(--shadow-sm); }
+.btn-secondary { background: var(--secondary); color: #fff; }
+.btn-secondary:hover { background: var(--text-muted); box-shadow: var(--shadow-sm); }
+.btn-danger    { background: var(--danger);    color: #fff; }
+.btn-danger:hover    { background: #b91c1c; box-shadow: var(--shadow-sm); }
+.btn-warning   { background: var(--warning);   color: #fff; }
+.btn-warning:hover   { background: #a16207; box-shadow: var(--shadow-sm); }
+.btn:focus-visible, button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.btn.disabled, .btn:disabled { opacity: .5; pointer-events: none; cursor: not-allowed; }
 
 .btn-small {
     padding: 0.25rem 0.5rem;
     font-size: 0.75rem;
-}
-
-.btn.disabled,
-.btn:disabled {
-    opacity: 0.5;
-    pointer-events: none;
-    cursor: not-allowed;
 }
 
 /* Button with spinner (HTMX loading state) */
