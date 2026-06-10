@@ -1242,6 +1242,13 @@ body {
 .success-message { color: var(--success-fg); background: var(--success-bg); padding: var(--space-2); border-radius: var(--radius-sm); margin-top: var(--space-2); }
 .warning-message { color: var(--warning-fg); background: var(--warning-bg); padding: var(--space-2); border-radius: var(--radius-sm); margin-top: var(--space-2); }
 
+/* Toast notification component */
+.toast { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-4); box-shadow: var(--shadow-md); max-width: 24rem; }
+.toast--success { background: var(--success-bg); border-color: var(--success); color: var(--success-fg); }
+.toast--error   { background: var(--danger-bg);  border-color: var(--danger);  color: var(--danger-fg); }
+.toast--warning { background: var(--warning-bg); border-color: var(--warning); color: var(--warning-fg); }
+.toast--info    { background: var(--info-bg);    border-color: var(--info);    color: var(--info-fg); }
+
 .empty-message {
     text-align: center;
     color: var(--text-muted);

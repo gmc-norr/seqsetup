@@ -37,16 +37,12 @@
     <div x-data="toastStack()"
          @toast.window="addToast($event.detail)"
          class="fixed top-4 right-4 z-50 space-y-2"
-         id="toast-stack">
+         id="toast-stack"
+         role="status"
+         aria-live="polite">
         <template x-for="toast in toasts" :key="toast.id">
             <div
-                :class="{
-                    'bg-green-100 border-green-400 text-green-800': toast.kind === 'success',
-                    'bg-red-100   border-red-400   text-red-800':   toast.kind === 'error',
-                    'bg-yellow-100 border-yellow-400 text-yellow-800': toast.kind === 'warning',
-                    'bg-blue-100  border-blue-400  text-blue-800':  toast.kind === 'info'
-                }"
-                class="border rounded px-4 py-2 shadow-md max-w-sm"
+                :class="'toast toast--' + toast.kind"
                 x-text="toast.message">
             </div>
         </template>
