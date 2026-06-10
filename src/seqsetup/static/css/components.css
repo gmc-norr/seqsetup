@@ -501,9 +501,12 @@ body {
 }
 
 .sample-table th {
-    background: var(--bg);
+    background: var(--surface-sunken);
     font-weight: 600;
+    position: sticky; top: 0; z-index: 2;
 }
+
+.sample-row:hover { background: var(--surface-sunken); }
 
 .sample-row.has-index {
     background: rgba(22, 163, 74, 0.05);
@@ -530,6 +533,7 @@ body {
     font-family: monospace;
     font-size: 0.8rem;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 .actions {
@@ -551,6 +555,7 @@ body {
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--text);
+    font-variant-numeric: tabular-nums;
 }
 
 .override-cycles-input {
@@ -896,7 +901,7 @@ body {
 
 .index-seqs {
     font-family: monospace;
-    font-size: 0.6rem;
+    font-size: var(--fs-xs);
     color: var(--text-muted);
     line-height: 1.2;
 }
@@ -1046,33 +1051,34 @@ body {
     display: flex;
     gap: 0.5rem;
     font-family: monospace;
-    font-size: 0.65rem;
+    font-size: var(--fs-xs);
     color: var(--text-muted);
 }
 
 .index-seq-compact {
     white-space: nowrap;
+    font-size: var(--fs-xs);
 }
 
 .index-seq-compact.i7 {
-    color: #2563eb;
+    color: var(--accent-i7);
 }
 
 .index-seq-compact.i5 {
-    color: #ea580c;
+    color: var(--accent-i5);
 }
 
 /* Compact pair styling */
 .draggable-index-compact.draggable-pair {
-    border-left: 3px solid #8b5cf6;
+    border-left: 3px solid var(--accent-pair);
 }
 
 .draggable-index-compact.i7-index {
-    border-left: 3px solid #2563eb;
+    border-left: 3px solid var(--accent-i7);
 }
 
 .draggable-index-compact.i5-index {
-    border-left: 3px solid #ea580c;
+    border-left: 3px solid var(--accent-i5);
 }
 
 /* Run config panel */
@@ -1902,23 +1908,23 @@ body {
 
 /* i7/i5 color coding */
 .index-seq.i7, .assigned-index.i7 {
-    color: #2563eb;
+    color: var(--accent-i7);
 }
 
 .index-seq.i5, .assigned-index.i5 {
-    color: #ea580c;
+    color: var(--accent-i5);
 }
 
 .i7-index {
-    border-left: 3px solid #2563eb;
+    border-left: 3px solid var(--accent-i7);
 }
 
 .i5-index {
-    border-left: 3px solid #ea580c;
+    border-left: 3px solid var(--accent-i5);
 }
 
 .draggable-pair {
-    border-left: 3px solid #8b5cf6;
+    border-left: 3px solid var(--accent-pair);
 }
 
 /* Kit mode badge */
@@ -1954,11 +1960,11 @@ body {
 }
 
 .i7-section .index-subsection-header {
-    color: #2563eb;
+    color: var(--accent-i7);
 }
 
 .i5-section .index-subsection-header {
-    color: #ea580c;
+    color: var(--accent-i5);
 }
 
 /* Drop zones for different index types */
@@ -1967,7 +1973,7 @@ body {
 }
 
 .drop-zone.i7-drop.drag-over {
-    border-color: #2563eb;
+    border-color: var(--accent-i7);
     background: rgba(37, 99, 235, 0.08);
 }
 
@@ -1976,7 +1982,7 @@ body {
 }
 
 .drop-zone.i5-drop.drag-over {
-    border-color: #ea580c;
+    border-color: var(--accent-i5);
     background: rgba(234, 88, 12, 0.08);
 }
 
