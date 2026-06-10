@@ -65,3 +65,6 @@ pydantic = { version = ">=2.7,<3", extras = ["email"] }
 pytest-playwright = ">=0.5,<1"
 httpx = ">=0.28.1, <0.29"
 itsdangerous = ">=2.2.0, <3"
+
+[feature.dev.dependencies]
+pillow = "*"
