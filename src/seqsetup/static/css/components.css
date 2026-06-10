@@ -71,6 +71,19 @@
 
 * { box-sizing: border-box; }
 
+/* Screen-reader only — visually hidden but accessible to assistive technology. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+}
+
 body {
     font-family: system-ui, -apple-system, sans-serif;
     background: var(--bg);
@@ -2427,18 +2440,24 @@ body {
     font-size: 0.6rem;
 }
 
-/* Distance-based coloring (0 = collision danger = red) */
-.heatmap-cell.dist-0 { background-color: #dc2626; color: white; }
-.heatmap-cell.dist-1 { background-color: #ef4444; color: white; }
-.heatmap-cell.dist-2 { background-color: #f97316; color: white; }
-.heatmap-cell.dist-3 { background-color: #facc15; }
-.heatmap-cell.dist-4 { background-color: #a3e635; }
-.heatmap-cell.dist-5 { background-color: #4ade80; }
-.heatmap-cell.dist-6 { background-color: #22c55e; }
-.heatmap-cell.dist-7 { background-color: #16a34a; color: white; }
-.heatmap-cell.dist-8 { background-color: #15803d; color: white; }
-.heatmap-cell.dist-9 { background-color: #166534; color: white; }
-.heatmap-cell.dist-10 { background-color: #14532d; color: white; }
+/* Single-hue red sequential ramp; numeric distance stays in every cell as the
+   load-bearing datum, colour is risk magnitude (dark = riskiest). */
+.heatmap-cell.dist-0,.legend-item.dist-0 { background-color:#7f1d1d; color:#fff; }
+.heatmap-cell.dist-1,.legend-item.dist-1 { background-color:#991b1b; color:#fff; }
+.heatmap-cell.dist-2,.legend-item.dist-2 { background-color:#b91c1c; color:#fff; }
+.heatmap-cell.dist-3,.legend-item.dist-3 { background-color:#dc2626; color:#fff; }
+.heatmap-cell.dist-4,.legend-item.dist-4 { background-color:#ef4444; color:#fff; }
+.heatmap-cell.dist-5,.legend-item.dist-5 { background-color:#f87171; color:#450a0a; }
+.heatmap-cell.dist-6,.legend-item.dist-6 { background-color:#fca5a5; color:#450a0a; }
+.heatmap-cell.dist-7,.legend-item.dist-7 { background-color:#fecaca; color:#450a0a; }
+.heatmap-cell.dist-8 { background-color:#fee2e2; color:#450a0a; }
+.heatmap-cell.dist-9 { background-color:#fef2f2; color:#450a0a; }
+.heatmap-cell.dist-10 { background-color:#fff5f5; color:#450a0a; }
+/* Non-colour danger cue: ⚠ glyph + heavy ring on the closest (riskiest) cells. */
+.heatmap-cell.dist-0::after,
+.heatmap-cell.dist-1::after,
+.heatmap-cell.dist-2::after { content:" ⚠"; font-size:.7em; }
+.heatmap-cell.dist-0,.heatmap-cell.dist-1,.heatmap-cell.dist-2 { outline:2px solid #450a0a; outline-offset:-2px; }
 
 .heatmap-legend {
     margin-top: 0.75rem;
@@ -2460,11 +2479,6 @@ body {
     font-size: 0.7rem;
 }
 
-.legend-item.dist-0 { background-color: #dc2626; color: white; }
-.legend-item.dist-1 { background-color: #ef4444; color: white; }
-.legend-item.dist-2 { background-color: #f97316; color: white; }
-.legend-item.dist-3 { background-color: #facc15; }
-.legend-item.dist-4 { background-color: #4ade80; }
 
 /* Validation tabs */
 .validation-tabs {
@@ -2594,12 +2608,12 @@ body {
     border-radius: 3px;
 }
 
-.colorbalance-legend .channel-green-demo {
+.colorbalance-legend .channel-1-demo {
     background: #dcfce7;
     color: #166534;
 }
 
-.colorbalance-legend .channel-red-demo {
+.colorbalance-legend .channel-2-demo {
     background: #fee2e2;
     color: #991b1b;
 }
