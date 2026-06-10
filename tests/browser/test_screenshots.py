@@ -39,7 +39,11 @@ NAV_PAGES = [
 def _shoot(page, name):
     OUT.mkdir(parents=True, exist_ok=True)
     page.wait_for_load_state("networkidle")
-    page.screenshot(path=str(OUT / f"{name}.png"), full_page=True)
+    # Let Alpine x-show toggles and any CSS transition settle so we never
+    # capture a tab mid-expand (deterministic oracle). animations="disabled"
+    # freezes CSS animations/transitions to their finished state at capture.
+    page.wait_for_timeout(350)
+    page.screenshot(path=str(OUT / f"{name}.png"), full_page=True, animations="disabled")
 
 
 @pytest.mark.browser
