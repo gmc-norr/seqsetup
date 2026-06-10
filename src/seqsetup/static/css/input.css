@@ -7,6 +7,26 @@
    styling and these classes for shared components. */
 @import "./components.css";
 
+@theme {
+  --color-slate-50:  #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1; --color-slate-400: #94a3b8; --color-slate-500: #64748b;
+  --color-slate-600: #475569; --color-slate-700: #334155; --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  /* Semantic, used by Phase-3 markup (bg-primary, text-info-fg, …). The full
+     fill/soft-bg/on-bg triad must exist so the brand-utility migration maps
+     1:1 — e.g. status-ready's soft bg-blue-100/text-blue-800 → bg-info-bg/
+     text-info-fg, and bg-blue-600 hover → hover:bg-primary-hover. */
+  --color-primary:       #2563eb;  /* flips to #0e7490 in Phase 4 */
+  --color-primary-hover: #1d4ed8;  /* flips to #155e75 in Phase 4 */
+  --color-primary-fg:    #ffffff;
+  --color-surface:        #ffffff;
+  --color-surface-sunken: #f1f5f9;
+  --color-success: #16a34a; --color-success-bg: #dcfce7; --color-success-fg: #166534;
+  --color-warning: #b45309; --color-warning-bg: #fef3c7; --color-warning-fg: #92400e;
+  --color-danger:  #dc2626; --color-danger-bg:  #fef2f2; --color-danger-fg:  #991b1b;
+  --color-info:    #2563eb; --color-info-bg:    #dbeafe; --color-info-fg:    #1e40af;  /* info trio flips to teal in Phase 4 */
+}
+
 [x-cloak] {
     display: none !important;
 }
