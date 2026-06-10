@@ -3328,3 +3328,11 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* ==========================================================================
+   Task 3.4 — Wide-table scroll wrappers + sticky heatmap column
+   ========================================================================== */
+
+.table-scroll { overflow-x: auto; }
+
+.heatmap-table .heatmap-row-header { position: sticky; left: 0; z-index: 1; background: var(--surface-sunken); }

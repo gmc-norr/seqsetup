@@ -51,13 +51,14 @@
         </div>
         {% endif %}
     </div>
+    <div class="table-scroll">
     <table class="darkcycles-table">
         <tr class="dc-header-row">
-            <th class="dc-header">Sample</th>
-            <th class="dc-header">i7 Index</th>
-            <th class="dc-header">i7 Status</th>
-            <th class="dc-header">i5 Index</th>
-            <th class="dc-header">i5 Status</th>
+            <th class="dc-header" scope="col">Sample</th>
+            <th class="dc-header" scope="col">i7 Index</th>
+            <th class="dc-header" scope="col">i7 Status</th>
+            <th class="dc-header" scope="col">i5 Index</th>
+            <th class="dc-header" scope="col">i5 Status</th>
         </tr>
         {% for row in rows %}
         <tr class="{{ row.row_cls }}">
@@ -93,5 +94,6 @@
         </tr>
         {% endfor %}
     </table>
+    </div>
     {% endif %}
 </div>

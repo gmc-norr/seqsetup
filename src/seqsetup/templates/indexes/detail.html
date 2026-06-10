@@ -25,50 +25,58 @@
         <section class="space-y-4">
             <div>
                 <h3 class="text-xl font-semibold">i7 Indexes ({{ kit.i7_indexes|length }})</h3>
+                <div class="table-scroll">
                 <table class="w-full border-collapse text-sm mt-2">
-                    <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left">Name</th><th class="border px-2 py-1 text-left">Sequence</th></tr></thead>
+                    <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left" scope="col">Name</th><th class="border px-2 py-1 text-left" scope="col">Sequence</th></tr></thead>
                     <tbody>
                     {% for idx in kit.i7_indexes %}
                     <tr><td class="border px-2 py-1">{{ idx.name }}</td><td class="border px-2 py-1 font-mono">{{ idx.sequence }}</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>
+                </div>
             </div>
             <div>
                 <h3 class="text-xl font-semibold">i5 Indexes ({{ kit.i5_indexes|length }})</h3>
+                <div class="table-scroll">
                 <table class="w-full border-collapse text-sm mt-2">
-                    <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left">Name</th><th class="border px-2 py-1 text-left">Sequence</th></tr></thead>
+                    <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left" scope="col">Name</th><th class="border px-2 py-1 text-left" scope="col">Sequence</th></tr></thead>
                     <tbody>
                     {% for idx in kit.i5_indexes %}
                     <tr><td class="border px-2 py-1">{{ idx.name }}</td><td class="border px-2 py-1 font-mono">{{ idx.sequence }}</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>
+                </div>
             </div>
         </section>
     {% elif kit.is_single() %}
         <section>
             <h3 class="text-xl font-semibold">Indexes ({{ kit.i7_indexes|length }})</h3>
+            <div class="table-scroll">
             <table class="w-full border-collapse text-sm mt-2">
-                <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left">Name</th><th class="border px-2 py-1 text-left">Sequence</th></tr></thead>
+                <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left" scope="col">Name</th><th class="border px-2 py-1 text-left" scope="col">Sequence</th></tr></thead>
                 <tbody>
                 {% for idx in kit.i7_indexes %}
                 <tr><td class="border px-2 py-1">{{ idx.name }}</td><td class="border px-2 py-1 font-mono">{{ idx.sequence }}</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
         </section>
     {% else %}
         <section>
             <h3 class="text-xl font-semibold">Index Pairs ({{ kit.index_pairs|length }})</h3>
+            <div class="table-scroll">
             <table class="w-full border-collapse text-sm mt-2">
-                <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left">Name</th><th class="border px-2 py-1 text-left">i7 Sequence</th><th class="border px-2 py-1 text-left">i5 Sequence</th></tr></thead>
+                <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left" scope="col">Name</th><th class="border px-2 py-1 text-left" scope="col">i7 Sequence</th><th class="border px-2 py-1 text-left" scope="col">i5 Sequence</th></tr></thead>
                 <tbody>
                 {% for pair in kit.index_pairs %}
                 <tr><td class="border px-2 py-1">{{ pair.name }}</td><td class="border px-2 py-1 font-mono">{{ pair.i7_sequence }}</td><td class="border px-2 py-1 font-mono">{{ pair.i5_sequence }}</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
         </section>
     {% endif %}
 

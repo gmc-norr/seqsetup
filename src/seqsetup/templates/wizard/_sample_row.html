@@ -37,10 +37,10 @@
     </td>
 {%- endif %}
 {%- if show_drop_zones %}
-    <td>{{ sample.sample_id }}</td>
-    <td>{{ sample.test_id }}</td>
-    <td class="worksheet-cell">{{ sample.worksheet_id or '-' }}</td>
-    <td class="kit-name-cell">
+    <td title="{{ sample.sample_id }}">{{ sample.sample_id }}</td>
+    <td title="{{ sample.test_id }}">{{ sample.test_id }}</td>
+    <td class="worksheet-cell" title="{{ sample.worksheet_id or '' }}">{{ sample.worksheet_id or '-' }}</td>
+    <td class="kit-name-cell" title="{{ sample.index_kit_name or '' }}">
         {% if sample.index_kit_name %}
             <span class="kit-name-display">{{ sample.index_kit_name }}</span>
         {% else %}
@@ -155,9 +155,9 @@
         </td>
     {%- endif %}
 {%- else %}
-    <td>{{ sample.sample_id }}</td>
-    <td>{{ sample.test_id }}</td>
-    <td class="worksheet-cell">{{ sample.worksheet_id or '-' }}</td>
+    <td title="{{ sample.sample_id }}">{{ sample.sample_id }}</td>
+    <td title="{{ sample.test_id }}">{{ sample.test_id }}</td>
+    <td class="worksheet-cell" title="{{ sample.worksheet_id or '' }}">{{ sample.worksheet_id or '-' }}</td>
     {%- if editable %}
         <td class="actions">
             <button type="button" class="btn-tiny btn-danger"

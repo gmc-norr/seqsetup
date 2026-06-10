@@ -80,14 +80,14 @@
             <p class="text-slate-500 text-sm mt-1">Application activity will appear here as it happens.</p>
         </div>
     {% else %}
-        <div class="overflow-x-auto">
+        <div class="table-scroll">
             <table class="w-full border-collapse text-sm">
                 <thead>
                     <tr class="bg-slate-100">
-                        <th class="border px-2 py-1 text-left">Time</th>
-                        <th class="border px-2 py-1 text-left">Level</th>
-                        <th class="border px-2 py-1 text-left">Logger</th>
-                        <th class="border px-2 py-1 text-left">Message</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Time</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Level</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Logger</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Message</th>
                     </tr>
                 </thead>
                 <tbody>

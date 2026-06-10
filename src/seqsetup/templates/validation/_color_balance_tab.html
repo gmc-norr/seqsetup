@@ -67,16 +67,17 @@
                     {% for table in lane.tables %}
                     <div class="index-colorbalance">
                         <h5 class="index-type-header">{{ table.index_type|upper }} Index</h5>
+                        <div class="table-scroll">
                         <table class="colorbalance-table">
                             <tr class="cb-header-row">
-                                <th class="cb-header">Pos</th>
-                                <th class="cb-header base-a">A</th>
-                                <th class="cb-header base-c">C</th>
-                                <th class="cb-header base-g">G</th>
-                                <th class="cb-header base-t">T</th>
-                                <th class="cb-header channel-1">{{ table.ch1_name }} %</th>
-                                <th class="cb-header channel-2">{{ table.ch2_name }} %</th>
-                                <th class="cb-header">Status</th>
+                                <th class="cb-header" scope="col">Pos</th>
+                                <th class="cb-header base-a" scope="col">A</th>
+                                <th class="cb-header base-c" scope="col">C</th>
+                                <th class="cb-header base-g" scope="col">G</th>
+                                <th class="cb-header base-t" scope="col">T</th>
+                                <th class="cb-header channel-1" scope="col">{{ table.ch1_name }} %</th>
+                                <th class="cb-header channel-2" scope="col">{{ table.ch2_name }} %</th>
+                                <th class="cb-header" scope="col">Status</th>
                             </tr>
                             {% for row in table.rows %}
                             <tr class="{{ row.row_cls }}">
@@ -91,6 +92,7 @@
                             </tr>
                             {% endfor %}
                         </table>
+                        </div>
                     </div>
                     {% endfor %}
                 {% else %}

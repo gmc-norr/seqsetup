@@ -30,22 +30,24 @@
             <span class="lane-sample-count">({{ lane.names|length }} samples)</span>
             {% for key in ['i7', 'i5', 'combined'] %}
             <div x-show="heatmapType === '{{ key }}'"{% if key != 'i7' %} x-cloak{% endif %}>
+                <div class="table-scroll">
                 <table class="heatmap-table">
                     <tr class="heatmap-header-row">
                         <th class="heatmap-corner"></th>
                         {% for i in range(lane.names|length) %}
-                        <th class="heatmap-header" title="{{ lane.full_names[i] }}">{{ lane.names[i] }}</th>
+                        <th class="heatmap-header" scope="col" title="{{ lane.full_names[i] }}">{{ lane.names[i] }}</th>
                         {% endfor %}
                     </tr>
                     {% for i in range(lane.names|length) %}
                     <tr>
-                        <th class="heatmap-row-header" title="{{ lane.full_names[i] }}">{{ lane.names[i] }}</th>
+                        <th class="heatmap-row-header" scope="row" title="{{ lane.full_names[i] }}">{{ lane.names[i] }}</th>
                         {% for cell in lane.cells[key][i] %}
                         <td class="{{ cell.class }}" title="{{ cell.title }}">{{ cell.content }}</td>
                         {% endfor %}
                     </tr>
                     {% endfor %}
                 </table>
+                </div>
             </div>
             {% endfor %}
         </div>
