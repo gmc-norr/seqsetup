@@ -388,12 +388,14 @@ body {
     font-size: 0.875rem;
 }
 
-.form-group input:focus,
-.form-group select:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+.form-group input:focus-visible, .form-group select:focus-visible, .form-group textarea:focus-visible,
+.settings-input:focus-visible, .index-filter-input:focus-visible,
+.mismatch-input:focus-visible, .override-cycles-input:focus-visible,
+.paste-textarea:focus-visible, a:focus-visible {
+    outline: none; box-shadow: var(--focus-ring); border-color: var(--primary);
 }
+.form-group input.is-invalid, .settings-input.is-invalid,
+.form-group input:user-invalid { border-color: var(--danger); background: var(--danger-bg); }
 
 /* Buttons */
 .btn, button {
