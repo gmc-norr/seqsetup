@@ -1030,12 +1030,12 @@ body {
 
 .index-i7-name-compact {
     font-size: 0.65rem;
-    color: #2563eb;
+    color: var(--accent-i7);
 }
 
 .index-i5-name-compact {
     font-size: 0.65rem;
-    color: #ea580c;
+    color: var(--accent-i5);
 }
 
 .index-well-compact {
