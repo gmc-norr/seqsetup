@@ -92,11 +92,7 @@ body {
     padding: 1rem;
     border-bottom: 1px solid var(--border);
     margin-bottom: 1rem;
-}
-
-.app-header h1 {
-    margin: 0;
-    font-size: 1.5rem;
+    box-shadow: var(--shadow-xs);
 }
 
 .app-brand {
@@ -108,7 +104,7 @@ body {
 
 .app-brand-text {
     font-size: 1.5rem;
-    font-weight: bold;
+    font-weight: var(--fw-bold);
     white-space: nowrap;
 }
 
@@ -1457,8 +1453,8 @@ body {
 
 .sidebar {
     width: 180px;
-    background: #1e293b;
-    color: white;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-fg);
     padding: 1rem;
     flex-shrink: 0;
 }
@@ -1466,16 +1462,20 @@ body {
 .sidebar .nav-item {
     display: block;
     padding: 0.75rem 1rem;
-    color: #94a3b8;
+    color: var(--sidebar-muted);
     text-decoration: none;
     border-radius: 4px;
     margin-bottom: 0.25rem;
 }
 
-.sidebar .nav-item:hover,
+.sidebar .nav-item:hover {
+    background: var(--sidebar-hover);
+    color: #fff;
+}
 .sidebar .nav-item.active {
-    background: #334155;
-    color: white;
+    background: var(--sidebar-hover); color: #fff;
+    border-left: 3px solid var(--sidebar-accent); font-weight: var(--fw-semibold);
+    padding-left: calc(1rem - 3px);
 }
 
 .sidebar-divider {
