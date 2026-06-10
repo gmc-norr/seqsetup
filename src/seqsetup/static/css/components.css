@@ -22,9 +22,9 @@
     --border: #e2e8f0;
     --border-strong: #cbd5e1;
 
-    /* ===== Text (AA bumps applied in Phase 1c) ===== */
-    --text: #1e293b;
-    --text-muted: #64748b;
+    /* ===== Text (AA bumps) ===== */
+    --text: #0f172a;
+    --text-muted: #475569;
     --text-subtle: #64748b;
 
     /* ===== Brand — blue now; flips to teal in Phase 4 ===== */
@@ -34,7 +34,7 @@
 
     /* ===== Semantic states (fill / soft-bg / on-bg text) ===== */
     --success: #16a34a; --success-bg: #dcfce7; --success-fg: #166534;
-    --warning: #ca8a04; --warning-bg: #fef3c7; --warning-fg: #92400e;
+    --warning: #b45309; --warning-bg: #fef3c7; --warning-fg: #92400e;
     --danger:  #dc2626; --danger-bg:  #fef2f2; --danger-fg:  #991b1b;
     --info:    #2563eb; --info-bg:    #dbeafe; --info-fg:    #1e40af;
 
@@ -1227,6 +1227,10 @@ body {
     margin-top: 0.5rem;
 }
 
+/* Missing inline-message classes (mirror .error-message) */
+.success-message { color: var(--success-fg); background: var(--success-bg); padding: var(--space-2); border-radius: var(--radius-sm); margin-top: var(--space-2); }
+.warning-message { color: var(--warning-fg); background: var(--warning-bg); padding: var(--space-2); border-radius: var(--radius-sm); margin-top: var(--space-2); }
+
 .empty-message {
     text-align: center;
     color: var(--text-muted);
@@ -1280,6 +1284,12 @@ body {
 .paste-details[open] summary {
     border-bottom: 1px solid var(--border);
 }
+
+/* Paste section name reconcile (template uses .paste-section*, CSS had .paste-details*) */
+.paste-section { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: var(--space-4); }
+.paste-section-summary { padding: var(--space-3) var(--space-4); cursor: pointer; background: var(--surface-sunken); font-weight: var(--fw-medium); font-size: var(--fs-sm); }
+.paste-section[open] .paste-section-summary { border-bottom: 1px solid var(--border); }
+.paste-section-content { padding: var(--space-4); }
 
 .paste-form-content {
     padding: 1rem;
@@ -2269,32 +2279,32 @@ body {
 }
 
 /* LDAP Config Form */
-.ldap-config-form {
+#ldap-config-form {
     background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.5rem;
 }
 
-.ldap-config-form h3 {
+#ldap-config-form h3 {
     margin-top: 0;
     margin-bottom: 1.5rem;
 }
 
-.ldap-config-form h4 {
+#ldap-config-form h4 {
     margin-top: 1.5rem;
     margin-bottom: 1rem;
     color: var(--primary);
 }
 
-.ldap-config-form fieldset {
+#ldap-config-form fieldset {
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 1rem;
     margin-bottom: 1rem;
 }
 
-.ldap-config-form legend {
+#ldap-config-form legend {
     font-weight: 500;
     padding: 0 0.5rem;
     color: var(--text);
