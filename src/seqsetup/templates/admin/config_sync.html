@@ -29,7 +29,7 @@
           hx-post="/admin/config-sync/config"
           hx-target="#config-sync-page"
           hx-swap="outerHTML">
-        <fieldset class="space-y-3">
+        <fieldset class="config-panel space-y-3">
             <legend class="text-lg font-semibold">Repository</legend>
             <div>
                 <label for="github_repo_url" class="block text-sm font-medium mb-1">Repository URL</label>
@@ -46,7 +46,7 @@
             </div>
         </fieldset>
 
-        <fieldset class="space-y-3">
+        <fieldset class="config-panel space-y-3">
             <legend class="text-lg font-semibold">Paths</legend>
             {% for field, label in [
                 ('test_profiles_path', 'Test Profiles Path'),
@@ -63,7 +63,7 @@
             {% endfor %}
         </fieldset>
 
-        <fieldset class="space-y-3">
+        <fieldset class="config-panel space-y-3">
             <legend class="text-lg font-semibold">Sync Behaviour</legend>
             <label class="flex items-center gap-2">
                 <input type="checkbox" name="sync_enabled" {% if config.sync_enabled %}checked{% endif %}>

@@ -1502,17 +1502,10 @@ body {
     display: none;
 }
 
-.settings-section summary::before {
-    content: "\25B6";
-    display: inline-block;
-    margin-right: 0.5rem;
-    font-size: 0.7rem;
-    transition: transform 0.2s;
-}
+.settings-section summary::before { content: none; }   /* kill the old ▶ (\25B6) so only the SVG renders */
 
-.settings-section[open] summary::before {
-    transform: rotate(90deg);
-}
+.nav-chevron { width: .7rem; height: .7rem; margin-right: .5rem; transition: transform .2s; vertical-align: middle; }
+.settings-section[open] > summary .nav-chevron { transform: rotate(90deg); }
 
 .settings-section summary:hover {
     background: #334155;
@@ -3336,3 +3329,12 @@ body {
 .table-scroll { overflow-x: auto; }
 
 .heatmap-table .heatmap-row-header { position: sticky; left: 0; z-index: 1; background: var(--surface-sunken); }
+
+/* ==========================================================================
+   Task 3.5 — Skip-link
+   ========================================================================== */
+
+.skip-link { position: absolute; left: -9999px; top: 0; z-index: 100;
+    background: var(--surface); color: var(--primary);
+    padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); }
+.skip-link:focus { left: var(--space-2); box-shadow: var(--focus-ring); }

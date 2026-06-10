@@ -14,7 +14,7 @@
 
         {# Auth-method selector #}
         <form class="bg-white border rounded-lg p-6 shadow-sm space-y-3">
-            <fieldset class="space-y-2">
+            <fieldset class="config-panel space-y-2">
                 <legend class="text-lg font-semibold">Authentication Method</legend>
 
                 {% for method_value, method_label, method_desc in [
@@ -62,7 +62,7 @@
               hx-swap="outerHTML">
             <h3 class="text-xl font-semibold">LDAP/AD Connection Settings</h3>
 
-            <fieldset class="space-y-3">
+            <fieldset class="config-panel space-y-3">
                 <legend class="text-lg font-semibold">Server Connection</legend>
                 <div>
                     <label for="server_url" class="block text-sm font-medium mb-1">Server URL</label>
@@ -101,7 +101,7 @@
                 </div>
             </fieldset>
 
-            <fieldset class="space-y-3">
+            <fieldset class="config-panel space-y-3">
                 <legend class="text-lg font-semibold">User Search</legend>
                 <div>
                     <label for="user_search_base" class="block text-sm font-medium mb-1">User Search Base</label>
@@ -126,7 +126,7 @@
                 </div>
             </fieldset>
 
-            <fieldset class="space-y-3">
+            <fieldset class="config-panel space-y-3">
                 <legend class="text-lg font-semibold">User Attributes</legend>
                 {% for field, label in [
                     ('username_attribute', 'Username Attribute'),
@@ -142,7 +142,7 @@
                 {% endfor %}
             </fieldset>
 
-            <fieldset class="space-y-3">
+            <fieldset class="config-panel space-y-3">
                 <legend class="text-lg font-semibold">Group-Based Roles</legend>
                 <div>
                     <label for="admin_group_dn" class="block text-sm font-medium mb-1">Admin Group DN</label>
@@ -164,7 +164,7 @@
                 </div>
             </fieldset>
 
-            <fieldset class="space-y-3">
+            <fieldset class="config-panel space-y-3">
                 <legend class="text-lg font-semibold">Timeouts</legend>
                 <div>
                     <label for="connect_timeout" class="block text-sm font-medium mb-1">Connect Timeout (s)</label>

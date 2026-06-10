@@ -24,7 +24,7 @@
         {% endif %}
 
         {# API Endpoint #}
-        <fieldset class="space-y-3">
+        <fieldset class="config-panel space-y-3">
             <legend class="text-lg font-semibold">API Endpoint</legend>
             <div>
                 <label for="base_url" class="block text-sm font-medium mb-1">Base URL</label>
@@ -50,7 +50,7 @@
         </fieldset>
 
         {# Settings #}
-        <fieldset class="space-y-3">
+        <fieldset class="config-panel space-y-3">
             <legend class="text-lg font-semibold">Settings</legend>
             <label class="flex items-center gap-2">
                 <input type="checkbox" name="enabled" {% if config.enabled %}checked{% endif %}>
@@ -60,7 +60,7 @@
         </fieldset>
 
         {# Field mappings #}
-        <fieldset class="space-y-3">
+        <fieldset class="config-panel space-y-3">
             <legend class="text-lg font-semibold">Field Mappings</legend>
             <p class="text-xs text-slate-500">Map API field names to SeqSetup fields. Leave blank to use defaults.</p>
             {% for field_name, label, default_hint in [
