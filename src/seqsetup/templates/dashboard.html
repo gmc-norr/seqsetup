@@ -13,7 +13,7 @@
         <h2 class="text-2xl font-semibold mb-2">No Runs Yet</h2>
         <p class="text-slate-600 mb-4">Get started by creating your first run.</p>
         <form method="post" action="/runs/new" class="inline-block">
-            <button type="submit" class="inline-block bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700 transition">+ New Run</button>
+            <button type="submit" class="inline-block bg-primary text-white rounded px-4 py-2 hover:bg-primary-hover transition">+ New Run</button>
         </form>
     </div>
 </div>
@@ -30,11 +30,11 @@
 <div id="dashboard" class="space-y-4">
     <div class="flex gap-2 border-b">
         {% for key, label in [('draft', 'Draft'), ('ready', 'Ready'), ('archived', 'Archived')] %}
-        <button class="px-4 py-2 -mb-px border-b-2 {% if key == active_tab %}border-blue-600 font-semibold text-blue-700{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}"
+        <button class="px-4 py-2 -mb-px border-b-2 {% if key == active_tab %}border-primary font-semibold text-primary{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}"
                 hx-get="/dashboard/tab/{{ key }}"
                 hx-target="#dashboard"
                 hx-swap="outerHTML">
-            {{ label }} ({{ counts[key] }})
+            {{ label }} <span class="badge badge--neutral">{{ counts[key] }}</span>
         </button>
         {% endfor %}
     </div>
@@ -70,7 +70,7 @@
             {% for run in tab_runs %}
             {% set is_archived = run.status.value == 'archived' %}
             <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_1.4fr] gap-2 items-center px-3 py-2 border-t text-sm" id="run-item-{{ run.id }}">
-                <a href="/runs/{{ run.id }}" class="text-blue-700 hover:underline truncate">{{ run.run_name or "Untitled Run" }}</a>
+                <a href="/runs/{{ run.id }}" class="text-primary hover:underline truncate">{{ run.run_name or "Untitled Run" }}</a>
                 <span>{{ run.instrument_platform.value }}</span>
                 <span>{{ run.flowcell_type or "—" }}</span>
                 <span>{{ run.samples|length }}</span>

@@ -14,11 +14,11 @@
     {% endif %}
 
     {% if not synced_instruments %}
-        <div class="bg-blue-50 border border-blue-300 rounded px-3 py-2">
+        <div class="bg-info-bg border border-primary rounded px-3 py-2">
             <strong>Note:</strong>
             No instruments have been synced from GitHub.
             Using local configuration file (<code>config/instruments.yaml</code>) as fallback.
-            <a href="/admin/config-sync" class="text-blue-700 hover:underline">Configure sync</a>
+            <a href="/admin/config-sync" class="text-primary hover:underline">Configure sync</a>
             to enable instrument management.
         </div>
     {% else %}

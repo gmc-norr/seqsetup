@@ -2,7 +2,7 @@
 {% block title %}Sign in - SeqSetup{% endblock %}
 {% block body %}
 <main class="min-h-screen flex items-center justify-center bg-slate-100">
-    <div class="bg-white rounded-lg shadow-md p-8 w-full max-w-sm">
+    <div class="bg-white rounded-md shadow-lg p-8 w-full max-w-sm">
         <div class="text-center mb-6">
             <h1 class="text-2xl font-semibold">SeqSetup</h1>
             <p class="text-sm text-slate-600 mt-1">Illumina Sequencing Run Configuration</p>
@@ -19,15 +19,15 @@
                 <label for="username" class="block text-sm font-medium mb-1">Username</label>
                 <input type="text" name="username" id="username" required autofocus
                        placeholder="Enter your username"
-                       class="w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-blue-300">
+                       class="w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-primary">
             </div>
             <div>
                 <label for="password" class="block text-sm font-medium mb-1">Password</label>
                 <input type="password" name="password" id="password" required
                        placeholder="Enter your password"
-                       class="w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-blue-300">
+                       class="w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-primary">
             </div>
-            <button type="submit" class="w-full bg-blue-600 text-white rounded py-2 hover:bg-blue-700 transition">
+            <button type="submit" class="w-full bg-primary text-white rounded py-2 hover:bg-primary-hover transition">
                 Sign In
             </button>
         </form>

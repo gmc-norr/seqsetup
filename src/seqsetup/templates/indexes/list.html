@@ -10,7 +10,7 @@
             <p class="text-slate-600">Manage the library of indexing kits available to sequencing runs.</p>
         </div>
         {% if user and user.is_admin %}
-        <a href="/indexes/import" class="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">+ Import Index Kit</a>
+        <a href="/indexes/import" class="bg-primary text-white rounded px-4 py-2 hover:bg-primary-hover">+ Import Index Kit</a>
         {% endif %}
     </div>
 
@@ -24,7 +24,7 @@
             <div class="text-center py-12 text-slate-500">
                 <p class="mb-2">No index kits have been imported yet.</p>
                 {% if user and user.is_admin %}
-                <a href="/indexes/import" class="text-blue-600 hover:underline">Import the first kit &rarr;</a>
+                <a href="/indexes/import" class="text-primary hover:underline">Import the first kit &rarr;</a>
                 {% endif %}
             </div>
         {% else %}
@@ -35,7 +35,7 @@
                 {% set index_count = (kit.i7_indexes|length + kit.i5_indexes|length) if kit.is_combinatorial() else (kit.i7_indexes|length if kit.is_single() else kit.index_pairs|length) %}
                 <div class="bg-white border rounded-lg p-4 shadow-sm space-y-2">
                     <div class="flex items-start justify-between gap-2">
-                        <a href="/indexes/detail/{{ kit.name|urlencode }}/{{ kit.version|urlencode }}" class="text-lg font-semibold text-blue-700 hover:underline truncate">{{ kit.name }}</a>
+                        <a href="/indexes/detail/{{ kit.name|urlencode }}/{{ kit.version|urlencode }}" class="text-lg font-semibold text-primary hover:underline truncate">{{ kit.name }}</a>
                         <span class="text-xs px-2 py-0.5 rounded bg-{{ mode_color }}-100 text-{{ mode_color }}-800 border border-{{ mode_color }}-300 whitespace-nowrap">{{ mode_label }}</span>
                     </div>
                     <div class="text-sm text-slate-600 space-y-0.5">
