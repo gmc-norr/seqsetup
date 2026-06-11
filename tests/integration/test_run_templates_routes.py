@@ -84,3 +84,132 @@ class TestCloneRun:
             follow_redirects=False,
         )
         assert r.status_code == 404
+
+
+class TestSaveAsTemplate:
+    def test_save_as_template_captures_config_and_selected_samples(
+        self, logged_in_client, fresh_app
+    ):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        _add_sample(logged_in_client, run_id, "CTRL_POS")
+        run = ctx.run_repo.get_by_id(run_id)
+        scaffold_uuid = run.samples[0].id
+
+        r = logged_in_client.post(
+            f"/runs/{run_id}/save-as-template",
+            data={
+                "name": "WGS Standard",
+                "description": "std",
+                "scaffold_sample_ids": json.dumps([scaffold_uuid]),
+            },
+            headers=_origin(),
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        templates = ctx.run_template_repo.list_all()
+        assert len(templates) == 1
+        t = templates[0]
+        assert t.name == "WGS Standard"
+        assert t.flowcell_type == run.flowcell_type
+        assert [s.sample_id for s in t.scaffold_samples] == ["CTRL_POS"]
+
+    def test_save_as_template_with_no_scaffold_is_config_only(
+        self, logged_in_client, fresh_app
+    ):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        _add_sample(logged_in_client, run_id, "S1")
+        r = logged_in_client.post(
+            f"/runs/{run_id}/save-as-template",
+            data={"name": "Config Only", "description": "", "scaffold_sample_ids": "[]"},
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 303
+        t = ctx.run_template_repo.list_all()[0]
+        assert t.scaffold_samples == []
+
+    def test_save_as_template_requires_name(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        r = logged_in_client.post(
+            f"/runs/{run_id}/save-as-template",
+            data={"name": "  ", "description": "", "scaffold_sample_ids": "[]"},
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 400
+        assert ctx.run_template_repo.list_all() == []
+
+    def test_save_as_template_is_create_only(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        for _ in range(2):
+            logged_in_client.post(
+                f"/runs/{run_id}/save-as-template",
+                data={"name": "Dup", "description": "", "scaffold_sample_ids": "[]"},
+                headers=_origin(), follow_redirects=False,
+            )
+        # Two saves with the same name -> two distinct templates.
+        assert len(ctx.run_template_repo.list_all()) == 2
+
+
+class TestTemplateCrud:
+    def _make_template(self, logged_in_client, ctx) -> str:
+        run_id = _create_run(logged_in_client)
+        logged_in_client.post(
+            f"/runs/{run_id}/save-as-template",
+            data={"name": "Orig", "description": "d", "scaffold_sample_ids": "[]"},
+            headers=_origin(), follow_redirects=False,
+        )
+        return ctx.run_template_repo.list_all()[0].id
+
+    def test_list_page_renders_template(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        self._make_template(logged_in_client, ctx)
+        r = logged_in_client.get("/templates")
+        assert r.status_code == 200
+        assert "Orig" in r.text
+
+    def test_edit_updates_name_description_and_touches(
+        self, logged_in_client, fresh_app
+    ):
+        _app, ctx, _db = fresh_app
+        tid = self._make_template(logged_in_client, ctx)
+        before = ctx.run_template_repo.get_by_id(tid).updated_at
+        r = logged_in_client.post(
+            f"/templates/{tid}",
+            data={"name": "Renamed", "description": "new"},
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 303
+        t = ctx.run_template_repo.get_by_id(tid)
+        assert t.name == "Renamed"
+        assert t.description == "new"
+        assert t.updated_at >= before
+        assert t.updated_by  # actor recorded
+
+    def test_delete_removes_template(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        tid = self._make_template(logged_in_client, ctx)
+        r = logged_in_client.delete(f"/templates/{tid}", headers=_origin())
+        assert r.status_code in (200, 204)
+        assert ctx.run_template_repo.get_by_id(tid) is None
+
+    def test_template_never_appears_in_run_repo(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        self._make_template(logged_in_client, ctx)
+        # The save-as-template flow created exactly one run (the source);
+        # the template is NOT a run.
+        assert len(ctx.run_repo.list_all()) == 1
+
+    def test_edit_missing_template_404(self, logged_in_client, fresh_app):
+        r = logged_in_client.post(
+            "/templates/nope",
+            data={"name": "x", "description": ""},
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 404
+
+    def test_delete_missing_template_404(self, logged_in_client, fresh_app):
+        r = logged_in_client.delete("/templates/nope", headers=_origin())
+        assert r.status_code == 404
