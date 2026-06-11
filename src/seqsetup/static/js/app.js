@@ -532,14 +532,22 @@ const _CLICK_ACTIONS = {
 document.addEventListener('click', function(event) {
     const actionEl = event.target.closest('[data-action]');
     if (actionEl) {
-        const action = actionEl.dataset.action;
-        if (action === 'navigate' && actionEl.dataset.href) { window.location = actionEl.dataset.href; return; }
-        const fn = _CLICK_ACTIONS[action];
+        const fn = _CLICK_ACTIONS[actionEl.dataset.action];
         if (fn) { fn(); return; }
     }
     if (event.target.closest('.sample-checkbox')) { handleSampleCheckboxClick(event); return; }
     const sa = event.target.closest('.select-all-checkbox');
     if (sa) { toggleSelectAllSamples(sa); return; }
+});
+
+// Navigate ONLY after a successful HTMX request (e.g. delete-then-go-to-list).
+// Fires after the server confirms success, so the request is never aborted by
+// an early navigation, and a cancelled hx-confirm never navigates.
+document.body.addEventListener('htmx:afterRequest', function(event) {
+    const el = event.target.closest('[data-navigate-after]');
+    if (el && event.detail && event.detail.successful) {
+        window.location = el.dataset.navigateAfter;
+    }
 });
 
 document.addEventListener('input', function(event) {
