@@ -203,3 +203,49 @@ class TestCascadeDelete:
         r = logged_in_client.delete(f"/runs/{run_id}", headers=_origin())
         assert r.status_code == 200
         assert ctx.run_history_repo.list_by_run(run_id, limit=10) == []
+
+
+class TestHistoryRouteAndPanel:
+    def test_edit_page_shows_history_panel(self, logged_in_client, fresh_app):
+        run_id = _create_run(logged_in_client)
+        r = logged_in_client.get(f"/runs/{run_id}")
+        assert r.status_code == 200
+        assert f"/runs/{run_id}/history" in r.text
+
+    def test_history_route_renders_entries(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        logged_in_client.post(f"/runs/{run_id}/name",
+                              data={"run_name": "Visible", "run_description": ""},
+                              headers=_origin())
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+        assert "Visible" in r.text          # the new value appears
+        assert "Created" in r.text          # the blank-creation entry
+
+    def test_history_route_404_for_missing_run(self, logged_in_client):
+        r = logged_in_client.get("/runs/nope/history")
+        assert r.status_code == 404
+
+    def test_history_route_works_for_archived_run(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.status = RunStatus.ARCHIVED
+        ctx.run_repo.save(run)
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+
+    def test_baseline_marker_for_run_without_created_entry(
+        self, logged_in_client, fresh_app
+    ):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        ctx.run_history_repo.delete_by_run(run_id)   # drop the auto 'created'
+        ctx.run_history_repo.append(RunHistoryEntry(
+            run_id=run_id, timestamp=datetime(2026, 6, 11, 9, 0, 0),
+            actor="alice", kind="updated",
+            field_changes=[{"field": "run_name", "before": "A", "after": "B"}]))
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+        assert "history began" in r.text.lower()

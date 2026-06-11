@@ -1,0 +1,47 @@
+<div class="text-sm">
+  {% if not entries and show_baseline %}
+    <p class="text-slate-500 italic">No change history recorded yet.</p>
+  {% endif %}
+  {% for e in entries %}
+  <div class="border-t py-2">
+    <div class="flex justify-between text-xs text-slate-500">
+      <span>{{ e.timestamp.strftime("%Y-%m-%d %H:%M") }}</span>
+      <span>{{ e.actor or "unknown" }}</span>
+    </div>
+    {% if e.kind == "created" %}
+      <div class="font-medium">
+        Created{% if e.provenance and e.provenance.source == "clone" %}
+          (cloned from run {{ e.provenance.ref }}){% elif e.provenance and e.provenance.source == "template" %}
+          (from template {{ e.provenance.ref }}){% endif %}
+      </div>
+    {% else %}
+      <ul class="list-disc ml-5">
+        {% for c in e.field_changes %}
+          <li>{{ c.field }}: {{ c.before }} → {{ c.after }}</li>
+        {% endfor %}
+        {% for sc in e.sample_changes %}
+          <li>
+            Sample {{ sc.sample_id }}
+            {% if sc.kind == "added" %}added{% elif sc.kind == "removed" %}removed{% else %}changed:
+              {% for f in sc.fields %}{{ f.name }} {{ f.before }} → {{ f.after }}{% if not loop.last %}; {% endif %}{% endfor %}
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if next_ts and next_id %}
+  <button class="mt-2 bg-slate-200 hover:bg-slate-300 rounded px-2 py-1 text-xs"
+          hx-get="/runs/{{ run.id }}/history?before_ts={{ next_ts | urlencode }}&before_id={{ next_id | urlencode }}"
+          hx-target="closest .run-history-panel"
+          hx-swap="innerHTML">Load older</button>
+  {% endif %}
+
+  {% if show_baseline %}
+  <p class="mt-3 text-xs text-slate-400 italic">
+    Change history began when this feature was deployed; edits before that point were not recorded.
+  </p>
+  {% endif %}
+</div>

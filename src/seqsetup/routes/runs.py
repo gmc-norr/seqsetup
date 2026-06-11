@@ -476,3 +476,45 @@ async def update_status(
         sample_api_enabled=sample_api_enabled, oob=True,
     )
     return HTMLResponse(status_html + export_html + section_html, headers={"Cache-Control": "no-store"})
+
+
+_HISTORY_PAGE = 50
+
+
+@router.get("/runs/{run_id}/history", response_class=HTMLResponse)
+def run_history(
+    request: Request,
+    run_id: str,
+    before_ts: str = "",
+    before_id: str = "",
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /runs/{run_id}/history — read-only change-history panel (any status)."""
+    run = ctx.run_repo.get_by_id(run_id)
+    if run is None:
+        return Response("Run not found", status_code=404)
+
+    entries = ctx.run_history_repo.list_by_run(
+        run_id,
+        limit=_HISTORY_PAGE + 1,
+        before_ts=before_ts or None,
+        before_id=before_id or None,
+    )
+    has_more = len(entries) > _HISTORY_PAGE
+    entries = entries[:_HISTORY_PAGE]
+
+    next_ts = next_id = None
+    if has_more and entries:
+        next_ts, next_id = entries[-1].cursor()
+
+    show_baseline = (not has_more) and (
+        not entries or entries[-1].kind != "created"
+    )
+
+    return render(request, "runs/_history_list.html", {
+        "run": run,
+        "entries": entries,
+        "next_ts": next_ts,
+        "next_id": next_id,
+        "show_baseline": show_baseline,
+    })

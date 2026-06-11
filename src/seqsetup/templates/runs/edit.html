@@ -35,5 +35,15 @@
         {% include "runs/_sample_section.html" %}
         {% endwith %}
     </fieldset>
+
+    <fieldset class="config-panel">
+        <legend>Change history</legend>
+        <div class="run-history-panel"
+             hx-get="/runs/{{ run.id }}/history"
+             hx-trigger="revealed"
+             hx-swap="innerHTML">
+            <p class="text-slate-400 text-sm">Loading history…</p>
+        </div>
+    </fieldset>
 </div>
 {% endblock %}
