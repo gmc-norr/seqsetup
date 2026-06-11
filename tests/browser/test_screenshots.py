@@ -27,7 +27,7 @@ def _clear_current():
 # Plain full-page navigations (real, confirmed routes).
 NAV_PAGES = [
     ("dashboard",         "/"),
-    ("run-editor",        "/runs/{draft_run_id}"),
+    ("run-editor",        "/runs/{screenshot_draft_run_id}"),
     ("validation-issues", "/runs/{collision_run_id}/validation"),  # default tab = issues
     ("indexes-list",      "/indexes"),
     ("admin-users",       "/admin/users"),

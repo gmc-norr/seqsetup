@@ -31,6 +31,7 @@ from seqsetup.models.user import UserRole
 
 # Fixed IDs used by screenshot/a11y tests for stable, deterministic URLs.
 DRAFT_RUN_ID = "screenshot-draft-run"
+SCREENSHOT_DRAFT_RUN_ID = "screenshot-oracle-run"  # dedicated to the screenshot oracle — never mutated by other tests
 COLLISION_RUN_ID = "screenshot-collision-run"
 READY_RUN_ID = "screenshot-ready-run"
 ARCHIVED_RUN_ID = "screenshot-archived-run"
@@ -246,6 +247,68 @@ def app_server(tmp_path_factory):
     ))
     ctx.run_repo.save(draft_run)
 
+    # --- Seed a dedicated DRAFT run for the screenshot oracle (never mutated by other tests). ---
+    # Visually equivalent to draft_run: 3 indexed + 3 unindexed samples, same kit.
+    # Kept separate so mutation tests (keyboard-assign, drag-drop) can use draft_run freely.
+    _t_oracle = datetime(2026, 1, 10, 9, 30, 0)
+    oracle_run = SequencingRun(
+        id=SCREENSHOT_DRAFT_RUN_ID,
+        run_name="Screenshot draft run",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8),
+        status=RunStatus.DRAFT,
+        created_by=BROWSER_ADMIN["username"],
+        updated_by=BROWSER_ADMIN["username"],
+        created_at=_t_draft,
+        updated_at=_t_draft,
+    )
+    # 3 indexed samples
+    oracle_run.add_sample(Sample(
+        id="ss-oracle-s1", sample_id="SAMPLE-01", sample_name="Sample One",
+        index_pair=IndexPair(
+            id="sck-p1", name="UDP0001",
+            index1=Index(name="i7-01", sequence="ATTACTCG", index_type=IndexType.I7),
+            index2=Index(name="i5-01", sequence="TATAGCCT", index_type=IndexType.I5),
+        ),
+        index_kit_name=SCREENSHOT_KIT_NAME,
+        lanes=[1],
+    ))
+    oracle_run.add_sample(Sample(
+        id="ss-oracle-s2", sample_id="SAMPLE-02", sample_name="Sample Two",
+        index_pair=IndexPair(
+            id="sck-p2", name="UDP0002",
+            index1=Index(name="i7-02", sequence="TCCGGAGA", index_type=IndexType.I7),
+            index2=Index(name="i5-02", sequence="ATAGAGGC", index_type=IndexType.I5),
+        ),
+        index_kit_name=SCREENSHOT_KIT_NAME,
+        lanes=[1],
+    ))
+    oracle_run.add_sample(Sample(
+        id="ss-oracle-s3", sample_id="SAMPLE-03", sample_name="Sample Three",
+        index_pair=IndexPair(
+            id="sck-p3", name="UDP0003",
+            index1=Index(name="i7-03", sequence="CGCTCATT", index_type=IndexType.I7),
+            index2=Index(name="i5-03", sequence="CCTATCCT", index_type=IndexType.I5),
+        ),
+        index_kit_name=SCREENSHOT_KIT_NAME,
+        lanes=[1],
+    ))
+    # 3 unindexed samples
+    oracle_run.add_sample(Sample(
+        id="ss-oracle-s4", sample_id="SAMPLE-04", sample_name="Sample Four",
+        lanes=[1],
+    ))
+    oracle_run.add_sample(Sample(
+        id="ss-oracle-s5", sample_id="SAMPLE-05", sample_name="Sample Five",
+        lanes=[1],
+    ))
+    oracle_run.add_sample(Sample(
+        id="ss-oracle-s6", sample_id="SAMPLE-06", sample_name="Sample Six",
+        lanes=[1],
+    ))
+    ctx.run_repo.save(oracle_run)
+
     # --- Seed a DRAFT run with index COLLISIONS so the validation heatmap shows dist-0 cells. ---
     # Two samples share the same i7+i5 sequences → Hamming distance 0.
     _t_coll = datetime(2026, 1, 10, 10, 0, 0)
@@ -402,6 +465,7 @@ def seeded_ids():
     """Fixed run IDs seeded in app_server for screenshot/a11y tests."""
     return {
         "draft_run_id": DRAFT_RUN_ID,
+        "screenshot_draft_run_id": SCREENSHOT_DRAFT_RUN_ID,
         "collision_run_id": COLLISION_RUN_ID,
         "ready_run_id": READY_RUN_ID,
         "archived_run_id": ARCHIVED_RUN_ID,
