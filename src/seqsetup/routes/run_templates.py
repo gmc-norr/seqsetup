@@ -169,3 +169,34 @@ def delete_template(
     ctx.run_template_repo.delete(template_id)
     audit("template.deleted", actor=get_username(request), target=template_id)
     return Response("", status_code=200)
+
+
+@router.post("/runs/new/from-template/{template_id}", response_class=Response)
+def new_run_from_template(
+    template_id: str, request: Request, ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """POST /runs/new/from-template/{id} — instantiate a draft from a template."""
+    template = ctx.run_template_repo.get_by_id(template_id)
+    if template is None:
+        return Response("Template not found", status_code=404)
+
+    try:
+        new_run = build_draft_run(
+            config_source=template,
+            samples=template.scaffold_samples,
+            created_by=get_username(request),
+            run_name=template.name,
+            instrument_config=ctx.instrument_config,
+            check_references=True,
+        )
+    except RunInstantiationError as exc:
+        return Response(str(exc), status_code=400)
+
+    ctx.run_repo.save(new_run)
+    audit(
+        "run.created_from_template",
+        actor=get_username(request),
+        target=new_run.id,
+        template=template_id,
+    )
+    return RedirectResponse(f"/runs/{new_run.id}", status_code=303)

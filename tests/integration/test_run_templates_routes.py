@@ -213,3 +213,57 @@ class TestTemplateCrud:
     def test_delete_missing_template_404(self, logged_in_client, fresh_app):
         r = logged_in_client.delete("/templates/nope", headers=_origin())
         assert r.status_code == 404
+
+
+class TestCreateFromTemplate:
+    def _make_template_with_scaffold(self, logged_in_client, ctx) -> str:
+        run_id = _create_run(logged_in_client)
+        _add_sample(logged_in_client, run_id, "CTRL_POS")
+        run = ctx.run_repo.get_by_id(run_id)
+        sid = run.samples[0].id
+        logged_in_client.post(
+            f"/runs/{run_id}/save-as-template",
+            data={"name": "WithCtrl", "description": "",
+                  "scaffold_sample_ids": json.dumps([sid])},
+            headers=_origin(), follow_redirects=False,
+        )
+        return ctx.run_template_repo.list_all()[0].id
+
+    def test_from_template_creates_draft_with_scaffold(
+        self, logged_in_client, fresh_app
+    ):
+        _app, ctx, _db = fresh_app
+        tid = self._make_template_with_scaffold(logged_in_client, ctx)
+        r = logged_in_client.post(
+            f"/runs/new/from-template/{tid}",
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 303
+        new_id = r.headers["location"].rsplit("/", 1)[1]
+        new_run = ctx.run_repo.get_by_id(new_id)
+        assert new_run.status == RunStatus.DRAFT
+        assert [s.sample_id for s in new_run.samples] == ["CTRL_POS"]
+        assert new_run.generated_samplesheet_v2 is None
+
+    def test_from_template_refuses_withdrawn_flowcell(
+        self, logged_in_client, fresh_app, monkeypatch
+    ):
+        _app, ctx, _db = fresh_app
+        tid = self._make_template_with_scaffold(logged_in_client, ctx)
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_flowcells_for_instrument",
+            lambda platform, cfg=None: {},
+        )
+        r = logged_in_client.post(
+            f"/runs/new/from-template/{tid}",
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 400
+        assert "no longer available" in r.text.lower()
+
+    def test_from_template_missing_template_404(self, logged_in_client):
+        r = logged_in_client.post(
+            "/runs/new/from-template/nope",
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 404
