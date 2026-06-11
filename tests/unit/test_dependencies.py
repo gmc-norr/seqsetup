@@ -48,6 +48,14 @@ class _FakeRunRepo:
         self.save_calls.append(run.id)
 
 
+class _FakeHistoryRepo:
+    def __init__(self):
+        self.appended = []
+
+    def append(self, entry):
+        self.appended.append(entry)
+
+
 # ---------------------------------------------------------------------------
 # require_admin_dep
 # ---------------------------------------------------------------------------
@@ -125,6 +133,7 @@ class TestSavingRun:
 
         class _Ctx:
             run_repo = repo
+            run_history_repo = _FakeHistoryRepo()
 
         return run, _Ctx(), _FakeRequest(auth=_FakeUser(username="alice"))
 
@@ -140,6 +149,9 @@ class TestSavingRun:
         assert ctx.run_repo.save_calls == ["r1"]
         # updated_by is set from the request's username.
         assert run.updated_by == "alice"
+        # A tracked change was made -> exactly one history entry recorded.
+        assert len(ctx.run_history_repo.appended) == 1
+        assert ctx.run_history_repo.appended[0].kind == "updated"
 
     def test_exception_skips_save(self):
         run, ctx, req = self._setup()
@@ -151,6 +163,8 @@ class TestSavingRun:
         assert ctx.run_repo.save_calls == []
         # NOT touched.
         assert run.updated_at == before_updated_at
+        # No history recorded when the handler raises.
+        assert ctx.run_history_repo.appended == []
 
     def test_http_exception_propagates_and_skips_save(self):
         """Critical: an HTTPException raised inside the handler must

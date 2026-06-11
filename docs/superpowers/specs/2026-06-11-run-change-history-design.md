@@ -318,3 +318,14 @@ None blocking.
   consistency, so it inherits this discrepancy rather than introducing a second
   convention. Converting the app to UTC is a separate, broader migration and is
   intentionally out of this feature's scope.
+
+- **Latent before-snapshot aliasing for `Sample.metadata` / `Sample.analyses`
+  (documented, not fixed here):** `Sample.to_dict()` returns those two fields by
+  reference, not as copies, so the `before = run.to_dict()` snapshot aliases
+  them. No current route handler mutates a sample's `metadata` or `analyses`
+  *in place* (they are reassigned via `__setattr__`, which the snapshot does not
+  alias), so the diff is correct today. If a future handler ever does
+  `sample.metadata[...] = ...` in place, that change would be invisible to the
+  history diff. The robust fix lives in `Sample.to_dict()` (copy those fields)
+  rather than in this feature; deep-copying the whole snapshot here was rejected
+  to avoid introducing diff-type noise. Tracked as a follow-up.

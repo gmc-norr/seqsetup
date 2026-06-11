@@ -87,6 +87,21 @@ class TestSampleDiff:
         chg = next(f for f in sc[0]["fields"] if f["name"] == "index1_cycles")
         assert chg["before"] == 8 and chg["after"] == 10
 
+    def test_all_index_assignment_fields_tracked(self):
+        # The denylist must track every field that index assignment mutates;
+        # an allowlist would silently drop these clinically-relevant changes.
+        for field, b, a in [
+            ("index2_cycles", 8, 10),
+            ("index1_override_pattern", None, "I8N2"),
+            ("index2_override_pattern", None, "I8N2"),
+            ("override_cycles", None, "Y151;I8N2;I8N2;Y151"),
+        ]:
+            before = _run_dict(samples=[_sample(**{field: b})])
+            after = _run_dict(samples=[_sample(**{field: a})])
+            _, sc = diff_run(before, after)
+            chg = next(f for f in sc[0]["fields"] if f["name"] == field)
+            assert chg["before"] == b and chg["after"] == a, field
+
     def test_sample_id_rename_same_uuid_is_modified_not_replace(self):
         before = _run_dict(samples=[_sample(sid_uuid="u1", sample_id="S1")])
         after = _run_dict(samples=[_sample(sid_uuid="u1", sample_id="S2")])

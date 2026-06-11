@@ -288,3 +288,53 @@ class TestHistoryRouteAndPanel:
         assert r.status_code == 200
         assert "D701 ATTACTCG" in r.text and "D702 TCCGGAGA" in r.text
         assert "'sequence'" not in r.text   # no raw dict repr
+
+
+class TestReadyPromotionDiff:
+    def test_ready_promotion_records_only_status_not_export_blobs(self, fresh_app):
+        # Promoting to READY also populates the (large, volatile) generated_*
+        # export blobs in the same save. The history entry must record ONLY
+        # status: draft -> ready, never the export blobs.
+        from seqsetup.services.run_history import record_run_updated
+        _app, ctx, _db = fresh_app
+        run = ctx.run_repo.create_run("alice")
+        before = run.to_dict()
+        run.status = RunStatus.READY
+        run.generated_samplesheet_v2 = "SHEET-V2"
+        run.generated_json = "JSON"
+        run.generated_validation_pdf = b"PDFBYTES"
+        run.touch(updated_by="alice")
+        ctx.run_repo.save(run)
+        record_run_updated(ctx, run, before, "alice")
+        entry = ctx.run_history_repo.list_by_run(run.id, limit=10)[0]
+        assert entry.kind == "updated"
+        names = {c["field"] for c in entry.field_changes}
+        assert "status" in names
+        assert not any(n.startswith("generated_") for n in names)
+
+
+class TestHistoryFailureNonFatal:
+    def test_blank_creation_survives_history_failure(
+        self, logged_in_client, fresh_app, monkeypatch
+    ):
+        _app, ctx, _db = fresh_app
+        monkeypatch.setattr(ctx.run_history_repo, "append",
+                            lambda entry: (_ for _ in ()).throw(RuntimeError("boom")))
+        before = len(ctx.run_repo.list_all())
+        r = logged_in_client.post("/runs/new", follow_redirects=False, headers=_origin())
+        assert r.status_code == 303
+        assert len(ctx.run_repo.list_all()) == before + 1   # run still created
+
+    def test_cascade_delete_survives_history_failure(
+        self, logged_in_client, fresh_app, monkeypatch
+    ):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.status = RunStatus.ARCHIVED
+        ctx.run_repo.save(run)
+        monkeypatch.setattr(ctx.run_history_repo, "delete_by_run",
+                            lambda rid: (_ for _ in ()).throw(RuntimeError("boom")))
+        r = logged_in_client.delete(f"/runs/{run_id}", headers=_origin())
+        assert r.status_code == 200
+        assert ctx.run_repo.get_by_id(run_id) is None   # run still deleted
