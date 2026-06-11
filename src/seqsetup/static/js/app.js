@@ -106,8 +106,11 @@ function handleDragStart(event, indexId, indexType) {
 function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     event.preventDefault();
 
-    // Find the drop zone element reliably (event.target may be a child node)
-    const dropZone = event.currentTarget || event.target.closest('.drop-zone') || event.target;
+    // Find the drop zone element reliably. The drop is wired via event
+    // delegation on document (inline ondrop is blocked by CSP), so
+    // event.currentTarget is document — resolve the real .drop-zone from the
+    // event target instead (event.target may be a child node of the zone).
+    const dropZone = event.target.closest('.drop-zone') || event.currentTarget || event.target;
     dropZone.classList.remove('drag-over');
 
     // Get context from drop zone data attribute (for simplified wizard views)

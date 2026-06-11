@@ -139,29 +139,18 @@ def test_drag_drop_assigns_index_to_sample(logged_in_page, base_url, mutable_run
         zone.dispatchEvent(new DragEvent('drop',      {dataTransfer: dt, bubbles: true, cancelable: true}));
     }""")
 
-    # Wait for the HTMX swap to increase the has-index count
+    # Wait for the HTMX swap to increase the has-index count. This is a hard
+    # assertion (no skip fallback): the delegated dragstart→drop path must
+    # actually assign an index, or it is a real regression.
     expected = before + 1
-    try:
-        page.wait_for_function(
-            f"document.querySelectorAll('.sample-row.has-index').length >= {expected}",
-            timeout=5000,
-        )
-        after = page.locator(".sample-row.has-index").count()
-        assert after >= expected, (
-            f"Expected at least {expected} indexed sample rows after drag-drop, got {after}"
-        )
-    except Exception as exc:
-        # If the drag-drop couldn't complete (e.g., DataTransfer payload was
-        # empty due to security restrictions), the test is inconclusive but
-        # we report it clearly rather than letting it silently pass.
-        after = page.locator(".sample-row.has-index").count()
-        if after < expected:
-            pytest.skip(
-                f"Synthetic drag-drop did not trigger index assignment "
-                f"(before={before}, after={after}). "
-                f"DataTransfer security restrictions may prevent this in headless Chromium. "
-                f"Original error: {exc}"
-            )
+    page.wait_for_function(
+        f"document.querySelectorAll('.sample-row.has-index').length >= {expected}",
+        timeout=5000,
+    )
+    after = page.locator(".sample-row.has-index").count()
+    assert after >= expected, (
+        f"Expected at least {expected} indexed sample rows after drag-drop, got {after}"
+    )
 
 
 @pytest.mark.browser
