@@ -8,14 +8,18 @@ the history append are separate writes — best-effort by necessity).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Optional
 
 from ..models.run_history import RunHistoryEntry
+from .audit_log import audit
 from .run_diff import diff_run, is_empty
 
 if TYPE_CHECKING:
     from ..context import AppContext
     from ..models.sequencing_run import SequencingRun
+
+_log = logging.getLogger(__name__)
 
 
 def record_run_updated(
@@ -53,3 +57,21 @@ def record_run_created(
         kind="created",
         provenance={"source": source, "ref": ref},
     ))
+
+
+def record_run_created_safe(
+    ctx: AppContext, run: SequencingRun, actor: str, source: str,
+    ref: Optional[str] = None,
+) -> None:
+    """``record_run_created`` for run-creation sites: a history failure must
+    never abort run creation, so swallow + log + audit (best-effort, mirroring
+    the guard in ``saving_run``)."""
+    try:
+        record_run_created(ctx, run, actor, source, ref=ref)
+    except Exception:
+        _log.error(
+            "Failed to record %s creation history for run %s",
+            source, run.id, exc_info=True,
+        )
+        audit("run.history.record_failed", actor=actor, target=run.id,
+              outcome="failure", reason="create_append_error", source=source)
