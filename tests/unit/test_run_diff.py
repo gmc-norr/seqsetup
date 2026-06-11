@@ -47,9 +47,12 @@ class TestConfigDiff:
         assert {"field": "status", "before": "draft", "after": "ready"} in fc
 
     def test_ignored_keys_excluded(self):
+        # Every volatile/ignored key changes -> still no diff. Exercises all
+        # five generated_* blobs so removing any from the denylist would fail.
         after = _run_dict(updated_at="2026-06-11T11:00:00", updated_by="alice",
                           wizard_step=3, generated_samplesheet_v2="SHEET",
-                          generated_json="J")
+                          generated_samplesheet_v1="V1", generated_json="J",
+                          generated_validation_json="VJ", generated_validation_pdf="PDF")
         fc, sc = diff_run(_run_dict(), after)
         assert fc == [] and sc == []
 
@@ -91,6 +94,34 @@ class TestSampleDiff:
         assert len(sc) == 1 and sc[0]["kind"] == "modified"
         chg = next(f for f in sc[0]["fields"] if f["name"] == "sample_id")
         assert chg["before"] == "S1" and chg["after"] == "S2"
+
+    def test_two_samples_both_modified(self):
+        before = _run_dict(samples=[
+            _sample(sid_uuid="u1", sample_id="S1", project="A"),
+            _sample(sid_uuid="u2", sample_id="S2", project="B"),
+        ])
+        after = _run_dict(samples=[
+            _sample(sid_uuid="u1", sample_id="S1", project="A2"),
+            _sample(sid_uuid="u2", sample_id="S2", project="B2"),
+        ])
+        _, sc = diff_run(before, after)
+        assert len(sc) == 2
+        assert all(c["kind"] == "modified" for c in sc)
+        assert {c["sample_id"] for c in sc} == {"S1", "S2"}
+
+    def test_modified_sample_multiple_changed_fields(self):
+        before = _run_dict(samples=[_sample(project="A", barcode_mismatches_index1=1)])
+        after = _run_dict(samples=[_sample(project="B", barcode_mismatches_index1=0)])
+        _, sc = diff_run(before, after)
+        names = {f["name"] for f in sc[0]["fields"]}
+        assert {"project", "barcode_mismatches_index1"} <= names
+
+    def test_unchanged_sample_not_reported(self):
+        # A sample present in both snapshots with no tracked change must produce
+        # NO entry — a phantom "this sample changed" line is a clinical hazard.
+        s = _sample()
+        fc, sc = diff_run(_run_dict(samples=[s]), _run_dict(samples=[s]))
+        assert sc == []
 
 
 class TestIsEmpty:
