@@ -5,6 +5,7 @@ from datetime import datetime
 import pytest
 
 from seqsetup.models.run_history import RunHistoryEntry
+from seqsetup.models.sequencing_run import RunStatus
 
 
 def _origin() -> dict:
@@ -186,3 +187,19 @@ class TestCreationEntries:
         created = [e for e in ctx.run_history_repo.list_by_run(new_id, limit=10)
                    if e.kind == "created"]
         assert created[0].provenance == {"source": "template", "ref": tid}
+
+
+class TestCascadeDelete:
+    def test_deleting_archived_run_removes_its_history(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        logged_in_client.post(f"/runs/{run_id}/name",
+                              data={"run_name": "X", "run_description": ""},
+                              headers=_origin())
+        assert ctx.run_history_repo.list_by_run(run_id, limit=10)   # has history
+        run = ctx.run_repo.get_by_id(run_id)
+        run.status = RunStatus.ARCHIVED
+        ctx.run_repo.save(run)
+        r = logged_in_client.delete(f"/runs/{run_id}", headers=_origin())
+        assert r.status_code == 200
+        assert ctx.run_history_repo.list_by_run(run_id, limit=10) == []
