@@ -249,3 +249,42 @@ class TestHistoryRouteAndPanel:
         r = logged_in_client.get(f"/runs/{run_id}/history")
         assert r.status_code == 200
         assert "history began" in r.text.lower()
+
+    def test_route_pagination_exposes_and_serves_older_page(
+        self, logged_in_client, fresh_app
+    ):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        for i in range(60):   # > _HISTORY_PAGE (50)
+            ctx.run_history_repo.append(RunHistoryEntry(
+                run_id=run_id, timestamp=datetime(2026, 6, 11, 0, 0, i),
+                actor="alice", kind="updated",
+                field_changes=[{"field": "run_name", "before": str(i),
+                                "after": str(i + 1)}]))
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+        assert "before_ts=" in r.text and "before_id=" in r.text  # Load-older link
+        # Following the cursor returns the older page (200, fewer/older entries).
+        older = logged_in_client.get(
+            f"/runs/{run_id}/history",
+            params={"before_ts": "2026-06-11T00:00:10", "before_id": "zzz"})
+        assert older.status_code == 200
+
+    def test_index_change_renders_readably_not_raw_dict(
+        self, logged_in_client, fresh_app
+    ):
+        # A structured index value must render via the histval filter
+        # ("D701 ATTACTCG"), not as a raw Python dict repr.
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        ctx.run_history_repo.append(RunHistoryEntry(
+            run_id=run_id, timestamp=datetime(2026, 6, 11, 9, 0, 0),
+            actor="alice", kind="updated",
+            sample_changes=[{"sample_id": "S1", "kind": "modified", "fields": [
+                {"name": "index1",
+                 "before": {"name": "D701", "sequence": "ATTACTCG"},
+                 "after": {"name": "D702", "sequence": "TCCGGAGA"}}]}]))
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+        assert "D701 ATTACTCG" in r.text and "D702 TCCGGAGA" in r.text
+        assert "'sequence'" not in r.text   # no raw dict repr

@@ -66,6 +66,27 @@ def _asset_url(rel_path: str) -> str:
 templates.env.filters["asset_url"] = _asset_url
 
 
+def _history_value(v):
+    """Render a change-history before/after value readably instead of as a raw
+    Python repr. Index objects (name+sequence) become ``"name sequence"``; an
+    index pair (a dict with ``name``) becomes its name; other dicts become
+    ``"k=v, …"``; lists are comma-joined; ``None`` becomes an em dash."""
+    if v is None:
+        return "—"
+    if isinstance(v, dict):
+        if "name" in v and "sequence" in v:
+            return f"{v.get('name') or ''} {v.get('sequence') or ''}".strip() or "—"
+        if "name" in v:
+            return str(v.get("name") or "—")
+        return ", ".join(f"{k}={_history_value(val)}" for k, val in v.items()) or "—"
+    if isinstance(v, list):
+        return ", ".join(_history_value(x) for x in v) if v else "—"
+    return str(v)
+
+
+templates.env.filters["histval"] = _history_value
+
+
 def render(
     request: Request,
     template: str,
