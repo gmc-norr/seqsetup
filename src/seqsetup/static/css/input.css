@@ -16,15 +16,15 @@
      fill/soft-bg/on-bg triad must exist so the brand-utility migration maps
      1:1 — e.g. status-ready's soft bg-blue-100/text-blue-800 → bg-info-bg/
      text-info-fg, and bg-blue-600 hover → hover:bg-primary-hover. */
-  --color-primary:       #2563eb;  /* flips to #0e7490 in Phase 4 */
-  --color-primary-hover: #1d4ed8;  /* flips to #155e75 in Phase 4 */
+  --color-primary:       #0e7490;
+  --color-primary-hover: #155e75;
   --color-primary-fg:    #ffffff;
   --color-surface:        #ffffff;
   --color-surface-sunken: #f1f5f9;
   --color-success: #16a34a; --color-success-bg: #dcfce7; --color-success-fg: #166534;
   --color-warning: #b45309; --color-warning-bg: #fef3c7; --color-warning-fg: #92400e;
   --color-danger:  #dc2626; --color-danger-bg:  #fef2f2; --color-danger-fg:  #991b1b;
-  --color-info:    #2563eb; --color-info-bg:    #dbeafe; --color-info-fg:    #1e40af;  /* info trio flips to teal in Phase 4 */
+  --color-info:    #0e7490; --color-info-bg:    #cff5fb; --color-info-fg:    #155e75;
 }
 
 [x-cloak] {

@@ -27,16 +27,16 @@
     --text-muted: #475569;
     --text-subtle: #64748b;
 
-    /* ===== Brand — blue now; flips to teal in Phase 4 ===== */
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
+    /* ===== Brand — Deep Teal Clinical ===== */
+    --primary: #0e7490;
+    --primary-hover: #155e75;
     --primary-fg: #ffffff;
 
     /* ===== Semantic states (fill / soft-bg / on-bg text) ===== */
     --success: #16a34a; --success-bg: #dcfce7; --success-fg: #166534;
     --warning: #b45309; --warning-bg: #fef3c7; --warning-fg: #92400e;
     --danger:  #dc2626; --danger-bg:  #fef2f2; --danger-fg:  #991b1b;
-    --info:    #2563eb; --info-bg:    #dbeafe; --info-fg:    #1e40af;
+    --info:    #0e7490; --info-bg:    #cff5fb; --info-fg:    #155e75;
 
     /* ===== Index coding — unchanged for the entire refresh ===== */
     --accent-i7: #2563eb; --accent-i5: #ea580c; --accent-pair: #8b5cf6;
@@ -738,7 +738,7 @@ body {
 }
 
 .sample-row.selected {
-    background: rgba(37, 99, 235, 0.1);
+    background: rgba(14, 116, 144, 0.1);
 }
 
 /* Bulk mismatch controls */
@@ -784,7 +784,7 @@ body {
 
 .drop-zone.drag-over {
     border-color: var(--primary);
-    background: rgba(37, 99, 235, 0.1);
+    background: rgba(14, 116, 144, 0.1);
 }
 
 .assigned-index {
@@ -881,8 +881,8 @@ body {
 
 .draggable-index.index-selected {
     border-color: var(--primary);
-    background: rgba(37, 99, 235, 0.1);
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+    background: rgba(14, 116, 144, 0.1);
+    box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.3);
 }
 
 .selection-count {
@@ -892,7 +892,7 @@ body {
     font-weight: 500;
     margin-left: 0.5rem;
     padding: 0.25rem 0.5rem;
-    background: rgba(37, 99, 235, 0.1);
+    background: rgba(14, 116, 144, 0.1);
     border-radius: 4px;
 }
 
@@ -988,7 +988,7 @@ body {
 .index-filter-input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.1);
 }
 
 .index-filter-input::placeholder {
@@ -1020,7 +1020,7 @@ body {
 
 .draggable-index-compact:hover {
     border-color: var(--primary);
-    background: rgba(37, 99, 235, 0.05);
+    background: rgba(14, 116, 144, 0.05);
 }
 
 .draggable-index-compact:active {
@@ -1029,8 +1029,8 @@ body {
 
 .draggable-index-compact.index-selected {
     border-color: var(--primary);
-    background: rgba(37, 99, 235, 0.1);
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+    background: rgba(14, 116, 144, 0.1);
+    box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.3);
 }
 
 .index-name-compact {
@@ -1333,7 +1333,7 @@ body {
 .paste-textarea:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.1);
 }
 
 .file-upload-row {
@@ -1820,7 +1820,7 @@ body {
     font-size: 0.65rem;
     padding: 0.1rem 0.3rem;
     border-radius: 3px;
-    background: rgba(37, 99, 235, 0.1);
+    background: rgba(14, 116, 144, 0.1);
     color: var(--primary);
     margin-left: 0.25rem;
 }
@@ -2136,7 +2136,7 @@ body {
 .settings-input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.1);
 }
 
 .settings-input-small {
@@ -2827,8 +2827,8 @@ body {
 }
 
 .dc-legend-normal {
-    background: #f0f9ff;
-    color: #1e40af;
+    background: #f0fdff;
+    color: #155e75;
     font-family: monospace;
 }
 
@@ -2903,13 +2903,13 @@ body {
 }
 
 .dc-base:not(.dc-dark) {
-    background: #dbeafe;
-    color: #1e40af;
+    background: #cff5fb;
+    color: #155e75;
 }
 
 .dc-base.dc-leading:not(.dc-dark) {
-    background: #93c5fd;
-    color: #1e3a8a;
+    background: #67e8f9;
+    color: #164e63;
     font-weight: 600;
 }
 
@@ -3024,7 +3024,7 @@ body {
 .index-filter-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.1);
 }
 
 .index-filter-input::placeholder {
@@ -3062,8 +3062,8 @@ body {
 }
 
 .log-badge-info {
-    background: rgba(37, 99, 235, 0.1);
-    color: #2563eb;
+    background: rgba(14, 116, 144, 0.1);
+    color: #0e7490;
 }
 
 .log-badge-debug {
@@ -3176,8 +3176,8 @@ body {
 }
 
 .log-level-info {
-    background: rgba(37, 99, 235, 0.1);
-    color: #2563eb;
+    background: rgba(14, 116, 144, 0.1);
+    color: #0e7490;
 }
 
 .log-level-debug {
@@ -3269,8 +3269,8 @@ body {
 }
 
 .kit-mode-single {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: #cff5fb;
+    color: #155e75;
 }
 
 .kit-badge-count {
