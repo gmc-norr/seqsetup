@@ -12,7 +12,11 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
     MAX_SAMPLES_PER_RUN,
 )
-from seqsetup.services.run_builder import build_draft_run, RunInstantiationError
+from seqsetup.services.run_builder import (
+    assert_references_available,
+    build_draft_run,
+    RunInstantiationError,
+)
 
 
 def _pair(i7="ATTACTCG", i5="TATAGCCT", name="D701"):
@@ -146,3 +150,57 @@ class TestAnalysesFiltering:
             run_name="x", instrument_config=None,
         )
         assert run.analyses == []
+
+
+class TestAssertReferencesAvailable:
+    def test_refuses_when_instrument_unavailable(self, monkeypatch):
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_flowcells_for_instrument",
+            lambda platform, cfg=None: {},
+        )
+        with pytest.raises(RunInstantiationError, match="no longer available"):
+            assert_references_available(_source_run(), None)
+
+    def test_refuses_when_flowcell_withdrawn(self, monkeypatch):
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_flowcells_for_instrument",
+            lambda platform, cfg=None: {"SOME_OTHER_FC": {}},
+        )
+        with pytest.raises(RunInstantiationError, match="no longer offered"):
+            assert_references_available(_source_run(), None)
+
+    def test_refuses_when_reagent_kit_withdrawn(self, monkeypatch):
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_flowcells_for_instrument",
+            lambda platform, cfg=None: {"10B": {}},
+        )
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_reagent_kits_for_flowcell",
+            lambda platform, flowcell, cfg=None: [500, 600],  # 300 not offered
+        )
+        with pytest.raises(RunInstantiationError, match="no longer offered"):
+            assert_references_available(_source_run(), None)
+
+    def test_passes_when_all_available(self, monkeypatch):
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_flowcells_for_instrument",
+            lambda platform, cfg=None: {"10B": {}},
+        )
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_reagent_kits_for_flowcell",
+            lambda platform, flowcell, cfg=None: [300, 500],  # 300 offered
+        )
+        # Should not raise.
+        assert_references_available(_source_run(), None)
+
+    def test_passes_when_flowcell_has_no_defined_reagent_kits(self, monkeypatch):
+        # Empty reagent-kit list = unconstrained flowcell; check is skipped.
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_flowcells_for_instrument",
+            lambda platform, cfg=None: {"10B": {}},
+        )
+        monkeypatch.setattr(
+            "seqsetup.services.run_builder.get_reagent_kits_for_flowcell",
+            lambda platform, flowcell, cfg=None: [],
+        )
+        assert_references_available(_source_run(), None)

@@ -62,6 +62,9 @@ def assert_references_available(config_source, instrument_config) -> None:
     reagent_kits = get_reagent_kits_for_flowcell(
         platform, config_source.flowcell_type, instrument_config
     )
+    # An empty reagent_kits list means the flowcell declares no kit
+    # constraints (e.g. a custom-configured instrument); treat as
+    # unrestricted and skip the check.
     if reagent_kits and config_source.reagent_cycles not in reagent_kits:
         raise RunInstantiationError(
             f"Reagent kit '{config_source.reagent_cycles}' cycles is no longer "
