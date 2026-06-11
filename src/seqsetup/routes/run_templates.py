@@ -32,7 +32,7 @@ def _bool_field(form, key: str) -> bool:
     return str(raw).lower() in ("1", "true", "on", "yes")
 
 
-@router.post("/runs/{run_id}/duplicate")
+@router.post("/runs/{run_id}/duplicate", response_class=Response)
 async def duplicate_run(
     request: Request,
     run=Depends(get_archivable_run),
@@ -92,7 +92,7 @@ def _config_from_run(run, name: str, description: str, scaffold_samples) -> RunT
     )
 
 
-@router.post("/runs/{run_id}/save-as-template")
+@router.post("/runs/{run_id}/save-as-template", response_class=Response)
 async def save_as_template(
     request: Request,
     run=Depends(get_archivable_run),
@@ -137,7 +137,7 @@ def list_templates(request: Request, ctx: AppContext = Depends(get_ctx)) -> Resp
     return render(request, "run_templates/list.html", {"templates": templates})
 
 
-@router.post("/templates/{template_id}")
+@router.post("/templates/{template_id}", response_class=Response)
 async def update_template(
     template_id: str, request: Request, ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -159,7 +159,7 @@ async def update_template(
     return RedirectResponse("/templates", status_code=303)
 
 
-@router.delete("/templates/{template_id}")
+@router.delete("/templates/{template_id}", response_class=Response)
 def delete_template(
     template_id: str, request: Request, ctx: AppContext = Depends(get_ctx),
 ) -> Response:
