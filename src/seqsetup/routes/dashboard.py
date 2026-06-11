@@ -6,14 +6,13 @@ the HTMX swap targets (tab/archive/delete) re-render just the
 {% block dashboard_content %} fragment via block_name="dashboard_content".
 """
 
-import logging
-
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus, SequencingRun
 from ..services.audit_log import audit
+from ..services.run_history import cascade_delete_history_safe
 from ..templating import render
 from .dependencies import get_archivable_run, get_ctx, saving_run
 from .utils import check_status_transition, get_username
@@ -107,11 +106,7 @@ def delete_run(
 
     previous_status = run.status.value
     ctx.run_repo.delete(run.id)
-    try:
-        ctx.run_history_repo.delete_by_run(run.id)
-    except Exception:
-        logging.getLogger(__name__).error(
-            "Failed to cascade-delete history for %s", run.id, exc_info=True)
+    cascade_delete_history_safe(ctx, run.id, get_username(request))
     audit(
         "run.deleted",
         actor=get_username(request),
