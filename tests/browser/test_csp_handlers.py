@@ -113,43 +113,56 @@ def test_bulk_apply_testid_updates_samples(logged_in_page, base_url, mutable_run
 
 @pytest.mark.browser
 def test_drag_drop_assigns_index_to_sample(logged_in_page, base_url, mutable_run_id):
-    """Synthetically dispatch dragstart on a chip and drop on the first
-    .drop-zone — assert the .sample-row.has-index count increases by 1.
+    """Drag an index chip onto a sample drop zone and assert a REAL assignment.
 
-    Proves the delegated dragstart/dragover/drop handlers in app.js are
-    wired (not the removed inline ondragstart/ondrop).
+    Proves the delegated dragstart/dragover/drop handlers in app.js are wired
+    (the inline ondragstart/ondrop were removed because the CSP blocks them).
+
+    Robustness:
+      * Playwright can't drive a native HTML5 drag, so the drag is synthesized.
+        We return the payload ``handleDragStart`` wrote into the DataTransfer and
+        assert it carried — a browser that no-ops ``setData`` then fails with a
+        clear message instead of a mystery DOM timeout.
+      * We wait on the ``assign-index`` POST the drop triggers (deterministic)
+        rather than polling the DOM, then confirm the row became indexed.
     """
     page = logged_in_page
-    run_id = mutable_run_id
-    page.goto(f"{base_url}/runs/{run_id}")
+    page.goto(f"{base_url}/runs/{mutable_run_id}")
     page.wait_for_load_state("networkidle")
 
-    # Count indexed samples before the operation
+    assert page.locator(".draggable-index-compact").count() >= 1, "seed must render an index chip"
+    assert page.locator(".drop-zone").count() >= 1, "seed must render an unindexed sample's drop zone"
     before = page.locator(".sample-row.has-index").count()
 
-    # Dispatch synthetic drag events.  DataTransfer is constructed in the
-    # browser so the delegated listeners can read it.
-    page.evaluate("""() => {
-        const chip = document.querySelector('.draggable-index-compact');
-        const zone = document.querySelector('.drop-zone');
-        if (!chip || !zone) throw new Error('chip or zone not found');
-        const dt = new DataTransfer();
-        chip.dispatchEvent(new DragEvent('dragstart', {dataTransfer: dt, bubbles: true}));
-        zone.dispatchEvent(new DragEvent('dragover',  {dataTransfer: dt, bubbles: true, cancelable: true}));
-        zone.dispatchEvent(new DragEvent('drop',      {dataTransfer: dt, bubbles: true, cancelable: true}));
-    }""")
+    # Synthesize dragstart→dragover→drop with one shared DataTransfer, and wait
+    # for the assignment request the drop fires (a hard assertion — the delegated
+    # path must actually assign, or it is a real regression; no skip fallback).
+    with page.expect_response(
+        lambda r: "assign-index" in r.url and r.request.method == "POST",
+        timeout=5000,
+    ) as resp_info:
+        carried = page.evaluate("""() => {
+            const chip = document.querySelector('.draggable-index-compact');
+            const zone = document.querySelector('.drop-zone');
+            const dt = new DataTransfer();
+            chip.dispatchEvent(new DragEvent('dragstart', {dataTransfer: dt, bubbles: true}));
+            const payload = dt.getData('text/plain');   // written by handleDragStart
+            zone.dispatchEvent(new DragEvent('dragover', {dataTransfer: dt, bubbles: true, cancelable: true}));
+            zone.dispatchEvent(new DragEvent('drop',     {dataTransfer: dt, bubbles: true, cancelable: true}));
+            return payload;
+        }""")
+    assert carried, (
+        "dragstart did not populate the DataTransfer (handleDragStart.setData was a "
+        "no-op in this browser), so the drag path could not be exercised"
+    )
+    assert resp_info.value.status == 200, f"assign-index returned HTTP {resp_info.value.status}"
 
-    # Wait for the HTMX swap to increase the has-index count. This is a hard
-    # assertion (no skip fallback): the delegated dragstart→drop path must
-    # actually assign an index, or it is a real regression.
-    expected = before + 1
     page.wait_for_function(
-        f"document.querySelectorAll('.sample-row.has-index').length >= {expected}",
+        f"document.querySelectorAll('.sample-row.has-index').length >= {before + 1}",
         timeout=5000,
     )
-    after = page.locator(".sample-row.has-index").count()
-    assert after >= expected, (
-        f"Expected at least {expected} indexed sample rows after drag-drop, got {after}"
+    assert page.locator(".sample-row.has-index").count() >= before + 1, (
+        "drag-drop did not produce an indexed sample row"
     )
 
 
