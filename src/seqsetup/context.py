@@ -13,6 +13,7 @@ from .repositories.local_user_repo import LocalUserRepository
 from .repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .repositories.sample_api_config_repo import SampleApiConfigRepository
 from .repositories.test_profile_repo import TestProfileRepository
+from .repositories.run_template_repo import RunTemplateRepository
 
 
 @dataclass
@@ -48,6 +49,7 @@ class AppContext:
     local_user_repo: Optional[LocalUserRepository] = None
     instrument_definition_repo: Optional[InstrumentDefinitionRepository] = None
     profile_sync_config_repo: Optional[ProfileSyncConfigRepository] = None
+    run_template_repo: Optional[RunTemplateRepository] = None
 
     # Service factories (callables that return service instances)
     get_github_sync_service: Optional[Callable] = None

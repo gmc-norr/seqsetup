@@ -15,6 +15,7 @@ from .repositories.api_token_repo import ApiTokenRepository
 from .repositories.local_user_repo import LocalUserRepository
 from .repositories.sample_api_config_repo import SampleApiConfigRepository
 from .repositories.instrument_definition_repo import InstrumentDefinitionRepository
+from .repositories.run_template_repo import RunTemplateRepository
 from .services.auth import AuthService
 from .services.database import init_db
 from .services.github_sync import GitHubSyncService
@@ -106,6 +107,7 @@ _REPO_REGISTRY = {
     "local_user": LocalUserRepository,
     "sample_api_config": SampleApiConfigRepository,
     "instrument_definition": InstrumentDefinitionRepository,
+    "run_template": RunTemplateRepository,
 }
 
 # Module-level state
@@ -173,6 +175,9 @@ def get_sample_api_config_repo() -> SampleApiConfigRepository:
 def get_instrument_definition_repo() -> InstrumentDefinitionRepository:
     return _get_repo("instrument_definition")
 
+def get_run_template_repo() -> RunTemplateRepository:
+    return _get_repo("run_template")
+
 
 def get_app_context() -> AppContext:
     """Create an AppContext with all repositories and service factories."""
@@ -189,6 +194,7 @@ def get_app_context() -> AppContext:
         local_user_repo=get_local_user_repo(),
         instrument_definition_repo=get_instrument_definition_repo(),
         profile_sync_config_repo=get_profile_sync_config_repo(),
+        run_template_repo=get_run_template_repo(),
         get_github_sync_service=get_github_sync_service,
     )
 

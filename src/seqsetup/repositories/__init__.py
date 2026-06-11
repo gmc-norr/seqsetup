@@ -13,6 +13,7 @@ from .sample_api_config_repo import SampleApiConfigRepository
 from .auth_config_repo import AuthConfigRepository
 from .api_token_repo import ApiTokenRepository
 from .local_user_repo import LocalUserRepository
+from .run_template_repo import RunTemplateRepository
 
 __all__ = [
     "BaseRepository",
@@ -29,4 +30,5 @@ __all__ = [
     "AuthConfigRepository",
     "ApiTokenRepository",
     "LocalUserRepository",
+    "RunTemplateRepository",
 ]
