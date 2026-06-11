@@ -503,6 +503,73 @@ function applyBulkDeleteForm() {
     htmx.trigger('#bulk-delete-form', 'submit');
 }
 
+// ===== CSP-safe event delegation =====
+// The app CSP (script-src 'self' 'unsafe-eval', no 'unsafe-inline') blocks inline
+// on* attributes, so every remaining handler is wired here via delegation.
+
+function clearPasteForm() {
+    const pd = document.getElementById('paste_data'); if (pd) pd.value = '';
+    const sf = document.getElementById('sample_file'); if (sf) sf.value = '';
+}
+
+const _CLICK_ACTIONS = {
+    'bulk-apply-lanes': applyBulkLanesForm,
+    'bulk-clear-lanes': clearBulkLanesForm,
+    'bulk-toggle-lanes': toggleBulkLanes,
+    'bulk-apply-mismatches': applyBulkMismatchesForm,
+    'bulk-clear-mismatches': clearBulkMismatchesForm,
+    'bulk-apply-override': applyBulkOverrideCyclesForm,
+    'bulk-clear-override': clearBulkOverrideCyclesForm,
+    'bulk-apply-testid': applyBulkTestIdForm,
+    'bulk-clear-testid': clearBulkTestIdForm,
+    'bulk-delete': applyBulkDeleteForm,
+    'clear-paste': clearPasteForm,
+};
+
+document.addEventListener('click', function(event) {
+    const actionEl = event.target.closest('[data-action]');
+    if (actionEl) {
+        const action = actionEl.dataset.action;
+        if (action === 'navigate' && actionEl.dataset.href) { window.location = actionEl.dataset.href; return; }
+        const fn = _CLICK_ACTIONS[action];
+        if (fn) { fn(); return; }
+    }
+    if (event.target.closest('.sample-checkbox')) { handleSampleCheckboxClick(event); return; }
+    const sa = event.target.closest('.select-all-checkbox');
+    if (sa) { toggleSelectAllSamples(sa); return; }
+});
+
+document.addEventListener('input', function(event) {
+    const filter = event.target.closest('.index-filter-input');
+    if (filter) filterIndexesWizard(filter.value);
+});
+
+document.addEventListener('dragstart', function(event) {
+    const chip = event.target.closest('.draggable-index, .draggable-index-compact');
+    if (!chip) return;
+    const indexId = chip.dataset.indexPairId || chip.dataset.indexId;
+    const indexType = chip.dataset.indexType || 'pair';
+    handleDragStart(event, indexId, indexType);
+});
+
+document.addEventListener('dragover', function(event) {
+    const zone = event.target.closest('.drop-zone');
+    if (!zone) return;
+    event.preventDefault();
+    zone.classList.add('drag-over');
+});
+
+document.addEventListener('dragleave', function(event) {
+    const zone = event.target.closest('.drop-zone');
+    if (zone) zone.classList.remove('drag-over');
+});
+
+document.addEventListener('drop', function(event) {
+    const zone = event.target.closest('.drop-zone');
+    if (!zone) return;
+    handleIndexDrop(event, zone.dataset.sampleId, zone.dataset.runId, zone.dataset.dropZoneType);
+});
+
 // =========================================================================
 // Index Filter Functions (for wizard compact view)
 // =========================================================================

@@ -41,7 +41,7 @@
                     <div class="paste-buttons">
                         <button type="submit" class="btn btn-primary">Add Samples</button>
                         <button type="button" class="btn btn-secondary"
-                                onclick="document.getElementById('paste_data').value=''; document.getElementById('sample_file').value=''">Clear</button>
+                                data-action="clear-paste">Clear</button>
                     </div>
                 </form>
                 {% if sample_api_enabled %}

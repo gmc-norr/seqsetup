@@ -32,8 +32,7 @@
 {%- if effective_checkboxes %}
     <td class="checkbox-cell">
         <input type="checkbox" class="sample-checkbox"
-               data-sample-id="{{ sample.id }}"
-               onclick="handleSampleCheckboxClick(event)">
+               data-sample-id="{{ sample.id }}">
     </td>
 {%- endif %}
 {%- if show_drop_zones %}
@@ -71,11 +70,7 @@
                  data-context="{{ context }}"
                  data-sample-id="{{ sample.id | e }}"
                  data-run-id="{{ run_id | e }}"
-                 data-drop-zone-type="i7"
-                 ondragover="event.preventDefault(); this.classList.add('drag-over')"
-                 ondragleave="this.classList.remove('drag-over')"
-                 ondrop="handleIndexDrop(event, '{{ sample.id }}', '{{ run_id }}', 'i7')"
-                 onkeydown="handleIndexAssignKeydown(event, '{{ sample.id }}', '{{ run_id }}', 'i7')">Drop i7 <span aria-hidden="true">⌖</span></div>
+                 data-drop-zone-type="i7">Drop i7 <span aria-hidden="true">⌖</span></div>
         </td>
     {%- else %}
         <td class="index-cell"><span class="no-index">-</span></td>
@@ -105,11 +100,7 @@
                      data-context="{{ context }}"
                      data-sample-id="{{ sample.id | e }}"
                      data-run-id="{{ run_id | e }}"
-                     data-drop-zone-type="i5"
-                     ondragover="event.preventDefault(); this.classList.add('drag-over')"
-                     ondragleave="this.classList.remove('drag-over')"
-                     ondrop="handleIndexDrop(event, '{{ sample.id }}', '{{ run_id }}', 'i5')"
-                     onkeydown="handleIndexAssignKeydown(event, '{{ sample.id }}', '{{ run_id }}', 'i5')">Drop i5 <span aria-hidden="true">⌖</span></div>
+                     data-drop-zone-type="i5">Drop i5 <span aria-hidden="true">⌖</span></div>
             </td>
         {%- else %}
             <td class="index-cell"><span class="no-index">-</span></td>

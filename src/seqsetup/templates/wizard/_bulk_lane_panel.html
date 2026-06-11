@@ -2,7 +2,7 @@
    Bulk-action panel — multi-select sample operations.
 
    Inputs:
-     run_id:        str
+     run:           SequencingRun (run.id used for HTMX form actions)
      num_lanes:     int
      test_profiles: list[TestProfile] | None
 
@@ -16,14 +16,14 @@
 <div id="bulk-action-panel" class="bulk-action-panel">
     {# Hidden HTMX forms — submitted by app.js globals #}
     <form id="bulk-lanes-form" style="display: none;"
-          hx-post="/runs/{{ run_id }}/samples/set-lanes"
+          hx-post="/runs/{{ run.id }}/samples/set-lanes"
           hx-target="#sample-table"
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-sample-ids">
         <input type="hidden" name="lanes" id="bulk-lanes">
     </form>
     <form id="bulk-mismatches-form" style="display: none;"
-          hx-post="/runs/{{ run_id }}/samples/set-mismatches"
+          hx-post="/runs/{{ run.id }}/samples/set-mismatches"
           hx-target="#sample-table"
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-mismatch-sample-ids">
@@ -31,21 +31,21 @@
         <input type="hidden" name="mismatch_index2" id="bulk-mismatch-index2">
     </form>
     <form id="bulk-override-form" style="display: none;"
-          hx-post="/runs/{{ run_id }}/samples/set-override-cycles"
+          hx-post="/runs/{{ run.id }}/samples/set-override-cycles"
           hx-target="#sample-table"
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-override-sample-ids">
         <input type="hidden" name="override_cycles" id="bulk-override-cycles">
     </form>
     <form id="bulk-test-id-form" style="display: none;"
-          hx-post="/runs/{{ run_id }}/samples/set-test-id"
+          hx-post="/runs/{{ run.id }}/samples/set-test-id"
           hx-target="#sample-table"
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-test-id-sample-ids">
         <input type="hidden" name="test_id" id="bulk-test-id">
     </form>
     <form id="bulk-delete-form" style="display: none;"
-          hx-post="/runs/{{ run_id }}/samples/bulk-delete"
+          hx-post="/runs/{{ run.id }}/samples/bulk-delete"
           hx-target="#sample-table"
           hx-swap="outerHTML"
           hx-confirm="Delete selected samples?">
@@ -57,7 +57,7 @@
         <span id="selected-sample-count" class="selected-count">0</span>
         <span class="selected-label"> samples selected</span>
         <button type="button" id="bulk-delete-btn" class="btn btn-danger btn-small bulk-delete-btn"
-                onclick="applyBulkDeleteForm()">Delete Selected</button>
+                data-action="bulk-delete">Delete Selected</button>
     </div>
 
     <div class="bulk-action-grid">
@@ -73,9 +73,9 @@
                     {% endfor %}
                 </div>
                 <div class="bulk-action-buttons">
-                    <button type="button" class="btn btn-primary btn-small" onclick="applyBulkLanesForm()">Apply</button>
-                    <button type="button" class="btn btn-secondary btn-small" onclick="clearBulkLanesForm()">Clear</button>
-                    <button type="button" class="btn btn-secondary btn-small" onclick="toggleBulkLanes()" title="Invert lane selections">Toggle</button>
+                    <button type="button" class="btn btn-primary btn-small" data-action="bulk-apply-lanes">Apply</button>
+                    <button type="button" class="btn btn-secondary btn-small" data-action="bulk-clear-lanes">Clear</button>
+                    <button type="button" class="btn btn-secondary btn-small" data-action="bulk-toggle-lanes" title="Invert lane selections">Toggle</button>
                 </div>
             </div>
             {# Mismatches #}
@@ -88,8 +88,8 @@
                     <input type="number" id="bulk-mismatch-i5-input" placeholder="-" min="0" max="2" class="mismatch-input bulk-mismatch-input">
                 </div>
                 <div class="bulk-action-buttons">
-                    <button type="button" class="btn btn-primary btn-small" onclick="applyBulkMismatchesForm()">Apply</button>
-                    <button type="button" class="btn btn-secondary btn-small" onclick="clearBulkMismatchesForm()">Clear</button>
+                    <button type="button" class="btn btn-primary btn-small" data-action="bulk-apply-mismatches">Apply</button>
+                    <button type="button" class="btn btn-secondary btn-small" data-action="bulk-clear-mismatches">Clear</button>
                 </div>
             </div>
         </div>
@@ -99,8 +99,8 @@
                 <span class="bulk-action-label">Override Cycles:</span>
                 <input type="text" id="bulk-override-cycles-input" placeholder="e.g., Y151;I8N2;I8N2;Y151" class="override-cycles-input bulk-override-input">
                 <div class="bulk-action-buttons">
-                    <button type="button" class="btn btn-primary btn-small" onclick="applyBulkOverrideCyclesForm()">Apply</button>
-                    <button type="button" class="btn btn-secondary btn-small" onclick="clearBulkOverrideCyclesForm()" title="Recalculate override cycles automatically">Auto</button>
+                    <button type="button" class="btn btn-primary btn-small" data-action="bulk-apply-override">Apply</button>
+                    <button type="button" class="btn btn-secondary btn-small" data-action="bulk-clear-override" title="Recalculate override cycles automatically">Auto</button>
                 </div>
             </div>
             {# Test ID #}
@@ -108,8 +108,8 @@
                 <span class="bulk-action-label">Test ID:</span>
                 {% include "wizard/_test_id_dropdown.html" %}
                 <div class="bulk-action-buttons">
-                    <button type="button" class="btn btn-primary btn-small" onclick="applyBulkTestIdForm()">Apply</button>
-                    <button type="button" class="btn btn-secondary btn-small" onclick="clearBulkTestIdForm()">Clear</button>
+                    <button type="button" class="btn btn-primary btn-small" data-action="bulk-apply-testid">Apply</button>
+                    <button type="button" class="btn btn-secondary btn-small" data-action="bulk-clear-testid">Clear</button>
                 </div>
             </div>
         </div>
