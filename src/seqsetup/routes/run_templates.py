@@ -11,12 +11,11 @@ from fastapi import APIRouter, Depends, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..context import AppContext
-from ..models.analysis import Analysis
 from ..models.run_template import RunTemplate
 from ..models.sample import Sample
 from ..models.sequencing_run import RunCycles
 from ..services.audit_log import audit
-from ..services.run_builder import build_draft_run, RunInstantiationError
+from ..services.run_builder import build_draft_run, RunInstantiationError, _filter_analyses
 from ..templating import render
 from .dependencies import get_archivable_run, get_ctx
 from .utils import get_username, sanitize_string
@@ -73,7 +72,13 @@ async def duplicate_run(
 
 
 def _config_from_run(run, name: str, description: str, scaffold_samples) -> RunTemplate:
-    """Build a RunTemplate capturing a run's config + chosen scaffold samples."""
+    """Build a RunTemplate capturing a run's config + chosen scaffold samples.
+
+    Analyses are filtered to the scaffold samples (and emptied analyses dropped)
+    so the stored template never references a sample that isn't in its scaffold —
+    the same rule build_draft_run applies at instantiation.
+    """
+    scaffold_ids = {s.sample_id for s in scaffold_samples}
     return RunTemplate(
         name=name,
         description=description,
@@ -87,7 +92,7 @@ def _config_from_run(run, name: str, description: str, scaffold_samples) -> RunT
         adapter_behavior=run.adapter_behavior,
         create_fastq_for_index_reads=run.create_fastq_for_index_reads,
         no_lane_splitting=run.no_lane_splitting,
-        analyses=[Analysis.from_dict(a.to_dict()) for a in run.analyses],
+        analyses=_filter_analyses(run.analyses, scaffold_ids),
         scaffold_samples=[Sample.from_dict(s.to_dict()) for s in scaffold_samples],
     )
 

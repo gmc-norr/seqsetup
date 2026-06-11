@@ -155,6 +155,57 @@ class TestSaveAsTemplate:
         # Two saves with the same name -> two distinct templates.
         assert len(ctx.run_template_repo.list_all()) == 2
 
+    def _run_with_analysis(self, logged_in_client, ctx, sample_ids):
+        from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
+        run_id = _create_run(logged_in_client)
+        _add_sample(logged_in_client, run_id, "S1")
+        _add_sample(logged_in_client, run_id, "CTRL_POS")
+        run = ctx.run_repo.get_by_id(run_id)
+        run.analyses = [Analysis(
+            name="g", analysis_type=AnalysisType.DRAGEN_ONBOARD,
+            dragen_pipeline=DRAGENPipeline.GERMLINE, sample_ids=sample_ids,
+        )]
+        ctx.run_repo.save(run)
+        ctrl = next(s for s in run.samples if s.sample_id == "CTRL_POS")
+        return run_id, ctrl.id
+
+    def test_save_as_template_filters_analyses_to_scaffold(
+        self, logged_in_client, fresh_app
+    ):
+        # Analysis references S1 (not scaffolded) + CTRL_POS (scaffolded); the
+        # stored template must keep only the scaffold reference.
+        _app, ctx, _db = fresh_app
+        run_id, ctrl_id = self._run_with_analysis(
+            logged_in_client, ctx, ["S1", "CTRL_POS"]
+        )
+        r = logged_in_client.post(
+            f"/runs/{run_id}/save-as-template",
+            data={"name": "Filtered", "description": "",
+                  "scaffold_sample_ids": json.dumps([ctrl_id])},
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 303
+        t = ctx.run_template_repo.list_all()[0]
+        assert [s.sample_id for s in t.scaffold_samples] == ["CTRL_POS"]
+        assert len(t.analyses) == 1
+        assert t.analyses[0].sample_ids == ["CTRL_POS"]
+
+    def test_save_as_template_drops_analysis_with_no_scaffold_samples(
+        self, logged_in_client, fresh_app
+    ):
+        # Analysis references only S1, which is NOT scaffolded → analysis dropped.
+        _app, ctx, _db = fresh_app
+        run_id, ctrl_id = self._run_with_analysis(logged_in_client, ctx, ["S1"])
+        r = logged_in_client.post(
+            f"/runs/{run_id}/save-as-template",
+            data={"name": "Dropped", "description": "",
+                  "scaffold_sample_ids": json.dumps([ctrl_id])},
+            headers=_origin(), follow_redirects=False,
+        )
+        assert r.status_code == 303
+        t = ctx.run_template_repo.list_all()[0]
+        assert t.analyses == []
+
 
 class TestTemplateCrud:
     def _make_template(self, logged_in_client, ctx) -> str:

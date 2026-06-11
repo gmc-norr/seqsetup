@@ -43,7 +43,10 @@ def _source_run(samples=None, analyses=None):
         samples=samples or [],
         analyses=analyses or [],
         generated_samplesheet_v2="STALE",
+        generated_samplesheet_v1="STALE",
         generated_json="STALE",
+        generated_validation_json="STALE",
+        generated_validation_pdf=b"STALE",
     )
 
 
@@ -58,8 +61,12 @@ class TestBuildDraftRunBasics:
         assert run.id != src.id
         assert run.created_by == "alice" and run.updated_by == "alice"
         assert run._loaded_updated_at is None
+        # ALL five pre-generated export blobs must be shed, not just the v2 sheet.
         assert run.generated_samplesheet_v2 is None
+        assert run.generated_samplesheet_v1 is None
         assert run.generated_json is None
+        assert run.generated_validation_json is None
+        assert run.generated_validation_pdf is None
         assert run.run_name == "New"
 
     def test_config_copied_from_source(self):
@@ -204,3 +211,31 @@ class TestAssertReferencesAvailable:
             lambda platform, flowcell, cfg=None: [],
         )
         assert_references_available(_source_run(), None)
+
+
+class TestExportHasNoDanglingAnalysisReference:
+    """Regression for the spec's clinical invariant: a run produced by
+    build_draft_run must never emit a DRAGEN [Dragen*_Data] Sample_ID that
+    isn't a sample in the run — that would route reads to a phantom sample."""
+
+    def test_dragen_data_section_omits_excluded_sample(self):
+        from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
+
+        analyses = [Analysis(
+            name="g", analysis_type=AnalysisType.DRAGEN_ONBOARD,
+            dragen_pipeline=DRAGENPipeline.GERMLINE, sample_ids=["S1", "CTRL"],
+        )]
+        ctrl = Sample(sample_id="CTRL", index_pair=_pair())
+        src = _source_run(
+            samples=[Sample(sample_id="S1", index_pair=_pair()), ctrl],
+            analyses=analyses,
+        )
+        # Build a draft including ONLY ctrl — S1 is dropped. The analysis must
+        # be filtered so S1 cannot reach the exported DRAGEN data section.
+        run = build_draft_run(
+            config_source=src, samples=[ctrl], created_by="a",
+            run_name="x", instrument_config=None,
+        )
+        out = SampleSheetV2Exporter.export(run)
+        assert "CTRL" in out
+        assert "S1" not in out
