@@ -53,3 +53,6 @@ src/seqsetup/static/css/app.css
 
 # Tailwind binary cache
 .pixi/bin/tailwindcss
+
+# Brainstorming visual-companion mockups (local only)
+.superpowers/
