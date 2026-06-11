@@ -13,7 +13,8 @@
     {% endwith %}
 
     <form method="post" action="/runs/{{ run.id }}/save-as-template" class="flex gap-2 items-center px-1 py-2">
-        <input type="text" name="name" placeholder="Template name"
+        <label for="template-name" class="sr-only">Template name</label>
+        <input type="text" id="template-name" name="name" placeholder="Template name"
                class="border rounded px-2 py-1 text-sm" required maxlength="256">
         <input type="hidden" name="scaffold_sample_ids" value="[]">
         <button type="submit"
