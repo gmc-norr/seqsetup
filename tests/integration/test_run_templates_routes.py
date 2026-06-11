@@ -2,6 +2,9 @@
 
 import json
 
+import pytest
+
+from seqsetup.models.run_template import RunTemplate
 from seqsetup.models.sequencing_run import RunStatus
 
 
@@ -286,3 +289,46 @@ class TestUiHooks:
         r = logged_in_client.get(f"/runs/{run_id}")
         assert r.status_code == 200
         assert "save-as-template" in r.text
+
+
+class TestSafetyBoundaries:
+    """Clinical invariants that must not regress: a malicious/invalid scaffold
+    cannot bypass model validation, and a clone never resurrects a non-DRAFT
+    status or stale exports from its source."""
+
+    def test_non_acgtn_index_in_template_dict_is_rejected(self):
+        # Deserializing a template whose scaffold sample carries a non-ACGTN
+        # index must RAISE, not silently produce a valid-looking template.
+        # Index.__post_init__ rejects characters outside [ACGTN].
+        bad = {
+            "id": "t1",
+            "name": "evil",
+            "instrument_platform": "NovaSeq X Series",
+            "scaffold_samples": [{
+                "id": "x", "sample_id": "S1",
+                "index1": {"name": "i", "sequence": "ZZZZ", "index_type": "i7"},
+            }],
+        }
+        with pytest.raises(ValueError):
+            RunTemplate.from_dict(bad)
+
+    def test_clone_of_archived_run_does_not_resurrect_status(
+        self, logged_in_client, fresh_app
+    ):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.status = RunStatus.ARCHIVED
+        run.generated_samplesheet_v2 = "snapshot"
+        ctx.run_repo.save(run)
+
+        r = logged_in_client.post(
+            f"/runs/{run_id}/duplicate",
+            data={"include_samples": "true"}, headers=_origin(),
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        new_id = r.headers["location"].rsplit("/", 1)[1]
+        new_run = ctx.run_repo.get_by_id(new_id)
+        assert new_run.status == RunStatus.DRAFT
+        assert new_run.generated_samplesheet_v2 is None
