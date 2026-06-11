@@ -9,9 +9,10 @@
    The five hidden forms have HX-target / HX-swap that re-render the whole
    #sample-table on success. app.js globals (applyBulkLanesForm() etc.)
    read the visible inputs, populate the hidden form inputs, and submit
-   via HTMX. The visible UI has its current inline-onclick wiring kept
-   verbatim — switching to Alpine sample_multi_select is a future refactor
-   that needs coordinated app.js changes.
+   via HTMX. The buttons carry `data-action="bulk-*"` and are wired via
+   event delegation in app.js — inline on* handlers are blocked by the
+   app CSP (script-src 'self' without 'unsafe-inline'), so they MUST NOT
+   be reintroduced.
 #}
 <div id="bulk-action-panel" class="bulk-action-panel">
     {# Hidden HTMX forms — submitted by app.js globals #}

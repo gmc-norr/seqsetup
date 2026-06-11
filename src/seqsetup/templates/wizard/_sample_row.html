@@ -13,10 +13,10 @@
      editable:           bool   — toggles input vs read-only displays; toggles delete button
      show_checkboxes:    bool|None — override; None derives from show_bulk_actions and editable
 
-   The drag-DROP zones use inline ondragover/ondrop calling the global
-   handleIndexDrop from app.js (unchanged protocol). The Alpine
-   indexDragZone component is pre-positioned but NOT used here yet —
-   that switch needs app.js coordination and is deferred.
+   The drop zones carry data-sample-id / data-run-id / data-drop-zone-type
+   and are wired via event delegation in app.js (dragover/dragleave/drop/
+   keydown calling handleIndexDrop / assignSelectedIndexToSample). Inline
+   on* handlers are blocked by the app CSP, so do NOT add them back.
 #}
 {% set has_index = sample.has_index %}
 {% set has_i7 = sample.index1_sequence is not none %}

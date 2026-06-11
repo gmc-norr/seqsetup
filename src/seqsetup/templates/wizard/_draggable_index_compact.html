@@ -6,10 +6,11 @@
      kit_name:    str
      index_type:  str — 'i7' or 'i5'
 
-   Uses the global handleIndexClick / handleDragStart from app.js.
-   data-* attributes carry the payload; inline onclick/ondragstart
-   pass the index_id + index_type. The JS reads the rest via
-   this.dataset.*.
+   Uses the global handleIndexClick / handleDragStart from app.js, wired
+   via event delegation on document (click/keydown/dragstart) — inline on*
+   handlers are blocked by the app CSP, so do NOT add them back. The
+   data-* attributes (data-index-id, data-index-type, …) carry the payload
+   the delegated listeners read.
 #}
 {% set index_id = kit_name ~ '_' ~ index_type ~ '_' ~ index.name %}
 <div class="draggable-index-compact draggable-single {{ index_type | e }}-index"
