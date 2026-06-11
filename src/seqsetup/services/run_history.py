@@ -6,11 +6,21 @@ edit (the deployment's standalone MongoDB has no transactions; the run save and
 the history append are separate writes — best-effort by necessity).
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
+
 from ..models.run_history import RunHistoryEntry
 from .run_diff import diff_run, is_empty
 
+if TYPE_CHECKING:
+    from ..context import AppContext
+    from ..models.sequencing_run import SequencingRun
 
-def record_run_updated(ctx, run, before: dict, actor: str) -> None:
+
+def record_run_updated(
+    ctx: AppContext, run: SequencingRun, before: dict, actor: str
+) -> None:
     """Diff `before` (pre-mutation to_dict) against the run's current state and
     append an 'updated' entry if anything tracked changed. No-op if nothing
     changed or history isn't configured."""
@@ -29,7 +39,10 @@ def record_run_updated(ctx, run, before: dict, actor: str) -> None:
     ))
 
 
-def record_run_created(ctx, run, actor: str, source: str, ref=None) -> None:
+def record_run_created(
+    ctx: AppContext, run: SequencingRun, actor: str, source: str,
+    ref: Optional[str] = None,
+) -> None:
     """Append a 'created' anchor entry with provenance."""
     if ctx.run_history_repo is None:
         return
