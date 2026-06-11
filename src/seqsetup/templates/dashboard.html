@@ -79,6 +79,10 @@
                 <span>{{ run.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
                 <div class="flex gap-2 justify-end">
                     <a href="/runs/{{ run.id }}" class="inline-block bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-xs">Edit</a>
+                    <form method="post" action="/runs/{{ run.id }}/duplicate" class="inline-block">
+                        <input type="hidden" name="include_samples" value="false">
+                        <button type="submit" class="inline-block bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-xs">Duplicate</button>
+                    </form>
                     {% if not is_archived %}
                     <button class="inline-block bg-warning hover:opacity-90 text-white rounded px-2 py-1 text-xs"
                             hx-post="/runs/{{ run.id }}/archive"

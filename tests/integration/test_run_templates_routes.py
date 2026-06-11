@@ -272,3 +272,17 @@ class TestCreateFromTemplate:
             headers=_origin(), follow_redirects=False,
         )
         assert r.status_code == 404
+
+
+class TestUiHooks:
+    def test_dashboard_shows_duplicate_action(self, logged_in_client, fresh_app):
+        run_id = _create_run(logged_in_client)
+        r = logged_in_client.get("/")
+        assert r.status_code == 200
+        assert f"/runs/{run_id}/duplicate" in r.text
+
+    def test_edit_page_shows_save_as_template(self, logged_in_client, fresh_app):
+        run_id = _create_run(logged_in_client)
+        r = logged_in_client.get(f"/runs/{run_id}")
+        assert r.status_code == 200
+        assert "save-as-template" in r.text
