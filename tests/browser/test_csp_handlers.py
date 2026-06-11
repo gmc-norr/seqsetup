@@ -68,48 +68,19 @@ def test_select_all_checkbox_checks_all_samples(logged_in_page, base_url, seeded
 
 
 @pytest.mark.browser
-def test_bulk_apply_testid_updates_samples(logged_in_page, base_url, seeded_ids):
-    """Create a fresh mutable run via page.request (shares session cookies),
-    navigate to it, select a sample, pick a test ID, click Apply — assert the
-    sample row reflects the new test ID after the HTMX swap.
+def test_bulk_apply_testid_updates_samples(logged_in_page, base_url, mutable_run_id):
+    """Navigate to a self-cleaning mutable run, select a sample, pick a test
+    ID, click Apply — assert the sample row reflects the new test ID after the
+    HTMX swap.
 
-    Uses a freshly created run so the session-scoped screenshot baseline
-    (which uses the fixed seeded draft run) is not corrupted.
+    Uses a function-scoped mutable run (created + deleted per test via the
+    repo) so the session-scoped screenshot baseline is never touched.
 
     Proves data-action='bulk-apply-testid' delegation triggers the real
     HTMX bulk-set-test-id request end-to-end.
     """
-    import re
-
     page = logged_in_page
-
-    # ---- Create a fresh draft run using page.request (shares the browser session) ----
-    # Include the Origin header to satisfy OriginCheckMiddleware (CSRF protection).
-    create_resp = page.request.post(
-        f"{base_url}/runs/new",
-        form={"run_name": "CSP-bulk-testid-test"},
-        headers={"Origin": base_url},
-    )
-    # The server returns 303 → /runs/new/step/1?run_id=<uuid>
-    # The run_id is in the query string of the redirect destination.
-    final_url = create_resp.url
-    m = re.search(r"[?&]run_id=([^&]+)", final_url)
-    if not m:
-        # Fallback: look for a path segment after /runs/ that is not "new"
-        m = re.search(r"/runs/(?!new(?:/|$))([^/?]+)", final_url)
-    assert m, (
-        f"Could not determine run_id from response URL: {final_url!r}. "
-        f"Status: {create_resp.status}"
-    )
-    run_id = m.group(1)
-
-    # ---- Add two samples via the bulk-paste endpoint ----
-    paste_resp = page.request.post(
-        f"{base_url}/runs/{run_id}/samples/bulk",
-        multipart={"paste_data": "sample_id\ttest_id\nCSP-S01\t\nCSP-S02\t"},
-        headers={"Origin": base_url},
-    )
-    assert paste_resp.status == 200, f"Sample bulk-paste returned {paste_resp.status}"
+    run_id = mutable_run_id
 
     # ---- Navigate the browser to the run editor ----
     page.goto(f"{base_url}/runs/{run_id}")
@@ -141,7 +112,7 @@ def test_bulk_apply_testid_updates_samples(logged_in_page, base_url, seeded_ids)
 
 
 @pytest.mark.browser
-def test_drag_drop_assigns_index_to_sample(logged_in_page, base_url, seeded_ids):
+def test_drag_drop_assigns_index_to_sample(logged_in_page, base_url, mutable_run_id):
     """Synthetically dispatch dragstart on a chip and drop on the first
     .drop-zone — assert the .sample-row.has-index count increases by 1.
 
@@ -149,7 +120,7 @@ def test_drag_drop_assigns_index_to_sample(logged_in_page, base_url, seeded_ids)
     wired (not the removed inline ondragstart/ondrop).
     """
     page = logged_in_page
-    run_id = seeded_ids["draft_run_id"]
+    run_id = mutable_run_id
     page.goto(f"{base_url}/runs/{run_id}")
     page.wait_for_load_state("networkidle")
 

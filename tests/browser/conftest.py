@@ -10,6 +10,7 @@ without a running server.
 """
 
 import importlib
+import itertools
 import os
 import socket
 import sys
@@ -28,6 +29,11 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.models.test_profile import TestProfile
 from seqsetup.models.user import UserRole
+
+# Module-level AppContext reference, set once by app_server and used by
+# function-scoped fixtures that need direct repo access (e.g. mutable_run_id).
+_app_ctx = None
+_mutable_run_counter = itertools.count(1)
 
 # Fixed IDs used by screenshot/a11y tests for stable, deterministic URLs.
 DRAFT_RUN_ID = "screenshot-draft-run"
@@ -97,6 +103,10 @@ def app_server(tmp_path_factory):
     app_module = importlib.import_module("seqsetup.app")
     app = app_module.app
     ctx = app_module._ctx
+
+    # Expose the AppContext to function-scoped fixtures.
+    global _app_ctx
+    _app_ctx = ctx
 
     # Stop the background scheduler started during app import.
     scheduler = getattr(startup_module, "_profile_sync_scheduler", None)
@@ -470,3 +480,80 @@ def seeded_ids():
         "ready_run_id": READY_RUN_ID,
         "archived_run_id": ARCHIVED_RUN_ID,
     }
+
+
+@pytest.fixture(scope="session")
+def app_ctx(app_server):
+    """The AppContext created by app_server — gives fixtures direct repo access."""
+    return _app_ctx
+
+
+@pytest.fixture
+def mutable_run_id(app_ctx):
+    """Create a short-lived DRAFT run for mutation tests, then delete it on teardown.
+
+    The run is created directly via the repo (no HTTP), uses a fixed
+    created_at/updated_at so it never shows a live timestamp in the DB, and
+    is deleted after the test function returns.  Because it exists only for the
+    duration of one test, it is invisible to every screenshot/oracle test and
+    does not affect the dashboard baseline.
+
+    The run has 3 indexed + 1 unindexed sample — enough for both the
+    keyboard-assign test (drop-zone) and the bulk-panel test (checkboxes).
+    """
+    _t_mut = datetime(2026, 1, 10, 9, 0, 0)
+    run_n = next(_mutable_run_counter)
+    run_id = f"mutable-run-{run_n:04d}"
+
+    run = SequencingRun(
+        id=run_id,
+        run_name=f"Mutable test run {run_n}",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8),
+        status=RunStatus.DRAFT,
+        created_by=BROWSER_ADMIN["username"],
+        updated_by=BROWSER_ADMIN["username"],
+        created_at=_t_mut,
+        updated_at=_t_mut,
+    )
+    # 3 indexed samples
+    run.add_sample(Sample(
+        id=f"{run_id}-s1", sample_id="MUT-01", sample_name="Mutable One",
+        index_pair=IndexPair(
+            id="sck-p1", name="UDP0001",
+            index1=Index(name="i7-01", sequence="ATTACTCG", index_type=IndexType.I7),
+            index2=Index(name="i5-01", sequence="TATAGCCT", index_type=IndexType.I5),
+        ),
+        index_kit_name=SCREENSHOT_KIT_NAME,
+        lanes=[1],
+    ))
+    run.add_sample(Sample(
+        id=f"{run_id}-s2", sample_id="MUT-02", sample_name="Mutable Two",
+        index_pair=IndexPair(
+            id="sck-p2", name="UDP0002",
+            index1=Index(name="i7-02", sequence="TCCGGAGA", index_type=IndexType.I7),
+            index2=Index(name="i5-02", sequence="ATAGAGGC", index_type=IndexType.I5),
+        ),
+        index_kit_name=SCREENSHOT_KIT_NAME,
+        lanes=[1],
+    ))
+    run.add_sample(Sample(
+        id=f"{run_id}-s3", sample_id="MUT-03", sample_name="Mutable Three",
+        index_pair=IndexPair(
+            id="sck-p3", name="UDP0003",
+            index1=Index(name="i7-03", sequence="CGCTCATT", index_type=IndexType.I7),
+            index2=Index(name="i5-03", sequence="CCTATCCT", index_type=IndexType.I5),
+        ),
+        index_kit_name=SCREENSHOT_KIT_NAME,
+        lanes=[1],
+    ))
+    # 1 unindexed sample — gives the keyboard-assign test a drop-zone target
+    run.add_sample(Sample(
+        id=f"{run_id}-s4", sample_id="MUT-04", sample_name="Mutable Four",
+        lanes=[1],
+    ))
+
+    app_ctx.run_repo.save(run)
+    yield run_id
+    app_ctx.run_repo.delete(run_id)

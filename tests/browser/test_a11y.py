@@ -42,9 +42,9 @@ def test_axe_dashboard(logged_in_page):
 
 
 @pytest.mark.browser
-def test_index_keyboard_assign(logged_in_page, base_url, seeded_ids):
+def test_index_keyboard_assign(logged_in_page, base_url, mutable_run_id):
     page = logged_in_page
-    page.goto(base_url + f"/runs/{seeded_ids['draft_run_id']}")
+    page.goto(base_url + f"/runs/{mutable_run_id}")
     page.wait_for_load_state("networkidle")
     before = page.locator(".sample-row.has-index").count()
     chip = page.locator(".draggable-index-compact").first
