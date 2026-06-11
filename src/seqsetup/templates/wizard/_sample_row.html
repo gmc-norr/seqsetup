@@ -32,7 +32,8 @@
 {%- if effective_checkboxes %}
     <td class="checkbox-cell">
         <input type="checkbox" class="sample-checkbox"
-               data-sample-id="{{ sample.id }}">
+               data-sample-id="{{ sample.id }}"
+               aria-label="Select {{ sample.sample_id or sample.id }}">
     </td>
 {%- endif %}
 {%- if show_drop_zones %}

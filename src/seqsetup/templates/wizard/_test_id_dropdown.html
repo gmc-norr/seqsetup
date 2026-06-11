@@ -4,11 +4,11 @@
      test_profiles: list[TestProfile] | None
 #}
 {% if not test_profiles %}
-<select id="bulk-test-id-input" class="test-id-input bulk-test-id-input" disabled>
+<select id="bulk-test-id-input" class="test-id-input bulk-test-id-input" aria-label="Test ID" disabled>
     <option value="" disabled selected>No test profiles available</option>
 </select>
 {% else %}
-<select id="bulk-test-id-input" class="test-id-input bulk-test-id-input">
+<select id="bulk-test-id-input" class="test-id-input bulk-test-id-input" aria-label="Test ID">
     <option value="" selected>Select a test...</option>
     {% for tp in test_profiles %}
         {% if tp.test_name and tp.test_name != tp.test_type %}

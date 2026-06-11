@@ -63,6 +63,9 @@ def app_server(tmp_path_factory):
     session_dir = tmp_path_factory.mktemp("browser-app")
     os.environ["SEQSETUP_SESSION_SECRET"] = "x" * 64
     os.environ["SEQSETUP_SESSKEY_PATH"] = str(session_dir / ".sesskey")
+    # Raise the login rate limit so the full browser-test suite can log in
+    # once per test function without hitting the production-default 20/60 s cap.
+    os.environ.setdefault("SEQSETUP_LOGIN_RATE_LIMIT", "100")
 
     # --- Patch init_db / get_db to use mongomock BEFORE app import ---
     # We can't use the integration fixture as-is (it's function-scoped

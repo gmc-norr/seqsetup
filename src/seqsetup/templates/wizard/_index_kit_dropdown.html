@@ -10,7 +10,7 @@
    Renders nothing if index_kits is empty.
 #}
 {% if index_kits %}
-<select name="selected_kit" id="index-kit-dropdown" class="index-kit-dropdown"
+<select name="selected_kit" id="index-kit-dropdown" class="index-kit-dropdown" aria-label="Index kit"
         hx-get="/indexes/kit-content"
         hx-target="#index-list-container"
         hx-swap="innerHTML"

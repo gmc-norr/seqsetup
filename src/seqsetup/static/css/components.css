@@ -1046,7 +1046,8 @@ body {
 
 .index-i5-name-compact {
     font-size: 0.65rem;
-    color: var(--accent-i5);
+    /* #ea580c (accent-i5) gives 3.6:1 at 0.65rem — use darker #c2410c (5.2:1) for AA small text */
+    color: #c2410c;
 }
 
 .index-well-compact {
@@ -1072,11 +1073,11 @@ body {
 }
 
 .index-seq-compact.i7 {
-    color: var(--accent-i7);
+    color: #1d4ed8; /* AA-safe i7 text */
 }
 
 .index-seq-compact.i5 {
-    color: var(--accent-i5);
+    color: #b73509; /* AA-safe i5 text */
 }
 
 /* Compact pair styling */
@@ -1785,13 +1786,16 @@ body {
     min-width: 100px;
 }
 
-/* i7/i5 color coding */
+/* i7/i5 color coding.
+   The accent tokens (#2563eb, #ea580c) are used for borders and decorative
+   elements. For text at small sizes (≤11pt) we use darker AA-safe shades:
+   i7-text #1d4ed8 (5.7:1 on has-index tinted bg), i5-text #b73509 (5.0:1). */
 .index-seq.i7, .assigned-index.i7 {
-    color: var(--accent-i7);
+    color: #1d4ed8; /* darker AA-safe i7 text (vs accent-i7 #2563eb for borders) */
 }
 
 .index-seq.i5, .assigned-index.i5 {
-    color: var(--accent-i5);
+    color: #b73509; /* darker AA-safe i5 text (vs accent-i5 #ea580c for borders) */
 }
 
 .i7-index {
@@ -1870,8 +1874,10 @@ body {
 .drop-zone:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .index-type-pill { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); padding: 0 .3rem; border-radius: var(--radius-sm); color: #fff; }
 .index-type-pill.i7 { background: var(--accent-i7); }
-.index-type-pill.i5 { background: var(--accent-i5); }
-.index-type-pill.pair { background: var(--accent-pair); }
+/* #ea580c (accent-i5) gives 3.6:1 at small text — use darker #c2410c (5.2:1) for AA */
+.index-type-pill.i5 { background: #c2410c; }
+/* #8b5cf6 (accent-pair) gives 4.2:1 at small text — use darker #7c3aed (5.7:1) for AA */
+.index-type-pill.pair { background: #7c3aed; }
 .drop-zone { border-radius: var(--radius-sm); }
 .drop-zone.drag-over { box-shadow: var(--shadow-md); }
 
@@ -2524,7 +2530,7 @@ body {
 
 .error-type {
     font-weight: 500;
-    color: #dc2626;
+    color: var(--danger-fg); /* #991b1b — 7.6:1 on danger-bg #fef2f2 (AA) */
 }
 
 /* Heatmaps tab */

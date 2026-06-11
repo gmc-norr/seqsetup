@@ -19,16 +19,21 @@
     <div class="export-panel-content">
         <div class="export-buttons">
             <a class="btn btn-primary btn-small export-btn{% if not ss_enabled %} disabled{% endif %}"
+               {% if not ss_enabled %}aria-disabled="true"{% endif %}
                {% if ss_enabled %}href="/runs/{{ run.id }}/export/samplesheet-v2"{% endif %}>Download Sample Sheet v2</a>
             {% if has_v1 %}
             <a class="btn btn-primary btn-small export-btn{% if not v1_enabled %} disabled{% endif %}"
+               {% if not v1_enabled %}aria-disabled="true"{% endif %}
                {% if v1_enabled %}href="/runs/{{ run.id }}/export/samplesheet-v1"{% endif %}>Download Sample Sheet v1</a>
             {% endif %}
             <a class="btn btn-secondary btn-small export-btn{% if not json_enabled %} disabled{% endif %}"
+               {% if not json_enabled %}aria-disabled="true"{% endif %}
                {% if json_enabled %}href="/runs/{{ run.id }}/export/json"{% endif %}>Download JSON</a>
             <a class="btn btn-secondary btn-small export-btn{% if not val_json_enabled %} disabled{% endif %}"
+               {% if not val_json_enabled %}aria-disabled="true"{% endif %}
                {% if val_json_enabled %}href="/runs/{{ run.id }}/export/validation-report"{% endif %}>Download Validation Report (JSON)</a>
             <a class="btn btn-secondary btn-small export-btn{% if not val_pdf_enabled %} disabled{% endif %}"
+               {% if not val_pdf_enabled %}aria-disabled="true"{% endif %}
                {% if val_pdf_enabled %}href="/runs/{{ run.id }}/export/validation-pdf"{% endif %}>Download Validation Report (PDF)</a>
         </div>
         {% if not is_ready %}

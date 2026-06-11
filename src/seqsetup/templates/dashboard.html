@@ -80,7 +80,8 @@
                 <div class="flex gap-2 justify-end">
                     <a href="/runs/{{ run.id }}" class="inline-block bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-xs">Edit</a>
                     {% if not is_archived %}
-                    <button class="inline-block bg-amber-500 hover:bg-amber-600 text-white rounded px-2 py-1 text-xs"
+                    <button class="inline-block hover:opacity-90 text-white rounded px-2 py-1 text-xs"
+                            style="background:#b45309"
                             hx-post="/runs/{{ run.id }}/archive"
                             hx-target="#dashboard"
                             hx-swap="outerHTML"
