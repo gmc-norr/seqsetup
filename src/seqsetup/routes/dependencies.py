@@ -20,6 +20,7 @@ Clinical-safety contract (codified per Section 7 of the design spec):
   primitive cover both consumers.
 """
 
+import logging
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -28,6 +29,8 @@ from fastapi import Depends, HTTPException, Request
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus, SequencingRun
 from ..models.user import UserRole
+from ..services.audit_log import audit
+from ..services.run_history import record_run_updated
 from ..startup import get_app_context
 from .utils import get_username
 
@@ -126,21 +129,31 @@ def saving_run(
     ctx: AppContext,
     request: Request,
 ) -> Iterator[SequencingRun]:
-    """Context manager: on successful exit, ``touch + save`` the run.
-    On exception, do NOT save — the exception propagates as the
-    response and the run stays untouched in the repo.
+    """Context manager: on successful exit, ``touch + save`` the run, then
+    record a change-history entry for the diff.
 
-    Single audit point for the load→check→mutate→touch→save invariant.
-    Reviewers grep ``with saving_run(`` to enumerate every mutation
-    handler.
+    On exception, do NOT save and do NOT record — the exception propagates and
+    the run stays untouched. The post-save history block is exception-guarded so
+    a diff/append failure can never 500 a clinical edit that already persisted
+    (history is best-effort; failures are logged + audited).
     """
+    before = run.to_dict()
     try:
         yield run
     except BaseException:
         raise
     else:
-        run.touch(updated_by=get_username(request))
+        actor = get_username(request)
+        run.touch(updated_by=actor)
         ctx.run_repo.save(run)
+        try:
+            record_run_updated(ctx, run, before, actor)
+        except Exception:
+            logging.getLogger(__name__).error(
+                "Failed to record run history for %s", run.id, exc_info=True
+            )
+            audit("run.history.record_failed", actor=actor, target=run.id,
+                  outcome="failure", reason="append_error")
 
 
 # ---------------------------------------------------------------------------

@@ -75,3 +75,76 @@ class TestRunHistoryRepository:
         assert repo.delete_by_run("r1") == 2
         assert repo.list_by_run("r1", limit=10) == []
         assert len(repo.list_by_run("r2", limit=10)) == 1
+
+
+def _create_run(client) -> str:
+    r = client.post("/runs/new", follow_redirects=False, headers=_origin())
+    assert r.status_code == 303, r.text[:300]
+    return r.headers["location"].split("run_id=", 1)[1].split("&", 1)[0]
+
+
+class TestEditCapture:
+    def test_edit_records_field_change(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        logged_in_client.post(f"/runs/{run_id}/name",
+                              data={"run_name": "Renamed", "run_description": ""},
+                              headers=_origin())
+        entries = ctx.run_history_repo.list_by_run(run_id, limit=10)
+        updated = [e for e in entries if e.kind == "updated"]
+        assert updated, "an updated entry should be recorded"
+        fields = {c["field"]: c for c in updated[0].field_changes}
+        assert fields["run_name"]["after"] == "Renamed"
+        assert updated[0].actor   # actor recorded
+        run = ctx.run_repo.get_by_id(run_id)
+        assert updated[0].timestamp == run.updated_at
+
+    def test_noop_save_records_nothing(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        before = len([e for e in ctx.run_history_repo.list_by_run(run_id, limit=50)
+                      if e.kind == "updated"])
+        run = ctx.run_repo.get_by_id(run_id)
+        logged_in_client.post(f"/runs/{run_id}/name",
+                              data={"run_name": run.run_name,
+                                    "run_description": run.run_description},
+                              headers=_origin())
+        after = len([e for e in ctx.run_history_repo.list_by_run(run_id, limit=50)
+                     if e.kind == "updated"])
+        assert after == before
+
+    def test_sample_add_records_added_entry(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        logged_in_client.post(f"/runs/{run_id}/samples",
+                              data={"sample_id": "S1"}, headers=_origin())
+        entries = ctx.run_history_repo.list_by_run(run_id, limit=50)
+        sample_adds = [e for e in entries
+                       for sc in e.sample_changes if sc["kind"] == "added"]
+        assert sample_adds
+
+    def test_no_phantom_entry_on_conflict(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        from seqsetup.repositories.base import ConflictError
+        before = len(ctx.run_history_repo.list_by_run(run_id, limit=50))
+        monkeypatch.setattr(ctx.run_repo, "save",
+                            lambda run: (_ for _ in ()).throw(ConflictError("x")))
+        logged_in_client.post(f"/runs/{run_id}/name",
+                              data={"run_name": "Z", "run_description": ""},
+                              headers=_origin())
+        after = len(ctx.run_history_repo.list_by_run(run_id, limit=50))
+        assert after == before
+
+    def test_history_write_failure_does_not_break_edit(
+        self, logged_in_client, fresh_app, monkeypatch
+    ):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        monkeypatch.setattr(ctx.run_history_repo, "append",
+                            lambda entry: (_ for _ in ()).throw(RuntimeError("boom")))
+        r = logged_in_client.post(f"/runs/{run_id}/name",
+                                  data={"run_name": "Persisted", "run_description": ""},
+                                  headers=_origin())
+        assert r.status_code == 200
+        assert ctx.run_repo.get_by_id(run_id).run_name == "Persisted"
