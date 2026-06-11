@@ -242,12 +242,17 @@ class TestCreateFromTemplate:
         new_id = r.headers["location"].rsplit("/", 1)[1]
         new_run = ctx.run_repo.get_by_id(new_id)
         assert new_run.status == RunStatus.DRAFT
+        assert new_run.run_name == "WithCtrl"
         assert [s.sample_id for s in new_run.samples] == ["CTRL_POS"]
         assert new_run.generated_samplesheet_v2 is None
 
-    def test_from_template_refuses_withdrawn_flowcell(
+    def test_from_template_refuses_stale_reference(
         self, logged_in_client, fresh_app, monkeypatch
     ):
+        # Empty flowcell set => instrument no longer available; this proves
+        # the route wires check_references=True and turns RunInstantiationError
+        # into a 400. (The three distinct refusal branches are unit-tested in
+        # tests/unit/test_run_builder.py::TestAssertReferencesAvailable.)
         _app, ctx, _db = fresh_app
         tid = self._make_template_with_scaffold(logged_in_client, ctx)
         monkeypatch.setattr(
