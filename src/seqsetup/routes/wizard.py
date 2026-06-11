@@ -17,6 +17,7 @@ from ..data.instruments import (
 from ..models.sequencing_run import RunCycles
 from ..startup import get_instrument_config_repo
 from ..templating import render
+from ..services.run_history import record_run_created
 from .dependencies import get_ctx
 
 
@@ -31,7 +32,15 @@ def wizard_new(
 ) -> Response:
     """POST /runs/new — create the run row and redirect to step 1."""
     user = request.scope.get("auth")
-    run = ctx.run_repo.create_run(user.username if user else "")
+    actor = user.username if user else ""
+    run = ctx.run_repo.create_run(actor)
+    try:
+        record_run_created(ctx, run, actor, source="blank")
+    except Exception:
+        import logging
+        logging.getLogger(__name__).error(
+            "Failed to record creation history for %s", run.id, exc_info=True
+        )
     return RedirectResponse(f"/runs/new/step/1?run_id={run.id}", status_code=303)
 
 

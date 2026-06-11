@@ -15,6 +15,7 @@ from ..models.run_template import RunTemplate
 from ..models.sample import Sample
 from ..models.sequencing_run import RunCycles
 from ..services.audit_log import audit
+from ..services.run_history import record_run_created
 from ..services.run_builder import build_draft_run, RunInstantiationError, _filter_analyses
 from ..templating import render
 from .dependencies import get_archivable_run, get_ctx
@@ -61,6 +62,13 @@ async def duplicate_run(
         return Response(str(exc), status_code=400)
 
     ctx.run_repo.save(new_run)
+    try:
+        record_run_created(ctx, new_run, get_username(request),
+                           source="clone", ref=run.id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).error(
+            "Failed to record clone history for %s", new_run.id, exc_info=True)
     audit(
         "run.cloned",
         actor=get_username(request),
@@ -198,6 +206,13 @@ def new_run_from_template(
         return Response(str(exc), status_code=400)
 
     ctx.run_repo.save(new_run)
+    try:
+        record_run_created(ctx, new_run, get_username(request),
+                           source="template", ref=template_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).error(
+            "Failed to record from-template history for %s", new_run.id, exc_info=True)
     audit(
         "run.created_from_template",
         actor=get_username(request),

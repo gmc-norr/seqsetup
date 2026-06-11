@@ -148,3 +148,41 @@ class TestEditCapture:
                                   headers=_origin())
         assert r.status_code == 200
         assert ctx.run_repo.get_by_id(run_id).run_name == "Persisted"
+
+
+class TestCreationEntries:
+    def test_blank_creation_records_created_entry(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        entries = ctx.run_history_repo.list_by_run(run_id, limit=10)
+        created = [e for e in entries if e.kind == "created"]
+        assert len(created) == 1
+        assert created[0].provenance == {"source": "blank", "ref": None}
+
+    def test_clone_records_created_with_source(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        src_id = _create_run(logged_in_client)
+        r = logged_in_client.post(f"/runs/{src_id}/duplicate",
+                                  data={"include_samples": "false"},
+                                  headers=_origin(), follow_redirects=False)
+        new_id = r.headers["location"].rsplit("/", 1)[1]
+        created = [e for e in ctx.run_history_repo.list_by_run(new_id, limit=10)
+                   if e.kind == "created"]
+        assert created[0].provenance == {"source": "clone", "ref": src_id}
+
+    def test_from_template_records_created_with_template_ref(
+        self, logged_in_client, fresh_app
+    ):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        logged_in_client.post(f"/runs/{run_id}/save-as-template",
+                              data={"name": "T", "description": "",
+                                    "scaffold_sample_ids": "[]"},
+                              headers=_origin(), follow_redirects=False)
+        tid = ctx.run_template_repo.list_all()[0].id
+        r = logged_in_client.post(f"/runs/new/from-template/{tid}",
+                                  headers=_origin(), follow_redirects=False)
+        new_id = r.headers["location"].rsplit("/", 1)[1]
+        created = [e for e in ctx.run_history_repo.list_by_run(new_id, limit=10)
+                   if e.kind == "created"]
+        assert created[0].provenance == {"source": "template", "ref": tid}
