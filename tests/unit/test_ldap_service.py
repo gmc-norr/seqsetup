@@ -9,8 +9,19 @@ different LDAP entry inform the User.role.
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from seqsetup.models.auth_config import LDAPConfig
-from seqsetup.services.ldap import LDAPService
+from seqsetup.services.ldap import LDAPError, LDAPService
+
+
+@pytest.fixture(autouse=True)
+def _allow_cleartext_ldap_in_unit_tests(monkeypatch):
+    """These unit tests exercise the auth flow against a MOCKED cleartext
+    ldap:// connection; opt into cleartext so the transport gate (which
+    fails closed in production) doesn't block them. Tests that assert the
+    gate itself delete this var explicitly."""
+    monkeypatch.setenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", "1")
 
 
 class _FakeAttr:
@@ -80,6 +91,38 @@ def _build_config() -> LDAPConfig:
         user_dn_pattern="CN={username},OU=Users,DC=example,DC=com",
         admin_group_dn="CN=SeqSetup-Admins,OU=Groups,DC=example,DC=com",
     )
+
+
+class TestCleartextTransportGate:
+    """Plaintext LDAP must be refused by default: the service-account bind
+    password and every user's login password would otherwise traverse the wire
+    in clear. Mirrors the LIMS plain-HTTP opt-in."""
+
+    def test_cleartext_refused_without_optin(self, monkeypatch):
+        monkeypatch.delenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", raising=False)
+        svc = LDAPService(_build_config())  # ldap://, use_ssl=False
+        with pytest.raises(LDAPError, match="(?i)cleartext|plaintext|tls|ssl"):
+            svc._get_server()
+
+    def test_cleartext_allowed_with_optin(self, monkeypatch):
+        monkeypatch.setenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", "1")
+        svc = LDAPService(_build_config())
+        svc._get_server()  # no raise
+
+    def test_ldaps_url_not_gated(self, monkeypatch):
+        monkeypatch.delenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", raising=False)
+        cfg = _build_config()
+        cfg.server_url = "ldaps://secure.example.com"
+        cfg.use_ssl = True
+        svc = LDAPService(cfg)
+        svc._get_server()  # no raise — TLS transport
+
+    def test_use_ssl_not_gated(self, monkeypatch):
+        monkeypatch.delenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", raising=False)
+        cfg = _build_config()
+        cfg.use_ssl = True
+        svc = LDAPService(cfg)
+        svc._get_server()  # no raise
 
 
 class TestUserDnPatternEscaping:

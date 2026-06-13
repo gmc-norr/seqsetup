@@ -103,6 +103,22 @@ class LDAPService:
         except ImportError:
             raise LDAPError("ldap3 package is not installed. Run: pip install ldap3")
 
+        # Refuse cleartext LDAP by default: with neither use_ssl nor an ldaps://
+        # URL (and no StartTLS path exists), the bind password AND every user's
+        # login password would be sent in plaintext. Mirror the LIMS plain-HTTP
+        # opt-in so an isolated/trusted network can deliberately allow it.
+        is_secure = self.config.use_ssl or self.config.server_url.lower().startswith("ldaps://")
+        if not is_secure:
+            import os
+            allow = os.environ.get("SEQSETUP_LDAP_ALLOW_CLEARTEXT", "").lower() in ("1", "true", "yes")
+            if not allow:
+                raise LDAPError(
+                    "Refusing to connect to LDAP over cleartext (no SSL/TLS): the bind "
+                    "and user passwords would be sent in plaintext. Use an ldaps:// URL "
+                    "or enable use_ssl. To allow cleartext on a trusted, isolated network, "
+                    "set SEQSETUP_LDAP_ALLOW_CLEARTEXT=1 (not for production)."
+                )
+
         tls = None
         if self.config.use_ssl or self.config.server_url.startswith("ldaps://"):
             # Use CERT_REQUIRED for production security, CERT_NONE for development/testing
