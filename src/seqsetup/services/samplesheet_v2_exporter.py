@@ -218,8 +218,12 @@ class SampleSheetV2Exporter:
                     row.append(str(lane) if lane else "")
 
                 row.append(cls._escape_csv(sample.sample_id))
-                row.append(sample.index1_sequence or "")
-                row.append(i5_seq)
+                # Escape index sequences too — parity with the profile-driven
+                # path. They are model-validated to [ACGTN], but Index has no
+                # __setattr__ so a post-construction reassignment could bypass
+                # that; escaping defensively keeps the row column count correct.
+                row.append(cls._escape_csv(sample.index1_sequence or ""))
+                row.append(cls._escape_csv(i5_seq))
 
                 if has_per_sample_override:
                     row.append(cls._escape_csv(override or ""))

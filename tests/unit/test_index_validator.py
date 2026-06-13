@@ -307,12 +307,15 @@ class TestMetadataValidation:
         assert any("name is required" in e for e in result.errors)
 
     def test_invalid_adapter_read1(self):
+        # The model now rejects a non-DNA adapter on assignment, so bypass it to
+        # confirm IndexValidator independently flags a value that slipped past
+        # (defense in depth against a non-model ingest path).
         kit = IndexKit(
             name="Kit",
             index_mode=IndexMode.SINGLE,
             i7_indexes=[_make_index("A", "AACCGGTT", IndexType.I7)],
-            adapter_read1="NOT-DNA!",
         )
+        object.__setattr__(kit, "adapter_read1", "NOT-DNA!")
         result = IndexValidator.validate(kit)
         assert not result.is_valid
         assert any("AdapterRead1" in e for e in result.errors)
@@ -322,8 +325,8 @@ class TestMetadataValidation:
             name="Kit",
             index_mode=IndexMode.SINGLE,
             i7_indexes=[_make_index("A", "AACCGGTT", IndexType.I7)],
-            adapter_read2="XYZ",
         )
+        object.__setattr__(kit, "adapter_read2", "XYZ")
         result = IndexValidator.validate(kit)
         assert not result.is_valid
         assert any("AdapterRead2" in e for e in result.errors)

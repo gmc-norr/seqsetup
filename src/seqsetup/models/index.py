@@ -198,6 +198,26 @@ class IndexKit:
                     f"({''.join(repr(c) for c in bad)}). Allowed: Y, I, U, N, digits, '*'."
                 )
             value = upper
+        # Adapter sequences are DNA — validate at the model boundary so an
+        # invalid base can't reach the kit document regardless of ingest path
+        # (matches the Index.sequence rule). Uppercase + strip like Index does.
+        elif name in ("adapter_read1", "adapter_read2") and isinstance(value, str):
+            seq = value.upper().strip()
+            if seq and not _VALID_DNA_RE.match(seq):
+                invalid = sorted(set(seq) - set("ACGTN"))
+                raise ValueError(
+                    f"Invalid characters in {name} "
+                    f"({''.join(repr(c) for c in invalid)}). "
+                    f"Only A, C, G, T, N are allowed."
+                )
+            value = seq
+        # Free-form identifiers/notes: the model is the load-bearing length cap
+        # so a direct attribute write can't balloon the document (routes also
+        # strip/sanitize at the edge).
+        elif name in (
+            "name", "version", "description", "comments", "created_by", "source",
+        ) and isinstance(value, str):
+            value = value[:256]
         object.__setattr__(self, name, value)
 
     @property
@@ -283,6 +303,21 @@ class IndexKit:
             )
             return None
 
+        def _recover_adapter(field_name):
+            """adapter_read* is now DNA-validated on assignment; legacy kits were
+            stored without that check. Recover (drop to None + log) rather than
+            make the kit (and every run referencing it) unloadable."""
+            value = data.get(field_name)
+            if value is None or _VALID_DNA_RE.match(str(value).upper().strip()):
+                return value
+            import logging
+            logging.getLogger(__name__).warning(
+                "IndexKit %r has invalid %s %r in stored data; loading with "
+                "%s=None. Re-save the kit to drop the corruption.",
+                data.get("name"), field_name, value, field_name,
+            )
+            return None
+
         return cls(
             name=data["name"],
             version=data.get("version", "1.0"),
@@ -293,8 +328,8 @@ class IndexKit:
             i5_indexes=[Index.from_dict(i) for i in data.get("i5_indexes", [])],
             is_fixed_layout=data.get("is_fixed_layout", False),
             comments=data.get("comments", ""),
-            adapter_read1=data.get("adapter_read1"),
-            adapter_read2=data.get("adapter_read2"),
+            adapter_read1=_recover_adapter("adapter_read1"),
+            adapter_read2=_recover_adapter("adapter_read2"),
             default_index1_cycles=data.get("default_index1_cycles"),
             default_index2_cycles=data.get("default_index2_cycles"),
             default_read1_override=_recover_override("default_read1_override"),

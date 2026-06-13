@@ -297,6 +297,31 @@ class TestSampleSheetV2Exporter:
         assert "Y151;I8;I8;Y151" in output
         assert '"Y151,I8,I8,Y151"' not in output
 
+    def test_export_escapes_index_sequence_with_comma(self):
+        """The non-profile BCLConvert_Data path must CSV-escape index sequences,
+        in parity with the profile-driven path. Index has no __setattr__, so a
+        post-construction reassignment bypasses DNA validation; a stray comma
+        must still be quoted, not split the row into the wrong column count."""
+        idx1 = Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7)
+        idx1.sequence = "ATTAC,TCG"  # bypasses Index.__post_init__ DNA validation
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(
+                    sample_id="S1",
+                    index_pair=IndexPair(
+                        id="p1", name="p1",
+                        index1=idx1,
+                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                    ),
+                ),
+            ],
+        )
+        output = SampleSheetV2Exporter.export(run)
+        assert '"ATTAC,TCG"' in output
+
     def test_export_escapes_reference_genome_with_comma(self):
         """analysis.reference_genome with a comma must be quoted in DRAGEN sections."""
         run = SequencingRun(

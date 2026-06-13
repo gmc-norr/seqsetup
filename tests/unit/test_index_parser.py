@@ -481,8 +481,8 @@ description: "Full description"
 comments: "Some comments"
 index_mode: unique_dual
 is_fixed_layout: true
-adapter_read1: "ADAPTER1"
-adapter_read2: "ADAPTER2"
+adapter_read1: "ACGTACGTACGT"
+adapter_read2: "TGCATGCATGCA"
 default_index1_cycles: 10
 default_index2_cycles: 10
 default_read1_override: "U8Y*"
@@ -501,8 +501,8 @@ index_pairs:
 
         assert kit.description == "Full description"
         assert kit.comments == "Some comments"
-        assert kit.adapter_read1 == "ADAPTER1"
-        assert kit.adapter_read2 == "ADAPTER2"
+        assert kit.adapter_read1 == "ACGTACGTACGT"
+        assert kit.adapter_read2 == "TGCATGCATGCA"
         assert kit.default_index1_cycles == 10
         assert kit.default_index2_cycles == 10
         assert kit.default_read1_override == "U8Y*"

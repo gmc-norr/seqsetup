@@ -260,6 +260,52 @@ class TestIndexKitValidation:
         assert kit.default_index1_cycles == 1
         assert kit.default_index2_cycles == 1
 
+    def test_string_fields_capped_at_256_on_construction(self):
+        # The model is the load-bearing length defense; a direct attribute write
+        # from a route must not balloon the MongoDB document.
+        long = "x" * 300
+        kit = IndexKit(name=long, version=long, description=long,
+                       comments=long, created_by=long, source=long)
+        assert len(kit.name) == 256
+        assert len(kit.version) == 256
+        assert len(kit.description) == 256
+        assert len(kit.comments) == 256
+        assert len(kit.created_by) == 256
+        assert len(kit.source) == 256
+
+    def test_string_field_capped_on_assignment(self):
+        kit = IndexKit(name="k")
+        kit.comments = "y" * 300
+        assert len(kit.comments) == 256
+
+    def test_adapter_dna_uppercased_and_stripped(self):
+        kit = IndexKit(name="k", adapter_read1=" ctgtctct ", adapter_read2="acgt")
+        assert kit.adapter_read1 == "CTGTCTCT"
+        assert kit.adapter_read2 == "ACGT"
+
+    def test_adapter_none_preserved(self):
+        kit = IndexKit(name="k", adapter_read1=None, adapter_read2=None)
+        assert kit.adapter_read1 is None
+        assert kit.adapter_read2 is None
+
+    def test_adapter_rejects_non_dna_on_construction(self):
+        with pytest.raises(ValueError, match="adapter_read1"):
+            IndexKit(name="k", adapter_read1="ACGTX")
+
+    def test_adapter_rejects_non_dna_on_assignment(self):
+        kit = IndexKit(name="k")
+        with pytest.raises(ValueError, match="adapter_read2"):
+            kit.adapter_read2 = "not-dna!"
+
+    def test_from_dict_recovers_invalid_adapter(self):
+        # A legacy kit stored with a non-DNA adapter must still load (drop to
+        # None + log) rather than raise and make every run referencing it
+        # unloadable — mirrors the default_read*_override recovery.
+        data = IndexKit(name="k").to_dict()
+        data["adapter_read1"] = "NOT-DNA"
+        kit = IndexKit.from_dict(data)
+        assert kit.adapter_read1 is None
+
 
 class TestSampleValidation:
     """Tests for Sample field clamping."""

@@ -236,6 +236,47 @@ Example nginx configuration:
    and security headers work correctly. This is required production config
    alongside ``SEQSETUP_HTTPS_ONLY`` whenever TLS is terminated upstream.
 
+Fail-Closed External-Service Gates
+----------------------------------
+
+For safety, connections to external services fail **closed** by default. An
+existing deployment that relied on a non-TLS or private-network service will
+stop authenticating users or importing worklists the moment it upgrades — the
+failure surfaces only as a login or import error. Review these before
+upgrading and set the opt-ins only where a deployment genuinely needs them.
+
+LDAP over cleartext
+~~~~~~~~~~~~~~~~~~~~~
+
+The app refuses to bind to an LDAP server over a cleartext connection
+(an ``ldap://`` URL / port 389 with no TLS), because the bind password would
+cross the network in the clear. Use ``ldaps://`` (or a host configured for
+TLS). Only on a trusted, isolated network may you opt back in:
+
+.. code-block:: bash
+
+   SEQSETUP_LDAP_ALLOW_CLEARTEXT=1   # NOT for production
+
+If this is unset and the configured LDAP URL is cleartext, login fails with an
+error message that names this variable, so the cause is discoverable.
+
+LIMS over plain HTTP or on a private network
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The LIMS API client requires HTTPS and refuses hostnames that resolve to a
+loopback / link-local / RFC1918-private / reserved address (an SSRF guard).
+Production must use HTTPS so the api-key is never sent in clear. For a LIMS
+that legitimately lives on a private corporate network, or speaks plain HTTP
+in a dev setup, opt in explicitly — this is a deliberate, audited decision per
+deployment:
+
+.. code-block:: bash
+
+   SEQSETUP_LIMS_ALLOW_HTTP=1          # LIMS speaks plain HTTP (sends api-key in clear)
+   SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1  # LIMS resolves to a private/RFC1918 address
+
+Leave both unset in production.
+
 Health Checks
 -------------
 

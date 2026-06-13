@@ -101,8 +101,8 @@ class TestIndexKitYamlExporter:
             comments="Some comments",
             index_mode=IndexMode.UNIQUE_DUAL,
             is_fixed_layout=True,
-            adapter_read1="ADAPTER1",
-            adapter_read2="ADAPTER2",
+            adapter_read1="ACGTACGTACGT",
+            adapter_read2="TGCATGCATGCA",
             default_index1_cycles=10,
             default_index2_cycles=10,
             default_read1_override="U8Y*",
@@ -122,8 +122,8 @@ class TestIndexKitYamlExporter:
 
         assert data["description"] == "Full description"
         assert data["comments"] == "Some comments"
-        assert data["adapter_read1"] == "ADAPTER1"
-        assert data["adapter_read2"] == "ADAPTER2"
+        assert data["adapter_read1"] == "ACGTACGTACGT"
+        assert data["adapter_read2"] == "TGCATGCATGCA"
         assert data["default_index1_cycles"] == 10
         assert data["default_index2_cycles"] == 10
         assert data["default_read1_override"] == "U8Y*"

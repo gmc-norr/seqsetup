@@ -524,3 +524,30 @@ class TestHistoryFailureNonFatal:
         r = logged_in_client.delete(f"/runs/{run_id}", headers=_origin())
         assert r.status_code == 200
         assert ctx.run_repo.get_by_id(run_id) is None   # run still deleted
+
+    def test_edit_persists_and_audits_when_history_append_fails(
+        self, logged_in_client, fresh_app, monkeypatch
+    ):
+        # The common edit path (saving_run): a history-append failure must NOT
+        # lose the clinical edit, AND must emit run.history.record_failed so
+        # operators know the audit trail has a hole on an otherwise-successful save.
+        import seqsetup.routes.dependencies as deps
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        monkeypatch.setattr(ctx.run_history_repo, "append",
+                            lambda entry: (_ for _ in ()).throw(RuntimeError("boom")))
+        captured: list[dict] = []
+        monkeypatch.setattr(deps, "audit",
+                            lambda event, **kw: captured.append({"event": event, **kw}))
+        r = logged_in_client.post(
+            f"/runs/{run_id}/samples", data={"sample_id": "S1"}, headers=_origin(),
+        )
+        assert r.status_code == 200
+        # The edit persisted despite the history failure.
+        run = ctx.run_repo.get_by_id(run_id)
+        assert any(s.sample_id == "S1" for s in run.samples)
+        # And the gap was audited (so the missing history entry is discoverable).
+        failed = [c for c in captured if c["event"] == "run.history.record_failed"]
+        assert len(failed) == 1
+        assert failed[0].get("reason") == "append_error"
+        assert failed[0].get("outcome") == "failure"
