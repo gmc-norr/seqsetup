@@ -828,6 +828,14 @@ async def set_override_cycles_bulk(
     override_cycles = override_cycles or None  # empty string -> None for the recalculate path
 
     try:
+        if override_cycles:
+            # '*' is internal pattern shorthand; expand it to concrete cycle
+            # counts against the run's declared cycles before storing, so the
+            # value that ships in the Sample Sheet is valid BCL Convert
+            # OverrideCycles. Raises (-> 400) if it cannot be resolved.
+            override_cycles = CycleCalculator.expand_override_cycles(
+                override_cycles, run.run_cycles
+            )
         with saving_run(run, ctx, request):
             for sample in run.samples:
                 if sample.id in sample_ids:
@@ -1169,6 +1177,12 @@ async def update_sample_settings(
                 bmi2 = None
 
     try:
+        if has_override and override_cycles:
+            # Expand the internal '*' wildcard to concrete cycle counts before
+            # storing (see set_override_cycles_bulk). Raises (-> 400) if unresolvable.
+            override_cycles = CycleCalculator.expand_override_cycles(
+                override_cycles, run.run_cycles
+            )
         with saving_run(run, ctx, request):
             if has_override:
                 if override_cycles:

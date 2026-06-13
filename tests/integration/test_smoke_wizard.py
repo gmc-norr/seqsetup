@@ -466,6 +466,29 @@ class TestBulkHandlersReachRoutes:
         for s in run.samples:
             assert s.override_cycles == "Y151;I8N2;I8N2;Y151"
 
+    def test_set_override_cycles_bulk_expands_wildcard(self, logged_in_client, fresh_app):
+        """A '*' wildcard entered in the bulk override field is internal
+        shorthand; it must be expanded to concrete cycle counts against the
+        run's declared cycles before storage. '*' is not valid BCL Convert
+        OverrideCycles, and the model rejects it — so without expansion this
+        POST would 400 instead of storing an expanded value."""
+        ctx, run_id, ids = self._setup_two_samples(logged_in_client, fresh_app)
+        import json
+        rc = ctx.run_repo.get_by_id(run_id).run_cycles
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/set-override-cycles",
+            data={
+                "sample_ids": json.dumps(ids),
+                "override_cycles": "Y*;I8N2;I8N2;Y*",
+            },
+            headers=_origin(),
+        )
+        assert response.status_code == 200
+        run = ctx.run_repo.get_by_id(run_id)
+        for s in run.samples:
+            assert "*" not in s.override_cycles
+            assert s.override_cycles == f"Y{rc.read1_cycles};I8N2;I8N2;Y{rc.read2_cycles}"
+
     def test_bulk_invalid_json_returns_named_400(self, logged_in_client, fresh_app):
         ctx, run_id, _ = self._setup_two_samples(logged_in_client, fresh_app)
         response = logged_in_client.post(

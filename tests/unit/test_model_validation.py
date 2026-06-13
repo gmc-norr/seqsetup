@@ -532,12 +532,21 @@ class TestSampleStringFields:
         assert sample.override_cycles is None
 
     def test_override_cycles_valid_pattern(self):
-        sample = Sample(override_cycles="Y8N2Y*")
-        assert sample.override_cycles == "Y8N2Y*"
+        sample = Sample(override_cycles="Y151;I8N2;I8N2;Y151")
+        assert sample.override_cycles == "Y151;I8N2;I8N2;Y151"
 
-    def test_override_cycles_complex_pattern(self):
-        sample = Sample(override_cycles="U8Y*,I8,U8Y*")
-        assert sample.override_cycles == "U8Y*,I8,U8Y*"
+    def test_override_cycles_rejects_wildcard_on_construction(self):
+        """The '*' wildcard is SeqSetup-internal pattern shorthand. The final
+        override_cycles must be concrete cycle counts — a '*' that reached a
+        Sample Sheet is not valid BCL Convert OverrideCycles. The model refuses
+        it on every ingest path; routes expand '*' before assigning."""
+        with pytest.raises(ValueError, match="override_cycles"):
+            Sample(override_cycles="U8Y*;I8;I8;Y*")
+
+    def test_override_cycles_rejects_wildcard_on_assignment(self):
+        sample = Sample(override_cycles=None)
+        with pytest.raises(ValueError, match="override_cycles"):
+            sample.override_cycles = "Y*;I8;I8;Y*"
 
     def test_override_cycles_rejects_injected_text(self):
         """Free-form text in override_cycles would flow into the Sample Sheet
@@ -577,11 +586,11 @@ class TestSampleStringFields:
         """Assignment of a lowercase value uppercases it, matching the
         construction-time behavior."""
         sample = Sample(override_cycles=None)
-        sample.override_cycles = "y8n2y*"
-        assert sample.override_cycles == "Y8N2Y*"
+        sample.override_cycles = "y151;i8n2;i8n2;y151"
+        assert sample.override_cycles == "Y151;I8N2;I8N2;Y151"
 
     def test_override_cycles_can_be_cleared_post_construction(self):
-        sample = Sample(override_cycles="Y8N2Y*")
+        sample = Sample(override_cycles="Y151;I8N2;I8N2;Y151")
         sample.override_cycles = None
         assert sample.override_cycles is None
 
@@ -679,7 +688,7 @@ class TestSampleStringFields:
             barcode_mismatches_index2=1,
             index1_cycles=10,
             index2_cycles=10,
-            override_cycles="Y*,I10,I10,Y*",
+            override_cycles="Y151;I10;I10;Y151",
             description="Baseline sample",
         )
         assert sample.sample_id == "SAMPLE-2024-001"

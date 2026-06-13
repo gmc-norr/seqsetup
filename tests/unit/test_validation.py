@@ -929,6 +929,29 @@ class TestOverrideCyclesMatchRunCycles:
         assert any(e.category == "override_cycles_mismatch"
                    for e in result.configuration_errors)
 
+    def test_residual_wildcard_is_error_not_skipped(self):
+        # A '*' must never reach the Sample Sheet — it is not valid BCL Convert
+        # OverrideCycles. The model now rejects '*' on assignment, so simulate a
+        # value that slipped past (legacy data / direct bypass) and confirm the
+        # reconciliation check BLOCKS approval rather than silently skipping it.
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        sample = Sample(sample_id="S1", index1=self._idx(),
+                        override_cycles="Y151;I10;I10;Y151")
+        object.__setattr__(sample, "override_cycles", "Y*;I10;I10;Y*")
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[sample],
+        )
+        result = ValidationService.validate_run(run)
+        errs = [e for e in result.configuration_errors
+                if e.category == "override_cycles_mismatch"]
+        assert len(errs) == 1
+        assert "S1" in errs[0].sample_names
+        assert errs[0].severity.value == "error"
+
 
 class TestMissingTestIdRequiresApproval:
     """When profile repos are configured, samples without test_id must block approval.

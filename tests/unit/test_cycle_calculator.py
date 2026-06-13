@@ -219,3 +219,73 @@ class TestBuildReadSegment:
 
     def test_trailing_mask(self):
         assert CycleCalculator._build_read_segment(151, "Y*N2") == "Y149N2"
+
+
+class TestExpandOverrideCycles:
+    """Tests for CycleCalculator.expand_override_cycles().
+
+    '*' is SeqSetup-internal shorthand for "the remaining cycles of this
+    read". BCL Convert's OverrideCycles requires explicit counts, so a
+    wildcard must be expanded into concrete cycles — equal to that read's
+    run cycles minus any fixed UMI/mask cycles in the same segment — before
+    the value ships in a Sample Sheet.
+    """
+
+    def test_passthrough_when_none(self):
+        rc = RunCycles(151, 151, 10, 10)
+        assert CycleCalculator.expand_override_cycles(None, rc) is None
+
+    def test_passthrough_when_no_wildcard(self):
+        rc = RunCycles(151, 151, 10, 10)
+        assert (
+            CycleCalculator.expand_override_cycles("Y151;I10;I10;Y151", rc)
+            == "Y151;I10;I10;Y151"
+        )
+
+    def test_expands_read_wildcards(self):
+        rc = RunCycles(151, 151, 10, 10)
+        assert (
+            CycleCalculator.expand_override_cycles("Y*;I8;I8;Y*", rc)
+            == "Y151;I8;I8;Y151"
+        )
+
+    def test_subtracts_umi_cycles_from_wildcard(self):
+        # U8 consumes 8 of Read1's 151 cycles; the wildcard takes the rest.
+        rc = RunCycles(151, 151, 8, 8)
+        assert (
+            CycleCalculator.expand_override_cycles("U8Y*;I8;I8;Y*", rc)
+            == "U8Y143;I8;I8;Y151"
+        )
+
+    def test_normalizes_comma_separators(self):
+        rc = RunCycles(151, 151, 10, 10)
+        assert (
+            CycleCalculator.expand_override_cycles("Y*,I8,I8,Y*", rc)
+            == "Y151;I8;I8;Y151"
+        )
+
+    def test_single_index_run_three_segments(self):
+        # index2_cycles == 0 -> three positions: Read1, Index1, Read2.
+        rc = RunCycles(151, 151, 10, 0)
+        assert (
+            CycleCalculator.expand_override_cycles("Y*;I10;Y*", rc)
+            == "Y151;I10;Y151"
+        )
+
+    def test_raises_without_run_cycles(self):
+        with pytest.raises(ValueError):
+            CycleCalculator.expand_override_cycles("Y*;I8;I8;Y*", None)
+
+    def test_raises_on_segment_count_mismatch(self):
+        # Run cycles imply four segments; two cannot be mapped — refuse to guess.
+        rc = RunCycles(151, 151, 10, 10)
+        with pytest.raises(ValueError):
+            CycleCalculator.expand_override_cycles("Y*;Y*", rc)
+
+    def test_raises_on_multiple_wildcards_in_one_segment(self):
+        # Two '*' in one segment would each claim all remaining cycles, silently
+        # producing an over-count (e.g. Y151N151). Reject it visibly at entry
+        # rather than storing a known-invalid value that only fails at Mark-Ready.
+        rc = RunCycles(151, 151, 10, 10)
+        with pytest.raises(ValueError):
+            CycleCalculator.expand_override_cycles("Y*N*;I8;I8;Y*", rc)

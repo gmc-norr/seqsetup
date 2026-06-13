@@ -273,7 +273,7 @@ class TestSampleSheetV2Exporter:
             samples=[
                 Sample(
                     sample_id="S1",
-                    override_cycles="Y*,I8,I8,Y*",  # legacy comma-separated form
+                    override_cycles="Y151,I8,I8,Y151",  # legacy comma-separated form
                     index_pair=IndexPair(
                         id="p1", name="p1",
                         index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),  # 8 bp
@@ -294,8 +294,8 @@ class TestSampleSheetV2Exporter:
         output = SampleSheetV2Exporter.export(run)
         # Normalized to ';' (BCL Convert separator); no literal comma remains, so
         # no CSV-quoting is needed and the row keeps the right column count.
-        assert "Y*;I8;I8;Y*" in output
-        assert '"Y*,I8,I8,Y*"' not in output
+        assert "Y151;I8;I8;Y151" in output
+        assert '"Y151,I8,I8,Y151"' not in output
 
     def test_export_escapes_reference_genome_with_comma(self):
         """analysis.reference_genome with a comma must be quoted in DRAGEN sections."""

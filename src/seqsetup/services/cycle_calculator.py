@@ -106,6 +106,78 @@ class CycleCalculator:
         return ";".join(parts)
 
     @classmethod
+    def expand_override_cycles(
+        cls, override_cycles: Optional[str], run_cycles: Optional[RunCycles]
+    ) -> Optional[str]:
+        """Expand the internal ``*`` wildcard into concrete cycle counts.
+
+        ``*`` is SeqSetup-internal shorthand for "the remaining cycles of this
+        read". BCL Convert's OverrideCycles field requires explicit counts, so
+        an operator-entered wildcard must be resolved against the run's declared
+        cycles — each ``*`` becomes that read's run cycles minus any fixed
+        UMI/mask cycles in the same segment — before the value can ship in a
+        Sample Sheet.
+
+        Returns the value unchanged when it holds no wildcard. Raises
+        ``ValueError`` when a wildcard is present but cannot be resolved: no run
+        cycles are configured, or the segment count does not match the run's
+        Read/Index structure. We refuse to guess the mapping for clinical output.
+
+        Args:
+            override_cycles: Operator-entered OverrideCycles string (may be None)
+            run_cycles: Run cycle configuration (may be None)
+
+        Returns:
+            OverrideCycles string with every ``*`` expanded to a concrete count
+        """
+        if not override_cycles or "*" not in override_cycles:
+            return override_cycles
+        if run_cycles is None:
+            raise ValueError(
+                "Cannot expand the '*' wildcard in OverrideCycles without "
+                "configured run cycles."
+            )
+
+        rc = run_cycles
+        # Mirror the segment order calculate_override_cycles emits: Read1, then
+        # Index1/Index2 only when their cycle count is > 0, then Read2.
+        totals = [rc.read1_cycles]
+        if rc.index1_cycles > 0:
+            totals.append(rc.index1_cycles)
+        if rc.index2_cycles > 0:
+            totals.append(rc.index2_cycles)
+        totals.append(rc.read2_cycles)
+
+        import re
+        segments = [seg for seg in re.split(r"[;,]", override_cycles) if seg]
+        if len(segments) != len(totals):
+            structure = "Read1" + (
+                "/Index1" if rc.index1_cycles > 0 else ""
+            ) + (
+                "/Index2" if rc.index2_cycles > 0 else ""
+            ) + "/Read2"
+            raise ValueError(
+                f"OverrideCycles {override_cycles!r} has {len(segments)} "
+                f"segment(s), but this run's cycles imply {len(totals)} "
+                f"({structure}). Cannot expand the '*' wildcard."
+            )
+
+        expanded = []
+        for seg, total in zip(segments, totals):
+            if "*" not in seg:
+                expanded.append(seg.upper())
+                continue
+            if seg.count("*") > 1:
+                # Each '*' claims all remaining cycles, so two in one segment
+                # would over-count. Reject visibly rather than store a bad value.
+                raise ValueError(
+                    f"OverrideCycles segment {seg!r} has more than one '*' "
+                    f"wildcard; a segment may use at most one."
+                )
+            expanded.append(cls._build_read_segment(total, seg))
+        return ";".join(expanded)
+
+    @classmethod
     def _build_index_segment(cls, index_len: int, run_cycles: int) -> str:
         """
         Build the override cycles segment for an index read.

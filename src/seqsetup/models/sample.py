@@ -9,10 +9,15 @@ from .index import Index, IndexPair, IndexType
 
 
 # Illumina override-cycle notation: Y (read), I (index), U (UMI), N (mask),
-# digits (counts), `*` (remaining-cycles wildcard), `;` (segment separator).
-# A comma is also tolerated for legacy stored values that used commas as
-# segment separators.
-_VALID_OVERRIDE_CYCLES_RE = re.compile(r'^[YIUN0-9*;,]*$')
+# digits (counts), `;` (segment separator). A comma is also tolerated for
+# legacy stored values that used commas as segment separators.
+# The `*` remaining-cycles wildcard is NOT permitted here: it is SeqSetup's
+# internal pattern shorthand and must be expanded to concrete cycle counts
+# (see CycleCalculator.expand_override_cycles) before it can be stored or
+# shipped in a Sample Sheet — BCL Convert's OverrideCycles requires explicit
+# counts. `*` remains valid only in the per-read/per-index *_override_pattern
+# fields below.
+_VALID_OVERRIDE_CYCLES_RE = re.compile(r'^[YIUN0-9;,]*$')
 
 # A per-read/per-index override PATTERN is a single segment (no ';'/',' joiner)
 # in the same Y/I/U/N/digit/* alphabet — e.g. "Y*", "N2Y*", "U8Y*", "I8N2".
@@ -147,12 +152,19 @@ class Sample:
         so we refuse it at the model boundary regardless of ingest path.
         """
         upper = value.upper()
+        if "*" in upper:
+            raise ValueError(
+                "Invalid '*' wildcard in override_cycles. The '*' is internal "
+                "pattern shorthand and must be expanded to concrete cycle "
+                "counts (e.g. 'Y151;I8;I8;Y151') before it can be stored or "
+                "exported."
+            )
         if not _VALID_OVERRIDE_CYCLES_RE.match(upper):
-            bad = sorted(set(upper) - set("YIUN0123456789*;,"))
+            bad = sorted(set(upper) - set("YIUN0123456789;,"))
             raise ValueError(
                 f"Invalid characters in override_cycles "
                 f"({''.join(repr(c) for c in bad)}). "
-                f"Allowed: Y, I, U, N, digits, '*', ';', ','."
+                f"Allowed: Y, I, U, N, digits, ';', ','."
             )
         return upper
 

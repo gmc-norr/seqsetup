@@ -351,7 +351,13 @@ class ValidationService:
             if not oc:
                 continue
             if "*" in oc:
-                continue  # unresolved wildcard — cannot statically reconcile
+                # A '*' is internal pattern shorthand, never valid in a shipped
+                # OverrideCycles — it must be expanded to concrete counts before
+                # storage (the model rejects it; routes expand it first). If one
+                # survives here (legacy data / a bypass), BLOCK approval rather
+                # than silently shipping an unexpanded wildcard to the sequencer.
+                bad.append(sample.sample_id or sample.id)
+                continue
             sums = [
                 sum(int(n) for n in re.findall(r"\d+", seg))
                 for seg in re.split(r"[;,]", oc) if seg
