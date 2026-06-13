@@ -27,6 +27,28 @@ class TestParseApiSamplesCap:
         assert len(result) == 4
 
 
+class TestParseApiSamplesIndexDna:
+    """The LIMS parser must DNA-validate index sequences (like the paste path),
+    raising a clean sample-naming error instead of letting a later Index()
+    construction throw an uncaught ValueError (HTTP 500)."""
+
+    def test_invalid_index1_dna_rejected_naming_sample(self):
+        data = [{"sample_id": "S1", "index_i7": "ACGTXYZ"}]
+        with pytest.raises(ValueError, match="S1"):
+            parse_api_samples(data)
+
+    def test_invalid_index2_dna_rejected_naming_sample(self):
+        data = [{"sample_id": "S2", "index_i5": "ACGT123"}]
+        with pytest.raises(ValueError, match="S2"):
+            parse_api_samples(data)
+
+    def test_valid_index_dna_uppercased(self):
+        data = [{"sample_id": "S3", "index_i7": "acgtn", "index_i5": "ttaa"}]
+        result = parse_api_samples(data)
+        assert result[0]["index1_sequence"] == "ACGTN"
+        assert result[0]["index2_sequence"] == "TTAA"
+
+
 class TestCheckConnection:
     """Tests for check_connection()."""
 

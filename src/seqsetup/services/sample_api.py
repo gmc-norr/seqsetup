@@ -5,6 +5,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import socket
 import ssl
 import threading
@@ -24,6 +25,11 @@ _MAX_RESPONSE_SIZE = 10 * 1024 * 1024
 # 256-char limit applied by form-submission paths so model invariants never
 # see an unbounded string regardless of which ingest route was taken.
 _MAX_FIELD_LEN = 256
+
+# Index sequences from a LIMS must be DNA; validate at this ingest point (like
+# the paste parser) so a malformed sequence is a clean, sample-naming rejection
+# rather than an uncaught Index() ValueError (HTTP 500) downstream.
+_VALID_DNA_RE = re.compile(r'^[ACGTN]*$')
 
 
 # Minimum interval between consecutive LIMS API calls (per host). Defends
@@ -645,6 +651,20 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         if "sample_id" not in sample or not sample["sample_id"]:
             rows_missing_sample_id.append(index)
             continue
+
+        # Index sequences must be DNA — uppercase + validate here, naming the
+        # sample, instead of letting Index() raise an opaque 500 downstream.
+        for seq_field in ("index1_sequence", "index2_sequence"):
+            seq = sample.get(seq_field)
+            if seq:
+                upper = seq.upper()
+                if not _VALID_DNA_RE.match(upper):
+                    bad = "".join(sorted(set(upper) - set("ACGTN")))
+                    raise ValueError(
+                        f"Sample '{sample['sample_id']}' has an invalid {seq_field} "
+                        f"('{seq}'): only A, C, G, T, N are allowed (offending: {bad})."
+                    )
+                sample[seq_field] = upper
 
         if len(results) >= MAX_SAMPLES_PER_RUN:
             # Same per-run cap the paste parser enforces — refuse an oversized
