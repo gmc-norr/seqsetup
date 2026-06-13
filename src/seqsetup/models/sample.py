@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 import uuid
 
-from .index import Index, IndexPair
+from .index import Index, IndexPair, IndexType
 
 
 # Illumina override-cycle notation: Y (read), I (index), U (UMI), N (mask),
@@ -251,12 +251,25 @@ class Sample:
 
     def assign_index1(self, index: Index) -> None:
         """Assign an i7 index to this sample (combinatorial/single mode)."""
+        # The slot is authoritative: an i5 in the i7 (Index) column silently
+        # misroutes reads at demultiplexing. Mirror IndexPair's enforcement
+        # rather than trusting a caller-supplied slot choice.
+        if index is not None and index.index_type != IndexType.I7:
+            raise ValueError(
+                f"assign_index1 requires an i7 index, got "
+                f"index_type={index.index_type.value}"
+            )
         self.index1 = index
         # Clear index pair when using individual indexes
         self.index_pair = None
 
     def assign_index2(self, index: Index) -> None:
         """Assign an i5 index to this sample (combinatorial mode)."""
+        if index is not None and index.index_type != IndexType.I5:
+            raise ValueError(
+                f"assign_index2 requires an i5 index, got "
+                f"index_type={index.index_type.value}"
+            )
         self.index2 = index
         # Clear index pair when using individual indexes
         self.index_pair = None

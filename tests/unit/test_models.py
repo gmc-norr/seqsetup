@@ -421,6 +421,27 @@ class TestSampleIndexMutations:
             index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
         )
 
+    def test_assign_index1_rejects_i5(self):
+        """An i5 in the i7 (Index) slot would silently misroute reads; reject it,
+        mirroring IndexPair's slot enforcement."""
+        s = Sample(sample_id="S1")
+        i5 = Index(name="x", sequence="ATTACTCG", index_type=IndexType.I5)
+        with pytest.raises(ValueError):
+            s.assign_index1(i5)
+
+    def test_assign_index2_rejects_i7(self):
+        s = Sample(sample_id="S1")
+        i7 = Index(name="x", sequence="ATTACTCG", index_type=IndexType.I7)
+        with pytest.raises(ValueError):
+            s.assign_index2(i7)
+
+    def test_assign_index1_accepts_i7_and_index2_accepts_i5(self):
+        s = Sample(sample_id="S1")
+        s.assign_index1(Index(name="a", sequence="ATTACTCG", index_type=IndexType.I7))
+        s.assign_index2(Index(name="b", sequence="TATAGCCT", index_type=IndexType.I5))
+        assert s.index1.index_type == IndexType.I7
+        assert s.index2.index_type == IndexType.I5
+
     def _make_i7(self):
         return Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7)
 
