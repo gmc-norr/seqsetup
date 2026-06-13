@@ -62,3 +62,20 @@ class TestValidateGithubContentHost:
         _validate_github_content_host(
             "https://raw.githubusercontent.com/some/path.yaml"
         )
+
+
+class TestGithubOpenerErrorHandling:
+    """The custom opener must include HTTPErrorProcessor + HTTPDefaultErrorHandler.
+    Without them, process_response never dispatches non-2xx responses: the
+    no-redirect handler never fires (a 3xx is returned instead of refused) and
+    4xx/5xx no longer raise HTTPError (a 404 to a mistyped path silently parses
+    as empty, masking operator config errors for clinical profile/instrument data).
+    """
+
+    def test_opener_dispatches_errors(self):
+        import urllib.request
+        from seqsetup.services.github_sync import _build_github_opener
+
+        handler_types = {type(h) for h in _build_github_opener().handlers}
+        assert urllib.request.HTTPErrorProcessor in handler_types
+        assert urllib.request.HTTPDefaultErrorHandler in handler_types

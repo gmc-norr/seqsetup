@@ -85,6 +85,13 @@ def _build_github_opener() -> urllib.request.OpenerDirector:
     opener = urllib.request.OpenerDirector()
     opener.add_handler(_NoRedirectHTTPSHandler())
     opener.add_handler(_NoRedirectHandler())
+    # Without these, process_response never dispatches non-2xx responses: the
+    # no-redirect handler above would never fire (a 3xx would be returned, not
+    # refused) and 4xx/5xx would not raise HTTPError. HTTPErrorProcessor routes
+    # non-2xx into the error handlers; HTTPDefaultErrorHandler raises HTTPError
+    # for anything not otherwise handled.
+    opener.add_handler(urllib.request.HTTPErrorProcessor())
+    opener.add_handler(urllib.request.HTTPDefaultErrorHandler())
     return opener
 
 

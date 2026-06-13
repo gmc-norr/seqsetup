@@ -60,6 +60,11 @@ def init_db() -> Database:
             uri,
             serverSelectionTimeoutMS=5000,
             connectTimeoutMS=5000,
+            # Bound a single operation that stalls mid-flight on an already-
+            # established connection. serverSelectionTimeoutMS/connectTimeoutMS
+            # only cover selection + handshake; without socketTimeoutMS a hung
+            # op blocks the worker thread (or the event loop) indefinitely.
+            socketTimeoutMS=30000,
         )
         # Verify connectivity by pinging the server
         _client.admin.command("ping")
