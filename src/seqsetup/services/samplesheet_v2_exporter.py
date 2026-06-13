@@ -198,7 +198,9 @@ class SampleSheetV2Exporter:
             override = None
             if has_per_sample_override:
                 override = sample.override_cycles
-                if not override and sample.index_pair and run.run_cycles:
+                if not override and sample.has_index and run.run_cycles:
+                    # has_index (not index_pair) so combinatorial/single-index
+                    # samples also get a computed OverrideCycles, not a blank cell.
                     override = CycleCalculator.calculate_override_cycles(
                         sample, run.run_cycles
                     )
@@ -332,7 +334,13 @@ class SampleSheetV2Exporter:
         if orientation != "reverse-complement":
             return override_cycles
 
-        parts = override_cycles.split(";")
+        # The Sample model permits a legacy comma separator; normalize to ';'
+        # FIRST so the 4-segment RC adjustment fires regardless of which
+        # separator was stored. A comma-form value would otherwise hit
+        # len != 4 and be returned unchanged, leaving the Index2 mask un-flipped
+        # while _resolve_i5 still reverse-complements the i5 sequence → the
+        # Index2 mask desyncs from the i5 read on RC instruments.
+        parts = override_cycles.replace(",", ";").split(";")
         if len(parts) != 4:
             return override_cycles
 

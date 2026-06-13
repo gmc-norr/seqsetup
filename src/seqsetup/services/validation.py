@@ -311,10 +311,71 @@ class ValidationService:
         errors.extend(cls._validate_index_length_consistency(run, all_lanes))
         errors.extend(cls._validate_mixed_indexing(run, all_lanes))
         errors.extend(cls._validate_run_cycles_vs_index_length(run))
+        errors.extend(cls._validate_override_cycles_match_run(run))
         errors.extend(cls._validate_duplicate_index_pairs(run, all_lanes))
         errors.extend(cls._validate_mismatch_threshold(run, all_lanes))
 
         return errors
+
+    @classmethod
+    def _validate_override_cycles_match_run(
+        cls, run: SequencingRun
+    ) -> list[ConfigurationError]:
+        """Each sample's effective OverrideCycles must reconcile with the run's
+        declared cycles. BCL Convert requires every OverrideCycles segment to sum
+        to the corresponding Read/Index cycle count; a fixed read-override pattern
+        (e.g. a kit default of ``Y100`` on a 151-cycle run) or an operator-pasted
+        bulk override that doesn't match would otherwise ship a sheet the
+        sequencer rejects or miscalls — and nothing else catches it.
+        """
+        rc = run.run_cycles
+        if not rc:
+            return []
+
+        # Expected segment cycle-sums, in OverrideCycles order. Index segments are
+        # only present when the run reads those index cycles (matches the exporter).
+        expected = [rc.read1_cycles]
+        if rc.index1_cycles > 0:
+            expected.append(rc.index1_cycles)
+        if rc.index2_cycles > 0:
+            expected.append(rc.index2_cycles)
+        expected.append(rc.read2_cycles)
+
+        bad: list[str] = []
+        for sample in run.samples:
+            oc = sample.override_cycles
+            if not oc and sample.has_index:
+                oc = CycleCalculator.calculate_override_cycles(run_cycles=rc, sample=sample)
+            if not oc:
+                continue
+            if "*" in oc:
+                continue  # unresolved wildcard — cannot statically reconcile
+            segments = [s for s in re.split(r"[;,]", oc) if s]
+            if len(segments) != len(expected):
+                bad.append(sample.sample_id or sample.id)
+                continue
+            for want, seg in zip(expected, segments):
+                got = sum(int(n) for n in re.findall(r"\d+", seg))
+                if got != want:
+                    bad.append(sample.sample_id or sample.id)
+                    break
+
+        if not bad:
+            return []
+        preview = ", ".join(bad[:5])
+        more = f", and {len(bad) - 5} more" if len(bad) > 5 else ""
+        return [ConfigurationError(
+            severity=ValidationSeverity.ERROR,
+            category="override_cycles_mismatch",
+            message=(
+                f"{len(bad)} sample(s) have OverrideCycles that do not match the run's "
+                f"declared cycles (Read1 {rc.read1_cycles} / Index1 {rc.index1_cycles} / "
+                f"Index2 {rc.index2_cycles} / Read2 {rc.read2_cycles}): {preview}{more}. "
+                f"Each OverrideCycles segment must sum to the corresponding cycle count "
+                f"or BCL Convert will reject or miscall the run."
+            ),
+            sample_names=bad,
+        )]
 
     @classmethod
     def _validate_sample_id_characters(cls, run: SequencingRun) -> list[ConfigurationError]:

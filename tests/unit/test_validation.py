@@ -830,6 +830,60 @@ class _StubAppProfileRepo:
         return None
 
 
+class TestOverrideCyclesMatchRunCycles:
+    """A sample's effective OverrideCycles must reconcile segment-for-segment
+    with the run's declared [Reads] — BCL Convert rejects/miscalls a sheet whose
+    OverrideCycles don't sum to the declared cycle counts. Blocks approval."""
+
+    def _idx(self):
+        return Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7)
+
+    def test_explicit_override_read_segment_mismatch_is_error(self):
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[Sample(sample_id="S1", index1=self._idx(),
+                            override_cycles="Y100;I10;I10;Y151")],  # read1 100 != 151
+        )
+        result = ValidationService.validate_run(run)
+        errs = [e for e in result.configuration_errors
+                if e.category == "override_cycles_mismatch"]
+        assert len(errs) == 1
+        assert "S1" in errs[0].sample_names
+        assert errs[0].severity.value == "error"
+
+    def test_matching_override_no_error(self):
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[Sample(sample_id="S1", index1=self._idx(),
+                            override_cycles="Y151;I8N2;I8N2;Y151")],  # read1 151 == 151
+        )
+        result = ValidationService.validate_run(run)
+        assert not [e for e in result.configuration_errors
+                    if e.category == "override_cycles_mismatch"]
+
+    def test_calculated_override_never_false_positives(self):
+        # No explicit override -> calculated on the fly; it matches by construction.
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[Sample(sample_id="S1", index1=self._idx())],
+        )
+        result = ValidationService.validate_run(run)
+        assert not [e for e in result.configuration_errors
+                    if e.category == "override_cycles_mismatch"]
+
+
 class TestMissingTestIdRequiresApproval:
     """When profile repos are configured, samples without test_id must block approval.
 

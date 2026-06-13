@@ -187,3 +187,35 @@ class TestReverseOverrideSegment:
     def test_case_insensitive(self):
         """Should handle lowercase input."""
         assert CycleCalculator.reverse_override_segment("i8n2") == "N2I8"
+
+    def test_wildcard_token_preserved(self):
+        """A '*' token must survive the reversal, not be silently dropped — on
+        an RC instrument a dropped Index2 token corrupts demultiplexing."""
+        assert CycleCalculator.reverse_override_segment("I4N*") == "N*I4"
+        assert CycleCalculator.reverse_override_segment("N*I4") == "I4N*"
+
+
+class TestBuildReadSegment:
+    """Tests for CycleCalculator._build_read_segment() — directly shapes the
+    Read1/Read2 OverrideCycles tokens emitted to the sequencer."""
+
+    def test_none_pattern_reads_all(self):
+        assert CycleCalculator._build_read_segment(151, None) == "Y151"
+
+    def test_empty_pattern_reads_all(self):
+        assert CycleCalculator._build_read_segment(151, "") == "Y151"
+
+    def test_wildcard_only(self):
+        assert CycleCalculator._build_read_segment(151, "Y*") == "Y151"
+
+    def test_leading_mask_wildcard(self):
+        assert CycleCalculator._build_read_segment(151, "N2Y*") == "N2Y149"
+
+    def test_umi_then_read(self):
+        assert CycleCalculator._build_read_segment(151, "U8Y*") == "U8Y143"
+
+    def test_mask_read_mask(self):
+        assert CycleCalculator._build_read_segment(151, "N2Y*N3") == "N2Y146N3"
+
+    def test_trailing_mask(self):
+        assert CycleCalculator._build_read_segment(151, "Y*N2") == "Y149N2"

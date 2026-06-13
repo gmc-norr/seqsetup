@@ -53,7 +53,9 @@ class JSONExporter:
     def _serialize_sample(cls, sample, run: SequencingRun) -> dict:
         """Serialize sample with computed override cycles."""
         override = sample.override_cycles
-        if not override and sample.index_pair and run.run_cycles:
+        if not override and sample.has_index and run.run_cycles:
+            # has_index (not index_pair) so combinatorial/single-index samples
+            # also get a computed OverrideCycles, not a null.
             override = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
 
         # Use Sample properties so combinatorial/single-mode indexes

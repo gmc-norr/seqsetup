@@ -118,6 +118,42 @@ class TestSampleSheetV2Exporter:
         # NextSeq 500/550 sample sheet carries i5 in RC → Index2 token reversed.
         assert "OverrideCycles,Y151;I8N2;N2I8;Y151" in output
 
+    def test_adjust_override_cycles_comma_separator_on_rc_instrument(self):
+        """A legacy comma-separated OverrideCycles must still get its Index2
+        token RC-adjusted on an RC instrument. Previously split(';') saw one
+        part, skipped the adjustment, and left Index2 desynced from the RC'd i5."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
+            flowcell_type="High",
+            run_cycles=RunCycles(151, 151, 10, 10),
+        )
+        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
+            "Y151,I8N2,I8N2,Y151", run
+        )
+        assert result == "Y151;I8N2;N2I8;Y151"
+
+    def test_single_index_sample_gets_computed_override_not_blank(self):
+        """In a run that forces per-sample OverrideCycles, a single-index sample
+        (index1 only, no index_pair, no explicit override) must get a COMPUTED
+        OverrideCycles, not a blank cell — the fallback now keys on has_index."""
+        run = SequencingRun(
+            run_name="Mixed",
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,  # forward, no RC noise
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(sample_id="DUAL", index_pair=IndexPair(
+                    id="p1", name="p1",
+                    index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                    index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5))),
+                Sample(sample_id="SINGLE", index1=Index(
+                    name="j7", sequence="GGGGCCCC", index_type=IndexType.I7)),
+            ],
+        )
+        output = SampleSheetV2Exporter.export(run)
+        # SINGLE: index1 8bp -> I8N2; absent index2 over 10 cycles -> N10.
+        assert "Y151;I8N2;N10;Y151" in output
+
     def test_export_bclconvert_runtime_settings_emitted(self, sample_run):
         """no_lane_splitting / create_fastq_for_index_reads / adapter_behavior
         on the run model must appear in [BCLConvert_Settings]; silent drop

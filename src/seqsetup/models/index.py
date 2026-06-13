@@ -9,6 +9,8 @@ from typing import Optional
 # newline, so "ACGT\n" would wrongly pass and leave a newline in the sequence
 # that later splits a Sample Sheet row. \Z matches only the true end of string.
 _VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
+# Single-segment override pattern alphabet (Y/I/U/N/digits/*) — e.g. "Y*", "N2Y*".
+_VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*$')
 
 
 class IndexType(Enum):
@@ -182,6 +184,19 @@ class IndexKit:
         # Clamp default index cycles to positive on every assignment.
         if name in ("default_index1_cycles", "default_index2_cycles") and value is not None:
             value = max(1, value)
+        # Read-override defaults flow onto samples and shape the sequencer's
+        # OverrideCycles; reject anything outside the Y/I/U/N/digit/* alphabet at
+        # the kit boundary so a bad default is caught at import, not as a 500
+        # when later applied to a sample.
+        elif name in ("default_read1_override", "default_read2_override") and isinstance(value, str):
+            upper = value.upper()
+            if not _VALID_OVERRIDE_PATTERN_RE.match(upper):
+                bad = sorted(set(upper) - set("YIUN0123456789*"))
+                raise ValueError(
+                    f"Invalid characters in {name} "
+                    f"({''.join(repr(c) for c in bad)}). Allowed: Y, I, U, N, digits, '*'."
+                )
+            value = upper
         object.__setattr__(self, name, value)
 
     @property

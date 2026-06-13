@@ -117,6 +117,20 @@ class TestJSONExporter:
         assert s["index1"] is None
         assert s["index2"] is None
 
+    def test_single_index_sample_gets_computed_override_cycles(self):
+        """A single-index sample (index1 only, no index_pair, no explicit
+        override) must get a COMPUTED override_cycles, not null — the fallback
+        keys on has_index, not index_pair."""
+        run = SequencingRun(
+            id="test",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[Sample(id="s1", sample_id="Single", index1=Index(
+                name="j7", sequence="GGGGCCCC", index_type=IndexType.I7))],
+        )
+        data = json.loads(JSONExporter.export(run))
+        # index1 8bp -> I8N2; absent index2 over 10 cycles -> N10.
+        assert data["samples"][0]["override_cycles"] == "Y151;I8N2;N10;Y151"
+
     def test_export_analyses(self):
         analysis = Analysis(
             id="a1",

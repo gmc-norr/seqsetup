@@ -320,8 +320,8 @@ class CycleCalculator:
     def reverse_override_segment(segment: str) -> str:
         """Reverse the token order within an override cycles segment.
 
-        Tokens are letter+number pairs like I8, N2, U4, Y151.
-        "I8N2" → "N2I8", "I10" → "I10", "N2I8N2" → "N2I8N2"
+        Tokens are letter+count pairs like I8, N2, U4, Y151, or letter+'*'
+        wildcards like N*. "I8N2" → "N2I8", "I10" → "I10", "I4N*" → "N*I4".
 
         Args:
             segment: A single override cycles segment (e.g., "I8N2")
@@ -330,7 +330,9 @@ class CycleCalculator:
             Segment with token order reversed
         """
         import re
-        tokens = re.findall(r'[YIUN]\d+', segment.upper())
+        # Match a count OR a '*' wildcard — a '*' token (e.g. "N*") must not be
+        # dropped, or an RC-flipped Index2 mask desyncs from the i5 sequence.
+        tokens = re.findall(r'[YIUN](?:\d+|\*)', segment.upper())
         if not tokens:
             return segment
         return "".join(reversed(tokens))

@@ -14,6 +14,10 @@ from .index import Index, IndexPair
 # segment separators.
 _VALID_OVERRIDE_CYCLES_RE = re.compile(r'^[YIUN0-9*;,]*$')
 
+# A per-read/per-index override PATTERN is a single segment (no ';'/',' joiner)
+# in the same Y/I/U/N/digit/* alphabet — e.g. "Y*", "N2Y*", "U8Y*", "I8N2".
+_VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*$')
+
 
 @dataclass
 class Sample:
@@ -109,6 +113,11 @@ class Sample:
                 value = max(1, value)
             elif name == "override_cycles":
                 value = self._normalize_override_cycles(value)
+            elif name in (
+                "read1_override_pattern", "read2_override_pattern",
+                "index1_override_pattern", "index2_override_pattern",
+            ) and isinstance(value, str):
+                value = self._normalize_override_pattern(name, value)
             elif name == "lanes" and value:
                 value = [
                     lane for lane in value
@@ -143,6 +152,22 @@ class Sample:
                 f"Invalid characters in override_cycles "
                 f"({''.join(repr(c) for c in bad)}). "
                 f"Allowed: Y, I, U, N, digits, '*', ';', ','."
+            )
+        return upper
+
+    @staticmethod
+    def _normalize_override_pattern(name: str, value: str) -> str:
+        """Uppercase + reject any character outside the single-segment override
+        alphabet (Y/I/U/N/digits/*). A read/index override pattern shapes the
+        OverrideCycles instruction emitted to the sequencer, so free-form text
+        must be refused at the model boundary regardless of ingest path."""
+        upper = value.upper()
+        if not _VALID_OVERRIDE_PATTERN_RE.match(upper):
+            bad = sorted(set(upper) - set("YIUN0123456789*"))
+            raise ValueError(
+                f"Invalid characters in {name} "
+                f"({''.join(repr(c) for c in bad)}). "
+                f"Allowed: Y, I, U, N, digits, '*'."
             )
         return upper
 

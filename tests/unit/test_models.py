@@ -283,6 +283,18 @@ class TestSample:
         assert restored.index1_sequence == sample_sample.index1_sequence
         assert restored.index2_sequence == sample_sample.index2_sequence
 
+    def test_read_override_pattern_rejects_invalid_chars(self):
+        """A read-override pattern is sequencer-controlling notation; reject any
+        character outside the Y/I/U/N/digit/* alphabet at the model boundary."""
+        with pytest.raises(ValueError):
+            Sample(sample_id="S1", read1_override_pattern="ACGT")
+        with pytest.raises(ValueError):
+            Sample(sample_id="S2", read2_override_pattern="Y;I8")  # ';' not in a single segment
+
+    def test_read_override_pattern_uppercased(self):
+        s = Sample(sample_id="S1", read1_override_pattern="n2y*")
+        assert s.read1_override_pattern == "N2Y*"
+
     def test_to_dict_does_not_alias_mutable_fields(self):
         """to_dict() must snapshot lanes/analyses/metadata by value, not by
         reference. The change-history diff captures ``before = run.to_dict()``
