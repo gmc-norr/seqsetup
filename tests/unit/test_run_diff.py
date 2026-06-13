@@ -60,6 +60,14 @@ class TestConfigDiff:
         fc, _ = diff_run(_run_dict(), _run_dict(run_cycles={"read1_cycles": 100}))
         assert any(c["field"] == "run_cycles" for c in fc)
 
+    def test_run_level_analyses_change_tracked(self):
+        # analyses drives DRAGEN/pipeline config; it is deliberately NOT in the
+        # ignore list, so a run-level change must be captured.
+        fc, _ = diff_run(_run_dict(analyses=[]),
+                         _run_dict(analyses=[{"name": "DRAGEN"}]))
+        chg = next(c for c in fc if c["field"] == "analyses")
+        assert chg["before"] == [] and chg["after"] == [{"name": "DRAGEN"}]
+
 
 class TestSampleDiff:
     def test_added(self):
@@ -101,6 +109,13 @@ class TestSampleDiff:
             _, sc = diff_run(before, after)
             chg = next(f for f in sc[0]["fields"] if f["name"] == field)
             assert chg["before"] == b and chg["after"] == a, field
+
+    def test_sample_level_analyses_change_tracked(self):
+        before = _run_dict(samples=[_sample(analyses=[])])
+        after = _run_dict(samples=[_sample(analyses=["a1"])])
+        _, sc = diff_run(before, after)
+        chg = next(f for f in sc[0]["fields"] if f["name"] == "analyses")
+        assert chg["before"] == [] and chg["after"] == ["a1"]
 
     def test_sample_id_rename_same_uuid_is_modified_not_replace(self):
         before = _run_dict(samples=[_sample(sid_uuid="u1", sample_id="S1")])

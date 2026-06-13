@@ -91,8 +91,8 @@ class Analysis:
             "reference_genome": self.reference_genome,
             "pipeline_name": self.pipeline_name,
             "pipeline_version": self.pipeline_version,
-            "pipeline_params": self.pipeline_params,
-            "sample_ids": self.sample_ids,
+            "pipeline_params": dict(self.pipeline_params),
+            "sample_ids": list(self.sample_ids),
         }
 
     @classmethod

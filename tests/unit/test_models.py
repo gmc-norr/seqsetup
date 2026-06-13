@@ -283,6 +283,24 @@ class TestSample:
         assert restored.index1_sequence == sample_sample.index1_sequence
         assert restored.index2_sequence == sample_sample.index2_sequence
 
+    def test_to_dict_does_not_alias_mutable_fields(self):
+        """to_dict() must snapshot lanes/analyses/metadata by value, not by
+        reference. The change-history diff captures ``before = run.to_dict()``
+        then mutates the live run; if to_dict aliased these mutable objects, an
+        in-place mutation would be invisible to the diff and silently dropped
+        from the clinical audit trail."""
+        sample = Sample(sample_id="Alias", lanes=[1], analyses=["a1"],
+                        metadata={"k": "v"})
+        snapshot = sample.to_dict()
+
+        sample.lanes.append(2)
+        sample.analyses.append("a2")
+        sample.metadata["k2"] = "v2"
+
+        assert snapshot["lanes"] == [1]
+        assert snapshot["analyses"] == ["a1"]
+        assert snapshot["metadata"] == {"k": "v"}
+
     def test_sample_to_dict_from_dict_no_index(self):
         """Test Sample round-trip without index."""
         sample = Sample(sample_id="NoIdx", sample_name="No Index")
@@ -566,6 +584,20 @@ class TestSampleIndexMutations:
         assert not hasattr(run, "validation_approved")
 
     # --- Analysis management ---
+
+    def test_to_dict_does_not_alias_mutable_fields(self):
+        """Analysis.to_dict() must snapshot sample_ids/pipeline_params by value,
+        not by reference — the same before-snapshot aliasing hazard the diff
+        engine relies on Sample.to_dict() avoiding."""
+        from seqsetup.models.analysis import Analysis, AnalysisType
+
+        analysis = Analysis(id="a1", name="T", analysis_type=AnalysisType.DOWNSTREAM,
+                            sample_ids=["s1"], pipeline_params={"k": "v"})
+        snapshot = analysis.to_dict()
+        analysis.sample_ids.append("s2")
+        analysis.pipeline_params["k2"] = "v2"
+        assert snapshot["sample_ids"] == ["s1"]
+        assert snapshot["pipeline_params"] == {"k": "v"}
 
     def test_add_and_get_analysis(self):
         """add_analysis and get_analysis work together."""

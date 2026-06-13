@@ -21,9 +21,16 @@
         {% endfor %}
         {% for sc in e.sample_changes %}
           <li>
-            Sample {{ sc.sample_id }}
-            {% if sc.kind == "added" %}added{% elif sc.kind == "removed" %}removed{% else %}changed:
-              {% for f in sc.fields %}{{ f.name }} {{ f.before | histval }} → {{ f.after | histval }}{% if not loop.last %}; {% endif %}{% endfor %}
+            {% if sc.kind == "summary" %}
+              {% if sc.summary %}{{ sc.summary.total }} sample changes
+              ({{ sc.summary.added }} added, {{ sc.summary.removed }} removed, {{ sc.summary.modified }} modified)
+              {% else %}Multiple sample changes{% endif %}
+              — per-sample detail omitted (change too large to record in full)
+            {% else %}
+              Sample {{ sc.sample_id }}
+              {% if sc.kind == "added" %}added{% elif sc.kind == "removed" %}removed{% else %}changed:
+                {% for f in sc.fields %}{{ f.name }} {{ f.before | histval }} → {{ f.after | histval }}{% if not loop.last %}; {% endif %}{% endfor %}
+              {% endif %}
             {% endif %}
           </li>
         {% endfor %}

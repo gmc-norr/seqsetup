@@ -312,20 +312,45 @@ existing `run.deleted` audit event still fires.
 
 None blocking.
 
-- **Timestamp timezone (documented, not fixed here):** the app records
+- **Timestamp timezone (app-wide, out of scope):** the app records
   `created_at`/`updated_at` via local `datetime.now()` while the API schema
   documents them as UTC. History reuses the run's own timestamp for
   consistency, so it inherits this discrepancy rather than introducing a second
   convention. Converting the app to UTC is a separate, broader migration and is
-  intentionally out of this feature's scope.
+  intentionally out of this feature's scope. **Resolved within this feature:**
+  keyset pagination compares timestamp *strings* lexically, which is only sound
+  if every stored value uses one representation. `RunHistoryEntry` now persists
+  a single canonical form (`_canonical_ts`: tz-aware coerced to UTC-naive,
+  fixed-width 6-digit microseconds, no offset suffix), so a future tz-aware
+  timestamp can no longer scramble page order.
 
-- **Latent before-snapshot aliasing for `Sample.metadata` / `Sample.analyses`
-  (documented, not fixed here):** `Sample.to_dict()` returns those two fields by
-  reference, not as copies, so the `before = run.to_dict()` snapshot aliases
-  them. No current route handler mutates a sample's `metadata` or `analyses`
-  *in place* (they are reassigned via `__setattr__`, which the snapshot does not
-  alias), so the diff is correct today. If a future handler ever does
-  `sample.metadata[...] = ...` in place, that change would be invisible to the
-  history diff. The robust fix lives in `Sample.to_dict()` (copy those fields)
-  rather than in this feature; deep-copying the whole snapshot here was rejected
-  to avoid introducing diff-type noise. Tracked as a follow-up.
+- **Before-snapshot aliasing for `Sample` mutable fields (FIXED):**
+  `Sample.to_dict()` previously returned `lanes` / `analyses` / `metadata` by
+  reference, so the `before = run.to_dict()` snapshot aliased the live run; an
+  in-place mutation (`sample.metadata[...] = ...`) would have been invisible to
+  the diff and silently dropped from the audit trail. `Sample.to_dict()` now
+  copies these three mutable fields (`list(...)` / `dict(...)`), pushing the
+  invariant down to the serialization boundary where both Mongo persistence and
+  the diff consume it — so correctness no longer depends on every handler
+  remembering to reassign rather than mutate. Regression test:
+  `test_to_dict_does_not_alias_mutable_fields`.
+
+- **Oversized entries summarized (FIXED):** a bulk paste / worklist import wraps
+  the whole import in one `saving_run`, producing a single entry with a
+  per-field before/after snapshot for every sample. At `MAX_SAMPLES_PER_RUN`
+  this can exceed MongoDB's 16 MB BSON document cap, and the oversized insert
+  would be swallowed by the best-effort guard — silently dropping the single
+  most audit-worthy edit. `record_run_updated` now measures the encoded entry
+  and, above `_MAX_ENTRY_BSON_BYTES` (15 MB), replaces the per-sample detail
+  with a count-only `kind:"summary"` change (`{added, removed, modified,
+  total}`) so the trail always records *that* a bulk change happened. The panel
+  renders this as a readable count line.
+
+- **Unbounded growth (operational, by design):** `run_history` is append-only
+  and is reclaimed only by `delete_by_run` on run deletion. Because ARCHIVED is
+  terminal and archived runs are retained as historical records, their history
+  is never reclaimed; a long-lived install accrues entries indefinitely. This is
+  intentional for an audit trail — entries are **not** auto-expired (a TTL would
+  silently delete clinical audit records). Operators who need to bound storage
+  should plan capacity or run an explicit, audited reconciliation/retention
+  sweep; this is a deployment decision, not an app default.

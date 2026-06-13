@@ -494,12 +494,24 @@ def run_history(
     if run is None:
         return Response("Run not found", status_code=404)
 
-    entries = ctx.run_history_repo.list_by_run(
-        run_id,
-        limit=_HISTORY_PAGE + 1,
-        before_ts=before_ts or None,
-        before_id=before_id or None,
-    )
+    # A keyset cursor is both-or-neither. A half cursor is malformed input —
+    # reject it rather than silently re-serving page 1 (clinical default: never
+    # silently discard a paging request and hand back the wrong page).
+    if bool(before_ts) != bool(before_id):
+        return Response("Invalid pagination cursor", status_code=400)
+
+    # Read path mirrors the recording helpers' None-guard: history is an
+    # Optional dependency, so degrade to an empty panel rather than 500 if it
+    # isn't configured.
+    if ctx.run_history_repo is None:
+        entries = []
+    else:
+        entries = ctx.run_history_repo.list_by_run(
+            run_id,
+            limit=_HISTORY_PAGE + 1,
+            before_ts=before_ts or None,
+            before_id=before_id or None,
+        )
     has_more = len(entries) > _HISTORY_PAGE
     entries = entries[:_HISTORY_PAGE]
 

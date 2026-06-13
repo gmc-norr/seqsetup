@@ -277,7 +277,7 @@ class Sample:
             "project": self.project,
             "test_id": self.test_id,
             "worksheet_id": self.worksheet_id,
-            "lanes": self.lanes,
+            "lanes": list(self.lanes),
             "index_pair": self.index_pair.to_dict() if self.index_pair else None,
             "index1": self.index1.to_dict() if self.index1 else None,
             "index2": self.index2.to_dict() if self.index2 else None,
@@ -291,9 +291,9 @@ class Sample:
             "index2_override_pattern": self.index2_override_pattern,
             "read1_override_pattern": self.read1_override_pattern,
             "read2_override_pattern": self.read2_override_pattern,
-            "analyses": self.analyses,
+            "analyses": list(self.analyses),
             "description": self.description,
-            "metadata": self.metadata,
+            "metadata": dict(self.metadata),
         }
 
     @classmethod

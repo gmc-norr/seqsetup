@@ -7,6 +7,8 @@ import pytest
 from seqsetup.models.run_history import RunHistoryEntry
 from seqsetup.models.sequencing_run import RunStatus
 
+from .conftest import disable_repos
+
 
 def _origin() -> dict:
     return {"Origin": "http://testserver"}
@@ -66,6 +68,26 @@ class TestRunHistoryRepository:
         page2 = repo.list_by_run("r1", limit=2, before_ts=cur_ts, before_id=cur_id)
         assert len(page2) == 1
         assert page2[0].id not in {e.id for e in page1}
+
+    def test_pagination_across_legacy_isoformat_rows_no_duplicate(self, fresh_app):
+        # Rows persisted before timestamp normalization stored a bare
+        # isoformat() string (whole-second values lack the ".000000" fraction).
+        # The keyset cursor must page across such rows without re-including the
+        # boundary entry — otherwise an audit page silently duplicates/loops.
+        _app, ctx, _db = fresh_app
+        repo = ctx.run_history_repo
+        rid = "legacy-fmt-run"   # unique id: insulate from other repo tests' "r1"
+        for _id, sec in [("LEGACY_A", 7), ("LEGACY_B", 8)]:
+            repo.collection.insert_one({
+                "_id": _id, "id": _id, "run_id": rid,
+                "timestamp": datetime(2026, 6, 11, 10, 0, sec).isoformat(),
+                "actor": "a", "kind": "updated", "provenance": None,
+                "field_changes": [], "sample_changes": []})
+        page1 = repo.list_by_run(rid, limit=1)
+        assert [e.id for e in page1] == ["LEGACY_B"]
+        cur_ts, cur_id = page1[-1].cursor()
+        page2 = repo.list_by_run(rid, limit=5, before_ts=cur_ts, before_id=cur_id)
+        assert [e.id for e in page2] == ["LEGACY_A"]   # no LEGACY_B duplicate
 
     def test_delete_by_run(self, fresh_app):
         _app, ctx, _db = fresh_app
@@ -227,6 +249,59 @@ class TestHistoryRouteAndPanel:
         r = logged_in_client.get("/runs/nope/history")
         assert r.status_code == 404
 
+    def test_history_route_requires_authentication(self, client, fresh_app):
+        # The new route must sit behind the global auth middleware like every
+        # other run route; an unauthenticated GET redirects to /login.
+        _app, ctx, _db = fresh_app
+        run = ctx.run_repo.create_run("alice")
+        r = client.get(f"/runs/{run.id}/history", follow_redirects=False)
+        assert r.status_code == 303
+        assert r.headers["location"] == "/login"
+
+    def test_history_route_degrades_when_repo_unavailable(
+        self, logged_in_client, fresh_app
+    ):
+        # The read path must not 500 if history isn't configured — mirror the
+        # None-guard the recording helpers apply (AppContext.run_history_repo
+        # is declared Optional). disable_repos nulls BOTH ctx and startup._repos
+        # so the route's per-request get_app_context() sees None.
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        disable_repos(ctx, "run_history")
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+        assert "No change history recorded yet" in r.text
+
+    def test_partial_cursor_is_rejected(self, logged_in_client, fresh_app):
+        # A keyset cursor is both-or-neither; a half cursor is malformed input
+        # and must be rejected (not silently re-served as page 1).
+        run_id = _create_run(logged_in_client)
+        only_ts = logged_in_client.get(
+            f"/runs/{run_id}/history",
+            params={"before_ts": "2026-06-11T00:00:00.000000"})
+        only_id = logged_in_client.get(
+            f"/runs/{run_id}/history", params={"before_id": "abc"})
+        assert only_ts.status_code == 400
+        assert only_id.status_code == 400
+
+    def test_history_panel_escapes_user_controlled_values(
+        self, logged_in_client, fresh_app
+    ):
+        # actor and before/after values are user-controlled (sample ids, names,
+        # descriptions). They must be HTML-escaped, never rendered as live markup.
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        ctx.run_history_repo.append(RunHistoryEntry(
+            run_id=run_id, timestamp=datetime(2026, 6, 11, 9, 0, 0),
+            actor="<script>alert(1)</script>", kind="updated",
+            field_changes=[{"field": "run_name", "before": "A",
+                            "after": "<img src=x onerror=alert(2)>"}]))
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+        assert "<script>alert(1)</script>" not in r.text
+        assert "<img src=x onerror=" not in r.text
+        assert "&lt;script&gt;" in r.text   # escaped form present
+
     def test_history_route_works_for_archived_run(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _create_run(logged_in_client)
@@ -270,6 +345,39 @@ class TestHistoryRouteAndPanel:
             params={"before_ts": "2026-06-11T00:00:10", "before_id": "zzz"})
         assert older.status_code == 200
 
+    def test_summary_sample_change_renders_readably(
+        self, logged_in_client, fresh_app
+    ):
+        # A summarized (oversized-import) entry must render a readable count
+        # line, not "Sample None changed:" with no fields.
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        ctx.run_history_repo.append(RunHistoryEntry(
+            run_id=run_id, timestamp=datetime(2026, 6, 11, 9, 0, 0),
+            actor="alice", kind="updated",
+            sample_changes=[{"sample_id": None, "kind": "summary", "fields": [],
+                             "summary": {"added": 5000, "removed": 0,
+                                         "modified": 0, "total": 5000}}]))
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+        assert "5000 sample changes" in r.text
+        assert "5000 added" in r.text
+        assert "Sample None" not in r.text   # not the generic per-sample line
+
+    def test_summary_without_summary_key_degrades_gracefully(
+        self, logged_in_client, fresh_app
+    ):
+        # A malformed summary change (no "summary" mapping) must not 500 the
+        # whole panel — degrade rather than raise UndefinedError.
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        ctx.run_history_repo.append(RunHistoryEntry(
+            run_id=run_id, timestamp=datetime(2026, 6, 11, 9, 0, 0),
+            actor="alice", kind="updated",
+            sample_changes=[{"sample_id": None, "kind": "summary", "fields": []}]))
+        r = logged_in_client.get(f"/runs/{run_id}/history")
+        assert r.status_code == 200
+
     def test_index_change_renders_readably_not_raw_dict(
         self, logged_in_client, fresh_app
     ):
@@ -311,6 +419,73 @@ class TestReadyPromotionDiff:
         names = {c["field"] for c in entry.field_changes}
         assert "status" in names
         assert not any(n.startswith("generated_") for n in names)
+
+
+class TestOversizedEntrySummarized:
+    """A bulk import that would produce a history entry exceeding the BSON cap
+    must be summarized, not silently dropped by the best-effort append guard."""
+
+    def test_large_diff_is_summarized_not_dropped(self, fresh_app, monkeypatch):
+        from seqsetup.services import run_history as rh
+        _app, ctx, _db = fresh_app
+        # Force the size ceiling low so a modest diff trips the summary path
+        # (instead of materializing thousands of samples in the test).
+        monkeypatch.setattr(rh, "_MAX_ENTRY_BSON_BYTES", 200)
+        run = ctx.run_repo.create_run("alice")
+        before = run.to_dict()
+        from seqsetup.models.sample import Sample
+        for i in range(5):
+            run.add_sample(Sample(sample_id=f"S{i}"))
+        run.touch(updated_by="alice")
+        ctx.run_repo.save(run)
+        rh.record_run_updated(ctx, run, before, "alice")
+
+        entry = ctx.run_history_repo.list_by_run(run.id, limit=10)[0]
+        assert entry.kind == "updated"
+        assert len(entry.sample_changes) == 1
+        sc = entry.sample_changes[0]
+        assert sc["kind"] == "summary"
+        assert sc["summary"]["added"] == 5
+        assert sc["summary"]["total"] == 5
+
+    def test_field_dominated_oversize_also_collapses_field_changes(
+        self, fresh_app, monkeypatch
+    ):
+        # If, after summarizing samples, the entry is STILL too large (a
+        # pathological run-level field diff), field_changes must also collapse
+        # so we never append a doc the best-effort guard would silently drop.
+        from seqsetup.services import run_history as rh
+        _app, ctx, _db = fresh_app
+        monkeypatch.setattr(rh, "_MAX_ENTRY_BSON_BYTES", 50)
+        run = ctx.run_repo.create_run("alice")
+        before = run.to_dict()
+        from seqsetup.models.sample import Sample
+        run.run_name = "Renamed"
+        run.add_sample(Sample(sample_id="S1"))
+        run.touch(updated_by="alice")
+        ctx.run_repo.save(run)
+        rh.record_run_updated(ctx, run, before, "alice")
+
+        entry = ctx.run_history_repo.list_by_run(run.id, limit=10)[0]
+        assert entry.sample_changes[0]["kind"] == "summary"
+        # field_changes collapsed to a single summary marker, not the raw diff
+        assert len(entry.field_changes) == 1
+        assert entry.field_changes[0]["field"] == "(summary)"
+
+    def test_small_diff_keeps_full_detail(self, fresh_app):
+        from seqsetup.services import run_history as rh
+        _app, ctx, _db = fresh_app
+        run = ctx.run_repo.create_run("alice")
+        before = run.to_dict()
+        from seqsetup.models.sample import Sample
+        run.add_sample(Sample(sample_id="S1"))
+        run.touch(updated_by="alice")
+        ctx.run_repo.save(run)
+        rh.record_run_updated(ctx, run, before, "alice")
+
+        entry = ctx.run_history_repo.list_by_run(run.id, limit=10)[0]
+        assert [sc["kind"] for sc in entry.sample_changes] == ["added"]
+        assert entry.sample_changes[0]["sample_id"] == "S1"
 
 
 class TestHistoryFailureNonFatal:
