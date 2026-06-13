@@ -55,18 +55,32 @@ _VALIDATION_INPUT_VERSION: int = 0
 def _validation_cache_key(
     run: "SequencingRun",
     version: int,
+    *,
+    has_test_profile_repo: bool,
+    has_app_profile_repo: bool,
+    has_instrument_config: bool,
 ) -> tuple:
     """Build the cache key.
 
     Includes ``run.id`` + ``run.updated_at`` (covers run-state changes)
     and the global ``validation_input_version`` (covers profile /
-    instrument / index-kit mutations that don't touch the run). We do NOT
-    key on repo identity — ``ctx.instrument_config`` is a property that
-    returns a freshly constructed object on every access, which would
-    make any ``id()``-based key change on every call and defeat the
-    cache entirely.
+    instrument / index-kit mutations that don't touch the run).
+
+    It ALSO keys on whether each optional input was supplied, because the
+    result *content* depends on them: application-profile and missing-test_id
+    checks run only when both profile repos are present, and ``instrument_config``
+    affects collision/color/configuration. The edit page calls ``validate_run``
+    with no repos while the Mark-Ready gate calls it with all of them at the same
+    ``run.updated_at`` — without this, the gate would be served the edit page's
+    repos-less (under-counted) cached result and could promote an invalid run.
+    We key on PRESENCE (a bool), not identity: ``ctx.instrument_config`` is a
+    property returning a freshly-constructed object each access, so an
+    ``id()``-based key would change every call and defeat the cache.
     """
-    return (run.id, run.updated_at, version)
+    return (
+        run.id, run.updated_at, version,
+        has_test_profile_repo, has_app_profile_repo, has_instrument_config,
+    )
 
 
 def clear_validation_cache() -> None:
@@ -116,7 +130,13 @@ class ValidationService:
         version counter. The cache is bounded (LRU); locked because
         Starlette's threadpool may call this concurrently.
         """
-        key = _validation_cache_key(run, _current_validation_input_version())
+        key = _validation_cache_key(
+            run,
+            _current_validation_input_version(),
+            has_test_profile_repo=test_profile_repo is not None,
+            has_app_profile_repo=app_profile_repo is not None,
+            has_instrument_config=instrument_config is not None,
+        )
         with _VALIDATION_CACHE_LOCK:
             if key in _VALIDATION_CACHE:
                 _VALIDATION_CACHE.move_to_end(key)

@@ -39,8 +39,16 @@ def edit_run(
     sample_api_cfg = ctx.sample_api_config
     sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
 
-    # Pre-compute validation result for the validate panel.
-    validation_result = ValidationService.validate_run(run)
+    # Pre-compute validation result for the validate panel. Pass the same repos
+    # as the Mark-Ready gate so the panel reflects the full validation (incl.
+    # application-profile / test_id checks) and primes the same cache entry the
+    # gate reads — never an under-counted repos-less result.
+    validation_result = ValidationService.validate_run(
+        run,
+        test_profile_repo=ctx.test_profile_repo,
+        app_profile_repo=ctx.app_profile_repo,
+        instrument_config=ctx.instrument_config,
+    )
     has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
 
     # Resolve flowcell description for the Jinja2 template.

@@ -872,6 +872,33 @@ class TestMissingTestIdRequiresApproval:
         ]
         assert missing_test_id == []
 
+    def test_repos_less_call_does_not_poison_later_repos_bearing_call(self):
+        """The edit page validates with NO repos (skipping the test_id / profile
+        checks); the Mark-Ready gate validates the SAME run (same id+updated_at)
+        WITH repos. The gate must not be served a cached repos-less result — that
+        would promote a run with a missing test_id, silently dropping a patient's
+        reads. Regression for the validation-cache-key bypass."""
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            samples=[Sample(sample_id="S1", test_id="")],
+        )
+        # Edit-page path: no repos -> test_id check skipped, result cached.
+        edit = ValidationService.validate_run(run)
+        assert not any(e.category == "missing_test_id"
+                       for e in edit.configuration_errors)
+        # Mark-Ready path: SAME run, WITH repos -> must detect the missing test_id.
+        gate = ValidationService.validate_run(
+            run,
+            test_profile_repo=_StubTestProfileRepo(),
+            app_profile_repo=_StubAppProfileRepo(),
+        )
+        assert any(e.category == "missing_test_id"
+                   for e in gate.configuration_errors), \
+            "repos-less cached result poisoned the repos-bearing Mark-Ready gate"
+
     def test_all_samples_with_test_id_emits_no_error(self):
         """No missing_test_id error when every sample has a test_id."""
         run = SequencingRun(
