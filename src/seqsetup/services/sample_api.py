@@ -29,7 +29,7 @@ _MAX_FIELD_LEN = 256
 # Index sequences from a LIMS must be DNA; validate at this ingest point (like
 # the paste parser) so a malformed sequence is a clean, sample-naming rejection
 # rather than an uncaught Index() ValueError (HTTP 500) downstream.
-_VALID_DNA_RE = re.compile(r'^[ACGTN]*$')
+_VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 
 
 # Minimum interval between consecutive LIMS API calls (per host). Defends

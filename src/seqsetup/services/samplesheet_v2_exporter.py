@@ -330,19 +330,21 @@ class SampleSheetV2Exporter:
         Returns:
             Adjusted override cycles string
         """
+        # The Sample model permits a legacy comma separator, but BCL Convert v2
+        # uses ';' as the OverrideCycles segment separator — normalize for ALL
+        # instruments so a literal comma never reaches the sheet, and so the
+        # RC adjustment below can fire on a comma-form value (which would
+        # otherwise hit len != 4 and skip the Index2 flip while _resolve_i5
+        # still reverse-complements the i5 sequence -> Index2 desync on RC).
+        normalized = override_cycles.replace(",", ";")
+
         orientation = get_samplesheet_v2_i5_orientation(run.instrument_platform)
         if orientation != "reverse-complement":
-            return override_cycles
+            return normalized
 
-        # The Sample model permits a legacy comma separator; normalize to ';'
-        # FIRST so the 4-segment RC adjustment fires regardless of which
-        # separator was stored. A comma-form value would otherwise hit
-        # len != 4 and be returned unchanged, leaving the Index2 mask un-flipped
-        # while _resolve_i5 still reverse-complements the i5 sequence → the
-        # Index2 mask desyncs from the i5 read on RC instruments.
-        parts = override_cycles.replace(",", ";").split(";")
+        parts = normalized.split(";")
         if len(parts) != 4:
-            return override_cycles
+            return normalized
 
         # Reverse the Index2 segment (3rd part, index 2)
         parts[2] = CycleCalculator.reverse_override_segment(parts[2])
@@ -532,9 +534,12 @@ class SampleSheetV2Exporter:
                         else cls._escape_csv(str(profile.data.get(field, "")))
                     )
                 elif field == "OverrideCycles":
-                    # Use sample's override cycles, or calculate from index lengths
+                    # Use sample's override cycles, or calculate from index lengths.
+                    # has_index (not index_pair) so combinatorial/single-index
+                    # samples also get a computed value, not a blank cell — this
+                    # is the production (profile-driven) export path.
                     oc = sample.override_cycles
-                    if not oc and sample.index_pair and run and run.run_cycles:
+                    if not oc and sample.has_index and run and run.run_cycles:
                         oc = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
                     if oc and run:
                         oc = cls._adjust_override_cycles_for_instrument(oc, run)

@@ -10,7 +10,8 @@ from typing import Optional
 # that later splits a Sample Sheet row. \Z matches only the true end of string.
 _VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 # Single-segment override pattern alphabet (Y/I/U/N/digits/*) — e.g. "Y*", "N2Y*".
-_VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*$')
+# ``\Z`` (not ``$``) so a trailing newline can't sneak past, per project convention.
+_VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*\Z')
 
 
 class IndexType(Enum):
@@ -266,6 +267,22 @@ class IndexKit:
     @classmethod
     def from_dict(cls, data: dict) -> "IndexKit":
         """Create from dictionary."""
+        def _recover_override(field_name):
+            """default_read*_override is now grammar-validated on assignment, but
+            legacy kits were stored without that check. Recover (drop to None +
+            log) rather than make the kit (and every run referencing it)
+            unloadable on a legacy bad value."""
+            value = data.get(field_name)
+            if value is None or _VALID_OVERRIDE_PATTERN_RE.match(str(value).upper()):
+                return value
+            import logging
+            logging.getLogger(__name__).warning(
+                "IndexKit %r has invalid %s %r in stored data; loading with "
+                "%s=None. Re-save the kit to drop the corruption.",
+                data.get("name"), field_name, value, field_name,
+            )
+            return None
+
         return cls(
             name=data["name"],
             version=data.get("version", "1.0"),
@@ -280,8 +297,8 @@ class IndexKit:
             adapter_read2=data.get("adapter_read2"),
             default_index1_cycles=data.get("default_index1_cycles"),
             default_index2_cycles=data.get("default_index2_cycles"),
-            default_read1_override=data.get("default_read1_override"),
-            default_read2_override=data.get("default_read2_override"),
+            default_read1_override=_recover_override("default_read1_override"),
+            default_read2_override=_recover_override("default_read2_override"),
             created_by=data.get("created_by", ""),
             source=data.get("source", "user"),
         )

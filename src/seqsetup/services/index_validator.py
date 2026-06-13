@@ -160,6 +160,7 @@ class IndexValidator:
 
         # Validate i7 indexes
         seen_i7: set[str] = set()
+        seen_i7_seq: dict[str, str] = {}  # sequence -> first index name
         for idx in kit.i7_indexes:
             if not idx.name or not idx.name.strip():
                 result.add_error("Each i7 index must have a name.")
@@ -168,6 +169,15 @@ class IndexValidator:
             if idx.name in seen_i7:
                 result.add_error(f"Duplicate i7 index name: '{idx.name}'.")
             seen_i7.add(idx.name)
+
+            if idx.sequence:
+                if idx.sequence in seen_i7_seq and seen_i7_seq[idx.sequence] != idx.name:
+                    result.add_warning(
+                        f"i7 indexes '{seen_i7_seq[idx.sequence]}' and '{idx.name}' have "
+                        f"identical sequences; they are indistinguishable at demultiplexing."
+                    )
+                else:
+                    seen_i7_seq.setdefault(idx.sequence, idx.name)
 
             if not idx.sequence:
                 result.add_error(f"i7 index '{idx.name}': sequence is required.")
@@ -179,6 +189,7 @@ class IndexValidator:
 
         # Validate i5 indexes
         seen_i5: set[str] = set()
+        seen_i5_seq: dict[str, str] = {}  # sequence -> first index name
         for idx in kit.i5_indexes:
             if not idx.name or not idx.name.strip():
                 result.add_error("Each i5 index must have a name.")
@@ -187,6 +198,15 @@ class IndexValidator:
             if idx.name in seen_i5:
                 result.add_error(f"Duplicate i5 index name: '{idx.name}'.")
             seen_i5.add(idx.name)
+
+            if idx.sequence:
+                if idx.sequence in seen_i5_seq and seen_i5_seq[idx.sequence] != idx.name:
+                    result.add_warning(
+                        f"i5 indexes '{seen_i5_seq[idx.sequence]}' and '{idx.name}' have "
+                        f"identical sequences; they are indistinguishable at demultiplexing."
+                    )
+                else:
+                    seen_i5_seq.setdefault(idx.sequence, idx.name)
 
             if not idx.sequence:
                 result.add_error(f"i5 index '{idx.name}': sequence is required.")

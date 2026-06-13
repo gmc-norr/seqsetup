@@ -102,6 +102,18 @@ class TestIndexKit:
         assert pair is not None
         assert pair.id == "kit_D702"
 
+    def test_from_dict_recovers_legacy_invalid_default_override(self):
+        """default_read*_override is now grammar-validated; legacy kits stored
+        without that check must still load (drop to None + log), not crash the
+        kit and every run referencing it."""
+        kit = IndexKit.from_dict({
+            "name": "Legacy",
+            "index_mode": "unique_dual",
+            "default_read1_override": "Y150, Y*",  # invalid (comma+space)
+        })
+        assert kit.name == "Legacy"               # loaded, did not raise
+        assert kit.default_read1_override is None
+
 
 class TestSample:
     """Tests for Sample model."""
@@ -294,6 +306,19 @@ class TestSample:
     def test_read_override_pattern_uppercased(self):
         s = Sample(sample_id="S1", read1_override_pattern="n2y*")
         assert s.read1_override_pattern == "N2Y*"
+
+    def test_from_dict_recovers_legacy_invalid_override_pattern(self):
+        """Override-pattern fields are now grammar-validated on assignment, but
+        legacy records were stored without that check. from_dict must recover
+        (drop to None + log) rather than make the whole run unloadable."""
+        sample = Sample.from_dict({
+            "id": "s1", "sample_id": "S1",
+            "read1_override_pattern": "Y150, Y*",       # comma+space: invalid segment
+            "index1_override_pattern": "free text here",  # invalid
+        })
+        assert sample.sample_id == "S1"          # loaded, did not raise
+        assert sample.read1_override_pattern is None
+        assert sample.index1_override_pattern is None
 
     def test_to_dict_does_not_alias_mutable_fields(self):
         """to_dict() must snapshot lanes/analyses/metadata by value, not by

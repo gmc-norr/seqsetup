@@ -103,31 +103,44 @@ class LDAPService:
         except ImportError:
             raise LDAPError("ldap3 package is not installed. Run: pip install ldap3")
 
-        # Refuse cleartext LDAP by default: with neither use_ssl nor an ldaps://
-        # URL (and no StartTLS path exists), the bind password AND every user's
-        # login password would be sent in plaintext. Mirror the LIMS plain-HTTP
-        # opt-in so an isolated/trusted network can deliberately allow it.
-        is_secure = self.config.use_ssl or self.config.server_url.lower().startswith("ldaps://")
-        if not is_secure:
+        # Determine the transport ldap3 will ACTUALLY use. ldap3 derives ssl from
+        # the URL scheme when one is present: Server('ldap://...', use_ssl=True)
+        # still binds in cleartext (ssl=False, port 389). So an explicit ldap://
+        # scheme is cleartext regardless of use_ssl; an explicit ldaps:// is TLS
+        # regardless of use_ssl; and a bare host honours use_ssl. (Case-insensitive
+        # so 'LDAPS://' is recognised too.)
+        url = self.config.server_url.lower()
+        if url.startswith("ldaps://"):
+            uses_tls = True
+        elif url.startswith("ldap://"):
+            uses_tls = False
+        else:
+            uses_tls = self.config.use_ssl
+
+        # Refuse cleartext LDAP by default: with no TLS (and no StartTLS path
+        # exists), the bind password AND every user's login password would be
+        # sent in plaintext. Mirror the LIMS plain-HTTP opt-in so an isolated/
+        # trusted network can deliberately allow it.
+        if not uses_tls:
             import os
             allow = os.environ.get("SEQSETUP_LDAP_ALLOW_CLEARTEXT", "").lower() in ("1", "true", "yes")
             if not allow:
                 raise LDAPError(
                     "Refusing to connect to LDAP over cleartext (no SSL/TLS): the bind "
                     "and user passwords would be sent in plaintext. Use an ldaps:// URL "
-                    "or enable use_ssl. To allow cleartext on a trusted, isolated network, "
-                    "set SEQSETUP_LDAP_ALLOW_CLEARTEXT=1 (not for production)."
+                    "or a host with use_ssl enabled. To allow cleartext on a trusted, "
+                    "isolated network, set SEQSETUP_LDAP_ALLOW_CLEARTEXT=1 (not for production)."
                 )
 
         tls = None
-        if self.config.use_ssl or self.config.server_url.startswith("ldaps://"):
+        if uses_tls:
             # Use CERT_REQUIRED for production security, CERT_NONE for development/testing
             cert_validation = ssl.CERT_REQUIRED if self.config.verify_ssl_cert else ssl.CERT_NONE
             tls = Tls(validate=cert_validation)
 
         return Server(
             self.config.server_url,
-            use_ssl=self.config.use_ssl,
+            use_ssl=uses_tls,
             tls=tls,
             connect_timeout=self.config.connect_timeout,
         )

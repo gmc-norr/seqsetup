@@ -132,6 +132,20 @@ class TestSampleSheetV2Exporter:
         )
         assert result == "Y151;I8N2;N2I8;Y151"
 
+    def test_comma_override_normalized_to_semicolon_on_forward_instrument(self):
+        """BCL Convert v2 uses ';' as the OverrideCycles separator; a legacy
+        comma-form override must be normalized to ';' on FORWARD instruments too,
+        not emitted with literal commas the sequencer can't parse."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,  # forward orientation
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+        )
+        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
+            "Y151,I8N2,I8N2,Y151", run
+        )
+        assert result == "Y151;I8N2;I8N2;Y151"  # commas->';', no RC flip (forward)
+
     def test_single_index_sample_gets_computed_override_not_blank(self):
         """In a run that forces per-sample OverrideCycles, a single-index sample
         (index1 only, no index_pair, no explicit override) must get a COMPUTED
@@ -243,15 +257,14 @@ class TestSampleSheetV2Exporter:
         """A CRLF sequence must be quoted (the \\n already triggers, but the \\r should be preserved inside quotes)."""
         assert SampleSheetV2Exporter._escape_csv("foo\r\nbar") == '"foo\r\nbar"'
 
-    def test_export_escapes_override_cycles_with_comma(self):
-        """Per-sample override_cycles containing a comma must be CSV-quoted.
-
-        Some legacy stored values use commas as segment separators (see
-        test_override_cycles_complex_pattern). Those still need to be emitted
-        as a single CSV cell, not split across columns. Per-sample
-        OverrideCycles column is emitted only when global inference fails
-        (samples disagree on effective index lengths), so two samples with
-        different index lengths force the per-sample path.
+    def test_export_normalizes_legacy_comma_override_to_semicolon(self):
+        """A legacy comma-separated override_cycles is normalized to the BCL
+        Convert ';' separator on export (regardless of instrument), so it is a
+        single CSV cell with the correct separator — not emitted with literal
+        commas (which BCL Convert can't parse and which would also split the
+        row). Per-sample OverrideCycles column is emitted only when global
+        inference fails (samples disagree on effective index lengths), so two
+        samples with different index lengths force the per-sample path.
         """
         run = SequencingRun(
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
@@ -279,8 +292,10 @@ class TestSampleSheetV2Exporter:
         )
 
         output = SampleSheetV2Exporter.export(run)
-        # The comma-containing value must be quoted so the row keeps the right column count.
-        assert '"Y*,I8,I8,Y*"' in output
+        # Normalized to ';' (BCL Convert separator); no literal comma remains, so
+        # no CSV-quoting is needed and the row keeps the right column count.
+        assert "Y*;I8;I8;Y*" in output
+        assert '"Y*,I8,I8,Y*"' not in output
 
     def test_export_escapes_reference_genome_with_comma(self):
         """analysis.reference_genome with a comma must be quoted in DRAGEN sections."""
@@ -652,3 +667,31 @@ class TestApplicationSectionsAcrossTestProfiles:
 
         assert output.count("[BCLConvert_Data]") == 1
         assert output.count("[BCLConvert_Settings]") == 1
+
+    def test_single_index_sample_override_cycles_on_profile_export_path(self):
+        """The production (profile-driven) export path must compute OverrideCycles
+        for a single-index sample (index1 only, no index_pair, no explicit
+        override) — not emit a blank cell, which would misroute its reads."""
+        app_profile = ApplicationProfile(
+            name="BCLConvertNextera",
+            version="1.0.0",
+            application_type="BclConvert",
+            application_name="BCLConvert",
+            settings={"SoftwareVersion": "4.3.6"},
+            data_fields=["Sample_ID", "OverrideCycles"],
+            data={},
+        )
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[Sample(sample_id="S_SINGLE", test_id="WGS", index1=Index(
+                name="i7", sequence="ATTACTCG", index_type=IndexType.I7))],
+        )
+        test_profile_repo = _StubTestProfileRepo({"WGS": self._make_test_profile("WGS")})
+        app_profile_repo = _StubAppProfileRepo({("BCLConvertNextera", "1.0.0"): app_profile})
+
+        output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
+        # index1 8bp over 8 index1 cycles -> I8; absent index2 over 8 -> N8.
+        # The single-index sample's OverrideCycles cell must be computed, not blank.
+        assert "S_SINGLE,Y151;I8;N8;Y151" in output

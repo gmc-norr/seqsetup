@@ -883,6 +883,52 @@ class TestOverrideCyclesMatchRunCycles:
         assert not [e for e in result.configuration_errors
                     if e.category == "override_cycles_mismatch"]
 
+    def test_single_end_three_segment_override_not_blocked(self):
+        # Single-end run (read2=0): the canonical 3-segment override must not be
+        # wrongly flagged (it has no Read2 segment).
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 0, 10, 10),  # read2=0 → single-end
+            samples=[Sample(sample_id="S1", index1=self._idx(),
+                            override_cycles="Y151;I10;I10")],
+        )
+        result = ValidationService.validate_run(run)
+        assert not [e for e in result.configuration_errors
+                    if e.category == "override_cycles_mismatch"]
+
+    def test_single_end_four_segment_override_with_zero_read2_ok(self):
+        # The auto-calc path emits "...;Y0" for read2=0; that must also pass.
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 0, 10, 10),
+            samples=[Sample(sample_id="S1", index1=self._idx(),
+                            override_cycles="Y151;I10;I10;Y0")],
+        )
+        result = ValidationService.validate_run(run)
+        assert not [e for e in result.configuration_errors
+                    if e.category == "override_cycles_mismatch"]
+
+    def test_genuine_mismatch_still_flagged_after_zero_filter(self):
+        # The zero-filter must not mask a real read1 mismatch.
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[Sample(sample_id="S1", index1=self._idx(),
+                            override_cycles="Y100;I10;I10;Y151")],
+        )
+        result = ValidationService.validate_run(run)
+        assert any(e.category == "override_cycles_mismatch"
+                   for e in result.configuration_errors)
+
 
 class TestMissingTestIdRequiresApproval:
     """When profile repos are configured, samples without test_id must block approval.

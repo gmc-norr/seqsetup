@@ -117,12 +117,26 @@ class TestCleartextTransportGate:
         svc = LDAPService(cfg)
         svc._get_server()  # no raise — TLS transport
 
-    def test_use_ssl_not_gated(self, monkeypatch):
+    def test_explicit_ldap_scheme_with_use_ssl_is_still_gated(self, monkeypatch):
+        # ldap3 derives transport from the URL SCHEME, not the use_ssl kwarg:
+        # Server('ldap://...', use_ssl=True) binds in CLEARTEXT (ssl=False).
+        # The gate must key on the resolved transport, not trust use_ssl.
         monkeypatch.delenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", raising=False)
         cfg = _build_config()
+        cfg.server_url = "ldap://dc.example.com"
         cfg.use_ssl = True
         svc = LDAPService(cfg)
-        svc._get_server()  # no raise
+        with pytest.raises(LDAPError, match="(?i)cleartext|plaintext|tls|ssl"):
+            svc._get_server()
+
+    def test_bare_host_with_use_ssl_not_gated_and_resolves_to_ssl(self, monkeypatch):
+        # No explicit scheme + use_ssl=True -> ldap3 honors use_ssl (ssl=True).
+        monkeypatch.delenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", raising=False)
+        cfg = _build_config()
+        cfg.server_url = "dc.example.com"
+        cfg.use_ssl = True
+        server = LDAPService(cfg)._get_server()  # no raise
+        assert server.ssl is True  # actually uses TLS
 
 
 class TestUserDnPatternEscaping:

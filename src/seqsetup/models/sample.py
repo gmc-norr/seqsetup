@@ -16,7 +16,8 @@ _VALID_OVERRIDE_CYCLES_RE = re.compile(r'^[YIUN0-9*;,]*$')
 
 # A per-read/per-index override PATTERN is a single segment (no ';'/',' joiner)
 # in the same Y/I/U/N/digit/* alphabet — e.g. "Y*", "N2Y*", "U8Y*", "I8N2".
-_VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*$')
+# ``\Z`` (not ``$``) so a trailing newline can't sneak past, per project convention.
+_VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*\Z')
 
 
 @dataclass
@@ -370,6 +371,25 @@ class Sample:
             )
             override_cycles = None
 
+        def _recover_pattern(field_name):
+            """Legacy override-PATTERN fields were stored without the grammar
+            check now enforced in __setattr__; recover (drop to None + log)
+            rather than make the whole run unloadable on a legacy bad value."""
+            value = data.get(field_name)
+            if value is None:
+                return None
+            try:
+                cls._normalize_override_pattern(field_name, value)
+                return value
+            except ValueError:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Sample %r has invalid %s %r in stored data; loading with "
+                    "%s=None. Re-save the run to drop the corruption.",
+                    data.get("id"), field_name, value, field_name,
+                )
+                return None
+
         return cls(
             id=data["id"],
             sample_id=data.get("sample_id", ""),
@@ -387,10 +407,10 @@ class Sample:
             barcode_mismatches_index2=data["barcode_mismatches_index2"] if "barcode_mismatches_index2" in data else 1,
             index1_cycles=data.get("index1_cycles"),
             index2_cycles=data.get("index2_cycles"),
-            index1_override_pattern=data.get("index1_override_pattern"),
-            index2_override_pattern=data.get("index2_override_pattern"),
-            read1_override_pattern=data.get("read1_override_pattern"),
-            read2_override_pattern=data.get("read2_override_pattern"),
+            index1_override_pattern=_recover_pattern("index1_override_pattern"),
+            index2_override_pattern=_recover_pattern("index2_override_pattern"),
+            read1_override_pattern=_recover_pattern("read1_override_pattern"),
+            read2_override_pattern=_recover_pattern("read2_override_pattern"),
             analyses=data.get("analyses", []),
             description=data.get("description", ""),
             metadata=data.get("metadata", {}),

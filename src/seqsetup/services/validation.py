@@ -332,14 +332,16 @@ class ValidationService:
         if not rc:
             return []
 
-        # Expected segment cycle-sums, in OverrideCycles order. Index segments are
-        # only present when the run reads those index cycles (matches the exporter).
-        expected = [rc.read1_cycles]
-        if rc.index1_cycles > 0:
-            expected.append(rc.index1_cycles)
-        if rc.index2_cycles > 0:
-            expected.append(rc.index2_cycles)
-        expected.append(rc.read2_cycles)
+        # Expected non-zero segment cycle-sums, in OverrideCycles order. Only
+        # reads/indexes with >0 cycles produce a segment (a single-end run has
+        # read2=0 and no Read2 segment). We compare against the non-zero segment
+        # sums of the override: a zero-cycle segment (e.g. a trailing "Y0" the
+        # auto-calc path emits for read2=0) is a no-op and must not cause a
+        # spurious length mismatch.
+        expected = [
+            c for c in (rc.read1_cycles, rc.index1_cycles, rc.index2_cycles, rc.read2_cycles)
+            if c > 0
+        ]
 
         bad: list[str] = []
         for sample in run.samples:
@@ -350,15 +352,13 @@ class ValidationService:
                 continue
             if "*" in oc:
                 continue  # unresolved wildcard — cannot statically reconcile
-            segments = [s for s in re.split(r"[;,]", oc) if s]
-            if len(segments) != len(expected):
+            sums = [
+                sum(int(n) for n in re.findall(r"\d+", seg))
+                for seg in re.split(r"[;,]", oc) if seg
+            ]
+            sums = [s for s in sums if s > 0]  # drop zero-cycle (absent read/index) segments
+            if sums != expected:
                 bad.append(sample.sample_id or sample.id)
-                continue
-            for want, seg in zip(expected, segments):
-                got = sum(int(n) for n in re.findall(r"\d+", seg))
-                if got != want:
-                    bad.append(sample.sample_id or sample.id)
-                    break
 
         if not bad:
             return []
