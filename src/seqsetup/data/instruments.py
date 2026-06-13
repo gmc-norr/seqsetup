@@ -84,8 +84,13 @@ def _get_synced_instruments() -> dict:
                 }
                 return _synced_instruments_cache
         except Exception:
-            # Silently fall back to YAML if DB unavailable
-            pass
+            # Fall back to YAML if the DB-synced instruments can't be loaded,
+            # but log it: a persistent failure means the app runs on YAML
+            # defaults while the operator believes DB-synced config is active.
+            logger.warning(
+                "Could not load DB-synced instruments; falling back to YAML defaults",
+                exc_info=True,
+            )
 
         return {}
 

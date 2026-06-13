@@ -51,6 +51,21 @@ class TestUniqueDualValidation:
         assert result.is_valid
         assert result.errors == []
 
+    def test_duplicate_sequence_under_different_names_warns(self):
+        # Two pairs with identical i7+i5 sequences but different names are
+        # physically indistinguishable — warn (not error, to allow aliasing).
+        kit = IndexKit(
+            name="DupSeq",
+            index_mode=IndexMode.UNIQUE_DUAL,
+            index_pairs=[
+                _make_pair("UDP001", "AACCGGTT", "TTGGCCAA"),
+                _make_pair("UDP002", "AACCGGTT", "TTGGCCAA"),
+            ],
+        )
+        result = IndexValidator.validate(kit)
+        assert result.is_valid  # warning, not error
+        assert any("sequence" in w.lower() for w in result.warnings)
+
     def test_empty_pairs(self):
         kit = IndexKit(name="Empty", index_mode=IndexMode.UNIQUE_DUAL, index_pairs=[])
         result = IndexValidator.validate(kit)

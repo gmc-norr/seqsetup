@@ -225,6 +225,17 @@ Example nginx configuration:
        }
    }
 
+.. important::
+
+   Behind a **TLS-terminating** reverse proxy (HTTPS at the proxy, plain HTTP to
+   the app), the app sees ``http`` as its own scheme while browsers send
+   ``Origin: https://your-host``. The CSRF Origin check then rejects every
+   state-changing request (POST/PUT/PATCH/DELETE) with HTTP 403, and HSTS is not
+   emitted. Set ``SEQSETUP_TRUSTED_ORIGINS`` to your public HTTPS origin(s)
+   (comma-separated, e.g. ``https://seqsetup.example.com``) so the Origin check
+   and security headers work correctly. This is required production config
+   alongside ``SEQSETUP_HTTPS_ONLY`` whenever TLS is terminated upstream.
+
 Health Checks
 -------------
 

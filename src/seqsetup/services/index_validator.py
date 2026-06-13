@@ -94,6 +94,7 @@ class IndexValidator:
             return
 
         seen_names: set[str] = set()
+        seen_sequences: dict[tuple, str] = {}  # (i7_seq, i5_seq) -> first pair name
 
         for pair in kit.index_pairs:
             # Check pair name
@@ -105,6 +106,21 @@ class IndexValidator:
             if pair.name in seen_names:
                 result.add_error(f"Duplicate index pair name: '{pair.name}'.")
             seen_names.add(pair.name)
+
+            # Warn on duplicate SEQUENCES under different names — physically
+            # indistinguishable indexes (likely a data-entry error). A warning,
+            # not an error, since deliberate aliasing is occasionally valid.
+            i7_seq = pair.index1.sequence if pair.index1 else None
+            i5_seq = pair.index2.sequence if pair.index2 else None
+            if i7_seq:
+                key = (i7_seq, i5_seq)
+                if key in seen_sequences and seen_sequences[key] != pair.name:
+                    result.add_warning(
+                        f"Pairs '{seen_sequences[key]}' and '{pair.name}' have identical "
+                        f"index sequences; they are indistinguishable at demultiplexing."
+                    )
+                else:
+                    seen_sequences.setdefault(key, pair.name)
 
             # Validate i7 (index1) - required
             if not pair.index1 or not pair.index1.sequence:
