@@ -125,6 +125,26 @@ class TestRejectBrokenQuoting:
         with pytest.raises(ValueError, match=r'Line 4: '):
             parse_pasted_samples(data)
 
+    def test_line_break_inside_cell_is_named_in_error(self):
+        # An Excel cell with Alt+Enter looks the same as a stray quote closed
+        # on a later line; both are refused, and the message says so.
+        data = 'S1,WGS,"note\nline2"\nS2,WGS,x\n'
+        with pytest.raises(ValueError, match=r"Line 1: .*more than one line"):
+            parse_pasted_samples(data)
+
+
+class TestLineEndings:
+    """Old-Mac (CR-only) line endings used to crash the parser with an
+    unhandled csv.Error; they are ordinary line breaks."""
+
+    def test_cr_only_line_endings_parse(self):
+        result = parse_pasted_samples("S1,WGS\rS2,WGS\r")
+        assert [s.sample_id for s in result] == ["S1", "S2"]
+
+    def test_crlf_line_endings_parse(self):
+        result = parse_pasted_samples("S1\tWGS\r\nS2\tWGS\r\n")
+        assert [s.sample_id for s in result] == ["S1", "S2"]
+
 
 class TestRejectMissingSampleId:
     """A row with content but no sample_id is a data error — silent skip

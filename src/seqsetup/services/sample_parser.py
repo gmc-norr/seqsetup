@@ -137,12 +137,22 @@ def _detect_delimiter(paste_data: str) -> str:
     return ","
 
 
-def _broken_quote_error(line_no: int) -> ValueError:
-    """Reject the whole paste: a broken quote merges or rewrites rows, so
-    samples would silently vanish or change ID."""
+def _unreadable_line_error(line_no: int) -> ValueError:
+    """Reject the whole paste: csv could not read this record (e.g. an
+    unclosed quote, or text after a closing quote)."""
     return ValueError(
-        f'Line {line_no}: a double quote (") is not closed correctly, so rows '
-        f"would be merged or changed. Fix or remove the quote and paste again."
+        f'Line {line_no}: this line could not be read — check it for a double '
+        f'quote (") that is not closed correctly, then paste again.'
+    )
+
+
+def _multiline_cell_error(line_no: int) -> ValueError:
+    """Reject the whole paste: a cell spanning lines means rows were merged
+    into it, so samples would silently vanish."""
+    return ValueError(
+        f"Line {line_no}: a cell runs over more than one line — a double "
+        f'quote (") that is not closed, or a line break inside a cell. Rows '
+        f"would be merged, so fix it and paste again."
     )
 
 
@@ -175,6 +185,10 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
     if paste_data.startswith("﻿"):
         paste_data = paste_data[1:]
 
+    # Old-Mac CR-only line endings are line breaks (csv.reader would raise on
+    # them). Normalizing CRLF too keeps line numbers the same for all three.
+    paste_data = paste_data.replace("\r\n", "\n").replace("\r", "\n")
+
     delimiter = _detect_delimiter(paste_data)
     # strict=True: an unclosed quote or text after a closing quote ('"S2"x')
     # raises instead of being silently repaired.
@@ -192,11 +206,11 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
         except StopIteration:
             break
         except csv.Error as exc:
-            raise _broken_quote_error(start_line) from exc
+            raise _unreadable_line_error(start_line) from exc
         # A cell holding a line break means a quote opened on one line and
         # closed on a later one: every row in between was merged into it.
-        if any("\n" in cell or "\r" in cell for cell in raw):
-            raise _broken_quote_error(start_line)
+        if any("\n" in cell for cell in raw):
+            raise _multiline_cell_error(start_line)
         line_no, start_line = start_line, reader.line_num + 1
         if not any(cell.strip() for cell in raw):
             continue  # skip wholly blank rows
