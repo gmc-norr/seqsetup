@@ -904,3 +904,73 @@ class TestProfileDrivenBclConvertData:
             ["S1", "1", "ATTACTCG", "TATAGCCT"],
             ["S1", "2", "ATTACTCG", "TATAGCCT"],
         ]
+
+
+class TestSampleIdentifiersWrittenExactly:
+    """A sample name made only of letters, digits, '-' and '_' is valid and
+    must reach the sheet exactly as entered. The spreadsheet-formula guard
+    used to prefix "'" to a leading '-', so '-S1' became "'-S1": the FASTQ
+    and LIMS names no longer matched the approved sample. Such a name cannot
+    carry a formula payload, so it needs no guard; other text keeps it."""
+
+    def _run(self, sample_id="-S1", analysis=None):
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[Sample(
+                sample_id=sample_id,
+                test_id="WGS",
+                index_pair=IndexPair(
+                    id="p1", name="p1",
+                    index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                    index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                ),
+            )],
+        )
+        if analysis:
+            run.add_analysis(analysis)
+        return run
+
+    def _section(self, output, name):
+        return TestApplicationSectionsAcrossTestProfiles._extract_section(output, name)
+
+    def test_leading_dash_kept_in_bclconvert_data(self):
+        output = SampleSheetV2Exporter.export(self._run())
+        assert "\n-S1,ATTACTCG,TATAGCCT" in self._section(output, "BCLConvert_Data")
+
+    def test_leading_dash_kept_in_cloud_data(self):
+        output = SampleSheetV2Exporter.export(self._run())
+        cloud = self._section(output, "Cloud_Data")
+        assert "\n-S1," in cloud
+        assert ",-S1_ATTACTCG_TATAGCCT" in cloud
+
+    def test_leading_dash_kept_in_profile_data_section(self):
+        profile = ApplicationProfile(
+            name="BCLConvertNextera", version="1.0.0",
+            application_type="Dragen", application_name="BCLConvert",
+            data_fields=["Sample_ID", "Index"], data={},
+        )
+        test_profile_repo = _StubTestProfileRepo({"WGS": TestProfile(
+            test_type="WGS", test_name="WGS", version="1.0.0",
+            application_profiles=[ApplicationProfileReference(
+                profile_name="BCLConvertNextera", profile_version="1.0.0")],
+        )})
+        app_profile_repo = _StubAppProfileRepo({("BCLConvertNextera", "1.0.0"): profile})
+        output = SampleSheetV2Exporter.export(self._run(), test_profile_repo, app_profile_repo)
+        assert "\n-S1,ATTACTCG" in self._section(output, "BCLConvert_Data")
+
+    def test_leading_dash_kept_in_dragen_data(self):
+        analysis = Analysis(
+            name="Germline", analysis_type=AnalysisType.DRAGEN_ONBOARD,
+            dragen_pipeline=DRAGENPipeline.GERMLINE, reference_genome="hg38",
+            sample_ids=["-S1"],
+        )
+        output = SampleSheetV2Exporter.export(self._run(analysis=analysis))
+        assert "\n-S1" in self._section(output, "DragenGermline_Data")
+
+    def test_formula_like_text_still_guarded(self):
+        # Not a valid sample name: validation blocks it, and the sheet keeps
+        # the formula guard in case it is ever opened in a spreadsheet.
+        output = SampleSheetV2Exporter.export(self._run(sample_id="=1+2"))
+        assert "\n'=1+2," in self._section(output, "BCLConvert_Data")

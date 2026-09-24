@@ -341,3 +341,31 @@ class TestSampleSheetV1EscapeCsv:
     def test_escape_csv_quotes_crlf(self):
         """A CRLF sequence must be quoted (preserving the \\r inside quotes)."""
         assert SampleSheetV1Exporter._escape_csv("foo\r\nbar") == '"foo\r\nbar"'
+
+
+class TestSampleIdentifiersWrittenExactly:
+    """v1 twin of the v2 test class: a valid sample name ('-S1') must reach
+    [Data] exactly, not as "'-S1". bcl2fastq names FASTQs by Sample_Name,
+    so that column is kept exact too."""
+
+    def _export(self, sample_id="-S1", sample_name="-S1"):
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.MISEQ,
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[Sample(
+                sample_id=sample_id,
+                sample_name=sample_name,
+                index_pair=IndexPair(
+                    id="p1", name="p1",
+                    index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                    index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                ),
+            )],
+        )
+        return SampleSheetV1Exporter.export(run).split("[Data]", 1)[1]
+
+    def test_leading_dash_kept_in_sample_id_and_name(self):
+        assert "\n-S1,-S1," in self._export()
+
+    def test_formula_like_text_still_guarded(self):
+        assert "\n'=1+2,'=1+2," in self._export(sample_id="=1+2", sample_name="=1+2")

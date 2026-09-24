@@ -11,7 +11,7 @@ from ..data.instruments import (
 from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
-from .samplesheet_v1_exporter import _reverse_complement
+from .samplesheet_v1_exporter import _PLAIN_IDENTIFIER_RE, _reverse_complement
 
 if TYPE_CHECKING:
     from ..repositories.test_profile_repo import TestProfileRepository
@@ -217,7 +217,7 @@ class SampleSheetV2Exporter:
                 if has_lanes:
                     row.append(str(lane) if lane else "")
 
-                row.append(cls._escape_csv(sample.sample_id))
+                row.append(cls._escape_identifier(sample.sample_id))
                 # Escape index sequences too — parity with the profile-driven
                 # path. They are model-validated to [ACGTN], but Index has no
                 # __setattr__ so a post-construction reassignment could bypass
@@ -273,7 +273,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenGermline_Data]\n")
         output.write("Sample_ID\n")
         for sample_id in analysis.sample_ids:
-            output.write(f"{cls._escape_csv(sample_id)}\n")
+            output.write(f"{cls._escape_identifier(sample_id)}\n")
         output.write("\n")
 
     @classmethod
@@ -289,7 +289,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenSomatic_Data]\n")
         output.write("Sample_ID\n")
         for sample_id in analysis.sample_ids:
-            output.write(f"{cls._escape_csv(sample_id)}\n")
+            output.write(f"{cls._escape_identifier(sample_id)}\n")
         output.write("\n")
 
     @classmethod
@@ -305,7 +305,7 @@ class SampleSheetV2Exporter:
         output.write("[DragenRNA_Data]\n")
         output.write("Sample_ID\n")
         for sample_id in analysis.sample_ids:
-            output.write(f"{cls._escape_csv(sample_id)}\n")
+            output.write(f"{cls._escape_identifier(sample_id)}\n")
         output.write("\n")
 
     @classmethod
@@ -406,6 +406,17 @@ class SampleSheetV2Exporter:
         if "," in value or '"' in value or "\n" in value or "\r" in value:
             return '"' + value.replace('"', '""') + '"'
         return value
+
+    @classmethod
+    def _escape_identifier(cls, value: str) -> str:
+        """Escape a sample identifier (Sample_ID, LibraryName). A name in the
+        valid sample ID alphabet (letters, digits, '-', '_') is written
+        exactly: it cannot carry a formula payload, and the formula guard's
+        "'" prefix on a leading '-' would change the sample's identity in the
+        sheet ('-S1' -> "'-S1"). Anything else goes through ``_escape_csv``."""
+        if value and _PLAIN_IDENTIFIER_RE.fullmatch(value):
+            return value
+        return cls._escape_csv(value)
 
     @classmethod
     def _write_application_sections_from_profiles(
@@ -536,7 +547,7 @@ class SampleSheetV2Exporter:
             row = []
             for field, col in columns:
                 if col == "Sample_ID":
-                    row.append(cls._escape_csv(sample.sample_id))
+                    row.append(cls._escape_identifier(sample.sample_id))
                 elif col == "Lane":
                     row.append(str(lane) if lane else "")
                 elif col == "Index":
@@ -595,9 +606,9 @@ class SampleSheetV2Exporter:
             library_name = f"{sample.sample_id}_{i7}_{i5}" if i7 and i5 else sample.sample_id
 
             row = [
-                cls._escape_csv(sample.sample_id),
+                cls._escape_identifier(sample.sample_id),
                 cls._escape_csv(project_name),
-                cls._escape_csv(library_name),
+                cls._escape_identifier(library_name),
             ]
             output.write(",".join(row) + "\n")
 

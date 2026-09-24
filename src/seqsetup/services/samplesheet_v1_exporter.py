@@ -1,5 +1,6 @@
 """Generate Illumina SampleSheet v1 (IEM) format."""
 
+import re
 from datetime import datetime
 from io import StringIO
 from typing import TextIO
@@ -10,6 +11,10 @@ from ..models.sequencing_run import InstrumentPlatform, SequencingRun
 
 # Reverse complement lookup table
 _RC = str.maketrans("ACGTacgt", "TGCAtgca")
+
+# The valid sample ID alphabet (ValidationService._SAMPLE_ID_PATTERN). A name
+# made only of these characters cannot carry a spreadsheet formula payload.
+_PLAIN_IDENTIFIER_RE = re.compile(r"[A-Za-z0-9_\-]+")
 
 
 def _reverse_complement(seq: str) -> str:
@@ -132,8 +137,8 @@ class SampleSheetV1Exporter:
                 if has_lanes:
                     row.append(str(lane) if lane else "")
 
-                row.append(cls._escape_csv(sample.sample_id))
-                row.append(cls._escape_csv(sample.sample_name))
+                row.append(cls._escape_identifier(sample.sample_id))
+                row.append(cls._escape_identifier(sample.sample_name))
                 row.append(cls._escape_csv(sample.project or ""))
                 row.append(i7_seq)
                 row.append(i5_seq)
@@ -142,6 +147,15 @@ class SampleSheetV1Exporter:
                 output.write(",".join(row) + "\n")
 
         output.write("\n")
+
+    @classmethod
+    def _escape_identifier(cls, value: str) -> str:
+        """Escape a sample identifier. A name in the valid sample ID alphabet
+        is written exactly — the formula guard's "'" prefix on a leading '-'
+        would change the sample's identity. Anything else: ``_escape_csv``."""
+        if value and _PLAIN_IDENTIFIER_RE.fullmatch(value):
+            return value
+        return cls._escape_csv(value)
 
     @classmethod
     def _escape_csv(cls, value: str) -> str:
