@@ -99,6 +99,33 @@ class TestParseSampleMixUpClassBugs:
         assert result[0].sample_id == 'Patient "A"'
 
 
+class TestRejectBrokenQuoting:
+    """A stray double quote must reject the paste, naming the line — not merge
+    the following rows into one cell (whose samples then silently vanish) or
+    quietly rewrite a sample ID ('"S2"x' -> 'S2x')."""
+
+    def test_unclosed_quote_rejects_instead_of_swallowing_rows(self):
+        data = 'S1\tWGS\n"S2\tWGS\nS3\tWGS\nS4\tWGS'
+        with pytest.raises(ValueError, match=r'Line 2: .*quote'):
+            parse_pasted_samples(data)
+
+    def test_text_after_closing_quote_rejects(self):
+        data = 'S1,WGS\n"S2"x,WGS\nS3,WGS\n'
+        with pytest.raises(ValueError, match=r'Line 2: .*quote'):
+            parse_pasted_samples(data)
+
+    def test_quoted_cell_spanning_lines_rejects(self):
+        # Quote closed two lines later: valid CSV, but it merges S2 and S3.
+        data = 'S1\tWGS\n"S2\tWGS\nS3"\tWGS\nS4\tWGS\n'
+        with pytest.raises(ValueError, match=r'Line 2: .*quote'):
+            parse_pasted_samples(data)
+
+    def test_error_names_first_line_after_header(self):
+        data = 'Sample_ID,Test_ID\nS1,WGS\nS2,WGS\n"S3,WGS\nS4,WGS\n'
+        with pytest.raises(ValueError, match=r'Line 4: '):
+            parse_pasted_samples(data)
+
+
 class TestRejectMissingSampleId:
     """A row with content but no sample_id is a data error — silent skip
     would route the dropped sample's reads to the Undetermined bucket."""

@@ -137,6 +137,15 @@ def _detect_delimiter(paste_data: str) -> str:
     return ","
 
 
+def _broken_quote_error(line_no: int) -> ValueError:
+    """Reject the whole paste: a broken quote merges or rewrites rows, so
+    samples would silently vanish or change ID."""
+    return ValueError(
+        f'Line {line_no}: a double quote (") is not closed correctly, so rows '
+        f"would be merged or changed. Fix or remove the quote and paste again."
+    )
+
+
 def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
     """
     Parse pasted sample data.
@@ -167,19 +176,34 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
         paste_data = paste_data[1:]
 
     delimiter = _detect_delimiter(paste_data)
-    reader = csv.reader(io.StringIO(paste_data), delimiter=delimiter)
+    # strict=True: an unclosed quote or text after a closing quote ('"S2"x')
+    # raises instead of being silently repaired.
+    reader = csv.reader(io.StringIO(paste_data), delimiter=delimiter, strict=True)
     # Capture (file_line_no, clamped_parts) per non-blank row so error
     # messages can name the actual source line the user can find in their
     # file. csv.reader.line_num is 1-based and tracks the input stream
-    # position regardless of blank-row filtering.
+    # position regardless of blank-row filtering. A record starts on the line
+    # after the previous record ended.
     rows: list[tuple[int, list[str]]] = []
-    for raw in reader:
+    start_line = 1
+    while True:
+        try:
+            raw = next(reader)
+        except StopIteration:
+            break
+        except csv.Error as exc:
+            raise _broken_quote_error(start_line) from exc
+        # A cell holding a line break means a quote opened on one line and
+        # closed on a later one: every row in between was merged into it.
+        if any("\n" in cell or "\r" in cell for cell in raw):
+            raise _broken_quote_error(start_line)
+        line_no, start_line = start_line, reader.line_num + 1
         if not any(cell.strip() for cell in raw):
             continue  # skip wholly blank rows
         # Clamp each cell to MAX_CELL_LEN per the CLAUDE.md input-sanitization
         # rule; downstream code assumes bounded strings (model invariants, DB
         # field widths, render budgets).
-        rows.append((reader.line_num, [cell.strip()[:_MAX_CELL_LEN] for cell in raw]))
+        rows.append((line_no, [cell.strip()[:_MAX_CELL_LEN] for cell in raw]))
 
     # Default column mapping (no header)
     column_mapping = {"sample_id": 0, "test_id": 1, "index1": 2, "index2": 3}
