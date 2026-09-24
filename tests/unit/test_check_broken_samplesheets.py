@@ -1,5 +1,7 @@
 """Tests for tools/check_broken_samplesheets.py (read-only server check)."""
 
+import mongomock
+
 from seqsetup.models.application_profile import ApplicationProfile
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
@@ -47,27 +49,14 @@ def _sheet(data_section: str) -> str:
     )
 
 
-class _FakeCollection:
-    """Supports only find() — any write attempt raises AttributeError, so the
-    CheckRuns tests also prove the tool never writes."""
-
-    def __init__(self, docs):
-        self._docs = docs
-
-    def find(self, filter=None, projection=None):
-        statuses = ((filter or {}).get("status") or {}).get("$in")
-        return [d for d in self._docs if statuses is None or d.get("status") in statuses]
-
-
-class _FakeDb:
-    def __init__(self, runs, app_profiles=()):
-        self._collections = {
-            "runs": _FakeCollection(list(runs)),
-            "application_profiles": _FakeCollection(list(app_profiles)),
-        }
-
-    def __getitem__(self, name):
-        return self._collections[name]
+def _FakeDb(runs, app_profiles=()):
+    """mongomock database, so check_runs' real query and projection apply."""
+    db = mongomock.MongoClient()["seqsetup"]
+    if runs:
+        db["runs"].insert_many([dict(r) for r in runs])
+    if app_profiles:
+        db["application_profiles"].insert_many([dict(p) for p in app_profiles])
+    return db
 
 
 def _run_doc(name, status, sheet, samples):
@@ -173,6 +162,41 @@ class TestFindProblems:
             sheet, [{"sample_id": "S1", "lanes": []}], {"RefGenome"}
         ) == ["[DragenGermline_Data] header has untranslated column(s): RefGenome"]
 
+    def test_repeated_section_names_are_all_checked(self):
+        # Two BCLConvert profiles in one run produce two [BCLConvert_Data]
+        # sections; a clean second one must not hide a broken first one.
+        sheet = (
+            "[BCLConvert_Data]\nSample_ID,Lane,IndexI7\nS1,1,ACGT\n\n"
+            "[BCLConvert_Data]\nSample_ID,Lane,Index\nS2,1,TTGG\nS2,2,TTGG\n"
+        )
+        problems = find_problems(
+            sheet,
+            [{"sample_id": "S1", "lanes": [1, 2]}, {"sample_id": "S2", "lanes": [1, 2]}],
+            DEFAULT_UNTRANSLATED,
+        )
+        assert problems == [
+            "[BCLConvert_Data] header has untranslated column(s): IndexI7",
+            "[BCLConvert_Data] sample S1: no row for lane(s) 2",
+        ]
+
+    def test_lanes_checked_only_in_bclconvert_data(self):
+        # Only BCLConvert rows are per lane; other sections keep one row.
+        sheet = (
+            "[BCLConvert_Data]\nSample_ID,Lane,Index\nS1,1,ACGT\nS1,2,ACGT\n\n"
+            "[DragenGermline_Data]\nSample_ID,Lane\nS1,1\n"
+        )
+        assert find_problems(
+            sheet, [{"sample_id": "S1", "lanes": [1, 2]}], DEFAULT_UNTRANSLATED
+        ) == []
+
+    def test_invalid_stored_lanes_are_ignored_like_the_model(self):
+        # Sample.__setattr__ keeps only positive ints, so the exporter never
+        # saw '1', True or 0 — expecting rows for them would be a false alarm.
+        sheet = _sheet("Sample_ID,Lane,Index\nS1,2,ACGT\n")
+        assert find_problems(
+            sheet, [{"sample_id": "S1", "lanes": ["1", True, 0, 2]}], DEFAULT_UNTRANSLATED
+        ) == []
+
 
 class TestUntranslatedNames:
     """untranslated_names collects Translate source names from all profiles."""
@@ -183,6 +207,10 @@ class TestUntranslatedNames:
 
     def test_ignores_identity_mappings_and_missing_translate(self):
         names = untranslated_names([{"translate": {"Index": "Index"}}, {}])
+        assert names == {"IndexI7", "IndexI5"}
+
+    def test_ignores_non_dict_translate(self):
+        names = untranslated_names([{"translate": ["IndexI7"]}, {"translate": None}])
         assert names == {"IndexI7", "IndexI5"}
 
 
@@ -200,6 +228,24 @@ class TestCheckRuns:
         assert "R1" in ready_part and "A1" not in ready_part
         assert "A1" in archived_part
         assert "no row for lane(s) 2" in ready_part
+
+    def test_legacy_complete_status_is_reported_as_archived(self):
+        # SequencingRun.from_dict loads the pre-rename status "complete" as
+        # ARCHIVED, and the API serves its saved sheet.
+        db = _FakeDb([
+            _run_doc("C1", "complete", OLD_SHEET, [{"sample_id": "S1", "lanes": [1]}]),
+        ])
+        report, broken = check_runs(db)
+        assert broken == 1
+        assert "C1" in report.split("ARCHIVED")[1]
+
+    def test_ready_advice_warns_sheet_may_already_have_been_used(self):
+        db = _FakeDb([
+            _run_doc("R1", "ready", OLD_SHEET, [{"sample_id": "S1", "lanes": [1]}]),
+        ])
+        report, _ = check_runs(db)
+        ready_part = report.split("ARCHIVED")[0]
+        assert "may already have been downloaded" in ready_part
 
     def test_draft_runs_are_not_checked(self):
         db = _FakeDb([

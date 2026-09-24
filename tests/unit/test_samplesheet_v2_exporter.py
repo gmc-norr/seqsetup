@@ -766,7 +766,7 @@ class TestProfileDrivenBclConvertData:
             translate=translate or {},
         )
 
-    def _export(self, app_profile, samples):
+    def _export(self, app_profile, samples, section="BCLConvert_Data"):
         run = SequencingRun(
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
             flowcell_type="10B",
@@ -791,7 +791,7 @@ class TestProfileDrivenBclConvertData:
         })
         output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
         return TestApplicationSectionsAcrossTestProfiles._extract_section(
-            output, "BCLConvert_Data"
+            output, section
         ).strip().splitlines()
 
     def test_multi_lane_sample_gets_one_row_per_lane(self):
@@ -822,6 +822,46 @@ class TestProfileDrivenBclConvertData:
             "Sample_ID,Lane,Index,Index2",
             "S1,1,ATTACTCG,TATAGCCT",
         ]
+
+    def test_translated_field_gets_value_of_its_target_column(self):
+        # A field renamed to a real BCL Convert column must be filled like
+        # that column — a Sample_ID header over blank cells, or a Lane header
+        # without per-lane rows, would be worse than no translation at all.
+        profile = self._make_app_profile(
+            ["SampleID", "LaneNo", "Index", "Index2"],
+            translate={"SampleID": "Sample_ID", "LaneNo": "Lane"},
+        )
+        lines = self._export(profile, [self._make_sample("S1", [1, 2])])
+        assert lines == [
+            "Sample_ID,Lane,Index,Index2",
+            "S1,1,ATTACTCG,TATAGCCT",
+            "S1,2,ATTACTCG,TATAGCCT",
+        ]
+
+    def test_profile_with_empty_translate_key_exports(self):
+        # A YAML "Translate:" key with no entries loads as None.
+        data = yaml.safe_load(SHIPPED_BCLCONVERT_PROFILE.read_text())
+        data["DataFields"] = ["Sample_ID", "Lane", "Index", "Index2"]
+        data["Translate"] = None
+        profile = ApplicationProfile.from_yaml(data, "test.yaml")
+        lines = self._export(profile, [self._make_sample("S1", [1])])
+        assert lines == ["Sample_ID,Lane,Index,Index2", "S1,1,ATTACTCG,TATAGCCT"]
+
+    def test_non_bclconvert_section_keeps_one_row_per_sample(self):
+        # Per-lane rows are a demultiplexing concept; other application
+        # sections keep their previous single row (first lane).
+        profile = ApplicationProfile(
+            name="GermlineWGS",
+            version="1.0.0",
+            application_type="Dragen",
+            application_name="DragenGermline",
+            data_fields=["Sample_ID", "Lane"],
+            data={},
+        )
+        lines = self._export(
+            profile, [self._make_sample("S1", [1, 2])], section="DragenGermline_Data"
+        )
+        assert lines == ["Sample_ID,Lane", "S1,1"]
 
     def test_shipped_bclconvert_nextera_profile_exports_valid_data_section(self):
         profile = ApplicationProfile.from_yaml(

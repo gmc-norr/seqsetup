@@ -496,62 +496,59 @@ class SampleSheetV2Exporter:
         # Get data fields from profile, filtering out fields we handle specially
         data_fields = profile.data_fields or list(profile.data.keys())
 
-        # Write header row — Translate maps a profile field name to its sample
-        # sheet column name (e.g. IndexI7 -> Index); BCL Convert does not
-        # recognise the untranslated names. Escape admin-defined names defensively.
-        output.write(
-            ",".join(cls._escape_csv(str(profile.translate.get(f, f))) for f in data_fields)
-            + "\n"
-        )
+        # Translate maps a profile field name to its sample sheet column name
+        # (e.g. IndexI7 -> Index); BCL Convert does not recognise the
+        # untranslated names. The column name drives both the header and the
+        # value written, so a translated field is filled like the column it
+        # becomes. A YAML "Translate:" key with no entries loads as None.
+        translate = profile.translate or {}
+        columns = [(field, translate.get(field, field)) for field in data_fields]
 
-        # One row per (sample, lane), as in _write_bclconvert_data — writing
-        # only the first lane would send the other lanes' reads to Undetermined.
-        # Without a Lane column the rows would be identical, so write one.
-        has_lane_column = "Lane" in data_fields
-        rows_to_write = [
-            (sample, lane)
-            for sample in samples
-            for lane in (sample.lanes if has_lane_column and sample.lanes else [None])
-        ]
+        # Write header row — escape admin-defined column names defensively.
+        output.write(",".join(cls._escape_csv(str(col)) for _, col in columns) + "\n")
+
+        # BCLConvert: one row per (sample, lane), as in _write_bclconvert_data —
+        # writing only the first lane would send the other lanes' reads to
+        # Undetermined. Without a Lane column the rows would be identical, so
+        # write one. Other applications keep one row per sample (first lane).
+        expand_lanes = app_name == "BCLConvert" and any(col == "Lane" for _, col in columns)
+
+        def _row_lanes(sample):
+            if expand_lanes and sample.lanes:
+                return sample.lanes
+            return [sample.lanes[0] if sample.lanes else None]
+
+        rows_to_write = [(sample, lane) for sample in samples for lane in _row_lanes(sample)]
 
         # Write data rows. Every cell flows through ",".join()
         # so any comma or quote in admin/user-supplied content would shift
         # downstream columns — escape every variable interpolation.
         for sample, lane in rows_to_write:
             row = []
-            for field in data_fields:
-                if field == "Sample_ID":
+            for field, col in columns:
+                if col == "Sample_ID":
                     row.append(cls._escape_csv(sample.sample_id))
-                elif field == "Lane":
+                elif col == "Lane":
                     row.append(str(lane) if lane else "")
-                elif field == "Index":
+                elif col == "Index":
                     # i7 index sequence (model-validated against [ACGTN], but escape defensively)
                     row.append(cls._escape_csv(sample.index1_sequence or ""))
-                elif field == "Index2":
+                elif col == "Index2":
                     # i5 sequence in sample-sheet orientation.
                     row.append(cls._escape_csv(cls._resolve_i5(sample, run)))
-                elif field in profile.translate:
-                    # Handle translated fields (e.g., IndexI7 -> Index)
-                    original = profile.translate[field]
-                    if original == "Index":
-                        row.append(cls._escape_csv(sample.index1_sequence or ""))
-                    elif original == "Index2":
-                        row.append(cls._escape_csv(cls._resolve_i5(sample, run)))
-                    else:
-                        row.append(cls._escape_csv(str(profile.data.get(field, ""))))
-                elif field == "BarcodeMismatchesIndex1":
+                elif col == "BarcodeMismatchesIndex1":
                     val = sample.barcode_mismatches_index1
                     row.append(
                         str(val) if val is not None
                         else cls._escape_csv(str(profile.data.get(field, "")))
                     )
-                elif field == "BarcodeMismatchesIndex2":
+                elif col == "BarcodeMismatchesIndex2":
                     val = sample.barcode_mismatches_index2
                     row.append(
                         str(val) if val is not None
                         else cls._escape_csv(str(profile.data.get(field, "")))
                     )
-                elif field == "OverrideCycles":
+                elif col == "OverrideCycles":
                     # Use sample's override cycles, or calculate from index lengths.
                     # has_index (not index_pair) so combinatorial/single-index
                     # samples also get a computed value, not a blank cell — this
