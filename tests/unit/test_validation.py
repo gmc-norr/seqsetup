@@ -914,6 +914,61 @@ class TestOverrideCyclesMatchRunCycles:
         assert not [e for e in result.configuration_errors
                     if e.category == "override_cycles_mismatch"]
 
+    def test_malformed_override_is_error_even_when_sums_match(self):
+        # '151' has no letter and 'Y151N' a dangling letter; the digit sums
+        # still match the run, so only a format check catches it.
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[Sample(sample_id="S1", index1=self._idx(),
+                            override_cycles="151;I10;I10;Y151N")],
+        )
+        result = ValidationService.validate_run(run)
+        errs = [e for e in result.configuration_errors
+                if e.category == "override_cycles_invalid"]
+        assert len(errs) == 1
+        assert errs[0].sample_names == ["S1"]
+        assert errs[0].severity.value == "error"
+
+    def test_malformed_read_override_pattern_is_error(self):
+        # 'U8YY*' is in the pattern alphabet, but the stray 'Y' was silently
+        # dropped when the pattern was applied ('U8Y143').
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[Sample(sample_id="S1", index1=self._idx(),
+                            read1_override_pattern="U8YY*")],
+        )
+        result = ValidationService.validate_run(run)
+        errs = [e for e in result.configuration_errors
+                if e.category == "override_cycles_invalid"]
+        assert len(errs) == 1
+        assert errs[0].sample_names == ["S1"]
+
+    def test_valid_override_and_pattern_not_flagged_invalid(self):
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[
+                Sample(sample_id="S1", index1=self._idx(),
+                       override_cycles="U8Y143;I8N2;N10;Y151"),
+                Sample(sample_id="S2", index1=self._idx(),
+                       read1_override_pattern="N2Y*N3"),
+            ],
+        )
+        result = ValidationService.validate_run(run)
+        assert not [e for e in result.configuration_errors
+                    if e.category == "override_cycles_invalid"]
+
     def test_genuine_mismatch_still_flagged_after_zero_filter(self):
         # The zero-filter must not mask a real read1 mismatch.
         from seqsetup.services.validation import clear_validation_cache

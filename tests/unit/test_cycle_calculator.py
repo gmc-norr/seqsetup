@@ -282,6 +282,28 @@ class TestExpandOverrideCycles:
         with pytest.raises(ValueError):
             CycleCalculator.expand_override_cycles("Y*;Y*", rc)
 
+    @pytest.mark.parametrize("value", [
+        "Y*Q;I10;I10;Y*",       # stray letter after the wildcard was dropped
+        "N2Y*5;I10;I10;Y*",     # digits after the wildcard were dropped
+        "151;I10;I10;Y151",     # segment with no letter
+        "Y151;I10;I10;Y151N",   # letter with no count
+        "Y151;I10;I10;Y151;",   # empty trailing segment
+        "Y151;;I10;I10;Y151",   # empty middle segment
+    ])
+    def test_raises_on_malformed_segment(self, value):
+        # A typo must be refused at entry, never silently repaired into a
+        # different (valid-looking) OverrideCycles.
+        rc = RunCycles(151, 151, 10, 10)
+        with pytest.raises(ValueError, match="not valid OverrideCycles"):
+            CycleCalculator.expand_override_cycles(value, rc)
+
+    def test_lowercase_input_still_accepted(self):
+        rc = RunCycles(151, 151, 10, 10)
+        assert (
+            CycleCalculator.expand_override_cycles("y*;i8n2;i8n2;y*", rc)
+            == "Y151;I8N2;I8N2;Y151"
+        )
+
     def test_raises_on_multiple_wildcards_in_one_segment(self):
         # Two '*' in one segment would each claim all remaining cycles, silently
         # producing an over-count (e.g. Y151N151). Reject it visibly at entry

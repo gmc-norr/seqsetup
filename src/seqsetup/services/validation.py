@@ -344,7 +344,17 @@ class ValidationService:
         ]
 
         bad: list[str] = []
+        # Malformed OverrideCycles, or a read override pattern that is malformed
+        # (applying it silently drops what it cannot parse: 'U8YY*' -> 'U8Y143').
+        invalid: list[str] = []
         for sample in run.samples:
+            patterns = (sample.read1_override_pattern, sample.read2_override_pattern)
+            if any(
+                p and not CycleCalculator.is_valid_override_segment(p.upper(), allow_wildcard=True)
+                for p in patterns
+            ):
+                invalid.append(sample.sample_id or sample.id)
+                continue
             oc = sample.override_cycles
             if not oc and sample.has_index:
                 oc = CycleCalculator.calculate_override_cycles(run_cycles=rc, sample=sample)
@@ -358,6 +368,14 @@ class ValidationService:
                 # than silently shipping an unexpanded wildcard to the sequencer.
                 bad.append(sample.sample_id or sample.id)
                 continue
+            # A digit sum can match while the value is malformed ('151' has no
+            # letter, 'Y151N' a dangling one) — BCL Convert rejects those.
+            if not all(
+                CycleCalculator.is_valid_override_segment(seg.upper())
+                for seg in re.split(r"[;,]", oc)
+            ):
+                invalid.append(sample.sample_id or sample.id)
+                continue
             sums = [
                 sum(int(n) for n in re.findall(r"\d+", seg))
                 for seg in re.split(r"[;,]", oc) if seg
@@ -366,11 +384,26 @@ class ValidationService:
             if sums != expected:
                 bad.append(sample.sample_id or sample.id)
 
+        errors: list[ConfigurationError] = []
+        if invalid:
+            preview = ", ".join(invalid[:5])
+            more = f", and {len(invalid) - 5} more" if len(invalid) > 5 else ""
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="override_cycles_invalid",
+                message=(
+                    f"{len(invalid)} sample(s) have a malformed OverrideCycles or read "
+                    f"override pattern: {preview}{more}. Each segment must be letters "
+                    f"Y, I, U or N, each followed by a cycle count "
+                    f"(e.g. 'Y151;I8N2;I8N2;Y151')."
+                ),
+                sample_names=invalid,
+            ))
         if not bad:
-            return []
+            return errors
         preview = ", ".join(bad[:5])
         more = f", and {len(bad) - 5} more" if len(bad) > 5 else ""
-        return [ConfigurationError(
+        return errors + [ConfigurationError(
             severity=ValidationSeverity.ERROR,
             category="override_cycles_mismatch",
             message=(

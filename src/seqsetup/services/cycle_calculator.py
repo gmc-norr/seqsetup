@@ -1,10 +1,17 @@
 """Calculate run cycles and override cycles."""
 
+import re
 from typing import Optional
 
 from ..data.instruments import get_default_cycles
 from ..models.sample import Sample
 from ..models.sequencing_run import RunCycles, SequencingRun
+
+# One OverrideCycles segment: one or more tokens, each a letter (Y read,
+# I index, U UMI, N mask) followed by a cycle count. With a wildcard, a
+# token's count may instead be the internal '*' shorthand.
+_SEGMENT_RE = re.compile(r"(?:[YIUN]\d+)+")
+_WILDCARD_SEGMENT_RE = re.compile(r"(?:[YIUN](?:\d+|\*))+")
 
 
 class CycleCalculator:
@@ -130,7 +137,19 @@ class CycleCalculator:
         Returns:
             OverrideCycles string with every ``*`` expanded to a concrete count
         """
-        if not override_cycles or "*" not in override_cycles:
+        if not override_cycles:
+            return override_cycles
+        # Refuse a malformed value outright: the token parser below
+        # (re.findall) silently drops what it cannot read, which would turn a
+        # typo such as 'Y*Q' or '151' into a different, valid-looking value.
+        for seg in re.split(r"[;,]", override_cycles.upper()):
+            if not cls.is_valid_override_segment(seg, allow_wildcard=True):
+                raise ValueError(
+                    f"{override_cycles!r} is not valid OverrideCycles: segment "
+                    f"{seg!r} must be letters Y, I, U or N, each followed by a "
+                    f"cycle count (e.g. 'Y151;I8N2;I8N2;Y151')."
+                )
+        if "*" not in override_cycles:
             return override_cycles
         if run_cycles is None:
             raise ValueError(
@@ -148,7 +167,6 @@ class CycleCalculator:
             totals.append(rc.index2_cycles)
         totals.append(rc.read2_cycles)
 
-        import re
         segments = [seg for seg in re.split(r"[;,]", override_cycles) if seg]
         if len(segments) != len(totals):
             structure = "Read1" + (
@@ -176,6 +194,13 @@ class CycleCalculator:
                 )
             expanded.append(cls._build_read_segment(total, seg))
         return ";".join(expanded)
+
+    @staticmethod
+    def is_valid_override_segment(segment: str, allow_wildcard: bool = False) -> bool:
+        """True if an uppercased OverrideCycles segment is well-formed, so
+        parsing it drops nothing. ``allow_wildcard`` also accepts '*' counts."""
+        pattern = _WILDCARD_SEGMENT_RE if allow_wildcard else _SEGMENT_RE
+        return pattern.fullmatch(segment) is not None
 
     @classmethod
     def _build_index_segment(cls, index_len: int, run_cycles: int) -> str:
