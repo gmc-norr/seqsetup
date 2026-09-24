@@ -149,6 +149,20 @@ class TestSampleSheetV2Exporter:
         )
         assert result == "Y151;I10;N2I8"
 
+    def test_adjust_override_cycles_legacy_four_segments_still_flips(self):
+        """An older stored '...;Y0' value on a single-end run keeps the Index2
+        flip it always had (validation now blocks it from Ready, but legacy
+        live exports must not get worse)."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
+            flowcell_type="High",
+            run_cycles=RunCycles(151, 0, 10, 10),
+        )
+        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
+            "Y151;I10;I8N2;Y0", run
+        )
+        assert result == "Y151;I10;N2I8;Y0"
+
     def test_adjust_override_cycles_single_index_rc_instrument_unchanged(self):
         """No Index2 read (index2_cycles=0): nothing to flip."""
         run = SequencingRun(

@@ -917,6 +917,8 @@ class TestOverrideCyclesMatchRunCycles:
                 if e.category == "override_cycles_mismatch"]
         assert len(errs) == 1
         assert errs[0].sample_names == ["S1"]
+        # The operator is told the way out: clearing recalculates the value.
+        assert "clear" in errs[0].message.lower()
 
     def test_malformed_override_is_error_even_when_sums_match(self):
         # '151' has no letter and 'Y151N' a dangling letter; the digit sums
@@ -954,6 +956,41 @@ class TestOverrideCyclesMatchRunCycles:
                 if e.category == "override_cycles_invalid"]
         assert len(errs) == 1
         assert errs[0].sample_names == ["S1"]
+
+    def test_unused_malformed_pattern_not_flagged(self):
+        # A pattern only shapes the sheet for an indexed sample and a read the
+        # run performs; an unused one must not block Ready (the operator has
+        # no way to edit it).
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 0, 10, 10),  # single-end: no Read2
+            samples=[
+                Sample(sample_id="S1", read1_override_pattern="YY*"),  # no index
+                Sample(sample_id="S2", index1=self._idx(),
+                       read2_override_pattern="Y*N"),  # read2 not performed
+            ],
+        )
+        result = ValidationService.validate_run(run)
+        assert not [e for e in result.configuration_errors
+                    if e.category == "override_cycles_invalid"]
+
+    def test_invalid_message_says_how_to_fix(self):
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+            samples=[Sample(sample_id="S1", index1=self._idx(),
+                            read1_override_pattern="U8YY*")],
+        )
+        result = ValidationService.validate_run(run)
+        err = next(e for e in result.configuration_errors
+                   if e.category == "override_cycles_invalid")
+        assert "index kit" in err.message
 
     def test_valid_override_and_pattern_not_flagged_invalid(self):
         from seqsetup.services.validation import clear_validation_cache

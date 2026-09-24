@@ -344,9 +344,17 @@ class ValidationService:
         # (applying it silently drops what it cannot parse: 'U8YY*' -> 'U8Y143').
         invalid: list[str] = []
         for sample in run.samples:
-            patterns = (sample.read1_override_pattern, sample.read2_override_pattern)
+            # Only a pattern that shapes the sheet counts: an indexed sample
+            # (unindexed ones get no OverrideCycles) and a read the run performs.
+            patterns = [
+                pattern for pattern, cycles in (
+                    (sample.read1_override_pattern, rc.read1_cycles),
+                    (sample.read2_override_pattern, rc.read2_cycles),
+                )
+                if sample.has_index and pattern and cycles > 0
+            ]
             if any(
-                p and not CycleCalculator.is_valid_override_segment(p.upper(), allow_wildcard=True)
+                not CycleCalculator.is_valid_override_segment(p.upper(), allow_wildcard=True)
                 for p in patterns
             ):
                 invalid.append(sample.sample_id or sample.id)
@@ -390,7 +398,10 @@ class ValidationService:
                     f"{len(invalid)} sample(s) have a malformed OverrideCycles or read "
                     f"override pattern: {preview}{more}. Each segment must be letters "
                     f"Y, I, U or N, each followed by a cycle count "
-                    f"(e.g. 'Y151;I8N2;I8N2;Y151')."
+                    f"(e.g. 'Y151;I8N2;I8N2;Y151'). Correct the sample's OverrideCycles; "
+                    f"a malformed read override pattern comes from the index kit's "
+                    f"default read override — an admin must fix the kit, then "
+                    f"re-assign the sample's index."
                 ),
                 sample_names=invalid,
             ))
@@ -405,8 +416,10 @@ class ValidationService:
                 f"{len(bad)} sample(s) have OverrideCycles that do not match the run's "
                 f"declared cycles (Read1 {rc.read1_cycles} / Index1 {rc.index1_cycles} / "
                 f"Index2 {rc.index2_cycles} / Read2 {rc.read2_cycles}): {preview}{more}. "
-                f"Each OverrideCycles segment must sum to the corresponding cycle count "
-                f"or BCL Convert will reject or miscall the run."
+                f"Each OverrideCycles segment must sum to the corresponding cycle count, "
+                f"with one segment per read of more than 0 cycles, or BCL Convert will "
+                f"reject or miscall the run. To recalculate from the run's cycles, "
+                f"clear the sample's OverrideCycles field."
             ),
             sample_names=bad,
         )]
