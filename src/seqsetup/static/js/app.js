@@ -557,9 +557,13 @@ document.body.addEventListener('htmx:afterRequest', function(event) {
 // as if it had worked. Now a failed response is swapped when the server aimed
 // it at an error slot (HX-Retarget, see exception_handlers.py); otherwise its
 // text goes into #error-banner. Either way an error toast is raised too, as
-// the banner can be scrolled out of view. isError stays true, so htmx still
-// reports the request as failed (data-navigate-after does not navigate).
-// Error bodies are only ever read as text, never rendered.
+// the banner can be scrolled out of view. The banner is cleared once the
+// element whose request failed succeeds — not on any later success, which
+// could hide a failure whose unsaved value is still on screen. isError stays
+// true, so htmx still reports the request as failed (data-navigate-after does
+// not navigate). Error bodies are only ever read as text, never rendered.
+let errorSource = null;  // element whose failed request #error-banner describes
+
 function htmxErrorMessage(xhr) {
     let text = xhr.responseText || '';
     if ((xhr.getResponseHeader('Content-Type') || '').includes('text/html')) {
@@ -577,26 +581,58 @@ function showErrorToast(message) {
     }));
 }
 
+function showErrorBanner(message) {
+    const banner = document.getElementById('error-banner');
+    if (!banner) return;
+    const div = document.createElement('div');
+    div.className = 'error-message';
+    div.textContent = message;
+    banner.replaceChildren(div);
+}
+
+function clearErrorSlots() {
+    for (const id of ['error-banner', 'form-errors']) {
+        const slot = document.getElementById(id);
+        if (slot) slot.replaceChildren();
+    }
+}
+
+// Let an error response the server aimed at an error slot be swapped there.
 document.body.addEventListener('htmx:beforeSwap', function(event) {
     const xhr = event.detail.xhr;
-    if (!xhr || xhr.status < 400) return;
-    const message = htmxErrorMessage(xhr);
-    if (xhr.getResponseHeader('HX-Retarget')) {
+    if (xhr && xhr.status >= 400 && xhr.getResponseHeader('HX-Retarget')) {
         event.detail.shouldSwap = true;
-    } else {
-        const banner = document.getElementById('error-banner');
-        if (banner) {
-            const div = document.createElement('div');
-            div.className = 'error-message';
-            div.textContent = message;
-            banner.replaceChildren(div);
-        }
+        xhr.seqsetupErrorSwapped = true;
     }
-    showErrorToast(message);
 });
 
-document.body.addEventListener('htmx:sendError', function() {
-    showErrorToast('Could not reach the server. The change was not saved.');
+// Report the outcome from the request itself, hooked when it is sent. htmx
+// fires its response events on the request's target and source elements; if
+// an earlier swap has replaced those (two quick edits in one sample row), the
+// events never reach the page. The XHR's own listeners always run, and run
+// after htmx's handler, so a swap above has already happened.
+document.body.addEventListener('htmx:beforeSend', function(event) {
+    const xhr = event.detail.xhr;
+    if (!xhr) return;
+    const source = event.detail.elt;
+    const config = event.detail.requestConfig;
+    const isRead = ((config && config.verb) || '').toLowerCase() === 'get';
+    xhr.addEventListener('load', function() {
+        if (xhr.status >= 400) {
+            const message = htmxErrorMessage(xhr);
+            if (!xhr.seqsetupErrorSwapped) showErrorBanner(message);
+            showErrorToast(message);
+            errorSource = source;
+        } else if (source === errorSource) {
+            clearErrorSlots();
+            errorSource = null;
+        }
+    });
+    xhr.addEventListener('error', function() {
+        showErrorToast(isRead
+            ? 'Could not reach the server.'
+            : 'Could not reach the server. The change was not saved.');
+    });
 });
 
 document.addEventListener('input', function(event) {
