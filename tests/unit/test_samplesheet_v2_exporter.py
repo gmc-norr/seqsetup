@@ -135,6 +135,32 @@ class TestSampleSheetV2Exporter:
         )
         assert result == "Y151;I8N2;N2I8;Y151"
 
+    def test_adjust_override_cycles_single_end_rc_instrument_flips_index2(self):
+        """A single-end run has three segments (no Read2). The Index2 mask
+        must still be flipped on an RC instrument, or it desyncs from the
+        reverse-complemented i5."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
+            flowcell_type="High",
+            run_cycles=RunCycles(151, 0, 10, 10),
+        )
+        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
+            "Y151;I10;I8N2", run
+        )
+        assert result == "Y151;I10;N2I8"
+
+    def test_adjust_override_cycles_single_index_rc_instrument_unchanged(self):
+        """No Index2 read (index2_cycles=0): nothing to flip."""
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
+            flowcell_type="High",
+            run_cycles=RunCycles(151, 151, 10, 0),
+        )
+        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
+            "Y151;I8N2;Y151", run
+        )
+        assert result == "Y151;I8N2;Y151"
+
     def test_comma_override_normalized_to_semicolon_on_forward_instrument(self):
         """BCL Convert v2 uses ';' as the OverrideCycles separator; a legacy
         comma-form override must be normalized to ';' on FORWARD instruments too,

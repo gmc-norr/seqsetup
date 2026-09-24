@@ -100,6 +100,25 @@ class TestCycleCalculator:
         # Should only use available cycles
         assert override == "Y151;I8;I8;Y151"
 
+    def test_single_end_run_has_no_read2_segment(self):
+        # BCL Convert needs one segment per read in RunInfo.xml; a read with
+        # 0 cycles is not in RunInfo, so a 'Y0' segment makes the sheet invalid.
+        run_cycles = RunCycles(read1_cycles=151, read2_cycles=0, index1_cycles=10, index2_cycles=10)
+        sample = Sample(
+            sample_id="test",
+            index_pair=IndexPair(
+                id="test",
+                name="test",
+                index1=Index(name="i7", sequence="ATCGATCGAT", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="GCTAGCTACC", index_type=IndexType.I5),
+            ),
+        )
+        assert CycleCalculator.calculate_override_cycles(sample, run_cycles) == "Y151;I10;I10"
+
+    def test_infer_global_without_samples_skips_zero_cycle_reads(self):
+        run = SequencingRun(run_cycles=RunCycles(151, 0, 10, 0))
+        assert CycleCalculator.infer_global_override_cycles(run) == "Y151;I10"
+
     def test_infer_global_override_same_lengths(self, sample_run):
         """Test inferring global override when all indexes have same length."""
         global_override = CycleCalculator.infer_global_override_cycles(sample_run)
@@ -270,6 +289,14 @@ class TestExpandOverrideCycles:
         assert (
             CycleCalculator.expand_override_cycles("Y*;I10;Y*", rc)
             == "Y151;I10;Y151"
+        )
+
+    def test_single_end_run_three_segments(self):
+        # read2_cycles == 0 -> three positions: Read1, Index1, Index2.
+        rc = RunCycles(151, 0, 10, 10)
+        assert (
+            CycleCalculator.expand_override_cycles("Y*;I10;I10", rc)
+            == "Y151;I10;I10"
         )
 
     def test_raises_without_run_cycles(self):

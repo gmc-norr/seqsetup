@@ -347,11 +347,20 @@ class SampleSheetV2Exporter:
             return normalized
 
         parts = normalized.split(";")
-        if len(parts) != 4:
-            return normalized
+        if run.run_cycles is None:
+            # Without run cycles only the four-read layout is known.
+            if len(parts) != 4:
+                return normalized
+            index2_pos = 2
+        else:
+            # Locate Index2 from the run's reads — a single-end run has three
+            # segments (no Read2) and its Index2 must still be flipped.
+            reads = [name for name, _, _ in CycleCalculator.read_structure(run.run_cycles)]
+            if "Index2" not in reads or len(parts) != len(reads):
+                return normalized
+            index2_pos = reads.index("Index2")
 
-        # Reverse the Index2 segment (3rd part, index 2)
-        parts[2] = CycleCalculator.reverse_override_segment(parts[2])
+        parts[index2_pos] = CycleCalculator.reverse_override_segment(parts[index2_pos])
         return ";".join(parts)
 
     @classmethod

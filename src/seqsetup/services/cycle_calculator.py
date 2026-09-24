@@ -85,13 +85,15 @@ class CycleCalculator:
         index1_len = cls._get_effective_index_length(sample, 1)
         index2_len = cls._get_effective_index_length(sample, 2)
 
-        # Build override cycles string
+        # Build override cycles string. One segment per read the run performs
+        # (see read_structure): a read with 0 cycles gets no segment.
         parts = []
 
         # Read 1
-        parts.append(cls._build_read_segment(
-            run_cycles.read1_cycles, sample.read1_override_pattern
-        ))
+        if run_cycles.read1_cycles > 0:
+            parts.append(cls._build_read_segment(
+                run_cycles.read1_cycles, sample.read1_override_pattern
+            ))
 
         # Index 1
         if run_cycles.index1_cycles > 0:
@@ -105,12 +107,27 @@ class CycleCalculator:
                 cls._build_index_segment(index2_len, run_cycles.index2_cycles)
             )
 
-        # Read 2
-        parts.append(cls._build_read_segment(
-            run_cycles.read2_cycles, sample.read2_override_pattern
-        ))
+        # Read 2 (absent on a single-end run)
+        if run_cycles.read2_cycles > 0:
+            parts.append(cls._build_read_segment(
+                run_cycles.read2_cycles, sample.read2_override_pattern
+            ))
 
         return ";".join(parts)
+
+    @staticmethod
+    def read_structure(run_cycles: RunCycles) -> list[tuple[str, str, int]]:
+        """(read name, default letter, cycles) for each read the run performs,
+        in OverrideCycles order. BCL Convert needs exactly one OverrideCycles
+        segment per read in RunInfo.xml, and a read with 0 cycles is not in
+        RunInfo — so it gets no segment."""
+        reads = [
+            ("Read1", "Y", run_cycles.read1_cycles),
+            ("Index1", "I", run_cycles.index1_cycles),
+            ("Index2", "I", run_cycles.index2_cycles),
+            ("Read2", "Y", run_cycles.read2_cycles),
+        ]
+        return [read for read in reads if read[2] > 0]
 
     @classmethod
     def expand_override_cycles(
@@ -157,23 +174,14 @@ class CycleCalculator:
                 "configured run cycles."
             )
 
-        rc = run_cycles
-        # Mirror the segment order calculate_override_cycles emits: Read1, then
-        # Index1/Index2 only when their cycle count is > 0, then Read2.
-        totals = [rc.read1_cycles]
-        if rc.index1_cycles > 0:
-            totals.append(rc.index1_cycles)
-        if rc.index2_cycles > 0:
-            totals.append(rc.index2_cycles)
-        totals.append(rc.read2_cycles)
+        # Mirror the segment order calculate_override_cycles emits: one per
+        # read with > 0 cycles.
+        reads = cls.read_structure(run_cycles)
+        totals = [cycles for _, _, cycles in reads]
 
         segments = [seg for seg in re.split(r"[;,]", override_cycles) if seg]
         if len(segments) != len(totals):
-            structure = "Read1" + (
-                "/Index1" if rc.index1_cycles > 0 else ""
-            ) + (
-                "/Index2" if rc.index2_cycles > 0 else ""
-            ) + "/Read2"
+            structure = "/".join(name for name, _, _ in reads)
             raise ValueError(
                 f"OverrideCycles {override_cycles!r} has {len(segments)} "
                 f"segment(s), but this run's cycles imply {len(totals)} "
@@ -342,8 +350,10 @@ class CycleCalculator:
         if not run.samples or not run.run_cycles:
             # No samples or no run cycles configured
             if run.run_cycles:
-                rc = run.run_cycles
-                return f"Y{rc.read1_cycles};I{rc.index1_cycles};I{rc.index2_cycles};Y{rc.read2_cycles}"
+                return ";".join(
+                    f"{letter}{cycles}"
+                    for _, letter, cycles in cls.read_structure(run.run_cycles)
+                )
             return None
 
         # Check if all samples have same effective index lengths and read patterns

@@ -899,8 +899,10 @@ class TestOverrideCyclesMatchRunCycles:
         assert not [e for e in result.configuration_errors
                     if e.category == "override_cycles_mismatch"]
 
-    def test_single_end_four_segment_override_with_zero_read2_ok(self):
-        # The auto-calc path emits "...;Y0" for read2=0; that must also pass.
+    def test_single_end_override_with_zero_read2_segment_is_error(self):
+        # BCL Convert needs one OverrideCycles segment per read in RunInfo.xml.
+        # A "...;Y0" (stored by the auto-calc path before it stopped emitting
+        # it) has four segments for a three-read run and is rejected.
         from seqsetup.services.validation import clear_validation_cache
         clear_validation_cache()
         run = SequencingRun(
@@ -911,8 +913,10 @@ class TestOverrideCyclesMatchRunCycles:
                             override_cycles="Y151;I10;I10;Y0")],
         )
         result = ValidationService.validate_run(run)
-        assert not [e for e in result.configuration_errors
-                    if e.category == "override_cycles_mismatch"]
+        errs = [e for e in result.configuration_errors
+                if e.category == "override_cycles_mismatch"]
+        assert len(errs) == 1
+        assert errs[0].sample_names == ["S1"]
 
     def test_malformed_override_is_error_even_when_sums_match(self):
         # '151' has no letter and 'Y151N' a dangling letter; the digit sums

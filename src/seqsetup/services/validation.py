@@ -332,16 +332,12 @@ class ValidationService:
         if not rc:
             return []
 
-        # Expected non-zero segment cycle-sums, in OverrideCycles order. Only
-        # reads/indexes with >0 cycles produce a segment (a single-end run has
-        # read2=0 and no Read2 segment). We compare against the non-zero segment
-        # sums of the override: a zero-cycle segment (e.g. a trailing "Y0" the
-        # auto-calc path emits for read2=0) is a no-op and must not cause a
-        # spurious length mismatch.
-        expected = [
-            c for c in (rc.read1_cycles, rc.index1_cycles, rc.index2_cycles, rc.read2_cycles)
-            if c > 0
-        ]
+        # Expected segment cycle-sums, in OverrideCycles order. Only reads with
+        # >0 cycles are in RunInfo.xml, and BCL Convert needs exactly one
+        # segment per RunInfo read — so a zero-cycle segment (e.g. a trailing
+        # "Y0" that older auto-calculated values carry for read2=0) is an extra
+        # segment and a mismatch, not a no-op.
+        expected = [cycles for _, _, cycles in CycleCalculator.read_structure(rc)]
 
         bad: list[str] = []
         # Malformed OverrideCycles, or a read override pattern that is malformed
@@ -380,7 +376,6 @@ class ValidationService:
                 sum(int(n) for n in re.findall(r"\d+", seg))
                 for seg in re.split(r"[;,]", oc) if seg
             ]
-            sums = [s for s in sums if s > 0]  # drop zero-cycle (absent read/index) segments
             if sums != expected:
                 bad.append(sample.sample_id or sample.id)
 
