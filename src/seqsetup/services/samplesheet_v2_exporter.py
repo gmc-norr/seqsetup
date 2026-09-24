@@ -496,20 +496,34 @@ class SampleSheetV2Exporter:
         # Get data fields from profile, filtering out fields we handle specially
         data_fields = profile.data_fields or list(profile.data.keys())
 
-        # Write header row — escape admin-defined column names defensively.
-        output.write(",".join(cls._escape_csv(str(f)) for f in data_fields) + "\n")
+        # Write header row — Translate maps a profile field name to its sample
+        # sheet column name (e.g. IndexI7 -> Index); BCL Convert does not
+        # recognise the untranslated names. Escape admin-defined names defensively.
+        output.write(
+            ",".join(cls._escape_csv(str(profile.translate.get(f, f))) for f in data_fields)
+            + "\n"
+        )
 
-        # Write data rows for each sample. Every cell flows through ",".join()
+        # One row per (sample, lane), as in _write_bclconvert_data — writing
+        # only the first lane would send the other lanes' reads to Undetermined.
+        # Without a Lane column the rows would be identical, so write one.
+        has_lane_column = "Lane" in data_fields
+        rows_to_write = [
+            (sample, lane)
+            for sample in samples
+            for lane in (sample.lanes if has_lane_column and sample.lanes else [None])
+        ]
+
+        # Write data rows. Every cell flows through ",".join()
         # so any comma or quote in admin/user-supplied content would shift
         # downstream columns — escape every variable interpolation.
-        for sample in samples:
+        for sample, lane in rows_to_write:
             row = []
             for field in data_fields:
                 if field == "Sample_ID":
                     row.append(cls._escape_csv(sample.sample_id))
                 elif field == "Lane":
-                    # Use first lane if available
-                    row.append(str(sample.lanes[0]) if sample.lanes else "")
+                    row.append(str(lane) if lane else "")
                 elif field == "Index":
                     # i7 index sequence (model-validated against [ACGTN], but escape defensively)
                     row.append(cls._escape_csv(sample.index1_sequence or ""))

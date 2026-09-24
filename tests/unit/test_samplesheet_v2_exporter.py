@@ -1,6 +1,9 @@
 """Tests for SampleSheet v2 exporter."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
 from seqsetup.models.application_profile import ApplicationProfile
@@ -720,3 +723,118 @@ class TestApplicationSectionsAcrossTestProfiles:
         # index1 8bp over 8 index1 cycles -> I8; absent index2 over 8 -> N8.
         # The single-index sample's OverrideCycles cell must be computed, not blank.
         assert "S_SINGLE,Y151;I8;N8;Y151" in output
+
+
+SHIPPED_BCLCONVERT_PROFILE = (
+    Path(__file__).resolve().parents[2]
+    / "config" / "profiles" / "application_profiles" / "dragen" / "BCLConvertNextera.yaml"
+)
+
+
+class TestProfileDrivenBclConvertData:
+    """The profile-driven [BCLConvert_Data] section must match what BCL Convert
+    expects: one row per (sample, lane), and the column names the profile's
+    Translate mapping declares (e.g. IndexI7 -> Index).
+
+    A multi-lane sample written with only its first lane sends its reads from
+    the other lanes to Undetermined. An 'IndexI7' header is not a column BCL
+    Convert recognises, so the sheet is rejected or demultiplexed without indexes.
+    """
+
+    def _make_sample(self, sample_id, lanes):
+        return Sample(
+            sample_id=sample_id,
+            test_id="WGS",
+            lanes=lanes,
+            index_pair=IndexPair(
+                id=f"pair_{sample_id}",
+                name=f"pair_{sample_id}",
+                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+            ),
+        )
+
+    def _make_app_profile(self, data_fields, translate=None):
+        return ApplicationProfile(
+            name="BCLConvertNextera",
+            version="1.0.0",
+            application_type="Dragen",
+            application_name="BCLConvert",
+            settings={"SoftwareVersion": "4.3.6"},
+            data_fields=data_fields,
+            data={},
+            translate=translate or {},
+        )
+
+    def _export(self, app_profile, samples):
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=samples,
+        )
+        test_profile_repo = _StubTestProfileRepo({
+            "WGS": TestProfile(
+                test_type="WGS",
+                test_name="WGS",
+                version="1.0.0",
+                application_profiles=[
+                    ApplicationProfileReference(
+                        profile_name=app_profile.name,
+                        profile_version=app_profile.version,
+                    ),
+                ],
+            ),
+        })
+        app_profile_repo = _StubAppProfileRepo({
+            (app_profile.name, app_profile.version): app_profile,
+        })
+        output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
+        return TestApplicationSectionsAcrossTestProfiles._extract_section(
+            output, "BCLConvert_Data"
+        ).strip().splitlines()
+
+    def test_multi_lane_sample_gets_one_row_per_lane(self):
+        profile = self._make_app_profile(["Sample_ID", "Lane", "Index", "Index2"])
+        lines = self._export(profile, [self._make_sample("S1", [1, 2])])
+        assert lines[1:] == [
+            "S1,1,ATTACTCG,TATAGCCT",
+            "S1,2,ATTACTCG,TATAGCCT",
+        ]
+
+    def test_sample_without_lanes_gets_single_row_with_blank_lane(self):
+        profile = self._make_app_profile(["Sample_ID", "Lane", "Index", "Index2"])
+        lines = self._export(profile, [self._make_sample("S1", [])])
+        assert lines[1:] == ["S1,,ATTACTCG,TATAGCCT"]
+
+    def test_lanes_do_not_duplicate_rows_when_profile_has_no_lane_column(self):
+        profile = self._make_app_profile(["Sample_ID", "Index", "Index2"])
+        lines = self._export(profile, [self._make_sample("S1", [1, 2])])
+        assert lines[1:] == ["S1,ATTACTCG,TATAGCCT"]
+
+    def test_header_uses_translated_column_names(self):
+        profile = self._make_app_profile(
+            ["Sample_ID", "Lane", "IndexI7", "IndexI5"],
+            translate={"IndexI7": "Index", "IndexI5": "Index2"},
+        )
+        lines = self._export(profile, [self._make_sample("S1", [1])])
+        assert lines == [
+            "Sample_ID,Lane,Index,Index2",
+            "S1,1,ATTACTCG,TATAGCCT",
+        ]
+
+    def test_shipped_bclconvert_nextera_profile_exports_valid_data_section(self):
+        profile = ApplicationProfile.from_yaml(
+            yaml.safe_load(SHIPPED_BCLCONVERT_PROFILE.read_text()),
+            str(SHIPPED_BCLCONVERT_PROFILE),
+        )
+        lines = self._export(profile, [self._make_sample("S1", [1, 2])])
+        header = lines[0].split(",")
+        assert header[:4] == ["Sample_ID", "Lane", "Index", "Index2"]
+        assert "IndexI7" not in header
+        assert "IndexI5" not in header
+        rows = [line.split(",") for line in lines[1:]]
+        assert [r[:4] for r in rows] == [
+            ["S1", "1", "ATTACTCG", "TATAGCCT"],
+            ["S1", "2", "ATTACTCG", "TATAGCCT"],
+        ]
