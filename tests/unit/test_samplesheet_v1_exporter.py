@@ -348,13 +348,15 @@ class TestSampleIdentifiersWrittenExactly:
     [Data] exactly, not as "'-S1". bcl2fastq names FASTQs by Sample_Name,
     so that column is kept exact too."""
 
-    def _export(self, sample_id="-S1", sample_name="-S1"):
+    def _export(self, sample_id="-S1", sample_name="-S1", project="", run_name="", full=False):
         run = SequencingRun(
+            run_name=run_name,
             instrument_platform=InstrumentPlatform.MISEQ,
             run_cycles=RunCycles(151, 151, 8, 8),
             samples=[Sample(
                 sample_id=sample_id,
                 sample_name=sample_name,
+                project=project,
                 index_pair=IndexPair(
                     id="p1", name="p1",
                     index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
@@ -362,10 +364,18 @@ class TestSampleIdentifiersWrittenExactly:
                 ),
             )],
         )
-        return SampleSheetV1Exporter.export(run).split("[Data]", 1)[1]
+        output = SampleSheetV1Exporter.export(run)
+        return output if full else output.split("[Data]", 1)[1]
 
     def test_leading_dash_kept_in_sample_id_and_name(self):
         assert "\n-S1,-S1," in self._export()
 
     def test_formula_like_text_still_guarded(self):
         assert "\n'=1+2,'=1+2," in self._export(sample_id="=1+2", sample_name="=1+2")
+
+    def test_leading_dash_project_kept(self):
+        # bcl2fastq uses Sample_Project as the output directory name.
+        assert "\n-S1,-S1,-P1," in self._export(project="-P1")
+
+    def test_leading_dash_run_name_kept_as_experiment_name(self):
+        assert "\nExperiment Name,-Run1\n" in self._export(run_name="-Run1", full=True)

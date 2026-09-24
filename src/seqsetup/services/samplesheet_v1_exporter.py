@@ -61,7 +61,7 @@ class SampleSheetV1Exporter:
             output.write(f"Investigator Name,{cls._escape_csv(run.created_by)}\n")
 
         if run.run_name:
-            output.write(f"Experiment Name,{cls._escape_csv(run.run_name)}\n")
+            output.write(f"Experiment Name,{cls._escape_identifier(run.run_name)}\n")
 
         output.write(f"Date,{run.created_at.strftime('%Y-%m-%d')}\n")
         output.write("Workflow,GenerateFASTQ\n")
@@ -139,7 +139,7 @@ class SampleSheetV1Exporter:
 
                 row.append(cls._escape_identifier(sample.sample_id))
                 row.append(cls._escape_identifier(sample.sample_name))
-                row.append(cls._escape_csv(sample.project or ""))
+                row.append(cls._escape_identifier(sample.project or ""))
                 row.append(i7_seq)
                 row.append(i5_seq)
                 row.append(cls._escape_csv(sample.description or ""))

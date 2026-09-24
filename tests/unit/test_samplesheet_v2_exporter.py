@@ -988,3 +988,10 @@ class TestSampleIdentifiersWrittenExactly:
         # the formula guard in case it is ever opened in a spreadsheet.
         output = SampleSheetV2Exporter.export(self._run(sample_id="=1+2"))
         assert "\n'=1+2," in self._section(output, "BCLConvert_Data")
+
+    def test_leading_dash_run_name_kept_in_header_and_cloud_project(self):
+        run = self._run()
+        run.run_name = "-Run1"
+        output = SampleSheetV2Exporter.export(run)
+        assert "\nRunName,-Run1\n" in output
+        assert "\n-S1,-Run1," in self._section(output, "Cloud_Data")

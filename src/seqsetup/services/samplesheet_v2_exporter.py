@@ -74,7 +74,7 @@ class SampleSheetV2Exporter:
         output.write(f"FileFormatVersion,{cls.FILE_FORMAT_VERSION}\n")
 
         if run.run_name:
-            output.write(f"RunName,{cls._escape_csv(run.run_name)}\n")
+            output.write(f"RunName,{cls._escape_identifier(run.run_name)}\n")
 
         if run.run_description:
             output.write(f"RunDescription,{cls._escape_csv(run.run_description)}\n")
@@ -609,7 +609,7 @@ class SampleSheetV2Exporter:
 
             row = [
                 cls._escape_identifier(sample.sample_id),
-                cls._escape_csv(project_name),
+                cls._escape_identifier(project_name),
                 cls._escape_identifier(library_name),
             ]
             output.write(",".join(row) + "\n")

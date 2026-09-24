@@ -46,7 +46,7 @@ a model or service layer where it cannot be forgotten.
 - Validate DNA sequences against `^[ACGTN]*$` after uppercasing — at the model layer.
 - Use `escape_js_string()` and `escape_html_attr()` from `utils/html.py` when embedding values in HTML or JavaScript. For JS string literals in Alpine/HTMX attributes, the project's canonical pattern is `{{ value | tojson }}` inside a single-quoted attribute (see `templates/admin/instruments.html`).
 - Use `sanitize_filename()` from `routes/utils.py` for Content-Disposition headers.
-- Use `_escape_csv()` for all user-supplied values in SampleSheet output (BCLConvert, DRAGEN, and Cloud sections).
+- Use `_escape_csv()` for all user-supplied values in SampleSheet output (BCLConvert, DRAGEN, and Cloud sections). Exception: identifiers (Sample_ID, Sample_Name, Sample_Project, LibraryName, ProjectName, RunName / Experiment Name) go through `_escape_identifier()`, which writes a value made only of `[A-Za-z0-9_-]` exactly — the formula guard's `'` prefix on a leading `-` would change the name — and falls back to `_escape_csv()` for anything else.
 
 ### Run state integrity
 - Never allow mutations to a run unless it passes the `Depends(get_editable_run)` guard — DRAFT-only, raises HTTP 403 otherwise (see `routes/dependencies.py`).
