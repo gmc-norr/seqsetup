@@ -550,6 +550,55 @@ document.body.addEventListener('htmx:afterRequest', function(event) {
     }
 });
 
+// Failed HTMX requests must be visible. htmx 2 never swaps a 4xx/5xx
+// response by default, and HX-Retarget/HX-Reswap only choose WHERE a swap
+// goes, not WHETHER — so a rejected save (400 bad input, 403 run not
+// editable, 409 edit conflict, 500 export failure) left the page unchanged,
+// as if it had worked. Now a failed response is swapped when the server aimed
+// it at an error slot (HX-Retarget, see exception_handlers.py); otherwise its
+// text goes into #error-banner. Either way an error toast is raised too, as
+// the banner can be scrolled out of view. isError stays true, so htmx still
+// reports the request as failed (data-navigate-after does not navigate).
+// Error bodies are only ever read as text, never rendered.
+function htmxErrorMessage(xhr) {
+    let text = xhr.responseText || '';
+    if ((xhr.getResponseHeader('Content-Type') || '').includes('text/html')) {
+        const doc = new DOMParser().parseFromString(text, 'text/html');
+        const node = doc.querySelector('.error-message') || doc.body;
+        text = node ? node.textContent : '';
+    }
+    text = text.replace(/\s+/g, ' ').trim().slice(0, 300);
+    return text || `The request failed (HTTP ${xhr.status}).`;
+}
+
+function showErrorToast(message) {
+    window.dispatchEvent(new CustomEvent('toast', {
+        detail: {kind: 'error', message: message, lifetime: 10000},
+    }));
+}
+
+document.body.addEventListener('htmx:beforeSwap', function(event) {
+    const xhr = event.detail.xhr;
+    if (!xhr || xhr.status < 400) return;
+    const message = htmxErrorMessage(xhr);
+    if (xhr.getResponseHeader('HX-Retarget')) {
+        event.detail.shouldSwap = true;
+    } else {
+        const banner = document.getElementById('error-banner');
+        if (banner) {
+            const div = document.createElement('div');
+            div.className = 'error-message';
+            div.textContent = message;
+            banner.replaceChildren(div);
+        }
+    }
+    showErrorToast(message);
+});
+
+document.body.addEventListener('htmx:sendError', function() {
+    showErrorToast('Could not reach the server. The change was not saved.');
+});
+
 document.addEventListener('input', function(event) {
     const filter = event.target.closest('.index-filter-input');
     if (filter) filterIndexesWizard(filter.value);
