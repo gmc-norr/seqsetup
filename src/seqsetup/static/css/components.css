@@ -1549,7 +1549,8 @@ body {
 
 .settings-section summary::before { content: none; }   /* kill the old ▶ (\25B6) so only the SVG renders */
 
-.nav-chevron { width: .7rem; height: .7rem; margin-right: .5rem; transition: transform .2s; vertical-align: middle; }
+/* inline-block: Tailwind's reset makes svg a block, which put the arrow on a line of its own. */
+.nav-chevron { display: inline-block; width: .7rem; height: .7rem; margin-right: .5rem; transition: transform .2s; vertical-align: middle; }
 .settings-section[open] > summary .nav-chevron { transform: rotate(90deg); }
 
 .settings-section summary:hover {
@@ -1568,9 +1569,34 @@ body {
 
 .main-content {
     flex: 1;
+    min-width: 0;
     padding: 1.5rem;
     overflow-y: auto;
     background: var(--bg);
+}
+
+/* Phones and small tablets: the sidebar becomes a wrapping bar above the
+   page instead of a 180px column squeezing it, the header wraps, and
+   side-by-side boxes stack. An opened Settings/Admin group takes a row. */
+@media (max-width: 800px) {
+    .app-container { padding: 0.5rem; }
+    .app-header { flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem; }
+    .app-shell { flex-direction: column; }
+    .sidebar {
+        width: auto;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.25rem 0.5rem;
+        padding: 0.5rem;
+    }
+    .sidebar .nav-item { margin-bottom: 0; padding: 0.5rem 0.75rem; }
+    .sidebar-btn { width: auto; margin-top: 0; }
+    .sidebar-divider { display: none; }
+    .sidebar .settings-section { margin-top: 0; }
+    .settings-section[open] { flex-basis: 100%; }
+    .main-content { padding: 0.75rem; }
+    .top-bar-columns { grid-template-columns: 1fr; }
 }
 
 /* Dashboard */

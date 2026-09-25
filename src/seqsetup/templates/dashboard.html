@@ -56,8 +56,8 @@
             </p>
         </div>
         {% else %}
-        <div class="border rounded-lg overflow-hidden bg-white shadow-sm">
-            <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_13rem] gap-2 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
+        <div class="border rounded-lg overflow-x-auto bg-white shadow-sm">
+            <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_13rem] min-w-[44rem] gap-2 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
                 <span>Name</span>
                 <span>Platform</span>
                 <span>Flowcell</span>
@@ -69,7 +69,7 @@
             </div>
             {% for run in tab_runs %}
             {% set is_archived = run.status.value == 'archived' %}
-            <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_13rem] gap-2 items-center px-3 py-2 border-t text-sm" id="run-item-{{ run.id }}">
+            <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_13rem] min-w-[44rem] gap-2 items-center px-3 py-2 border-t text-sm" id="run-item-{{ run.id }}">
                 <a href="/runs/{{ run.id }}" class="text-primary hover:underline truncate">{{ run.run_name or "Untitled Run" }}</a>
                 <span>{{ run.instrument_platform.value }}</span>
                 <span>{{ run.flowcell_type or "—" }}</span>
