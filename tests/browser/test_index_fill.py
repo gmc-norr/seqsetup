@@ -10,6 +10,7 @@ from datetime import datetime
 import pytest
 from playwright.sync_api import expect
 
+from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
@@ -121,6 +122,42 @@ def test_cancel_clears_the_area_and_saves_nothing(logged_in_page, base_url, app_
     expect(page.locator("#index-fill-preview")).to_be_visible()
 
     page.click("[data-action='cancel-index-fill']")
+
+    expect(page.locator("#index-fill-area")).to_be_empty()
+    stored = app_ctx.run_repo.get_by_id(fill_run_id)
+    assert all(not s.has_index for s in stored.samples)
+
+
+@pytest.fixture
+def second_kit_id(app_ctx):
+    """A second kit, so the kit dropdown can change; deleted afterwards."""
+    kit = IndexKit(
+        name="Fill-Second-Kit", version="1.0", index_mode=IndexMode.UNIQUE_DUAL,
+        index_pairs=[IndexPair(
+            id="fill-second-p1", name="SK0001",
+            index1=Index(name="sk-i7", sequence="GGACTCCT", index_type=IndexType.I7),
+            index2=Index(name="sk-i5", sequence="TAGATCGC", index_type=IndexType.I5),
+        )],
+    )
+    app_ctx.index_kit_repo.save(kit)
+    yield kit.kit_id
+    app_ctx.index_kit_repo.delete(kit.name, kit.version)
+
+
+@pytest.mark.browser
+def test_changing_the_kit_clears_the_preview(
+    logged_in_page, base_url, app_ctx, fill_run_id, second_kit_id
+):
+    """A preview names one kit; once the dropdown shows another, Assign
+    would still use the first. So the preview goes away."""
+    page = logged_in_page
+    _open(page, base_url, fill_run_id)
+    _select_kit(page)
+    _open_preview(page)
+    expect(page.locator("#index-fill-preview")).to_contain_text(SCREENSHOT_KIT_NAME)
+
+    with page.expect_response(lambda r: "/indexes/kit-content" in r.url and r.status == 200):
+        page.select_option("#index-kit-dropdown", second_kit_id)
 
     expect(page.locator("#index-fill-area")).to_be_empty()
     stored = app_ctx.run_repo.get_by_id(fill_run_id)

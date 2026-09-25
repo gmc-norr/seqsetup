@@ -88,6 +88,8 @@ kit shown in the index panel, in table order, with a preview first.
   there is no Assign.
 - Assign swaps `#sample-section` like the paste preview's Add does. Cancel
   empties `#index-fill-area` (CSP-safe `data-action`, see `static/js/app.js`).
+- Changing the kit dropdown also empties `#index-fill-area`: the preview names
+  one kit and Assign uses that kit, so it must not stay under another kit.
 
 ### Code
 

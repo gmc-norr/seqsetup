@@ -611,6 +611,10 @@ function tickAllPasteLanes(el) {
     if (form) form.querySelectorAll('input[name="lanes"][type="checkbox"]').forEach(cb => { cb.checked = true; });
 }
 
+function clearIndexFillArea() {
+    const a = document.getElementById('index-fill-area'); if (a) a.innerHTML = '';
+}
+
 const _CLICK_ACTIONS = {
     'bulk-apply-lanes': applyBulkLanesForm,
     'bulk-clear-lanes': clearBulkLanesForm,
@@ -624,8 +628,14 @@ const _CLICK_ACTIONS = {
     'bulk-delete': applyBulkDeleteForm,
     'clear-paste': clearPasteForm,
     'paste-all-lanes': tickAllPasteLanes,
-    'cancel-index-fill': () => { const a = document.getElementById('index-fill-area'); if (a) a.innerHTML = ''; },
+    'cancel-index-fill': clearIndexFillArea,
 };
+
+// A fill preview names one kit and Assign uses that kit, so once the kit
+// dropdown shows another one the preview goes away.
+document.addEventListener('change', function(event) {
+    if (event.target.id === 'index-kit-dropdown') clearIndexFillArea();
+});
 
 document.addEventListener('click', function(event) {
     const actionEl = event.target.closest('[data-action]');
