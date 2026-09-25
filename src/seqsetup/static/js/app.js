@@ -155,6 +155,16 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
             if (!checkedIds.includes(sampleId)) {
                 checkedIds.push(sampleId);
             }
+            // One index on several samples is only right when they are in
+            // different lanes; a box ticked for another reason must not
+            // receive it silently.
+            if (checkedIds.length > 1 && !window.confirm(
+                    `Give this same index to all ${checkedIds.length} samples ` +
+                    '(the ticked ones and the one you dropped on)?\n\n' +
+                    'Samples in the same lane must not share an index.')) {
+                clearIndexSelection();
+                return;
+            }
             htmx.ajax('POST', `/runs/${runId}/samples/assign-index-to-selected`, {
                 target: '#sample-table',
                 swap: 'outerHTML',
