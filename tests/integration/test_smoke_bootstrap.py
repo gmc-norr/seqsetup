@@ -524,7 +524,8 @@ def test_new_run_wizard_step1_renders(logged_in_client, fresh_app):
 
     response = logged_in_client.get(f"/runs/new/step/1?run_id={run.id}")
     assert response.status_code == 200
-    assert "New Run Configuration" in response.text
+    # Opened without new=1 (not just created): the edit-setup heading.
+    assert "Run Setup" in response.text
     assert 'id="flowcell-select"' in response.text
     assert 'id="reagent-kit-select"' in response.text
     assert 'id="cycle-config"' in response.text

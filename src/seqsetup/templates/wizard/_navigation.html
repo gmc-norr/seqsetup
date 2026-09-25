@@ -1,11 +1,29 @@
-{# Wizard navigation: Cancel → /, Continue → /runs/{run_id}.
+{# Setup page navigation.
 
    Inputs:
-     step:        int (used in the wrapper id — must match the id HTMX targets)
-     run_id:      str
-     can_proceed: bool (informational — Continue is always enabled, matching
-                  the original FT component behaviour)
-     oob:         bool — true to add hx-swap-oob for out-of-band swaps #}
+     step:    int (used in the wrapper id — must match the id HTMX targets)
+     run_id:  str
+     is_new:  bool — this page just created the run
+     oob:     bool — true to add hx-swap-oob for out-of-band swaps
+
+   Continue / Back to Run first saves name, description and cycles
+   (POST /runs/{id}/setup), then opens the run: a value typed just before
+   clicking is not lost, and a rejected value keeps the user here with the
+   error shown. Cancel on a new run deletes it (still an empty draft), so
+   no "Untitled Run" is left behind. An existing run's changes are saved
+   as they are made, so it has nothing to cancel. #}
 <div id="wizard-nav-step-{{ step }}"
      class="wizard-nav"{% if oob %} hx-swap-oob="true"{% endif %}>
-<a href="/" class="btn btn-secondary">Cancel</a><a href="/runs/{{ run_id }}" class="btn btn-primary">Continue to Run</a></div>
+{%- if is_new %}
+<button type="button" class="btn btn-secondary"
+        hx-delete="/runs/{{ run_id }}"
+        hx-confirm="Cancel and delete this new run?"
+        hx-swap="none"
+        data-navigate-after="/">Cancel</button>
+{%- endif %}
+<button type="button" class="btn btn-primary ml-auto"
+        hx-post="/runs/{{ run_id }}/setup"
+        hx-include="#run-setup-fields"
+        hx-swap="none"
+        data-navigate-after="/runs/{{ run_id }}">{{ "Continue to Run" if is_new else "Back to Run" }}</button>
+</div>

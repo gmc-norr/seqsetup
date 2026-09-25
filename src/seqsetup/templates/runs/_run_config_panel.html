@@ -11,6 +11,11 @@
 {% set updated_at_str = run.updated_at.strftime("%Y-%m-%d %H:%M") if run.updated_at else "—" %}
 {% set created_by_str = run.created_by or "—" %}
 <div id="run-config-panel" class="run-config-horizontal">
+    {% if run.status.value == 'draft' %}
+    <div class="flex justify-end">
+        <a href="/runs/new/step/1?run_id={{ run.id }}" class="text-primary hover:underline text-sm">Edit setup (name, instrument, cycles)</a>
+    </div>
+    {% endif %}
     <div class="config-columns">
         <div class="config-column">
             <fieldset class="config-panel details-display">

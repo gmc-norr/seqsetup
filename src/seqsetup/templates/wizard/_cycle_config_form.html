@@ -1,7 +1,10 @@
 {#
-   Cycle-config fieldset (Read1/Read2/Index1/Index2 + Apply).
-   HTMX attributes are on the <fieldset> element, matching the FT structure
-   (CycleConfigFormWizard uses Fieldset with hx_post/hx_target/hx_swap).
+   Cycle-config fieldset (Read1/Read2/Index1/Index2).
+
+   Saves on change: any input's change bubbles to the fieldset, which
+   posts all four counts (hx-include="this"). Only the total is swapped
+   back, so a value being typed in another box is never overwritten. A
+   rejected value (400) shows in the error banner and nothing is saved.
 
    Inputs:
      run:                  SequencingRun
@@ -10,7 +13,10 @@
 #}
 <fieldset class="cycle-config" id="cycle-config"
           hx-post="/runs/{{ run.id }}/cycles"
-          hx-target="#sample-table"
+          hx-trigger="change"
+          hx-include="this"
+          hx-select=".cycle-total"
+          hx-target="find .cycle-total"
           hx-swap="outerHTML">
     <legend>Run Cycle Configuration</legend>
     <div class="cycle-row">
@@ -46,5 +52,4 @@
     <div class="cycle-total">
         <span>Total: {{ cycles.total_cycles }} / {{ run.reagent_cycles }} cycles</span>
     </div>
-    <button type="submit" class="btn-primary btn-small">Apply Cycles</button>
 </fieldset>

@@ -1,9 +1,11 @@
 {#
    Run name + description form. HTMX-saves on change (hx-trigger=change).
+   "submit" is caught too: Enter in the name box would otherwise submit
+   the form natively, reloading the page without its run_id.
    Inputs: run
 #}
 <form hx-post="/runs/{{ run.id }}/name"
-      hx-trigger="change"
+      hx-trigger="change, submit"
       hx-swap="none"
       class="run-name-form">
     <div class="form-group">

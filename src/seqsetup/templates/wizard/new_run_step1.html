@@ -1,16 +1,24 @@
 {% extends "_app_shell.html" %}
-{% set page_title = "New Run - Configuration" %}
+{% set page_title = "New Run - Configuration" if is_new else "Run Setup" %}
 {% set active_route = "/" %}
 
 {% block content %}
 <div class="wizard-container">
-    <div class="wizard-content">
+    {# hx-sync is inherited: every save on this page waits for the one
+       before it, so a quick edit followed by Continue never races into an
+       edit conflict (409). #}
+    <div class="wizard-content" hx-sync="this:queue all">
+        {% if is_new %}
         <h2>New Run Configuration</h2>
         <p>Configure the sequencing instrument and cycle settings for this run.</p>
+        {% else %}
+        <h2>Run Setup</h2>
+        <p>Changes are saved as you make them.</p>
+        {% endif %}
 
         {% include "wizard/_run_metadata.html" %}
 
-        <div class="wizard-form">
+        <div class="wizard-form" id="run-setup-fields">
             {% include "wizard/_run_name_form.html" %}
             {% with run=run, instruments=instruments,
                     current_flowcells=current_flowcells,
@@ -22,8 +30,7 @@
             {% endwith %}
         </div>
 
-        {# Wizard step 1 navigation — Cancel + Continue to Run (no Back). #}
-        {% with step=1, run_id=run.id, can_proceed=True, oob=False %}
+        {% with step=1, run_id=run.id, is_new=is_new, oob=False %}
         {% include "wizard/_navigation.html" %}
         {% endwith %}
     </div>

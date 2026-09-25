@@ -14,7 +14,7 @@ from ..data.instruments import (
     get_index_cycle_options,
     get_reagent_kits_for_flowcell,
 )
-from ..models.sequencing_run import RunCycles
+from ..models.sequencing_run import RunCycles, RunStatus
 from ..startup import get_instrument_config_repo
 from ..templating import render
 from ..services.run_history import record_run_created_safe
@@ -35,19 +35,27 @@ def wizard_new(
     actor = user.username if user else ""
     run = ctx.run_repo.create_run(actor)
     record_run_created_safe(ctx, run, actor, source="blank")
-    return RedirectResponse(f"/runs/new/step/1?run_id={run.id}", status_code=303)
+    # new=1: this page just made the run, so its Cancel deletes it.
+    return RedirectResponse(f"/runs/new/step/1?new=1&run_id={run.id}", status_code=303)
 
 
 @router.get("/runs/new/step/1")
 def wizard_step1(
     request: Request,
     run_id: str = "",
+    new: str = "",
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """GET /runs/new/step/1 — wizard step 1: run configuration."""
+    """GET /runs/new/step/1 — run setup (name, instrument, cycles).
+
+    Opened for a new run (``new=1``) and from a draft's "Edit setup" link.
+    A Ready or Archived run cannot be changed, so it goes to its run page.
+    """
     run = ctx.run_repo.get_by_id(run_id)
     if not run:
         return RedirectResponse("/", status_code=303)
+    if run.status != RunStatus.DRAFT:
+        return RedirectResponse(f"/runs/{run.id}", status_code=303)
 
     instrument_config = get_instrument_config_repo().get()
     instruments = get_enabled_instruments(instrument_config)
@@ -65,6 +73,7 @@ def wizard_step1(
         "current_reagent_kits": current_reagent_kits,
         "cycles": cycles,
         "index_cycle_options": index_cycle_options,
+        "is_new": new == "1",
     })
 
 

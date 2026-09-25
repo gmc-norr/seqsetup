@@ -1,6 +1,6 @@
 """Run configuration routes.
 
-Uses APIRouter + Depends(get_editable_run) for the six simple
+Uses APIRouter + Depends(get_editable_run) for the simple
 mutation handlers (DRAFT-only). update_status uses
 Depends(get_archivable_run) because status transitions cross the
 editable boundary (DRAFT->READY, READY->DRAFT, READY->ARCHIVED).
@@ -14,6 +14,7 @@ and skips touch+save if the body raises.
 import hashlib
 import json
 import logging
+import re
 
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import HTMLResponse, Response
@@ -251,38 +252,93 @@ async def update_reagent_kit(
     })
 
 
+_CYCLE_FIELDS = (
+    ("read1_cycles", "Read 1"),
+    ("read2_cycles", "Read 2"),
+    ("index1_cycles", "Index 1"),
+    ("index2_cycles", "Index 2"),
+)
+_MAX_CYCLES = 600
+
+
+def _parse_run_cycles(form) -> RunCycles:
+    """Read all four cycle counts, or raise ValueError naming the first one
+    that is missing or not a whole number 0-600. Nothing is clamped or
+    defaulted: a count the user did not see must never be saved."""
+    values = {}
+    for key, label in _CYCLE_FIELDS:
+        raw = form.get(key)
+        raw = raw.strip() if isinstance(raw, str) else ""
+        if not re.fullmatch(r"[0-9]{1,4}", raw) or int(raw) > _MAX_CYCLES:
+            raise ValueError(f"{label} cycles must be a whole number from 0 to {_MAX_CYCLES}.")
+        values[key] = int(raw)
+    return RunCycles(**values)
+
+
+def _set_run_cycles(run: SequencingRun, run_cycles: RunCycles) -> None:
+    """Apply cycle counts. Every sample's OverrideCycles is recomputed only
+    when the counts change: re-saving the same counts must not wipe
+    overrides the user set by hand."""
+    if run.run_cycles == run_cycles:
+        return
+    run.run_cycles = run_cycles
+    CycleCalculator.update_all_sample_override_cycles(run)
+
+
 @router.post("/runs/{run_id}/cycles", response_class=HTMLResponse)
 async def update_cycles(
     request: Request,
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/cycles — update cycle configuration."""
+    """POST /runs/{run_id}/cycles — update cycle configuration.
+
+    All four counts are required; a missing or invalid one is a 400 and
+    nothing is saved. Returns the re-rendered cycle form (new total).
+    """
     form = await request.form()
-    read1_cycles = max(0, min(_int_field(form, "read1_cycles"), 600))
-    read2_cycles = max(0, min(_int_field(form, "read2_cycles"), 600))
-    index1_cycles = max(0, min(_int_field(form, "index1_cycles"), 600))
-    index2_cycles = max(0, min(_int_field(form, "index2_cycles"), 600))
+    try:
+        run_cycles = _parse_run_cycles(form)
+    except ValueError as exc:
+        return Response(str(exc), status_code=400)
 
     with saving_run(run, ctx, request):
-        run.run_cycles = RunCycles(
-            read1_cycles=read1_cycles,
-            read2_cycles=read2_cycles,
-            index1_cycles=index1_cycles,
-            index2_cycles=index2_cycles,
-        )
-        CycleCalculator.update_all_sample_override_cycles(run)
+        _set_run_cycles(run, run_cycles)
 
-    return render(request, "wizard/_sample_table.html", {
+    return render(request, "wizard/_cycle_config_form.html", {
         "run": run,
-        "show_drop_zones": False,
-        "index_kits": None,
-        "num_lanes": 1,
-        "show_bulk_actions": True,
-        "context": "",
-        "test_profiles": None,
-        "editable": True,
+        "cycles": run.run_cycles,
+        "index_cycle_options": get_index_cycle_options(),
     })
+
+
+@router.post("/runs/{run_id}/setup", response_class=HTMLResponse)
+async def update_setup(
+    request: Request,
+    run: SequencingRun = Depends(get_editable_run),
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """POST /runs/{run_id}/setup — save the setup page's name, description
+    and cycles together (its Continue / Back button), so a value typed just
+    before leaving is never lost. All or nothing: any missing or invalid
+    field is a 400 and nothing is saved.
+    """
+    form = await request.form()
+    missing = [key for key in ("run_name", "run_description") if key not in form]
+    if missing:
+        return Response(f"Missing field(s): {', '.join(missing)}", status_code=400)
+    try:
+        run_cycles = _parse_run_cycles(form)
+    except ValueError as exc:
+        return Response(str(exc), status_code=400)
+    run_name = sanitize_string(form.get("run_name", ""), 256)
+    run_description = sanitize_string(form.get("run_description", ""), 4096)
+
+    with saving_run(run, ctx, request):
+        run.run_name = run_name
+        run.run_description = run_description
+        _set_run_cycles(run, run_cycles)
+    return Response("")
 
 
 @router.post("/runs/{run_id}/bclconvert", response_class=HTMLResponse)

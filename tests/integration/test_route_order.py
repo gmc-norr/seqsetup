@@ -29,4 +29,4 @@ def test_runs_new_step1_resolves_to_wizard(logged_in_client, fresh_app):
     response = logged_in_client.get(f"/runs/new/step/1?run_id={run_id}", follow_redirects=False)
     assert response.status_code == 200
     # The wizard page contains a known marker.
-    assert "Run Configuration" in response.text or "Step 1" in response.text
+    assert "Run Setup" in response.text or "Run Configuration" in response.text
