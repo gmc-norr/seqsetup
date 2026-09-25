@@ -13,10 +13,8 @@
     <div id="validation-approval-bar" class="bg-white border rounded p-3 flex items-center gap-3">
         {% if can_mark_ready %}
             <span class="font-semibold text-green-700">Validation passed — ready to mark this run as Ready.</span>
-            <a href="/runs/{{ run.id }}" class="ml-auto bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1 text-sm">Back to run</a>
         {% else %}
             <span class="text-red-700">Validation has {{ result.error_count }} error(s) — resolve before marking ready.</span>
-            <a href="/runs/{{ run.id }}" class="ml-auto bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1 text-sm">Back to run</a>
         {% endif %}
     </div>
     {% endblock %}

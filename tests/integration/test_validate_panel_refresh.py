@@ -42,10 +42,9 @@ class TestValidatePanelRoute:
 
     def test_panel_counts_errors_like_the_page(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        run_id = _make_run(ctx, samples=0)
+        run_id = _make_run(ctx, samples=1)  # one sample with no index: an error
         page = logged_in_client.get(f"/runs/{run_id}").text
         panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
-        assert "No samples" in panel
         assert "Errors:" in page and "Errors:" in panel
 
     @pytest.mark.parametrize("status", [RunStatus.READY, RunStatus.ARCHIVED])

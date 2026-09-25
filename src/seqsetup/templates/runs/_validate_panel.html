@@ -9,6 +9,9 @@
                          app.js marks those rows in the sample table
      error_lines:        list[str] — validation_summary.error_messages; the
                          first 10 are listed, the rest counted
+     waiting:            bool — validation_summary.waiting_for_samples: no
+                         samples is the only error, so Check has not been
+                         reached yet and is shown in grey, not as an error
 
    Refresh: after any successful non-GET HTMX request on the page (a
    change to the run), the fieldset re-fetches this partial from
@@ -22,7 +25,9 @@
 {% set has_samples = run.has_samples %}
 {% set all_have_indexes = run.all_samples_have_indexes if has_samples else False %}
 {% set samples_with_indexes = run.samples|selectattr('has_index')|list|length %}
-{% if error_count > 0 or not has_samples %}
+{% if waiting %}
+    {% set status_cls = 'waiting' %}
+{% elif error_count > 0 or not has_samples %}
     {% set status_cls = 'has-errors' %}
 {% elif not all_have_indexes or color_balance_issues > 0 %}
     {% set status_cls = 'has-warnings' %}
@@ -37,6 +42,9 @@
           hx-swap="outerHTML">
     <legend>Check</legend>
     <div class="validate-panel-content" data-sample-errors='{{ (sample_errors or {}) | tojson }}'>
+        {% if waiting %}
+        <p class="validate-waiting">Add samples first. The check runs once the run has samples.</p>
+        {% else %}
         <div class="validate-status-badges {{ status_cls }}">
             {% if has_samples %}
                 <span class="status-ok">Samples: {{ run.samples|length }}</span>
@@ -65,6 +73,7 @@
         </ul>
         {% if error_lines | length > 10 %}
         <p class="validate-error-more">and {{ error_lines | length - 10 }} more on the validation page.</p>
+        {% endif %}
         {% endif %}
         {% endif %}
         <div class="validate-footer">

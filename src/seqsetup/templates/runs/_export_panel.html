@@ -16,6 +16,10 @@
 {% set v1_enabled = is_ready and all_have_indexes %}
 <fieldset id="export-panel" class="config-panel export-display" {% if oob %}hx-swap-oob="true"{% endif %}>
     <legend>Export</legend>
+    {% if run.status.value == 'draft' %}
+    {# Nothing to download yet: one line instead of a row of dead buttons. #}
+    <p class="export-waiting">Downloads open when the run is Ready.</p>
+    {% else %}
     <div class="export-panel-content">
         <div class="export-buttons">
             <a class="btn btn-primary btn-small export-btn{% if not ss_enabled %} disabled{% endif %}"
@@ -40,4 +44,5 @@
         <p class="export-warning">Run must be marked as ready to enable exports</p>
         {% endif %}
     </div>
+    {% endif %}
 </fieldset>

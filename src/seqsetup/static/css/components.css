@@ -1218,6 +1218,13 @@ body {
     margin-top: 0.25rem;
 }
 
+/* A step not reached yet: plain grey text, not a warning or an error. */
+.export-waiting, .validate-waiting {
+    margin: 0;
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+}
+
 .validation-summary {
     padding: 0.75rem;
     border-radius: 4px;

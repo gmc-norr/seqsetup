@@ -25,6 +25,21 @@ def error_messages(result: ValidationResult) -> list[str]:
     return msgs
 
 
+def waiting_for_samples(run: SequencingRun, result: ValidationResult) -> bool:
+    """True when the run has no samples and that is its only error.
+
+    The run page then shows Check as "not reached yet" instead of as an
+    error. Display only: Mark Ready still refuses a run with no samples.
+    """
+    if run.samples:
+        return False
+    no_samples = sum(
+        1 for e in result.configuration_errors
+        if e.severity == ValidationSeverity.ERROR and e.category == "prerequisite_no_samples"
+    )
+    return result.error_count == no_samples
+
+
 def errors_by_sample(run: SequencingRun, result: ValidationResult) -> dict[str, list[str]]:
     """Blocking errors per sample, keyed by the sample's internal id.
 

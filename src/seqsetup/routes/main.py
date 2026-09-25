@@ -14,7 +14,7 @@ from ..data.instruments import get_flowcells_for_instrument, get_lanes_for_flowc
 from ..models.sequencing_run import RunCycles, RunStatus
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
-from ..services.validation_summary import error_messages, errors_by_sample
+from ..services.validation_summary import error_messages, errors_by_sample, waiting_for_samples
 from ..templating import render
 from .dependencies import get_ctx
 
@@ -53,12 +53,12 @@ def _run_steps(run, result) -> list[dict]:
     indexed = sum(1 for s in run.samples if s.has_index)
     errors = result.error_count
 
-    if errors:
-        check_state, check_detail = "error", _plural(errors, "error")
-    elif n:
-        check_state, check_detail = "done", "No errors"
-    else:
+    if waiting_for_samples(run, result):
         check_state, check_detail = "todo", "After samples"
+    elif errors:
+        check_state, check_detail = "error", _plural(errors, "error")
+    else:
+        check_state, check_detail = "done", "No errors"
 
     steps = [
         {"key": "setup", "label": "Setup", "href": "#run-config-panel",
@@ -127,6 +127,7 @@ def validate_panel(
         "validation_result": validation_result,
         "sample_errors": errors_by_sample(run, validation_result),
         "error_lines": error_messages(validation_result),
+        "waiting": waiting_for_samples(run, validation_result),
     })
 
 
@@ -169,6 +170,7 @@ def edit_run(
         "validation_result": validation_result,
         "sample_errors": errors_by_sample(run, validation_result),
         "error_lines": error_messages(validation_result),
+        "waiting": waiting_for_samples(run, validation_result),
         "steps": _run_steps(run, validation_result),
         "has_v1": has_v1,
         "flowcell_desc": flowcell_desc,
