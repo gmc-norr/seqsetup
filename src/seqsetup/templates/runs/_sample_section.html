@@ -8,8 +8,8 @@
      - shows the sample table with drop zones + bulk-action panel
 
    When the run is locked (READY/ARCHIVED), shows the locked-message
-   + a read-only sample table (no paste, no drop zones, no bulk
-   actions).
+   + a read-only sample table with all columns (no paste, no drop
+   zones, no bulk actions).
 
    Inputs:
      run:              SequencingRun
@@ -88,8 +88,11 @@
         <div class="add-samples-btn">
             <p class="locked-message">Run is locked for editing. Return to Draft to make changes.</p>
         </div>
-        {% with run=run, show_drop_zones=False, index_kits=index_kits,
-                num_lanes=num_lanes, show_bulk_actions=False, context='',
+        {# Full columns (indexes, lanes, settings) so a locked run can be
+           checked before loading; editable=False makes every cell
+           read-only and drops the checkboxes and bulk panel. #}
+        {% with run=run, show_drop_zones=True, index_kits=index_kits,
+                num_lanes=num_lanes, show_bulk_actions=True, context='',
                 test_profiles=test_profiles, editable=is_editable %}
         {% include "wizard/_sample_table.html" %}
         {% endwith %}
