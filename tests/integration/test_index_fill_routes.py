@@ -177,6 +177,52 @@ class TestPreviewSkipsUsed:
         assert "Skipped, already used in this run: UDP0000" in resp.text
 
 
+class TestPreviewPartialI5OnlySamples:
+    """A sample with only an i5 index is explained, not silently folded
+    into "already has an index"; Assign still fills the true targets and
+    leaves the i5-only sample exactly as it was."""
+
+    def test_preview_explains_i5_only_sample_and_apply_leaves_it_unchanged(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx, n_samples=3)
+        kit = _dual_kit(ctx)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.get_sample("s2").assign_index2(
+            Index(name="x", sequence="GTGTGTGT", index_type=IndexType.I5)
+        )
+        ctx.run_repo.save(run)
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill/preview",
+            data={"selected_kit": kit.kit_id},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200, resp.text[:500]
+        assert "Left alone, they have only an i5 index: S2." in resp.text
+        assert "Assign 2 indexes" in resp.text
+
+        run = ctx.run_repo.get_by_id(run_id)
+        plan = build_fill_plan(run, kit)
+
+        apply_resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill",
+            data={
+                "selected_kit": kit.kit_id,
+                "start_id": plan.start.id,
+                "plan": plan.signature(),
+            },
+            headers=ORIGIN,
+        )
+
+        assert apply_resp.status_code == 200, apply_resp.text[:500]
+        saved = ctx.run_repo.get_by_id(run_id)
+        s2 = saved.get_sample("s2")
+        assert s2.index_pair is None
+        assert s2.index1 is None
+        assert s2.index2_sequence == "GTGTGTGT"
+
+
 class TestPreviewCombinatorialRefused:
     """A combinatorial kit is refused outright; no Assign is offered."""
 

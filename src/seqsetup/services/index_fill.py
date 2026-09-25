@@ -47,6 +47,7 @@ class FillPlan:
     start: Optional[KitEntry] = None
     rows: list[FillRow] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    partial: list[str] = field(default_factory=list)
     problem: str = ""
 
     @property
@@ -105,6 +106,11 @@ def build_fill_plan(run: SequencingRun, kit: IndexKit, start_id: str = "") -> Fi
         plan.problem = f"{kit.name} has no indexes."
         return plan
 
+    plan.partial = [
+        s.sample_id for s in run.samples
+        if not needs_index(s) and s.index_pair is None and s.index1 is None
+    ]
+
     used_i7 = {s.index1_sequence for s in run.samples if s.index1_sequence}
     used_i5 = {s.index2_sequence for s in run.samples if s.index2_sequence}
 
@@ -121,7 +127,17 @@ def build_fill_plan(run: SequencingRun, kit: IndexKit, start_id: str = "") -> Fi
         plan.start = entries[pos]
 
     if not targets:
-        plan.problem = "Every sample already has an index."
+        if plan.partial:
+            names = ", ".join(plan.partial[:10])
+            if len(plan.partial) > 10:
+                names += f", and {len(plan.partial) - 10} more"
+            plan.problem = (
+                f"Fill in order only fills samples with no index at all. "
+                f"{len(plan.partial)} sample(s) have only an i5 index; "
+                f"give them an i7 by hand: {names}."
+            )
+        else:
+            plan.problem = "Every sample already has an index."
         return plan
     if pos is None:
         plan.problem = f"Every index in {kit.name} is already used in this run."

@@ -88,6 +88,52 @@ class TestOnlyEmptySamples:
         assert plan.problem == "Every sample already has an index." and not plan.can_apply
 
 
+class TestPartialI5OnlySamples:
+    """A sample with only an i5 index is never a fill target, but the plan
+    says so instead of implying every sample already has an index."""
+
+    def test_i5_only_sample_blocks_apply_and_is_named(self):
+        run = _run(2)
+        run.samples[0].assign_index2(Index(name="x", sequence="GTGTGTGT",
+                                           index_type=IndexType.I5))  # S1: i5 only
+        run.samples[1].assign_index(_pair(4))                        # S2: full pair
+        plan = build_fill_plan(run, _dual_kit())
+        assert plan.partial == ["S1"]
+        assert not plan.can_apply
+        assert plan.problem == (
+            "Fill in order only fills samples with no index at all. 1 sample(s) "
+            "have only an i5 index; give them an i7 by hand: S1."
+        )
+
+    def test_i5_only_sample_is_skipped_but_others_still_fill(self):
+        run = _run(3)
+        run.samples[1].assign_index2(Index(name="x", sequence="GTGTGTGT",
+                                           index_type=IndexType.I5))  # S2: i5 only
+        plan = build_fill_plan(run, _dual_kit())
+        assert [r.sample_label for r in plan.rows] == ["S1", "S3"]
+        assert plan.partial == ["S2"]
+        assert plan.problem == ""
+
+    def test_many_partial_samples_are_summarized_after_ten(self):
+        run = _run(0)
+        for k in range(1, 13):
+            sample = Sample(id=f"p{k}", sample_id=f"P{k:02d}", lanes=[1])
+            sample.assign_index2(Index(name="x", sequence="GTGTGTGT", index_type=IndexType.I5))
+            run.add_sample(sample)
+        plan = build_fill_plan(run, _dual_kit())
+        assert plan.problem == (
+            "Fill in order only fills samples with no index at all. 12 sample(s) "
+            "have only an i5 index; give them an i7 by hand: P01, P02, P03, P04, "
+            "P05, P06, P07, P08, P09, P10, and 2 more."
+        )
+
+    def test_fully_indexed_run_keeps_the_original_message(self):
+        run = _run(1)
+        run.samples[0].assign_index(_pair(0))
+        plan = build_fill_plan(run, _dual_kit())
+        assert plan.problem == "Every sample already has an index." and plan.partial == []
+
+
 class TestSkipUsed:
     """An index whose i7 or i5 is already used in the run is skipped."""
 

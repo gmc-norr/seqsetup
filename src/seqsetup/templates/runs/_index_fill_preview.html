@@ -34,6 +34,9 @@
     {% if plan.skipped %}
     <p class="index-fill-note">Skipped, already used in this run: {{ plan.skipped | join(', ') }}.</p>
     {% endif %}
+    {% if plan.partial %}
+    <p class="index-fill-note">Left alone, they have only an i5 index: {{ plan.partial | join(', ') }}.</p>
+    {% endif %}
     <table class="index-fill-table">
         <thead><tr><th>Sample</th><th>Index</th><th>i7</th><th>i5</th></tr></thead>
         <tbody>
