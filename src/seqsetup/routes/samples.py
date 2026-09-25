@@ -424,6 +424,51 @@ async def add_bulk_samples(
     return _render_sample_section(run, request, ctx, messages=messages or None)
 
 
+# Registered before POST /runs/{run_id}/samples/{sample_id}, which would
+# otherwise take "preview" as a sample id.
+@router.post("/runs/{run_id}/samples/preview", response_class=HTMLResponse)
+async def preview_paste(
+    request: Request,
+    run: SequencingRun = Depends(get_editable_run),
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """POST /runs/{run_id}/samples/preview — show what a paste would add.
+
+    Saves nothing. Reads with the same parser as /samples/bulk; the preview's
+    Add form sends the same text back there, which re-applies every rule.
+    """
+    paste, error = await _read_paste_input(request, run, ctx)
+    if paste is None:
+        return Response(error, status_code=400)
+
+    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    cap = sequencing_run_module.MAX_SAMPLES_PER_RUN
+    preview, read_error = None, ""
+    try:
+        read = read_pasted_samples(paste.text)
+    except ValueError as e:
+        read_error = str(e)
+    else:
+        preview = build_paste_preview(
+            read,
+            existing_ids={s.sample_id for s in run.samples},
+            test_types={tp.test_type for tp in test_profiles},
+            default_test=paste.default_test,
+            room=cap - len(run.samples),
+        )
+
+    return render(request, "runs/_paste_preview.html", {
+        "run": run,
+        "paste": paste,
+        "preview": preview,
+        "read_error": read_error,
+        "line_count": len(paste.text.splitlines()),
+        "cap": cap,
+        "test_profiles": test_profiles,
+        "num_lanes": get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type),
+    })
+
+
 # ---------------------------------------------------------------------------
 # Read handlers — GET endpoints, no mutation, no get_editable_run needed
 # ---------------------------------------------------------------------------

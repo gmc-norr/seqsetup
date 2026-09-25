@@ -1,0 +1,64 @@
+{#
+   Add-samples form: paste or file, test for blank rows, lanes. Preview
+   swaps the preview into #paste-area; nothing is saved until the
+   preview's Add button.
+
+   Inputs:
+     run:           SequencingRun
+     test_profiles: list[TestProfile]
+     num_lanes:     int
+     paste:         _PasteInput | undefined — refills the form after a preview
+#}
+{% set chosen_lanes = paste.lanes if paste else [1] %}
+{% set chosen_test = paste.default_test if paste else '' %}
+<form class="paste-form"
+      hx-post="/runs/{{ run.id }}/samples/preview"
+      hx-target="#paste-area"
+      hx-swap="innerHTML"
+      hx-encoding="multipart/form-data">
+    {% include "wizard/_sample_paste_format_help.html" %}
+    <label for="paste_data" class="paste-label">Paste rows from a spreadsheet</label>
+    <textarea name="paste_data" id="paste_data" class="paste-textarea" rows="6"
+              placeholder="sample_id&#9;test_id&#9;index_i7&#9;index_i5&#10;Sample001&#9;WGS&#9;ATTACTCG&#9;TATAGCCT">
+{{ paste.text if paste else '' }}</textarea>
+    <p class="paste-hint">Safest: make the first row name the columns, like <code>sample_id, test_id, index_i7, index_i5</code>.</p>
+    <div class="file-upload-row">
+        <label for="sample_file" class="file-upload-label">Or a file (.csv, .tsv, .txt):</label>
+        <input type="file" name="sample_file" id="sample_file" accept=".csv,.tsv,.txt" class="sample-file-input">
+    </div>
+    <div class="paste-options">
+        <div class="paste-option">
+            <label for="default_test_id" class="paste-option-label">Test for rows without one</label>
+            <select name="default_test_id" id="default_test_id" class="paste-select">
+                <option value="">Leave blank</option>
+                {% for tp in test_profiles %}
+                <option value="{{ tp.test_type }}"{% if tp.test_type == chosen_test %} selected{% endif %}>{{ tp.test_type }}{% if tp.test_name and tp.test_name != tp.test_type %} ({{ tp.test_name }}){% endif %}</option>
+                {% endfor %}
+            </select>
+            <span class="paste-option-help">Rows that already have a test keep it.</span>
+        </div>
+        {% if num_lanes > 1 %}
+        <fieldset class="paste-option">
+            <legend class="paste-option-label">Lanes for these samples</legend>
+            <div class="paste-lane-boxes">
+                {% for lane in range(1, num_lanes + 1) %}
+                <label class="paste-lane"><input type="checkbox" name="lanes" value="{{ lane }}"{% if lane in chosen_lanes %} checked{% endif %}> {{ lane }}</label>
+                {% endfor %}
+                <button type="button" class="paste-link" data-action="paste-all-lanes">All lanes</button>
+            </div>
+            <span class="paste-option-help">New samples start in lane 1. Change it here, or later in the table.</span>
+        </fieldset>
+        {% else %}
+        <div class="paste-option">
+            <span class="paste-option-label">Lane</span>
+            <span>1</span>
+            <input type="hidden" name="lanes" value="1">
+        </div>
+        {% endif %}
+    </div>
+    <div class="paste-buttons">
+        <button type="submit" class="btn btn-primary">Preview</button>
+        <button type="button" class="paste-link" data-action="clear-paste">Clear</button>
+        <span class="paste-option-help">Nothing is saved until you press Add on the next screen.</span>
+    </div>
+</form>

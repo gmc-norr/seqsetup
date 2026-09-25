@@ -1,0 +1,130 @@
+{#
+   Add-samples preview: what the paste would add, before anything is saved.
+   Swapped into #paste-area by POST /runs/{id}/samples/preview.
+
+   The Add form carries the exact previewed text; /samples/bulk reads it
+   again and re-applies every blocking rule, so this page shows, it never
+   decides. Alpine only toggles between this preview and the refilled form.
+
+   Inputs:
+     run, test_profiles, num_lanes — as for runs/_paste_form.html
+     paste:      _PasteInput — text, lanes, default_test, file_name
+     preview:    PastePreview | None — None when the text could not be read
+     read_error: str — the parser's message when preview is None
+     line_count: int
+     cap:        int — most samples a run may hold
+#}
+<div x-data="{ editing: false }">
+    <div x-show="editing" x-cloak>
+        {% include "runs/_paste_form.html" %}
+    </div>
+    <div x-show="!editing" class="paste-preview">
+        <div class="paste-recap">
+            <span>{% if paste.file_name %}File {{ paste.file_name }}{% else %}Pasted text, {{ line_count }} line{{ '' if line_count == 1 else 's' }}{% endif %}</span>
+            <span>Test for blank rows: <b>{{ paste.default_test or 'leave blank' }}</b></span>
+            <span>Lanes: <b>{{ paste.lanes | join(', ') }}</b></span>
+            <button type="button" class="paste-link" @click="editing = true">Edit paste</button>
+        </div>
+
+        <h3 class="paste-preview-title">Check what we read</h3>
+
+        {% if read_error %}
+        <div class="paste-notice paste-notice--blocked" role="alert">
+            <b>Can't read this paste.</b>
+            <span>{{ read_error }}</span>
+        </div>
+        {% elif not preview.rows %}
+        <div class="paste-notice paste-notice--look">No samples found in the paste.</div>
+        {% else %}
+            {% if preview.repeated_ids %}
+            <div class="paste-notice paste-notice--blocked" role="alert">
+                <b>Can't add yet.</b>
+                <span>Same sample ID more than once in the paste: {{ preview.repeated_ids | join(', ') }}. We can't tell which row is right. Fix the paste, then preview again.</span>
+            </div>
+            {% endif %}
+            {% if preview.over_cap %}
+            <div class="paste-notice paste-notice--blocked" role="alert">
+                <b>Too many samples.</b>
+                <span>A run holds at most {{ cap }} samples. This run has {{ run.samples | length }}, and the paste would add {{ preview.to_add }}.</span>
+            </div>
+            {% endif %}
+            {% if preview.guessed %}
+            <div class="paste-notice paste-notice--look">
+                <b>No header row, so we guessed the columns.</b>
+                <span>{% for col, fld in preview.columns_used %}{{ col | capitalize }} = {{ fld }}{{ ', ' if not loop.last }}{% endfor %}. If that's wrong, add a first row that names the columns.</span>
+            </div>
+            {% endif %}
+
+            <div class="paste-counts">
+                <span class="paste-chip">{{ preview.rows | length }} sample{{ '' if preview.rows | length == 1 else 's' }} read</span>
+                {% if preview.can_add %}<span class="paste-chip paste-chip--add">{{ preview.to_add }} will be added</span>{% endif %}
+                {% if preview.skipped %}<span class="paste-chip paste-chip--skipped">{{ preview.skipped }} skipped</span>{% endif %}
+                {% if preview.to_look %}<span class="paste-chip paste-chip--look">{{ preview.to_look }} to look at</span>{% endif %}
+                {% if preview.blocked %}<span class="paste-chip paste-chip--blocked">{{ preview.blocked }} repeated</span>{% endif %}
+            </div>
+
+            <div class="paste-columns">
+                <span class="paste-columns-label">Columns used:</span>
+                {% for col, fld in preview.columns_used %}<span class="paste-col"><code>{{ col }}</code> → {{ fld }}</span>{% endfor %}
+                {% if preview.columns_unused %}
+                <span class="paste-columns-label">Not used:</span>
+                {% for col in preview.columns_unused %}<span class="paste-col paste-col--unused"><code>{{ col }}</code></span>{% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="paste-table-wrap">
+                <table class="paste-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Line</th>
+                            <th scope="col">Sample ID</th>
+                            <th scope="col">Test</th>
+                            <th scope="col">i7</th>
+                            <th scope="col">i5</th>
+                            <th scope="col">Index name</th>
+                            <th scope="col">Lanes</th>
+                            <th scope="col">Note</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in preview.rows %}
+                        <tr class="paste-row paste-row--{{ r.state }}" data-state="{{ r.state }}">
+                            <td>{{ r.line }}</td>
+                            <td>{{ r.sample_id }}</td>
+                            <td>{% if r.test_picked %}<i>{{ r.test_id }}</i> <span class="paste-picked">(picked)</span>{% else %}{{ r.test_id or '–' }}{% endif %}</td>
+                            <td class="seq i7">{% if r.index1 %}{{ r.index1 }}{% else %}<span class="paste-none">none</span>{% endif %}</td>
+                            <td class="seq i5">{% if r.index2 %}{{ r.index2 }}{% else %}<span class="paste-none">none</span>{% endif %}</td>
+                            <td>{{ r.index_name }}</td>
+                            <td>{{ '–' if r.state == 'skipped' else paste.lanes | join(', ') }}</td>
+                            <td class="paste-note">
+                                {%- if r.state == 'ok' %}OK
+                                {%- else %}<b class="paste-badge paste-badge--{{ r.state }}">{% if r.state == 'blocked' %}Repeated{% elif r.state == 'skipped' %}Skipped{% else %}Look{% endif %}</b> {{ r.notes | join(' ') }}{% endif -%}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+
+        <div class="paste-actions">
+            {% if preview and preview.can_add %}
+            <form hx-post="/runs/{{ run.id }}/samples/bulk"
+                  hx-target="#sample-section"
+                  hx-swap="outerHTML"
+                  hx-disabled-elt="find button">
+                <textarea name="paste_data" hidden>
+{{ paste.text }}</textarea>
+                {% for lane in paste.lanes %}<input type="hidden" name="lanes" value="{{ lane }}">{% endfor %}
+                <input type="hidden" name="default_test_id" value="{{ paste.default_test }}">
+                <button type="submit" class="btn btn-primary">Add {{ preview.to_add }} sample{{ '' if preview.to_add == 1 else 's' }}</button>
+            </form>
+            {% else %}
+            <button type="button" class="btn btn-primary" disabled>Add samples</button>
+            <span class="paste-blocked-hint">{% if read_error or (preview and (preview.repeated_ids or preview.over_cap)) %}Fix the red rows first.{% else %}Nothing to add.{% endif %}</span>
+            {% endif %}
+            <button type="button" class="paste-link" @click="editing = true">Back to edit</button>
+            {% if preview and preview.can_add %}<span class="paste-option-help">Adds exactly what is shown here.</span>{% endif %}
+        </div>
+    </div>
+</div>

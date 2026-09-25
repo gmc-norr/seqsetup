@@ -14,8 +14,8 @@
    Inputs:
      run:              SequencingRun
      index_kits:       list[IndexKit]
-     test_profiles:    list[TestProfile]
-     num_lanes:        int
+     test_profiles:    list[TestProfile] — also the paste form's test picker
+     num_lanes:        int — also the paste form's lane picker
      is_editable:      bool — run.status.value == 'draft'
      sample_api_enabled: bool — LIMS-API integration toggle
      oob:              bool (default False) — add hx-swap-oob when True
@@ -27,23 +27,10 @@
         <details class="paste-section" {% if not run.samples %}open{% endif %}>
             <summary class="paste-section-summary">+ Add Samples (paste or import)</summary>
             <div class="paste-section-content">
-                {% include "wizard/_sample_paste_format_help.html" %}
-                <form hx-post="/runs/{{ run.id }}/samples/bulk"
-                      hx-target="#sample-section"
-                      hx-swap="outerHTML"
-                      hx-encoding="multipart/form-data">
-                    <textarea name="paste_data" id="paste_data" class="paste-textarea" rows="6"
-                              placeholder="sample_id&#9;test_id&#9;index_i7&#9;index_i5&#10;Sample001&#9;WGS&#9;ATTACTCG&#9;TATAGCCT"></textarea>
-                    <div class="file-upload-row">
-                        <span class="file-upload-label">or import from file:</span>
-                        <input type="file" name="sample_file" id="sample_file" accept=".csv,.tsv,.txt" class="sample-file-input">
-                    </div>
-                    <div class="paste-buttons">
-                        <button type="submit" class="btn btn-primary">Add Samples</button>
-                        <button type="button" class="btn btn-secondary"
-                                data-action="clear-paste">Clear</button>
-                    </div>
-                </form>
+                {# Paste form; Preview swaps the preview in here (Add saves). #}
+                <div id="paste-area">
+                    {% include "runs/_paste_form.html" %}
+                </div>
                 {% if sample_api_enabled %}
                     {% with context='', existing_ids='' %}
                     {% include "wizard/_fetch_from_api_section.html" %}

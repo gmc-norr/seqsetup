@@ -606,6 +606,11 @@ function clearPasteForm() {
     const sf = document.getElementById('sample_file'); if (sf) sf.value = '';
 }
 
+function tickAllPasteLanes(el) {
+    const form = el.closest('form');
+    if (form) form.querySelectorAll('input[name="lanes"][type="checkbox"]').forEach(cb => { cb.checked = true; });
+}
+
 const _CLICK_ACTIONS = {
     'bulk-apply-lanes': applyBulkLanesForm,
     'bulk-clear-lanes': clearBulkLanesForm,
@@ -618,13 +623,14 @@ const _CLICK_ACTIONS = {
     'bulk-clear-testid': clearBulkTestIdForm,
     'bulk-delete': applyBulkDeleteForm,
     'clear-paste': clearPasteForm,
+    'paste-all-lanes': tickAllPasteLanes,
 };
 
 document.addEventListener('click', function(event) {
     const actionEl = event.target.closest('[data-action]');
     if (actionEl) {
         const fn = _CLICK_ACTIONS[actionEl.dataset.action];
-        if (fn) { fn(); return; }
+        if (fn) { fn(actionEl); return; }
     }
     if (event.target.closest('.sample-checkbox')) { handleSampleCheckboxClick(event); return; }
     const sa = event.target.closest('.select-all-checkbox');

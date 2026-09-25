@@ -487,7 +487,7 @@ def test_edit_run_page_has_paste_section_when_draft(logged_in_client, fresh_app)
     response = logged_in_client.get(f"/runs/{run.id}")
     assert response.status_code == 200
     # Paste form HTMX target is present
-    assert 'hx-post="/runs/{}/samples/bulk"'.format(run.id) in response.text
+    assert 'hx-post="/runs/{}/samples/preview"'.format(run.id) in response.text
     # Sample table is also there
     assert 'id="sample-section"' in response.text
 
