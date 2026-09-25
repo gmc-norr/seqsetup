@@ -7,13 +7,13 @@
      has_v1: bool — SampleSheetV1Exporter.supports(run.instrument_platform)
      oob:    bool (default False) — when True, add hx-swap-oob="true"
 #}
-{% set is_ready = run.status.value == 'ready' %}
+{% set is_exportable = run.status.value in ('ready', 'archived') %}
 {% set all_have_indexes = run.all_samples_have_indexes if run.has_samples else False %}
-{% set ss_enabled = is_ready and all_have_indexes %}
-{% set json_enabled = is_ready %}
-{% set val_json_enabled = is_ready %}
-{% set val_pdf_enabled = is_ready %}
-{% set v1_enabled = is_ready and all_have_indexes %}
+{% set ss_enabled = is_exportable and all_have_indexes %}
+{% set json_enabled = is_exportable %}
+{% set val_json_enabled = is_exportable %}
+{% set val_pdf_enabled = is_exportable %}
+{% set v1_enabled = is_exportable and all_have_indexes %}
 <fieldset id="export-panel" class="config-panel export-display" {% if oob %}hx-swap-oob="true"{% endif %}>
     <legend>Export</legend>
     {% if run.status.value == 'draft' %}
@@ -40,9 +40,6 @@
                {% if not val_pdf_enabled %}aria-disabled="true"{% endif %}
                {% if val_pdf_enabled %}href="/runs/{{ run.id }}/export/validation-pdf"{% endif %}>Download Validation Report (PDF)</a>
         </div>
-        {% if not is_ready %}
-        <p class="export-warning">Run must be marked as ready to enable exports</p>
-        {% endif %}
     </div>
     {% endif %}
 </fieldset>
