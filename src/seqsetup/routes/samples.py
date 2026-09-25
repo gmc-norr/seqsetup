@@ -25,7 +25,13 @@ from ..services.paste_preview import build_paste_preview, repeated_sample_ids
 from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
 from ..templating import render, templates
 from .dependencies import get_ctx, get_editable_run, saving_run
-from .utils import UploadTooLargeError, get_username, read_upload_capped, sanitize_string
+from .utils import (
+    UploadTooLargeError,
+    get_username,
+    read_upload_capped,
+    sanitize_string,
+    selected_kit_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +74,7 @@ def _render_sample_section(
         run=run, index_kits=index_kits, test_profiles=test_profiles,
         num_lanes=num_lanes, is_editable=is_editable,
         sample_api_enabled=sample_api_enabled, oob=False,
+        chosen_kit_id=selected_kit_id(request),
     )
     body = section_html
     if messages:

@@ -40,7 +40,7 @@ from ..services.validation_report import ValidationReportJSON, ValidationReportP
 from ..services.validation_summary import error_messages
 from ..templating import render, templates
 from .dependencies import get_archivable_run, get_ctx, get_editable_run, saving_run
-from .utils import check_status_transition, get_username, sanitize_string
+from .utils import check_status_transition, get_username, sanitize_string, selected_kit_id
 
 
 logger = logging.getLogger(__name__)
@@ -542,6 +542,7 @@ async def update_status(
         run=run, index_kits=index_kits, test_profiles=test_profiles,
         num_lanes=num_lanes, is_editable=is_editable,
         sample_api_enabled=sample_api_enabled, oob=True,
+        chosen_kit_id=selected_kit_id(request),
     )
     return HTMLResponse(status_html + export_html + section_html, headers={"Cache-Control": "no-store"})
 

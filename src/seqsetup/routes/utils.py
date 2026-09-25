@@ -15,6 +15,7 @@ Implement it consistently or not at all.
 """
 
 import re
+from urllib.parse import unquote
 
 from starlette.responses import Response
 
@@ -30,6 +31,13 @@ def get_username(req) -> str:
     if api_token:
         return f"api:{api_token.name}"
     return ""
+
+
+def selected_kit_id(request) -> str:
+    """The kit the page's index-kit dropdown shows, sent by app.js on every
+    HTMX request as the X-Selected-Kit header (URI-encoded), so a re-rendered
+    sample section keeps it. Only ever compared with existing kit ids."""
+    return unquote(request.headers.get("X-Selected-Kit", ""))[:512]
 
 
 # Valid state transitions: source -> set of allowed targets

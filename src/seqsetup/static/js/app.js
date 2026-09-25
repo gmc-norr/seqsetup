@@ -648,6 +648,15 @@ document.addEventListener('click', function(event) {
     if (sa) { toggleSelectAllSamples(sa); return; }
 });
 
+// Every HTMX request says which kit the kit dropdown shows, so a re-rendered
+// sample section keeps it instead of falling back to the first kit. A header,
+// not a form field: the fill's Assign form sends its own selected_kit, which
+// must not be overwritten. URI-encoded because header values must be Latin-1.
+document.body.addEventListener('htmx:configRequest', function(event) {
+    const d = document.getElementById('index-kit-dropdown');
+    if (d && d.value) event.detail.headers['X-Selected-Kit'] = encodeURIComponent(d.value);
+});
+
 // Navigate ONLY after a successful HTMX request (e.g. delete-then-go-to-list).
 // Fires after the server confirms success, so the request is never aborted by
 // an early navigation, and a cancelled hx-confirm never navigates.

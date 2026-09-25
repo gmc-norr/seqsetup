@@ -20,6 +20,9 @@
      is_editable:      bool — run.status.value == 'draft'
      sample_api_enabled: bool — LIMS-API integration toggle
      oob:              bool (default False) — add hx-swap-oob when True
+     chosen_kit_id:    str — kit_id the page's kit dropdown shows, from the
+                            X-Selected-Kit header (may be undefined on a full
+                            page load; unknown → the first kit)
 #}
 {% set has_unindexed = is_editable and run.samples and run.samples|rejectattr('has_index')|list %}
 <div id="sample-section" {% if oob %}hx-swap-oob="true"{% endif %}>
@@ -47,7 +50,8 @@
         <div class="run-page-with-index-panel">
             <aside class="wizard-index-panel">
                 <h3>Available Indexes</h3>
-                {% set default_kit = index_kits[0] if index_kits else None %}
+                {% set chosen_kits = index_kits | selectattr('kit_id', 'equalto', chosen_kit_id) | list if chosen_kit_id else [] %}
+                {% set default_kit = chosen_kits[0] if chosen_kits else (index_kits[0] if index_kits else None) %}
                 {% with index_kits=index_kits, selected_kit_id=(default_kit.kit_id if default_kit else '') %}
                 {% include "wizard/_index_kit_dropdown.html" %}
                 {% endwith %}
