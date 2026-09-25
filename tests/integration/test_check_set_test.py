@@ -71,9 +71,6 @@ class TestSetTestFromCheck:
 
     def test_not_offered_without_test_profiles(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        # Clear explicitly: integration tests can see an earlier test's data
-        # (startup.py binds init_db at first import).
-        ctx.test_profile_repo.delete_all()
         run_id = _run(ctx)
         assert _fix_ids(logged_in_client.get(f"/runs/{run_id}/validate-panel").text) is None
 

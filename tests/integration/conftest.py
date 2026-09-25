@@ -43,6 +43,10 @@ def isolated_mongo(monkeypatch):
     monkeypatch.setattr(db_module, "init_db", lambda: db)
     monkeypatch.setattr(db_module, "get_db", lambda: db)
     monkeypatch.setattr(db_module, "_db", db)
+    # startup.py imports init_db by name, so patch it there too. Otherwise a
+    # file run on its own keeps the first test's database for every test.
+    import seqsetup.startup as startup_module
+    monkeypatch.setattr(startup_module, "init_db", lambda: db)
 
     yield db
 
