@@ -639,8 +639,27 @@ body {
 
 .bulk-action-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     gap: 0.5rem 1.5rem;
+}
+
+/* Bulk tools fold away until a sample is ticked (app.js toggles
+   .has-selection): with nothing ticked they, and Delete, can only fail. */
+.bulk-action-panel:not(.has-selection) .bulk-action-grid,
+.bulk-action-panel:not(.has-selection) .bulk-delete-btn {
+    display: none;
+}
+.bulk-action-panel:not(.has-selection) .selection-info {
+    border-bottom: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+.bulk-action-panel.has-selection .bulk-hint {
+    display: none;
+}
+.bulk-hint {
+    color: var(--text-muted);
+    margin-left: 0.25rem;
 }
 
 .bulk-action-column {
@@ -1660,8 +1679,17 @@ body {
     align-items: start;
 }
 .run-page-sample-panel { min-width: 0; overflow-x: auto; }
-@media (max-width: 1000px) {
+/* The table needs ~850px; beside the 320px panel that only fits on wide
+   screens. Below that the panel sits above the table, so no column is
+   hidden behind a sideways scroll. The full-width chip list flows in
+   columns and stays short, so the table is not pushed far down. */
+@media (max-width: 1499px) {
     .run-page-with-index-panel { grid-template-columns: 1fr; }
+    .run-page-with-index-panel .index-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        max-height: 240px;
+    }
 }
 
 /* Wizard Step 2 (Samples & Indexes) layout */

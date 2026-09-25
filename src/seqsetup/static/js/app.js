@@ -315,6 +315,11 @@ function updateSampleSelection() {
     if (countEl) {
         countEl.textContent = selectedIds.length;
     }
+    // The bulk tools unfold only while something is ticked (see CSS).
+    const panel = document.getElementById('bulk-action-panel');
+    if (panel) {
+        panel.classList.toggle('has-selection', selectedIds.length > 0);
+    }
 
     // Update row highlighting
     document.querySelectorAll('.sample-row').forEach(row => {
@@ -326,6 +331,10 @@ function updateSampleSelection() {
         }
     });
 }
+
+// A swapped-in row or table arrives unticked: keep the count and the
+// bulk panel in step with what is actually ticked.
+document.addEventListener('htmx:afterSettle', updateSampleSelection);
 
 function toggleSelectAllSamples(headerCheckbox) {
     const checkboxes = document.querySelectorAll('.sample-checkbox');
