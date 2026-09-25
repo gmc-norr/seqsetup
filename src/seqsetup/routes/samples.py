@@ -936,7 +936,7 @@ async def set_lanes_bulk(
     try:
         lanes = json.loads(lanes_json)
     except json.JSONDecodeError:
-        return Response("Invalid sample_ids or lanes JSON", status_code=400)
+        return Response("Invalid lanes JSON", status_code=400)
     sample_ids = _parse_sample_ids(sample_ids_json)
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)

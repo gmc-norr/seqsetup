@@ -114,3 +114,25 @@ class TestBulkRouteRejectsFileSampleIds:
         assert response.status_code == 400, response.text[:300]
         after = ctx.run_repo.get_by_id(run_id).to_dict()
         assert after == before
+
+
+class TestSetLanesRejectsInvalidLanesJson:
+    """``set-lanes`` with a valid ``sample_ids`` but a ``lanes`` value that
+    isn't JSON must answer 400 naming the ``lanes`` field — not
+    ``sample_ids`` — and must not touch the stored run."""
+
+    def test_returns_400_and_leaves_lanes_unchanged(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        before = ctx.run_repo.get_by_id(run_id).to_dict()
+
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/set-lanes",
+            data={"sample_ids": json.dumps(["s1", "s2"]), "lanes": "not json"},
+            headers=ORIGIN,
+        )
+
+        assert response.status_code == 400, response.text[:300]
+        assert response.text == "Invalid lanes JSON"
+        after = ctx.run_repo.get_by_id(run_id).to_dict()
+        assert after == before

@@ -1297,10 +1297,6 @@ body {
 }
 
 /* Bulk paste section */
-.bulk-paste-section {
-    margin-bottom: 1rem;
-}
-
 .paste-details {
     border: 1px solid var(--border);
     border-radius: 4px;
