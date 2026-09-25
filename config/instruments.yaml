@@ -56,6 +56,17 @@
 # For each 2-color instrument, channel1_bases and channel2_bases define
 # which bases produce signal in each dye channel. The validation service
 # uses these to compute per-position color balance.
+#
+# Reagent kit cycle limits (optional, per instrument):
+#
+#   reagent_kit_max_cycles:
+#     300: <most cycles the 300-cycle kit allows, all reads together>
+#
+#   Read 1 + Index 1 + Index 2 + Read 2 above this number is a validation
+#   error, and the run cannot be marked Ready. Take the number from the
+#   kit's Illumina documentation; the kit label is not the limit (kits hold
+#   extra cycles). If the limit differs between flowcells, enter the
+#   smallest. A kit without a number is not checked. None are set here.
 
 instruments:
   # NovaSeq X Series - Two-color XLEAP chemistry (Blue+Green)

@@ -147,34 +147,6 @@ class TestCycleCalculator:
         global_override = CycleCalculator.infer_global_override_cycles(sample_run)
         assert global_override is None
 
-    def test_validate_cycles_valid(self):
-        """Test validation of valid cycle configuration."""
-        cycles = RunCycles(
-            read1_cycles=140, read2_cycles=140, index1_cycles=10, index2_cycles=10
-        )
-        errors = CycleCalculator.validate_cycles(cycles, 300)
-        assert len(errors) == 0
-
-    def test_validate_cycles_exceeds_kit(self):
-        """Test validation when cycles exceed reagent kit."""
-        cycles = RunCycles(
-            read1_cycles=140, read2_cycles=140, index1_cycles=10, index2_cycles=10
-        )
-        errors = CycleCalculator.validate_cycles(cycles, 300)
-        assert len(errors) == 0
-
-        # Now test exceeding
-        cycles = RunCycles(
-            read1_cycles=200, read2_cycles=200, index1_cycles=10, index2_cycles=10
-        )
-        errors = CycleCalculator.validate_cycles(cycles, 420)
-        assert len(errors) == 0  # 420 > 200+200+10+10=420, so valid
-
-        # Test actually exceeding
-        errors = CycleCalculator.validate_cycles(cycles, 300)
-        assert len(errors) == 1
-        assert "exceeds" in errors[0].lower()
-
 
 class TestReverseOverrideSegment:
     """Tests for CycleCalculator.reverse_override_segment()."""

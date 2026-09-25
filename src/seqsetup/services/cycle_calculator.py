@@ -443,34 +443,3 @@ class CycleCalculator:
         if not tokens:
             return segment
         return "".join(reversed(tokens))
-
-    @classmethod
-    def validate_cycles(cls, run_cycles: RunCycles, reagent_kit: int) -> list[str]:
-        """
-        Validate cycle configuration against reagent kit limits.
-
-        Args:
-            run_cycles: Configured cycles
-            reagent_kit: Reagent kit total cycles
-
-        Returns:
-            List of validation error messages (empty if valid)
-        """
-        errors = []
-
-        total = run_cycles.total_cycles
-        if total > reagent_kit:
-            errors.append(
-                f"Total cycles ({total}) exceeds reagent kit capacity ({reagent_kit})"
-            )
-
-        if run_cycles.read1_cycles <= 0:
-            errors.append("Read 1 cycles must be positive")
-        if run_cycles.read2_cycles < 0:
-            errors.append("Read 2 cycles cannot be negative")
-        if run_cycles.index1_cycles < 0:
-            errors.append("Index 1 cycles cannot be negative")
-        if run_cycles.index2_cycles < 0:
-            errors.append("Index 2 cycles cannot be negative")
-
-        return errors
