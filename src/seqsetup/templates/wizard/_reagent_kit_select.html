@@ -5,11 +5,13 @@
      reagent_kits: list[int] — available cycle counts
      cycle_total_oob: bool   — also send the cycle total line out of band
                    (needs run, cycles, kit_max_cycles; see _cycle_total.html)
+     kit_select_oob: bool    — swap this select in out of band (an
+                   instrument change can change which kits are offered)
 #}
 <select name="reagent_cycles" id="reagent-kit-select"
         hx-post="/runs/{{ run_id }}/reagent-kit"
         hx-target="#cycle-config"
-        hx-swap="outerHTML">
+        hx-swap="outerHTML"{% if kit_select_oob %} hx-swap-oob="true"{% endif %}>
     {% for kit in reagent_kits %}
     <option value="{{ kit }}" {% if current == kit %}selected{% endif %}>{{ kit }} cycles</option>
     {% endfor %}

@@ -180,7 +180,8 @@ async def update_instrument(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/instrument — change platform; return new flowcell options.
+    """POST /runs/{run_id}/instrument — change platform; return new flowcell
+    and reagent-kit options.
 
     Rejects unknown platform values rather than silently keeping the
     previous one — silent fallback would let a stale UI submit a
@@ -207,11 +208,17 @@ async def update_instrument(
             run.flowcell_type = list(flowcells.keys())[0]
         else:
             run.flowcell_type = ""
+        reagent_kits = get_reagent_kits_for_flowcell(matched, run.flowcell_type)
+        if reagent_kits and run.reagent_cycles not in reagent_kits:
+            run.reagent_cycles = reagent_kits[0]
 
     return render(request, "wizard/_flowcell_select.html", {
         "run_id": run.id,
         "current": run.flowcell_type,
         "flowcells": flowcells,
+        "kit_select_oob": True,
+        "reagent_kits": reagent_kits,
+        "reagent_cycles": run.reagent_cycles,
         **_cycle_total_oob(run),
     })
 
