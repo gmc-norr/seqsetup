@@ -65,6 +65,11 @@ def wizard_step1(
     )
     cycles = run.run_cycles or RunCycles(150, 150, 10, 10)
     index_cycle_options = get_index_cycle_options()
+    # A new run may start from a template instead (see run_templates.py).
+    templates = (
+        sorted(ctx.run_template_repo.list_all(), key=lambda t: t.name.lower())
+        if new == "1" else []
+    )
 
     return render(request, "wizard/new_run_step1.html", {
         "run": run,
@@ -74,6 +79,7 @@ def wizard_step1(
         "cycles": cycles,
         "index_cycle_options": index_cycle_options,
         "is_new": new == "1",
+        "templates": templates,
     })
 
 

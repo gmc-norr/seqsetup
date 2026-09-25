@@ -11,6 +11,21 @@
         {% if is_new %}
         <h2>New Run Configuration</h2>
         <p>Configure the sequencing instrument and cycle settings for this run.</p>
+        {% if templates %}
+        {# Using a template makes a new run from it and deletes this blank
+           one, which is still an empty draft (routes/run_templates.py). #}
+        <form class="template-start" method="post" action="/runs/new/from-template">
+            <input type="hidden" name="discard_run_id" value="{{ run.id }}">
+            <label for="template_id" class="template-start-label">Or start from a template:</label>
+            <select name="template_id" id="template_id" class="paste-select" required>
+                <option value="">Choose a template…</option>
+                {% for t in templates %}
+                <option value="{{ t.id }}">{{ t.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-secondary btn-small">Use template</button>
+        </form>
+        {% endif %}
         {% else %}
         <h2>Run Setup</h2>
         <p>Changes are saved as you make them.</p>
