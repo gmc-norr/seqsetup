@@ -372,6 +372,42 @@ function updateSampleSelection() {
 // bulk panel in step with what is actually ticked.
 document.addEventListener('htmx:afterSettle', updateSampleSelection);
 
+// Mark the sample rows a blocking validation error names. The Validate box
+// carries {sample id: [messages]} from the server and is refreshed after
+// every change, so rows are re-marked after every swap. Display only: the
+// server decides what is an error. Messages go in as text, never HTML.
+function markSampleErrors() {
+    const content = document.querySelector('#validate-panel .validate-panel-content');
+    let errors = {};
+    try {
+        errors = JSON.parse((content && content.dataset.sampleErrors) || '{}');
+    } catch (e) {
+        errors = {};
+    }
+    document.querySelectorAll('#sample-table .sample-row').forEach(row => {
+        const msgs = errors[row.id.replace(/^sample-row-/, '')];
+        row.classList.toggle('has-error', Boolean(msgs));
+        let badge = row.querySelector('.row-error-badge');
+        if (!msgs) {
+            if (badge) badge.remove();
+            return;
+        }
+        if (!badge) {
+            const cell = row.querySelector('td[title]');  // the Sample ID cell
+            if (!cell) return;
+            badge = document.createElement('span');
+            badge.className = 'row-error-badge';
+            badge.setAttribute('role', 'img');
+            badge.textContent = '!';
+            cell.prepend(badge);
+        }
+        badge.title = msgs.join('\n');
+        badge.setAttribute('aria-label', `${msgs.length} error(s): ${msgs.join(' ')}`);
+    });
+}
+document.addEventListener('DOMContentLoaded', markSampleErrors);
+document.addEventListener('htmx:afterSettle', markSampleErrors);
+
 function toggleSelectAllSamples(headerCheckbox) {
     const checkboxes = document.querySelectorAll('.sample-checkbox');
     checkboxes.forEach(cb => {

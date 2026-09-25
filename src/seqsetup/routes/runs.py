@@ -36,6 +36,7 @@ from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
+from ..services.validation_summary import error_messages
 from ..templating import render, templates
 from .dependencies import get_archivable_run, get_ctx, get_editable_run, saving_run
 from .utils import check_status_transition, get_username, sanitize_string
@@ -397,20 +398,6 @@ async def update_status(
             instrument_config=ctx.instrument_config,
         )
         if validation_result.error_count > 0:
-            first_messages = []
-            for err in validation_result.configuration_errors[:3]:
-                if err.severity.value == "error":
-                    first_messages.append(err.message)
-            if not first_messages and validation_result.index_collisions:
-                first_messages.append(
-                    f"Index collisions in {len(validation_result.index_collisions)} lane(s)."
-                )
-            more = validation_result.error_count - len(first_messages)
-            suffix = f" (+ {more} more)" if more > 0 else ""
-            denial_message = (
-                f"Cannot mark ready — {validation_result.error_count} validation "
-                f"error(s):\n" + "\n".join(f"• {m}" for m in first_messages) + suffix
-            )
             audit(
                 "run.status.denied",
                 actor=get_username(request),
@@ -421,8 +408,8 @@ async def update_status(
                 error_count=validation_result.error_count,
             )
             return HTMLResponse(
-                templates.env.get_template("_messages.html").render(
-                    messages=[{"text": denial_message, "kind": "error"}]
+                templates.env.get_template("runs/_ready_refused.html").render(
+                    run=run, messages=error_messages(validation_result),
                 ),
                 headers={
                     "Cache-Control": "no-store",

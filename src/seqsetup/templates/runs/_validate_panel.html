@@ -5,6 +5,8 @@
    Inputs:
      run:                SequencingRun
      validation_result:  ValidationResult (pre-computed by the handler)
+     sample_errors:      dict[sample id, list[str]] — validation_summary.errors_by_sample;
+                         app.js marks those rows in the sample table
 
    Refresh: after any successful non-GET HTMX request on the page (a
    change to the run), the fieldset re-fetches this partial from
@@ -32,7 +34,7 @@
           hx-target="find .validate-panel-content"
           hx-swap="outerHTML">
     <legend>Validate</legend>
-    <div class="validate-panel-content">
+    <div class="validate-panel-content" data-sample-errors='{{ (sample_errors or {}) | tojson }}'>
         <div class="validate-status-badges {{ status_cls }}">
             {% if has_samples %}
                 <span class="status-ok">Samples: {{ run.samples|length }}</span>

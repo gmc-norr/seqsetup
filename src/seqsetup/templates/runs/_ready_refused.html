@@ -1,0 +1,20 @@
+{#
+   Mark-Ready refusal, swapped into #error-banner (HX-Retarget).
+
+   Every blocking error is listed; none is hidden behind "(+ N more)".
+   Messages are autoescaped: they can contain sample IDs.
+
+   Inputs:
+     run:      SequencingRun
+     messages: list[str] — validation_summary.error_messages(result)
+#}
+<div class="error-message ready-refused">
+    <p><strong>Cannot mark ready: {{ messages | length }} error{{ '' if messages | length == 1 else 's' }} to fix first.</strong></p>
+    <ul>
+        {%- for message in messages %}
+        <li>{{ message }}</li>
+        {%- endfor %}
+    </ul>
+    <p>Samples with errors are marked in the table.
+       <a href="/runs/{{ run.id }}/validation">Open the validation page</a> for details.</p>
+</div>

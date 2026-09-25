@@ -26,6 +26,7 @@ from reportlab.platypus import (
 
 from ..models.sequencing_run import SequencingRun
 from .index_collision_validator import MAX_HEATMAP_SAMPLES
+from .validation_summary import error_messages
 from ..models.validation import (
     ColorBalanceStatus,
     IndexColorBalance,
@@ -304,18 +305,8 @@ class ValidationReportPDF:
 
     @classmethod
     def _collect_error_messages(cls, result: ValidationResult) -> list[str]:
-        msgs = []
-        msgs.extend(result.duplicate_sample_ids)
-        for c in result.index_collisions:
-            msgs.append(c.collision_description)
-        for e in result.dark_cycle_errors:
-            msgs.append(e.description)
-        for e in result.application_errors:
-            msgs.append(e.detail)
-        for e in result.configuration_errors:
-            if e.severity == ValidationSeverity.ERROR:
-                msgs.append(e.message)
-        return msgs
+        # Shared with the Mark-Ready refusal, so both list the same errors.
+        return error_messages(result)
 
     @classmethod
     def _collect_warning_messages(cls, result: ValidationResult) -> list[str]:

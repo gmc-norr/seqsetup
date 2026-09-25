@@ -14,6 +14,7 @@ from ..data.instruments import get_flowcells_for_instrument, get_lanes_for_flowc
 from ..models.sequencing_run import RunCycles, RunStatus
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
+from ..services.validation_summary import errors_by_sample
 from ..templating import render
 from .dependencies import get_ctx
 
@@ -48,9 +49,11 @@ def validate_panel(
     run = ctx.run_repo.get_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
+    validation_result = _validate_for_panel(run, ctx)
     return render(request, "runs/_validate_panel.html", {
         "run": run,
-        "validation_result": _validate_for_panel(run, ctx),
+        "validation_result": validation_result,
+        "sample_errors": errors_by_sample(run, validation_result),
     })
 
 
@@ -91,6 +94,7 @@ def edit_run(
         "is_editable": is_editable,
         "sample_api_enabled": sample_api_enabled,
         "validation_result": validation_result,
+        "sample_errors": errors_by_sample(run, validation_result),
         "has_v1": has_v1,
         "flowcell_desc": flowcell_desc,
         "cycles": cycles,
