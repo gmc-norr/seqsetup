@@ -250,6 +250,22 @@ def _lane_words(lanes: list[int]) -> str:
     return f"lane {lanes[0]}" if len(lanes) == 1 else "lanes " + ", ".join(str(n) for n in lanes)
 
 
+def _parse_sample_ids(raw: str) -> Optional[list[str]]:
+    """Parse a ``sample_ids`` form field as JSON and validate its shape.
+
+    Returns the list of sample ID strings, or ``None`` if ``raw`` is not
+    valid JSON, or the parsed value is not a JSON array of strings (e.g.
+    ``null``, an object, or an array containing a non-string element).
+    """
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        return None
+    return parsed
+
+
 # ---------------------------------------------------------------------------
 # Mutation handlers — all require DRAFT run via Depends(get_editable_run)
 # ---------------------------------------------------------------------------
@@ -770,10 +786,9 @@ async def assign_index_to_selected(
     if not sample_ids_json:
         return Response("Missing sample_ids", status_code=400)
 
-    try:
-        sample_ids = json.loads(sample_ids_json)
-    except json.JSONDecodeError:
-        return Response("Invalid sample_ids format", status_code=400)
+    sample_ids = _parse_sample_ids(sample_ids_json)
+    if sample_ids is None:
+        return Response("sample_ids must be a list of sample IDs", status_code=400)
 
     kit = None
     index_pair = None
@@ -831,12 +846,12 @@ async def set_lanes_bulk(
     lanes_json = form.get("lanes", "[]")
 
     try:
-        sample_ids = json.loads(sample_ids_json)
         lanes = json.loads(lanes_json)
     except json.JSONDecodeError:
         return Response("Invalid sample_ids or lanes JSON", status_code=400)
-    if not isinstance(sample_ids, list):
-        return Response("Invalid sample_ids: expected a JSON array", status_code=400)
+    sample_ids = _parse_sample_ids(sample_ids_json)
+    if sample_ids is None:
+        return Response("sample_ids must be a list of sample IDs", status_code=400)
 
     max_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
     normalized_lanes = _normalize_lane_selection(lanes, max_lanes)
@@ -878,10 +893,9 @@ async def set_mismatches_bulk(
     mismatch_index1_str = form.get("mismatch_index1", "")
     mismatch_index2_str = form.get("mismatch_index2", "")
 
-    try:
-        sample_ids = json.loads(sample_ids_json)
-    except json.JSONDecodeError:
-        return Response("Invalid sample_ids: not valid JSON", status_code=400)
+    sample_ids = _parse_sample_ids(sample_ids_json)
+    if sample_ids is None:
+        return Response("sample_ids must be a list of sample IDs", status_code=400)
 
     mismatch_index1 = None
     if mismatch_index1_str.strip():
@@ -928,10 +942,9 @@ async def set_override_cycles_bulk(
     sample_ids_json = form.get("sample_ids", "[]")
     override_cycles_str = form.get("override_cycles", "")
 
-    try:
-        sample_ids = json.loads(sample_ids_json)
-    except json.JSONDecodeError:
-        return Response("Invalid sample_ids: not valid JSON", status_code=400)
+    sample_ids = _parse_sample_ids(sample_ids_json)
+    if sample_ids is None:
+        return Response("sample_ids must be a list of sample IDs", status_code=400)
 
     # Length-limit defensively — the model regex restricts characters but
     # a multi-megabyte all-`Y` string would still match and balloon the doc.
@@ -988,10 +1001,9 @@ async def set_test_id_bulk(
     sample_ids_json = form.get("sample_ids", "[]")
     test_id_str = form.get("test_id", "")
 
-    try:
-        sample_ids = json.loads(sample_ids_json)
-    except json.JSONDecodeError:
-        return Response("Invalid sample_ids: not valid JSON", status_code=400)
+    sample_ids = _parse_sample_ids(sample_ids_json)
+    if sample_ids is None:
+        return Response("sample_ids must be a list of sample IDs", status_code=400)
 
     test_id = sanitize_string(test_id_str, 256)
 
@@ -1023,10 +1035,9 @@ async def delete_samples_bulk(
     form = await request.form()
     sample_ids_json = form.get("sample_ids", "[]")
 
-    try:
-        sample_ids = json.loads(sample_ids_json)
-    except json.JSONDecodeError:
-        return Response("Invalid sample_ids: not valid JSON", status_code=400)
+    sample_ids = _parse_sample_ids(sample_ids_json)
+    if sample_ids is None:
+        return Response("sample_ids must be a list of sample IDs", status_code=400)
 
     deleted_ids = [sid for sid in sample_ids if run.get_sample(str(sid))]
     with saving_run(run, ctx, request):
