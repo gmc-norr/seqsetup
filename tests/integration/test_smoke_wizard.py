@@ -279,7 +279,7 @@ class TestBulkPasteSizeCap:
         too_big = "S1,T1,ACGT,ACGT\n" * (10 * 1024 * 1024 // 16 + 100)  # > 10 MB
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/bulk",
-            data={"paste_data": too_big},
+            data={"paste_data": too_big, "lanes": "1"},
             headers=_origin(),
         )
         assert response.status_code == 400
@@ -296,7 +296,7 @@ class TestBulkPasteSizeCap:
         paste = "Sample_ID,Test_ID,Index_I7,Index_I5\nS1,WGS,ATTACTCG,TATAGCCT\n,WGS,ATTACTCG,TATAGCCT\n"
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/bulk",
-            data={"paste_data": paste},
+            data={"paste_data": paste, "lanes": "1"},
             headers=_origin(),
         )
         # The handler renders the sample section with an error banner; the

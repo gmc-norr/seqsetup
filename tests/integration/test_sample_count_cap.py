@@ -30,7 +30,7 @@ class TestBulkSampleCapRoute:
         paste = "A,WGS\nB,WGS\nC,WGS"
         resp = logged_in_client.post(
             f"/runs/{run_id}/samples/bulk",
-            data={"paste_data": paste},
+            data={"paste_data": paste, "lanes": "1"},
             headers={**_origin(), "HX-Request": "true"},
         )
         assert resp.status_code == 200, resp.text[:300]

@@ -6,6 +6,7 @@ Depends(get_editable_run) + with saving_run(...).
 
 import json
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,7 +20,8 @@ from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import SequencingRun
 from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
-from ..services.sample_parser import parse_pasted_samples
+from ..services.paste_preview import build_paste_preview, repeated_sample_ids
+from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
 from ..templating import render, templates
 from .dependencies import get_ctx, get_editable_run, saving_run
 from .utils import UploadTooLargeError, get_username, read_upload_capped, sanitize_string
@@ -172,6 +174,82 @@ def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
     return sorted(lanes)
 
 
+_MAX_PASTE_CHARS = 10 * 1024 * 1024
+
+
+@dataclass
+class _PasteInput:
+    """What an Add-samples form sent: the text, and the picked lanes and test."""
+    text: str
+    lanes: list[int]
+    default_test: str
+    file_name: str = ""
+
+
+def _test_types(ctx: AppContext) -> set[str]:
+    repo = ctx.test_profile_repo
+    return {tp.test_type for tp in repo.list_all()} if repo else set()
+
+
+async def _read_paste_input(
+    request: Request, run: SequencingRun, ctx: AppContext,
+) -> tuple[Optional[_PasteInput], str]:
+    """Read an Add-samples form (preview or add). Returns (input, "") or
+    (None, message) for a 400. Saves nothing.
+
+    Lanes: at least one, each within the flowcell — an empty choice is an
+    error, never "all lanes". The default test must be empty or a known
+    test profile.
+    """
+    form = await request.form()
+
+    file_name = ""
+    sample_file = form.get("sample_file")
+    if sample_file and hasattr(sample_file, "read") and sample_file.filename:
+        # Stream-read in bounded chunks so a multi-GB POST can't exhaust
+        # memory before the size check fires (the index-kit upload path uses
+        # the same shared helper).
+        try:
+            raw_bytes = await read_upload_capped(sample_file, _MAX_PASTE_CHARS)
+        except UploadTooLargeError:
+            return None, "File too large (max 10 MB)"
+        try:
+            text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            return None, "File must be UTF-8 encoded"
+        file_name = sanitize_string(sample_file.filename, 256)
+    else:
+        text = form.get("paste_data", "")
+        # Mirror the 10 MB cap from the file-upload branch — without this an
+        # authenticated user can post unbounded paste_data and balloon the
+        # run document past MongoDB's 16 MB BSON limit on save.
+        if len(text) > _MAX_PASTE_CHARS:
+            return None, "Pasted data too large (max 10 MB)"
+
+    max_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
+    lanes = _normalize_lane_selection(form.getlist("lanes"), max_lanes)
+    if lanes is None:
+        return None, f"Invalid lane selection. Use lane numbers between 1 and {max_lanes}."
+    if not lanes:
+        return None, "Pick at least one lane for the new samples."
+
+    default_test = sanitize_string(form.get("default_test_id", ""), 256)
+    if default_test and default_test not in _test_types(ctx):
+        return None, f'No test called "{default_test}".'
+
+    return _PasteInput(text=text, lanes=lanes, default_test=default_test, file_name=file_name), ""
+
+
+def _name_list(ids: list[str], limit: int = 10) -> str:
+    """'A, B, C' — the first ``limit`` names, then 'and N more'."""
+    shown = ", ".join(ids[:limit])
+    return f"{shown} and {len(ids) - limit} more" if len(ids) > limit else shown
+
+
+def _lane_words(lanes: list[int]) -> str:
+    return f"lane {lanes[0]}" if len(lanes) == 1 else "lanes " + ", ".join(str(n) for n in lanes)
+
+
 # ---------------------------------------------------------------------------
 # Mutation handlers — all require DRAFT run via Depends(get_editable_run)
 # ---------------------------------------------------------------------------
@@ -228,31 +306,12 @@ async def add_bulk_samples(
     """POST /runs/{run_id}/samples/bulk — add multiple samples from paste/file."""
     run_id = run.id
 
-    form = await request.form()
-
-    sample_file = form.get("sample_file")
-    if sample_file and hasattr(sample_file, "read") and sample_file.filename:
-        # Stream-read in bounded chunks so a multi-GB POST can't exhaust
-        # memory before the size check fires (the index-kit upload path uses
-        # the same shared helper).
-        try:
-            raw_bytes = await read_upload_capped(sample_file, 10 * 1024 * 1024)
-        except UploadTooLargeError:
-            return Response("File too large (max 10 MB)", status_code=400)
-        try:
-            content = raw_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            return Response("File must be UTF-8 encoded", status_code=400)
-    else:
-        content = form.get("paste_data", "")
-        # Mirror the 10 MB cap from the file-upload branch — without this an
-        # authenticated user can post unbounded paste_data and balloon the
-        # run document past MongoDB's 16 MB BSON limit on save.
-        if len(content) > 10 * 1024 * 1024:
-            return Response("Pasted data too large (max 10 MB)", status_code=400)
+    paste, error = await _read_paste_input(request, run, ctx)
+    if paste is None:
+        return Response(error, status_code=400)
 
     try:
-        parsed = parse_pasted_samples(content)
+        parsed = parse_pasted_samples(paste.text)
     except ValueError as e:
         # Reject the whole import — silent partial drops would land
         # patient samples in the Undetermined bucket. Surface the parse
@@ -262,50 +321,56 @@ async def add_bulk_samples(
             messages=[{"text": f"Bulk import rejected: {e}", "kind": "error"}],
         )
 
+    # An ID twice in one paste: we can't tell which row is right, so the
+    # whole paste is refused (the preview shows these rows in red).
+    repeated = repeated_sample_ids(parsed)
+    if repeated:
+        return _render_sample_section(
+            run, request, ctx,
+            messages=[{
+                "text": (
+                    "Bulk import rejected: these sample IDs appear more than once "
+                    f"in the paste: {_name_list(repeated)}. Nothing was added."
+                ),
+                "kind": "error",
+            }],
+        )
+
     existing_sample_ids = {s.sample_id for s in run.samples}
-
-    added_count = 0
     skipped_duplicates: list[str] = []
-    skipped_within_paste: list[str] = []
-
     new_samples = []
-    seen_in_paste: set[str] = set()
     for ps in parsed:
         if ps.sample_id in existing_sample_ids:
             skipped_duplicates.append(ps.sample_id)
-        elif ps.sample_id in seen_in_paste:
-            skipped_within_paste.append(ps.sample_id)
-        else:
-            seen_in_paste.add(ps.sample_id)
-            sample = Sample(
-                sample_id=ps.sample_id,
-                test_id=ps.test_id,
-                lanes=[1],
-            )
+            continue
+        sample = Sample(
+            sample_id=ps.sample_id,
+            test_id=ps.test_id or paste.default_test,
+            lanes=list(paste.lanes),
+        )
 
-            if ps.index1_sequence:
-                index1 = Index(
-                    name=ps.index1_name or "",
-                    sequence=ps.index1_sequence,
-                    index_type=IndexType.I7,
-                )
-                sample.assign_index1(index1)
+        if ps.index1_sequence:
+            index1 = Index(
+                name=ps.index1_name or "",
+                sequence=ps.index1_sequence,
+                index_type=IndexType.I7,
+            )
+            sample.assign_index1(index1)
+            sample.index_kit_name = ps.index_pair_name or "Pasted"
+
+        if ps.index2_sequence:
+            index2 = Index(
+                name=ps.index2_name or "",
+                sequence=ps.index2_sequence,
+                index_type=IndexType.I5,
+            )
+            sample.assign_index2(index2)
+            if not sample.index_kit_name:
                 sample.index_kit_name = ps.index_pair_name or "Pasted"
 
-            if ps.index2_sequence:
-                index2 = Index(
-                    name=ps.index2_name or "",
-                    sequence=ps.index2_sequence,
-                    index_type=IndexType.I5,
-                )
-                sample.assign_index2(index2)
-                if not sample.index_kit_name:
-                    sample.index_kit_name = ps.index_pair_name or "Pasted"
-
-            _update_override_cycles(sample, run)
-
-            new_samples.append(sample)
-            added_count += 1
+        _update_override_cycles(sample, run)
+        new_samples.append(sample)
+    added_count = len(new_samples)
 
     # Refuse before mutating if the additions would push the run past the
     # per-run cap (the model's add_sample backstop would otherwise raise
@@ -333,25 +398,26 @@ async def add_bulk_samples(
             target=run_id,
             added_count=added_count,
             skipped_duplicates_count=len(skipped_duplicates),
-            skipped_within_paste_count=len(skipped_within_paste),
+            lanes=",".join(str(n) for n in paste.lanes),
+            default_test_id=paste.default_test,
         )
 
-    # Surface per-import feedback so duplicate-skips aren't silent.
+    # Surface per-import feedback so skips are never silent.
     messages: list[dict] = []
-    if added_count == 1:
-        messages.append({"text": "Added 1 sample.", "kind": "success"})
-    elif added_count > 1:
-        messages.append({"text": f"Added {added_count} samples.", "kind": "success"})
+    if added_count:
+        noun = "sample" if added_count == 1 else "samples"
+        messages.append({
+            "text": f"Added {added_count} {noun} to {_lane_words(paste.lanes)}.",
+            "kind": "success",
+        })
     elif not parsed:
         messages.append({"text": "No samples found in input.", "kind": "warning"})
     if skipped_duplicates:
         messages.append({
-            "text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.",
-            "kind": "warning",
-        })
-    if skipped_within_paste:
-        messages.append({
-            "text": f"Skipped {len(skipped_within_paste)} duplicate(s) within the pasted data.",
+            "text": (
+                f"Skipped {len(skipped_duplicates)} already in the run: "
+                f"{_name_list(skipped_duplicates)}."
+            ),
             "kind": "warning",
         })
 
