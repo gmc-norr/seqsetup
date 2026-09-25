@@ -20,6 +20,7 @@ from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import SequencingRun
 from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
+from ..services.index_fill import build_fill_plan
 from ..services.paste_preview import build_paste_preview, repeated_sample_ids
 from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
 from ..templating import render, templates
@@ -766,6 +767,81 @@ async def assign_indexes_bulk(
     )
 
     return _render_sample_section(run, request, ctx)
+
+
+def _index_fill_plan(form, run: SequencingRun, ctx: AppContext):
+    """(plan, "") or (None, message for a 400)."""
+    kit_id = sanitize_string(form.get("selected_kit", ""), 512)
+    start_id = sanitize_string(form.get("start_id", ""), 512)
+    kit = ctx.index_kit_repo.get_by_kit_id(kit_id) if kit_id else None
+    if kit is None:
+        return None, "Pick an index kit first."
+    try:
+        return build_fill_plan(run, kit, start_id), ""
+    except ValueError:
+        return None, "That start index is not in this kit."
+
+
+@router.post("/runs/{run_id}/index-fill/preview", response_class=HTMLResponse)
+async def preview_index_fill(
+    request: Request,
+    run: SequencingRun = Depends(get_editable_run),
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """POST /runs/{run_id}/index-fill/preview — what "Fill in order" would
+    assign. Nothing is saved."""
+    plan, error = _index_fill_plan(await request.form(), run, ctx)
+    if error:
+        return Response(error, status_code=400)
+    return render(request, "runs/_index_fill_preview.html", {"run": run, "plan": plan})
+
+
+@router.post("/runs/{run_id}/index-fill", response_class=HTMLResponse)
+async def apply_index_fill(
+    request: Request,
+    run: SequencingRun = Depends(get_editable_run),
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """POST /runs/{run_id}/index-fill — assign the previewed plan. Refused
+    (409) unless the plan rebuilt now is the one the preview showed."""
+    form = await request.form()
+    plan, error = _index_fill_plan(form, run, ctx)
+    if error:
+        return Response(error, status_code=400)
+    if not plan.can_apply:
+        return Response(plan.problem or "Nothing to fill.", status_code=400)
+    if plan.signature() != form.get("plan", ""):
+        return Response(
+            "The run or kit changed since the preview. Preview again.", status_code=409
+        )
+
+    with saving_run(run, ctx, request):
+        for row in plan.rows:
+            if plan.mode == "pair":
+                run.assign_index_pair_to_sample(row.sample_id, row.entry.index)
+            else:
+                run.assign_index1_to_sample(row.sample_id, row.entry.index)
+            sample = run.get_sample(row.sample_id)
+            sample.index_kit_name = plan.kit.name
+            _apply_kit_defaults(sample, plan.kit)
+            _update_override_cycles(sample, run)
+
+    audit(
+        "sample.index_filled_in_order",
+        actor=get_username(request),
+        target=run.id,
+        kit_name=plan.kit.name,
+        kit_version=plan.kit.version,
+        start=plan.start.name,
+        sample_count=len(plan.rows),
+    )
+    return _render_sample_section(run, request, ctx, messages=[{
+        "text": (
+            f"Gave indexes to {len(plan.rows)} samples from {plan.kit.name}, "
+            f"starting at {plan.start.name}."
+        ),
+        "kind": "success",
+    }])
 
 
 @router.post("/runs/{run_id}/samples/assign-index-to-selected", response_class=HTMLResponse)

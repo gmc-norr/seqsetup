@@ -4,7 +4,8 @@
    When the run is in DRAFT (is_editable=True):
      - shows the bulk-paste import section above the table
      - shows the index-kit side panel (drag sources) when there's at
-       least one un-indexed sample
+       least one un-indexed sample, with a "Fill empty samples in
+       order…" button that previews into #index-fill-area
      - shows the sample table with drop zones + bulk-action panel
 
    When the run is locked (READY/ARCHIVED), shows the locked-message
@@ -42,6 +43,7 @@
         <div id="add-samples-result"></div>
 
         {% if has_unindexed %}
+        <div id="index-fill-area"></div>
         <div class="run-page-with-index-panel">
             <aside class="wizard-index-panel">
                 <h3>Available Indexes</h3>
@@ -49,6 +51,16 @@
                 {% with index_kits=index_kits, selected_kit_id=(default_kit.kit_id if default_kit else '') %}
                 {% include "wizard/_index_kit_dropdown.html" %}
                 {% endwith %}
+                {% if index_kits %}
+                <form class="index-fill-start"
+                      hx-post="/runs/{{ run.id }}/index-fill/preview"
+                      hx-include="#index-kit-dropdown"
+                      hx-target="#index-fill-area"
+                      hx-select="#index-fill-preview"
+                      hx-swap="innerHTML">
+                    <button type="submit" class="btn btn-secondary btn-small">Fill empty samples in order…</button>
+                </form>
+                {% endif %}
                 <div class="index-kits-compact" id="index-list-container">
                     {% with kit=default_kit %}
                     {% include "wizard/_index_kit_panel_compact.html" %}

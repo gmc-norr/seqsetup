@@ -624,6 +624,7 @@ const _CLICK_ACTIONS = {
     'bulk-delete': applyBulkDeleteForm,
     'clear-paste': clearPasteForm,
     'paste-all-lanes': tickAllPasteLanes,
+    'cancel-index-fill': () => { const a = document.getElementById('index-fill-area'); if (a) a.innerHTML = ''; },
 };
 
 document.addEventListener('click', function(event) {

@@ -1,0 +1,66 @@
+{#
+   "Fill empty samples in order" preview. Nothing is saved until Assign;
+   Assign sends the plan's signature and the server refuses a changed plan.
+
+   Inputs:
+     run:   SequencingRun
+     plan:  FillPlan (services/index_fill.py)
+#}
+<div id="index-fill-preview" class="index-fill-preview">
+    <h3 class="index-fill-title">Fill samples without an index, in order</h3>
+    {% if plan.entries %}
+    <form class="index-fill-options"
+          hx-post="/runs/{{ run.id }}/index-fill/preview"
+          hx-trigger="change"
+          hx-target="#index-fill-area"
+          hx-select="#index-fill-preview"
+          hx-swap="innerHTML">
+        <input type="hidden" name="selected_kit" value="{{ plan.kit.kit_id }}">
+        <label for="index-fill-start">Start at</label>
+        <select id="index-fill-start" name="start_id" class="paste-select">
+            {% for e in plan.entries %}
+            <option value="{{ e.id }}" {% if plan.start and e.id == plan.start.id %}selected{% endif %}>{{ e.name }}{% if e.well %} ({{ e.well }}){% endif %}</option>
+            {% endfor %}
+        </select>
+    </form>
+    {% endif %}
+
+    {% if plan.problem %}
+    <p class="index-fill-problem">{{ plan.problem }}</p>
+    {% else %}
+    <p class="index-fill-summary">{{ plan.rows | length }} sample(s) without an index get indexes
+        from {{ plan.kit.name }}, in table order, starting at {{ plan.start.name }}.
+        Samples that already have an index are not changed.</p>
+    {% if plan.skipped %}
+    <p class="index-fill-note">Skipped, already used in this run: {{ plan.skipped | join(', ') }}.</p>
+    {% endif %}
+    <table class="index-fill-table">
+        <thead><tr><th>Sample</th><th>Index</th><th>i7</th><th>i5</th></tr></thead>
+        <tbody>
+            {% for row in plan.rows %}
+            <tr>
+                <td>{{ row.sample_label }}</td>
+                <td>{{ row.entry.name }}</td>
+                <td><code>{{ row.entry.i7 }}</code></td>
+                <td><code>{{ row.entry.i5 or '' }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <div class="index-fill-actions">
+        {% if plan.can_apply %}
+        <form hx-post="/runs/{{ run.id }}/index-fill"
+              hx-target="#sample-section"
+              hx-swap="outerHTML"
+              hx-disabled-elt="find button">
+            <input type="hidden" name="selected_kit" value="{{ plan.kit.kit_id }}">
+            <input type="hidden" name="start_id" value="{{ plan.start.id }}">
+            <input type="hidden" name="plan" value="{{ plan.signature() }}">
+            <button type="submit" class="btn btn-primary btn-small">Assign {{ plan.rows | length }} indexes</button>
+        </form>
+        {% endif %}
+        <button type="button" class="paste-link" data-action="cancel-index-fill">Cancel</button>
+    </div>
+</div>
