@@ -12,6 +12,7 @@ from ..data.instruments import (
     get_enabled_instruments,
     get_flowcells_for_instrument,
     get_index_cycle_options,
+    get_reagent_kit_max_cycles,
     get_reagent_kits_for_flowcell,
 )
 from ..models.sequencing_run import RunCycles, RunStatus
@@ -78,6 +79,7 @@ def wizard_step1(
         "current_reagent_kits": current_reagent_kits,
         "cycles": cycles,
         "index_cycle_options": index_cycle_options,
+        "kit_max_cycles": get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles),
         "is_new": new == "1",
         "templates": templates,
     })

@@ -10,6 +10,7 @@
      run:                  SequencingRun
      cycles:               RunCycles
      index_cycle_options:  list[int]
+     kit_max_cycles:       int | None (see _cycle_total.html)
 #}
 <fieldset class="cycle-config" id="cycle-config"
           hx-post="/runs/{{ run.id }}/cycles"
@@ -49,7 +50,5 @@
             </select>
         </div>
     </div>
-    <div class="cycle-total">
-        <span>Total: {{ cycles.total_cycles }} / {{ run.reagent_cycles }} cycles</span>
-    </div>
+    {% with oob=False %}{% include "wizard/_cycle_total.html" %}{% endwith %}
 </fieldset>

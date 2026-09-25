@@ -25,6 +25,7 @@ from ..data.instruments import (
     get_flowcells_for_instrument,
     get_index_cycle_options,
     get_lanes_for_flowcell,
+    get_reagent_kit_max_cycles,
     get_reagent_kits_for_flowcell,
 )
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
@@ -160,6 +161,19 @@ async def update_run_name(
     return Response("")
 
 
+def _cycle_total_oob(run: SequencingRun) -> dict:
+    """Context for sending the setup page's cycle total line out of band:
+    an instrument or flowcell change can change the kit's cycle limit."""
+    if not run.run_cycles:
+        return {"cycle_total_oob": False}
+    return {
+        "cycle_total_oob": True,
+        "run": run,
+        "cycles": run.run_cycles,
+        "kit_max_cycles": get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles),
+    }
+
+
 @router.post("/runs/{run_id}/instrument", response_class=HTMLResponse)
 async def update_instrument(
     request: Request,
@@ -198,6 +212,7 @@ async def update_instrument(
         "run_id": run.id,
         "current": run.flowcell_type,
         "flowcells": flowcells,
+        **_cycle_total_oob(run),
     })
 
 
@@ -221,6 +236,7 @@ async def update_flowcell(
         "run_id": run.id,
         "current": run.reagent_cycles,
         "reagent_kits": reagent_kits,
+        **_cycle_total_oob(run),
     })
 
 
@@ -250,6 +266,7 @@ async def update_reagent_kit(
         "run": run,
         "cycles": run.run_cycles,
         "index_cycle_options": index_cycle_options,
+        "kit_max_cycles": get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles),
     })
 
 
@@ -310,6 +327,7 @@ async def update_cycles(
         "run": run,
         "cycles": run.run_cycles,
         "index_cycle_options": get_index_cycle_options(),
+        "kit_max_cycles": get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles),
     })
 
 

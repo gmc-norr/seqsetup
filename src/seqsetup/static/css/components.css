@@ -1144,6 +1144,12 @@ body {
     color: var(--text-muted);
 }
 
+.cycle-total-over {
+    margin-left: 0.5rem;
+    color: var(--danger);
+    font-weight: var(--fw-semibold);
+}
+
 /* Run metadata display */
 .run-metadata {
     background: #f1f5f9;

@@ -1,0 +1,22 @@
+{#
+   Cycle total line, under the cycle inputs.
+
+   Inputs:
+     run:             SequencingRun
+     cycles:          RunCycles
+     kit_max_cycles:  int | None — most cycles the kit allows, when the
+                      instrument's config gives a number (Check refuses a
+                      run over it); None shows the kit label as before
+     oob:             bool — swap in out of band (instrument or flowcell
+                      change, which can change the limit)
+#}
+<div class="cycle-total" id="cycle-total"{% if oob %} hx-swap-oob="true"{% endif %}>
+    {% if kit_max_cycles %}
+    <span>Total: {{ cycles.total_cycles }} / {{ kit_max_cycles }} max ({{ run.reagent_cycles }}-cycle kit)</span>
+    {% if cycles.total_cycles > kit_max_cycles %}
+    <span class="cycle-total-over">Too many cycles for this kit.</span>
+    {% endif %}
+    {% else %}
+    <span>Total: {{ cycles.total_cycles }} / {{ run.reagent_cycles }} cycles</span>
+    {% endif %}
+</div>
