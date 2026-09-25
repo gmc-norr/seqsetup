@@ -166,7 +166,7 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
                 return;
             }
             htmx.ajax('POST', `/runs/${runId}/samples/assign-index-to-selected`, {
-                target: '#sample-table',
+                target: '#sample-section',
                 swap: 'outerHTML',
                 values: {
                     sample_ids: JSON.stringify(checkedIds),
@@ -205,7 +205,7 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
         }
         // Use htmx.ajax to properly handle OOB swaps for navigation
         htmx.ajax('POST', `/runs/${runId}/samples/assign-indexes-bulk`, {
-            target: '#sample-table',
+            target: '#sample-section',
             swap: 'outerHTML',
             values: {
                 start_sample_id: sampleId,
