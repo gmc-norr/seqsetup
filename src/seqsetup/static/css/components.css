@@ -1736,6 +1736,12 @@ body {
     overflow-y: auto;
 }
 
+.index-panel-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0.25rem 0 0.5rem;
+}
+
 /* Review page */
 .wizard-review-content {
     display: grid;

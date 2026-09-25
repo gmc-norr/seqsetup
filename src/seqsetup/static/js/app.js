@@ -195,7 +195,14 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
             });
         }
     } else {
-        // Multi-index assignment - assign to consecutive samples starting from drop target
+        // Multi-index assignment - assign to consecutive samples starting from drop target.
+        // The server replaces any index already on those rows and skips
+        // indexes past the last row, so say so before doing either.
+        const warning = multiDropWarning(sampleId, indexes);
+        if (warning && !window.confirm(warning)) {
+            clearIndexSelection();
+            return;
+        }
         // Use htmx.ajax to properly handle OOB swaps for navigation
         htmx.ajax('POST', `/runs/${runId}/samples/assign-indexes-bulk`, {
             target: '#sample-table',
@@ -212,6 +219,35 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
 
     // Clear selection after drop
     clearIndexSelection();
+}
+
+// Why a multi-index drop needs a confirm, or '' if it needs none. The
+// indexes go to the drop target and the rows below it in table order (the
+// server's run order): name the rows that already carry an index of the
+// dropped kind, and count indexes that run past the last row.
+function multiDropWarning(sampleId, indexes) {
+    const rows = Array.from(document.querySelectorAll('#sample-table .sample-row'));
+    const start = rows.findIndex(r => r.id === `sample-row-${sampleId}`);
+    if (start < 0) return '';
+    const targets = rows.slice(start, start + indexes.length);
+    const type = indexes[0].type;
+    const slot = (type === 'i7' || type === 'i5') ? `.assigned-index.${type}` : '.assigned-index';
+    const replaced = targets
+        .filter(r => r.querySelector(slot))
+        .map(r => { const c = r.querySelector('td[title]'); return c ? c.title : r.id; });
+
+    const parts = [];
+    if (replaced.length) {
+        const names = replaced.slice(0, 5).join(', ') +
+            (replaced.length > 5 ? `, and ${replaced.length - 5} more` : '');
+        parts.push(`This will replace the index on ${replaced.length} sample(s) that already have one: ${names}.`);
+    }
+    const unused = indexes.length - targets.length;
+    if (unused > 0) {
+        parts.push(`Only ${targets.length} sample(s) from here down: the last ${unused} ` +
+            `index${unused === 1 ? '' : 'es'} will not be used.`);
+    }
+    return parts.length ? parts.join('\n\n') + '\n\nContinue?' : '';
 }
 
 function handleIndexKeydown(event) {                 // chip: Enter/Space = select
