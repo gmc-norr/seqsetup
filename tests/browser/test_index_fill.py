@@ -127,8 +127,23 @@ def test_cancel_clears_the_area_and_saves_nothing(logged_in_page, base_url, app_
     assert all(not s.has_index for s in stored.samples)
 
 
+# This is a page-layout smoke check only: it proves the preview does not
+# cause the *page* to scroll horizontally at a narrow/mobile viewport. It
+# does NOT and cannot prove that .index-fill-table's own overflow-x:auto /
+# display:block rule is what does the work. Measured directly (viewports
+# 50-1280px, with the real 3-row fixture and with sample IDs stretched to
+# 30+ chars to force much wider table content): .index-fill-table's
+# clientWidth always equals its scrollWidth, with or without those two
+# declarations present, because an ancestor a few levels up
+# (.config-panel.samples-display, a flex item with overflow: visible and
+# no min-width: 0) always grows to fit the table's own content instead of
+# constraining it. The table can structurally never become narrower than
+# its content on this page today, so the "table scrolls inside itself"
+# half of the requirement is not something a test against the real page
+# can currently exercise. See task-7-report.md, "Fix pass" section, for
+# the full investigation.
 @pytest.mark.browser
-def test_preview_fits_at_375px_without_page_scroll(logged_in_page, base_url, fill_run_id):
+def test_preview_at_375px_does_not_cause_page_scroll(logged_in_page, base_url, fill_run_id):
     page = logged_in_page
     page.set_viewport_size({"width": 375, "height": 800})
     _open(page, base_url, fill_run_id)
