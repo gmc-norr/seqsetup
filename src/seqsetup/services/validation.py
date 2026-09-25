@@ -19,6 +19,7 @@ from ..data.instruments import (
     get_chemistry_type,
     get_i5_read_orientation,
     get_lanes_for_flowcell,
+    get_reagent_kit_max_cycles,
     is_color_balance_enabled,
 )
 from ..models.sequencing_run import SequencingRun
@@ -285,6 +286,9 @@ class ValidationService:
                 message="Run has no name; give it a name in Run Setup before marking it ready.",
             ))
 
+        # A run setting, so checked before the sample checks below.
+        errors.extend(cls._validate_cycles_fit_kit(run))
+
         # Prerequisite: at least one sample
         if not run.samples:
             errors.append(ConfigurationError(
@@ -325,6 +329,30 @@ class ValidationService:
         errors.extend(cls._validate_mismatch_threshold(run, all_lanes))
 
         return errors
+
+    @classmethod
+    def _validate_cycles_fit_kit(cls, run: SequencingRun) -> list[ConfigurationError]:
+        """Read 1 + Index 1 + Index 2 + Read 2 must fit the reagent kit.
+
+        The limit is the lab's number for this instrument and kit
+        (``reagent_kit_max_cycles``). The kit label is not the limit — kits
+        hold extra cycles — so a kit without a number is not checked.
+        """
+        if not run.run_cycles:
+            return []
+        limit = get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles)
+        total = run.run_cycles.total_cycles
+        if limit is None or total <= limit:
+            return []
+        return [ConfigurationError(
+            severity=ValidationSeverity.ERROR,
+            category="cycles_exceed_kit",
+            message=(
+                f"Too many cycles: {total}. A {run.reagent_cycles}-cycle kit on "
+                f"{run.instrument_platform.value} allows {limit}. "
+                f"Lower the cycles in Run Setup."
+            ),
+        )]
 
     @classmethod
     def _validate_override_cycles_match_run(

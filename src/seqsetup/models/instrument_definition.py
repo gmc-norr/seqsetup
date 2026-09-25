@@ -6,6 +6,31 @@ from typing import Optional
 import uuid
 
 
+def checked_kit_cycle_limits(limits) -> dict[int, int]:
+    """Check ``reagent_kit_max_cycles``: kit label -> most cycles allowed,
+    all reads together. Labels may arrive as strings from MongoDB (BSON keys
+    are strings). Raises ValueError for anything that is not a positive
+    whole-number label with a whole-number limit no smaller than the label:
+    this number decides whether a run's cycles fit its kit."""
+    if not isinstance(limits, dict):
+        raise ValueError(
+            f"reagent_kit_max_cycles must be a mapping of kit label to cycles, got {limits!r}"
+        )
+    checked = {}
+    for label, limit in limits.items():
+        if isinstance(label, str) and label.isdigit():
+            label = int(label)
+        if (isinstance(label, bool) or not isinstance(label, int) or label <= 0
+                or isinstance(limit, bool) or not isinstance(limit, int)
+                or limit < label):
+            raise ValueError(
+                f"reagent_kit_max_cycles: {label!r}: {limit!r} is not a kit label "
+                f"with a whole-number limit no smaller than the label"
+            )
+        checked[label] = limit
+    return checked
+
+
 @dataclass
 class FlowcellDefinition:
     """Flowcell type definition."""
@@ -101,6 +126,11 @@ class InstrumentDefinition:
     flowcells: list[FlowcellDefinition] = field(default_factory=list)
     onboard_applications: list[OnboardApplication] = field(default_factory=list)
 
+    # Most cycles each reagent kit allows (kit label -> cycles, all reads
+    # together), entered by the lab from the kit's documentation. A kit
+    # without a number is not checked.
+    reagent_kit_max_cycles: dict[int, int] = field(default_factory=dict)
+
     # Sync metadata
     source_file: str = ""
     synced_at: Optional[datetime] = None
@@ -126,6 +156,8 @@ class InstrumentDefinition:
                 f"InstrumentDefinition.{name} must be one of "
                 f"{self._ALLOWED_I5_ORIENTATIONS}, got {value!r}"
             )
+        if name == "reagent_kit_max_cycles":
+            value = checked_kit_cycle_limits(value)
         object.__setattr__(self, name, value)
 
     def to_dict(self) -> dict:
@@ -152,6 +184,9 @@ class InstrumentDefinition:
             "samplesheet_versions": self.samplesheet_versions,
             "flowcells": [fc.to_dict() for fc in self.flowcells],
             "onboard_applications": [app.to_dict() for app in self.onboard_applications],
+            "reagent_kit_max_cycles": {
+                str(label): limit for label, limit in self.reagent_kit_max_cycles.items()
+            },
             "source_file": self.source_file,
             "synced_at": self.synced_at.isoformat() if self.synced_at else None,
             "enabled": self.enabled,
@@ -186,6 +221,7 @@ class InstrumentDefinition:
             samplesheet_versions=data.get("samplesheet_versions", [2]),
             flowcells=[FlowcellDefinition.from_dict(fc) for fc in data.get("flowcells", [])],
             onboard_applications=[OnboardApplication.from_dict(app) for app in data.get("onboard_applications", [])],
+            reagent_kit_max_cycles=data.get("reagent_kit_max_cycles") or {},
             source_file=data.get("source_file", ""),
             synced_at=synced_at,
             enabled=data.get("enabled", True),
@@ -250,6 +286,7 @@ class InstrumentDefinition:
             samplesheet_versions=yaml_data.get("samplesheet_versions", [2]),
             flowcells=flowcells,
             onboard_applications=onboard_apps,
+            reagent_kit_max_cycles=yaml_data.get("reagent_kit_max_cycles") or {},
             source_file=source_file,
             synced_at=datetime.now(),
         )

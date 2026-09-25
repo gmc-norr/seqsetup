@@ -234,6 +234,7 @@ def _synced_instrument_to_config(inst) -> dict:
             app.name: {"software_version": app.software_version}
             for app in inst.onboard_applications
         },
+        "reagent_kit_max_cycles": inst.reagent_kit_max_cycles,
     }
 
 
@@ -612,6 +613,7 @@ def get_all_instruments() -> list[dict]:
 # provide backwards compatibility by mapping enum values to config names.
 
 # Import here to avoid circular imports
+from ..models.instrument_definition import checked_kit_cycle_limits
 from ..models.sequencing_run import InstrumentPlatform
 
 
@@ -638,6 +640,23 @@ def get_reagent_kits_for_flowcell(
 def get_lanes_for_flowcell(platform: InstrumentPlatform, flowcell_type: str, instrument_config=None) -> int:
     """Get number of lanes for a flowcell type (legacy)."""
     return get_lanes_for_flowcell_by_name(_platform_to_name(platform), flowcell_type, instrument_config)
+
+
+def get_reagent_kit_max_cycles(platform: InstrumentPlatform, reagent_kit: int) -> Optional[int]:
+    """Most cycles (all reads together) this instrument's reagent kit allows,
+    from ``reagent_kit_max_cycles`` in its config; None when no number is
+    given for the kit. The sync validator checks synced numbers; a malformed
+    value in the fallback YAML is logged and treated as no number."""
+    name = _platform_to_name(platform)
+    limits = (get_instrument_config(name) or {}).get("reagent_kit_max_cycles")
+    if not limits:
+        return None
+    try:
+        limits = checked_kit_cycle_limits(limits)
+    except ValueError:
+        logger.warning("Ignoring malformed reagent_kit_max_cycles for %s: %r", name, limits)
+        return None
+    return limits.get(reagent_kit)
 
 
 def get_chemistry_type(platform: InstrumentPlatform) -> ChemistryType:

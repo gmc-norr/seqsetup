@@ -106,6 +106,9 @@ def validate_instrument_yaml(yaml_data: dict, source_file: str = "") -> Validati
     # Flowcells
     _validate_flowcells(result, yaml_data)
 
+    # Most cycles each reagent kit allows
+    _validate_reagent_kit_max_cycles(result, yaml_data)
+
     # Onboard applications
     _validate_onboard_applications(result, yaml_data)
 
@@ -227,6 +230,44 @@ def _validate_flowcells(result: ValidationResult, data: dict) -> None:
                         str(kit),
                     )
                     break
+
+
+def _validate_reagent_kit_max_cycles(result: ValidationResult, data: dict) -> None:
+    """Validate reagent_kit_max_cycles (optional): kit label -> most cycles
+    allowed, all reads together. Runs are checked against these numbers, so
+    one that cannot be right is an error, not a warning."""
+    limits = data.get("reagent_kit_max_cycles")
+    if limits is None:
+        return
+    if not isinstance(limits, dict):
+        result.add_error(
+            "reagent_kit_max_cycles",
+            "Must be a mapping of kit label to most cycles allowed",
+            str(type(limits)),
+        )
+        return
+
+    offered = set()
+    flowcells = data.get("flowcells")
+    if isinstance(flowcells, dict):
+        for fc_config in flowcells.values():
+            if isinstance(fc_config, dict) and isinstance(fc_config.get("reagent_kits"), list):
+                offered.update(fc_config["reagent_kits"])
+
+    for label, limit in limits.items():
+        field = f"reagent_kit_max_cycles.{label}"
+        if isinstance(label, bool) or not isinstance(label, int) or label <= 0:
+            result.add_error(field, "Kit label must be a positive whole number", str(label))
+            continue
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            result.add_error(field, "Must be a whole number of cycles", str(limit))
+        elif limit < label:
+            result.add_error(field, f"Must be at least the kit label ({label})", str(limit))
+        if label not in offered:
+            result.add_warning(
+                "reagent_kit_max_cycles",
+                f"Kit {label} is not offered by any flowcell",
+            )
 
 
 def _validate_onboard_applications(result: ValidationResult, data: dict) -> None:
