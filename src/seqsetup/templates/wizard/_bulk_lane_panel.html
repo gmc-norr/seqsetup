@@ -6,26 +6,34 @@
      num_lanes:     int
      test_profiles: list[TestProfile] | None
 
-   The five hidden forms have HX-target / HX-swap that re-render the whole
-   #sample-table on success. app.js globals (applyBulkLanesForm() etc.)
-   read the visible inputs, populate the hidden form inputs, and submit
-   via HTMX. The buttons carry `data-action="bulk-*"` and are wired via
-   event delegation in app.js — inline on* handlers are blocked by the
-   app CSP (script-src 'self' without 'unsafe-inline'), so they MUST NOT
-   be reintroduced.
+   The five hidden forms' HX-target / HX-swap must match what their route
+   actually returns:
+     - set-lanes, set-mismatches, set-override-cycles, set-test-id all
+       return _render_sample_section() — the full #sample-section (paste
+       box + index panel + table) — so they target #sample-section, not
+       the #sample-table nested inside it (targeting #sample-table would
+       swap a #sample-section in as its own replacement, nesting the
+       section inside itself).
+     - bulk-delete returns wizard/_sample_table.html directly (just the
+       table), so it targets #sample-table.
+   app.js globals (applyBulkLanesForm() etc.) read the visible inputs,
+   populate the hidden form inputs, and submit via HTMX. The buttons
+   carry `data-action="bulk-*"` and are wired via event delegation in
+   app.js — inline on* handlers are blocked by the app CSP (script-src
+   'self' without 'unsafe-inline'), so they MUST NOT be reintroduced.
 #}
 <div id="bulk-action-panel" class="bulk-action-panel">
     {# Hidden HTMX forms — submitted by app.js globals #}
     <form id="bulk-lanes-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-lanes"
-          hx-target="#sample-table"
+          hx-target="#sample-section"
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-sample-ids">
         <input type="hidden" name="lanes" id="bulk-lanes">
     </form>
     <form id="bulk-mismatches-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-mismatches"
-          hx-target="#sample-table"
+          hx-target="#sample-section"
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-mismatch-sample-ids">
         <input type="hidden" name="mismatch_index1" id="bulk-mismatch-index1">
@@ -33,14 +41,14 @@
     </form>
     <form id="bulk-override-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-override-cycles"
-          hx-target="#sample-table"
+          hx-target="#sample-section"
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-override-sample-ids">
         <input type="hidden" name="override_cycles" id="bulk-override-cycles">
     </form>
     <form id="bulk-test-id-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-test-id"
-          hx-target="#sample-table"
+          hx-target="#sample-section"
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-test-id-sample-ids">
         <input type="hidden" name="test_id" id="bulk-test-id">
