@@ -245,6 +245,25 @@ class TestPreviewBadInput:
         assert unknown_start_resp.status_code == 400
         assert "That start index is not in this kit." in unknown_start_resp.text
 
+    def test_selected_kit_as_file_part_is_400_not_500(self, logged_in_client, fresh_app):
+        """``await request.form()`` yields an ``UploadFile`` (not a ``str``)
+        for a multipart part named ``selected_kit``, and
+        ``sanitize_string(UploadFile, 512)`` calls ``.strip()`` on it,
+        raising ``AttributeError`` — producing a 500 instead of a 400."""
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        before = ctx.run_repo.get_by_id(run_id).to_dict()
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill/preview",
+            files={"selected_kit": ("kit.txt", b"SomeKit:1", "text/plain")},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 400, resp.text[:300]
+        after = ctx.run_repo.get_by_id(run_id).to_dict()
+        assert after == before
+
 
 class TestApplyHappyPath:
     """Assign gives each targeted sample the previewed index and reports it."""

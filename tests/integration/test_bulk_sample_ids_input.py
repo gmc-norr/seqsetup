@@ -89,3 +89,28 @@ class TestBulkRoutesRejectNonListSampleIds:
         assert response.status_code == 400, response.text[:300]
         after = ctx.run_repo.get_by_id(run_id).to_dict()
         assert after == before
+
+
+class TestBulkRouteRejectsFileSampleIds:
+    """``sample_ids`` sent as a multipart *file* part, not a text field.
+
+    ``await request.form()`` yields an ``UploadFile`` (not a ``str``) for a
+    multipart part named ``sample_ids``, and ``json.loads(UploadFile)``
+    raises ``TypeError`` — not the ``json.JSONDecodeError`` the parser
+    guards against. That reached no ``except`` clause and produced a 500.
+    """
+
+    def test_bulk_delete_returns_400_not_500(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        before = ctx.run_repo.get_by_id(run_id).to_dict()
+
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/bulk-delete",
+            files={"sample_ids": ("ids.json", b'["s1"]', "application/octet-stream")},
+            headers=ORIGIN,
+        )
+
+        assert response.status_code == 400, response.text[:300]
+        after = ctx.run_repo.get_by_id(run_id).to_dict()
+        assert after == before

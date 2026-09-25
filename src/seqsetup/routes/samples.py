@@ -254,10 +254,13 @@ def _lane_words(lanes: list[int]) -> str:
 def _parse_sample_ids(raw: str) -> Optional[list[str]]:
     """Parse a ``sample_ids`` form field as JSON and validate its shape.
 
-    Returns the list of sample ID strings, or ``None`` if ``raw`` is not
+    Returns the list of sample ID strings, or ``None`` if ``raw`` is not a
+    string (e.g. an ``UploadFile`` from a multipart file part), is not
     valid JSON, or the parsed value is not a JSON array of strings (e.g.
     ``null``, an object, or an array containing a non-string element).
     """
+    if not isinstance(raw, str):
+        return None
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
@@ -771,8 +774,10 @@ async def assign_indexes_bulk(
 
 def _index_fill_plan(form, run: SequencingRun, ctx: AppContext):
     """(plan, "") or (None, message for a 400)."""
-    kit_id = sanitize_string(form.get("selected_kit", ""), 512)
-    start_id = sanitize_string(form.get("start_id", ""), 512)
+    raw_kit_id = form.get("selected_kit", "")
+    raw_start_id = form.get("start_id", "")
+    kit_id = sanitize_string(raw_kit_id, 512) if isinstance(raw_kit_id, str) else ""
+    start_id = sanitize_string(raw_start_id, 512) if isinstance(raw_start_id, str) else ""
     kit = ctx.index_kit_repo.get_by_kit_id(kit_id) if kit_id else None
     if kit is None:
         return None, "Pick an index kit first."
