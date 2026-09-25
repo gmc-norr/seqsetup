@@ -1696,6 +1696,21 @@ body {
     background: none;
 }
 
+/* Mark Ready is quiet until the step bar's Check step is done. The step
+   bar refreshes after every change, so this follows it without a reload.
+   Still clickable: a refusal lists every error. */
+.mark-ready-hint { display: none; font-size: var(--fs-xs); color: var(--text-muted); }
+.run-header:has(.run-step[data-step="check"]:not([data-state="done"])) .mark-ready-hint { display: inline; }
+.run-header:has(.run-step[data-step="check"]:not([data-state="done"])) .run-status-bar .btn-primary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    box-shadow: none;
+}
+.run-header:has(.run-step[data-step="check"]:not([data-state="done"])) .run-status-bar .btn-primary:hover {
+    background: var(--surface-sunken);
+}
+
 /* Step bar (runs/_step_bar.html) */
 .run-steps {
     display: flex;

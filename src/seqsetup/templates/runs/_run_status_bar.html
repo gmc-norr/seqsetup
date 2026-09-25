@@ -14,7 +14,10 @@
         {% if status_value == 'draft' %}
             {# Mark Ready — always clickable in DRAFT. Server-side validation
                check at /runs/{id}/status/ready handles refusal with an inline
-               error message via the #error-banner slot. #}
+               error message via the #error-banner slot. Until Check passes,
+               CSS (keyed on the step bar's Check step, which refreshes after
+               every change) makes it quiet and shows the hint. #}
+            <span class="mark-ready-hint">Check must pass first</span>
             <form class="status-form"
                   hx-post="/runs/{{ run.id }}/status/ready"
                   hx-target="#run-status-bar"
