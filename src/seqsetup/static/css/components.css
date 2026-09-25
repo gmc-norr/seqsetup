@@ -1437,6 +1437,20 @@ body {
 .paste-actions form { margin: 0; }
 .paste-blocked-hint { color: var(--danger-fg); font-size: var(--fs-sm); }
 
+/* Fill empty samples in order (index-fill) */
+.index-fill-start { margin: var(--space-2) 0 var(--space-3); }
+.index-fill-preview { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-4); margin-bottom: var(--space-4); }
+.index-fill-title { margin: 0 0 var(--space-3); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
+.index-fill-options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+.index-fill-options label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.index-fill-summary { margin: 0 0 var(--space-2); font-size: var(--fs-sm); }
+.index-fill-problem { margin: 0; padding: var(--space-2) var(--space-3); background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger); border-radius: var(--radius-sm); font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.index-fill-note { margin: 0 0 var(--space-3); font-size: var(--fs-sm); color: var(--text-muted); }
+.index-fill-table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--fs-sm); margin-bottom: var(--space-3); }
+.index-fill-table th { padding: var(--space-2); background: var(--surface-sunken); color: #334155; text-align: left; white-space: nowrap; }
+.index-fill-table td { padding: var(--space-2); border-top: 1px solid var(--border); white-space: nowrap; }
+.index-fill-actions { display: flex; align-items: center; gap: var(--space-3); }
+
 /* Responsive */
 @media (max-width: 1200px) {
     .main-layout {
