@@ -6,7 +6,7 @@ Must be registered LAST among /runs/... routes because {run_id} is a
 path catch-all.
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..context import AppContext
@@ -19,6 +19,39 @@ from .dependencies import get_ctx
 
 
 router = APIRouter(tags=["main"])
+
+
+def _validate_for_panel(run, ctx: AppContext):
+    # Pass the same repos as the Mark-Ready gate so the panel reflects the
+    # full validation (incl. application-profile / test_id checks) and primes
+    # the same cache entry the gate reads — never an under-counted
+    # repos-less result.
+    return ValidationService.validate_run(
+        run,
+        test_profile_repo=ctx.test_profile_repo,
+        app_profile_repo=ctx.app_profile_repo,
+        instrument_config=ctx.instrument_config,
+    )
+
+
+@router.get("/runs/{run_id}/validate-panel", response_class=HTMLResponse)
+def validate_panel(
+    request: Request,
+    run_id: str,
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /runs/{run_id}/validate-panel — the Validate box, recomputed.
+
+    Read-only. The box on the edit page fetches this after each successful
+    change so its counts never go stale.
+    """
+    run = ctx.run_repo.get_by_id(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return render(request, "runs/_validate_panel.html", {
+        "run": run,
+        "validation_result": _validate_for_panel(run, ctx),
+    })
 
 
 @router.get("/runs/{run_id}", response_class=HTMLResponse)
@@ -39,16 +72,8 @@ def edit_run(
     sample_api_cfg = ctx.sample_api_config
     sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
 
-    # Pre-compute validation result for the validate panel. Pass the same repos
-    # as the Mark-Ready gate so the panel reflects the full validation (incl.
-    # application-profile / test_id checks) and primes the same cache entry the
-    # gate reads — never an under-counted repos-less result.
-    validation_result = ValidationService.validate_run(
-        run,
-        test_profile_repo=ctx.test_profile_repo,
-        app_profile_repo=ctx.app_profile_repo,
-        instrument_config=ctx.instrument_config,
-    )
+    # Pre-compute validation result for the validate panel.
+    validation_result = _validate_for_panel(run, ctx)
     has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
 
     # Resolve flowcell description for the Jinja2 template.
