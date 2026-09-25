@@ -1,0 +1,76 @@
+{#
+   Dashboard run table — used by a status tab and by search results.
+
+   Inputs:
+     table_runs:  list[SequencingRun], in display order
+     show_status: bool — search results mix statuses, so each row shows
+                  its status badge
+     matched:     dict[run id, list[str]] — search results only: the sample
+                  IDs that matched, shown under the run name
+     user:        the logged-in user (admins may delete archived runs)
+#}
+<div class="border rounded-lg overflow-x-auto bg-white shadow-sm">
+    <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_13rem] min-w-[44rem] gap-2 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
+        <span>Name</span>
+        <span>Platform</span>
+        <span>Flowcell</span>
+        <span>Samples</span>
+        <span>Created by</span>
+        <span>Modified by</span>
+        <span>Updated</span>
+        <span></span>
+    </div>
+    {% for run in table_runs %}
+    {% set is_archived = run.status.value == 'archived' %}
+    <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_13rem] min-w-[44rem] gap-2 items-center px-3 py-2 border-t text-sm" id="run-item-{{ run.id }}">
+        {% if show_status %}
+        <div class="min-w-0">
+            <a href="/runs/{{ run.id }}" class="text-primary hover:underline truncate">{{ run.run_name or "Untitled Run" }}</a>
+            <span class="run-status-badge status-{{ run.status.value }}">{{ run.status.value | capitalize }}</span>
+            {% set hits = (matched or {}).get(run.id, []) %}
+            {% if hits %}
+            <div class="text-xs text-slate-600 truncate">Sample{{ '' if hits | length == 1 else 's' }}: {{ hits[:3] | join(', ') }}{% if hits | length > 3 %} and {{ hits | length - 3 }} more{% endif %}</div>
+            {% endif %}
+        </div>
+        {% else %}
+        <a href="/runs/{{ run.id }}" class="text-primary hover:underline truncate">{{ run.run_name or "Untitled Run" }}</a>
+        {% endif %}
+        <span>{{ run.instrument_platform.value }}</span>
+        <span>{{ run.flowcell_type or "—" }}</span>
+        <span>{{ run.samples|length }}</span>
+        <span class="truncate">{{ run.created_by or "—" }}</span>
+        <span class="truncate">{{ run.updated_by or "—" }}</span>
+        <span>{{ run.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
+        <div class="flex gap-2 justify-end">
+            {# Shared .btn classes so every control is one size. Open (Edit on
+               a draft) is the main action; Archive is routine, not loud. #}
+            <a href="/runs/{{ run.id }}" class="btn btn-primary btn-small">{{ 'Edit' if run.status.value == 'draft' else 'Open' }}</a>
+            <form method="post" action="/runs/{{ run.id }}/duplicate" class="inline-block">
+                <input type="hidden" name="include_samples" value="false">
+                <button type="submit" class="btn btn-secondary btn-small">Duplicate</button>
+            </form>
+            {# Only the actions this run may take (see routes/dashboard.py):
+               Archive from Ready; Delete an empty draft, or (admins) an archived run. #}
+            {% if run.status.value == 'ready' %}
+            <button class="btn btn-secondary btn-small"
+                    hx-post="/runs/{{ run.id }}/archive"
+                    hx-target="#dashboard"
+                    hx-swap="outerHTML"
+                    hx-confirm="Archive this run?">Archive</button>
+            {% elif run.status.value == 'draft' and not run.samples %}
+            <button class="btn btn-danger btn-small"
+                    hx-delete="/runs/{{ run.id }}"
+                    hx-target="#dashboard"
+                    hx-swap="outerHTML"
+                    hx-confirm="Delete this empty draft run?">Delete</button>
+            {% elif is_archived and user and user.is_admin %}
+            <button class="btn btn-danger btn-small"
+                    hx-delete="/runs/{{ run.id }}"
+                    hx-target="#dashboard"
+                    hx-swap="outerHTML"
+                    hx-confirm="Are you sure you want to delete this run?">Delete</button>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>

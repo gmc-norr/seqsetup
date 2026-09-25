@@ -16,7 +16,7 @@ from ..services.audit_log import audit
 from ..services.run_history import cascade_delete_history_safe
 from ..templating import render
 from .dependencies import get_archivable_run, get_ctx, saving_run
-from .utils import check_status_transition, get_username
+from .utils import check_status_transition, get_username, sanitize_string
 
 
 router = APIRouter(tags=["dashboard"])
@@ -50,6 +50,43 @@ def dashboard_tab(
         request,
         "dashboard.html",
         {"runs": ctx.run_repo.list_all(), "active_tab": tab},
+        block_name="dashboard_content",
+    )
+
+
+def _search_runs(runs: list[SequencingRun], query: str) -> tuple[list[SequencingRun], dict[str, list[str]]]:
+    """Runs whose name, or any sample ID, contains ``query`` (ignoring
+    case), newest first, and for each run the sample IDs that matched."""
+    q = query.lower()
+    found: list[SequencingRun] = []
+    matched: dict[str, list[str]] = {}
+    for run in runs:
+        samples = [s.sample_id for s in run.samples if q in (s.sample_id or "").lower()]
+        if samples or q in (run.run_name or "").lower():
+            found.append(run)
+            matched[run.id] = samples
+    found.sort(key=lambda r: r.updated_at, reverse=True)
+    return found, matched
+
+
+@router.get("/dashboard/search", response_class=HTMLResponse)
+def dashboard_search(
+    request: Request,
+    q: str = "",
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /dashboard/search?q= — runs whose name or a sample ID contains q,
+    in every status. Read-only. An empty query gives back the tabs."""
+    query = sanitize_string(q, 256)
+    runs = ctx.run_repo.list_all()
+    search = None
+    if query:
+        found, matched = _search_runs(runs, query)
+        search = {"query": query, "runs": found, "matched": matched}
+    return render(
+        request,
+        "dashboard.html",
+        {"runs": runs, "active_tab": "draft", "search": search},
         block_name="dashboard_content",
     )
 
