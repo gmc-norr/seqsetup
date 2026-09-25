@@ -3,37 +3,51 @@
 {% set active_route = "/runs/" ~ run.id %}
 
 {% block content %}
+{# Parts follow the work: setup, samples and indexes, check, (ready: the
+   status bar in the header), export. The step bar links to each. #}
 <div class="edit-run-layout" id="edit-run-page">
-    {% with run=run %}
-    {% include "runs/_run_status_bar.html" %}
-    {% endwith %}
-
-    {% with run=run, validation_result=validation_result, has_v1=has_v1 %}
-    {% include "runs/_top_bar.html" %}
-    {% endwith %}
-
-    <form method="post" action="/runs/{{ run.id }}/save-as-template" class="flex gap-2 items-center px-1 py-2">
-        <label for="template-name" class="sr-only">Template name</label>
-        <input type="text" id="template-name" name="name" placeholder="Template name"
-               class="border rounded px-2 py-1 text-sm" required maxlength="256">
-        <input type="hidden" name="scaffold_sample_ids" value="[]">
-        <button type="submit"
-                class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-sm">
-            Save as template
-        </button>
-    </form>
+    <div class="run-header">
+        <div class="run-header-top">
+            <h1 class="run-title{% if not run.run_name %} run-title--untitled{% endif %}">{{ run.run_name or "Untitled run" }}</h1>
+            {% with run=run %}
+            {% include "runs/_run_status_bar.html" %}
+            {% endwith %}
+        </div>
+        {% with run=run, steps=steps %}
+        {% include "runs/_step_bar.html" %}
+        {% endwith %}
+    </div>
 
     {% with run=run, flowcell_desc=flowcell_desc, cycles=cycles %}
     {% include "runs/_run_config_panel.html" %}
     {% endwith %}
 
-    <fieldset class="config-panel samples-display">
-        <legend>Samples</legend>
+    <fieldset id="samples" class="config-panel samples-display">
+        <legend>Samples and indexes</legend>
         {% with run=run, index_kits=index_kits, test_profiles=test_profiles,
                 num_lanes=num_lanes, is_editable=is_editable,
                 sample_api_enabled=sample_api_enabled, oob=False %}
         {% include "runs/_sample_section.html" %}
         {% endwith %}
+    </fieldset>
+
+    {% with run=run, validation_result=validation_result, sample_errors=sample_errors, error_lines=error_lines %}
+    {% include "runs/_validate_panel.html" %}
+    {% endwith %}
+
+    {% with run=run, has_v1=has_v1, oob=False %}
+    {% include "runs/_export_panel.html" %}
+    {% endwith %}
+
+    <fieldset class="config-panel">
+        <legend>Save as template</legend>
+        <form method="post" action="/runs/{{ run.id }}/save-as-template" class="flex gap-2 items-center">
+            <label for="template-name" class="sr-only">Template name</label>
+            <input type="text" id="template-name" name="name" placeholder="Template name"
+                   class="template-name-input border rounded px-2 py-1 text-sm" required maxlength="256">
+            <input type="hidden" name="scaffold_sample_ids" value="[]">
+            <button type="submit" class="btn btn-secondary btn-small">Save as template</button>
+        </form>
     </fieldset>
 
     <fieldset class="config-panel">

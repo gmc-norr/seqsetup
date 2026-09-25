@@ -197,46 +197,6 @@ body {
     font-size: 1.1rem;
 }
 
-.config-columns {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 1rem;
-}
-
-.top-bar-columns {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    align-items: stretch;
-}
-
-.config-column {
-    min-width: 0;
-}
-
-.config-column fieldset {
-    margin: 0;
-    padding: 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    height: 100%;
-}
-
-.config-column legend {
-    font-size: 0.8rem;
-    font-weight: 600;
-    padding: 0 0.35rem;
-    color: var(--secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-
-/* Consistent font size for all config panel content */
-.config-column fieldset {
-    font-size: 0.85rem;
-    line-height: 1.3;
-}
-
 /* Label-value grid layout for config panels */
 .config-item,
 .cycle-item {
@@ -400,7 +360,7 @@ body {
 .form-group input:focus-visible, .form-group select:focus-visible, .form-group textarea:focus-visible,
 .settings-input:focus-visible, .index-filter-input:focus-visible,
 .mismatch-input:focus-visible, .override-cycles-input:focus-visible,
-.paste-textarea:focus-visible, a:focus-visible {
+.paste-textarea:focus-visible, .template-name-input:focus-visible, a:focus-visible {
     outline: none; box-shadow: var(--focus-ring); border-color: var(--primary);
 }
 .form-group input.is-invalid, .settings-input.is-invalid,
@@ -1421,16 +1381,6 @@ body {
     .center-panel {
         order: 1;
     }
-
-    .config-columns {
-        grid-template-columns: 1fr 1fr;
-    }
-}
-
-@media (max-width: 800px) {
-    .config-columns {
-        grid-template-columns: 1fr;
-    }
 }
 
 /* User info in header */
@@ -1596,7 +1546,6 @@ body {
     .sidebar .settings-section { margin-top: 0; }
     .settings-section[open] { flex-basis: 100%; }
     .main-content { padding: 0.75rem; }
-    .top-bar-columns { grid-template-columns: 1fr; }
 }
 
 /* Dashboard */
@@ -1647,6 +1596,165 @@ body {
     border: 1px solid var(--border);
     border-radius: 6px;
     margin-bottom: 0;
+}
+
+/* Run page header: name, status and its actions, then the step bar. */
+.run-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    margin: 0 0 var(--space-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xs);
+}
+.run-header-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+}
+.run-title {
+    margin: 0;
+    font-size: var(--fs-2xl);
+    font-weight: var(--fw-bold);
+    line-height: var(--lh-tight);
+}
+.run-title--untitled {
+    color: var(--text-muted);
+    font-style: italic;
+}
+.run-header .run-status-bar {
+    flex: 1;
+    padding: 0;
+    border: 0;
+    background: none;
+}
+
+/* Step bar (runs/_step_bar.html) */
+.run-steps {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.run-step {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+.run-step:not(:last-child)::after {
+    content: "›";
+    color: var(--text-subtle);
+    font-size: var(--fs-lg);
+}
+.run-step-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    text-decoration: none;
+}
+.run-step-link:hover {
+    background: var(--surface-sunken);
+}
+.run-step-marker {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+}
+.run-step-marker svg {
+    width: 1rem;
+    height: 1rem;
+}
+.run-step--done .run-step-marker { background: var(--success); color: #fff; }
+.run-step--error .run-step-marker { background: var(--danger); color: #fff; }
+.run-step--current .run-step-marker {
+    box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary);
+}
+.run-step-text {
+    display: flex;
+    flex-direction: column;
+    line-height: var(--lh-tight);
+}
+.run-step-label {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+}
+.run-step--current .run-step-label { color: var(--primary); }
+.run-step-detail {
+    font-size: var(--fs-2xs);
+    color: var(--text-muted);
+}
+.run-step--error .run-step-detail { color: var(--danger-fg); }
+
+/* Setup summary (runs/_run_config_panel.html) */
+.run-setup-summary { position: relative; }
+.run-setup-edit {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-4);
+    font-size: var(--fs-sm);
+    color: var(--primary);
+}
+.run-setup-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-6);
+    margin: 0;
+}
+.run-setup-facts dt {
+    font-size: var(--fs-2xs);
+    color: var(--text-muted);
+}
+.run-setup-facts dd {
+    margin: 0;
+    font-size: var(--fs-sm);
+}
+.run-setup-wide { flex-basis: 100%; }
+.run-setup-record {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+    font-size: var(--fs-2xs);
+    color: var(--text-muted);
+}
+
+/* Check panel's error list, and the Mark-Ready refusal's (Tailwind's
+   reset strips list bullets). */
+.validate-error-list,
+.ready-refused ul {
+    list-style: disc;
+    margin: var(--space-2) 0 0;
+    padding-left: 1.25rem;
+}
+.validate-error-list {
+    font-size: var(--fs-sm);
+    color: var(--danger-fg);
+}
+.validate-error-list li + li,
+.ready-refused li + li { margin-top: 0.2rem; }
+.validate-error-more {
+    margin: var(--space-1) 0 0;
+    font-size: var(--fs-xs);
+    color: var(--text-muted);
 }
 
 .run-status-info {

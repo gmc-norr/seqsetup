@@ -47,7 +47,7 @@ def test_new_run_keeps_typed_name_and_cycles(logged_in_page, base_url, app_ctx, 
     assert run.run_name == "Setup test run"
     rc = run.run_cycles
     assert (rc.read1_cycles, rc.read2_cycles, rc.index1_cycles) == (101, 0, 8)
-    expect(page.locator("#cycle-config")).to_contain_text("Read 1: 101")
+    expect(page.locator("#run-config-panel")).to_contain_text("Read 1: 101")
 
 
 @pytest.mark.browser

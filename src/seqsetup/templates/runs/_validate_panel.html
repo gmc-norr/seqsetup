@@ -1,12 +1,14 @@
 {#
-   Validate panel — shows samples/indexes/errors status badges
-   and a link to the validation review page.
+   Check panel (step 4) — samples/indexes/errors status badges, the first
+   blocking errors, and a link to the validation review page.
 
    Inputs:
      run:                SequencingRun
      validation_result:  ValidationResult (pre-computed by the handler)
      sample_errors:      dict[sample id, list[str]] — validation_summary.errors_by_sample;
                          app.js marks those rows in the sample table
+     error_lines:        list[str] — validation_summary.error_messages; the
+                         first 10 are listed, the rest counted
 
    Refresh: after any successful non-GET HTMX request on the page (a
    change to the run), the fieldset re-fetches this partial from
@@ -33,7 +35,7 @@
           hx-select=".validate-panel-content"
           hx-target="find .validate-panel-content"
           hx-swap="outerHTML">
-    <legend>Validate</legend>
+    <legend>Check</legend>
     <div class="validate-panel-content" data-sample-errors='{{ (sample_errors or {}) | tojson }}'>
         <div class="validate-status-badges {{ status_cls }}">
             {% if has_samples %}
@@ -55,8 +57,18 @@
                 <span class="status-warning">Color balance: {{ color_balance_issues }} lane(s)</span>
             {% endif %}
         </div>
+        {% if error_lines %}
+        <ul class="validate-error-list">
+            {%- for line in error_lines[:10] %}
+            <li>{{ line }}</li>
+            {%- endfor %}
+        </ul>
+        {% if error_lines | length > 10 %}
+        <p class="validate-error-more">and {{ error_lines | length - 10 }} more on the validation page.</p>
+        {% endif %}
+        {% endif %}
         <div class="validate-footer">
-            <a href="/runs/{{ run.id }}/validation" class="validate-details-link">Review Validation</a>
+            <a href="/runs/{{ run.id }}/validation" class="validate-details-link">Open the validation page</a>
         </div>
     </div>
 </fieldset>

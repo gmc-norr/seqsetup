@@ -1,0 +1,40 @@
+{#
+   Step bar — where the run stands, in work order; each step links to its
+   part of the page.
+
+   Refresh: like the Validate box, it re-fetches /runs/{id}/step-bar after
+   any successful non-GET HTMX request on the page. The <nav> stays and
+   only its <ol> is swapped, so a refresh queued behind one in flight
+   still runs; its own GET does not match the filter, so it never loops.
+
+   Inputs:
+     run:   SequencingRun
+     steps: list[dict] — routes/main.py:_run_steps
+#}
+{% set state_words = {'done': 'done', 'error': 'has errors', 'todo': 'to do'} %}
+<nav id="run-step-bar" class="run-step-bar" aria-label="Run steps"
+     hx-get="/runs/{{ run.id }}/step-bar"
+     hx-trigger="htmx:afterRequest[detail.successful && detail.requestConfig && detail.requestConfig.verb.toLowerCase() !== 'get'] from:body delay:300ms"
+     hx-select=".run-steps"
+     hx-target="find .run-steps"
+     hx-swap="outerHTML">
+    <ol class="run-steps">
+        {%- for step in steps %}
+        <li class="run-step run-step--{{ step.state }}{% if step.current %} run-step--current{% endif %}" data-step="{{ step.key }}" data-state="{{ step.state }}"{% if step.current %} aria-current="step"{% endif %}>
+            <a href="{{ step.href }}" class="run-step-link">
+                <span class="run-step-marker" aria-hidden="true">
+                    {%- if step.state == 'done' -%}
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+                    {%- else -%}
+                    {{ step.number }}
+                    {%- endif -%}
+                </span>
+                <span class="run-step-text">
+                    <span class="run-step-label">{{ step.label }}<span class="sr-only"> ({{ state_words[step.state] }})</span></span>
+                    <span class="run-step-detail">{{ step.detail }}</span>
+                </span>
+            </a>
+        </li>
+        {%- endfor %}
+    </ol>
+</nav>

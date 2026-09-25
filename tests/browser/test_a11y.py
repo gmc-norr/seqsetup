@@ -176,6 +176,19 @@ def test_focus_ring_input(logged_in_page, base_url, seeded_ids):
 
 
 @pytest.mark.browser
+def test_focus_ring_template_name(logged_in_page, base_url, seeded_ids):
+    """The Save-as-template name box shows the focus ring too (it used to be
+    the first input on the page and had none)."""
+    page = logged_in_page
+    page.goto(base_url + f"/runs/{seeded_ids['screenshot_draft_run_id']}")
+    page.wait_for_load_state("networkidle")
+    page.keyboard.press("Tab")  # keyboard focus, so :focus-visible applies
+    page.locator("#template-name").focus()
+    shadow = page.evaluate("() => getComputedStyle(document.activeElement).boxShadow")
+    assert shadow and shadow != "none", f"Template name box has no focus ring (got {shadow!r})"
+
+
+@pytest.mark.browser
 def test_focus_ring_index_chip(logged_in_page, base_url, seeded_ids):
     """An index chip (.draggable-index-compact) must have a non-empty box-shadow when focused."""
     page = logged_in_page

@@ -1,6 +1,7 @@
 {#
-   Run config panel — read-only display of run metadata + instrument + cycles.
-   Three columns.
+   Setup summary (step 1), read-only: instrument, flowcell, reagent kit,
+   cycles in the order they are read, description, and the run's record.
+   "Edit setup" opens the setup page while the run is a draft.
 
    Inputs:
      run:           SequencingRun
@@ -9,65 +10,40 @@
 #}
 {% set created_at_str = run.created_at.strftime("%Y-%m-%d %H:%M") if run.created_at else "—" %}
 {% set updated_at_str = run.updated_at.strftime("%Y-%m-%d %H:%M") if run.updated_at else "—" %}
-{% set created_by_str = run.created_by or "—" %}
-<div id="run-config-panel" class="run-config-horizontal">
+<fieldset id="run-config-panel" class="config-panel run-setup-summary">
+    <legend>Setup</legend>
     {% if run.status.value == 'draft' %}
-    <div class="flex justify-end">
-        <a href="/runs/new/step/1?run_id={{ run.id }}" class="text-primary hover:underline text-sm">Edit setup (name, instrument, cycles)</a>
-    </div>
+    <a href="/runs/new/step/1?run_id={{ run.id }}" class="run-setup-edit">Edit setup</a>
     {% endif %}
-    <div class="config-columns">
-        <div class="config-column">
-            <fieldset class="config-panel details-display">
-                <legend>Details</legend>
-                {% with run=run %}
-                {% include "runs/_run_name_display.html" %}
-                {% endwith %}
-                <div class="config-item uuid-item"
-                     x-data='{ "copied": false, "failed": false, "uuid": {{ run.id | tojson }} }'>
-                    <span class="config-label">UUID: </span>
-                    <span class="config-value uuid-value" title="{{ run.id }}">{{ run.id }}</span>
-                    <button type="button"
-                            class="uuid-copy-btn"
-                            title="Copy UUID"
-                            @click="
-                                copied = false; failed = false;
-                                const reset = () => setTimeout(() => { copied = false; failed = false; }, 1500);
-                                if (navigator.clipboard && navigator.clipboard.writeText) {
-                                    navigator.clipboard.writeText(uuid)
-                                        .then(() => { copied = true; reset(); })
-                                        .catch(() => { failed = true; reset(); });
-                                } else {
-                                    failed = true; reset();
-                                }">
-                        <span x-show="!copied && !failed">Copy</span>
-                        <span x-show="copied" x-cloak>Copied</span>
-                        <span x-show="failed" x-cloak>Copy failed</span>
-                    </button>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Created by: </span>
-                    <span class="config-value">{{ created_by_str }}</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Created: </span>
-                    <span class="config-value">{{ created_at_str }}</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Updated: </span>
-                    <span class="config-value">{{ updated_at_str }}</span>
-                </div>
-            </fieldset>
-        </div>
-        <div class="config-column">
-            {% with run=run, flowcell_desc=flowcell_desc %}
-            {% include "runs/_instrument_config_display.html" %}
-            {% endwith %}
-        </div>
-        <div class="config-column">
-            {% with run=run, cycles=cycles %}
-            {% include "runs/_cycle_config_display.html" %}
-            {% endwith %}
-        </div>
-    </div>
-</div>
+    <dl class="run-setup-facts">
+        <div><dt>Platform</dt><dd>{{ run.instrument_platform.value }}</dd></div>
+        <div><dt>Flowcell</dt><dd>{{ run.flowcell_type }} - {{ flowcell_desc }}</dd></div>
+        <div><dt>Reagent kit</dt><dd>{{ run.reagent_cycles }} cycles</dd></div>
+        <div><dt>Cycles</dt><dd>Read 1: {{ cycles.read1_cycles }} · Index 1: {{ cycles.index1_cycles }} · Index 2: {{ cycles.index2_cycles }} · Read 2: {{ cycles.read2_cycles }}</dd></div>
+        {% if run.run_description %}
+        <div class="run-setup-wide"><dt>Description</dt><dd>{{ run.run_description }}</dd></div>
+        {% endif %}
+    </dl>
+    <p class="run-setup-record"
+       x-data='{ "copied": false, "failed": false, "uuid": {{ run.id | tojson }} }'>
+        <span>UUID <span class="uuid-value" title="{{ run.id }}">{{ run.id }}</span></span>
+        <button type="button"
+                class="uuid-copy-btn"
+                title="Copy UUID"
+                @click="
+                    copied = false; failed = false;
+                    const reset = () => setTimeout(() => { copied = false; failed = false; }, 1500);
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(uuid)
+                            .then(() => { copied = true; reset(); })
+                            .catch(() => { failed = true; reset(); });
+                    } else {
+                        failed = true; reset();
+                    }">
+            <span x-show="!copied && !failed">Copy</span>
+            <span x-show="copied" x-cloak>Copied</span>
+            <span x-show="failed" x-cloak>Copy failed</span>
+        </button>
+        <span>· Created by {{ run.created_by or "—" }} on {{ created_at_str }} · Updated {{ updated_at_str }}</span>
+    </p>
+</fieldset>

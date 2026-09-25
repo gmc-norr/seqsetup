@@ -14,7 +14,7 @@ from ..data.instruments import get_flowcells_for_instrument, get_lanes_for_flowc
 from ..models.sequencing_run import RunCycles, RunStatus
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
-from ..services.validation_summary import errors_by_sample
+from ..services.validation_summary import error_messages, errors_by_sample
 from ..templating import render
 from .dependencies import get_ctx
 
@@ -33,6 +33,78 @@ def _validate_for_panel(run, ctx: AppContext):
         app_profile_repo=ctx.app_profile_repo,
         instrument_config=ctx.instrument_config,
     )
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _run_steps(run, result) -> list[dict]:
+    """The step bar's steps, in work order, for runs/_step_bar.html.
+
+    Each step's ``state`` is "done", "todo", or "error" (Check with
+    errors); on a draft, the first step that is not done is ``current``.
+    Display only: Mark Ready runs its own validation and refuses on any
+    error.
+    """
+    locked = run.status in (RunStatus.READY, RunStatus.ARCHIVED)
+    named = bool((run.run_name or "").strip())
+    n = len(run.samples)
+    indexed = sum(1 for s in run.samples if s.has_index)
+    errors = result.error_count
+
+    if errors:
+        check_state, check_detail = "error", _plural(errors, "error")
+    elif n:
+        check_state, check_detail = "done", "No errors"
+    else:
+        check_state, check_detail = "todo", "After samples"
+
+    steps = [
+        {"key": "setup", "label": "Setup", "href": "#run-config-panel",
+         "state": "done" if named else "todo",
+         "detail": f"{run.instrument_platform.value} · {run.flowcell_type}" if named else "Needs a name"},
+        {"key": "samples", "label": "Samples", "href": "#samples",
+         "state": "done" if n else "todo",
+         "detail": _plural(n, "sample") if n else "None yet"},
+        {"key": "indexes", "label": "Indexes", "href": "#samples",
+         "state": "done" if n and indexed == n else "todo",
+         "detail": f"{indexed} of {n} assigned" if n else "After samples"},
+        {"key": "check", "label": "Check", "href": "#validate-panel",
+         "state": check_state, "detail": check_detail},
+        {"key": "ready", "label": "Ready", "href": "#run-status-bar",
+         "state": "done" if locked else "todo",
+         "detail": run.status.value.capitalize() if locked else "Locks the run"},
+        {"key": "export", "label": "Export", "href": "#export-panel",
+         "state": "done" if locked else "todo",
+         "detail": {"ready": "Available", "archived": "Archived"}.get(run.status.value, "After Ready")},
+    ]
+    # A locked run has no next step; a live error on it still shows red.
+    current = None if locked else next((s for s in steps if s["state"] != "done"), None)
+    for number, step in enumerate(steps, 1):
+        step["number"] = number
+        step["current"] = step is current
+    return steps
+
+
+@router.get("/runs/{run_id}/step-bar", response_class=HTMLResponse)
+def step_bar(
+    request: Request,
+    run_id: str,
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /runs/{run_id}/step-bar — the step bar, recomputed.
+
+    Read-only. The bar on the edit page fetches this after each successful
+    change, like the Validate box.
+    """
+    run = ctx.run_repo.get_by_id(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return render(request, "runs/_step_bar.html", {
+        "run": run,
+        "steps": _run_steps(run, _validate_for_panel(run, ctx)),
+    })
 
 
 @router.get("/runs/{run_id}/validate-panel", response_class=HTMLResponse)
@@ -54,6 +126,7 @@ def validate_panel(
         "run": run,
         "validation_result": validation_result,
         "sample_errors": errors_by_sample(run, validation_result),
+        "error_lines": error_messages(validation_result),
     })
 
 
@@ -95,6 +168,8 @@ def edit_run(
         "sample_api_enabled": sample_api_enabled,
         "validation_result": validation_result,
         "sample_errors": errors_by_sample(run, validation_result),
+        "error_lines": error_messages(validation_result),
+        "steps": _run_steps(run, validation_result),
         "has_v1": has_v1,
         "flowcell_desc": flowcell_desc,
         "cycles": cycles,
