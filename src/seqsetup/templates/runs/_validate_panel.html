@@ -12,6 +12,10 @@
      waiting:            bool — validation_summary.waiting_for_samples: no
                          samples is the only error, so Check has not been
                          reached yet and is shown in grey, not as an error
+     fix_test_ids:       list[str] — a draft's samples with no test; with
+                         test_profiles, a picker sets the test for exactly
+                         these (POST .../samples/set-test-id)
+     test_profiles:      list[TestProfile]
 
    Refresh: after any successful non-GET HTMX request on the page (a
    change to the run), the fieldset re-fetches this partial from
@@ -74,6 +78,26 @@
         {% if error_lines | length > 10 %}
         <p class="validate-error-more">and {{ error_lines | length - 10 }} more on the validation page.</p>
         {% endif %}
+        {% endif %}
+        {% if fix_test_ids and test_profiles %}
+        {# hx-select is set here because this form sits inside the fieldset,
+           whose hx-select (.validate-panel-content) it would otherwise inherit. #}
+        <form class="validate-fix"
+              hx-post="/runs/{{ run.id }}/samples/set-test-id"
+              hx-target="#sample-section"
+              hx-select="#sample-section"
+              hx-swap="outerHTML"
+              hx-disabled-elt="find button">
+            <input type="hidden" name="sample_ids" value='{{ fix_test_ids | tojson }}'>
+            <label for="fix-test-id">Set test for the {{ fix_test_ids | length }} sample{{ '' if fix_test_ids | length == 1 else 's' }} without one:</label>
+            <select name="test_id" id="fix-test-id" class="paste-select" required>
+                <option value="">Select a test…</option>
+                {% for tp in test_profiles %}
+                <option value="{{ tp.test_type }}">{{ tp.test_type }}{% if tp.test_name and tp.test_name != tp.test_type %} ({{ tp.test_name }}){% endif %}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-secondary btn-small">Set test</button>
+        </form>
         {% endif %}
         {% endif %}
         <div class="validate-footer">

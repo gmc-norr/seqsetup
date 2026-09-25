@@ -35,6 +35,14 @@ def _validate_for_panel(run, ctx: AppContext):
     )
 
 
+def _samples_without_test(run) -> list[str]:
+    """Internal ids of a draft's samples with no test, for Check's
+    "Set test" picker. Empty on a locked run (nothing can be changed)."""
+    if run.status != RunStatus.DRAFT:
+        return []
+    return [s.id for s in run.samples if not s.test_id]
+
+
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
@@ -128,6 +136,8 @@ def validate_panel(
         "sample_errors": errors_by_sample(run, validation_result),
         "error_lines": error_messages(validation_result),
         "waiting": waiting_for_samples(run, validation_result),
+        "fix_test_ids": _samples_without_test(run),
+        "test_profiles": ctx.test_profile_repo.list_all() if ctx.test_profile_repo else [],
     })
 
 
@@ -171,6 +181,7 @@ def edit_run(
         "sample_errors": errors_by_sample(run, validation_result),
         "error_lines": error_messages(validation_result),
         "waiting": waiting_for_samples(run, validation_result),
+        "fix_test_ids": _samples_without_test(run),
         "steps": _run_steps(run, validation_result),
         "has_v1": has_v1,
         "flowcell_desc": flowcell_desc,

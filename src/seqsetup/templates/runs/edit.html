@@ -31,7 +31,8 @@
         {% endwith %}
     </fieldset>
 
-    {% with run=run, validation_result=validation_result, sample_errors=sample_errors, error_lines=error_lines, waiting=waiting %}
+    {% with run=run, validation_result=validation_result, sample_errors=sample_errors, error_lines=error_lines, waiting=waiting,
+            fix_test_ids=fix_test_ids, test_profiles=test_profiles %}
     {% include "runs/_validate_panel.html" %}
     {% endwith %}
 
