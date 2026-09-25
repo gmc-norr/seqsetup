@@ -58,11 +58,48 @@ class TestFillOrder:
         plan = build_fill_plan(_run(2), _dual_kit(), start_id="p2")
         assert _mapping(plan) == [("S1", "UDP0002"), ("S2", "UDP0003")]
 
+    def test_start_on_a_duplicated_id_begins_at_the_first_match(self):
+        """Two pairs can carry the same id; the start lands on the first of
+        them and each row keeps its own pair's sequences."""
+        dup = IndexPair(
+            id="p0", name="UDP0001",
+            index1=Index(name="i7-1", sequence=I7[1], index_type=IndexType.I7),
+            index2=Index(name="i5-1", sequence=I5[1], index_type=IndexType.I5),
+        )
+        plan = build_fill_plan(_run(2), _dual_kit(pairs=[_pair(0), dup]), start_id="p0")
+        assert plan.start.name == "UDP0000"
+        assert _mapping(plan) == [("S1", "UDP0000"), ("S2", "UDP0001")]
+        assert [r.entry.id for r in plan.rows] == ["p0", "p0"]
+        assert [(r.entry.i7, r.entry.i5) for r in plan.rows] == [
+            (I7[0], I5[0]), (I7[1], I5[1]),
+        ]
+
     def test_never_wraps_to_the_beginning(self):
         plan = build_fill_plan(_run(2), _dual_kit(), start_id="p4")
         assert not plan.can_apply and plan.rows == []
         assert plan.problem == ("Not enough unused indexes: 2 needed, 1 left in Kit from "
                                 "UDP0004. Pick an earlier start or another kit.")
+
+    def test_more_samples_than_the_whole_kit_fills_nothing(self):
+        plan = build_fill_plan(_run(6), _dual_kit(5), start_id="p0")
+        assert not plan.can_apply and plan.rows == []
+        assert plan.needed == 6 and plan.skipped == []
+        assert plan.problem == ("Not enough unused indexes: 6 needed, 5 left in Kit from "
+                                "UDP0000. Pick an earlier start or another kit.")
+
+    def test_a_sample_with_an_empty_sample_id_is_filled_in_run_order(self):
+        """The model accepts an empty ``sample_id``; the planner treats such a
+        sample like any other and its row label is empty too."""
+        run = _run(0)
+        run.add_sample(Sample(id="s1", sample_id="A", lanes=[1]))
+        run.add_sample(Sample(id="s2", sample_id="", lanes=[1]))
+        run.add_sample(Sample(id="s3", sample_id="B", lanes=[1]))
+        assert run.samples[1].sample_id == ""
+        plan = build_fill_plan(run, _dual_kit())
+        assert plan.needed == 3 and plan.problem == ""
+        assert [r.sample_id for r in plan.rows] == ["s1", "s2", "s3"]
+        assert [r.sample_label for r in plan.rows] == ["A", "", "B"]
+        assert [r.entry.name for r in plan.rows] == ["UDP0000", "UDP0001", "UDP0002"]
 
     def test_unknown_start_raises(self):
         with pytest.raises(ValueError):
@@ -179,6 +216,19 @@ class TestKitModes:
         assert [r.entry.id for r in plan.rows] == ["Single_i7_S0", "Single_i7_S1"]
         assert all(r.entry.i5 is None for r in plan.rows)
 
+    def test_a_pair_with_no_i5_fills_and_blocks_no_later_index(self):
+        """A unique dual pair may carry no i5: the row's i5 is None, and that
+        None neither uses up a later pair's i5 nor a second empty one."""
+        bare = [
+            IndexPair(id=f"p{k}", name=f"UDP{k:04d}",
+                      index1=Index(name=f"i7-{k}", sequence=I7[k], index_type=IndexType.I7))
+            for k in (0, 1)
+        ]
+        plan = build_fill_plan(_run(3), _dual_kit(pairs=bare + [_pair(2)]))
+        assert _mapping(plan) == [("S1", "UDP0000"), ("S2", "UDP0001"), ("S3", "UDP0002")]
+        assert [r.entry.i5 for r in plan.rows] == [None, None, I5[2]]
+        assert plan.skipped == [] and plan.problem == ""
+
     def test_combinatorial_kit_refused(self):
         kit = IndexKit(name="Combo", version="1", index_mode=IndexMode.COMBINATORIAL,
                        i7_indexes=[Index(name="a", sequence=I7[0], index_type=IndexType.I7)],
@@ -207,6 +257,26 @@ class TestSignature:
         before = build_fill_plan(run, _dual_kit()).signature()
         edited = _dual_kit(pairs=[_pair(0, i7="GTGTGTGT")] + [_pair(k) for k in range(1, 5)])
         assert build_fill_plan(run, edited).signature() != before
+
+    def test_signature_separates_two_indexes_sharing_an_id(self):
+        """The signature holds sequences, so a kit whose second pair carries a
+        different i7 under the same index id cannot pass as the previewed kit."""
+        def kit(i7):
+            dup = IndexPair(
+                id="p0", name="UDP0001",
+                index1=Index(name="i7-1", sequence=i7, index_type=IndexType.I7),
+                index2=Index(name="i5-1", sequence=I5[1], index_type=IndexType.I5),
+            )
+            return _dual_kit(pairs=[_pair(0), dup])
+
+        run = _run(2)
+        plan_a = build_fill_plan(run, kit(I7[1]), start_id="p0")
+        plan_b = build_fill_plan(run, kit("GTGTGTGT"), start_id="p0")
+        assert [r.entry.id for r in plan_a.rows] == ["p0", "p0"]
+        assert [r.entry.id for r in plan_b.rows] == ["p0", "p0"]
+        assert json.loads(plan_a.signature())[1][1] == ["s2", "p0", I7[1], I5[1]]
+        assert json.loads(plan_b.signature())[1][1] == ["s2", "p0", "GTGTGTGT", I5[1]]
+        assert plan_a.signature() != plan_b.signature()
 
     def test_signature_changes_when_the_run_changes(self):
         run = _run(2)
