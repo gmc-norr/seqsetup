@@ -44,6 +44,10 @@ ARCHIVED_RUN_ID = "screenshot-archived-run"
 SCREENSHOT_KIT_NAME = "Screenshot-TestKit"
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "browser: Playwright test against the served app")
+
+
 def _free_port() -> int:
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
         s.bind(("127.0.0.1", 0))
