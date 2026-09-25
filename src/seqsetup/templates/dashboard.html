@@ -57,7 +57,7 @@
         </div>
         {% else %}
         <div class="border rounded-lg overflow-hidden bg-white shadow-sm">
-            <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_1.4fr] gap-2 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
+            <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_13rem] gap-2 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
                 <span>Name</span>
                 <span>Platform</span>
                 <span>Flowcell</span>
@@ -69,7 +69,7 @@
             </div>
             {% for run in tab_runs %}
             {% set is_archived = run.status.value == 'archived' %}
-            <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_1.4fr] gap-2 items-center px-3 py-2 border-t text-sm" id="run-item-{{ run.id }}">
+            <div class="grid grid-cols-[2fr_1fr_1fr_0.7fr_1fr_1fr_1fr_13rem] gap-2 items-center px-3 py-2 border-t text-sm" id="run-item-{{ run.id }}">
                 <a href="/runs/{{ run.id }}" class="text-primary hover:underline truncate">{{ run.run_name or "Untitled Run" }}</a>
                 <span>{{ run.instrument_platform.value }}</span>
                 <span>{{ run.flowcell_type or "—" }}</span>
@@ -78,27 +78,29 @@
                 <span class="truncate">{{ run.updated_by or "—" }}</span>
                 <span>{{ run.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
                 <div class="flex gap-2 justify-end">
-                    <a href="/runs/{{ run.id }}" class="inline-block bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-xs">Edit</a>
+                    {# Shared .btn classes so every control is one size. Open (Edit on
+                       a draft) is the main action; Archive is routine, not loud. #}
+                    <a href="/runs/{{ run.id }}" class="btn btn-primary btn-small">{{ 'Edit' if run.status.value == 'draft' else 'Open' }}</a>
                     <form method="post" action="/runs/{{ run.id }}/duplicate" class="inline-block">
                         <input type="hidden" name="include_samples" value="false">
-                        <button type="submit" class="inline-block bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-xs">Duplicate</button>
+                        <button type="submit" class="btn btn-secondary btn-small">Duplicate</button>
                     </form>
                     {# Only the actions this run may take (see routes/dashboard.py):
                        Archive from Ready; Delete an empty draft, or (admins) an archived run. #}
                     {% if run.status.value == 'ready' %}
-                    <button class="inline-block bg-warning hover:opacity-90 text-white rounded px-2 py-1 text-xs"
+                    <button class="btn btn-secondary btn-small"
                             hx-post="/runs/{{ run.id }}/archive"
                             hx-target="#dashboard"
                             hx-swap="outerHTML"
                             hx-confirm="Archive this run?">Archive</button>
                     {% elif run.status.value == 'draft' and not run.samples %}
-                    <button class="inline-block bg-red-600 hover:bg-red-700 text-white rounded px-2 py-1 text-xs"
+                    <button class="btn btn-danger btn-small"
                             hx-delete="/runs/{{ run.id }}"
                             hx-target="#dashboard"
                             hx-swap="outerHTML"
                             hx-confirm="Delete this empty draft run?">Delete</button>
                     {% elif is_archived and user and user.is_admin %}
-                    <button class="inline-block bg-red-600 hover:bg-red-700 text-white rounded px-2 py-1 text-xs"
+                    <button class="btn btn-danger btn-small"
                             hx-delete="/runs/{{ run.id }}"
                             hx-target="#dashboard"
                             hx-swap="outerHTML"
