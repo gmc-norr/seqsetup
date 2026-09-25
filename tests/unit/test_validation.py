@@ -762,6 +762,7 @@ class TestValidateRun:
     def test_no_errors_when_valid(self):
         """has_errors is False when run is valid."""
         run = SequencingRun(
+            run_name="Valid run",
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
             flowcell_type="10B",
             samples=[
@@ -1805,3 +1806,32 @@ class TestIndexLengthConsistencyUsesEffectiveLength:
         ))
         errors = ValidationService._validate_index_length_consistency(run, [1])
         assert errors == []
+
+class TestRunNameRequired:
+    """A run must have a name before it can be marked Ready: an unnamed run
+    is hard to tell apart on the dashboard and in the sequencer's run list."""
+
+    def _errors(self, run_name):
+        from seqsetup.services.validation import clear_validation_cache
+        clear_validation_cache()
+        run = SequencingRun(
+            run_name=run_name,
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 10, 10),
+        )
+        result = ValidationService.validate_run(run)
+        return [e for e in result.configuration_errors
+                if e.category == "prerequisite_run_name"]
+
+    def test_unnamed_run_is_error(self):
+        errs = self._errors("")
+        assert len(errs) == 1
+        assert errs[0].severity.value == "error"
+        assert "name" in errs[0].message.lower()
+
+    def test_whitespace_only_name_is_error(self):
+        assert len(self._errors("   ")) == 1
+
+    def test_named_run_has_no_name_error(self):
+        assert self._errors("Run_2026_09_25") == []

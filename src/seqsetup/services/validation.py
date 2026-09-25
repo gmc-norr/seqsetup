@@ -276,6 +276,15 @@ class ValidationService:
         """
         errors: list[ConfigurationError] = []
 
+        # Prerequisite: a run name — an unnamed run is hard to tell apart on
+        # the dashboard and in the sequencer's run list.
+        if not (run.run_name or "").strip():
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="prerequisite_run_name",
+                message="Run has no name; give it a name in Run Setup before marking it ready.",
+            ))
+
         # Prerequisite: at least one sample
         if not run.samples:
             errors.append(ConfigurationError(
