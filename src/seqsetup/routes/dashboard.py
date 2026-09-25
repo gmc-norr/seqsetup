@@ -11,6 +11,7 @@ from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus, SequencingRun
+from ..models.user import UserRole
 from ..services.audit_log import audit
 from ..services.run_history import cascade_delete_history_safe
 from ..templating import render
@@ -97,12 +98,24 @@ def delete_run(
     run: SequencingRun = Depends(get_archivable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """DELETE /runs/{run_id} — delete an ARCHIVED run (HTMX fragment).
+    """DELETE /runs/{run_id} — delete a run (HTMX fragment).
 
-    Only archived runs may be deleted; draft/ready return 403.
+    - An EMPTY draft (no samples) may be deleted by any user: it can never
+      have been Ready, so no sheet from it can have been used.
+    - A draft with samples may have been Ready and sent back: 403.
+    - A Ready run: 403.
+    - An ARCHIVED run is the clinical record: admins only, else 403.
     """
-    if run.status != RunStatus.ARCHIVED:
-        return Response("Only archived runs can be deleted", status_code=403)
+    user = request.scope.get("auth")
+    is_admin = bool(user and user.role == UserRole.ADMIN)
+    if run.status == RunStatus.DRAFT:
+        if run.samples:
+            return Response("A draft run with samples cannot be deleted.", status_code=403)
+    elif run.status == RunStatus.ARCHIVED:
+        if not is_admin:
+            return Response("Only an admin can delete an archived run.", status_code=403)
+    else:
+        return Response("A Ready run cannot be deleted.", status_code=403)
 
     previous_status = run.status.value
     ctx.run_repo.delete(run.id)
@@ -117,6 +130,6 @@ def delete_run(
     return render(
         request,
         "dashboard.html",
-        {"runs": ctx.run_repo.list_all(), "active_tab": "archived"},
+        {"runs": ctx.run_repo.list_all(), "active_tab": previous_status},
         block_name="dashboard_content",
     )

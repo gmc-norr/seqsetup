@@ -91,10 +91,10 @@ def get_archivable_run(
     """Load a run for archive/delete; raise 404 if missing.
 
     Unlike `get_editable_run` (which requires DRAFT), this dep does NOT
-    check status — archive is valid from DRAFT and READY, and delete is
-    valid from ARCHIVED. The handler is responsible for the state-machine
-    check (`check_status_transition` for archive, explicit status guard
-    for delete).
+    check status — archive is valid from READY, and delete from an empty
+    DRAFT or (admins only) ARCHIVED. The handler is responsible for the
+    state-machine check (`check_status_transition` for archive, explicit
+    status/role guard for delete).
     """
     run = ctx.run_repo.get_by_id(run_id)
     if not run:

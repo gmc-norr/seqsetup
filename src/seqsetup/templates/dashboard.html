@@ -83,13 +83,21 @@
                         <input type="hidden" name="include_samples" value="false">
                         <button type="submit" class="inline-block bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-2 py-1 text-xs">Duplicate</button>
                     </form>
-                    {% if not is_archived %}
+                    {# Only the actions this run may take (see routes/dashboard.py):
+                       Archive from Ready; Delete an empty draft, or (admins) an archived run. #}
+                    {% if run.status.value == 'ready' %}
                     <button class="inline-block bg-warning hover:opacity-90 text-white rounded px-2 py-1 text-xs"
                             hx-post="/runs/{{ run.id }}/archive"
                             hx-target="#dashboard"
                             hx-swap="outerHTML"
                             hx-confirm="Archive this run?">Archive</button>
-                    {% else %}
+                    {% elif run.status.value == 'draft' and not run.samples %}
+                    <button class="inline-block bg-red-600 hover:bg-red-700 text-white rounded px-2 py-1 text-xs"
+                            hx-delete="/runs/{{ run.id }}"
+                            hx-target="#dashboard"
+                            hx-swap="outerHTML"
+                            hx-confirm="Delete this empty draft run?">Delete</button>
+                    {% elif is_archived and user and user.is_admin %}
                     <button class="inline-block bg-red-600 hover:bg-red-700 text-white rounded px-2 py-1 text-xs"
                             hx-delete="/runs/{{ run.id }}"
                             hx-target="#dashboard"
