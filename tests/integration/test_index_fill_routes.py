@@ -11,7 +11,6 @@ refuses with 409 and saves nothing. Both routes are DRAFT-only
 """
 
 import markupsafe
-import pytest
 
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.sample import Sample
@@ -34,11 +33,27 @@ def _pair(k, i7=None, i5=None):
     )
 
 
-def _dual_kit(ctx, n=5, name="Kit", version="1"):
-    """Save and return a unique-dual kit with n pairs, indexes 0..n-1."""
+def _dual_kit(ctx, n=5, name="Kit", version="1", **kit_defaults):
+    """Save and return a unique-dual kit with n pairs, indexes 0..n-1.
+
+    ``kit_defaults`` forwards to IndexKit (e.g. default_index1_cycles=,
+    default_read1_override=...) for tests that need to pin the kit-default
+    fields _apply_kit_defaults copies onto a filled sample.
+    """
     kit = IndexKit(
         name=name, version=version, index_mode=IndexMode.UNIQUE_DUAL,
         index_pairs=[_pair(k) for k in range(n)],
+        **kit_defaults,
+    )
+    ctx.index_kit_repo.save(kit)
+    return kit
+
+
+def _single_kit(ctx, n=5, name="Single", version="1"):
+    """Save and return a single-index (i7-only) kit with n indexes, 0..n-1."""
+    kit = IndexKit(
+        name=name, version=version, index_mode=IndexMode.SINGLE,
+        i7_indexes=[Index(name=f"i7-{k}", sequence=I7[k], index_type=IndexType.I7) for k in range(n)],
     )
     ctx.index_kit_repo.save(kit)
     return kit
@@ -128,6 +143,18 @@ class TestPreviewStart:
             assert pair_name in resp.text
         assert "Assign 3 indexes" in resp.text
 
+        # The above alone is vacuous: all five pair names (UDP0000..UDP0004)
+        # always render in the Start-at <select>
+        # (templates/runs/_index_fill_preview.html:22-25) regardless of where
+        # the fill actually starts, so those substrings would still be
+        # present even if start_id were ignored entirely. Pin the full
+        # sample->index mapping via the hidden "plan" input's value, which
+        # only equals the start_id="p2" signature when the fill truly begins
+        # at the 3rd pair.
+        run = ctx.run_repo.get_by_id(run_id)
+        expected_plan_value = _plan_value(run, kit, "p2")
+        assert f'name="plan" value="{expected_plan_value}"' in resp.text
+
 
 class TestPreviewSkipsUsed:
     """An index already used elsewhere in the run is skipped and named."""
@@ -216,6 +243,7 @@ class TestPreviewBadInput:
             headers=ORIGIN,
         )
         assert unknown_start_resp.status_code == 400
+        assert "That start index is not in this kit." in unknown_start_resp.text
 
 
 class TestApplyHappyPath:
@@ -246,6 +274,79 @@ class TestApplyHappyPath:
             sample = saved.get_sample(sample_id)
             assert sample.index1_sequence == I7[k]
             assert sample.index2_sequence == I5[k]
+            assert sample.index_kit_name == kit.name
+
+    def test_apply_sets_kit_defaults_and_recomputes_override_cycles(self, logged_in_client, fresh_app):
+        """Every filled row also gets the kit's override defaults and a
+        recomputed override_cycles (routes/samples.py:826-827:
+        _apply_kit_defaults + _update_override_cycles). The test kits used
+        above set no kit defaults, so those two calls are no-ops there and
+        this gap would pass unnoticed; here the kit sets 4bp effective index
+        lengths and non-default read patterns, so the result is only
+        correct if both calls ran."""
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx, n_samples=1)
+        kit = _dual_kit(
+            ctx, n=1,
+            default_index1_cycles=4, default_index2_cycles=4,
+            default_read1_override="N2Y*", default_read2_override="N3Y*",
+        )
+        run = ctx.run_repo.get_by_id(run_id)
+        plan = build_fill_plan(run, kit)
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill",
+            data={
+                "selected_kit": kit.kit_id,
+                "start_id": plan.start.id,
+                "plan": plan.signature(),
+            },
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200, resp.text[:500]
+        saved = ctx.run_repo.get_by_id(run_id)
+        sample = saved.get_sample("s1")
+        # _apply_kit_defaults copied the kit's override defaults onto the sample:
+        assert sample.index1_cycles == 4
+        assert sample.index2_cycles == 4
+        assert sample.read1_override_pattern == "N2Y*"
+        assert sample.read2_override_pattern == "N3Y*"
+        # _update_override_cycles recomputed override_cycles from those
+        # defaults and the run's 151/151/8/8 cycles — not the raw 8bp
+        # sequence length, and not left at None:
+        assert sample.override_cycles == "N2Y149;I4N4;I4N4;N3Y148"
+
+
+class TestApplySingleIndexKit:
+    """The i7-only write path (routes/samples.py:822-823,
+    run.assign_index1_to_sample, the plan.mode != "pair" branch) — every
+    other apply test here uses a unique-dual kit and never reaches it."""
+
+    def test_apply_single_index_kit_assigns_i7_only(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx, n_samples=3)
+        kit = _single_kit(ctx)
+        run = ctx.run_repo.get_by_id(run_id)
+        plan = build_fill_plan(run, kit)
+        assert plan.mode == "i7"
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill",
+            data={
+                "selected_kit": kit.kit_id,
+                "start_id": plan.start.id,
+                "plan": plan.signature(),
+            },
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200, resp.text[:500]
+        saved = ctx.run_repo.get_by_id(run_id)
+        for sample_id, k in [("s1", 0), ("s2", 1), ("s3", 2)]:
+            sample = saved.get_sample(sample_id)
+            assert sample.index1_sequence == I7[k]
+            assert not sample.index2_sequence
             assert sample.index_kit_name == kit.name
 
 
