@@ -61,7 +61,9 @@ kit shown in the index panel, in table order, with a preview first.
   partial fill.
 - **Nothing to do:** "Every sample already has an index."
 - **Apply = preview:** the Assign form carries the kit, the start and the plan's
-  signature (`[[sample id, index id], …]`). The apply route rebuilds the plan
+  signature (`[kit id, [[sample id, index id, i7, i5], …]]` — the sequences
+  too, since a kit sync can change a sequence without changing the kit's name,
+  version or index ids). The apply route rebuilds the plan
   from the current run and kit and refuses with 409 "The run or kit changed
   since the preview. Preview again." if the signature differs. Nothing is saved
   in that case.

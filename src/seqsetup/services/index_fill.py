@@ -54,8 +54,13 @@ class FillPlan:
         return not self.problem and bool(self.rows)
 
     def signature(self) -> str:
-        """What Assign will save, for the apply route to compare."""
-        return json.dumps([[row.sample_id, row.entry.id] for row in self.rows])
+        """What Assign will save, for the apply route to compare. Holds the
+        sequences, not just the index ids: a kit sync can change a sequence
+        without changing the kit's name, version or index ids."""
+        return json.dumps([
+            self.kit.kit_id,
+            [[row.sample_id, row.entry.id, row.entry.i7, row.entry.i5] for row in self.rows],
+        ])
 
 
 def kit_entries(kit: IndexKit) -> list[KitEntry]:

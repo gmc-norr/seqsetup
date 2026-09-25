@@ -401,6 +401,33 @@ class TestApplyStaleSignatureRefused:
         after = ctx.run_repo.get_by_id(run_id).to_dict()
         assert after == before
 
+    def test_kit_sequence_changed_since_preview_is_409(self, logged_in_client, fresh_app):
+        """A kit sync can replace a pair's sequence without changing the kit's
+        name, version or pair ids; Assign must not write a sequence the
+        preview never showed."""
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        kit = _dual_kit(ctx)
+        run = ctx.run_repo.get_by_id(run_id)
+        stale_plan = build_fill_plan(run, kit)
+
+        kit.index_pairs[0] = _pair(0, i7="GTGTGTGT")
+        ctx.index_kit_repo.save(kit)
+        before = ctx.run_repo.get_by_id(run_id).to_dict()
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill",
+            data={
+                "selected_kit": kit.kit_id,
+                "start_id": stale_plan.start.id,
+                "plan": stale_plan.signature(),
+            },
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 409
+        assert ctx.run_repo.get_by_id(run_id).to_dict() == before
+
 
 class TestApplyLeavesIndexedSamplesAlone:
     """A sample that already had an index keeps exactly that index."""

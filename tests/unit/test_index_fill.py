@@ -149,7 +149,18 @@ class TestSignature:
 
     def test_signature_is_what_will_be_saved(self):
         plan = build_fill_plan(_run(2), _dual_kit())
-        assert json.loads(plan.signature()) == [["s1", "p0"], ["s2", "p1"]]
+        assert json.loads(plan.signature()) == [
+            "Kit:1",
+            [["s1", "p0", I7[0], I5[0]], ["s2", "p1", I7[1], I5[1]]],
+        ]
+
+    def test_signature_changes_when_only_a_kit_sequence_changes(self):
+        """A kit re-synced with a changed sequence but the same name, version
+        and index ids must not pass as the kit the preview showed."""
+        run = _run(2)
+        before = build_fill_plan(run, _dual_kit()).signature()
+        edited = _dual_kit(pairs=[_pair(0, i7="GTGTGTGT")] + [_pair(k) for k in range(1, 5)])
+        assert build_fill_plan(run, edited).signature() != before
 
     def test_signature_changes_when_the_run_changes(self):
         run = _run(2)
