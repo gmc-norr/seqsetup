@@ -29,6 +29,7 @@ class ParsedSample:
     index_pair_name: str = ""  # Name for the index pair (used as index_kit_name)
     index1_name: str = ""  # i7 index name
     index2_name: str = ""  # i5 index name
+    line: int = 0  # 1-based line in the pasted text
 
 
 # Common header names (case-insensitive)
@@ -57,6 +58,57 @@ INDEX1_NAME_HEADERS = {
 INDEX2_NAME_HEADERS = {
     "i5_name", "i5 name", "index_i5_name", "index2_name",
 }
+
+# Display names for the preview's "Columns used" line.
+FIELD_LABELS = {
+    "sample_id": "Sample ID",
+    "test_id": "Test",
+    "index1": "i7",
+    "index2": "i5",
+    "index_pair_name": "Index name",
+    "index1_name": "i7 name",
+    "index2_name": "i5 name",
+}
+
+# Without a header row, columns 1-4 are read as these fields, in order.
+_HEADERLESS_FIELDS = ("sample_id", "test_id", "index1", "index2")
+
+
+@dataclass
+class PasteReadResult:
+    """What the parser read from a paste, and how it read the columns.
+
+    columns_used pairs each source column (its header text, or "column N"
+    when there is no header row) with the field it was read as;
+    columns_unused lists source columns holding data that no field took.
+    """
+    samples: list[ParsedSample]
+    header_found: bool
+    columns_used: list[tuple[str, str]]
+    columns_unused: list[str]
+
+
+def _describe_columns(
+    rows: list[tuple[int, list[str]]],
+    header_found: bool,
+    column_mapping: dict[str, int],
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Which source columns were read as which field, and which were not."""
+    data_rows = rows[1:] if header_found else rows
+    filled = {i for _line, parts in data_rows for i, cell in enumerate(parts) if cell}
+    if header_found:
+        header = rows[0][1]
+        names = {
+            i: header[i] if i < len(header) and header[i] else f"column {i + 1}"
+            for i in set(range(len(header))) | filled
+        }
+        taken = {i: field for field, i in column_mapping.items()}
+    else:
+        names = {i: f"column {i + 1}" for i in filled}
+        taken = dict(enumerate(_HEADERLESS_FIELDS))
+    used = [(names[i], FIELD_LABELS[taken[i]]) for i in sorted(names) if i in taken]
+    unused = [names[i] for i in sorted(names) if i not in taken and i in filled]
+    return used, unused
 
 
 def _detect_column_mapping(header_parts: list[str]) -> dict[str, int]:
@@ -156,7 +208,7 @@ def _multiline_cell_error(line_no: int) -> ValueError:
     )
 
 
-def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
+def read_pasted_samples(paste_data: str) -> PasteReadResult:
     """
     Parse pasted sample data.
 
@@ -171,11 +223,11 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
         paste_data: Raw pasted text
 
     Returns:
-        List of ParsedSample objects
+        PasteReadResult
     """
     samples = []
     if not paste_data or not paste_data.strip():
-        return samples
+        return PasteReadResult([], False, [], [])
 
     # Strip a leading UTF-8 BOM (﻿). Excel and many LIMS exports prepend
     # one; without this it would embed in the first header cell (e.g.
@@ -318,6 +370,7 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
             index_pair_name=index_pair_name,
             index1_name=index1_name,
             index2_name=index2_name,
+            line=source_line,
         ))
 
     if rows_missing_sample_id:
@@ -327,4 +380,10 @@ def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
             f"Either supply a sample_id or remove the row entirely."
         )
 
-    return samples
+    used, unused = _describe_columns(rows, header_detected, column_mapping)
+    return PasteReadResult(samples, header_detected, used, unused)
+
+
+def parse_pasted_samples(paste_data: str) -> list[ParsedSample]:
+    """Parse pasted sample data; see read_pasted_samples."""
+    return read_pasted_samples(paste_data).samples

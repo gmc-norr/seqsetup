@@ -9,7 +9,7 @@ sample-identity errors.
 import pytest
 
 from seqsetup.services import sample_parser as sample_parser_module
-from seqsetup.services.sample_parser import parse_pasted_samples
+from seqsetup.services.sample_parser import parse_pasted_samples, read_pasted_samples
 
 
 class TestSampleCountCap:
@@ -204,3 +204,42 @@ class TestBomStripping:
         assert result[0].sample_id == "S1"
         assert result[0].index1_sequence == "ATTACTCG"
         assert result[0].test_id == "WGS"
+
+
+class TestReadPastedSamples:
+    """read_pasted_samples reports how it read the paste, so the preview can
+    show guesses and dropped columns instead of hiding them."""
+
+    def test_rows_carry_their_source_line(self):
+        read = read_pasted_samples("sample_id,test_id\n\nS1,WGS\nS2,WGS\n")
+        assert [(s.sample_id, s.line) for s in read.samples] == [("S1", 3), ("S2", 4)]
+
+    def test_header_columns_used_and_unused(self):
+        read = read_pasted_samples("sample_id\ttest_id\tlane\nS1\tWGS\t3\n")
+        assert read.header_found is True
+        assert read.columns_used == [("sample_id", "Sample ID"), ("test_id", "Test")]
+        assert read.columns_unused == ["lane"]
+
+    def test_empty_unknown_column_is_not_listed(self):
+        assert read_pasted_samples("sample_id\tcomment\nS1\t\n").columns_unused == []
+
+    def test_headerless_columns_are_guessed_by_position(self):
+        read = read_pasted_samples("S1\tATTACTCG\tTATAGCCT\n")
+        assert read.header_found is False
+        assert read.columns_used == [
+            ("column 1", "Sample ID"), ("column 2", "Test"), ("column 3", "i7"),
+        ]
+        assert read.samples[0].test_id == "ATTACTCG"  # the guess the preview must show
+
+    def test_headerless_fifth_column_is_unused(self):
+        assert read_pasted_samples("S1,WGS,ATTACTCG,TATAGCCT,extra\n").columns_unused == ["column 5"]
+
+    def test_data_beyond_the_header_is_unused(self):
+        assert read_pasted_samples("sample_id,test_id\nS1,WGS,surprise\n").columns_unused == ["column 3"]
+
+    def test_parse_pasted_samples_still_returns_the_list(self):
+        assert [s.sample_id for s in parse_pasted_samples("S1\nS2")] == ["S1", "S2"]
+
+    def test_blank_input(self):
+        read = read_pasted_samples("   ")
+        assert (read.samples, read.header_found, read.columns_used, read.columns_unused) == ([], False, [], [])
