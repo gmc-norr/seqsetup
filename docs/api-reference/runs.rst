@@ -16,8 +16,9 @@ configurations.
 
 **Allowed statuses:** ``ready``, ``archived``
 
-Attempting to access a draft run or specifying ``draft`` as a status filter
-returns HTTP 403 Forbidden.
+Attempting to access a draft run directly returns HTTP 403 Forbidden.
+Specifying ``draft`` as the ``status`` filter on the list endpoint returns
+HTTP 400 Bad Request.
 
 Authentication
 --------------
@@ -37,69 +38,75 @@ Exceeding the limit returns HTTP 429 with a ``Retry-After`` header.
 List Runs
 ---------
 
-.. http:get:: /api/runs
+``GET /api/runs``
 
-   List finalized sequencing runs as minimal summaries.
+List finalized sequencing runs as minimal summaries.
 
-   :query status: Filter by run status. One of ``ready`` or ``archived``.
-      Defaults to ``ready``.
-   :query limit: Page size, 1–200. Defaults to 50. Out-of-range values
-      return HTTP 422.
-   :query offset: Zero-based offset into the result set. Defaults to 0.
-   :status 200: Returns a paginated envelope (see below).
-   :status 400: Invalid status (e.g., ``draft`` requested).
-   :status 401: Missing or invalid Bearer token.
-   :status 422: Invalid query parameter (out-of-range ``limit``, etc.).
-   :status 429: Rate limit exceeded; see ``Retry-After``.
+:``status``: Query parameter. Filter by run status. One of ``ready`` or
+   ``archived``. Defaults to ``ready``.
+:``limit``: Query parameter. Page size, 1–200. Defaults to 50.
+   Out-of-range values return HTTP 422.
+:``offset``: Query parameter. Zero-based offset into the result set.
+   Defaults to 0.
 
-   **Example request**::
+====== ============================================================
+Status Meaning
+====== ============================================================
+200    Returns a paginated envelope (see below).
+400    Invalid status (e.g., ``draft`` requested).
+401    Missing or invalid Bearer token.
+422    Invalid query parameter (out-of-range ``limit``, etc.).
+429    Rate limit exceeded; see ``Retry-After``.
+====== ============================================================
 
-      GET /api/runs?status=ready&limit=50 HTTP/1.1
-      Authorization: Bearer <token>
+**Example request**::
 
-   **Example response**:
+   GET /api/runs?status=ready&limit=50 HTTP/1.1
+   Authorization: Bearer <token>
 
-   .. code-block:: json
+**Example response**:
 
-      {
-        "items": [
-          {
-            "id": "a1b2c3d4-...",
-            "run_name": "Run_2025_001",
-            "status": "ready",
-            "instrument_platform": "NovaSeq X Series",
-            "flowcell_type": "10B",
-            "created_at": "2025-06-15T10:30:00",
-            "updated_at": "2025-06-15T14:22:00",
-            "created_by": "jdoe",
-            "sample_count": 96
-          }
-        ],
-        "total": 137,
-        "limit": 50,
-        "offset": 0
-      }
+.. code-block:: json
 
-   .. note::
+   {
+     "items": [
+       {
+         "id": "a1b2c3d4-...",
+         "run_name": "Run_2025_001",
+         "status": "ready",
+         "instrument_platform": "NovaSeq X Series",
+         "flowcell_type": "10B",
+         "created_at": "2025-06-15T10:30:00",
+         "updated_at": "2025-06-15T14:22:00",
+         "created_by": "jdoe",
+         "sample_count": 96
+       }
+     ],
+     "total": 137,
+     "limit": 50,
+     "offset": 0
+   }
 
-      **Breaking change (API v2.0):** Earlier versions of SeqSetup returned a
-      bare JSON array of full run documents (samples, generated Sample
-      Sheets, validation PDF base64, etc.) from this endpoint. That was a
-      privacy/data-exposure concern (audit finding C1) — a token-holder
-      enumerating runs could bulk-dump finalized clinical content. The
-      endpoint now returns a paginated envelope of minimal summaries.
-      The bulky payloads (samples, exports, PDF) are served only by the
-      per-run endpoints documented below.
+.. note::
 
-      If you depended on the old shape, you'll need to:
+   **Breaking change (API v2.0):** Earlier versions of SeqSetup returned a
+   bare JSON array of full run documents (samples, generated Sample
+   Sheets, validation PDF base64, etc.) from this endpoint. That was a
+   privacy/data-exposure concern (audit finding C1) — a token-holder
+   enumerating runs could bulk-dump finalized clinical content. The
+   endpoint now returns a paginated envelope of minimal summaries.
+   The bulky payloads (samples, exports, PDF) are served only by the
+   per-run endpoints documented below.
 
-      1. Iterate the list with ``limit``/``offset`` (or fetch a single page
-         with ``limit=200``).
-      2. For each ``items[i].id`` you want full data for, call the
-         appropriate per-run endpoint:
-         ``GET /api/runs/{run_id}/json`` for the structured JSON metadata,
-         ``GET /api/runs/{run_id}/samplesheet-v2`` for the Sample Sheet,
-         etc.
+   If you depended on the old shape, you'll need to:
+
+   1. Iterate the list with ``limit``/``offset`` (or fetch a single page
+      with ``limit=200``).
+   2. For each ``items[i].id`` you want full data for, call the
+      appropriate per-run endpoint:
+      ``GET /api/runs/{run_id}/json`` for the structured JSON metadata,
+      ``GET /api/runs/{run_id}/samplesheet-v2`` for the Sample Sheet,
+      etc.
 
 List Response Envelope
 ----------------------
@@ -170,77 +177,102 @@ For full sample / analysis / cycle-configuration data, use ``GET
 Get SampleSheet v2
 ------------------
 
-.. http:get:: /api/runs/{run_id}/samplesheet-v2
+``GET /api/runs/{run_id}/samplesheet-v2``
 
-   Get the pre-generated SampleSheet v2 CSV (instrument-ready).
+Get the pre-generated SampleSheet v2 CSV (instrument-ready).
 
-   :param run_id: Run UUID.
-   :status 200: Returns the SampleSheet v2 CSV (``Content-Type: text/csv``).
-   :status 401: Missing or invalid Bearer token.
-   :status 403: Run is a draft (not accessible via API).
-   :status 404: Run not found or sheet not generated.
-   :status 429: Rate limit exceeded.
+:``run_id``: Run UUID.
 
-   **Example request**::
+====== ============================================================
+Status Meaning
+====== ============================================================
+200    Returns the SampleSheet v2 CSV (``Content-Type: text/csv``).
+401    Missing or invalid Bearer token.
+403    Run is a draft (not accessible via API).
+404    Run not found or sheet not generated.
+429    Rate limit exceeded.
+====== ============================================================
 
-      GET /api/runs/a1b2c3d4-.../samplesheet-v2 HTTP/1.1
-      Authorization: Bearer <token>
+**Example request**::
+
+   GET /api/runs/a1b2c3d4-.../samplesheet-v2 HTTP/1.1
+   Authorization: Bearer <token>
 
 Get SampleSheet v1
 ------------------
 
-.. http:get:: /api/runs/{run_id}/samplesheet-v1
+``GET /api/runs/{run_id}/samplesheet-v1``
 
-   Get the pre-generated SampleSheet v1 CSV for instruments that support it
-   (e.g., MiSeq).
+Get the pre-generated SampleSheet v1 CSV for instruments that support it
+(e.g., MiSeq).
 
-   :param run_id: Run UUID.
-   :status 200: Returns the SampleSheet v1 CSV.
-   :status 401: Missing or invalid Bearer token.
-   :status 403: Run is a draft.
-   :status 404: Run not found or SampleSheet v1 not available for this run.
-   :status 429: Rate limit exceeded.
+:``run_id``: Run UUID.
+
+====== ============================================================
+Status Meaning
+====== ============================================================
+200    Returns the SampleSheet v1 CSV.
+401    Missing or invalid Bearer token.
+403    Run is a draft.
+404    Run not found or SampleSheet v1 not available for this run.
+429    Rate limit exceeded.
+====== ============================================================
 
 Get JSON Metadata
 -----------------
 
-.. http:get:: /api/runs/{run_id}/json
+``GET /api/runs/{run_id}/json``
 
-   Get the full pre-generated JSON metadata for a ready or archived run.
-   Contains the per-sample data (sample_id, indexes, lanes, override_cycles,
-   analyses, etc.) and full cycle configuration.
+Get the full pre-generated JSON metadata for a ready or archived run.
+Contains the per-sample data (sample_id, indexes, lanes, override_cycles,
+analyses, etc.) and full cycle configuration.
 
-   :param run_id: Run UUID.
-   :status 200: Returns the JSON metadata.
-   :status 401: Missing or invalid Bearer token.
-   :status 403: Run is a draft.
-   :status 404: Run not found or JSON not yet generated.
-   :status 429: Rate limit exceeded.
+:``run_id``: Run UUID.
+
+====== ============================================================
+Status Meaning
+====== ============================================================
+200    Returns the JSON metadata.
+401    Missing or invalid Bearer token.
+403    Run is a draft.
+404    Run not found or JSON not yet generated.
+429    Rate limit exceeded.
+====== ============================================================
 
 Get Validation Report (JSON)
 ----------------------------
 
-.. http:get:: /api/runs/{run_id}/validation-report
+``GET /api/runs/{run_id}/validation-report``
 
-   Get the pre-generated validation report in JSON format.
+Get the pre-generated validation report in JSON format.
 
-   :param run_id: Run UUID.
-   :status 200: Returns the validation report JSON.
-   :status 401: Missing or invalid Bearer token.
-   :status 403: Run is a draft.
-   :status 404: Run not found or validation report not yet generated.
-   :status 429: Rate limit exceeded.
+:``run_id``: Run UUID.
+
+====== ============================================================
+Status Meaning
+====== ============================================================
+200    Returns the validation report JSON.
+401    Missing or invalid Bearer token.
+403    Run is a draft.
+404    Run not found or validation report not yet generated.
+429    Rate limit exceeded.
+====== ============================================================
 
 Get Validation Report (PDF)
 ---------------------------
 
-.. http:get:: /api/runs/{run_id}/validation-pdf
+``GET /api/runs/{run_id}/validation-pdf``
 
-   Get the pre-generated validation report as a PDF document.
+Get the pre-generated validation report as a PDF document.
 
-   :param run_id: Run UUID.
-   :status 200: Returns the validation report PDF.
-   :status 401: Missing or invalid Bearer token.
-   :status 403: Run is a draft.
-   :status 404: Run not found or validation PDF not yet generated.
-   :status 429: Rate limit exceeded.
+:``run_id``: Run UUID.
+
+====== ============================================================
+Status Meaning
+====== ============================================================
+200    Returns the validation report PDF.
+401    Missing or invalid Bearer token.
+403    Run is a draft.
+404    Run not found or validation PDF not yet generated.
+429    Rate limit exceeded.
+====== ============================================================

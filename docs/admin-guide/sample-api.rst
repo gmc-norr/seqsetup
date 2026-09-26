@@ -15,8 +15,8 @@ Navigate to **Admin > Sample API** to configure the integration.
    For example, if the base URL is ``https://lims.example.com/api``, SeqSetup will
    call:
 
-   - ``GET https://lims.example.com/api/worklists`` -- list available worklists
-   - ``GET https://lims.example.com/api/worklists/{id}/samples`` -- fetch samples
+   - ``GET https://lims.example.com/api/worksheets`` -- list available worklists
+   - ``GET https://lims.example.com/api/worksheets/{id}`` -- fetch samples
      for a worklist
 
 **API Key**
@@ -37,48 +37,48 @@ The external API must implement two endpoints.
 List Worklists
 ^^^^^^^^^^^^^^
 
-.. http:get:: {base_url}/worklists
+``GET {base_url}/worksheets``
 
-   Returns a JSON array of worklist objects. Each object must include at least
-   an ``id`` field. A ``name`` field is recommended for display purposes.
+Returns a JSON array of worklist objects. Each object must include at least
+an ``id`` field. A ``name`` field is recommended for display purposes.
 
-   **Example response:**
+**Example response:**
 
-   .. code-block:: json
+.. code-block:: json
 
-      [
-        {"id": "WL-2025-001", "name": "Exome batch 12"},
-        {"id": "WL-2025-002", "name": "RNA panel 7"}
-      ]
+   [
+     {"id": "WL-2025-001", "name": "Exome batch 12"},
+     {"id": "WL-2025-002", "name": "RNA panel 7"}
+   ]
 
-   Field names are matched case-insensitively.
+Field names are matched case-insensitively.
 
 Get Worklist Samples
 ^^^^^^^^^^^^^^^^^^^^
 
-.. http:get:: {base_url}/worklists/{worklist_id}/samples
+``GET {base_url}/worksheets/{worklist_id}``
 
-   Returns a JSON array of sample objects for the specified worklist.
+Returns a JSON array of sample objects for the specified worklist.
 
-   **Example response:**
+**Example response:**
 
-   .. code-block:: json
+.. code-block:: json
 
-      [
-        {
-          "sample_id": "S001",
-          "test_id": "WES",
-          "index_i7": "AACGTTCC",
-          "index_i5": "GGAACTTG",
-          "index_pair_name": "UDP0001"
-        },
-        {
-          "sample_id": "S002",
-          "test_id": "WGS"
-        }
-      ]
+   [
+     {
+       "sample_id": "S001",
+       "test_id": "WES",
+       "index_i7": "AACGTTCC",
+       "index_i5": "GGAACTTG",
+       "index_pair_name": "UDP0001"
+     },
+     {
+       "sample_id": "S002",
+       "test_id": "WGS"
+     }
+   ]
 
-   Each sample must include at least a ``sample_id``. All other fields are optional.
+Each sample must include at least a ``sample_id``. All other fields are optional.
 
 Field Mapping
 ^^^^^^^^^^^^^
@@ -115,8 +115,10 @@ recognized field names for each attribute:
      - ``i5_name``, ``index_i5_name``, ``index2_name``
      - i5 index identifier name
 
-Samples without a valid ``sample_id`` are silently skipped. Duplicate sample IDs
-within the same run are prevented automatically.
+A worklist row with no valid ``sample_id`` is never silently dropped: the
+entire import is rejected with an error naming the offending row number(s),
+so the missing identifier can be fixed upstream before retrying. Duplicate
+sample IDs already present in the run are skipped automatically.
 
 Error Handling
 --------------
