@@ -15,6 +15,7 @@ Admin-only via router-level require_admin_dep. Preserves:
   - Full audit trail (user.created, user.updated, user.deleted)
 """
 
+import logging
 from datetime import datetime
 from typing import Annotated
 
@@ -27,10 +28,13 @@ from ..context import AppContext
 from ..forms.validators import strip_and_truncate
 from ..models.local_user import LocalUser, WeakPasswordError
 from ..models.user import UserRole
+from ..services import web_sessions
 from ..services.audit_log import audit
 from ..templating import render
 from .dependencies import get_ctx, require_admin_dep
 from .utils import get_username
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
@@ -82,6 +86,17 @@ class EditUserForm(BaseModel):
     email: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
     role: UserRole = UserRole.STANDARD
     password: str = Field(default="", max_length=512)
+
+
+def _clean_up_logins(ctx, username: str):
+    """Remove the user's login rows. The account write already ended them
+    (session stamp changed, or the record is gone), so a failure here is
+    logged, not fatal. Returns the number removed, or None on failure."""
+    try:
+        return web_sessions.end_all_for(ctx.web_session_repo, username)
+    except Exception:
+        logger.warning("Could not remove login rows for %s", username, exc_info=True)
+        return None
 
 
 def _render_page(request, ctx, message="", error=""):
@@ -189,6 +204,13 @@ def edit_user(
     user.updated_at = datetime.now()
     repo.save(user)
 
+    # A role or password change also changed the user's session stamp
+    # (models/local_user.py), so the save above already ended their logins.
+    logins_ended = form.role != previous_role or password_changed
+    extra = {}
+    if logins_ended:
+        extra = {"sessions_ended": True,
+                 "session_rows_removed": _clean_up_logins(ctx, username)}
     audit(
         "user.updated",
         actor=get_username(request),
@@ -196,8 +218,12 @@ def edit_user(
         from_role=previous_role.value,
         to_role=form.role.value,
         password_changed=password_changed,
+        **extra,
     )
-    return _render_page(request, ctx, message=f"User '{username}' updated successfully.")
+    message = f"User '{username}' updated."
+    if logins_ended:
+        message += " Their open logins were ended."
+    return _render_page(request, ctx, message=message)
 
 
 @router.delete("/admin/users/{username}", response_class=HTMLResponse)
@@ -221,10 +247,15 @@ def delete_user(
 
     deleted_role = user.role.value
     repo.delete(username)
+    # With the record gone its logins are refused already; this is cleanup.
+    removed = _clean_up_logins(ctx, username)
     audit(
         "user.deleted",
         actor=get_username(request),
         target=username,
         deleted_role=deleted_role,
+        sessions_ended=True,
+        session_rows_removed=removed,
     )
-    return _render_page(request, ctx, message=f"User '{username}' deleted.")
+    return _render_page(
+        request, ctx, message=f"User '{username}' deleted. Their open logins were ended.")
