@@ -3,7 +3,8 @@
 Migrated to APIRouter via the make_router(auth_service) factory.
 auth_service is closed over because it's an app-singleton built at
 startup, not per-request DI. No AppContext dependency — auth routes
-only touch auth_service and request.session.
+only touch auth_service, request.session and the login list
+(services/web_sessions.py, via the startup repo getters).
 
 Handlers are intentionally synchronous (def, not async def) because
 they call into bcrypt (a blocking C extension). Starlette runs sync
@@ -18,11 +19,14 @@ from pydantic import BaseModel, Field
 from pydantic.functional_validators import BeforeValidator
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
+from .. import startup
 from ..forms.validators import strip_and_truncate
 from ..rate_limit import client_identity, get_login_limiter
 from ..services.audit_log import audit
+from ..services import web_sessions
 from ..services.auth import AuthenticationError
 from ..templating import render
+from .utils import get_username
 
 
 class LoginForm(BaseModel):
@@ -43,15 +47,15 @@ class LoginForm(BaseModel):
     password: str = Field(min_length=1, max_length=512)
 
 
-def _login_user(sess, user) -> None:
-    """Apply the authenticated user to the session.
+def _login_user(sess, user, sessions, now, policy) -> None:
+    """Record the login server-side and put only its ticket in the cookie.
 
     Clears any prior session contents first to defeat session fixation:
-    an attacker who plants a known session ID on a shared workstation
-    must not retain that session after a legitimate user logs in.
+    an attacker who plants a known session on a shared workstation must
+    not retain it after a legitimate user logs in.
     """
     sess.clear()
-    sess["user"] = user.to_dict()
+    sess["sid"] = web_sessions.start(sessions, user, now, policy)
 
 
 def make_router(auth_service) -> APIRouter:
@@ -69,8 +73,16 @@ def make_router(auth_service) -> APIRouter:
         fresh form (which would invite re-submission with browser
         autofill on a new session id).
         """
-        if request.session.get("user"):
-            return RedirectResponse("/", status_code=303)
+        sid = request.session.get("sid")
+        if sid:
+            try:
+                live = web_sessions.resolve(
+                    startup.get_web_session_repo(), startup.get_local_user_repo(),
+                    sid, web_sessions.utcnow(), web_sessions.current_policy())
+            except Exception:
+                live = None
+            if live is not None:
+                return RedirectResponse("/", status_code=303)
         return render(request, "login.html", {"error_message": ""})
 
     @router.post("/login/submit")
@@ -119,7 +131,8 @@ def make_router(auth_service) -> APIRouter:
 
         try:
             user = auth_service.authenticate(username, password)
-            _login_user(sess, user)
+            _login_user(sess, user, startup.get_web_session_repo(),
+                        web_sessions.utcnow(), web_sessions.current_policy())
             audit("login.success", actor=actor)
             return RedirectResponse("/", status_code=303)
         except AuthenticationError as e:
@@ -145,9 +158,10 @@ def make_router(auth_service) -> APIRouter:
         despite the SameSite=Strict cookie.
         """
         sess = request.session
-        # Best-effort capture of who is logging out; sess may be empty.
-        user_data = sess.get("user") or {}
-        actor = (user_data.get("username") or "")[:128]
+        actor = get_username(request)[:128]
+        sid = sess.get("sid")
+        if sid:
+            web_sessions.end(startup.get_web_session_repo(), sid)
         sess.clear()
         audit("logout", actor=actor)
         return RedirectResponse("/login", status_code=303)
