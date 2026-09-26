@@ -8,7 +8,7 @@ FastHTML's ``@rt``-decorated handlers; routes registered directly on
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import PlainTextResponse, RedirectResponse
 
 from .models.user import User
 
@@ -34,7 +34,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
+        # The path the router matches. Never request.url.path: Starlette
+        # rebuilds that from the Host header, so a Host like "x/api" made
+        # every page look like /api/... and skipped the login.
+        path = request.scope["path"]
+
+        # Browsers never send "." or ".." segments, and a hop that collapsed
+        # them after this check would turn an exempt prefix (/api/, /static/)
+        # into a protected page.
+        if any(segment in (".", "..") for segment in path.split("/")):
+            return PlainTextResponse("Bad Request", status_code=400)
 
         # Public paths and static assets: pass through with no auth.
         if path in PUBLIC_ROUTES or path.startswith(_STATIC_PREFIXES):

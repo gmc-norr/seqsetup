@@ -114,9 +114,12 @@ class OriginCheckMiddleware(BaseHTTPMiddleware):
         )
 
     async def dispatch(self, request: Request, call_next):
+        # scope["path"], the path the router matches: request.url.path is
+        # rebuilt from the Host header, so a Host like "x/api" would make any
+        # page look like /api/* and take the Bearer exemption below.
         allowed, reason = check_origin_against_host(
             method=request.method,
-            path=request.url.path,
+            path=request.scope["path"],
             origin_header=request.headers.get("origin", ""),
             host_header=request.headers.get("host", ""),
             request_scheme=request.url.scheme,
@@ -127,7 +130,7 @@ class OriginCheckMiddleware(BaseHTTPMiddleware):
             logger.warning(
                 "Rejected CSRF candidate request: %s %s — %s",
                 request.method,
-                request.url.path,
+                request.scope["path"],
                 reason,
             )
             return PlainTextResponse("Forbidden", status_code=403)
