@@ -278,6 +278,39 @@ def _parse_sample_ids(raw: str) -> Optional[list[str]]:
     return parsed
 
 
+def _find_index(ctx: AppContext, idx_type: str, idx_id: str, kit_id: str):
+    """(index pair or index, kit, None), or (None, None, error Response).
+
+    Index ids are built from the kit name, so every version of a kit holds
+    the same ids. The index is taken from the kit the chip was shown in
+    (``kit_id``); without one, the id must be in exactly one kit — never
+    whichever version the database returns first.
+    """
+    what = "Index pair" if idx_type == "pair" else "Index"
+    repo = ctx.index_kit_repo
+    if kit_id:
+        kit = repo.get_by_kit_id(kit_id)
+        if kit is None:
+            return None, None, Response("Index kit not found", status_code=404)
+        kits = [kit]
+    elif idx_type == "pair":
+        kits = repo.find_kits_with_index_pair(idx_id)
+    else:
+        kits = repo.find_kits_with_index(idx_id)
+    if len(kits) > 1:
+        return None, None, Response(
+            f"{what} is in more than one version of the kit. Reload the page and try again.",
+            status_code=409,
+        )
+    found = None
+    if kits:
+        kit = kits[0]
+        found = kit.get_index_pair_by_id(idx_id) if idx_type == "pair" else kit.get_index_by_id(idx_id)
+    if found is None:
+        return None, None, Response(f"{what} not found", status_code=404)
+    return found, kits[0], None
+
+
 # ---------------------------------------------------------------------------
 # Mutation handlers — all require DRAFT run via Depends(get_editable_run)
 # ---------------------------------------------------------------------------
@@ -734,20 +767,18 @@ async def assign_indexes_bulk(
 
         idx_id = idx_data.get("id")
         idx_type = idx_data.get("type", "pair")
+        kit_id = idx_data.get("kit_id", "")
 
         if not isinstance(idx_id, str) or not idx_id:
             return Response("Invalid indexes_json entry: missing 'id'", status_code=400)
+        if not isinstance(kit_id, str):
+            return Response("Invalid indexes_json entry: 'kit_id' must be a string", status_code=400)
 
-        if idx_type == "pair":
-            index_pair, kit = ctx.index_kit_repo.find_index_pair_with_kit(idx_id)
-            if not index_pair or not kit:
-                return Response("Index pair not found", status_code=404)
-            resolved_assignments.append((idx_type, index_pair, kit))
-        elif idx_type in ("i7", "i5"):
-            index, kit = ctx.index_kit_repo.find_index_with_kit(idx_id)
-            if not index or not kit:
-                return Response("Index not found", status_code=404)
-            resolved_assignments.append((idx_type, index, kit))
+        if idx_type in ("pair", "i7", "i5"):
+            found, kit, error = _find_index(ctx, idx_type, idx_id, kit_id)
+            if error:
+                return error
+            resolved_assignments.append((idx_type, found, kit))
         else:
             return Response(f"Invalid index type: {idx_type}", status_code=400)
 
@@ -870,6 +901,7 @@ async def assign_index_to_selected(
     index_pair_id = form.get("index_pair_id", "")
     index_id = form.get("index_id", "")
     index_type = form.get("index_type", "")
+    kit_id = form.get("kit_id", "")
     context = form.get("context", "")
 
     if not sample_ids_json:
@@ -878,19 +910,21 @@ async def assign_index_to_selected(
     sample_ids = _parse_sample_ids(sample_ids_json)
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
+    if not isinstance(kit_id, str):
+        return Response("kit_id must be a string", status_code=400)
 
     kit = None
     index_pair = None
     index = None
 
     if index_pair_id:
-        index_pair, kit = ctx.index_kit_repo.find_index_pair_with_kit(index_pair_id)
-        if not index_pair:
-            return Response("Index pair not found", status_code=404)
+        index_pair, kit, error = _find_index(ctx, "pair", index_pair_id, kit_id)
+        if error:
+            return error
     elif index_id and index_type:
-        index, kit = ctx.index_kit_repo.find_index_with_kit(index_id)
-        if not index:
-            return Response("Index not found", status_code=404)
+        index, kit, error = _find_index(ctx, index_type, index_id, kit_id)
+        if error:
+            return error
     else:
         return Response("Missing index_pair_id or index_id/index_type", status_code=400)
 
@@ -1251,17 +1285,20 @@ async def assign_index(
     index_pair_id = form.get("index_pair_id", "")
     index_id = form.get("index_id", "")
     index_type = form.get("index_type", "")
+    kit_id = form.get("kit_id", "")
     context = form.get("context", "") or request.query_params.get("context", "")
 
     sample = run.get_sample(sample_id_path)
     if not sample:
         return Response("Sample not found", status_code=404)
+    if not isinstance(kit_id, str):
+        return Response("kit_id must be a string", status_code=400)
 
     kit = None
     if index_pair_id:
-        index_pair, kit = ctx.index_kit_repo.find_index_pair_with_kit(index_pair_id)
-        if not index_pair:
-            return Response("Index pair not found", status_code=404)
+        index_pair, kit, error = _find_index(ctx, "pair", index_pair_id, kit_id)
+        if error:
+            return error
 
         with saving_run(run, ctx, request):
             run.assign_index_pair_to_sample(sample.id, index_pair)
@@ -1269,9 +1306,9 @@ async def assign_index(
             _apply_kit_defaults(sample, kit)
             _update_override_cycles(sample, run)
     elif index_id and index_type:
-        index, kit = ctx.index_kit_repo.find_index_with_kit(index_id)
-        if not index:
-            return Response("Index not found", status_code=404)
+        index, kit, error = _find_index(ctx, index_type, index_id, kit_id)
+        if error:
+            return error
 
         # Validate index_type before entering saving_run — a return inside
         # the with block would trigger the else clause and save a touched run.

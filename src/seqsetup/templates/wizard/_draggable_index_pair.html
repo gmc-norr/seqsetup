@@ -7,6 +7,9 @@
    Inputs:
      pair: IndexPair instance with id, name, index1 (i7), index2 (i5),
            well_position, index1_sequence, index2_sequence.
+     kit:  IndexKit the pair belongs to (from the including template) —
+           its kit_id goes on the chip so the assign request names the
+           kit version.
 #}
 <div class="draggable-index-compact draggable-pair"
      draggable="true"
@@ -15,6 +18,7 @@
      data-index-pair-id="{{ pair.id | e }}"
      data-index-name="{{ pair.name | e }}"
      data-index-type="pair"
+     data-kit-id="{{ kit.kit_id | e }}"
      data-well="{{ pair.well_position or '' | e }}"
      aria-label="{{ pair.name | e }} pair sequence {{ pair.index1_sequence | e }}"
      title="{{ pair.name | e }}&#10;i7: {{ pair.index1_sequence | e }}&#10;i5: {{ pair.index2_sequence or 'N/A' | e }}&#10;Well: {{ pair.well_position or 'N/A' | e }}">

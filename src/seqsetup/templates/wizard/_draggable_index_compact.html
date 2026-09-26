@@ -4,6 +4,8 @@
    Inputs:
      index:       Index — has .name, .sequence, .well_position
      kit_name:    str
+     kit:         IndexKit (from the including template) — its kit_id goes
+                  on the chip so the assign request names the kit version
      index_type:  str — 'i7' or 'i5'
 
    Uses the global handleIndexClick / handleDragStart from app.js, wired
@@ -21,6 +23,7 @@
      data-index-name="{{ index.name | e }}"
      data-index-type="{{ index_type | e }}"
      data-kit-name="{{ kit_name | e }}"
+     data-kit-id="{{ kit.kit_id | e }}"
      data-well="{{ index.well_position or '' | e }}"
      aria-label="{{ index.name | e }} {{ index_type | e }} sequence {{ index.sequence | e }}"
      title="{{ index.name | e }}&#10;Well: {{ index.well_position or 'N/A' | e }}&#10;Sequence: {{ index.sequence | e }}">

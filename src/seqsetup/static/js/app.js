@@ -12,7 +12,9 @@ function handleIndexClick(event, indexId, indexType) {
     const element = event.target.closest('.draggable-index, .draggable-index-compact');
     if (!element) return;
 
-    const indexData = { id: indexId, type: indexType || 'pair' };
+    // kit_id: every version of a kit has the same index ids, so the server
+    // needs the chip's kit to know which version's sequences to assign.
+    const indexData = { id: indexId, type: indexType || 'pair', kit_id: element.dataset.kitId || '' };
 
     // Check if already selected
     const existingIndex = selectedIndexes.findIndex(i => i.id === indexId);
@@ -49,7 +51,7 @@ function handleIndexClick(event, indexId, indexType) {
                     const elId = el.dataset.indexPairId || el.dataset.indexId;
                     const elType = el.dataset.indexType || 'pair';
                     if (!selectedIndexes.find(s => s.id === elId)) {
-                        selectedIndexes.push({ id: elId, type: elType });
+                        selectedIndexes.push({ id: elId, type: elType, kit_id: el.dataset.kitId || '' });
                         el.classList.add('index-selected');
                     }
                 }
@@ -86,7 +88,8 @@ function updateSelectionCount() {
 }
 
 function handleDragStart(event, indexId, indexType) {
-    const indexData = { id: indexId, type: indexType || 'pair' };
+    const chip = event.target.closest('.draggable-index, .draggable-index-compact');
+    const indexData = { id: indexId, type: indexType || 'pair', kit_id: chip ? (chip.dataset.kitId || '') : '' };
 
     // If dragging a selected index, include all selected indexes
     // Otherwise, just drag this one index
@@ -173,13 +176,14 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
                     index_pair_id: indexData.type === 'pair' ? indexData.id : '',
                     index_id: indexData.type !== 'pair' ? indexData.id : '',
                     index_type: indexData.type !== 'pair' ? indexData.type : '',
+                    kit_id: indexData.kit_id || '',
                     context: context,
                     existing_ids: existingIds
                 }
             });
         } else {
             // No samples selected — assign to just the drop target
-            const values = { context: context, existing_ids: existingIds };
+            const values = { context: context, existing_ids: existingIds, kit_id: indexData.kit_id || '' };
 
             if (indexData.type === 'pair') {
                 values.index_pair_id = indexData.id;
@@ -271,7 +275,7 @@ function assignSelectedIndexToSample(sampleId, runId, dropZoneType, dropZoneEl) 
     const context = dropZoneEl && dropZoneEl.dataset ? (dropZoneEl.dataset.context || '') : '';
     const sampleTable = document.getElementById('sample-table');
     const existingIds = sampleTable ? (sampleTable.dataset.existingIds || '') : '';
-    const values = { context: context, existing_ids: existingIds };
+    const values = { context: context, existing_ids: existingIds, kit_id: idx.kit_id || '' };
     if (idx.type === 'pair') { values.index_pair_id = idx.id; }
     else { values.index_id = idx.id; values.index_type = idx.type; }
     htmx.ajax('POST', `/runs/${runId}/samples/${sampleId}/assign-index`, {
@@ -632,9 +636,14 @@ const _CLICK_ACTIONS = {
 };
 
 // A fill preview names one kit and Assign uses that kit, so once the kit
-// dropdown shows another one the preview goes away.
+// dropdown shows another one the preview goes away. So does the index
+// selection: its chips are no longer on screen, and another version of the
+// kit has chips with the same ids.
 document.addEventListener('change', function(event) {
-    if (event.target.id === 'index-kit-dropdown') clearIndexFillArea();
+    if (event.target.id === 'index-kit-dropdown') {
+        clearIndexFillArea();
+        clearIndexSelection();
+    }
 });
 
 document.addEventListener('click', function(event) {
