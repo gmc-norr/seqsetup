@@ -23,6 +23,14 @@ Environment Variables
    * - ``SEQSETUP_SESSION_SECRET``
      - Session encryption secret key (use in production)
      - Auto-generated in ``.sesskey``
+   * - ``SEQSETUP_SESSION_IDLE_SECONDS``
+     - A login unused for this many seconds ends. Allowed 60 up to the
+       maximum age; a value outside is clamped and logged.
+     - ``1800`` (30 minutes)
+   * - ``SEQSETUP_SESSION_MAX_AGE_SECONDS``
+     - Every login ends this many seconds after it began, even while in use.
+       Allowed 300–86400; a value outside is clamped and logged.
+     - ``28800`` (8 hours)
 
 Environment variables take precedence over configuration files.
 
