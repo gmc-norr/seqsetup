@@ -1,46 +1,68 @@
 Authentication
 ==============
 
-SeqSetup requires authentication before accessing any functionality.
+SeqSetup requires you to sign in before you can see any run, sample or index
+data. A request for any page other than the login page itself is redirected
+to :guilabel:`/login` if you do not have a session yet.
 
-User Roles
+Signing in
 ----------
 
-Two roles are supported:
-
-**Administrator**
-   Full access to all features including index kit management, application profile
-   management, local user management, and API token management.
-
-**Standard User**
-   Access to run setup, sample management, and export functions. Cannot manage
-   index kits, profiles, or other administrative settings.
-
-Login
------
-
-Navigate to the application URL to reach the login page. Enter your username and
-password to authenticate.
+1. Navigate to the application URL. If you are not already signed in, you
+   land on the login page.
+2. Enter your **Username** and **Password**.
+3. Select **Sign In**.
 
 .. figure:: /_static/screenshots/login/login-form.png
    :alt: The SeqSetup login form, with the username field, password field, and Sign In button outlined in red.
 
-   The login form (outlined).
+   The login form, outlined.
 
-Authentication is checked in the following order:
+A wrong username or password redisplays this same page with an error
+message; the fields are not pre-filled. Repeated failed attempts from the
+same address, or against the same username, are rate-limited and rejected
+with "Too many login attempts. Try again later." until the limit resets.
 
-1. **LDAP/AD** -- If configured, credentials are verified against the directory server.
-2. **Local users** -- Users managed through the admin interface in MongoDB.
-3. **Configuration file** -- Fallback to ``config/users.yaml`` (development use).
+Authentication is checked in this order:
 
-Session Management
-------------------
+1. **LDAP/AD**, if a directory server is configured.
+2. **Local users**, managed through the admin interface and stored in
+   MongoDB.
+3. **Configuration file** (``config/users.yaml``), a fallback most often
+   used in development.
 
-After successful login, a session is created and maintained via a browser cookie.
-The session persists until the user logs out or the session expires.
+.. note::
+   Signing in clears any prior session content before applying the new
+   one, so an old session id cannot be reused to inherit a different
+   user's access.
 
-The session secret key can be configured via the ``SEQSETUP_SESSION_SECRET``
-environment variable (recommended for production). If not set, it falls back to
-``.sesskey`` at the project root, which is auto-generated on first startup.
+User roles
+----------
 
-See :doc:`/admin-guide/authentication` for LDAP/AD configuration details.
+Every user has exactly one of two roles:
+
+**Administrator**
+   Full access to run setup, samples, and export, plus index kit
+   management, application profiles, local users, API tokens, and the
+   rest of the admin section.
+
+**Standard User**
+   Run setup, sample management, and export. The admin section is not
+   shown, and admin-only actions (such as index kit upload) are refused.
+
+Session and logout
+-------------------
+
+After signing in, your session is kept in a server-side cookie. It lasts
+until you sign out or the session expires. Signing out is a button in the
+top-right corner of every page, next to your display name; it always
+submits as a request that changes state, so it cannot be triggered from
+another site.
+
+The session's signing secret comes from the ``SEQSETUP_SESSION_SECRET``
+environment variable when set (the recommended production setup). If it
+is not set, SeqSetup falls back to a ``.sesskey`` file at the project
+root, generated automatically on first startup.
+
+See :doc:`/admin-guide/authentication` for configuring LDAP/AD and local
+users.

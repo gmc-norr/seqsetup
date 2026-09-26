@@ -1,50 +1,98 @@
 Run Setup
 =========
 
-Creating a new sequencing run is done through a guided wizard.
+Selecting **+ New Run** creates a new Draft run right away and opens its
+setup page. Everything on this page saves as you go -- there is no
+separate "save" step until you leave it.
 
-Starting a New Run
-------------------
+Starting from a template
+-------------------------
 
-From the dashboard, select **New Run** to start the wizard.
+If your organization has saved any run templates (see **Run Templates**
+in the sidebar), a new run offers to start from one instead of blank
+defaults:
 
-Step 1: Instrument and Flowcell
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. figure:: /_static/screenshots/new-run/template-choice.png
+   :alt: The "Or start from a template" selector on the New Run page, with a template chosen, outlined.
 
-Select the sequencing instrument and flowcell type:
+   Starting from a template, outlined.
 
-- **Instrument platform** -- Choose from supported instruments (NovaSeq X, MiSeq i100,
-  NextSeq 1000/2000, etc.)
-- **Flowcell type** -- Available options depend on the selected instrument
-- **Reagent kit** -- Determines the maximum available cycles
+Choosing a template and selecting **Use template** replaces the blank run
+with a new Draft copying that template's instrument, cycles and any
+sample scaffold it was saved with, and discards the blank run this page
+had just created. This section only appears for a brand-new run, and only
+when at least one template exists.
 
-Step 2: Run Cycles
-^^^^^^^^^^^^^^^^^^
+Run name and description
+--------------------------
 
-Configure the number of cycles for each segment:
+.. figure:: /_static/screenshots/new-run/name-and-description.png
+   :alt: The Run Name and Description fields, outlined.
 
-- **Read 1 cycles** -- Number of sequencing cycles for the first read
-- **Read 2 cycles** -- Number of sequencing cycles for the second read
-- **Index 1 cycles** -- Number of cycles for the i7 index read
-- **Index 2 cycles** -- Number of cycles for the i5 index read
+   Run name and description, outlined.
 
-The total cycles (Read1 + Read2 + Index1 + Index2) must not exceed the reagent kit
-capacity.
+**Run Name** and **Description** save automatically when you leave the
+field or press Enter. The run name is limited to 256 characters and
+cannot contain a line break; the description is limited to 4096
+characters.
 
-Step 3: Run Details
-^^^^^^^^^^^^^^^^^^^
+Instrument, flowcell and reagent kit
+--------------------------------------
 
-Provide additional run metadata:
+.. figure:: /_static/screenshots/new-run/instrument-and-flowcell.png
+   :alt: The Platform, Flowcell and Reagent Kit selects, outlined.
 
-- **Run name** -- A descriptive name for the run
-- **Run description** -- Optional notes or comments
-- **Barcode mismatches** -- Default mismatch tolerance for i7 and i5 (default: 1)
+   Instrument configuration, outlined.
 
-After completing the wizard, you proceed to the sample configuration view where
-samples, indexes, and lanes are managed.
+- **Platform** -- the sequencing instrument. Changing it refreshes the
+  Flowcell and Reagent Kit choices to match.
+- **Flowcell** -- the flowcell type for that instrument. Changing it
+  refreshes the Reagent Kit choices.
+- **Reagent Kit (cycles)** -- the reagent kit. Changing it resets Read 1,
+  Read 2, Index 1 and Index 2 below to that kit's default cycle counts.
 
-Editing Run Settings
---------------------
+Run cycle configuration
+-------------------------
 
-Run-level settings (instrument, cycles, mismatches) can be modified after creation
-through the run configuration panel in the sample view.
+.. figure:: /_static/screenshots/new-run/cycle-config.png
+   :alt: The Read 1, Read 2, Index 1 and Index 2 cycle fields with the running total below them, outlined.
+
+   Cycle configuration, outlined.
+
+Each of the four cycle counts must be a whole number from 0 to 600; an
+invalid value is rejected and nothing is saved. The line below the four
+fields totals them against the reagent kit.
+
+.. warning::
+   When the selected reagent kit has a known cycle limit, going over it
+   shows **Too many cycles for this kit.** in red next to the total:
+
+   .. figure:: /_static/screenshots/new-run/cycle-limit-exceeded.png
+      :alt: The cycle total line reading "Too many cycles for this kit." in red, outlined.
+
+      The cycle-limit warning, outlined.
+
+   This limit comes from the instrument's synced configuration (kept
+   under **Admin > Config Sync**) and is only checked for kits that have
+   one recorded; a kit without a recorded limit is not checked here, but
+   an over-long run is still refused when you try to mark it Ready.
+
+Finishing setup
+----------------
+
+.. figure:: /_static/screenshots/new-run/continue-button.png
+   :alt: The Cancel and Continue to Run buttons at the bottom of the New Run page, outlined.
+
+   Finishing setup, outlined.
+
+- **Continue to Run** saves the run name, description and cycle counts
+  together and opens the run, where you add samples, indexes and lanes.
+  If any of those values is rejected, you stay on this page with the
+  error shown and nothing is saved.
+- **Cancel** (shown only for a run you just created) deletes this run,
+  since it is still an empty Draft.
+
+Opening an existing run's setup again shows **Run Setup** instead of
+**New Run Configuration**, with **Back to Run** in place of **Continue to
+Run**, and no template chooser -- but only while it is still a Draft. A
+Ready or Archived run's setup cannot be changed.

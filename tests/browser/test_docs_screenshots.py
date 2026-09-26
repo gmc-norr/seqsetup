@@ -8,10 +8,13 @@ other browser tests never see the demo world.
 """
 
 import os
+import re
 from pathlib import Path
 
 import pytest
 
+from seqsetup.data.instruments import clear_synced_instruments_cache
+from seqsetup.models.instrument_definition import FlowcellDefinition, InstrumentDefinition
 from seqsetup.services import database
 
 from .docs_shots import shoot
@@ -62,3 +65,126 @@ def test_login_form(page, base_url, demo):
     page.goto(f"{base_url}/login")
     form = page.locator("form").filter(has=page.locator('input[name="username"]'))
     snap(page, "login/login-form", form, pad=24)
+
+
+def test_dashboard_tabs(demo_page, base_url, demo):
+    page = demo_page
+    tabs = page.locator("#dashboard .flex.gap-2.border-b")
+    snap(page, "dashboard/tabs", tabs)
+
+
+def test_dashboard_search(demo_page, base_url, demo):
+    page = demo_page
+    page.fill("#dashboard-search", "DEMO-RUN-01")
+    page.wait_for_selector("#dashboard a:has-text('DEMO-RUN-01')", timeout=5000)
+    search_box = page.locator("#dashboard-search")
+    snap(page, "dashboard/search", search_box, region=page.locator("#main"))
+
+
+def test_dashboard_new_run_button(demo_page, base_url, demo):
+    page = demo_page
+    button = page.get_by_role("button", name="New Run")
+    snap(page, "dashboard/new-run-button", button)
+
+
+def test_new_run_template_choice(demo_page, base_url, demo):
+    page = demo_page
+    # The demo world seeds no run templates (docs_world.py has none), so the
+    # New Run page's "start from a template" section has nothing to offer
+    # unless one exists. Create one for real, through the run page's own
+    # "Save as template" form -- the same way a user would.
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.fill("#template-name", "Standard WGS Setup")
+    with page.expect_navigation(url=re.compile(r"/templates$")):
+        page.get_by_role("button", name="Save as template").click()
+
+    page.goto(f"{base_url}/")
+    with page.expect_navigation(url=re.compile(r"/runs/new/step/1")):
+        page.get_by_role("button", name="New Run").click()
+
+    page.select_option("#template_id", label="Standard WGS Setup")
+    template_section = page.locator("form.template-start")
+    snap(page, "new-run/template-choice", template_section)
+
+
+def test_new_run_name_and_description(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/")
+    with page.expect_navigation(url=re.compile(r"/runs/new/step/1")):
+        page.get_by_role("button", name="New Run").click()
+
+    form = page.locator("form.run-name-form")
+    snap(page, "new-run/name-and-description", form)
+
+
+def test_new_run_instrument_and_flowcell(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/")
+    with page.expect_navigation(url=re.compile(r"/runs/new/step/1")):
+        page.get_by_role("button", name="New Run").click()
+
+    fieldset = page.locator("fieldset.instrument-config")
+    snap(page, "new-run/instrument-and-flowcell", fieldset)
+
+
+def test_new_run_cycle_config(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/")
+    with page.expect_navigation(url=re.compile(r"/runs/new/step/1")):
+        page.get_by_role("button", name="New Run").click()
+
+    cycles = page.locator("#cycle-config")
+    snap(page, "new-run/cycle-config", cycles)
+
+
+def test_new_run_cycle_limit_exceeded(demo_page, base_url, demo, app_ctx):
+    page = demo_page
+    # config/instruments.yaml ships reagent_kit_max_cycles for no instrument
+    # at all (see the comment at the end of that file) -- the limit that
+    # drives the "Too many cycles" warning only exists once an admin syncs
+    # instrument definitions that carry one (services/github_sync.py). Seed
+    # one directly, the same way docs_world.py seeds runs/users/index kits
+    # straight through the repositories instead of the UI, so the warning
+    # rendered below is the real template branch, not a mock-up.
+    definition = InstrumentDefinition(
+        name="NovaSeq X Series",
+        samplesheet_name="NovaSeqXSeries",
+        chemistry_type="2-color",
+        i5_read_orientation="reverse-complement",
+        samplesheet_v2_i5_orientation="forward",
+        has_dragen_onboard=True,
+        flowcells=[
+            FlowcellDefinition(
+                name="10B", lanes=8, reads=10_000_000_000,
+                reagent_kits=[100, 200, 300],
+                description="10 billion reads, 8 lanes",
+            ),
+        ],
+        reagent_kit_max_cycles={300: 300},
+    )
+    app_ctx.instrument_definition_repo.save(definition)
+    clear_synced_instruments_cache()
+    try:
+        # A brand-new run defaults to NovaSeq X Series / 10B / 300 cycles,
+        # whose default Read1+Read2+Index1+Index2 (151+151+10+10=322) is
+        # already over the 300-cycle limit just seeded -- no field needs
+        # to be touched to see the warning.
+        page.goto(f"{base_url}/")
+        with page.expect_navigation(url=re.compile(r"/runs/new/step/1")):
+            page.get_by_role("button", name="New Run").click()
+
+        warning = page.locator(".cycle-total-over")
+        snap(page, "new-run/cycle-limit-exceeded", warning, region=page.locator("#cycle-config"))
+    finally:
+        app_ctx.instrument_definition_repo.delete_all()
+        clear_synced_instruments_cache()
+
+
+def test_new_run_continue_button(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/")
+    with page.expect_navigation(url=re.compile(r"/runs/new/step/1")):
+        page.get_by_role("button", name="New Run").click()
+
+    nav = page.locator(".wizard-nav")
+    snap(page, "new-run/continue-button", nav)
