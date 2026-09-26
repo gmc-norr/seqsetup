@@ -126,7 +126,7 @@ List Response Envelope
      - Total number of runs matching the status filter across all pages.
    * - ``limit``
      - integer
-     - Page size used for this response (clamped to [1, 200]).
+     - Page size used for this response (must be in [1, 200]; out-of-range values return HTTP 422).
    * - ``offset``
      - integer
      - Offset used for this response.
@@ -204,7 +204,7 @@ Get SampleSheet v1
 ``GET /api/runs/{run_id}/samplesheet-v1``
 
 Get the pre-generated SampleSheet v1 CSV for instruments that support it
-(e.g., MiSeq).
+(e.g., MiSeq, NovaSeq 6000).
 
 :``run_id``: Run UUID.
 

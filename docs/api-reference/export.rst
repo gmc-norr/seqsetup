@@ -51,7 +51,7 @@ Export SampleSheet v1
 ``GET /runs/{run_id}/export/samplesheet-v1``
 
 Download a SampleSheet v1 CSV file for instruments that support it
-(e.g., MiSeq i100 Series).
+(e.g., MiSeq, NovaSeq 6000).
 
 :``run_id``: Run UUID
 
