@@ -45,3 +45,25 @@ def test_paste_survives_an_ended_login(logged_in_page, base_url, admin_creds, ap
     expect(page.locator("#error-banner")).to_contain_text("Added 2 samples")
     ids = {s.sample_id for s in app_ctx.run_repo.get_by_id(mutable_run_id).samples}
     assert {"LATE-01", "LATE-02"} <= ids
+
+
+@pytest.mark.browser
+def test_message_shows_for_a_control_that_keeps_one_part(logged_in_page, base_url,
+                                                         admin_creds, app_ctx):
+    """The cycle fields keep only the total from each answer (hx-select);
+    the ended-login message must still show in full."""
+    page = logged_in_page
+    page.click("button.sidebar-btn")
+    page.wait_for_url("**/runs/new/step/1?new=1&run_id=*")
+    run_id = page.url.split("run_id=", 1)[1]
+    try:
+        page.wait_for_load_state("networkidle")
+        app_ctx.web_session_repo.delete_for_user(admin_creds["username"])
+        with page.expect_response(lambda r: r.url.endswith("/cycles") and r.status == 401):
+            page.fill("#read1_cycles", "101")
+            page.dispatch_event("#read1_cycles", "change")
+        banner = page.locator("#error-banner")
+        expect(banner).to_contain_text("Your login has ended, so this was not saved.")
+        expect(banner.locator('a[href="/login"]')).to_have_text("Log in again")
+    finally:
+        app_ctx.run_repo.delete(run_id)

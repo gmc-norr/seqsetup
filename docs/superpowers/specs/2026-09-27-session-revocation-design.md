@@ -210,6 +210,9 @@ the routes only add cleanup and a visible message:
   change (the last save wins, role and stamp included). This is how user editing
   works today; not changed here.
 - No "who is logged in" admin page and no "log out everywhere" button.
+- API tokens are not tied to a user (`models/api_token.py`). An admin who is demoted
+  or deleted keeps any API tokens they made; revoke them on `/admin/api-tokens`.
+  This was true before this change and is not changed here.
 - Each request adds one read and one small write on `web_sessions`, plus one user
   read for database users.
 
@@ -281,3 +284,17 @@ the routes only add cleanup and a visible message:
 4. **"Nothing typed is lost" was not true** with a whole-page redirect — fixed by
    keeping the page on HTMX actions and showing a message with a log-in link that
    opens a new tab; plain form posts carry no typed input. Browser-tested.
+
+## Code review changes (independent review of the build, 2026-09-27)
+
+1. **A failed logout left the login alive** — logout now clears the browser cookie
+   first; if the server cannot remove the row, it answers 503 with a plain message
+   and the audit trail records `logout` with outcome `failure`.
+2. **The ended-login message was blank for controls with `hx-select`** (for example
+   the cycle fields, which keep only `.cycle-total` from each answer). Banner
+   responses now send `HX-Reselect: unset`. Browser-tested on the cycle fields.
+3. A background read (GET) gets "Your login has ended." without "this was not saved".
+4. `GET /login` logs a WARNING when it cannot check the login (it still shows the
+   login page).
+5. The 503 test now also covers a failing `touch` and a failing user lookup, and
+   checks the HTMX headers.

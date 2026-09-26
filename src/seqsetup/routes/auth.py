@@ -12,6 +12,7 @@ handlers in a threadpool, isolating the blocking call from the event
 loop.
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request
@@ -27,6 +28,8 @@ from ..services import web_sessions
 from ..services.auth import AuthenticationError
 from ..templating import render
 from .utils import get_username
+
+logger = logging.getLogger(__name__)
 
 
 class LoginForm(BaseModel):
@@ -80,6 +83,7 @@ def make_router(auth_service) -> APIRouter:
                     startup.get_web_session_repo(), startup.get_local_user_repo(),
                     sid, web_sessions.utcnow(), web_sessions.current_policy())
             except Exception:
+                logger.warning("Could not check the login on the login page", exc_info=True)
                 live = None
             if live is not None:
                 return RedirectResponse("/", status_code=303)
@@ -160,9 +164,21 @@ def make_router(auth_service) -> APIRouter:
         sess = request.session
         actor = get_username(request)[:128]
         sid = sess.get("sid")
-        if sid:
-            web_sessions.end(startup.get_web_session_repo(), sid)
+        # The browser is logged out whatever happens next.
         sess.clear()
+        if sid:
+            try:
+                web_sessions.end(startup.get_web_session_repo(), sid)
+            except Exception:
+                logger.error("Logout could not end the login server-side", exc_info=True)
+                audit("logout", actor=actor, outcome="failure")
+                minutes = web_sessions.current_policy().idle_seconds // 60
+                return PlainTextResponse(
+                    "Logout did not finish on the server: the database is unavailable. "
+                    "This browser is logged out, but a copy of the login may still work "
+                    f"for up to {minutes} minutes. Tell your administrator.",
+                    status_code=503,
+                )
         audit("logout", actor=actor)
         return RedirectResponse("/login", status_code=303)
 

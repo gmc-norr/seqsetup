@@ -70,6 +70,39 @@ class TestLogout:
         (ev,) = ctx.audit_event_repo.search(limit=1, event_prefix="logout")
         assert ev.actor == "admin-test"
 
+    def test_failed_logout_still_clears_the_browser_and_says_so(
+            self, fresh_app, admin_user_seeded, monkeypatch):
+        """Review: if the server cannot end the login, the browser is still
+        logged out, the user is told plainly, and the audit trail records it."""
+        app, ctx, _db = fresh_app
+        c = _login(app, admin_user_seeded)
+        real_delete = ctx.web_session_repo.delete
+
+        def boom(*a, **k):
+            raise ConnectionError("db hiccup")
+        monkeypatch.setattr(ctx.web_session_repo, "delete", boom)
+        r = c.post("/logout", headers=ORIGIN, follow_redirects=False)
+        assert r.status_code == 503
+        assert "Logout did not finish on the server" in r.text
+        assert "seqsetup_session=null" in r.headers.get("set-cookie", "")
+        monkeypatch.setattr(ctx.web_session_repo, "delete", real_delete)
+        (ev,) = ctx.audit_event_repo.search(limit=1, event_prefix="logout")
+        assert (ev.actor, ev.outcome) == ("admin-test", "failure")
+
+    def test_login_page_logs_a_database_error(self, fresh_app, admin_user_seeded,
+                                              monkeypatch, caplog):
+        import logging
+        app, ctx, _db = fresh_app
+        c = _login(app, admin_user_seeded)
+
+        def boom(*a, **k):
+            raise ConnectionError("db down")
+        monkeypatch.setattr(ctx.web_session_repo, "get", boom)
+        caplog.set_level(logging.WARNING, logger="seqsetup.routes.auth")
+        assert _get(c, "/login").status_code == 200
+        assert any("login" in r.getMessage().lower() for r in caplog.records
+                   if r.name == "seqsetup.routes.auth")
+
     def test_login_page_redirects_only_a_live_login(self, fresh_app, admin_user_seeded):
         app, ctx, _db = fresh_app
         c = _login(app, admin_user_seeded)
@@ -121,15 +154,40 @@ class TestEndedLoginResponses:
         ctx.web_session_repo.delete_for_user("admin-test")
         assert _get(c, "/").headers.get("location") == "/login"
 
-    def test_database_error_is_503_never_200(self, fresh_app, admin_user_seeded, monkeypatch):
+    @pytest.mark.parametrize("repo,method", [("web_session_repo", "get"),
+                                             ("web_session_repo", "touch"),
+                                             ("local_user_repo", "get_by_username")])
+    def test_database_error_is_503_never_200(self, fresh_app, admin_user_seeded, monkeypatch,
+                                             repo, method):
         app, ctx, _db = fresh_app
         c = _login(app, admin_user_seeded)
 
         def boom(*a, **k):
             raise ConnectionError("db down")
-        monkeypatch.setattr(ctx.web_session_repo, "get", boom)
+        monkeypatch.setattr(getattr(ctx, repo), method, boom)
         assert _get(c, "/").status_code == 503
-        assert _get(c, "/", headers={"HX-Request": "true"}).status_code == 503
+        r = _get(c, "/", headers={"HX-Request": "true"})
+        assert r.status_code == 503
+        assert (r.headers["HX-Retarget"], r.headers["HX-Reselect"]) == ("#error-banner", "unset")
+
+    def test_htmx_messages_show_whole_even_with_hx_select(self, fresh_app, admin_user_seeded):
+        """HX-Reselect: unset stops an inherited hx-select from blanking the message."""
+        app, ctx, _db = fresh_app
+        c = _login(app, admin_user_seeded)
+        ctx.web_session_repo.delete_for_user("admin-test")
+        r = c.post("/runs/new", headers={**ORIGIN, "HX-Request": "true"},
+                   follow_redirects=False)
+        assert r.headers["HX-Reselect"] == "unset"
+
+    def test_htmx_read_gets_read_wording(self, fresh_app, admin_user_seeded):
+        app, ctx, _db = fresh_app
+        c = _login(app, admin_user_seeded)
+        ctx.web_session_repo.delete_for_user("admin-test")
+        r = _get(c, "/", headers={"HX-Request": "true"})
+        assert r.status_code == 401
+        assert "Your login has ended." in r.text
+        assert "not saved" not in r.text and "What you typed" not in r.text
+        assert '<a href="/login" target="_blank" rel="noopener">Log in again</a>' in r.text
 
     def test_old_style_cookie_is_refused(self, fresh_app):
         app, _ctx, _db = fresh_app
