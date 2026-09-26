@@ -26,6 +26,7 @@ from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
 from ..templating import render, templates
 from .dependencies import get_ctx, get_editable_run, saving_run
 from .utils import (
+    MAX_KIT_ID_LEN,
     UploadTooLargeError,
     get_username,
     read_upload_capped,
@@ -783,7 +784,7 @@ def _index_fill_plan(form, run: SequencingRun, ctx: AppContext):
     """(plan, "") or (None, message for a 400)."""
     raw_kit_id = form.get("selected_kit", "")
     raw_start_id = form.get("start_id", "")
-    kit_id = sanitize_string(raw_kit_id, 512) if isinstance(raw_kit_id, str) else ""
+    kit_id = sanitize_string(raw_kit_id, MAX_KIT_ID_LEN) if isinstance(raw_kit_id, str) else ""
     start_id = sanitize_string(raw_start_id, 512) if isinstance(raw_start_id, str) else ""
     kit = ctx.index_kit_repo.get_by_kit_id(kit_id) if kit_id else None
     if kit is None:

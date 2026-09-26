@@ -584,3 +584,23 @@ class TestApplyIgnoresSelectedKitHeader:
             assert sample.index1_sequence != b_i7[k]
             assert sample.index2_sequence != b_i5[k]
             assert sample.index_kit_name == kit_a.name
+
+
+class TestLongestKitId:
+    """IndexKit caps name and version at 256 characters each, so a kit_id
+    can be 513 long; the fill must still find that kit."""
+
+    def test_preview_finds_a_kit_with_the_longest_possible_id(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        kit = _dual_kit(ctx, name="N" * 256, version="9" * 256)
+        assert len(kit.kit_id) == 513
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill/preview",
+            data={"selected_kit": kit.kit_id},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert "UDP0000" in resp.text

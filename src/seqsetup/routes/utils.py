@@ -33,11 +33,15 @@ def get_username(req) -> str:
     return ""
 
 
+# IndexKit caps name and version at 256 characters each; kit_id is "name:version".
+MAX_KIT_ID_LEN = 256 + 1 + 256
+
+
 def selected_kit_id(request) -> str:
     """The kit the page's index-kit dropdown shows, sent by app.js on every
     HTMX request as the X-Selected-Kit header (URI-encoded), so a re-rendered
     sample section keeps it. Only ever compared with existing kit ids."""
-    return unquote(request.headers.get("X-Selected-Kit", ""))[:512]
+    return unquote(request.headers.get("X-Selected-Kit", ""))[:MAX_KIT_ID_LEN]
 
 
 # Valid state transitions: source -> set of allowed targets
