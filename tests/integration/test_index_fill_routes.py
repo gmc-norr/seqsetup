@@ -10,6 +10,8 @@ refuses with 409 and saves nothing. Both routes are DRAFT-only
 (Depends(get_editable_run)).
 """
 
+from urllib.parse import quote
+
 import markupsafe
 
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
@@ -531,3 +533,54 @@ class TestReadyRunRefused:
             headers=ORIGIN,
         )
         assert apply_resp.status_code == 403
+
+
+class TestApplyIgnoresSelectedKitHeader:
+    """Assign takes its kit only from the previewed form's hidden
+    ``selected_kit`` field, never from the X-Selected-Kit header app.js sends
+    on every HTMX request so a re-rendered sample section keeps the
+    dropdown's kit. If Assign ever fell back to that header, a fill could be
+    built from a different kit (or kit version) than the one the preview
+    showed, exporting samples under the wrong index sequences."""
+
+    def test_assign_uses_previewed_kit_not_header_kit(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        kit_a = _dual_kit(ctx, name="KitA", version="1")
+        b_i7 = ["TTTTAAAA", "GGGGCCCC", "CCCCGGGG"]
+        b_i5 = ["ACACGTGT", "GTGTACAC", "TGCATGCA"]
+        kit_b = IndexKit(
+            name="KitB", version="1", index_mode=IndexMode.UNIQUE_DUAL,
+            index_pairs=[_pair(k, i7=b_i7[k], i5=b_i5[k]) for k in range(3)],
+        )
+        ctx.index_kit_repo.save(kit_b)
+
+        preview_resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill/preview",
+            data={"selected_kit": kit_a.kit_id},
+            headers=ORIGIN,
+        )
+        assert preview_resp.status_code == 200, preview_resp.text[:500]
+
+        run = ctx.run_repo.get_by_id(run_id)
+        plan = build_fill_plan(run, kit_a)
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill",
+            data={
+                "selected_kit": kit_a.kit_id,
+                "start_id": plan.start.id,
+                "plan": plan.signature(),
+            },
+            headers={**ORIGIN, "X-Selected-Kit": quote(kit_b.kit_id)},
+        )
+
+        assert resp.status_code == 200, resp.text[:500]
+        saved = ctx.run_repo.get_by_id(run_id)
+        for sample_id, k in [("s1", 0), ("s2", 1), ("s3", 2)]:
+            sample = saved.get_sample(sample_id)
+            assert sample.index1_sequence == I7[k]
+            assert sample.index2_sequence == I5[k]
+            assert sample.index1_sequence != b_i7[k]
+            assert sample.index2_sequence != b_i5[k]
+            assert sample.index_kit_name == kit_a.name
