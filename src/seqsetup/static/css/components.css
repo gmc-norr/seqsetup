@@ -1218,12 +1218,6 @@ body {
     text-decoration: none;
 }
 
-.export-warning {
-    font-size: 0.75rem;
-    color: var(--warning);
-    margin-top: 0.25rem;
-}
-
 /* A step not reached yet: plain grey text, not a warning or an error. */
 .export-waiting, .validate-waiting {
     margin: 0;
