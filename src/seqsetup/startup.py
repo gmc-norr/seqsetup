@@ -18,6 +18,7 @@ from .repositories.instrument_definition_repo import InstrumentDefinitionReposit
 from .repositories.run_template_repo import RunTemplateRepository
 from .repositories.run_history_repo import RunHistoryRepository
 from .repositories.audit_event_repo import AuditEventRepository
+from .repositories.web_session_repo import WebSessionRepository
 from .services.auth import AuthService
 from .services.database import init_db
 from .services.github_sync import GitHubSyncService
@@ -112,6 +113,7 @@ _REPO_REGISTRY = {
     "run_template": RunTemplateRepository,
     "run_history": RunHistoryRepository,
     "audit_event": AuditEventRepository,
+    "web_session": WebSessionRepository,
 }
 
 # Module-level state
@@ -188,6 +190,9 @@ def get_run_history_repo() -> RunHistoryRepository:
 def get_audit_event_repo() -> AuditEventRepository:
     return _get_repo("audit_event")
 
+def get_web_session_repo() -> WebSessionRepository:
+    return _get_repo("web_session")
+
 
 def get_app_context() -> AppContext:
     """Create an AppContext with all repositories and service factories."""
@@ -207,6 +212,7 @@ def get_app_context() -> AppContext:
         run_template_repo=get_run_template_repo(),
         run_history_repo=get_run_history_repo(),
         audit_event_repo=get_audit_event_repo(),
+        web_session_repo=get_web_session_repo(),
         get_github_sync_service=get_github_sync_service,
     )
 
