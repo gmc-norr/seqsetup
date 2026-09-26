@@ -9,6 +9,7 @@ other browser tests never see the demo world.
 
 import os
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,7 @@ from seqsetup.models.instrument_definition import FlowcellDefinition, Instrument
 from seqsetup.services import database
 
 from .docs_shots import shoot
-from .docs_world import DEMO_ADMIN, clear, reset_caches, restore, seed_demo, snapshot
+from .docs_world import DEMO_ADMIN, DEMO_KIT_NAME, clear, reset_caches, restore, seed_demo, snapshot
 
 SHOTS = Path(__file__).resolve().parents[2] / "docs" / "_static" / "screenshots"
 
@@ -300,3 +301,173 @@ def test_samples_row_edit(demo_page, base_url, demo):
     # stays on just the Override Cycles input.
     table = page.locator("table.sample-table")
     snap(page, "samples/row-edit", row.locator('input[name="override_cycles"]'), region=table, pad=24)
+
+
+# ---------------------------------------------------------------------------
+# Index assignment: kit picker, drag-and-drop, shift-click selection, ticked
+# rows, and "fill empty samples in order".
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _sample_section_unclipped(page):
+    """#sample-section's overflow-x:auto computes overflow-y to auto too
+    (components.css:441-442), which clips the outline on any descendant
+    flush with its box -- the index panel and sample table both live inside
+    it. Neutralise the clip for the moment of capture only, the same way
+    test_samples_add_button does for a single shot, then restore it."""
+    section = page.locator("#sample-section")
+    previous = section.evaluate(
+        "(e) => { const old = e.style.overflow; e.style.overflow = 'visible'; return old; }"
+    )
+    try:
+        yield
+    finally:
+        section.evaluate("(e, old) => { e.style.overflow = old; }", previous)
+
+
+def _drag_index(page, chip, drop_zone):
+    """Fire a real HTML5 drag-and-drop sequence from ``chip`` to
+    ``drop_zone``. Playwright's high-level drag_to() drives mouse events,
+    which Chromium does not turn into dragstart/drop for a custom
+    draggable="true" element the way a real OS-level drag does -- app.js's
+    dragstart/dragover/drop listeners (app.js:769-793) never fire. Instead,
+    build one DataTransfer in the page and dispatch the same event sequence
+    a browser would during a real drag, all carrying that one DataTransfer
+    object -- this is Playwright's own documented recipe for HTML5 drag and
+    drop. handleDragStart (app.js:90-107) and handleIndexDrop (app.js:109-
+    226) are the real, unmodified handlers; nothing about the drop is
+    faked."""
+    data_transfer = page.evaluate_handle("new DataTransfer()")
+    chip.dispatch_event("dragstart", {"dataTransfer": data_transfer})
+    drop_zone.dispatch_event("dragenter", {"dataTransfer": data_transfer})
+    drop_zone.dispatch_event("dragover", {"dataTransfer": data_transfer})
+    drop_zone.dispatch_event("drop", {"dataTransfer": data_transfer})
+    chip.dispatch_event("dragend", {"dataTransfer": data_transfer})
+
+
+def _pair_chip(page, name: str):
+    return page.locator(".draggable-index-compact.draggable-pair").filter(has_text=name)
+
+
+def test_indexes_kit_picker(demo_page, base_url, demo):
+    page = demo_page
+    # demo['draft'] has un-indexed samples (SAMPLE-A05..A08, plus the pasted
+    # SAMPLE-B01..B03), so runs/_sample_section.html's has_unindexed branch
+    # renders the index panel next to the table.
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    dropdown = page.locator("#index-kit-dropdown")
+    # Demo world seeds exactly one kit -- confirm the picker actually names
+    # it, not just that a <select> exists.
+    assert DEMO_KIT_NAME in dropdown.locator("option:checked").text_content()
+    with _sample_section_unclipped(page):
+        snap(page, "indexes/kit-picker", dropdown, pad=24)
+
+
+def test_indexes_drag_drop(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    chip = _pair_chip(page, "UDI0005")
+    row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A05")
+    _drag_index(page, chip, row.locator(".drop-zone.i7-drop"))
+    # assign-index swaps only the row; #validate-panel refreshes separately,
+    # 300ms after any successful non-GET request (_validate_panel.html:41-46).
+    # markSampleErrors() (app.js:383-413) runs on every htmx:afterSettle,
+    # including this row's own settle -- the first run reuses the *stale*
+    # data-sample-errors still naming SAMPLE-A05 as having no index, and
+    # marks the fresh row wrongly until the panel's own refresh lands.
+    # Waiting only for the assigned index (as elsewhere) would photograph
+    # that stale badge; wait for it to be removed instead.
+    page.wait_for_selector('tr.sample-row:has-text("SAMPLE-A05") .assigned-index.i7')
+    page.wait_for_selector('tr.sample-row:has-text("SAMPLE-A05") .row-error-badge', state="detached")
+    row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A05")
+    with _sample_section_unclipped(page):
+        snap(page, "indexes/drag-drop", row.locator(".assigned-index.i7"), region=row, pad=24)
+
+
+def test_indexes_several_in_order(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    chip6, chip8 = _pair_chip(page, "UDI0006"), _pair_chip(page, "UDI0008")
+    chip6.click()
+    chip8.click(modifiers=["Shift"])
+    # Click + shift-click select the whole visible range between them
+    # (app.js:31-59): UDI0006, UDI0007, UDI0008.
+    assert page.locator(".draggable-index-compact.index-selected").count() == 3
+    with _sample_section_unclipped(page):
+        snap(page, "indexes/several-in-order", chip8,
+             region=page.locator("#index-list-items"), pad=16)
+
+    # Prove the selection is real, not just styled: drag it onto
+    # SAMPLE-A06 and check it filled three consecutive rows in table order
+    # (app.js:201-222, routes/samples.py assign-indexes-bulk).
+    row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A06")
+    _drag_index(page, chip6, row.locator(".drop-zone.i7-drop"))
+    page.wait_for_selector('tr.sample-row:has-text("SAMPLE-A08") .assigned-index.i7')
+    # A unique-dual pair sets both i7 and i5, so .index-name-display appears
+    # twice per row (one per column) -- .first is enough to prove it landed.
+    assert "UDI0006" in page.locator("tr.sample-row").filter(has_text="SAMPLE-A06").locator(".index-name-display").first.text_content()
+    assert "UDI0007" in page.locator("tr.sample-row").filter(has_text="SAMPLE-A07").locator(".index-name-display").first.text_content()
+    assert "UDI0008" in page.locator("tr.sample-row").filter(has_text="SAMPLE-A08").locator(".index-name-display").first.text_content()
+
+
+def test_indexes_ticked_rows(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    row_b01 = page.locator("tr.sample-row").filter(has_text="SAMPLE-B01")
+    row_b02 = page.locator("tr.sample-row").filter(has_text="SAMPLE-B02")
+    row_b01.locator(".sample-checkbox").check()
+    row_b02.locator(".sample-checkbox").check()
+    with _sample_section_unclipped(page):
+        snap(page, "indexes/ticked-rows", row_b02, region=page.locator("table.sample-table"), pad=24)
+
+    # Dropping one index on a ticked row gives that SAME index to every
+    # ticked sample plus the one dropped on (app.js:150-183) -- confirmed
+    # first, because two samples must not silently share an index. The
+    # dialog itself cannot be screenshotted; capture its exact wording
+    # (app.js:164-167) instead of picturing it, and accept it so the real
+    # assignment goes through.
+    messages = []
+    page.on("dialog", lambda d: (messages.append(d.message), d.accept()))
+    chip = _pair_chip(page, "UDI0010")
+    _drag_index(page, chip, row_b01.locator(".drop-zone.i7-drop"))
+    page.wait_for_selector('tr.sample-row:has-text("SAMPLE-B02") .assigned-index.i7')
+    assert messages == [
+        "Give this same index to all 2 samples "
+        "(the ticked ones and the one you dropped on)?\n\n"
+        "Samples in the same lane must not share an index."
+    ]
+
+
+def test_indexes_fill_preview(demo_page, base_url, demo):
+    page = demo_page
+    # demo['fill'] (DEMO-RUN-05) has 6 samples and no indexes at all.
+    page.goto(f"{base_url}/runs/{demo['fill']}")
+    page.get_by_role("button", name="Fill empty samples in order…").click()
+    page.wait_for_selector("#index-fill-preview .index-fill-summary")
+    preview = page.locator("#index-fill-preview")
+    with _sample_section_unclipped(page):
+        snap(page, "indexes/fill-preview", preview.locator(".index-fill-table"), region=preview, pad=16)
+
+
+def test_indexes_fill_assigned(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['fill']}")
+    page.get_by_role("button", name="Fill empty samples in order…").click()
+    page.wait_for_selector("#index-fill-preview .index-fill-summary")
+    page.get_by_role("button", name="Assign 6 indexes").click()
+    # index-fill swaps #sample-section outerHTML; wait for a row to actually
+    # carry the assigned index, not the pre-fill drop-zone placeholder.
+    page.wait_for_selector('tr.sample-row:has-text("SAMPLE-A01") .assigned-index.i7')
+    # #validate-panel refreshes separately, 300ms after any successful
+    # non-GET request (_validate_panel.html:41-46); markSampleErrors() (app.js:
+    # 383-413) runs on this swap's own htmx:afterSettle first, reusing the
+    # *stale* "6 sample(s) have no index" data and wrongly badging every row
+    # until the panel's own refresh lands. SAMPLE-A02 gets UDI0002, which has
+    # no dark-cycle problem, so its stale badge is the one that must clear;
+    # SAMPLE-A01 gets UDI0001, whose i5 read as its reverse complement on
+    # NovaSeq X starts with two dark bases -- a genuine dark-cycle error --
+    # so its badge is expected to stay.
+    page.wait_for_selector('tr.sample-row:has-text("SAMPLE-A02") .row-error-badge', state="detached")
+    with _sample_section_unclipped(page):
+        snap(page, "indexes/fill-assigned", page.locator("#sample-table"))
