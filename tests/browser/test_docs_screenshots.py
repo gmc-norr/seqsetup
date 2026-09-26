@@ -193,3 +193,80 @@ def test_new_run_continue_button(demo_page, base_url, demo):
 
     nav = page.locator(".wizard-nav")
     snap(page, "new-run/continue-button", nav)
+
+
+# Header row + a blank line + 3 new data rows: the blank line and the
+# header are not samples, so "lines read" (5, via str.splitlines()) and
+# "samples read" (3, via the parser) genuinely differ -- the discrepancy
+# the paste-preview picture is asked to show.
+_SAMPLES_PASTE_TEXT = "sample_id\ttest_id\nSAMPLE-B01\tWGS\n\nSAMPLE-B02\tWGS\nSAMPLE-B03\tWGS"
+
+
+def test_samples_add_button(demo_page, base_url, demo):
+    page = demo_page
+    # demo['draft'] already has 8 samples, so runs/_sample_section.html
+    # renders the <details> collapsed -- the state a returning user meets.
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    toggle = page.locator(".paste-section-summary")
+    snap(page, "samples/add-button", toggle)
+
+
+def test_samples_paste_form(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.locator(".paste-section-summary").click()
+    form = page.locator("#paste-area .paste-form")
+    snap(page, "samples/paste-form", form, pad=24)
+
+
+def test_samples_paste_preview(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.locator(".paste-section-summary").click()
+    page.fill("#paste_data", _SAMPLES_PASTE_TEXT)
+    page.get_by_role("button", name="Preview").click()
+    # Only the completed preview renders a .paste-counts row -- the form
+    # being replaced (innerHTML swap of #paste-area) has no such element.
+    page.wait_for_selector("#paste-area .paste-counts")
+    preview = page.locator("#paste-area .paste-preview")
+    snap(page, "samples/paste-preview", preview.locator(".paste-counts"), region=preview)
+
+
+def test_samples_sample_table(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.locator(".paste-section-summary").click()
+    page.fill("#paste_data", _SAMPLES_PASTE_TEXT)
+    page.get_by_role("button", name="Preview").click()
+    page.wait_for_selector("#paste-area .paste-counts")
+    page.get_by_role("button", name="Add 3 samples").click()
+    # Two HTMX round trips follow this click: the POST swaps #sample-section
+    # (the new row lands immediately), then #validate-panel's own
+    # hx-trigger (any successful non-GET, delay:300ms -- see
+    # templates/runs/_validate_panel.html) refetches the Validate box and
+    # app.js's markSampleErrors() re-marks every unindexed row from that
+    # fresh data, including the ones just pasted. Waiting only for the new
+    # row (not this second trip) would catch the table mid-flight, still
+    # missing the error badge every other unindexed row already has.
+    page.wait_for_selector(
+        "#sample-table tr.sample-row:has-text('SAMPLE-B01') .row-error-badge"
+    )
+    table = page.locator("#sample-table")
+    snap(page, "samples/sample-table", table)
+
+
+def test_samples_row_edit(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A01")
+    box = row.locator('input[name="override_cycles"]')
+    box.fill("Y151;I8;I8;Y151")
+    box.dispatch_event("change")
+    # The row is swapped outerHTML by POST .../settings; wait for the
+    # saved value to actually be on the page, not the pre-swap input.
+    page.wait_for_selector(
+        'tr.sample-row:has-text("SAMPLE-A01") '
+        'input[name="override_cycles"][value="Y151;I8;I8;Y151"]'
+    )
+    row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A01")
+    snap(page, "samples/row-edit", row.locator('input[name="override_cycles"]'), region=row)
