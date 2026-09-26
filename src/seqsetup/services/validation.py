@@ -255,8 +255,20 @@ class ValidationService:
 
         return errors
 
-    # Allowed characters in Illumina sample IDs: alphanumeric, dash, underscore
-    _SAMPLE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_\-]+$")
+    # Allowed characters in Illumina sample IDs: alphanumeric, dash, underscore.
+    # ``\Z`` (not ``$``) so a trailing newline can't sneak past.
+    _SAMPLE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_\-]+\Z")
+
+    # The characters str.splitlines() breaks a line on. Any of them in sample
+    # text written to the Sample Sheet starts a new line for some reader.
+    _LINE_BREAK_CHARS = frozenset("\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029")
+
+    # Free-text sample fields written to the Sample Sheet, with their UI names.
+    _SAMPLE_TEXT_FIELDS = (
+        ("sample_name", "sample name"),
+        ("project", "project"),
+        ("description", "description"),
+    )
 
     @classmethod
     def validate_configuration(
@@ -319,6 +331,7 @@ class ValidationService:
         all_lanes = list(range(1, total_lanes + 1))
 
         errors.extend(cls._validate_sample_id_characters(run))
+        errors.extend(cls._validate_sample_text_line_breaks(run))
         errors.extend(cls._validate_lane_assignments(run, total_lanes))
         errors.extend(cls._validate_no_lane_assignment(run))
         errors.extend(cls._validate_index_length_consistency(run, all_lanes))
@@ -481,6 +494,37 @@ class ValidationService:
                         sample_names=[sid],
                     )
                 )
+        return errors
+
+    @classmethod
+    def _validate_sample_text_line_breaks(
+        cls, run: SequencingRun
+    ) -> list[ConfigurationError]:
+        """Sample name, project and description go into the Sample Sheet as
+        text. A line break in one would split the sample's row, so it is an
+        error rather than something the exporter quietly quotes."""
+        errors: list[ConfigurationError] = []
+        for sample in run.samples:
+            fields = [
+                label for attr, label in cls._SAMPLE_TEXT_FIELDS
+                if not cls._LINE_BREAK_CHARS.isdisjoint(getattr(sample, attr) or "")
+            ]
+            if not fields:
+                continue
+            name = sample.sample_id or sample.id
+            errors.append(
+                ConfigurationError(
+                    severity=ValidationSeverity.ERROR,
+                    category="line_break_in_sample_text",
+                    message=(
+                        f"Sample '{name}' has a line break in its "
+                        f"{' and '.join(fields)}. A line break would split the "
+                        f"sample's row in the Sample Sheet. Remove it before "
+                        f"marking the run ready."
+                    ),
+                    sample_names=[name],
+                )
+            )
         return errors
 
     @classmethod
