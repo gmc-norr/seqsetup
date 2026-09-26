@@ -113,18 +113,26 @@ Every sample in the run appears here: its Sample ID, Test ID, Worksheet
 (from a worklist import, otherwise blank), assigned Index Kit and index
 names or sequences, Lanes, Override Cycles, and the two barcode-mismatch
 overrides (**MM i7** / **MM i5**). A sample with no index yet shows a drop
-target instead of an index cell -- see :doc:`index-assignment`.
+target instead of an index cell -- see :doc:`index-assignment`. A row
+tinted red and marked with a **!** is flagged by validation -- for any
+problem, not only a missing index -- so check :doc:`validation` for what
+it found before you rely on that row.
 
 Editing a sample
 ^^^^^^^^^^^^^^^^^^
 
 **Override Cycles** and the two mismatch counts are the fields you can
 change directly in the table; each saves the moment you leave the field.
+The screenshot below sets **SAMPLE-A01**'s Override Cycles to
+``Y151;I8;I8;Y151``; the field itself is narrow, so the app shows it
+truncated (``Y151;I8;I8;Y1…``) even though the full value is what gets
+saved.
 
 .. figure:: /_static/screenshots/samples/row-edit.png
-   :alt: A sample row's Override Cycles field, edited to a specific cycle pattern, outlined.
+   :alt: SAMPLE-A01's Override Cycles field in the sample table, outlined; the table header and surrounding rows are visible for context.
 
-   Editing Override Cycles inline, outlined.
+   Editing Override Cycles inline, outlined -- the table around it gives
+   context for the edited row.
 
 Each of these three fields saves independently -- changing one does not
 touch the others on that row. For a sample that already has an index,

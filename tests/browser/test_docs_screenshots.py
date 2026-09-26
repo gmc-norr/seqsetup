@@ -208,7 +208,32 @@ def test_samples_add_button(demo_page, base_url, demo):
     # renders the <details> collapsed -- the state a returning user meets.
     page.goto(f"{base_url}/runs/{demo['draft']}")
     toggle = page.locator(".paste-section-summary")
-    snap(page, "samples/add-button", toggle)
+    # The outline on .paste-section-summary itself only ever paints a
+    # bottom underline (verified: switching the target to its <details>
+    # parent renders the exact same bottom-only line -- this is not a
+    # `<summary>`-specific quirk). getBoundingClientRect shows why:
+    # .paste-section-summary sits flush (identical x/y/width) against
+    # #sample-section, whose `overflow-x: auto` (components.css:441-442)
+    # computes overflow-y to `auto` too, per spec, clipping any painted
+    # content -- including a descendant's outline -- that pokes past its
+    # box. The outline's 3px width + docs_shots.py's fixed 2px offset
+    # extend 5px outward on every side; with zero clearance on top/left/
+    # right that 5px is clipped away, while the bottom survives because
+    # the sample table below leaves ~900px of clearance before
+    # #sample-section's actual bottom edge. .paste-form (paste-form.png)
+    # is unaffected because it sits ~17px inside that same edge (1px
+    # <details> border + the 16px .paste-section-content padding).
+    # Neutralise the clip for the moment of capture only, the same way
+    # shoot() itself neutralises the outline style: set + revert an
+    # inline style on #sample-section, no src/ or docs_shots.py change.
+    section = page.locator("#sample-section")
+    previous_overflow = section.evaluate(
+        "(e) => { const old = e.style.overflow; e.style.overflow = 'visible'; return old; }"
+    )
+    try:
+        snap(page, "samples/add-button", toggle)
+    finally:
+        section.evaluate("(e, old) => { e.style.overflow = old; }", previous_overflow)
 
 
 def test_samples_paste_form(demo_page, base_url, demo):
@@ -269,4 +294,9 @@ def test_samples_row_edit(demo_page, base_url, demo):
         'input[name="override_cycles"][value="Y151;I8;I8;Y151"]'
     )
     row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A01")
-    snap(page, "samples/row-edit", row.locator('input[name="override_cycles"]'), region=row)
+    # region=row alone clipped to a 65px sliver -- half of the row above and
+    # below, unreadable. Capture the whole table (header + every row) so the
+    # edited row is whole and has its neighbours for context; the outline
+    # stays on just the Override Cycles input.
+    table = page.locator("table.sample-table")
+    snap(page, "samples/row-edit", row.locator('input[name="override_cycles"]'), region=table, pad=24)
