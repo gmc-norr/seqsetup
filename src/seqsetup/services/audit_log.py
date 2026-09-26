@@ -19,6 +19,10 @@ from typing import Any
 
 
 _audit_logger = logging.getLogger("seqsetup.audit")
+# audit() writes at INFO. Without its own level this logger inherits the root
+# default, WARNING, and every audit event is dropped before any handler sees
+# it. Set here, where the logger is made, so no entry point can forget it.
+_audit_logger.setLevel(logging.INFO)
 
 
 def audit(
