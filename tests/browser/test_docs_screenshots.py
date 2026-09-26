@@ -34,10 +34,12 @@ def demo(app_ctx):
     saved = snapshot(db)
     clear(db)
     reset_caches()
-    ids = seed_demo(app_ctx)
-    yield ids
-    restore(db, saved)
-    reset_caches()
+    try:
+        ids = seed_demo(app_ctx)
+        yield ids
+    finally:
+        restore(db, saved)
+        reset_caches()
 
 
 @pytest.fixture
