@@ -63,8 +63,16 @@ def _set_lanes(client, run_id, sample_ids, chosen_kit_header=None):
 
 
 def _selected_kit_option(html):
-    """The value of the dropdown's selected <option>, or None."""
-    match = _SELECTED_OPTION_RE.search(html)
+    """The value of the kit dropdown's selected <option>, or None.
+
+    Only looks inside <select id="index-kit-dropdown">: other selects on the
+    page (e.g. the paste form's test picker) render the same option shape.
+    """
+    start = html.find('id="index-kit-dropdown"')
+    if start < 0:
+        return None
+    dropdown = html[start:html.find("</select>", start)]
+    match = _SELECTED_OPTION_RE.search(dropdown)
     return match.group(1) if match else None
 
 
