@@ -922,6 +922,8 @@ async def assign_index_to_selected(
         if error:
             return error
     elif index_id and index_type:
+        if index_type not in ("i7", "i5"):
+            return Response(f"Invalid index type: {index_type}", status_code=400)
         index, kit, error = _find_index(ctx, index_type, index_id, kit_id)
         if error:
             return error

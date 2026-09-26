@@ -228,6 +228,25 @@ class TestAssignToSelected:
         assert resp.status_code == 409
         assert _stored(ctx) == before
 
+    def test_unknown_index_type_is_400_and_saves_nothing(self, logged_in_client, fresh_app):
+        """With index_id, index_type must be i7 or i5. Anything else used to
+        find the index and then set the kit name and kit defaults on the
+        samples without giving them an index."""
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        combo = _combo_kit(ctx, "1.0", "AAAAAAAA")
+        before = _stored(ctx)
+
+        resp = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/assign-index-to-selected",
+            data={"sample_ids": json.dumps(["s1"]), "index_id": "ComboKit_i7_A1",
+                  "index_type": "bogus", "kit_id": combo.kit_id},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 400
+        assert _stored(ctx) == before
+
 
 class TestAssignSeveralInOrder:
     """POST /runs/{id}/samples/assign-indexes-bulk (multi-index drop)."""
