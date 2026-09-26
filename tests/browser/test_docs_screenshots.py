@@ -76,7 +76,12 @@ def test_dashboard_tabs(demo_page, base_url, demo):
 def test_dashboard_search(demo_page, base_url, demo):
     page = demo_page
     page.fill("#dashboard-search", "DEMO-RUN-01")
-    page.wait_for_selector("#dashboard a:has-text('DEMO-RUN-01')", timeout=5000)
+    # The unfiltered dashboard already links DEMO-RUN-01, so waiting on that
+    # link races the 300ms-debounced HTMX swap. Wait instead for something
+    # that exists ONLY in a completed search result: the status badge next
+    # to the run name (dashboard.html renders it only when show_status is
+    # set, which is true for search results and never for the plain tabs).
+    page.wait_for_selector("#dashboard .run-status-badge", timeout=5000)
     search_box = page.locator("#dashboard-search")
     snap(page, "dashboard/search", search_box, region=page.locator("#main"))
 

@@ -37,17 +37,18 @@ Type in the search box above the tabs to find a run by name, or by any
 sample ID it contains, across all three statuses.
 
 .. figure:: /_static/screenshots/dashboard/search.png
-   :alt: The dashboard search box, with a query typed in and the matching run listed below it, outlined.
+   :alt: The dashboard search box outlined, with a query typed in, above the one matching run and its status badge; the status tabs are gone while a search is active.
 
-   Searching by run name, outlined.
+   Searching by run name -- the tabs are replaced by a match count and the one matching run, its status shown as a badge.
 
 Search results list which sample IDs matched under each run. Clear the
 search box to see the tabs again.
 
 .. note::
-   Search matches a sample ID exactly as typed, case-insensitively,
-   anywhere in the run's list of samples -- not only the run you were
-   looking at when you started typing.
+   Search matches a sample ID that contains what you typed, anywhere in
+   the run's list of samples, case-insensitively -- not only an exact
+   match, and not only the run you were looking at when you started
+   typing.
 
 Starting a new run
 -------------------

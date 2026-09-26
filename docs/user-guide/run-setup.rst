@@ -59,9 +59,15 @@ Run cycle configuration
 
    Cycle configuration, outlined.
 
-Each of the four cycle counts must be a whole number from 0 to 600; an
-invalid value is rejected and nothing is saved. The line below the four
-fields totals them against the reagent kit.
+The total shown here is often higher than the reagent kit's own number --
+a 300-cycle kit's defaults already add up to 322 cycles (151 + 151 + 10 +
+10), because the kit label understates its real capacity. A total above
+the kit's label is expected and not itself a problem.
+
+Read 1 and Read 2 are typed as whole numbers from 0 to 600; an invalid
+value is rejected and nothing is saved. Index 1 and Index 2 are chosen
+from a fixed list of cycle counts -- 8, 10, 12, 17, or 24. The line
+below the four fields totals them against the reagent kit.
 
 .. warning::
    When the selected reagent kit has a known cycle limit, going over it
@@ -74,8 +80,16 @@ fields totals them against the reagent kit.
 
    This limit comes from the instrument's synced configuration (kept
    under **Admin > Config Sync**) and is only checked for kits that have
-   one recorded; a kit without a recorded limit is not checked here, but
-   an over-long run is still refused when you try to mark it Ready.
+   one recorded.
+
+.. warning::
+   As shipped, no instrument's configuration records a cycle limit for
+   any kit, so this warning never appears on a default install. The
+   **Mark Ready** validation uses this same limit lookup, so it does not
+   refuse an over-long run either. Until an administrator adds a cycle
+   limit for your instrument's kit through **Admin > Config Sync**, the
+   cycle total is not checked at any stage -- a run can be marked Ready
+   and its Sample Sheet exported no matter how many cycles it totals.
 
 Finishing setup
 ----------------
