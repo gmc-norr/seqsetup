@@ -22,6 +22,11 @@ Login
 Navigate to the application URL to reach the login page. Enter your username and
 password to authenticate.
 
+.. figure:: /_static/screenshots/login/login-form.png
+   :alt: The SeqSetup login page with the username and password fields outlined in red.
+
+   The login form (outlined).
+
 Authentication is checked in the following order:
 
 1. **LDAP/AD** -- If configured, credentials are verified against the directory server.
