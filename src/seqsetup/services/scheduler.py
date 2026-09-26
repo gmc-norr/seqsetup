@@ -5,7 +5,7 @@ import threading
 import time
 from datetime import datetime
 
-from .audit_log import audit
+from .audit_log import audit, redact_url
 from .github_sync import GitHubSyncService
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 
@@ -102,7 +102,7 @@ class ProfileSyncScheduler:
         audit(
             "config_sync.scheduled.started",
             actor="scheduler",
-            target=config.github_repo_url,
+            target=redact_url(config.github_repo_url),
         )
         success, message, count = self.sync_service.sync()
 
@@ -111,7 +111,7 @@ class ProfileSyncScheduler:
             audit(
                 "config_sync.scheduled.completed",
                 actor="scheduler",
-                target=config.github_repo_url,
+                target=redact_url(config.github_repo_url),
                 outcome="success",
                 items=count,
                 message=message,
@@ -121,7 +121,7 @@ class ProfileSyncScheduler:
             audit(
                 "config_sync.scheduled.completed",
                 actor="scheduler",
-                target=config.github_repo_url,
+                target=redact_url(config.github_repo_url),
                 outcome="failure",
                 message=message,
             )

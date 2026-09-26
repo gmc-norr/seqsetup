@@ -6,6 +6,7 @@ All admin pages are now in per-page submodules under this package:
   - admin/instruments.py
   - admin/sample_api.py
   - admin/logs.py
+  - admin/audit.py
   - admin/config_sync.py
 
 Each is included via app.include_router in app.py. There is no

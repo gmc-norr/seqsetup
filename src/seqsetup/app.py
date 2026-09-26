@@ -32,6 +32,7 @@ from .exception_handlers import install as install_exception_handlers
 from .middleware import AuthMiddleware
 from .routes import api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, run_templates, runs, samples, validation, wizard
 from .routes.admin import (
+    audit as admin_audit,
     authentication as admin_authentication,
     config_sync as admin_config_sync,
     instruments as admin_instruments,
@@ -40,8 +41,10 @@ from .routes.admin import (
 )
 from .security_headers import SecurityHeadersMiddleware
 from .services.log_capture import setup_log_capture
+from .services.audit_log import set_audit_sink
 from .startup import (
     get_app_context,
+    get_audit_event_repo,
     get_instrument_definition_repo,
     init_auth_service,
     init_repos,
@@ -127,6 +130,7 @@ def _favicon_redirect():
 
 # Initialize services
 set_instrument_definition_repo(get_instrument_definition_repo())  # Enable synced instruments
+set_audit_sink(get_audit_event_repo())  # Keep every audit event; before the scheduler starts
 auth_service = init_auth_service()
 init_scheduler()
 setup_log_capture(["seqsetup"])
@@ -151,6 +155,7 @@ app.include_router(admin_authentication.router)
 app.include_router(admin_config_sync.router)
 app.include_router(admin_instruments.router)
 app.include_router(admin_logs.router)
+app.include_router(admin_audit.router)
 app.include_router(admin_sample_api.router)
 app.include_router(api_tokens.router)
 app.include_router(local_users.router)

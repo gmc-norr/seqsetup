@@ -47,16 +47,28 @@ class TestAuditLoggerIsEnabled:
 
         assert out == "True"
 
-    def test_audit_event_reaches_the_log_viewer_handler(self):
+    def test_audit_event_is_logged_but_not_kept_in_the_log_viewer(self):
+        """The event is emitted on the audit logger (operators can route it),
+        but the /admin/logs buffer skips it: audit events live on the Audit
+        trail page, where Clear logs and the 2000-entry cap cannot reach."""
         out = _run_clean(
+            "import logging\n"
             "from seqsetup.services.audit_log import audit\n"
             "from seqsetup.services.log_capture import setup_log_capture\n"
-            "handler = setup_log_capture(['seqsetup'])\n"
+            "viewer = setup_log_capture(['seqsetup'])\n"
+            "seen = []\n"
+            "class H(logging.Handler):\n"
+            "    def emit(self, record): seen.append(record.getMessage())\n"
+            "logging.getLogger('seqsetup.audit').addHandler(H())\n"
             "audit('login.success', actor='alice')\n"
-            "print(sum('login.success' in e.message for e in handler.get_entries()))\n"
+            "logging.getLogger('seqsetup.services.x').warning('app warning')\n"
+            "kept = [e.message for e in viewer.get_entries()]\n"
+            "print(sum('login.success' in m for m in seen), "
+            "sum('login.success' in m for m in kept), "
+            "sum('app warning' in m for m in kept))\n"
         )
 
-        assert out == "1"
+        assert out == "1 0 1"
 
     def test_other_app_info_logs_stay_off(self):
         """Only the audit logger is raised — the rest of the app still logs

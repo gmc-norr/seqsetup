@@ -251,11 +251,11 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
         # of who initiated the request — the api-key was about to be sent.
         # Imported lazily to keep this module decoupled from the audit
         # service (which lives in the same services package).
-        from .audit_log import audit
+        from .audit_log import audit, redact_url
         audit(
             "lims.url_blocked",
             actor="lims_client",
-            target=url,
+            target=redact_url(url),
             reason=str(exc),
         )
         raise
