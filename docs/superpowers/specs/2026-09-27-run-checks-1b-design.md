@@ -124,9 +124,8 @@ bar in `runs/edit.html`:
   out every selected sample's final value first and refuses the whole request if any one
   fails — no sample is changed. A problem is an `HTTPException(400)`; the error banner
   shows the message and nothing is saved:
-  - typed, invalid: "Override Cycles '<value>' is malformed: each part must be the letter
-    Y, I, U or N followed by a cycle count (e.g. 'Y151;I8N2;I8N2;Y151'). Nothing was
-    saved."
+  - typed, malformed: already refused today by `expand_override_cycles` with its own
+    message (unchanged) — it runs before this check, so the value never reaches it.
   - typed, mismatch: "Override Cycles '<value>' does not fit this run's cycles (Read1 151
     / Index1 10 / Index2 10 / Read2 151): each part must add up to its read's cycles, one
     part per read of more than 0 cycles. Nothing was saved. Leave the field empty to

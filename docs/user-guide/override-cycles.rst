@@ -122,18 +122,13 @@ could not be expanded -- is refused immediately: nothing is saved, and
 the error banner names the problem. This applies the same way whether
 you typed it into the row's own cell or the bulk panel.
 
-.. warning::
-   That immediate check does **not** confirm the value actually matches
-   this run. A value with the right characters but the wrong number of
-   segments, or one whose cycle counts do not sum to the run's declared
-   Read/Index cycles, is accepted and saved without complaint -- for
-   example, typing a four-read value's worth of cycles into only two
-   segments. The mistake is only caught the next time the run is
-   checked: the **Check** panel above the table, or Mark Ready, compares
-   every sample's Override Cycles against the run's configured cycles
-   and flags anything that does not add up. Do not treat a value as
-   correct just because it was accepted when you typed it -- check the
-   run (see :doc:`validation`) before relying on it.
+The same save also checks that the value fits this run: one segment per
+read of more than 0 cycles, each adding up to that read's cycles. A value
+that does not fit is refused the same way, and so is a value calculated
+when you leave the field empty -- that one comes from the index kit's
+default read override, which an admin must correct. The **Check** panel
+and Mark Ready check again, because the run's cycles can change after a
+value was saved.
 
 Forward orientation
 -----------------------
