@@ -1,74 +1,99 @@
 Validation
 ==========
 
-SeqSetup validates the run configuration to detect potential issues before export.
+Every Draft run has a **Check** panel above its Export panel, on the run's
+own page. It re-runs automatically after every change -- add a sample,
+assign an index, edit an override -- so it always reflects what is
+currently saved, not what the page looked like when it was first loaded.
 
-Index Collision Detection
+The Check panel
+----------------
+
+.. figure:: /_static/screenshots/check/panel.png
+   :alt: The Check panel showing Samples, Indexes and Errors status badges, an error list, and an "Open the validation page" link.
+
+   The Check panel, outlined.
+
+The panel shows a badge for the sample count, a badge for how many samples
+have an index assigned, and -- only when there is at least one -- a badge
+for the number of errors. Up to ten error messages are listed directly
+underneath; beyond ten, the panel says how many more there are and points
+to the full validation page. Errors it finds are the same fixes needed to
+pass **Mark Ready** -- see :doc:`export`.
+
+Select **Open the validation page** for the full picture: every error and
+warning in detail, an index distance heatmap per lane, and a color
+balance table per lane.
+
+Errors and warnings
+--------------------
+
+The validation page's **Issues** tab lists every error first, then every
+warning. Two samples in the same lane with the same (or too similar) an
+index are reported here as a collision; a sample with no test assigned is
+reported as a missing-test error; and so on.
+
+.. figure:: /_static/screenshots/check/validation-issues.png
+   :alt: The validation page's Issues tab, listing index collision and other errors in red.
+
+   The Issues tab, outlined.
+
+.. warning::
+   Two samples that share a lane must not share an index -- with nothing
+   to tell their reads apart, demultiplexing cannot say which sample a
+   read actually came from. SeqSetup does not refuse to *save* this in a
+   Draft run; the Check panel and the Issues tab mark it as an error, but
+   the run is only actually blocked at **Mark Ready** (see :doc:`export`).
+   Do not assume a run is safe because it saved without complaint -- check
+   the Issues tab, or the Check panel's error count, before relying on it.
+
+Index distance heatmaps
 -------------------------
 
-Indexes within the same lane are checked for collisions. Two indexes collide when
-their Hamming distance is less than or equal to the configured barcode mismatch
-threshold.
+The **Heatmaps** tab shows, for each lane, the pairwise Hamming distance
+between every pair of samples' indexes -- lower numbers (closer to red)
+mean a higher risk that a sequencing error could make one sample's index
+misread as another's. Separate views are available for i7 only, i5 only,
+and the two combined.
 
-For example, with a mismatch threshold of 1, indexes ``ATTACTCG`` and ``ATTACTCA``
-(Hamming distance 1) would collide because BCLConvert cannot reliably distinguish
-them.
+.. figure:: /_static/screenshots/check/heatmaps.png
+   :alt: The Heatmaps tab's per-lane distance table, with the diagonal and any close pairs colour-coded.
 
-Collision detection considers:
+   A lane's index distance heatmap, outlined.
 
-- Per-lane grouping (only samples in the same lane are compared)
-- Both i7 and i5 indexes independently
-- The configured barcode mismatch threshold (global and per-sample)
+This tab is only available once a lane has more than one indexed sample --
+there is nothing to compare a single index against.
 
-Index Distance Matrix
----------------------
+Color balance
+--------------
 
-A distance matrix shows the pairwise Hamming distances between all indexes in each
-lane. This helps identify which sample pairs are closest and might cause
-demultiplexing issues.
+Illumina two-color chemistry instruments (NovaSeq X, NextSeq, MiSeq i100,
+and others) need signal in at least one of two fluorescence channels at
+every sequencing cycle to keep base-calling and cluster-finding on track.
+The **Color Balance** tab checks this at every position of every index
+read, across all the indexed samples in a lane at once:
 
-The matrix includes:
+.. figure:: /_static/screenshots/check/color-balance.png
+   :alt: The Color Balance tab's per-position table for one lane, with per-channel percentages and a status column.
 
-- i7 distances
-- i5 distances
-- Combined (i7 + i5) distances
+   A lane's color balance table, outlined.
 
-Color Balance Analysis
-----------------------
+Each row is one cycle position. The table counts, across every sample in
+the lane, how many indexes carry a base that lights up each channel at
+that position, and gives it a status:
 
-For two-color SBS chemistry instruments (NovaSeq X, MiSeq i100, NextSeq, etc.),
-SeqSetup analyzes the color balance of index sequences at each position.
+- **OK** -- both channels have signal.
+- **Warning** -- one channel is below 25% of samples.
+- **Error** -- one channel has *no* signal at all from any sample in the
+  lane.
 
-Good color balance requires signal in both fluorescence channels at every cycle.
-The analysis reports:
+Which bases feed which channel is instrument-specific -- the tab's legend
+names the channels and bases for the run's own instrument.
 
-- **Per-position balance** -- Percentage of bases contributing to each channel
-- **Warnings** -- Positions where a channel is below 25%
-- **Errors** -- Positions where a channel has no signal
-
-Channel assignments are instrument-specific:
-
-**XLEAP chemistry** (NovaSeq X, MiSeq i100):
-
-- Channel 1 (Blue): A, C
-- Channel 2 (Green): C, T
-- Dark: G
-
-**Red/Green chemistry** (NextSeq 500/550, NovaSeq 6000):
-
-- Channel 1 (Red): A, C
-- Channel 2 (Green): A, T
-- Dark: G
-
-Dark Cycle Detection
---------------------
-
-A warning is raised when a sample's index sequence starts with two consecutive
-dark bases (G for two-color instruments). This can cause imaging issues during the
-first cycles of the index read.
-
-Duplicate Sample IDs
---------------------
-
-The system checks for duplicate sample identifiers within the same run. Each
-sample must have a unique sample ID.
+.. note::
+   A dedicated check also flags any single sample whose index starts with
+   two consecutive dark bases (no signal in either channel) -- this can
+   keep the instrument from finding that sample's read at all in the
+   first two index cycles. That check's errors are listed on the **Issues**
+   tab alongside collisions, not on the Color Balance tab, because it is
+   about one sample's own index, not the mix of indexes sharing a lane.

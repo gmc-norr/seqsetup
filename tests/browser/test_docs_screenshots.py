@@ -551,3 +551,238 @@ def test_override_cycles_bulk(demo_page, base_url, demo):
     page.wait_for_selector(
         'tr.sample-row:has-text("SAMPLE-A02") input[name="override_cycles"][value="Y151;I8;I8;Y151"]'
     )
+
+
+# ---------------------------------------------------------------------------
+# Check, Mark Ready, downloads and archive.
+#
+# demo['problem'] (DEMO-RUN-02) is untouched by every test above it: A01 and
+# A02 carry the exact same index pair (UDI0001, both i7 and i5 -- a real
+# collision), A03 has no index and no test_id. It is never navigated to
+# above, so its errors are exactly as seeded. It plays the "run with
+# problems" role for the whole Check group below.
+#
+# demo['ready'] and demo['archived'] were written straight into the database
+# with that status (docs_world.seed_demo) -- they never went through the
+# real DRAFT->READY route, so their generated_* export fields are None and
+# their Export panel would not show what a genuinely-promoted run looks
+# like. A brand-new run is built and driven through Mark Ready / Return to
+# Draft / Archive for real instead, using UDI0005-UDI0008 -- the same four
+# pairs demo['archived'] uses, proven collision- and dark-cycle-free.
+# _CLEAN_RUN carries that run's id from test_ready_mark_ready to the tests
+# after it (mirroring how test_lanes_bulk_panel hands state to
+# test_lanes_row_lanes, except the id itself, not just DB state, has to be
+# threaded through since this run isn't one of docs_world's fixed ids).
+# ---------------------------------------------------------------------------
+
+_CLEAN_RUN: dict[str, str] = {}
+
+
+@contextmanager
+def _overflow_visible(locator):
+    """Same clip as #sample-section (see _sample_section_unclipped above),
+    generalised to any locator: an ancestor with overflow-x:auto computes
+    overflow-y to auto too (CSS spec), clipping a flush child's outline.
+    .table-scroll (components.css:3626) wraps both the Heatmaps and Color
+    Balance tables the exact same flush way -- neutralise it for the
+    capture only, then restore."""
+    previous = locator.evaluate(
+        "(e) => { const old = e.style.overflow; e.style.overflow = 'visible'; return old; }"
+    )
+    try:
+        yield
+    finally:
+        locator.evaluate("(e, old) => { e.style.overflow = old; }", previous)
+
+
+def test_check_panel(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['problem']}")
+    snap(page, "check/panel", page.locator("#validate-panel"))
+
+
+def test_check_validation_issues(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['problem']}/validation")
+    # The Issues tab is Alpine's default activeTab and carries no x-cloak
+    # (templates/validation/page.html), so it is visible on first paint --
+    # no click or wait needed to reach it.
+    issues = page.locator(".issues-tab-content")
+    snap(page, "check/validation-issues", issues, region=page.locator("#validation-tabs"))
+
+
+def test_check_heatmaps(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['problem']}/validation")
+    # A01 and A02 are both indexed (A03 is not), so every lane has two
+    # indexed samples and the Heatmaps tab is enabled, not disabled.
+    page.get_by_role("button", name="Heatmaps").click()
+    lane = page.locator(".lane-heatmap-simple").first
+    with _overflow_visible(lane.locator(".table-scroll").first):
+        snap(page, "check/heatmaps", lane.locator(".heatmap-table").first, region=lane)
+
+
+def test_check_color_balance(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['problem']}/validation")
+    # Button text is "Color Balance" or "Color Balance (N)" depending on
+    # whether calculate_color_balance() found any lane issues -- match
+    # either (routes/validation.py:_build_color_balance_ctx, templates/
+    # validation/page.html).
+    page.get_by_role("button", name=re.compile(r"^Color Balance")).click()
+    lane = page.locator(".lane-colorbalance-section").first
+    with _overflow_visible(lane.locator(".table-scroll").first):
+        snap(page, "check/color-balance", lane.locator(".colorbalance-table").first, region=lane)
+
+
+def test_ready_mark_ready_refused(demo_page, base_url, demo):
+    page = demo_page
+    # demo['problem'] has real errors (a collision plus a missing test_id),
+    # so this refusal is genuine, not staged -- Mark Ready is always
+    # clickable in Draft (templates/runs/_run_status_bar.html) and runs its
+    # own real-time validation (routes/runs.py:update_status).
+    page.goto(f"{base_url}/runs/{demo['problem']}")
+    page.get_by_role("button", name="Mark Ready").click()
+    page.wait_for_selector("#error-banner .ready-refused")
+    banner = page.locator(".ready-refused")
+    assert "Cannot mark ready" in banner.text_content()
+    snap(page, "ready/mark-ready-refused", banner, region=page.locator("#error-banner"))
+    # Refusing must not have moved the run out of Draft.
+    assert page.locator("#run-status-bar .status-draft").count() == 1
+
+
+def test_ready_mark_ready(demo_page, base_url, demo):
+    page = demo_page
+    # Build a brand-new, real Draft run through the wizard -- not one of
+    # docs_world's seeded ids -- so promoting it to Ready is a genuine
+    # DRAFT->READY transition, not a fake status written into the DB.
+    page.goto(f"{base_url}/")
+    with page.expect_navigation(url=re.compile(r"/runs/new/step/1")):
+        page.get_by_role("button", name="New Run").click()
+    run_id = re.search(r"run_id=([^&]+)", page.url).group(1)
+    _CLEAN_RUN["id"] = run_id
+
+    page.fill("#run_name", "DEMO-RUN-06")
+    # Continue's own POST /runs/{id}/setup (hx-include="#run-setup-fields")
+    # saves whatever is currently in #run_name, so no separate change event
+    # is needed before it (templates/wizard/_navigation.html).
+    with page.expect_navigation(url=f"{base_url}/runs/{run_id}"):
+        page.get_by_role("button", name="Continue to Run").click()
+
+    # Add 4 samples with a real test_id -- WGS is the one test profile
+    # docs_world seeds, and prerequisite_run_name / prerequisite_no_samples
+    # / prerequisite_missing_indexes / missing_test_id are all real,
+    # error-severity checks (services/validation.py:280-314,836-862) that
+    # would otherwise block Mark Ready below.
+    page.fill("#paste_data", "sample_id\ttest_id\n" + "\n".join(
+        f"SAMPLE-C0{n}\tWGS" for n in range(1, 5)
+    ))
+    page.get_by_role("button", name="Preview").click()
+    page.wait_for_selector("#paste-area .paste-counts")
+    page.get_by_role("button", name="Add 4 samples").click()
+    page.wait_for_selector('tr.sample-row:has-text("SAMPLE-C04")')
+
+    # UDI0005-UDI0008: the same four pairs demo['archived'] (DEMO-RUN-04)
+    # uses, the proven collision- and dark-cycle-clean set -- UDI0001 and
+    # UDI0018 are the kit's two bad pairs and are not used here.
+    for n in range(1, 5):
+        chip = _pair_chip(page, f"UDI000{4 + n}")
+        row = page.locator("tr.sample-row").filter(has_text=f"SAMPLE-C0{n}")
+        _drag_index(page, chip, row.locator(".drop-zone.i7-drop"))
+        page.wait_for_selector(f'tr.sample-row:has-text("SAMPLE-C0{n}") .assigned-index.i7')
+
+    # Wait for the Check panel's OWN refresh (htmx:afterRequest, delay:300ms
+    # -- templates/runs/_validate_panel.html), not just the last row's
+    # assigned-index class: the panel refreshes on a separate request from
+    # the row swap, and photographing (or trusting) it before that refresh
+    # lands would show stale data. Wait on "Indexes: 4/4" specifically (only
+    # true post-refresh, once every sample is indexed), not on status_cls
+    # == "ok": four distinct real 8bp sequences can still trip a lane's
+    # color-balance check at some position (a real, separate, non-error
+    # finding -- see color_balance_issue_count, models/validation.py:313-
+    # 316 -- which is never added into error_count/has_errors,
+    # models/validation.py:286-304, so it cannot block Mark Ready below),
+    # which alone keeps status_cls at "has-warnings" and never "ok"
+    # (templates/runs/_validate_panel.html:27-34) even with zero errors.
+    page.wait_for_selector('#validate-panel .validate-status-badges:has-text("Indexes: 4/4")')
+    badges = page.locator("#validate-panel .validate-status-badges")
+    assert badges.locator(".status-error").count() == 0
+    assert "Samples: 4" in badges.text_content()
+    assert "Indexes: 4/4" in badges.text_content()
+    assert page.locator("#validate-panel .validate-error-list").count() == 0
+
+    page.get_by_role("button", name="Mark Ready").click()
+    page.wait_for_selector("#run-status-bar .run-status-badge.status-ready")
+    snap(page, "ready/mark-ready", page.locator("#run-status-bar .run-status-badge"),
+         region=page.locator("#run-status-bar"))
+
+
+def test_export_panel_ready(demo_page, base_url, demo):
+    page = demo_page
+    # test_ready_mark_ready (above) left this run genuinely Ready, with
+    # exports pre-generated by the real DRAFT->READY route -- the export
+    # panel came along for free in that same response (hx-swap-oob on
+    # #export-panel, routes/runs.py:update_status), so nothing further is
+    # needed to reach it here on a fresh page load.
+    page.goto(f"{base_url}/runs/{_CLEAN_RUN['id']}")
+    assert page.locator("#run-status-bar .status-ready").count() == 1
+    buttons = page.locator("#export-panel .export-buttons")
+    assert buttons.locator("a.export-btn.disabled").count() == 0
+    snap(page, "export/panel-ready", buttons, region=page.locator("#export-panel"))
+
+
+def test_ready_back_to_draft(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{_CLEAN_RUN['id']}")
+    page.get_by_role("button", name="Return to Draft").click()
+    page.wait_for_selector("#run-status-bar .status-draft")
+    snap(page, "ready/back-to-draft", page.locator("#run-status-bar .run-status-badge"),
+         region=page.locator("#run-status-bar"))
+    # READY->DRAFT clears the pre-generated exports (routes/runs.py:
+    # update_status, the elif new_status == RunStatus.DRAFT branch) -- the
+    # panel goes back to the one-line "Downloads open..." message.
+    page.wait_for_selector("#export-panel .export-waiting")
+
+
+def test_archive_button(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{_CLEAN_RUN['id']}")
+    # Nothing about the samples or indexes changed since test_ready_mark_
+    # ready, so this re-promotion is still a genuine, error-free
+    # DRAFT->READY transition, not a repeat of a stale check.
+    page.get_by_role("button", name="Mark Ready").click()
+    page.wait_for_selector("#run-status-bar .status-ready")
+    snap(page, "archive/archive-button", page.get_by_role("button", name="Archive"),
+         region=page.locator("#run-status-bar"))
+
+
+def test_export_panel_archived(demo_page, base_url, demo):
+    page = demo_page
+    # test_archive_button (above) left this run Ready -- demo_page is a
+    # fresh page + login per test (like every test in this module), so
+    # reload it here rather than assuming the DOM from that test survives.
+    page.goto(f"{base_url}/runs/{_CLEAN_RUN['id']}")
+    page.get_by_role("button", name="Archive").click()
+    page.wait_for_selector("#run-status-bar .status-archived")
+    # READY->ARCHIVED keeps the pre-generated exports (routes/runs.py:
+    # update_status -- the DRAFT-clearing branch above is an elif, so
+    # ARCHIVED never takes it); the panel should still show every button
+    # enabled, not the Draft "Downloads open..." message.
+    buttons = page.locator("#export-panel .export-buttons")
+    assert buttons.locator("a.export-btn.disabled").count() == 0
+    snap(page, "export/panel-archived", buttons, region=page.locator("#export-panel"))
+
+    # Not a picture -- a direct check of the ARCHIVED terminal-state claim
+    # in export.rst. The status bar still renders a "Reset to Draft" button
+    # for an Archived run (templates/runs/_run_status_bar.html), but
+    # check_status_transition (routes/utils.py) maps ARCHIVED to an empty
+    # allowed-target set, so the POST is always refused; app.js's generic
+    # htmx error handling (static/js/app.js:729-751) puts the plain-text
+    # body in #error-banner since the 400 carries no HX-Retarget.
+    page.get_by_role("button", name="Reset to Draft").click()
+    page.wait_for_selector("#error-banner .error-message")
+    assert page.locator("#error-banner").text_content().strip() == (
+        "Invalid status transition: archived → draft"
+    )
+    # Confirm the refusal really changed nothing.
+    assert page.locator("#run-status-bar .status-archived").count() == 1
