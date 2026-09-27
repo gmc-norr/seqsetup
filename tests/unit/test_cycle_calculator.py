@@ -310,3 +310,35 @@ class TestExpandOverrideCycles:
         rc = RunCycles(151, 151, 10, 10)
         with pytest.raises(ValueError):
             CycleCalculator.expand_override_cycles("Y*N*;I8;I8;Y*", rc)
+
+
+class TestOverrideCyclesProblem:
+    """One rule, used by Mark Ready and the save routes: does a sample's
+    OverrideCycles fit the run's reads (spec 2026-09-27 run checks 1b, F11)?"""
+
+    RC = RunCycles(151, 151, 10, 10)
+
+    @pytest.mark.parametrize("value", [
+        "Y151;I10;I10;Y151", "Y151;I8N2;I8N2;Y151", "U8Y143;I10;I10;Y151",
+        "y151;i10;i10;y151", "Y151,I10,I10,Y151",
+    ])
+    def test_value_that_fits_has_no_problem(self, value):
+        assert CycleCalculator.override_cycles_problem(value, self.RC) is None
+
+    @pytest.mark.parametrize("value", ["151;I10;I10;Y151", "Y151N;I10;I10;Y151", "Y151;;I10;I10;Y151"])
+    def test_malformed_value_is_invalid(self, value):
+        assert CycleCalculator.override_cycles_problem(value, self.RC) == "invalid"
+
+    @pytest.mark.parametrize("value", [
+        pytest.param("Y151;I10;Y151", id="too-few-parts"),
+        pytest.param("Y100;I10;I10;Y151", id="wrong-sum"),
+        pytest.param("Y100;I8N2;I8N2;Y151", id="kit-pattern-Y100"),
+        pytest.param("Y*;I10;I10;Y151", id="leftover-wildcard"),
+    ])
+    def test_value_that_does_not_fit_is_a_mismatch(self, value):
+        assert CycleCalculator.override_cycles_problem(value, self.RC) == "mismatch"
+
+    def test_zero_cycle_read_has_no_part(self):
+        rc = RunCycles(151, 0, 10, 10)
+        assert CycleCalculator.override_cycles_problem("Y151;I10;I10", rc) is None
+        assert CycleCalculator.override_cycles_problem("Y151;I10;I10;Y0", rc) == "mismatch"

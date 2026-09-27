@@ -392,13 +392,6 @@ class ValidationService:
         if not rc:
             return []
 
-        # Expected segment cycle-sums, in OverrideCycles order. Only reads with
-        # >0 cycles are in RunInfo.xml, and BCL Convert needs exactly one
-        # segment per RunInfo read — so a zero-cycle segment (e.g. a trailing
-        # "Y0" that older auto-calculated values carry for read2=0) is an extra
-        # segment and a mismatch, not a no-op.
-        expected = [cycles for _, _, cycles in CycleCalculator.read_structure(rc)]
-
         bad: list[str] = []
         # Malformed OverrideCycles, or a read override pattern that is malformed
         # (applying it silently drops what it cannot parse: 'U8YY*' -> 'U8Y143').
@@ -424,27 +417,10 @@ class ValidationService:
                 oc = CycleCalculator.calculate_override_cycles(run_cycles=rc, sample=sample)
             if not oc:
                 continue
-            if "*" in oc:
-                # A '*' is internal pattern shorthand, never valid in a shipped
-                # OverrideCycles — it must be expanded to concrete counts before
-                # storage (the model rejects it; routes expand it first). If one
-                # survives here (legacy data / a bypass), BLOCK approval rather
-                # than silently shipping an unexpanded wildcard to the sequencer.
-                bad.append(sample.sample_id or sample.id)
-                continue
-            # A digit sum can match while the value is malformed ('151' has no
-            # letter, 'Y151N' a dangling one) — BCL Convert rejects those.
-            if not all(
-                CycleCalculator.is_valid_override_segment(seg.upper())
-                for seg in re.split(r"[;,]", oc)
-            ):
+            problem = CycleCalculator.override_cycles_problem(oc, rc)
+            if problem == "invalid":
                 invalid.append(sample.sample_id or sample.id)
-                continue
-            sums = [
-                sum(int(n) for n in re.findall(r"\d+", seg))
-                for seg in re.split(r"[;,]", oc) if seg
-            ]
-            if sums != expected:
+            elif problem == "mismatch":
                 bad.append(sample.sample_id or sample.id)
 
         errors: list[ConfigurationError] = []
