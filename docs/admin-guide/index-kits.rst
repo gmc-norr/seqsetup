@@ -1,54 +1,103 @@
 Index Kit Management
-====================
+=====================
 
-Administrators can add and manage index adapter kits used for sample demultiplexing.
+An index kit is the library of i7/i5 barcodes that samples are assigned in a
+run. Every user can browse and use the index kits already in SeqSetup, from
+**Settings > Index Kits**; importing a new one requires the **Admin** role.
 
-Index Kit Structure
+.. figure:: /_static/screenshots/admin/index-kits-list.png
+   :alt: The Index Kits list page, with the "+ Import Index Kit" link outlined in its header.
+
+   The **Index Kits** list. **+ Import Index Kit** is shown only to admins.
+
+Importing a kit
 -------------------
 
-Each index kit defines:
+Select **+ Import Index Kit** and fill in the form:
 
-- **Name** -- Kit identifier (e.g., "IDT for Illumina DNA/RNA UD Indexes")
-- **Version** -- Kit version string
-- **Description** -- Optional description
-- **Index type** -- The indexing mode:
+- **Index kit file** -- a YAML, CSV, or TSV file, up to 1 MB.
+- **Index mode** -- **Unique Dual** (i7+i5 pairs), **Combinatorial**
+  (independent i7 and i5 lists), or **Single** (i7 only).
+- **Kit name** / **Kit version** / **Description** -- optional; when left
+  blank, SeqSetup takes them from the file itself where the format provides
+  them.
+- Adapter sequences and default override-cycle patterns -- optional; see the
+  page's own **Override cycles help** for the notation.
 
-  - ``unique_dual`` -- Pre-defined i7+i5 pairs
-  - ``combinatorial`` -- Independent i7 and i5 sets
-  - ``single`` -- i7 only
+.. figure:: /_static/screenshots/admin/index-kit-upload.png
+   :alt: The Import Index Kit form with a CSV file selected and the kit name and version filled in, and the Upload Index Kit button outlined.
 
-- **Index pairs** (for UDI kits) -- Each pair has a name, i7 index, and i5 index
-- **i7 indexes** and **i5 indexes** (for combinatorial kits) -- Separate lists
+   The import form, filled in, with **Upload Index Kit** outlined.
 
-Each index has:
+Select **Upload Index Kit** to import it.
 
-- **Name** -- Index identifier (e.g., "D701")
-- **Sequence** -- Nucleotide sequence (e.g., "ATTACTCG")
-- **Index type** -- ``i7`` or ``i5``
+What is checked on import
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Adding Index Kits
+Before a kit is saved, SeqSetup checks, in order:
+
+1. **Size** -- the upload is capped at 1 MB.
+2. **Content type** -- the file's first bytes are checked against common
+   binary formats (PNG, JPEG, PDF, ZIP/xlsx/docx, gzip, executables, and
+   more), and against a stray NUL byte or invalid UTF-8 in the first 8 KB.
+   A file that looks binary is rejected outright: index kits must be plain
+   text.
+3. **Parsing** -- a file that fails to parse in the selected format is
+   rejected with a generic "check the format and try again" message.
+4. **Field validation** -- the kit name is required; the version must be a
+   valid semantic version; adapter sequences, and every i7/i5 sequence, must
+   be DNA (``A``, ``C``, ``G``, ``T``, ``N`` only); every index pair needs a
+   name and, in Unique Dual mode, both an i7 and an i5 sequence; a duplicate
+   pair *name* is an error, a duplicate pair *sequence* under a different
+   name is only a warning (two indexes that are physically indistinguishable
+   at demultiplexing time, which is occasionally intentional).
+5. **Name + version clash** -- a kit with the same name and version already
+   present is rejected rather than silently overwritten.
+
+Every outcome -- success or any of the rejections above -- is written to the
+audit log.
+
+.. note::
+   A rejected upload never partially saves. Nothing is added to the kit
+   library until every check above passes.
+
+Viewing a kit
+----------------
+
+Select a kit's name, or **View**, to see its full contents: every index
+pair (or i7/i5 list) with its sequence, plus the kit's adapter and
+default-override settings.
+
+.. figure:: /_static/screenshots/admin/index-kit-detail.png
+   :alt: The index kit detail page, with the Download YAML and Delete buttons at the bottom outlined.
+
+   A kit's detail page, with **Delete** outlined next to **Download YAML**.
+
+Select **Download YAML** to export the kit as a YAML file, in SeqSetup's own
+format -- useful for backing up a kit, or for checking it into a GitHub repo
+that :doc:`Config Sync <profiles>` will later pick up.
+
+Deleting a kit
 -----------------
 
-Index kits can be added through:
+Select **Delete**, on the list or the detail page, and confirm.
 
-1. **Admin interface** -- Manual entry through the web UI
-2. **CSV import** -- Upload a CSV file with index definitions
-3. **GitHub sync** -- Automatic synchronization from a GitHub repository
+.. warning::
+   Deleting a kit is immediate and permanent, and **SeqSetup does not check
+   whether any run is using it first** -- a Draft, Ready, or even Archived
+   run can reference a kit that no longer exists. This is safe for samples
+   that already have an index assigned: assigning an index copies its name
+   and sequence onto the sample at that moment, so a sample's actual
+   barcode is unaffected by a later change or deletion of the kit it came
+   from. It does mean a Draft run can no longer assign *new* samples from a
+   deleted kit, and its kit picker will report the kit as not found. Before
+   deleting a kit that might still be in use, download it first (above) so
+   it can be re-imported if needed.
 
-Default Index Cycles
-^^^^^^^^^^^^^^^^^^^^
+Who can do this
+-------------------
 
-Kits can specify default effective index cycle counts. When indexes from such a kit
-are assigned to a sample, these defaults are used to calculate override cycles
-instead of the actual sequence length.
-
-This is useful for kits where the physical index length differs from the intended
-read length (e.g., a 10bp index that should only be read for 8 cycles).
-
-Default Override Patterns
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Kits can also provide default override patterns for:
-
-- **Index reads** -- e.g., ``I8N2`` for an 8bp read with 2 masked cycles
-- **Sequencing reads** -- e.g., ``U8Y*`` for 8 UMI cycles followed by sequencing
+Anyone can view the kit list and a kit's detail page. Importing a kit
+requires the **Admin** role. Deleting a kit is allowed for an admin (any
+kit) or for a standard user deleting a kit *they themselves* uploaded --
+not other users' kits.

@@ -9,6 +9,7 @@ other browser tests never see the demo world.
 
 import os
 import re
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -1017,3 +1018,159 @@ def test_admin_logs(demo_page, base_url, demo):
         "Refresh was expected to keep the current filters (htmx's closest-form "
         f"default), but the row count changed to {refreshed_rows}"
     )
+
+
+def test_admin_index_kits_list(demo_page, base_url, demo):
+    page = demo_page
+    # index_kits_page has no admin dependency at all (routes/indexes.py:
+    # 108-119) -- every authenticated user can see the kit list. Only the
+    # "+ Import Index Kit" link is admin-gated, in the template itself
+    # (indexes/list.html:12-14); the upload routes are separately admin-only
+    # (routes/indexes.py:122,134). The demo world seeds exactly one kit
+    # (DEMO_KIT_NAME), and nothing before this test in the module adds
+    # another, so this is still the single-kit view.
+    page.goto(f"{base_url}/indexes")
+    assert DEMO_KIT_NAME in page.locator("#indexes-page").text_content()
+    header = page.locator("#indexes-page > div.flex.items-center.justify-between")
+    snap(page, "admin/index-kits-list",
+         page.get_by_role("link", name="+ Import Index Kit"), region=header)
+
+
+def test_admin_index_kit_upload(demo_page, base_url, demo):
+    page = demo_page
+    # /indexes/import (the form page) and /indexes/upload (the handler) are
+    # both admin-only (routes/indexes.py:122,134). Upload a made-up kit
+    # through the real form, in the simple CSV format the file-format-help
+    # <details> on this page documents (name,index,index2 -- parsed by
+    # IndexParser._parse_csv, services/index_parser.py:503-505).
+    page.goto(f"{base_url}/indexes/import")
+    csv_content = (
+        "name,index,index2\n"
+        "DP01,ACGTGCAT,TGCATACG\n"
+        "DP02,GGCTAACG,CATGGTAC\n"
+        "DP03,TACGGATC,AGCTTGCA\n"
+        "DP04,CTGATCGA,GTACCTAG\n"
+    )
+    # A real filename, not tempfile's random name -- it shows in the
+    # browser's own file input and ends up in the picture.
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = os.path.join(tmp_dir, "docs-demo-panel.csv")
+    with open(tmp_path, "w", newline="") as f:
+        f.write(csv_content)
+    try:
+        page.set_input_files("#index_file", tmp_path)
+        page.fill("#kit_name", "Docs Demo Panel")
+        page.fill("#kit_version", "2.0")
+        page.fill("#kit_description", "Made-up panel kit for the admin guide screenshots")
+        form = page.locator("form[hx-post='/indexes/upload']")
+        snap(page, "admin/index-kit-upload",
+             form.get_by_role("button", name="Upload Index Kit"), region=form)
+        # A successful upload responds with HX-Redirect: /indexes (indexes.py:
+        # 251-252), which htmx turns into a real navigation.
+        with page.expect_navigation(url=re.compile(r"/indexes$")):
+            form.get_by_role("button", name="Upload Index Kit").click()
+    finally:
+        os.unlink(tmp_path)
+        os.rmdir(tmp_dir)
+    assert "Docs Demo Panel" in page.locator("#indexes-page").text_content()
+
+
+def test_admin_index_kit_detail(demo_page, base_url, demo):
+    page = demo_page
+    # Navigate the way a user would: from the list, into the kit just
+    # uploaded above. can_delete is true for dana.demo both as admin and as
+    # the kit's own uploader (indexes/detail.html:92, routes/indexes.py:
+    # 271-279) -- Delete is admin-only-or-owner, not admin-only.
+    page.goto(f"{base_url}/indexes")
+    card = page.locator("div.bg-white.border.rounded-lg").filter(has_text="Docs Demo Panel")
+    with page.expect_navigation(url=re.compile(r"/indexes/detail/")):
+        card.get_by_role("link", name="View").click()
+    delete_button = page.get_by_role("button", name="Delete")
+    button_row = page.locator("div.flex.gap-2").filter(has=delete_button)
+    snap(page, "admin/index-kit-detail", delete_button, region=button_row)
+
+
+def test_admin_instruments(demo_page, base_url, demo, app_ctx):
+    page = demo_page
+    # /admin/instruments is admin-only (routes/admin/instruments.py:31-34)
+    # and manages only SYNCED instrument definitions. config/instruments.yaml
+    # ships no synced instruments and no reagent_kit_max_cycles for any
+    # instrument at all (see that file's own closing comment) -- with none
+    # synced, the page shows the "Using local configuration file as
+    # fallback" note instead of the enable/disable table (admin/
+    # instruments.html:16-23). Seed two directly through the repository,
+    # the same way docs_world.py and test_new_run_cycle_limit_exceeded above
+    # do, so this is the real toggle table, not the fallback note.
+    definitions = [
+        InstrumentDefinition(
+            name="Docs Demo NovaSeq", samplesheet_name="DocsDemoNovaSeq",
+            chemistry_type="2-color", i5_read_orientation="reverse-complement",
+            samplesheet_v2_i5_orientation="forward", has_dragen_onboard=True,
+            flowcells=[FlowcellDefinition(name="10B", lanes=8, reads=10_000_000_000)],
+            enabled=True,
+        ),
+        InstrumentDefinition(
+            name="Docs Demo MiniSeq", samplesheet_name="DocsDemoMiniSeq",
+            chemistry_type="4-color", i5_read_orientation="forward",
+            samplesheet_v2_i5_orientation="forward", has_dragen_onboard=False,
+            flowcells=[FlowcellDefinition(name="Standard", lanes=1, reads=25_000_000)],
+            enabled=False,
+        ),
+    ]
+    for definition in definitions:
+        app_ctx.instrument_definition_repo.save(definition)
+    clear_synced_instruments_cache()
+    try:
+        page.goto(f"{base_url}/admin/instruments")
+        enabled_row = page.locator("tr").filter(has_text="Docs Demo NovaSeq")
+        section = page.locator("#synced-instruments-section")
+        snap(page, "admin/instruments", enabled_row.locator("input[type=checkbox]"), region=section)
+    finally:
+        app_ctx.instrument_definition_repo.delete_all()
+        clear_synced_instruments_cache()
+
+
+def test_admin_config_sync(demo_page, base_url, demo):
+    page = demo_page
+    # admin_config_sync.router is admin-only (routes/admin/config_sync.py:
+    # 27-30). Saving this form never touches the network (routes/admin/
+    # config_sync.py:77-113); only the separate "Run Manual Sync" button
+    # does (config_sync.py:116-144), which this test never clicks.
+    page.goto(f"{base_url}/admin/config-sync")
+    page.fill("#github_repo_url", "https://github.com/example-org/seqsetup-config")
+    page.fill("#github_branch", "main")
+    form = page.locator("form[hx-post='/admin/config-sync/config']")
+    form.get_by_role("button", name="Save Configuration").click()
+    # hx-swap="outerHTML" on #config-sync-page replaces the whole node
+    # (config_sync.py:108-113); wait for the success banner that only the
+    # swapped-in fragment carries before re-querying it.
+    page.wait_for_selector("text=Configuration saved")
+    form = page.locator("form[hx-post='/admin/config-sync/config']")
+    snap(page, "admin/config-sync",
+         form.get_by_role("button", name="Save Configuration"), region=form)
+
+
+def test_admin_lims_settings(demo_page, base_url, demo):
+    page = demo_page
+    # The demo world seeds no LIMS config, so sample_api_enabled = bool(cfg
+    # and cfg.enabled and cfg.base_url) (routes/runs.py:534) is False and the
+    # run-editing page's "Load Worklists" panel (wizard/
+    # _fetch_from_api_section.html:17-19) does not render at all -- confirm
+    # that directly, since it is the reason this test photographs the ADMIN
+    # settings page instead.
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    assert page.get_by_role("button", name="Load Worklists").count() == 0
+
+    # admin_sample_api.router is admin-only (routes/admin/sample_api.py:
+    # 36-39); ctx.sample_api_config_repo is never None in the running app
+    # (startup.py:174-175,197), so this page always renders, unlike the
+    # run-page panel above. Fill but do not submit: submitting with
+    # enabled=True would call check_connection() (routes/admin/
+    # sample_api.py:107-109), a real network request this suite must not
+    # make.
+    page.goto(f"{base_url}/admin/sample-api")
+    page.fill("#base_url", "https://lims.example.org/api")
+    page.check("input[name=enabled]")
+    form = page.locator("#sample-api-config-form")
+    snap(page, "admin/lims-settings",
+         form.get_by_role("button", name="Save Configuration"), region=form)

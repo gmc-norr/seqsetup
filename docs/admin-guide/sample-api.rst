@@ -1,33 +1,89 @@
-Sample API
-==========
+LIMS Integration
+=================
 
-SeqSetup can import sample and test identifiers from an external system (e.g., a
-LIMS) via a REST API. This feature is disabled by default and must be configured
-by an administrator.
+SeqSetup can pull a worklist of samples from an external system -- typically a
+LIMS -- over a REST API, instead of pasting them by hand. The integration is
+**disabled by default** and must be configured by an administrator from
+**Admin > LIMS Integration**.
 
-Configuration
--------------
+Configuring the connection
+---------------------------
 
-Navigate to **Admin > Sample API** to configure the integration.
+.. figure:: /_static/screenshots/admin/lims-settings.png
+   :alt: The LIMS Integration settings form, with Base URL filled in, Enable LIMS Integration checked, and the Save Configuration button outlined.
+
+   The **LIMS Integration** settings form, with **Save Configuration** outlined.
 
 **Base URL**
-   The root URL of the external API. SeqSetup appends endpoint paths to this URL.
-   For example, if the base URL is ``https://lims.example.com/api``, SeqSetup will
-   call:
-
-   - ``GET https://lims.example.com/api/worksheets`` -- list available worklists
-   - ``GET https://lims.example.com/api/worksheets/{id}`` -- fetch samples
-     for a worklist
+   The root URL of the external API, e.g. ``https://lims.example.com/api``.
+   SeqSetup derives two endpoints from it (see below).
 
 **API Key**
-   An optional Bearer token for authentication. If provided, SeqSetup sends it in
-   the ``Authorization`` header::
+   An optional key for authentication. If set, SeqSetup sends it as an
+   ``api-key`` header on every request::
 
-      Authorization: Bearer <api_key>
+      api-key: <api_key>
+
+   The field is write-only: it always renders blank, and leaving it blank on
+   save keeps whatever key is already stored. An operator can instead set the
+   ``SEQSETUP_LIMS_API_KEY`` environment variable, which always takes
+   precedence over the stored value and keeps the secret out of the database
+   entirely.
 
 **Enabled**
-   Toggle to enable or disable the integration. When disabled, the worklist import
-   option is hidden from the sample entry workflow.
+   Turns the integration on or off. While disabled -- or while **Base URL**
+   is empty -- the **Load Worklists** button on the sample-entry screen does
+   not appear at all; there is no way to reach it and no in-between "visible
+   but refused" state.
+
+**Field Mappings**
+   Optional, and narrower than it looks: these four fields (**Worksheet ID
+   field**, **Investigator field**, **Updated timestamp field**, **Samples
+   field**) rename the fields SeqSetup reads from the *worklist listing and
+   worklist-detail* response envelope -- for example, if your API calls the
+   worklist ID ``AL`` instead of ``id``. The *sample-level* field names in
+   the **Field Mapping** table further below (``sample_id``, ``index_i7``,
+   etc.) are recognized from a fixed set of aliases and are not
+   admin-configurable, with one exception: **Worksheet ID field** doubles as
+   a sample-level alias too, since a sample row may carry its own
+   ``worksheet_id``.
+
+.. warning::
+   If you enable the integration with an unreachable **Base URL**, SeqSetup
+   tests the connection immediately on save. On failure, it force-disables
+   the integration, saves it disabled, and shows the connection error --
+   rather than saving an integration that looks enabled but cannot be
+   reached.
+
+Network safety (SSRF protection)
+------------------------------------
+
+Because the LIMS URL and API key are attacker-reachable if a browser or a
+compromised dependency can ever influence them, every LIMS request is
+validated before it is sent, regardless of who is logged in:
+
+- The hostname is DNS-resolved, and the connection is pinned to the resolved
+  IP -- the same address that was validated, not whatever a second DNS
+  lookup might return a moment later (closes a DNS-rebinding window).
+- Any resolved address that is loopback, link-local, RFC1918 private,
+  multicast, reserved, unspecified, CGNAT (100.64.0.0/10), or IETF
+  protocol-assignment space (192.0.0.0/24) is **refused**. This is what
+  stops a LIMS configuration from being used to reach services on
+  SeqSetup's own host or internal network (SSRF).
+- Plain **HTTP is refused** -- only HTTPS is allowed -- because the api-key
+  would otherwise travel in clear text.
+- The response body is capped at 10 MB.
+
+Both restrictions can be lifted, but only via environment variables the
+*operator* sets on the server, never from the admin UI:
+
+- ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1`` -- allow a LIMS on a private
+  corporate network.
+- ``SEQSETUP_LIMS_ALLOW_HTTP=1`` -- allow plain HTTP.
+
+Treat each as a deliberate, audited decision for that one deployment --
+production should set neither, and should reach its LIMS over HTTPS on a
+public or explicitly allow-listed address.
 
 Expected API Contract
 ---------------------
@@ -37,10 +93,12 @@ The external API must implement two endpoints.
 List Worklists
 ^^^^^^^^^^^^^^
 
-``GET {base_url}/worksheets``
+``GET {base_url}/worksheets?detail=true``
 
-Returns a JSON array of worklist objects. Each object must include at least
-an ``id`` field. A ``name`` field is recommended for display purposes.
+Returns a JSON array of worklist objects (or a two-element
+``[worklists, pagination]`` array -- the first element is used). Each object
+must include at least an ``id`` field. A ``name`` field is recommended for
+display purposes.
 
 **Example response:**
 
@@ -54,11 +112,14 @@ an ``id`` field. A ``name`` field is recommended for display purposes.
 Field names are matched case-insensitively.
 
 Get Worklist Samples
-^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
 
 ``GET {base_url}/worksheets/{worklist_id}``
 
-Returns a JSON array of sample objects for the specified worklist.
+Returns a JSON array of sample objects for the specified worklist. The
+worklist ID is restricted to letters, digits, ``.``, ``_``, ``-`` and ``~``
+before it is placed in the URL, so it cannot inject an extra path segment or
+query string.
 
 **Example response:**
 
@@ -78,13 +139,20 @@ Returns a JSON array of sample objects for the specified worklist.
      }
    ]
 
-Each sample must include at least a ``sample_id``. All other fields are optional.
+Each sample must include at least a ``sample_id``. All other fields are
+optional.
+
+A response that is a single JSON *object* rather than an array is also
+accepted, for a worklist system that embeds its samples inside the
+worksheet record (for example ``{"AL": "...", "samples": {"S001": "WES"}}``);
+SeqSetup looks for the samples under the **Samples field** mapping above, or
+under a plain ``samples`` key.
 
 Field Mapping
 ^^^^^^^^^^^^^
 
-SeqSetup uses flexible, case-insensitive field matching. The following table shows
-recognized field names for each attribute:
+SeqSetup uses flexible, case-insensitive field matching. The following table
+shows recognized field names for each attribute:
 
 .. list-table::
    :header-rows: 1
@@ -115,20 +183,42 @@ recognized field names for each attribute:
      - ``i5_name``, ``index_i5_name``, ``index2_name``
      - i5 index identifier name
 
-A worklist row with no valid ``sample_id`` is never silently dropped: the
-entire import is rejected with an error naming the offending row number(s),
-so the missing identifier can be fixed upstream before retrying. Duplicate
-sample IDs already present in the run are skipped automatically.
+Every value pulled from the API is trimmed and capped at 256 characters, and
+an index sequence is uppercased and checked against ``[ACGTN]`` before it is
+accepted -- an invalid sequence rejects that one sample by name rather than
+failing with an unrelated server error later.
+
+.. warning::
+   A worklist row with content but no recognizable ``sample_id`` is never
+   silently dropped: the **entire import is rejected**, naming the offending
+   row number(s), so the missing identifier can be fixed upstream before
+   retrying. A row whose ``sample_id`` already exists in the run is skipped
+   instead, and SeqSetup says so in a banner ("Skipped N duplicate(s)
+   already in run.") -- never silently.
+
+Using it from a run
+--------------------
+
+On a **Draft** run's sample-entry screen, **Load Worklists** (visible only
+when the integration is enabled and configured, as above) fetches the
+worklist list, lets you preview one, and imports its samples. If importing
+the worklist would push the run over the per-run sample maximum, the whole
+import is refused rather than adding a partial worklist.
 
 Error Handling
 --------------
 
-SeqSetup handles the following error conditions:
+SeqSetup surfaces every failure to the user rather than failing silently:
 
-- **Network errors** -- Connection failures or timeouts (30-second limit) are
-  reported to the user.
-- **HTTP errors** -- Non-2xx responses are reported with the status code and reason.
-- **Invalid JSON** -- Responses that are not valid JSON arrays produce an error
-  message.
-- **Empty responses** -- If no worklists or samples are returned, the user is
-  notified.
+- **Network errors** -- connection failures or timeouts (30-second limit).
+- **URL policy refusals** -- an SSRF- or HTTP-policy refusal (see above).
+- **HTTP errors** -- non-2xx responses, with the status code and reason.
+- **Invalid JSON** -- a response that isn't a valid JSON array.
+- **Empty responses** -- no worklists, or no valid samples, in the response.
+
+Who can do this
+-------------------
+
+Configuring the integration, from **Admin > LIMS Integration**, requires the
+**Admin** role. Using an already-configured integration to fetch a worklist
+into a run is available to any user who can edit that run.

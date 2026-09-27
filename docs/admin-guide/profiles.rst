@@ -1,9 +1,10 @@
 Profiles
 ========
 
-SeqSetup uses a profile system to define reusable configurations for test types
-and analysis pipelines. Profiles enable consistent sample sheet generation and
-support both on-instrument DRAGEN pipelines and external analysis workflows.
+SeqSetup uses a profile system to define reusable configurations for test
+types and analysis pipelines. Every user can browse profiles from
+**Settings > Profiles**; only an administrator can bring new ones in
+(below).
 
 Overview
 --------
@@ -11,15 +12,15 @@ Overview
 The profile system consists of two types:
 
 **Test Profiles**
-   Define a sequencing test type (e.g., "WGS", "Exome", "RNA-Seq") and link it
-   to one or more application profiles. When a sample has a test ID, SeqSetup
-   resolves the test profile and includes the associated application pipelines
-   in the sample sheet.
+   Define a sequencing test type (e.g., "WGS", "Exome", "RNA-Seq") and link
+   it to one or more application profiles. When a sample has a test ID,
+   SeqSetup resolves the test profile and includes the associated
+   application pipelines in the sample sheet.
 
 **Application Profiles**
-   Define analysis pipeline configurations. These can be DRAGEN on-instrument
-   pipelines (generating sample sheet sections) or external pipelines (metadata
-   only, processed outside the sequencer).
+   Define analysis pipeline configurations. These can be DRAGEN
+   on-instrument pipelines (generating sample sheet sections) or external
+   pipelines (metadata only, processed outside the sequencer).
 
 Test Profiles
 -------------
@@ -54,7 +55,7 @@ Required Fields
      - List of application profile references (see below)
 
 Application Profile References
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Each entry in ``ApplicationProfiles`` must contain:
 
@@ -68,7 +69,7 @@ Version constraints support:
 - Range specifiers: ``>=1.0,<2.0``
 
 Example Test Profile
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: yaml
 
@@ -86,10 +87,10 @@ Example Test Profile
        ApplicationProfileVersion: "~=1.0.0"
 
 Application Profiles
---------------------
+---------------------
 
-Application profiles define analysis pipeline configurations. SeqSetup supports
-two types:
+Application profiles define analysis pipeline configurations. SeqSetup
+supports two types:
 
 1. **DRAGEN profiles** -- Generate sample sheet sections for on-instrument
    analysis (BCLConvert, DragenGermline, DragenSomatic, etc.)
@@ -98,7 +99,7 @@ two types:
    sequencer (bioinformatics workflows, cloud pipelines, custom tools)
 
 Required Fields (All Profiles)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 These fields are required for all application profiles regardless of type:
 
@@ -123,7 +124,7 @@ These fields are required for all application profiles regardless of type:
      - Profile type: ``Dragen`` for on-instrument, any other value for external
 
 DRAGEN Profile Fields
-~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 When ``ApplicationType`` is ``Dragen``, these additional fields are required:
 
@@ -160,7 +161,7 @@ Optional DRAGEN field:
        names (e.g., ``IndexI7: Index`` maps the i7 index to the ``Index`` column)
 
 Example DRAGEN Profile
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: yaml
 
@@ -206,11 +207,11 @@ This generates sample sheet sections like:
    hg38-alt_masked...,AllVariantCallers,...,Sample_001
 
 External Profile Fields
-~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-External profiles (``ApplicationType`` is anything other than ``Dragen``) only
-require the four core fields. Additional fields are optional and can be used
-to store pipeline-specific configuration:
+External profiles (``ApplicationType`` is anything other than ``Dragen``)
+only require the four core fields. Additional fields are optional and can be
+used to store pipeline-specific configuration:
 
 .. list-table::
    :header-rows: 1
@@ -230,7 +231,7 @@ to store pipeline-specific configuration:
      - Optional. Field names to include in JSON export
 
 Example External Profiles
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Minimal external profile:**
 
@@ -267,56 +268,43 @@ Example External Profiles
      - AnalysisMode
      - ReferenceGenome
 
-**LIMS integration profile:**
-
-.. code-block:: yaml
-
-   ---
-   ApplicationProfileName: LimsExport
-   ApplicationProfileVersion: 1.0.0
-   ApplicationName: LimsIntegration
-   ApplicationType: Integration
-
-   Settings:
-     LimsEndpoint: "https://lims.example.com/api"
-     AutoSubmit: true
-     IncludeQcMetrics: true
-
-External profiles are included in the JSON metadata export but do not generate
-sample sheet sections. Use them to:
-
-- Track which external pipelines should process the samples
-- Store pipeline configuration for downstream automation
-- Pass metadata to LIMS or workflow management systems
+External profiles are included in the JSON metadata export but do not
+generate sample sheet sections. Use them to track which external pipelines
+should process the samples, store pipeline configuration for downstream
+automation, or pass metadata to a LIMS or workflow manager.
 
 Validation
 ----------
 
-Profiles are validated when loaded from YAML files or synced from GitHub.
-
 Test Profile Validation
-~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 - All required fields must be present and non-empty
 - ``Version`` must be a valid PEP 440 version
 - ``ApplicationProfiles`` must be a non-empty list
-- Each application profile reference must have name and version
+- Each application profile reference must have a name and a version
+  constraint, and the constraint must itself be valid PEP 440
 
 Application Profile Validation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - All four required fields must be present and non-empty
 - ``ApplicationProfileVersion`` must be a valid PEP 440 version
-- If ``ApplicationType`` is ``Dragen``:
+- If ``ApplicationType`` is ``Dragen``: ``Settings`` and ``Data`` must be
+  present and be dicts, and ``DataFields`` must be present and be a list
 
-  - ``Settings`` must be present and be a dict
-  - ``Data`` must be present and be a dict
-  - ``DataFields`` must be present and be a list
+.. note::
+   These checks run when a profile file is pulled in by :ref:`Config Sync
+   <config-sync>`. A file that fails them is **not** imported, and does not
+   count towards the "N profiles synced" total on the Config Sync page --
+   but no per-file error is shown there either. The reason is only visible
+   on **Admin > Logs**, as a warning naming the file.
 
 Runtime Validation
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
 
-When validating a sequencing run, SeqSetup checks:
+When validating a sequencing run (see :doc:`/user-guide/validation`),
+SeqSetup checks:
 
 1. Test profiles exist for all samples with test IDs
 2. Referenced application profiles exist with compatible versions
@@ -324,58 +312,74 @@ When validating a sequencing run, SeqSetup checks:
 4. Software versions match instrument capabilities
 5. No version conflicts across samples in the same run
 
-Profile Storage
----------------
+.. _config-sync:
 
-Profiles can be stored in two locations:
+Bringing profiles in: Config Sync
+-------------------------------------
 
-**MongoDB**
-   Primary storage. Profiles synced from GitHub or created through the admin
-   interface are stored in the ``application_profiles`` and ``test_profiles``
-   collections.
+Application profiles and test profiles reach SeqSetup in exactly one way:
+synced in from a GitHub repository, from **Admin > Config Sync**. There is
+no form to create or edit a profile directly in the app -- write the YAML
+(the local files under ``config/profiles/`` in this repository are examples
+of the format to use), push it to your own repository, and sync.
 
-**YAML Files**
-   Local files in ``config/profiles/`` are loaded at startup:
+.. figure:: /_static/screenshots/admin/config-sync.png
+   :alt: The GitHub Config Sync form, with a repository URL and branch filled in and the Save Configuration button outlined.
 
-   - ``config/profiles/application_profiles/`` -- Application profile YAML files
-   - ``config/profiles/test_profiles/`` -- Test profile YAML files
+   The **Config Sync** form, with **Save Configuration** outlined.
 
-   Subdirectories are supported for organization (e.g.,
-   ``application_profiles/dragen/``, ``application_profiles/external/``).
+What one sync does
+~~~~~~~~~~~~~~~~~~~~~
 
-GitHub Sync
------------
+A sync (manual or scheduled) always does all of the following:
 
-Profiles can be automatically synced from a GitHub repository. Configure sync
-settings through the admin interface:
+- **Application profiles** and **test profiles** are fetched recursively
+  from their configured repository paths and **completely replace** what is
+  already stored -- every application and test profile not present in this
+  sync is gone afterwards, whether or not **Enable scheduled sync** is
+  checked.
+- **Instruments** and **index kits** are each synced only if their own
+  checkbox (**Also sync instruments** / **Also sync index kits**) is on.
+  Instruments are also replaced wholesale, but an instrument's **Enabled**
+  state (see :doc:`instruments`) is carried forward across the replace by
+  matching on its samplesheet name -- disabling one is not undone by the
+  next sync. Index kits keep any kit uploaded directly through the UI;
+  only previously *synced* kits are replaced.
+- As a safety net, a sync that would replace an existing, non-empty
+  collection with **zero** fetched items is refused rather than applied --
+  a misconfigured path or a network blip cannot wipe out reference data
+  that was already there.
 
-1. Navigate to **Settings > Profile Sync**
-2. Enter the GitHub repository URL and optional access token
-3. Specify the branch and paths to sync
-4. Enable automatic sync or trigger manually
+.. warning::
+   Syncing instruments changes what a **new** run can be set up on -- see
+   the warning on :doc:`instruments`. Syncing profiles or index kits does
+   not touch any existing run's own stored data, but it can change how that
+   run validates the *next* time it is checked (a profile version bump or
+   removal can turn a passing run into a failing one, or the reverse). A
+   run's already pre-generated exports (Ready or Archived) are not
+   regenerated by a sync -- only re-opening its validation, or moving it
+   through Ready again, sees the new definitions.
 
-The sync service pulls YAML files from the repository and updates MongoDB.
-Profiles are validated during sync; invalid profiles are rejected with error
-messages.
+Manual vs. scheduled
+~~~~~~~~~~~~~~~~~~~~~~~
 
-Directory Structure
+**Run Manual Sync** runs a sync immediately, regardless of the **Enable
+scheduled sync** checkbox -- that checkbox only controls the background
+scheduler described next.
+
+SeqSetup also syncs on a schedule, in a background thread that starts with
+the application and checks once a minute whether a sync is due. A scheduled
+sync runs only when **all** of these are true: **Enable scheduled sync** is
+checked, a **Repository URL** is configured, and at least **Sync Interval
+(minutes)** (1-1440, default 60) has passed since the last sync. With no
+repository configured -- the default -- nothing ever runs on its own.
+
+Both the interactive and the scheduled sync record an entry in the audit
+log.
+
+Who can do this
 -------------------
 
-Recommended organization for profile YAML files:
-
-.. code-block:: text
-
-   config/profiles/
-   ├── application_profiles/
-   │   ├── dragen/
-   │   │   ├── BCLConvertNextera.yaml
-   │   │   ├── DragenGermlineIdtWgs.yaml
-   │   │   ├── DragenSomaticIdt.yaml
-   │   │   └── DragenRnaIdt.yaml
-   │   └── external/
-   │       ├── CloudAnalysisPipeline.yaml
-   │       └── LimsExport.yaml
-   └── test_profiles/
-       ├── Wgs.yaml
-       ├── Exome.yaml
-       └── RnaSeq.yaml
+Viewing profiles, from **Settings > Profiles**, needs no special role.
+Configuring or triggering Config Sync, from **Admin > Config Sync**,
+requires the **Admin** role.

@@ -1,79 +1,82 @@
 Instrument Configuration
 ========================
 
-Supported sequencing instruments and their configurations are defined in
-``config/instruments.yaml``.
+SeqSetup ships a built-in list of Illumina instruments and their flowcells in
+``config/instruments.yaml`` -- read once at startup, and requiring a restart
+(or the ``INSTRUMENTS_CONFIG`` environment variable, to point at a different
+file) to change. This shipped list cannot be edited or individually disabled
+from the UI.
 
-Configuration Structure
------------------------
+**Admin > Instruments** lets an admin manage a *different*, additional set:
+instrument definitions synced in from GitHub (see :doc:`profiles`). Until at
+least one instrument has been synced, the page shows a note pointing at that
+fallback file instead of a management table -- there is nothing to enable or
+disable yet.
 
-Each instrument entry defines:
+.. figure:: /_static/screenshots/admin/instruments.png
+   :alt: The Synced Instruments table, with one instrument's Enabled checkbox outlined.
 
-- **Name** -- Display name (e.g., "NovaSeq X Series")
-- **Platform** -- Illumina platform identifier
-- **i5 read orientation** -- ``forward`` or ``reverse-complement``
-- **SBS chemistry** -- Chemistry type (``2-color`` or ``4-color``) and dye channel
-  configuration
-- **Flowcell types** -- List of supported flowcell types, each with:
+   The synced-instrument table, with one instrument's **Enabled** checkbox
+   outlined.
 
-  - Name and identifier
-  - Number of lanes
-  - Available reagent kits (with maximum cycle counts)
+.. warning::
+   Syncing instrument definitions is **not additive**. As soon as any
+   instrument has ever been synced, the New Run instrument dropdown offers
+   *only* the synced set -- ``config/instruments.yaml`` stops being
+   consulted for that dropdown entirely, even for instrument names the sync
+   never mentioned. If your synced repository defines only a subset of the
+   instruments your lab actually runs (say, just NovaSeq X Series), the rest
+   disappear from **New Run** the moment that sync completes, until they are
+   added to the synced set too. A run **already** using one of the
+   now-unlisted instruments is unaffected -- its own settings still resolve
+   correctly -- but nobody can start a *new* run on it until it is synced.
 
-Supported Instruments
----------------------
+Enabling and disabling
+--------------------------
 
-SeqSetup includes configurations for the following instruments:
+Once at least one instrument is synced, each row has its own **Enabled**
+checkbox; toggling it (or **Enable All** / **Disable All**) takes effect
+immediately, with no confirmation. A disabled instrument is not offered when
+setting up a new run, but a run already using it is unaffected.
 
-**Reverse-complement i5 instruments:**
+.. note::
+   Disabling and re-enabling an instrument survives a later sync: SeqSetup
+   matches the old and new instrument sets by their samplesheet name and
+   carries a disabled flag forward, rather than resetting everything back
+   to enabled.
 
-- NovaSeq X Series
-- NovaSeq 6000
-- HiSeq 4000
-- HiSeq X
+i5 Read Orientation and SBS Chemistry
+------------------------------------------
 
-**Forward i5 instruments:**
+Each instrument definition also carries the physical details SeqSetup needs
+to build a correct Sample Sheet:
 
-- MiSeq i100 Series
-- MiSeq (classic)
-- MiniSeq
-- NextSeq 1000/2000
-- NextSeq 500/550
+**i5 read orientation**
+   ``forward`` or ``reverse-complement``. SeqSetup always stores index
+   sequences in forward orientation; for a reverse-complement instrument, it
+   reverses the Index 2 override-cycles segment at export time (e.g.
+   ``I8N2`` becomes ``N2I8``) and lets BCL Convert handle the actual
+   sequence reverse-complementing.
 
-i5 Read Orientation
+**SBS chemistry**
+   ``2-color`` or ``4-color``. Two-color chemistry has a "dark" base with no
+   fluorescent signal, which is why SeqSetup runs a color-balance check for
+   those instruments (see :doc:`/user-guide/validation`) and does not for
+   four-color ones.
+
+.. warning::
+   A reagent kit's maximum total cycle count (Read 1 + Index 1 + Index 2 +
+   Read 2) is an **optional** field on an instrument definition
+   (``reagent_kit_max_cycles``), and the shipped
+   ``config/instruments.yaml`` sets it for **no instrument at all** -- so
+   the "too many cycles for this kit" check never fires unless an admin
+   syncs an instrument definition that supplies it. If your lab relies on
+   that check, it only ever exists after a GitHub sync brings in a
+   definition that sets it.
+
+Who can do this
 -------------------
 
-The i5 read orientation determines how the Index 2 sequence is processed:
-
-**Forward instruments** read the i5 index in the same orientation as entered.
-The i5 sequence in the sample sheet matches the stored sequence.
-
-**Reverse-complement instruments** read the i5 index in the opposite direction.
-SeqSetup handles this automatically:
-
-- Index sequences are always stored in forward orientation
-- At export time, the Index 2 override cycles segment is reversed for
-  reverse-complement instruments (e.g., ``I8N2`` becomes ``N2I8``)
-- BCLConvert handles the actual sequence reverse-complementing
-
-SBS Chemistry
--------------
-
-The SBS chemistry type affects color balance validation:
-
-**Two-color SBS** (XLEAP, Red/Green):
-   Used by most modern instruments. Two fluorescence channels detect bases, with one
-   base (G) being dark (no signal). Good color balance requires both channels to have
-   signal at every index position.
-
-**Four-color SBS:**
-   Each base has a distinct fluorescence signal. Color balance is not a concern.
-
-Customizing Instruments
------------------------
-
-To add or modify instruments, edit ``config/instruments.yaml``. The application reads
-this file on startup. Changes require a restart.
-
-The instrument configuration path can be overridden with the ``INSTRUMENTS_CONFIG``
-environment variable.
+Viewing and changing which synced instruments are enabled requires the
+**Admin** role. The shipped ``config/instruments.yaml`` file itself is
+edited on the server's filesystem, outside the application.
