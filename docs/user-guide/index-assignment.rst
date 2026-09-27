@@ -54,9 +54,10 @@ A unique-dual **pair** chip can be dropped on either the i7 or the i5
 target of a sample; either way it fills both. A single **i7** or **i5**
 chip (combinatorial or single-index kits) only fills the matching target
 and refuses the other one. Dropping a new index on a sample that already
-has one replaces it -- there is no separate button on this page to clear
-just the index; drag a different one on to replace it, or remove the
-whole sample to start over.
+has one does nothing -- once a cell holds an index, it is no longer a
+drop target. There is no button on this page to clear or replace an
+index either; the only way to change one is to remove the whole sample
+and add it again.
 
 You can do the same thing from the keyboard: press **Enter** or
 **Space** on an index chip to select it, then **Tab** to the sample's
@@ -66,7 +67,7 @@ drop target and press **Enter** or **Space** there to assign it.
 Selecting several indexes in order
 --------------------------------------
 
-To hand out a block of indexes in one move, select more than one: click
+To hand out a block of indexes in one move, select more than one: select
 the first index chip, then shift-click the last one you want -- everything
 between them (in the order the panel lists them) is selected together.
 Ctrl-click (Cmd-click on a Mac) adds or removes one chip at a time instead
@@ -82,8 +83,10 @@ first selected index goes to the sample you drop on, the next one to the
 row below it, and so on down the table -- filling that many rows starting
 from the drop target, in table order. If any of those rows already has an
 index it will be replaced, and if the table runs out of rows before the
-selection does, the extra indexes are left unused; either way SeqSetup
-asks you to confirm before going ahead.
+selection does, the extra indexes are left unused; SeqSetup asks you to
+confirm before going ahead only when one of those two things would
+actually happen. A drop that neither replaces an existing index nor
+leaves any index unused goes ahead immediately, with no confirmation.
 
 .. note::
    Ticking sample checkboxes (below) has no effect on a multi-index drag
@@ -104,15 +107,17 @@ what a *single*-index drop does:
    Ticked rows, outlined -- dropping one index anywhere among ticked rows
    gives every ticked sample that same index.
 
-Drop (or keyboard-assign) a single index chip onto a ticked row and
-SeqSetup gives that same index to every ticked sample, plus the one you
-dropped on -- not just the row under the drop target. Because two samples
-sharing an index in the same lane is exactly the kind of mistake this
-tool exists to prevent, it always asks first:
+Drop a single index chip onto a ticked row and SeqSetup gives that same
+index to every ticked sample, plus the one you dropped on -- not just the
+row under the drop target. Keyboard-assign does not do this: pressing
+**Enter** or **Space** on a drop target always assigns only to that one
+sample, ignoring any ticked rows.
 
 .. warning::
-   Before making the assignment, SeqSetup shows a confirmation dialog
-   reading exactly:
+   Because two samples sharing an index in the same lane is exactly the
+   kind of mistake this tool exists to prevent, a drag-and-drop that
+   would give the index to more than one sample asks first, showing a
+   confirmation dialog reading exactly:
 
    .. code-block:: text
 
@@ -121,10 +126,12 @@ tool exists to prevent, it always asks first:
       Samples in the same lane must not share an index.
 
    (``N`` is however many samples are ticked, including the drop target
-   if it was not already ticked.) Selecting Cancel leaves every sample
-   unchanged. Only tick rows you actually mean to give the same index to
-   -- and check the run afterward, since two samples in the same lane
-   with the same index is a real error, not just a warning here.
+   if it was not already ticked.) If the only ticked row is the one you
+   drop on, so exactly one sample would receive the index, SeqSetup skips
+   this dialog and assigns immediately. Selecting Cancel leaves every
+   sample unchanged. Only tick rows you actually mean to give the same
+   index to -- and check the run afterward, since two samples in the same
+   lane with the same index is a real error, not just a warning here.
 
 Filling empty samples in order
 ----------------------------------

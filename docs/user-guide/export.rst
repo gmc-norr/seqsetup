@@ -4,8 +4,8 @@ Export
 A Draft run cannot be downloaded. Before any file can leave SeqSetup, the
 run must be promoted to **Ready** -- which requires the **Check** panel
 (see :doc:`validation`) to show zero errors -- and every export is
-generated at that moment, once, from the run as it stood when you clicked
-**Mark Ready**.
+generated at that moment, once, from the run as it stood when you
+selected **Mark Ready**.
 
 Marking a run Ready
 ---------------------

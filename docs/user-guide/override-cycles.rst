@@ -63,13 +63,19 @@ stored, the cell looks the same whether SeqSetup calculated it or you
 typed it by hand -- only an empty cell means nothing is stored.
 
 .. warning::
-   Assigning or clearing a sample's index recalculates its Override
-   Cycles and *overwrites* whatever was stored before -- including a
-   value you typed by hand (see :doc:`index-assignment`). Re-dropping an
-   index on a sample that already has one has the same effect, even if
-   it is the same index as before. If you have set a manual Override
-   Cycles value for a reason (a UMI protocol, for example), re-check it
-   after any index change on that sample.
+   Assigning an index (by drag, keyboard, or the bulk panel) recalculates
+   a sample's Override Cycles and *overwrites* whatever was stored before
+   -- including a value you typed by hand (see :doc:`index-assignment`).
+   Re-dropping an index on a sample that already has one has the same
+   effect, even if it is the same index as before.
+
+   Clearing an index does **not** reliably do the same. Clearing i5 alone
+   leaves the stored Override Cycles completely untouched, so a segment
+   sized for an index that is now gone can be left behind silently.
+   Clearing i7 alone does the same unless the sample's i5 was already
+   empty too. If you have set a manual Override Cycles value, or an index
+   change leaves you unsure what is stored, check the cell (or select
+   **Auto** in the bulk panel) rather than assuming a clear reset it.
 
 Setting a value by hand
 -------------------------
@@ -140,10 +146,11 @@ whatever orientation that specific instrument's Sample Sheet format
 calls for -- which is not always the direction the instrument physically
 reads it in. On a NovaSeq X, the instrument this guide's screenshots
 use, that expected orientation happens to match the forward orientation
-you typed, so the Index 2 segment is exported unchanged. Other
-instruments do have their Index 2 segment reversed for export. If you
-need to know for certain what a specific instrument does, check the
-exported Sample Sheet itself (see :doc:`export`) rather than assuming.
+you typed, so the Index 2 segment is exported unchanged. Five of the
+other ten shipped instruments do have their Index 2 segment reversed for
+export, and five stay forward like NovaSeq X -- see :doc:`export` for
+which is which, or check the exported Sample Sheet itself rather than
+assuming.
 
 Global vs. per-sample in the exported sheet
 -----------------------------------------------

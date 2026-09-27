@@ -21,13 +21,15 @@ status -- Draft, Ready or Archived -- since a template only reads the run,
 it never changes it.
 
 .. note::
-   Saving as a template captures the run's setup only: instrument
-   platform, flowcell, reagent cycles, read and index cycle lengths,
-   barcode mismatch tolerances, adapter behavior and the FASTQ/lane-
-   splitting switches. It does **not** capture the run's samples, their
-   indexes, lanes, override cycles, or any per-sample analysis -- a run
-   made from a template today always starts with zero samples, no matter
-   how many the source run had.
+   Saving as a template captures the run's setup: instrument platform,
+   flowcell, reagent cycles, read and index cycle lengths, barcode
+   mismatch tolerances, adapter behavior and the FASTQ/lane-splitting
+   switches. A template can also hold a snapshot of samples (with their
+   assigned indexes) to pre-load into a new run made from it -- but this
+   page's **Save as template** box has no control for choosing any, so
+   saving from here always creates a template with zero samples; a run
+   made from a template saved this way today always starts with zero
+   samples, no matter how many the source run had.
 
 Managing templates
 -------------------
@@ -71,5 +73,6 @@ template exists; see :doc:`run-setup`.
    reagent-cycle count is no longer offered for that instrument, starting
    a run from it is refused with an error message naming what is missing,
    and nothing is created. This does not check the template's index kit --
-   a template never stores samples, so there is no index kit reference to
+   any samples a template carries store their index sequences directly
+   rather than a reference to a kit, so there is no kit availability to
    check.

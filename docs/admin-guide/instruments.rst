@@ -68,11 +68,21 @@ Each instrument definition also carries the physical details SeqSetup needs
 to build a correct Sample Sheet:
 
 **i5 read orientation**
-   ``forward`` or ``reverse-complement``. SeqSetup always stores index
-   sequences in forward orientation; for a reverse-complement instrument, it
-   reverses the Index 2 override-cycles segment at export time (e.g.
-   ``I8N2`` becomes ``N2I8``) and lets BCL Convert handle the actual
-   sequence reverse-complementing.
+   ``forward`` or ``reverse-complement`` -- the direction this instrument
+   physically reads the i5 index.
+
+**Sample Sheet v2 i5 orientation**
+   ``forward`` or ``reverse-complement`` -- a separate field that decides
+   what SeqSetup actually writes for Sample Sheet v2 (falling back to i5
+   read orientation when not set explicitly), and it can disagree with
+   the physical direction above: NovaSeq X Series physically reads i5 as
+   reverse-complement, but its Sample Sheet v2 i5 orientation is
+   ``forward``, so nothing is flipped for it. When this field is
+   ``reverse-complement``, SeqSetup itself reverses the Index 2
+   override-cycles segment (e.g. ``I8N2`` becomes ``N2I8``) and writes
+   the i5 sequence already reverse-complemented -- it does not rely on
+   BCL Convert to do either. See :doc:`/user-guide/export` for which
+   shipped instruments this applies to.
 
 **SBS chemistry**
    ``2-color`` or ``4-color``. Two-color chemistry has a "dark" base with no

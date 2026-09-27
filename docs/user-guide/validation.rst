@@ -70,7 +70,7 @@ Color balance
 --------------
 
 Illumina two-color chemistry instruments (NovaSeq X, NextSeq, MiSeq i100,
-and others) need signal in at least one of two fluorescence channels at
+and others) need signal in both of the two fluorescence channels at
 every sequencing cycle to keep base-calling and cluster-finding on track.
 The **Color Balance** tab checks this at every position of every index
 read, across all the indexed samples in a lane at once:
