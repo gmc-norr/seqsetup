@@ -3,7 +3,7 @@
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from .sheet_text import PLAIN_NAME_RE
+from .sheet_text import PLAIN_NAME_RE, describe, hidden_characters
 
 
 class ProfileValidationError(Exception):
@@ -82,6 +82,20 @@ def validate_test_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
         raise ProfileValidationError(errors, source_file)
 
 
+def _hidden_in(value) -> list[str]:
+    """The distinct hidden characters anywhere in a YAML value, looking
+    inside nested lists and mappings (keys included)."""
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        parts = [c for k, v in value.items() for c in _hidden_in(k) + _hidden_in(v)]
+    elif isinstance(value, list):
+        parts = [c for item in value for c in _hidden_in(item)]
+    else:
+        parts = hidden_characters(str(value))
+    return list(dict.fromkeys(parts))
+
+
 def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
     """Validate application profile YAML data.
 
@@ -120,6 +134,25 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
             "Field 'ApplicationName' may only contain letters, digits, '_' and '-': "
             f"{str(app_name)!r}"
         )
+
+    # Settings, Data, DataFields and Translate are written into the Sample
+    # Sheet as cells. A quoted line break still starts a new line for a
+    # line-oriented reader, so no hidden character is allowed in them.
+    for field in ("Settings", "Data", "DataFields", "Translate"):
+        value = yaml_data.get(field)
+        if isinstance(value, dict):
+            entries = [(key, {key: item}) for key, item in value.items()]
+        elif isinstance(value, list):
+            entries = [(item, item) for item in value]
+        else:
+            continue
+        for where, part in entries:
+            chars = _hidden_in(part)
+            if chars:
+                errors.append(
+                    f"Field '{field}' has a hidden character in {str(where)!r}: "
+                    f"{describe(chars)}"
+                )
 
     # Validate ApplicationProfileVersion is PEP 440 compliant
     version_val = yaml_data.get("ApplicationProfileVersion")

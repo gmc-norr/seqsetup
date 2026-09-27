@@ -1077,3 +1077,76 @@ class TestSheetTextGuards:
 
         assert "InstrumentPlatform,NovaSeqXSeries" in output
         assert "SoftwareVersion,4.3.6" in output
+
+
+def _export_with_profile(settings, data, data_fields, translate, **sample_fields):
+    """Export one indexed sample through a profile-driven section."""
+    run = SequencingRun(
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8),
+        samples=[Sample(
+            sample_id="S1",
+            test_id="WGS",
+            index_pair=IndexPair(
+                id="p1", name="p1",
+                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+            ),
+            **sample_fields,
+        )],
+    )
+    app_profile = ApplicationProfile(
+        name="P", version="1.0.0", application_type="Custom",
+        application_name="BCLConvert",
+        settings=settings, data_fields=data_fields, data=data, translate=translate,
+    )
+    tp = TestProfile(
+        test_type="WGS", test_name="WGS", version="1.0.0",
+        application_profiles=[ApplicationProfileReference(profile_name="P", profile_version="1.0.0")],
+    )
+    return SampleSheetV2Exporter.export(
+        run,
+        _StubTestProfileRepo({"WGS": tp}),
+        _StubAppProfileRepo({("P", "1.0.0"): app_profile}),
+    )
+
+
+class TestProfileCellGuard:
+    """Cells taken from an application profile refuse every hidden character,
+    line breaks and tab included: quoting a line break still leaves a new line
+    for a line-oriented reader."""
+
+    FIELDS = ["Sample_ID", "Index", "Index2", "Extra"]
+
+    @pytest.mark.parametrize("settings,data,fields,translate", [
+        pytest.param({"SoftwareVersion": "4.3.6\n[Junk]"}, {"Extra": "x"}, FIELDS, {}, id="setting-value"),
+        pytest.param({"Soft\nware": "4.3.6"}, {"Extra": "x"}, FIELDS, {}, id="setting-key"),
+        pytest.param({}, {"Extra": "x\ny"}, FIELDS, {}, id="data-default"),
+        pytest.param({}, {"Extra": "x"}, FIELDS, {"Extra": "Ex\ntra"}, id="column-name"),
+    ])
+    def test_line_break_in_profile_cell_is_refused(self, settings, data, fields, translate):
+        with pytest.raises(ValueError, match="U\\+000A"):
+            _export_with_profile(settings, data, fields, translate)
+
+    def test_line_break_in_mismatch_default_is_refused(self):
+        """The profile's BarcodeMismatches default is used when the sample
+        has no value of its own."""
+        with pytest.raises(ValueError, match="U\\+000A"):
+            _export_with_profile(
+                {}, {"BarcodeMismatchesIndex1": "1\n"}, ["Sample_ID", "BarcodeMismatchesIndex1"], {},
+                barcode_mismatches_index1=None,
+            )
+
+    def test_tab_in_profile_cell_is_refused(self):
+        with pytest.raises(ValueError, match="U\\+0009"):
+            _export_with_profile({}, {"Extra": "x\ty"}, self.FIELDS, {})
+
+    def test_plain_profile_cells_are_written(self):
+        output = _export_with_profile(
+            {"SoftwareVersion": "4.3.6"}, {"Extra": "x,y"}, self.FIELDS, {}
+        )
+
+        assert "SoftwareVersion,4.3.6" in output.split("\n")
+        assert "Sample_ID,Index,Index2,Extra" in output.split("\n")
+        assert 'S1,ATTACTCG,TATAGCCT,"x,y"' in output.split("\n")

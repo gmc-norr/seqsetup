@@ -361,3 +361,59 @@ class TestApplicationNameCharacters:
     @pytest.mark.parametrize("name", ["BCLConvert", "DragenGermline", "Custom_App-2"])
     def test_plain_application_name_is_accepted(self, name):
         validate_application_profile_yaml({**self.BASE, "ApplicationName": name})
+
+
+class TestProfileValuesHiddenCharacters:
+    """Settings, Data, DataFields and Translate are written into the Sample
+    Sheet as cells. A quoted line break still starts a new line for a
+    line-oriented reader, so no hidden character is allowed in them."""
+
+    BASE = {
+        "ApplicationProfileName": "P",
+        "ApplicationProfileVersion": "1.0.0",
+        "ApplicationName": "BCLConvert",
+        "ApplicationType": "Custom",
+        "Settings": {"SoftwareVersion": "4.3.6"},
+        "Data": {"Extra": "x"},
+        "DataFields": ["Sample_ID", "Index", "Extra"],
+        "Translate": {"IndexI7": "Index"},
+    }
+
+    @pytest.mark.parametrize("char", [
+        pytest.param("\n", id="LF"),
+        pytest.param("\r", id="CR"),
+        pytest.param("\t", id="TAB"),
+        pytest.param("\x00", id="NUL"),
+        pytest.param(" ", id="LINE-SEPARATOR"),
+    ])
+    @pytest.mark.parametrize("field,make", [
+        pytest.param("Settings", lambda c: {"SoftwareVersion": f"4.3.6{c}[Junk]"}, id="settings-value"),
+        pytest.param("Settings", lambda c: {f"Soft{c}ware": "4.3.6"}, id="settings-key"),
+        pytest.param("Data", lambda c: {"Extra": f"x{c}y"}, id="data-value"),
+        pytest.param("Data", lambda c: {"Extra": {"nested": [f"x{c}y"]}}, id="data-nested"),
+        pytest.param("DataFields", lambda c: ["Sample_ID", f"Ex{c}tra"], id="datafields"),
+        pytest.param("Translate", lambda c: {"IndexI7": f"Ind{c}ex"}, id="translate-value"),
+        pytest.param("Translate", lambda c: {f"Index{c}I7": "Index"}, id="translate-key"),
+    ])
+    def test_hidden_character_in_profile_values_is_refused(self, field, make, char):
+        with pytest.raises(ProfileValidationError, match=f"Field '{field}' has a hidden character"):
+            validate_application_profile_yaml({**self.BASE, field: make(char)})
+
+    def test_dragen_profile_is_checked_too(self):
+        data = {
+            **self.BASE,
+            "ApplicationType": "Dragen",
+            "Settings": {"SoftwareVersion": "4.3.6\n[BCLConvert_Data]"},
+        }
+        with pytest.raises(ProfileValidationError, match="U\\+000A"):
+            validate_application_profile_yaml(data)
+
+    def test_plain_values_are_accepted(self):
+        validate_application_profile_yaml(self.BASE)
+
+    def test_numbers_booleans_and_empty_values_are_accepted(self):
+        validate_application_profile_yaml({
+            **self.BASE,
+            "Settings": {"Threads": 8, "Trim": True, "Empty": None},
+            "Data": {"Extra": 1.5},
+        })

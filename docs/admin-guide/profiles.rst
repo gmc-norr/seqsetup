@@ -303,6 +303,10 @@ Application Profile Validation
 - ``ApplicationName`` may only contain letters, digits, ``_`` and ``-`` --
   it becomes a section name in the Sample Sheet (``[<name>_Settings]``),
   written exactly as given
+- ``Settings``, ``Data``, ``DataFields`` and ``Translate`` may not hold a
+  hidden character anywhere -- no line break, tab or other invisible
+  control character, in a key or a value. They are written into the Sample
+  Sheet as cells, and a line break there would start a new line in it
 - If ``ApplicationType`` is ``Dragen``: ``Settings`` and ``Data`` must be
   present and be dicts, and ``DataFields`` must be present and be a list
 

@@ -29,6 +29,17 @@ def hidden_characters(text: str | None) -> list[str]:
     ]
 
 
+def refuse_hidden_characters(value: str, allow: str = "") -> None:
+    """Raise ``ValueError`` if ``value`` holds a hidden character that is not
+    in ``allow``. The message names the character codes only — the text can
+    be patient data, and the error is logged."""
+    bad = [c for c in hidden_characters(value) if c not in allow]
+    if bad:
+        raise ValueError(
+            f"Hidden character ({describe(bad)}) cannot be written to the Sample Sheet"
+        )
+
+
 def describe(chars: list[str]) -> str:
     """Character codes for a message: ``'U+0000, U+0009 (tab)'``."""
     parts = []

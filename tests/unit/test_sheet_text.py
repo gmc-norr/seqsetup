@@ -7,6 +7,7 @@ from seqsetup.services.sheet_text import (
     PLAIN_VERSION_RE,
     describe,
     hidden_characters,
+    refuse_hidden_characters,
 )
 
 
@@ -62,3 +63,28 @@ class TestDescribe:
 
     def test_codes_with_tab_named(self):
         assert describe(["\x00", "\t", " "]) == "U+0000, U+0009 (tab), U+2028"
+
+
+class TestRefuseHiddenCharacters:
+    """One place raises the error for text that may not reach the sheet."""
+
+    @pytest.mark.parametrize("char", ["\n", "\r", "\t", "\x00", "\u2028"])
+    def test_refuses_every_hidden_character_by_default(self, char):
+        with pytest.raises(ValueError, match=f"U\\+{ord(char):04X}"):
+            refuse_hidden_characters(f"a{char}b")
+
+    def test_allowed_characters_pass(self):
+        refuse_hidden_characters("a\tb\nc\rd", allow="\t\n\r")
+
+    def test_other_characters_still_refused_when_some_are_allowed(self):
+        with pytest.raises(ValueError, match="U\\+0000"):
+            refuse_hidden_characters("a\tb\x00", allow="\t\n\r")
+
+    def test_message_names_codes_not_the_text(self):
+        with pytest.raises(ValueError) as exc:
+            refuse_hidden_characters("Patient-Name\x00X")
+        assert "Patient-Name" not in str(exc.value)
+        assert str(exc.value) == "Hidden character (U+0000) cannot be written to the Sample Sheet"
+
+    def test_visible_text_passes(self):
+        refuse_hidden_characters("Åsa Öberg, 2 × 150")

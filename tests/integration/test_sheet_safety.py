@@ -93,7 +93,7 @@ class TestMarkReadyRefusesHiddenCharacters:
         assert ctx.run_repo.get_by_id(run_id).status.value == "ready"
 
 
-def _seed_synced_profile(ctx, app_name: str) -> None:
+def _seed_synced_profile(ctx, app_name: str, settings: dict | None = None) -> None:
     """What a config sync stores, written straight to the database so the
     sync validator is bypassed. The synced instrument lists the same
     application, so the existing app_not_available check passes and Mark
@@ -103,7 +103,7 @@ def _seed_synced_profile(ctx, app_name: str) -> None:
         version="1.0",
         application_type="Dragen",
         application_name=app_name,
-        settings={"SoftwareVersion": "4.3.6"},
+        settings=settings if settings is not None else {"SoftwareVersion": "4.3.6"},
         data={},
         data_fields=["Sample_ID", "Index", "Index2"],
         translate={},
@@ -148,6 +148,31 @@ class TestExportGuardStopsBadSyncedNames:
         try:
             _seed_synced_profile(ctx, "Evil\n[Junk")
             run_id = _seed_draft(ctx, "guard-appname", test_id="GUARD_T")
+            _assert_validation_passes(ctx, run_id)
+
+            resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+            assert resp.status_code == 500
+            assert "Failed to generate exports" in resp.text
+            run = ctx.run_repo.get_by_id(run_id)
+            assert run.status.value == "draft"
+            assert run.generated_samplesheet_v2 is None
+        finally:
+            instruments_module.clear_synced_instruments_cache()
+            clear_validation_cache()
+
+    def test_line_break_in_synced_setting_stops_mark_ready(self, logged_in_client, fresh_app):
+        """A quoted line break in a synced profile Setting would still start
+        a new line in the sheet (found by the review)."""
+        _app, ctx, _db = fresh_app
+        try:
+            # SoftwareVersion stays valid: the application-profile check
+            # compares it with the instrument's version.
+            _seed_synced_profile(ctx, "GuardApp", settings={
+                "SoftwareVersion": "4.3.6",
+                "FastqCompressionFormat": "gzip\n[BCLConvert_Data]",
+            })
+            run_id = _seed_draft(ctx, "guard-setting", test_id="GUARD_T")
             _assert_validation_passes(ctx, run_id)
 
             resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)

@@ -12,7 +12,7 @@ from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .samplesheet_v1_exporter import _PLAIN_IDENTIFIER_RE, _reverse_complement
-from .sheet_text import PLAIN_NAME_RE, PLAIN_VERSION_RE, describe, hidden_characters
+from .sheet_text import PLAIN_NAME_RE, PLAIN_VERSION_RE, refuse_hidden_characters
 
 if TYPE_CHECKING:
     from ..repositories.test_profile_repo import TestProfileRepository
@@ -415,11 +415,7 @@ class SampleSheetV2Exporter:
            refuses them first; this is the backstop. The error names the
            character codes only — the text can be patient data.
         """
-        unsafe = [c for c in hidden_characters(value) if c not in "\t\n\r"]
-        if unsafe:
-            raise ValueError(
-                f"Hidden character ({describe(unsafe)}) cannot be written to the Sample Sheet"
-            )
+        refuse_hidden_characters(value, allow="\t\n\r")
         if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
             value = "'" + value
         if "," in value or '"' in value or "\n" in value or "\r" in value:
@@ -436,6 +432,16 @@ class SampleSheetV2Exporter:
         if value and _PLAIN_IDENTIFIER_RE.fullmatch(value):
             return value
         return cls._escape_csv(value)
+
+    @classmethod
+    def _escape_config_cell(cls, value) -> str:
+        """Escape a cell taken from an application profile (a setting, a
+        column name, a default value). Quoting a line break still leaves a
+        new line for a line-oriented reader, so every hidden character —
+        tab and line breaks included — is refused before ``_escape_csv``."""
+        text = str(value)
+        refuse_hidden_characters(text)
+        return cls._escape_csv(text)
 
     @classmethod
     def _require_plain(cls, value: str, pattern, what: str) -> str:
@@ -535,7 +541,7 @@ class SampleSheetV2Exporter:
 
         for key, value in profile.settings.items():
             output.write(
-                f"{cls._escape_csv(str(key))},{cls._escape_csv(str(value))}\n"
+                f"{cls._escape_config_cell(key)},{cls._escape_config_cell(value)}\n"
             )
         output.write("\n")
 
@@ -554,7 +560,7 @@ class SampleSheetV2Exporter:
         columns = [(field, translate.get(field, field)) for field in data_fields]
 
         # Write header row — escape admin-defined column names defensively.
-        output.write(",".join(cls._escape_csv(str(col)) for _, col in columns) + "\n")
+        output.write(",".join(cls._escape_config_cell(col) for _, col in columns) + "\n")
 
         # BCLConvert: one row per (sample, lane), as in _write_bclconvert_data —
         # writing only the first lane would send the other lanes' reads to
@@ -589,13 +595,13 @@ class SampleSheetV2Exporter:
                     val = sample.barcode_mismatches_index1
                     row.append(
                         str(val) if val is not None
-                        else cls._escape_csv(str(profile.data.get(field, "")))
+                        else cls._escape_config_cell(profile.data.get(field, ""))
                     )
                 elif col == "BarcodeMismatchesIndex2":
                     val = sample.barcode_mismatches_index2
                     row.append(
                         str(val) if val is not None
-                        else cls._escape_csv(str(profile.data.get(field, "")))
+                        else cls._escape_config_cell(profile.data.get(field, ""))
                     )
                 elif col == "OverrideCycles":
                     # Use sample's override cycles, or calculate from index lengths.
@@ -610,7 +616,7 @@ class SampleSheetV2Exporter:
                     row.append(cls._escape_csv(oc or ""))
                 else:
                     # Use default value from profile data
-                    row.append(cls._escape_csv(str(profile.data.get(field, ""))))
+                    row.append(cls._escape_config_cell(profile.data.get(field, "")))
             output.write(",".join(row) + "\n")
 
         output.write("\n")
