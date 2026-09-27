@@ -838,3 +838,168 @@ def test_history_change_history(demo_page, base_url, demo):
     page.wait_for_selector(".run-history-panel .border-t")
     fieldset = page.locator("fieldset:has(.run-history-panel)")
     snap(page, "history/change-history", panel, region=fieldset)
+
+
+# ---------------------------------------------------------------------------
+# Admin: local users, authentication, API tokens, and application logs.
+# ---------------------------------------------------------------------------
+
+
+def test_admin_users_list(demo_page, base_url, demo):
+    page = demo_page
+    # local_users.router is admin-only (routes/local_users.py:36-39); the
+    # create form posts to /admin/users/create (routes/local_users.py:118),
+    # which swaps the whole #local-users-page (local_users.html:23-26).
+    page.goto(f"{base_url}/admin/users")
+    page.fill("#new_username", "taylor.audit")
+    page.fill("#new_display_name", "Taylor Audit")
+    page.fill("#new_email", "taylor.audit@example.org")
+    page.fill("#new_password", "Taylor-Docs-2026!")
+    page.get_by_role("button", name="Create User").click()
+    # user-row-{{ username }} (local_users.html:86) contains a literal '.',
+    # which an ID selector would misparse as a class -- use an attribute
+    # selector instead.
+    row = page.locator('tr[id="user-row-taylor.audit"]')
+    row.wait_for()
+    table = page.locator("table:has(tr[id='user-row-taylor.audit'])")
+    snap(page, "admin/users-list", row.get_by_role("button", name="Edit"), region=table)
+
+
+def test_admin_user_edit(demo_page, base_url, demo):
+    page = demo_page
+    # Fresh page/session per test (demo_page is function-scoped) -- the user
+    # created above persists in the shared demo world's database.
+    page.goto(f"{base_url}/admin/users")
+    row = page.locator('tr[id="user-row-taylor.audit"]')
+    row.get_by_role("button", name="Edit").click()
+    # editing=true is a client-side Alpine toggle within the same <tr>
+    # (local_users.html:86,107-113) -- no network round trip, so wait on
+    # the now-visible role <select> rather than assuming the click landed.
+    role_select = row.locator("select[name='role']")
+    role_select.wait_for(state="visible")
+    snap(page, "admin/user-edit", row.get_by_role("button", name="Save"), region=row)
+
+
+def test_admin_auth_settings(demo_page, base_url, demo):
+    page = demo_page
+    # admin_authentication.router is admin-only (routes/admin/
+    # authentication.py:54-57). Selecting LDAP auto-saves via hx-post
+    # (authentication.html:26-36) and swaps in the whole #ldap-config-form,
+    # which now reveals the LDAP connection fieldset (routes/admin/
+    # authentication.py:133-159; authentication.html:57-63).
+    page.goto(f"{base_url}/admin/authentication")
+    page.check("#auth_method_ldap")
+    # The connection-settings heading exists ONLY after the swap reveals it
+    # -- a stronger wait than the radio's own `checked` state, which is
+    # already true before the network round trip completes.
+    page.wait_for_selector("h3:has-text('LDAP/AD Connection Settings')")
+    fieldset = page.locator("fieldset", has_text="Authentication Method")
+    snap(page, "admin/auth-settings",
+         fieldset.locator("label:has(input[name='allow_local_fallback'])"),
+         region=fieldset)
+
+
+def test_admin_api_tokens(demo_page, base_url, demo):
+    page = demo_page
+    # api_tokens.router is admin-only (routes/api_tokens.py:35-38). No
+    # token is seeded by docs_world.seed_demo, so this is the true empty
+    # state; the form is filled in but not submitted, so it stays empty
+    # for this test only.
+    page.goto(f"{base_url}/admin/api-tokens")
+    fieldset = page.locator("fieldset", has_text="Create New Token")
+    fieldset.locator("#token_name").fill("Docs LIMS Reader")
+    snap(page, "admin/api-tokens", fieldset.get_by_role("button", name="Create Token"),
+         region=fieldset)
+
+
+def test_admin_api_token_created(demo_page, base_url, demo):
+    page = demo_page
+    # create_api_token (routes/api_tokens.py:72-118) returns the plaintext
+    # ONLY in this response -- new_token is always "" on a plain GET
+    # (routes/api_tokens.py:65) -- so the reveal has to be captured in the
+    # same request/response as the create, not a fresh page load.
+    page.goto(f"{base_url}/admin/api-tokens")
+    page.fill("#token_name", "Docs LIMS Reader")
+    page.get_by_role("button", name="Create Token").click()
+    reveal = page.locator("div.bg-amber-50", has_text="Token Created")
+    reveal.wait_for()
+    snap(page, "admin/api-token-created", reveal)
+
+
+@contextmanager
+def _logs_table_unclipped(page):
+    """.table-scroll's overflow-x:auto (components.css:3626) computes
+    overflow-y to auto too, clipping the outline on any descendant flush
+    with its box -- the same mechanism as _sample_section_unclipped above.
+    The entries <table> sits directly inside it with no padding, so every
+    row is flush against its left/right edges. Neutralise for the moment
+    of capture only, the same way shoot() itself neutralises the outline
+    style: set + revert an inline style, no src/ or docs_shots.py change."""
+    wrap = page.locator("#logs-page .table-scroll")
+    previous = wrap.evaluate(
+        "(e) => { const old = e.style.overflow; e.style.overflow = 'visible'; return old; }"
+    )
+    try:
+        yield
+    finally:
+        wrap.evaluate("(e, old) => { e.style.overflow = old; }", previous)
+
+
+def test_admin_logs(demo_page, base_url, demo):
+    page = demo_page
+    # admin_logs.router is admin-only (routes/admin/logs.py:27-30).
+    #
+    # Verified directly (python -c against this same environment): the
+    # "seqsetup" logger has no level of its own (NOTSET) and nothing in
+    # src/seqsetup ever raises it or root above Python's built-in WARNING
+    # default -- setup_log_capture (app.py:132) sets the HANDLER's level to
+    # DEBUG (log_capture.py:193), but a logger's OWN effective level is
+    # checked first. Every audit() call is logged at INFO
+    # (services/audit_log.py:60), so in this default configuration NONE of
+    # it -- not logins, not user/token changes -- ever reaches this buffer;
+    # confirmed empirically too: after the ~44 prior tests in this module
+    # (logins, user/token/LDAP-config changes, validations...), the page's
+    # own stats panel reads "Total: 0". Relying on an audit entry for this
+    # picture would therefore be demonstrating something the shipped app
+    # does not actually do -- see the App oddities note in the task report.
+    #
+    # A real WARNING-level event that DOES pass the default threshold:
+    # OriginCheckMiddleware (csrf.py:96-135) rejects any POST/PUT/PATCH/
+    # DELETE with no Origin header, logging the rejection at WARNING
+    # (csrf.py:130) before the request ever reaches routing -- so the path
+    # doesn't need to exist. Playwright's request client (unlike a real
+    # browser fetch) sends no Origin header, so this POST is rejected for
+    # exactly that reason, producing one genuine, safe log line with no
+    # secret or patient-like content in it.
+    probe_path = "/admin/csrf-probe-for-docs"
+    resp = page.request.post(f"{base_url}{probe_path}")
+    assert resp.status == 403
+
+    page.goto(f"{base_url}/admin/logs")
+    page.select_option("#level", "WARNING")
+    page.fill("#search", probe_path)
+    page.get_by_role("button", name="Filter").click()
+    # Waiting merely for a row containing this text would be satisfied by
+    # the PRE-filter page too, if it were already within the default
+    # unfiltered view -- wait instead for the row COUNT to drop to exactly
+    # the one match, which only the filtered result can satisfy.
+    page.wait_for_function(
+        "document.querySelectorAll('#logs-page tbody tr').length === 1"
+    )
+    row = page.locator("#logs-page tbody tr").filter(has_text=probe_path)
+    with _logs_table_unclipped(page):
+        snap(page, "admin/logs", row, region=page.locator("#logs-page .table-scroll"))
+
+    # Behavioural check (not a picture): does Refresh (logs.html:64-68,
+    # hx-get with no explicit hx-include) keep the applied filters, or
+    # clear them? htmx's documented default is to include the closest
+    # enclosing <form>'s inputs even without hx-include, and this button
+    # sits inside the same <form> as #level/#search -- confirm that here
+    # rather than assuming.
+    page.get_by_role("button", name="Refresh").click()
+    page.wait_for_selector("#logs-page .table-scroll")
+    refreshed_rows = page.locator("#logs-page tbody tr").count()
+    assert refreshed_rows == 1, (
+        "Refresh was expected to keep the current filters (htmx's closest-form "
+        f"default), but the row count changed to {refreshed_rows}"
+    )
