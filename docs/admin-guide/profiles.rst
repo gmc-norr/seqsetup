@@ -18,9 +18,10 @@ The profile system consists of two types:
    application pipelines in the sample sheet.
 
 **Application Profiles**
-   Define analysis pipeline configurations. These can be DRAGEN
-   on-instrument pipelines (generating sample sheet sections) or external
-   pipelines (metadata only, processed outside the sequencer).
+   Define analysis pipeline configurations -- for on-instrument DRAGEN
+   pipelines, cloud pipelines, or external tools. All of them generate
+   sample sheet sections the same way; none of them appear in the JSON
+   metadata export.
 
 Test Profiles
 -------------
@@ -90,13 +91,17 @@ Application Profiles
 ---------------------
 
 Application profiles define analysis pipeline configurations. SeqSetup
-supports two types:
+does not treat the ``ApplicationType`` field specially when writing the
+Sample Sheet: **every** application profile referenced by a sample's test
+profile writes an ``[AppName_Settings]`` / ``[AppName_Data]`` pair into
+the instrument-facing Sample Sheet, named after whatever
+``ApplicationName`` the profile declares -- whether ``ApplicationType`` is
+``Dragen`` (BCLConvert, DragenGermline, DragenSomatic, etc.), ``Cloud``,
+``External``, or anything else. ``ApplicationType`` is free-form,
+informational text; it does not control what gets exported.
 
-1. **DRAGEN profiles** -- Generate sample sheet sections for on-instrument
-   analysis (BCLConvert, DragenGermline, DragenSomatic, etc.)
-
-2. **External profiles** -- Define metadata for pipelines run outside the
-   sequencer (bioinformatics workflows, cloud pipelines, custom tools)
+Application and test profile data is never included in the JSON metadata
+export, regardless of ``ApplicationType``.
 
 Required Fields (All Profiles)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -121,7 +126,8 @@ These fields are required for all application profiles regardless of type:
      - Application identifier (e.g., ``DragenGermline``, ``CustomPipeline``)
    * - ``ApplicationType``
      - string
-     - Profile type: ``Dragen`` for on-instrument, any other value for external
+     - Free-form label describing how the pipeline runs (e.g. ``Dragen``,
+       ``Cloud``, ``External``) -- does not change what gets exported
 
 DRAGEN Profile Fields
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -228,7 +234,8 @@ used to store pipeline-specific configuration:
      - Optional. Default values for sample-level fields
    * - ``DataFields``
      - list
-     - Optional. Field names to include in JSON export
+     - Optional. Field names to include as columns in this profile's
+       ``[AppName_Data]`` Sample Sheet section
 
 Example External Profiles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -268,10 +275,13 @@ Example External Profiles
      - AnalysisMode
      - ReferenceGenome
 
-External profiles are included in the JSON metadata export but do not
-generate sample sheet sections. Use them to track which external pipelines
-should process the samples, store pipeline configuration for downstream
-automation, or pass metadata to a LIMS or workflow manager.
+External profiles generate sample sheet sections exactly like DRAGEN
+profiles do -- an ``[AppName_Settings]`` / ``[AppName_Data]`` pair, named
+after the profile's ``ApplicationName`` -- and are not included in the
+JSON metadata export. Use them to track which external pipelines should
+process which samples, and to carry the settings and per-sample data those
+pipelines need directly into the Sample Sheet for a downstream tool to
+read.
 
 Validation
 ----------

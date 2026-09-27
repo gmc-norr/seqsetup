@@ -38,9 +38,12 @@ The generated SampleSheet v2 contains the following sections:
 
 - ``[Header]`` -- Run metadata and instrument platform
 - ``[Reads]`` -- Cycle counts for all read and index segments
-- ``[BCLConvert_Settings]`` -- Demultiplexing configuration
-- ``[BCLConvert_Data]`` -- Per-sample index and lane assignments
-- DRAGEN pipeline sections (if configured)
+- One ``[AppName_Settings]`` / ``[AppName_Data]`` pair per application
+  profile a sample's Test ID resolves to (e.g. ``[BCLConvert_Settings]`` /
+  ``[BCLConvert_Data]``, ``[DragenGermline_Settings]`` /
+  ``[DragenGermline_Data]``) -- absent entirely if no sample's Test ID
+  resolves to one
+- ``[Cloud_Settings]`` / ``[Cloud_Data]`` -- always written
 
 For details on the SampleSheet format, see
 :doc:`/architecture/samplesheet-format`.
@@ -141,22 +144,14 @@ Status Meaning
          "metadata": {}
        }
      ],
-     "index_kits": [
-       {
-         "name": "IDT for Illumina DNA/RNA UD Indexes",
-         "version": "1.0.0",
-         "description": "96 unique dual index pairs",
-         "index_count": 96,
-         "is_fixed_layout": true,
-         "index_pairs": ["..."]
-       }
-     ],
      "analyses": []
    }
 
-The JSON export includes all metadata for the run, including information
-not representable in the SampleSheet v2 format (e.g., test identifiers,
-index kit details, detailed sample metadata).
+The JSON export includes information not representable in the SampleSheet
+v2 format, such as sample names, projects, descriptions, and free-form
+metadata. It does **not** include a sample's Test ID, its index kit name,
+per-sample barcode-mismatch overrides, or any user/timestamp tracking for
+the run -- those fields are not serialized.
 
 Export Validation Report (JSON)
 -------------------------------
@@ -223,13 +218,13 @@ Differences Between Formats
      - Yes
    * - Index kit metadata
      - No
-     - Yes
+     - No
    * - Sample metadata and descriptions
      - No
      - Yes
    * - Timestamps and user tracking
      - No
-     - Yes
+     - No
    * - Run UUID for traceability
      - Yes (in header)
      - Yes

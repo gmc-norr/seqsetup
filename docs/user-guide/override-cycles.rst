@@ -155,9 +155,9 @@ assuming.
 Global vs. per-sample in the exported sheet
 -----------------------------------------------
 
-When every sample in the run ends up with the same effective Override
-Cycles, SeqSetup writes it once, for the whole run. As soon as samples
-differ from each other, each sample's own value is written per-row in
-the exported data instead. Either way, the value used is the one
-described above: what is stored on the sample if anything is, otherwise
-the calculated one.
+The exported Sample Sheet writes each sample's Override Cycles on its own
+row, in the application's ``_Data`` section (see :doc:`export`) -- always
+per sample, never as a single run-wide value, even when every sample in
+the run ends up with the same effective Override Cycles. The value
+written is the one described above: what is stored on the sample if
+anything is, otherwise the calculated one.

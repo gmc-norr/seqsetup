@@ -76,8 +76,12 @@ behavior -- the same as a sample that has never had lanes set.
 Lanes in the exported Sample Sheet
 --------------------------------------
 
-A run where every sample is left on "All" (no explicit lane) exports
-without a ``Lane`` column at all. As soon as *any* sample in the run has
-an explicit lane, the column appears for every sample, and a sample
-assigned to more than one lane produces one row per lane in the exported
-data section -- a sample in lanes 2 and 3 becomes two rows.
+Whether the exported Sample Sheet has a ``Lane`` column at all is decided
+by the application profile a sample's Test ID resolves to (see
+:doc:`export`), not by whether any sample in the run has an explicit
+lane. In the shipped BCLConvert profile, ``Lane`` is always a column: a
+sample still left on "All" gets a blank cell there rather than a lane
+number, and a sample assigned to more than one lane produces one row per
+lane in the exported data section -- a sample in lanes 2 and 3 becomes two
+rows. A different application profile is free to define its own data
+columns and can leave ``Lane`` out entirely.

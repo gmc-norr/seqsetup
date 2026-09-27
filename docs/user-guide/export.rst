@@ -76,23 +76,40 @@ The exported file follows the Illumina Sample Sheet v2 CSV format:
 ``[Reads]``
    Cycle counts for Read 1, Read 2, Index 1, and Index 2.
 
-``[BCLConvert_Settings]``
-   Demultiplexing settings including barcode mismatch tolerances, adapter
-   behavior, global override cycles (if applicable), and FASTQ compression
-   format.
+One ``[AppName_Settings]`` / ``[AppName_Data]`` pair per application profile
+   For every sample with a **Test ID**, SeqSetup resolves the matching test
+   profile and, for each application profile it references, writes one
+   ``Settings``/``Data`` section pair named after that profile's
+   application name -- for example ``[BCLConvert_Settings]`` /
+   ``[BCLConvert_Data]``, or ``[DragenGermline_Settings]`` /
+   ``[DragenGermline_Data]``. Which sections appear, and which columns each
+   ``Data`` row has, is defined entirely by the application profiles the
+   run's samples resolve to (see :doc:`/admin-guide/profiles`) -- there is
+   no fixed section list and no fixed column set. A ``BCLConvert`` profile's
+   ``Data`` section commonly carries index sequences, lane assignment,
+   override cycles, and barcode mismatch overrides; it has no project
+   column unless a profile explicitly adds one.
 
-``[BCLConvert_Data]``
-   Per-sample data rows with sample ID, index sequences, project, and
-   optionally per-sample override cycles, lane assignments, and barcode
-   mismatch overrides.
-
-``[DRAGENPipeline_Settings]`` and ``[DRAGENPipeline_Data]``
-   If DRAGEN onboard analysis is configured, additional sections for each
-   pipeline type (Germline, Somatic, RNA) are included with reference
-   genome paths and sample assignments.
+``[Cloud_Settings]`` and ``[Cloud_Data]``
+   Written on every export, unconditionally, for compatibility with
+   Illumina's Instrument Management Service. ``[Cloud_Data]`` lists each
+   sample's ID, project name, and a library name computed from the sample
+   ID and index sequences.
 
 A UUID is embedded in the sample sheet to link it to the JSON metadata
 export of the same run.
+
+.. warning::
+   If none of a run's samples have a **Test ID** that resolves to a test
+   profile referencing at least one application profile, SeqSetup writes
+   none of the application sections described above -- the exported Sample
+   Sheet v2 contains only ``[Header]``, ``[Reads]``, ``[Cloud_Settings]``,
+   and ``[Cloud_Data]``. There are no index sequences, no OverrideCycles,
+   no Lane column, and no demultiplexing data of any kind, and **Mark
+   Ready does not catch this**: an unresolved application profile is not
+   one of the checks the Check panel runs. Confirm every sample's Test ID
+   resolves to the test and application profiles you expect before relying
+   on the exported Sample Sheet.
 
 .. note::
    Whether Index 2's override-cycles segment is written forward
@@ -110,17 +127,24 @@ export of the same run.
 JSON metadata
 ----------------
 
-The JSON export carries the complete dataset for the run, including
-information the Sample Sheet v2 format has no place for:
+The JSON export serializes the run and its samples as structured data,
+including some information the Sample Sheet v2 format has no place for:
 
-- Sample identifiers and test identifiers
-- Index sequences and kit information
-- Override cycles and barcode mismatch settings
-- Lane assignments
-- Instrument configuration (type, flowcell, run cycles)
+- Sample identifiers, names, and index sequences
+- Override cycles, lane assignments, description, and free-form metadata
+  (per sample)
+- Instrument configuration (platform, flowcell, run cycles) and the
+  run-level BCL Convert settings (barcode mismatch defaults, adapter
+  behavior, lane splitting, global override cycles)
 - Analysis configurations
-- User information and run comments
-- Timestamps and the shared UUID
+- The run description and the shared UUID
+
+It does not carry everything about the run. Missing from the export: a
+sample's **Test ID**, its index kit name, and any per-sample
+barcode-mismatch override -- only the run-level default is serialized, not
+what an individual sample overrides it to. Also missing, at the run level:
+who created or last updated the run, and when -- there is no user tracking
+and no timestamps in the JSON export.
 
 Returning to Draft
 ---------------------
