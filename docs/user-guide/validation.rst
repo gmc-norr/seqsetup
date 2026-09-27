@@ -72,6 +72,10 @@ is one of these:
   has the same effective i7 (or i5) length.
 - **Mixed single- and dual-indexed samples in a lane.**
 - **An index longer than the run's index cycles for that read.**
+- **A line break in a sample's name, project or description.** *"Sample
+  'ID' has a line break in its description. A line break would split the
+  sample's row in the Sample Sheet. Remove it before marking the run
+  ready."* (The message names each field that has one.)
 - **A malformed Override Cycles value**, on the sample or from a kit's
   default read-override pattern.
 - **Override Cycles that don't match the run's declared cycles** -- each

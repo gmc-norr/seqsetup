@@ -61,10 +61,10 @@ Before a kit is saved, SeqSetup checks, in order:
    sequences in the downloaded YAML (**Download YAML**, below).
 
 Only the **content type** check (2) and a file that fails to **parse** (3)
-write to the audit log on rejection, alongside a **successful** upload.
-The **size** cap (1), **field validation** (4), and a **name + version
-clash** (5) reject the upload silently as far as the audit log is
-concerned -- nothing is recorded for those three.
+are recorded on the :doc:`audit-trail` on rejection, alongside a
+**successful** upload. The **size** cap (1), **field validation** (4), and a
+**name + version clash** (5) reject the upload without an audit trail
+entry -- nothing is recorded for those three.
 
 .. note::
    A rejected upload never partially saves. Nothing is added to the kit

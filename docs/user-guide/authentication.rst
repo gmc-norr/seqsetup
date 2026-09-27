@@ -32,9 +32,9 @@ Authentication is checked in this order:
    used in development.
 
 .. note::
-   Signing in clears any prior session content before applying the new
-   one, so an old session id cannot be reused to inherit a different
-   user's access.
+   Every sign-in gets a new ticket and clears anything the browser held
+   before, so an old or planted cookie cannot be reused to inherit a
+   different user's access.
 
 User roles
 ----------
@@ -53,23 +53,52 @@ Every user has exactly one of two roles:
 Session and logout
 -------------------
 
-After signing in, your session is kept in a signed cookie in your browser
--- SeqSetup keeps no matching record of it on the server. It lasts until
-you sign out or the cookie itself expires; each request you make renews
-that expiry, so an account in active use effectively never times out on
-its own, while one left idle expires after 8 hours (configurable by an
-administrator via ``SEQSETUP_SESSION_MAX_AGE_SECONDS``). Signing out is a
-button in the top-right corner of every page, next to your display name;
-it always submits as a request that changes state, so it cannot be
-triggered from another site.
+When you sign in, SeqSetup records the login on the server and gives your
+browser a random ticket for it, kept in a cookie. Every page you open is
+checked against that record, so a login can be ended from the server side.
 
-.. warning::
-   Because the server keeps no record of who has an active session, there
-   is no way to force-expire one. If an account is deleted or demoted from
-   Admin, any session it already has stays exactly as it was -- signed in,
-   with its old role -- until that browser signs out or the session times
-   out from its own inactivity. Removing or demoting a user does not cut
-   off access already in progress.
+A login ends when any of these happens:
+
+- **You leave it unused for 30 minutes.** The next thing you open asks you
+  to sign in again.
+- **8 hours have passed since you signed in**, even if you were working the
+  whole time.
+- **You sign out.** The sign-out button is in the top-right corner of every
+  page, next to your display name. Signing out ends the login on the server
+  too, so a copy of the cookie stops working.
+- **An administrator deletes your account, or changes your role or
+  password.** Every login you have ends at once, in every browser.
+
+An administrator can change the two time limits with
+``SEQSETUP_SESSION_IDLE_SECONDS`` and ``SEQSETUP_SESSION_MAX_AGE_SECONDS``
+(see :doc:`/getting-started/configuration`).
+
+If your login ended while you were working
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Opening a page takes you to the login page, as usual. But if you were in the
+middle of something that saves without leaving the page -- editing a sample,
+adding pasted samples, changing cycles -- the page stays where it is, nothing
+is saved, and a red message says so:
+
+.. figure:: /_static/screenshots/login/login-ended.png
+   :alt: A red message reading "Your login has ended, so this was not saved. What you typed is still on this page. Log in again in a new tab, then try again here.", outlined.
+
+   The message at the top of the page after a login ended, outlined.
+
+What you typed is still on the page. Select **Log in again** -- it opens the
+login page in a new tab -- sign in there, come back to this tab, and do the
+same thing again. It works the second time.
+
+If signing out itself cannot reach the database, you see *"Logout did not
+finish on the server"*. Your browser is signed out anyway, but a copy of the
+login may keep working until it times out, so tell your administrator.
+
+.. note::
+   Accounts from LDAP/Active Directory or from ``config/users.yaml`` are
+   managed outside SeqSetup. If such an account is disabled or removed
+   there, SeqSetup does not see it: a login it already has keeps working
+   until it ends by one of the time limits above.
 
 The session's signing secret comes from the ``SEQSETUP_SESSION_SECRET``
 environment variable when set (the recommended production setup). If it

@@ -384,8 +384,8 @@ checked, a **Repository URL** is configured, and at least **Sync Interval
 (minutes)** (1-1440, default 60) has passed since the last sync. With no
 repository configured -- the default -- nothing ever runs on its own.
 
-Both the interactive and the scheduled sync record an entry in the audit
-log.
+Both the interactive and the scheduled sync record an entry on the
+:doc:`audit-trail` page.
 
 Who can do this
 -------------------

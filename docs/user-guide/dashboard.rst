@@ -33,7 +33,9 @@ buttons on the right depend on the run's status:
 .. warning::
    Deleting a run deletes its :doc:`Change History <change-history>` along
    with it -- permanently, and with no separate confirmation for the
-   history. A run whose audit trail must be kept should not be deleted.
+   history. The :doc:`/admin-guide/audit-trail` keeps a record that the
+   run was deleted, and by whom, but not its change history -- a run whose
+   history must be kept should not be deleted.
 
 Search
 ------

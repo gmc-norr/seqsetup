@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import expect
 
 from seqsetup.data.instruments import clear_synced_instruments_cache
 from seqsetup.models.instrument_definition import FlowcellDefinition, InstrumentDefinition
@@ -67,6 +68,23 @@ def test_login_form(page, base_url, demo):
     page.goto(f"{base_url}/login")
     form = page.locator("form").filter(has=page.locator('input[name="username"]'))
     snap(page, "login/login-form", form, pad=24)
+
+
+def test_login_ended_message(demo_page, base_url, demo, app_ctx):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.locator(".paste-section-summary").click()
+    page.fill("#paste_data", _SAMPLES_PASTE_TEXT)
+    # End the login server-side, as the idle limit or an admin would; the
+    # next background action is refused and the page is kept.
+    app_ctx.web_session_repo.delete_for_user(DEMO_ADMIN["username"])
+    with page.expect_response(
+            lambda r: r.url.endswith("/samples/preview") and r.status == 401):
+        page.get_by_role("button", name="Preview").click()
+    banner = page.locator("#error-banner")
+    expect(banner).to_contain_text("Your login has ended, so this was not saved.")
+    expect(page.locator("#paste_data")).to_have_value(_SAMPLES_PASTE_TEXT)
+    snap(page, "login/login-ended", banner)
 
 
 def test_dashboard_tabs(demo_page, base_url, demo):
@@ -994,19 +1012,10 @@ def test_admin_logs(demo_page, base_url, demo):
     page = demo_page
     # admin_logs.router is admin-only (routes/admin/logs.py:27-30).
     #
-    # Verified directly (python -c against this same environment): the
-    # "seqsetup" logger has no level of its own (NOTSET) and nothing in
-    # src/seqsetup ever raises it or root above Python's built-in WARNING
-    # default -- setup_log_capture (app.py:132) sets the HANDLER's level to
-    # DEBUG (log_capture.py:193), but a logger's OWN effective level is
-    # checked first. Every audit() call is logged at INFO
-    # (services/audit_log.py:60), so in this default configuration NONE of
-    # it -- not logins, not user/token changes -- ever reaches this buffer;
-    # confirmed empirically too: after the ~44 prior tests in this module
-    # (logins, user/token/LDAP-config changes, validations...), the page's
-    # own stats panel reads "Total: 0". Relying on an audit entry for this
-    # picture would therefore be demonstrating something the shipped app
-    # does not actually do -- see the App oddities note in the task report.
+    # This buffer holds SeqSetup's warnings and errors. Audit events are kept
+    # out of it on purpose (log_capture._not_audit_record) -- they are on the
+    # Audit trail page, pictured in test_admin_audit_trail -- so a picture
+    # of this page needs a genuine WARNING.
     #
     # A real WARNING-level event that DOES pass the default threshold:
     # OriginCheckMiddleware (csrf.py:96-135) rejects any POST/PUT/PATCH/
@@ -1082,6 +1091,25 @@ def test_admin_logs(demo_page, base_url, demo):
         f"showing both planted entries, but got level={level_value!r} "
         f"search={search_value!r} rows={refreshed_rows}"
     )
+
+
+def test_admin_audit_trail(demo_page, base_url, demo):
+    page = demo_page
+    # Mark Ready, Back to Draft and Archive were done through the UI by the
+    # pictures above, so the trail holds real run.status.changed events.
+    page.goto(f"{base_url}/admin/audit")
+    page.fill("#event", "run.status")
+    page.get_by_role("button", name="Search").click()
+    # The unfiltered page also lists login and sample events; wait until
+    # every row is a run.status one, which only the filtered result shows.
+    page.wait_for_function(
+        "(() => { const cells = [...document.querySelectorAll("
+        "'#audit-page tbody tr td:nth-child(3)')];"
+        " return cells.length > 0 && cells.every("
+        "td => td.textContent.trim().startsWith('run.status')); })()"
+    )
+    table = page.locator("#audit-page .table-scroll")
+    snap(page, "admin/audit-trail", table, region=page.locator("#audit-page"))
 
 
 def test_admin_index_kits_list(demo_page, base_url, demo):

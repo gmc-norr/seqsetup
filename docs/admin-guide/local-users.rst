@@ -42,6 +42,13 @@ text, "Leave blank to keep", is the only clue -- leave it empty to keep the
 existing password, or type a new one to replace it. Select **Save** to
 apply the changes, or **Cancel** to discard them.
 
+Changing a user's **role** or **password** ends every login that user has
+open, in every browser: their next click takes them to the login page, and
+they sign in again with the new role or password. The message after saving
+says so: *"User 'name' updated. Their open logins were ended."* Changing
+only the display name or email does not end their logins. If you change
+your own role, you are signed out too.
+
 .. warning::
    SeqSetup refuses to demote or delete the **last remaining Admin**
    account -- doing so would leave every admin-only page unreachable by
@@ -52,9 +59,16 @@ Deleting a user
 -----------------
 
 Select **Delete** on a user's row and confirm. This removes the account from
-SeqSetup's database. It does not change or remove any runs that user
-created, and it does not affect entries already recorded in a run's change
-history under that username.
+SeqSetup's database and ends every login the user has open -- the message
+says *"User 'name' deleted. Their open logins were ended."* It does not
+change or remove any runs that user created, and it does not affect entries
+already recorded in a run's change history or in the :doc:`audit-trail`
+under that username.
+
+.. warning::
+   API tokens are not tied to the user who made them. Deleting or demoting
+   an administrator does **not** revoke the API tokens they created -- check
+   :doc:`api-tokens` and revoke any that should stop working.
 
 Who can do this
 -----------------

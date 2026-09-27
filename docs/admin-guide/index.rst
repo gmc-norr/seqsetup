@@ -16,3 +16,4 @@ anyone can view them, and only changing what they hold needs Admin.
    api-tokens
    sample-api
    logs
+   audit-trail

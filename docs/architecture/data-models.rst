@@ -138,6 +138,18 @@ User and Authentication Models
 
 **LocalUser**
    MongoDB-stored user with bcrypt password hash, timestamps, and conversion to User.
+   Its ``session_stamp`` changes whenever the role or password changes, which ends
+   every login made with the old stamp.
+
+**WebSession**
+   One login in the server-side login list (``web_sessions``). The browser's cookie
+   holds a random ticket; the row's id is the ticket's SHA-256. Holds the user, where
+   the login came from (local, yaml or LDAP), and when it began and was last used.
+
+**AuditEvent**
+   One entry in the permanent audit trail (``audit_events``): time, event name, who,
+   on what, result and details. The repository can only add events, never change or
+   delete them.
 
 **ApiToken**
    Bearer token for programmatic API access. Only the bcrypt hash is stored; the

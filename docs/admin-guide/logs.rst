@@ -5,18 +5,13 @@ Application Logs
 lines -- up to the last 2000. It is not a file on disk: restarting the
 application clears it.
 
-.. warning::
-   By default, this page mostly shows **warnings and errors**, not routine
-   activity. SeqSetup's audit trail (logins, user and token changes,
-   configuration changes) is logged at the ``INFO`` level, and nothing in
-   SeqSetup raises its own logger above Python's default threshold, which
-   only lets ``WARNING`` and more severe messages through. In practice that
-   means this page will not show a record of who logged in or who changed
-   what -- only failures and unusual conditions, such as a rejected
-   request or a problem reaching an external server. A deployment that
-   wants the full activity trail on this page needs to raise the logging
-   level itself (for example, by calling Python's ``logging.basicConfig``
-   with ``level=logging.INFO`` before starting the application).
+.. note::
+   This page shows SeqSetup's **warnings and errors** -- a rejected request,
+   a problem reaching an external server -- not routine activity. Who did
+   what (logins, user and token changes, run changes, exports) is on the
+   :doc:`audit-trail` page instead, which is kept permanently. The one
+   exception: if an audit event cannot be saved to the database, it is
+   written here as an ``ERROR`` that includes the event, so it is not lost.
 
 Filtering
 -----------

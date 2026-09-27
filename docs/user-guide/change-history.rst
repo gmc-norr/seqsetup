@@ -53,8 +53,9 @@ and that edits made before that point were never captured.
    Change history is **not retained after the run itself is deleted**.
    Deleting an empty Draft, or an Archived run (administrators only),
    removes its entire change history at the same time -- there is no way
-   to recover it afterward. A run that must keep a permanent audit trail
-   should not be deleted.
+   to recover it afterward. The :doc:`/admin-guide/audit-trail` records
+   that the run was deleted, and by whom, but not what its history said.
+   A run whose history must be kept should not be deleted.
 
 Who can see it
 ---------------
