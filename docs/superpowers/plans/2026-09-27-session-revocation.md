@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-27-session-revocation-design.md`
 
+> **Superseded in part.** After the code review, logout, the banner headers (`HX-Reselect: unset`) and the read-only wording changed. The spec's "Code review changes" section and the code are the source of truth where they differ from the tasks below.
+
 ## Global Constraints
 
 - Worktree `/home/parlar_ai/dev/seqsetup/.worktrees/sessions`, branch `fix/session-revocation`. Never `pixi run` here.
