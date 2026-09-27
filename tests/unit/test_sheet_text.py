@@ -40,7 +40,7 @@ class TestHiddenCharacters:
 
     @pytest.mark.parametrize("char", [
         "\x00", "\t", "\n", "\r", "\x0b", "\x0c", "\x1f", "\x7f", "\x85", "\x9b",
-        " ", " ",
+        "\u2028", "\u2029",
     ])
     def test_finds_each_hidden_character(self, char):
         assert hidden_characters(f"a{char}b") == [char]
@@ -62,7 +62,7 @@ class TestDescribe:
     """Character codes for messages; a tab is named."""
 
     def test_codes_with_tab_named(self):
-        assert describe(["\x00", "\t", " "]) == "U+0000, U+0009 (tab), U+2028"
+        assert describe(["\x00", "\t", "\u2028"]) == "U+0000, U+0009 (tab), U+2028"
 
 
 class TestRefuseHiddenCharacters:

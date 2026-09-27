@@ -81,7 +81,9 @@ is one of these:
   control character, often carried in by pasted text. *"Sample 'ID' has a
   hidden character in its project: U+0009 (tab). Hidden characters can
   break the Sample Sheet. Remove it before marking the run ready."* The
-  message names each field and each character by its code.
+  message names each field and each character by its code. You cannot see
+  the character, so the simplest fix is to clear the field and type the
+  text again.
 - **A malformed Override Cycles value**, on the sample or from a kit's
   default read-override pattern.
 - **Override Cycles that don't match the run's declared cycles** -- each

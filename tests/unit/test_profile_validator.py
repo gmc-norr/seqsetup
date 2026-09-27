@@ -384,7 +384,7 @@ class TestProfileValuesHiddenCharacters:
         pytest.param("\r", id="CR"),
         pytest.param("\t", id="TAB"),
         pytest.param("\x00", id="NUL"),
-        pytest.param(" ", id="LINE-SEPARATOR"),
+        pytest.param("\u2028", id="LINE-SEPARATOR"),
     ])
     @pytest.mark.parametrize("field,make", [
         pytest.param("Settings", lambda c: {"SoftwareVersion": f"4.3.6{c}[Junk]"}, id="settings-value"),

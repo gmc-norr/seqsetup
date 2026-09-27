@@ -15,7 +15,7 @@ PLAIN_NAME_RE = re.compile(r"[A-Za-z0-9_-]+")
 # A software version written as is, e.g. ``4.3.6``.
 PLAIN_VERSION_RE = re.compile(r"[A-Za-z0-9._-]+")
 
-_SEPARATORS = frozenset("  ")
+_SEPARATORS = frozenset("\u2028\u2029")
 _NAMES = {"\t": "tab"}
 
 

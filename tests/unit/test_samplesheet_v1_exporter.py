@@ -385,7 +385,7 @@ class TestSheetTextGuardV1:
     """The v1 writer refuses hidden characters it cannot make safe (audit
     2026-09 N-12)."""
 
-    @pytest.mark.parametrize("char", ["\x00", "\x0b", "\x0c", "\x85", " "])
+    @pytest.mark.parametrize("char", ["\x00", "\x0b", "\x0c", "\x85", "\u2028"])
     def test_escape_csv_refuses_hidden_character(self, char):
         with pytest.raises(ValueError, match=f"U\\+{ord(char):04X}"):
             SampleSheetV1Exporter._escape_csv(f"N{char}X")

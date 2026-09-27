@@ -86,6 +86,14 @@ class TestShippedConfigStillPasses:
             result = validate_instrument_yaml(yaml_data, "instruments.yaml")
             assert result.is_valid, (name, [str(e) for e in result.errors])
 
+    def test_every_shipped_instrument_file_passes(self):
+        """The one-instrument files are the format a config sync reads."""
+        paths = sorted((REPO / "config" / "instruments").glob("*.y*ml"))
+        assert paths
+        for path in paths:
+            result = validate_instrument_yaml(yaml.safe_load(path.read_text()), path.name)
+            assert result.is_valid, (path.name, [str(e) for e in result.errors])
+
     def test_every_shipped_application_profile_passes(self):
         checked = 0
         for path in sorted(REPO.glob("config/**/*.y*ml")):

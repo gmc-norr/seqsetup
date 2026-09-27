@@ -16,6 +16,7 @@ from seqsetup.models.sequencing_run import (
 )
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
+from seqsetup.services.sheet_text import PLAIN_VERSION_RE
 
 
 class TestSampleSheetV2Exporter:
@@ -1002,7 +1003,7 @@ class TestSheetTextGuards:
     N-11, N-12). Mark Ready then fails and the run stays Draft."""
 
     @pytest.mark.parametrize("char", [
-        "\x00", "\x0b", "\x0c", "\x1f", "\x7f", "\x85", " ", " ",
+        "\x00", "\x0b", "\x0c", "\x1f", "\x7f", "\x85", "\u2028", "\u2029",
     ])
     def test_escape_csv_refuses_hidden_character(self, char):
         with pytest.raises(ValueError, match=f"U\\+{ord(char):04X}"):
@@ -1071,6 +1072,10 @@ class TestSheetTextGuards:
                 _StubTestProfileRepo({"WGS": tp}),
                 _StubAppProfileRepo({("Bad", "1.0.0"): app_profile}),
             )
+
+    def test_non_string_config_value_is_checked_as_text(self):
+        """An unquoted YAML number (e.g. software_version: 4.3) is a float."""
+        assert SampleSheetV2Exporter._require_plain(4.3, PLAIN_VERSION_RE, "v") == "4.3"
 
     def test_plain_names_are_written_unchanged(self, sample_run):
         output = SampleSheetV2Exporter.export(sample_run)

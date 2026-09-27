@@ -97,8 +97,10 @@ to build a correct Sample Sheet:
    can run. Both may only contain letters, digits, ``_`` and ``-``; an
    onboard application's ``software_version`` may also contain ``.``. A
    synced instrument file that breaks this is skipped, with the reason on
-   :doc:`Admin > Logs <logs>`. SeqSetup also refuses to write a Sample Sheet
-   holding such a name, so a run cannot be marked Ready with one.
+   :doc:`Admin > Logs <logs>`. As a second check, SeqSetup will not write a
+   Sample Sheet whose ``InstrumentPlatform`` name, or whose application
+   profile's ``ApplicationName`` (see :doc:`profiles`), breaks the rule, so
+   a run cannot be marked Ready with one.
 
 .. warning::
    A reagent kit's maximum total cycle count (Read 1 + Index 1 + Index 2 +

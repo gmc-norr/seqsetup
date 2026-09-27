@@ -176,7 +176,11 @@ class TestSampleTextHiddenCharacters:
         )
         assert "Remove it before marking the run ready." in errors[0].message
 
-    @pytest.mark.parametrize("line_break", LINE_BREAKS)
+    @pytest.mark.parametrize(
+        "line_break",
+        sorted(ValidationService._LINE_BREAK_CHARS),
+        ids=lambda c: f"U+{ord(c):04X}",
+    )
     def test_line_break_alone_gives_only_the_line_break_error(self, line_break):
         run = _run_with(Sample(sample_id="S1", sample_name=f"A{line_break}B"))
 
@@ -226,7 +230,7 @@ class TestRunTextHiddenCharacters:
     @pytest.mark.parametrize("attr,label", RUN_TEXT_FIELDS)
     @pytest.mark.parametrize("char,code", HIDDEN + [
         pytest.param("\x0b", "U+000B", id="VT"),
-        pytest.param(" ", "U+2028", id="LINE-SEPARATOR"),
+        pytest.param("\u2028", "U+2028", id="LINE-SEPARATOR"),
     ])
     def test_hidden_character_in_run_text_is_an_error(self, attr, label, char, code):
         run = _run_with(Sample(sample_id="S1"))

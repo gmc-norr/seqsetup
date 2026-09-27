@@ -80,7 +80,7 @@ class TestHiddenCharacters:
 
     @pytest.mark.parametrize("char", [
         "\x00", "\t", "\n", "\r", "\x0b", "\x0c", "\x1f", "\x7f", "\x85", "\x9b",
-        " ", " ",
+        "\u2028", "\u2029",
     ])
     def test_finds_each_hidden_character(self, char):
         assert hidden_characters(f"a{char}b") == [char]
@@ -102,7 +102,7 @@ class TestDescribe:
     """Character codes for messages; a tab is named."""
 
     def test_codes_with_tab_named(self):
-        assert describe(["\x00", "\t", " "]) == "U+0000, U+0009 (tab), U+2028"
+        assert describe(["\x00", "\t", "\u2028"]) == "U+0000, U+0009 (tab), U+2028"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -132,7 +132,7 @@ PLAIN_NAME_RE = re.compile(r"[A-Za-z0-9_-]+")
 # A software version written as is, e.g. ``4.3.6``.
 PLAIN_VERSION_RE = re.compile(r"[A-Za-z0-9._-]+")
 
-_SEPARATORS = frozenset("  ")
+_SEPARATORS = frozenset("\u2028\u2029")
 _NAMES = {"\t": "tab"}
 
 
@@ -536,7 +536,7 @@ class TestRunTextHiddenCharacters:
     @pytest.mark.parametrize("attr,label", RUN_TEXT_FIELDS)
     @pytest.mark.parametrize("char,code", HIDDEN + [
         pytest.param("\x0b", "U+000B", id="VT"),
-        pytest.param(" ", "U+2028", id="LINE-SEPARATOR"),
+        pytest.param("\u2028", "U+2028", id="LINE-SEPARATOR"),
     ])
     def test_hidden_character_in_run_text_is_an_error(self, attr, label, char, code):
         run = _run_with(Sample(sample_id="S1"))
@@ -844,7 +844,7 @@ class TestSheetTextGuards:
     N-11, N-12). Mark Ready then fails and the run stays Draft."""
 
     @pytest.mark.parametrize("char", [
-        "\x00", "\x0b", "\x0c", "\x1f", "\x7f", "\x85", " ", " ",
+        "\x00", "\x0b", "\x0c", "\x1f", "\x7f", "\x85", "\u2028", "\u2029",
     ])
     def test_escape_csv_refuses_hidden_character(self, char):
         with pytest.raises(ValueError, match=f"U\\+{ord(char):04X}"):
@@ -928,7 +928,7 @@ class TestSheetTextGuardV1:
     """The v1 writer refuses hidden characters it cannot make safe (audit
     2026-09 N-12)."""
 
-    @pytest.mark.parametrize("char", ["\x00", "\x0b", "\x0c", "\x85", " "])
+    @pytest.mark.parametrize("char", ["\x00", "\x0b", "\x0c", "\x85", "\u2028"])
     def test_escape_csv_refuses_hidden_character(self, char):
         with pytest.raises(ValueError, match=f"U\\+{ord(char):04X}"):
             SampleSheetV1Exporter._escape_csv(f"N{char}X")
@@ -1402,7 +1402,7 @@ BarcodeMismatches defaults and the final `else` default), `src/seqsetup/services
 
 ### Task 8: Review minors
 
-- [ ] Replace every literal U+2028/U+2029 in `src/`, `tests/` and this plan with ` `/` `
+- [ ] Replace every literal U+2028/U+2029 in `src/`, `tests/` and this plan with `\u2028`/`\u2029`
   escapes; confirm `grep -rlP '[\x{2028}\x{2029}]' src tests docs` finds nothing.
 - [ ] `test_sync_name_rules.py`: also validate every `config/instruments/*.yaml` file.
 - [ ] `test_sample_text_validation.py`: parametrize the line-break-only test over

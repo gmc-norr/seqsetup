@@ -31,8 +31,8 @@ from ..models.validation import (
 from .application_profile_validator import ApplicationProfileValidator
 from .color_analysis_validator import ColorAnalysisValidator
 from .cycle_calculator import CycleCalculator
-from .sheet_text import describe, hidden_characters
 from .index_collision_validator import IndexCollisionValidator
+from .sheet_text import describe, hidden_characters
 from .validation_utils import effective_index_sequence, hamming_distance
 
 

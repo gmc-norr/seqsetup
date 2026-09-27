@@ -393,7 +393,7 @@ class SampleSheetV2Exporter:
     def _escape_csv(cls, value: str) -> str:
         """Escape a value for CSV output.
 
-        Two independent concerns:
+        Three independent concerns:
 
         1. Structural: lone CR is quoted as well as LF — a Mac-style line
            ending pasted from an upstream source would otherwise write a
@@ -448,10 +448,12 @@ class SampleSheetV2Exporter:
         """Return ``value`` if it may be written into the sheet's structure as
         is (a section header or a header line); raise ``ValueError`` if not.
         These values come from the synced config, and quoting cannot make a
-        section header safe."""
-        if not pattern.fullmatch(value or ""):
-            raise ValueError(f"{what} {value!r} cannot be written to the Sample Sheet")
-        return value
+        section header safe. A non-string value (an unquoted YAML number) is
+        checked and written as text, as the f-string wrote it before."""
+        text = "" if value is None else str(value)
+        if not pattern.fullmatch(text):
+            raise ValueError(f"{what} {text!r} cannot be written to the Sample Sheet")
+        return text
 
     @classmethod
     def _write_application_sections_from_profiles(
