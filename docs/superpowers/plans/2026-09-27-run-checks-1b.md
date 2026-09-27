@@ -149,15 +149,22 @@ def _pair(i7: str, i5: str, name: str = "p1") -> IndexPair:
     )
 
 
+# No blocking error and no color-balance error: i7 CCCCCCCC lights both
+# channels; NovaSeq X reads i5 as its reverse complement, so i5 GGGGGGGG is
+# read as CCCCCCCC (i5 CCCCCCCC would be read GGGGGGGG: a dark-cycle error).
+CLEAN_PAIR = ("CCCCCCCC", "GGGGGGGG")
+
+
 def _seed(ctx, run_id: str, pairs=(("ATTACTCG", "TATAGCCT"),), platform=InstrumentPlatform.NOVASEQ_X,
-          flowcell="10B", read1_pattern: str | None = None) -> str:
-    """A DRAFT run with one indexed sample per pair; 151/10/10/151 cycles."""
+          flowcell="10B", read1_pattern: str | None = None, lanes=(1,)) -> str:
+    """A DRAFT run with one indexed sample per pair, in lane 1 only (a sample
+    without lanes is in every lane: 8 on a 10B flowcell); 151/10/10/151 cycles."""
     run = SequencingRun(
         id=run_id, run_name="Checks", instrument_platform=platform, flowcell_type=flowcell,
         run_cycles=RunCycles(151, 151, 10, 10),
     )
     for n, (i7, i5) in enumerate(pairs, start=1):
-        sample = Sample(sample_id=f"S{n}", index_pair=_pair(i7, i5, f"p{n}"))
+        sample = Sample(sample_id=f"S{n}", index_pair=_pair(i7, i5, f"p{n}"), lanes=list(lanes))
         if read1_pattern:
             sample.read1_override_pattern = read1_pattern
         run.add_sample(sample)
@@ -419,7 +426,7 @@ class TestReadyMessageSlot:
     def test_success_empties_the_ready_slot(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         disable_repos(ctx, "test_profile", "app_profile")
-        run_id = _seed(ctx, "slot-ok", pairs=(("CCCCCCCC", "CCCCCCCC"),))
+        run_id = _seed(ctx, "slot-ok", pairs=(CLEAN_PAIR,))
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
@@ -435,7 +442,7 @@ class TestReadyMessageSlot:
         assert '<div id="ready-message" class="empty:hidden"></div>' in page
 ```
 
-(`CCCCCCCC` lights both channels at every position, so this one-sample run has no color-balance error and is not asked the Task 4 question.)
+(`CLEAN_PAIR` has no blocking error and no color-balance error, so this run is not asked the Task 4 question — Astra checked the pair.)
 
 Browser (`tests/browser/test_ready_message.py`) — seeds its own runs through `app_ctx`, like `mutable_run_id`:
 
@@ -453,6 +460,11 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
 
+# See CLEAN_PAIR in tests/integration/test_run_checks_1b.py: i5 GGGGGGGG is
+# read as CCCCCCCC on NovaSeq X, so this pair has no error of any kind.
+CLEAN = ("CCCCCCCC", "GGGGGGGG")
+
+
 def _seed(app_ctx, run_id, i7, i5, test_id="WGS", indexed=True):
     t = datetime(2026, 1, 10, 9, 0, 0)
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.NOVASEQ_X,
@@ -461,7 +473,8 @@ def _seed(app_ctx, run_id, i7, i5, test_id="WGS", indexed=True):
     pair = IndexPair(id=f"{run_id}-p", name="p",
                      index1=Index(name="i7", sequence=i7, index_type=IndexType.I7),
                      index2=Index(name="i5", sequence=i5, index_type=IndexType.I5)) if indexed else None
-    run.add_sample(Sample(id=f"{run_id}-s1", sample_id="RM-01", test_id=test_id, index_pair=pair))
+    run.add_sample(Sample(id=f"{run_id}-s1", sample_id="RM-01", test_id=test_id, index_pair=pair,
+                          lanes=[1]))
     app_ctx.run_repo.save(run)
     return run_id
 
@@ -478,7 +491,7 @@ def cleanup(app_ctx):
 def test_save_failure_survives_mark_ready(logged_in_page, base_url, app_ctx, cleanup):
     """A refused edit leaves the old value stored; Mark Ready can succeed
     on it, and the failure message must still be on screen afterwards."""
-    run_id = _seed(app_ctx, "ready-msg-survive", "CCCCCCCC", "CCCCCCCC")
+    run_id = _seed(app_ctx, "ready-msg-survive", *CLEAN)
     cleanup.append(run_id)
     page = logged_in_page
     page.goto(f"{base_url}/runs/{run_id}")
@@ -497,7 +510,7 @@ def test_save_failure_survives_mark_ready(logged_in_page, base_url, app_ctx, cle
 
 @pytest.mark.browser
 def test_refusal_does_not_replace_a_save_failure(logged_in_page, base_url, app_ctx, cleanup):
-    run_id = _seed(app_ctx, "ready-msg-refused", "CCCCCCCC", "CCCCCCCC", test_id="")
+    run_id = _seed(app_ctx, "ready-msg-refused", *CLEAN, test_id="")
     cleanup.append(run_id)
     page = logged_in_page
     page.goto(f"{base_url}/runs/{run_id}")
@@ -666,7 +679,8 @@ def _events(ctx, prefix):
 
 class TestColorBalanceQuestion:
     """Mark Ready asks before promoting a run with color-balance errors; the
-    answer counts only for the run and lanes that were shown (F13)."""
+    answer counts only for the run and lanes that were shown (F13). `_seed`
+    puts samples in lane 1 only, so the error lanes are [1]."""
 
     def _setup(self, fresh_app, run_id, pairs=(("ATTACTCG", "TATAGCCT"),)):
         _app, ctx, _db = fresh_app
@@ -721,7 +735,7 @@ class TestColorBalanceQuestion:
         assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
 
     def test_no_error_lanes_do_not_ask(self, logged_in_client, fresh_app):
-        ctx, run_id = self._setup(fresh_app, "cb-none", pairs=(("CCCCCCCC", "CCCCCCCC"),))
+        ctx, run_id = self._setup(fresh_app, "cb-none", pairs=(CLEAN_PAIR,))
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
@@ -852,7 +866,7 @@ CSS (`components.css`, after `.ready-refused li + li`):
 Check panel badge (`_validate_panel.html`): after the `color_balance_issues` set line add
 `{% set color_balance_asks = validation_result.color_balance_error_lanes | length > 0 %}` and make the badge
 `<span class="status-warning">Color balance: {{ color_balance_issues }} lane(s){% if color_balance_asks %} · Mark Ready will ask{% endif %}</span>`.
-Add a test in `test_run_checks_1b.py` that `GET /runs/{id}/validate-panel` for the `cb-ask` setup contains `Mark Ready will ask`, and for the `CCCCCCCC` setup does not.
+Add a test in `test_run_checks_1b.py` that `GET /runs/{id}/validate-panel` for the `cb-ask` setup contains `Mark Ready will ask`, and for the `CLEAN_PAIR` setup does not.
 
 - [ ] **Step 5: Run** the unit file and `test_run_checks_1b.py`: pass.
 
@@ -937,8 +951,9 @@ before you answer, the question comes back for the new state.
 `test_docs_screenshots.py::test_ready_mark_ready`: after `page.get_by_role("button", name="Mark Ready").click()`, before waiting for the Ready badge:
 
 ```python
-    # DEMO-RUN-06's four pairs leave color-balance errors in lane 1 (i7
-    # positions 4 and 6), so Mark Ready asks first (spec 2026-09-27, F13).
+    # DEMO-RUN-06's four pairs leave color-balance errors (i7 positions 4
+    # and 6, in every lane the samples are in), so Mark Ready asks first
+    # (spec 2026-09-27, F13).
     question = page.locator("#ready-message .ready-confirm")
     expect(question).to_be_visible()
     snap(page, "ready/mark-ready-color-balance", question, region=page.locator("#ready-message"))
