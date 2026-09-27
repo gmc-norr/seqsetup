@@ -12,7 +12,12 @@ from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .samplesheet_v1_exporter import _PLAIN_IDENTIFIER_RE, _reverse_complement
-from .sheet_text import PLAIN_NAME_RE, PLAIN_VERSION_RE, refuse_hidden_characters
+from .sheet_text import (
+    PLAIN_NAME_RE,
+    PLAIN_VERSION_RE,
+    refuse_hidden_characters,
+    starts_a_section,
+)
 
 if TYPE_CHECKING:
     from ..repositories.test_profile_repo import TestProfileRepository
@@ -435,25 +440,29 @@ class SampleSheetV2Exporter:
 
     @classmethod
     def _escape_config_cell(cls, value) -> str:
-        """Escape a cell taken from an application profile (a setting, a
-        column name, a default value). Quoting a line break still leaves a
-        new line for a line-oriented reader, so every hidden character —
-        tab and line breaks included — is refused before ``_escape_csv``."""
+        """Escape a value taken from an application profile (a setting value,
+        a default value). Quoting a line break still leaves a new line for a
+        line-oriented reader, so every hidden character — tab and line breaks
+        included — is refused before ``_escape_csv``. So is a value starting
+        with '[': first on its line, it would start a new section."""
         text = str(value)
         refuse_hidden_characters(text)
+        if starts_a_section(text):
+            raise ValueError(
+                f"A profile value starting with '[' cannot be written to the Sample Sheet: {text!r}"
+            )
         return cls._escape_csv(text)
 
     @classmethod
     def _require_plain(cls, value: str, pattern, what: str) -> str:
         """Return ``value`` if it may be written into the sheet's structure as
-        is (a section header or a header line); raise ``ValueError`` if not.
-        These values come from the synced config, and quoting cannot make a
-        section header safe. A non-string value (an unquoted YAML number) is
-        checked and written as text, as the f-string wrote it before."""
-        text = "" if value is None else str(value)
-        if not pattern.fullmatch(text):
-            raise ValueError(f"{what} {text!r} cannot be written to the Sample Sheet")
-        return text
+        is (a section header, a header line, a setting or column name); raise
+        ``ValueError`` if not. These values come from the synced config, and
+        quoting cannot make a section header safe. A non-string value (an
+        unquoted YAML number) is refused: str() would write 4.10 as 4.1."""
+        if not isinstance(value, str) or not pattern.fullmatch(value):
+            raise ValueError(f"{what} {value!r} cannot be written to the Sample Sheet")
+        return value
 
     @classmethod
     def _write_application_sections_from_profiles(
@@ -542,9 +551,8 @@ class SampleSheetV2Exporter:
                     output.write(line)
 
         for key, value in profile.settings.items():
-            output.write(
-                f"{cls._escape_config_cell(key)},{cls._escape_config_cell(value)}\n"
-            )
+            name = cls._require_plain(key, PLAIN_NAME_RE, "Setting name")
+            output.write(f"{name},{cls._escape_config_cell(value)}\n")
         output.write("\n")
 
         # Write Data section
@@ -561,8 +569,11 @@ class SampleSheetV2Exporter:
         translate = profile.translate or {}
         columns = [(field, translate.get(field, field)) for field in data_fields]
 
-        # Write header row — escape admin-defined column names defensively.
-        output.write(",".join(cls._escape_config_cell(col) for _, col in columns) + "\n")
+        # Write header row — admin-defined column names must be plain names.
+        output.write(
+            ",".join(cls._require_plain(col, PLAIN_NAME_RE, "Column name") for _, col in columns)
+            + "\n"
+        )
 
         # BCLConvert: one row per (sample, lane), as in _write_bclconvert_data —
         # writing only the first lane would send the other lanes' reads to

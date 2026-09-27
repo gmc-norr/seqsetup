@@ -3,7 +3,7 @@
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from .sheet_text import PLAIN_NAME_RE, describe, hidden_characters
+from .sheet_text import PLAIN_NAME_RE, describe, hidden_characters, starts_a_section
 
 
 class ProfileValidationError(Exception):
@@ -82,6 +82,11 @@ def validate_test_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
         raise ProfileValidationError(errors, source_file)
 
 
+def _is_plain_name(value) -> bool:
+    """True for text made only of letters, digits, '_' and '-'."""
+    return isinstance(value, str) and PLAIN_NAME_RE.fullmatch(value) is not None
+
+
 def _hidden_in(value) -> list[str]:
     """The distinct hidden characters anywhere in a YAML value, looking
     inside nested lists and mappings (keys included)."""
@@ -125,15 +130,24 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
     # ApplicationName becomes a Sample Sheet section name ([<name>_Settings]),
     # written as is, so it may hold only letters, digits, '_' and '-'.
     app_name = yaml_data.get("ApplicationName")
-    if (
-        app_name is not None
-        and str(app_name).strip()
-        and not PLAIN_NAME_RE.fullmatch(str(app_name))
-    ):
+    if app_name is not None and str(app_name).strip() and not _is_plain_name(app_name):
         errors.append(
             "Field 'ApplicationName' may only contain letters, digits, '_' and '-': "
-            f"{str(app_name)!r}"
+            f"{app_name!r}"
         )
+
+    # The Sample Sheet writer reads Settings, Data and Translate as mappings
+    # and DataFields as a list, for every ApplicationType. Empty is allowed
+    # here; the Dragen check below still requires the first three.
+    for field, kind, name in (
+        ("Settings", dict, "a mapping"),
+        ("Data", dict, "a mapping"),
+        ("DataFields", list, "a list"),
+        ("Translate", dict, "a mapping"),
+    ):
+        value = yaml_data.get(field)
+        if value is not None and not isinstance(value, kind):
+            errors.append(f"Field '{field}' must be {name}")
 
     # Settings, Data, DataFields and Translate are written into the Sample
     # Sheet as cells. A quoted line break still starts a new line for a
@@ -154,6 +168,44 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
                     f"{describe(chars)}"
                 )
 
+    # Every name becomes a line start (a setting) or a column name. Quoting
+    # cannot stop a name like '[BCLConvert_Data]' from starting a new
+    # section, so names may hold only letters, digits, '_' and '-'. A name
+    # with a hidden character is already reported above.
+    settings = yaml_data.get("Settings")
+    data = yaml_data.get("Data")
+    data_fields = yaml_data.get("DataFields")
+    translate = yaml_data.get("Translate")
+    names = []
+    if isinstance(settings, dict):
+        names += [("Settings", key) for key in settings]
+    if isinstance(data, dict):
+        names += [("Data", key) for key in data]
+    if isinstance(data_fields, list):
+        names += [("DataFields", item) for item in data_fields]
+    if isinstance(translate, dict):
+        names += [("Translate", n) for key, value in translate.items() for n in (key, value)]
+    for field, name in names:
+        if not _is_plain_name(name) and not _hidden_in(name):
+            errors.append(
+                f"Field '{field}' has a name that may only contain letters, digits, "
+                f"'_' and '-': {name!r}"
+            )
+
+    # A value is written as a cell, as text. First on its line (a data
+    # default in the first column), a value starting with '[' would start a
+    # new section.
+    values = []
+    if isinstance(settings, dict):
+        values += [("Settings", key, value) for key, value in settings.items()]
+    if isinstance(data, dict):
+        values += [("Data", key, value) for key, value in data.items()]
+    for field, key, value in values:
+        if value is not None and starts_a_section(str(value)):
+            errors.append(
+                f"Field '{field}' value for {str(key)!r} cannot start with '[': {str(value)!r}"
+            )
+
     # Validate ApplicationProfileVersion is PEP 440 compliant
     version_val = yaml_data.get("ApplicationProfileVersion")
     if version_val is not None and str(version_val).strip():
@@ -167,19 +219,20 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
     # Dragen-specific required sections
     app_type = yaml_data.get("ApplicationType", "")
     if str(app_type).strip().lower() == "dragen":
+        # A wrong shape is reported above; here only an empty value.
         if "Settings" not in yaml_data:
             errors.append("Missing required field 'Settings' (required for ApplicationType 'Dragen')")
-        elif not isinstance(yaml_data["Settings"], dict):
+        elif yaml_data["Settings"] is None:
             errors.append("Field 'Settings' must be a mapping")
 
         if "Data" not in yaml_data:
             errors.append("Missing required field 'Data' (required for ApplicationType 'Dragen')")
-        elif not isinstance(yaml_data["Data"], dict):
+        elif yaml_data["Data"] is None:
             errors.append("Field 'Data' must be a mapping")
 
         if "DataFields" not in yaml_data:
             errors.append("Missing required field 'DataFields' (required for ApplicationType 'Dragen')")
-        elif not isinstance(yaml_data["DataFields"], list):
+        elif yaml_data["DataFields"] is None:
             errors.append("Field 'DataFields' must be a list")
 
     if errors:

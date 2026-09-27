@@ -32,9 +32,11 @@ Run name and description
    Run name and description, outlined.
 
 **Run Name** and **Description** save automatically when you leave the
-field or press Enter. The run name is limited to 256 characters and the
-description to 4096; a line break in either is saved as a space. Neither
-may hold another hidden character, such as a tab from pasted text --
+field; the run name also saves when you press Enter. The run name is
+limited to 256 characters and the description to 4096. A line break in
+either -- such as one made by pressing Enter in the description -- is
+saved as a space. Neither may hold another hidden character, such as a
+tab from pasted text --
 **Mark Ready** refuses the run until it is removed (see :doc:`validation`).
 
 Instrument, flowcell and reagent kit

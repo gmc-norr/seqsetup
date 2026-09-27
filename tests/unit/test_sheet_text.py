@@ -8,6 +8,7 @@ from seqsetup.services.sheet_text import (
     describe,
     hidden_characters,
     refuse_hidden_characters,
+    starts_a_section,
 )
 
 
@@ -88,3 +89,16 @@ class TestRefuseHiddenCharacters:
 
     def test_visible_text_passes(self):
         refuse_hidden_characters("Åsa Öberg, 2 × 150")
+
+
+class TestStartsASection:
+    """A value that starts with '[' would start a new section when it is
+    the first cell on its line."""
+
+    @pytest.mark.parametrize("value", ["[Junk]", "[", " [BCLConvert_Data]"])
+    def test_leading_bracket_starts_a_section(self, value):
+        assert starts_a_section(value)
+
+    @pytest.mark.parametrize("value", ["", "gzip", "a[b]", "x]", "'[x"])
+    def test_other_text_does_not(self, value):
+        assert not starts_a_section(value)

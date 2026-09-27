@@ -197,3 +197,57 @@ sequences raw (they are validated in the model); the fallback global `OverrideCy
 written raw (Mark Ready refuses a malformed one); Unicode format characters (zero-width
 space, BOM, bidi controls) do not break the sheet's structure but can make two names look
 the same — a follow-up.
+
+## Addendum after the second review (2026-09-27)
+
+The second review found, and I reproduced, that a synced profile `Settings` key such as
+`[BCLConvert_Data]` is written as the line `[BCLConvert_Data],` — a section header of its
+own, with the rows after it read as data. Quoting cannot help: the line starts with `[`.
+Column names have the same problem. The user chose to close it here ("fix it here").
+
+- **Names are plain.** Every name that reaches the sheet's structure — a `Settings` key, a
+  `Data` key, a `DataFields` entry and both sides of `Translate` — must be text made only
+  of letters, digits, `_` and `-`. At sync, `validate_application_profile_yaml` refuses
+  any other name: `Field '<field>' has a name that may only contain letters, digits, '_'
+  and '-': <name>`. A name that holds a hidden character is reported once, by the
+  hidden-character rule. At export, the setting name and the column name go through
+  `_require_plain(..., PLAIN_NAME_RE, "Setting name" | "Column name")`.
+- **No value starts a section.** A `Settings` or `Data` value is written as a cell; as a
+  data default in the first column it would start its line. `sheet_text.starts_a_section`
+  (a leading `[`, after any spaces) is the one rule. At sync: `Field '<field>' value for
+  '<key>' cannot start with '[': <value>`. At export, `_escape_config_cell` refuses it.
+- **Shapes.** The writer reads `Settings`, `Data` and `Translate` as mappings and
+  `DataFields` as a list for every `ApplicationType`, so the sync now refuses another
+  shape for every type (empty is still allowed; the Dragen rule still requires the first
+  three). Before, a wrong shape skipped the character checks.
+- **Numbers are refused, not converted.** This reverses the first addendum's minor:
+  `_require_plain` refuses a value that is not text, because `str(4.10)` is `'4.1'`. The
+  sync already refuses a non-text `samplesheet_name` and `software_version`; it now also
+  refuses a non-text `ApplicationName`.
+- **Docs.** `profiles.rst` lists the three new rules and says that a YAML block value
+  (`|`, `>`) ends in a line break and is refused, so use one line or `>-`.
+  `run-setup.rst` says that pressing Enter in the description makes a line break, which
+  is saved as a space; only the run name saves on Enter.
+
+All six shipped application profiles pass the new rules (a test loads each one).
+
+The third review found no Critical or Important issue. Fixed with it: `profiles.rst` says
+that names must be text (quote `"1"`, `"yes"`, `"on"`), that `>-` must have no blank line
+inside, that a `[` after spaces counts, and that a YAML list value is refused; a test
+exports every shipped profile through the writer, so a writer rule stricter than the sync
+is caught.
+
+Follow-ups found by that review, not changed here (each is older than this change, and
+none writes a bad sheet):
+
+- An empty `Settings:` or `Data:` (loads as `None`) on a profile that is not Dragen passes
+  the sync, then every Mark Ready of that test fails with a plain 500 "Failed to generate
+  exports"; the cause is only in the log. Decide: treat empty as absent, or refuse it at
+  sync.
+- A number in a profile value is converted with `str` (`SoftwareVersion: 4.10` is written
+  as `4.1`). Mark Ready catches it only when the instrument lists software versions.
+- A `None` value is written as the text `None`.
+- A profile with empty `Data` and `DataFields` writes a data header with no `Sample_ID`
+  column; the sync accepts `DataFields: []`, even for Dragen.
+- `ApplicationName: 123` is refused with "may only contain letters, digits…", which does
+  not say that the problem is the missing quotes.

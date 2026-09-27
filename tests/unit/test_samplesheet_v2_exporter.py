@@ -1073,9 +1073,12 @@ class TestSheetTextGuards:
                 _StubAppProfileRepo({("Bad", "1.0.0"): app_profile}),
             )
 
-    def test_non_string_config_value_is_checked_as_text(self):
-        """An unquoted YAML number (e.g. software_version: 4.3) is a float."""
-        assert SampleSheetV2Exporter._require_plain(4.3, PLAIN_VERSION_RE, "v") == "4.3"
+    @pytest.mark.parametrize("value", [4.3, 4.10, 7, True])
+    def test_non_string_config_value_is_refused(self, value):
+        """An unquoted YAML number (e.g. software_version: 4.10) is a float,
+        and str() would write 4.1. Refuse it rather than guess."""
+        with pytest.raises(ValueError, match="cannot be written"):
+            SampleSheetV2Exporter._require_plain(value, PLAIN_VERSION_RE, "v")
 
     def test_plain_names_are_written_unchanged(self, sample_run):
         output = SampleSheetV2Exporter.export(sample_run)
@@ -1126,9 +1129,7 @@ class TestProfileCellGuard:
 
     @pytest.mark.parametrize("settings,data,fields,translate", [
         pytest.param({"SoftwareVersion": "4.3.6\n[Junk]"}, {"Extra": "x"}, FIELDS, {}, id="setting-value"),
-        pytest.param({"Soft\nware": "4.3.6"}, {"Extra": "x"}, FIELDS, {}, id="setting-key"),
         pytest.param({}, {"Extra": "x\ny"}, FIELDS, {}, id="data-default"),
-        pytest.param({}, {"Extra": "x"}, FIELDS, {"Extra": "Ex\ntra"}, id="column-name"),
     ])
     def test_line_break_in_profile_cell_is_refused(self, settings, data, fields, translate):
         with pytest.raises(ValueError, match="U\\+000A"):
@@ -1155,3 +1156,106 @@ class TestProfileCellGuard:
         assert "SoftwareVersion,4.3.6" in output.split("\n")
         assert "Sample_ID,Index,Index2,Extra" in output.split("\n")
         assert 'S1,ATTACTCG,TATAGCCT,"x,y"' in output.split("\n")
+
+
+class TestProfileNameGuard:
+    """Setting names and column names start a line or name a column, and
+    quoting cannot stop '[BCLConvert_Data]' from starting a new section.
+    They are written only if made of letters, digits, '_' and '-'."""
+
+    FIELDS = ["Sample_ID", "Index", "Index2", "Extra"]
+
+    @pytest.mark.parametrize("key", ["[BCLConvert_Data]", "Soft\nware", "a,b", 7])
+    def test_non_plain_setting_name_is_refused(self, key):
+        with pytest.raises(ValueError, match="Setting name"):
+            _export_with_profile({key: "x"}, {"Extra": "x"}, self.FIELDS, {})
+
+    @pytest.mark.parametrize("fields,translate", [
+        pytest.param(["Sample_ID", "Ex tra"], {}, id="datafields"),
+        pytest.param(FIELDS, {"Extra": "[Junk]"}, id="translate"),
+        pytest.param(FIELDS, {"Extra": "Ex\ntra"}, id="translate-line-break"),
+    ])
+    def test_non_plain_column_name_is_refused(self, fields, translate):
+        with pytest.raises(ValueError, match="Column name"):
+            _export_with_profile({}, {"Extra": "x", "Ex tra": "x"}, fields, translate)
+
+    def test_plain_names_are_written(self):
+        output = _export_with_profile(
+            {"Adapter_Read-1": "x"}, {"Extra": "x"}, self.FIELDS, {"Extra": "My_Extra"}
+        )
+
+        assert "Adapter_Read-1,x" in output.split("\n")
+        assert "Sample_ID,Index,Index2,My_Extra" in output.split("\n")
+
+
+class TestProfileValueBracketGuard:
+    """A profile value is written as a cell. First on its line (a data
+    default in the first column), a value starting with '[' would start a
+    new section, so it is refused wherever it is written."""
+
+    @pytest.mark.parametrize("value", ["[BCLConvert_Settings]", " [Junk]"])
+    def test_data_default_starting_a_section_is_refused(self, value):
+        with pytest.raises(ValueError, match="starting with"):
+            _export_with_profile({}, {"Extra": value}, ["Extra", "Sample_ID"], {})
+
+    def test_setting_value_starting_a_section_is_refused(self):
+        with pytest.raises(ValueError, match="starting with"):
+            _export_with_profile({"SoftwareVersion": "[Junk]"}, {}, ["Sample_ID"], {})
+
+    def test_mismatch_default_starting_a_section_is_refused(self):
+        with pytest.raises(ValueError, match="starting with"):
+            _export_with_profile(
+                {}, {"BarcodeMismatchesIndex1": "[1"}, ["BarcodeMismatchesIndex1", "Sample_ID"], {},
+                barcode_mismatches_index1=None,
+            )
+
+    def test_bracket_inside_a_value_is_written(self):
+        output = _export_with_profile({}, {"Extra": "a[b]"}, ["Extra", "Sample_ID"], {})
+
+        assert "a[b],S1" in output.split("\n")
+
+
+_SHIPPED_PROFILES = sorted(
+    (Path(__file__).parents[2] / "config" / "profiles" / "application_profiles").rglob("*.yaml")
+)
+
+
+@pytest.mark.parametrize("path", _SHIPPED_PROFILES, ids=lambda p: p.name)
+def test_shipped_application_profiles_export(path):
+    """Every shipped profile passes the writer's rules too, not only the
+    sync's: a writer rule stricter than the sync would stop Mark Ready."""
+    profile = ApplicationProfile.from_yaml(yaml.safe_load(path.read_text()), path.name)
+    run = SequencingRun(
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8),
+        samples=[Sample(
+            sample_id="S1",
+            test_id="WGS",
+            lanes=[1, 2],
+            index_pair=IndexPair(
+                id="p1", name="p1",
+                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+            ),
+        )],
+    )
+    tp = TestProfile(
+        test_type="WGS", test_name="WGS", version="1.0.0",
+        application_profiles=[ApplicationProfileReference(
+            profile_name=profile.name, profile_version=profile.version,
+        )],
+    )
+
+    output = SampleSheetV2Exporter.export(
+        run,
+        _StubTestProfileRepo({"WGS": tp}),
+        _StubAppProfileRepo({(profile.name, profile.version): profile}),
+    )
+
+    assert f"[{profile.application_name}_Settings]" in output.split("\n")
+    assert f"[{profile.application_name}_Data]" in output.split("\n")
+
+
+def test_shipped_application_profiles_are_found_for_export():
+    assert len(_SHIPPED_PROFILES) >= 6

@@ -186,6 +186,29 @@ class TestExportGuardStopsBadSyncedNames:
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()
 
+    def test_section_name_as_synced_setting_name_stops_mark_ready(self, logged_in_client, fresh_app):
+        """A setting named '[BCLConvert_Data]' would start a fake data
+        section (found by the second review)."""
+        _app, ctx, _db = fresh_app
+        try:
+            _seed_synced_profile(ctx, "GuardApp", settings={
+                "SoftwareVersion": "4.3.6",
+                "[BCLConvert_Data]": "",
+            })
+            run_id = _seed_draft(ctx, "guard-setting-name", test_id="GUARD_T")
+            _assert_validation_passes(ctx, run_id)
+
+            resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+            assert resp.status_code == 500
+            assert "Failed to generate exports" in resp.text
+            run = ctx.run_repo.get_by_id(run_id)
+            assert run.status.value == "draft"
+            assert run.generated_samplesheet_v2 is None
+        finally:
+            instruments_module.clear_synced_instruments_cache()
+            clear_validation_cache()
+
     def test_plain_application_name_is_made_ready(self, logged_in_client, fresh_app):
         """CONTROL: the same setup with a plain name is marked ready, so the
         test above fails only because of the name."""

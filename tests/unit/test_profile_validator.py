@@ -1,6 +1,9 @@
 """Tests for profile YAML validators."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from seqsetup.services.profile_validator import (
     ProfileValidationError,
@@ -417,3 +420,114 @@ class TestProfileValuesHiddenCharacters:
             "Settings": {"Threads": 8, "Trim": True, "Empty": None},
             "Data": {"Extra": 1.5},
         })
+
+
+class TestProfileNames:
+    """Every name in Settings, Data, DataFields and Translate becomes a line
+    start or a column name in the Sample Sheet. Quoting cannot stop a name
+    like '[BCLConvert_Data]' from starting a new section, so only letters,
+    digits, '_' and '-' are allowed (found by the second review)."""
+
+    BASE = TestProfileValuesHiddenCharacters.BASE
+
+    @pytest.mark.parametrize("field,value", [
+        pytest.param("Settings", {"[BCLConvert_Data]": "x"}, id="settings-section-name"),
+        pytest.param("Settings", {"Soft ware": "4.3.6"}, id="settings-space"),
+        pytest.param("Settings", {"a,b": "x"}, id="settings-comma"),
+        pytest.param("Settings", {7: "x"}, id="settings-number"),
+        pytest.param("Data", {"[Junk]": "x"}, id="data-key"),
+        pytest.param("DataFields", ["Sample_ID", "Ex tra"], id="datafields-space"),
+        pytest.param("DataFields", ["Sample_ID", 5], id="datafields-number"),
+        pytest.param("DataFields", ["Sample_ID", {"a": "b"}], id="datafields-mapping"),
+        pytest.param("Translate", {"IndexI7": "[Junk]"}, id="translate-value"),
+        pytest.param("Translate", {"Index I7": "Index"}, id="translate-key"),
+    ])
+    def test_non_plain_name_is_refused(self, field, value):
+        with pytest.raises(ProfileValidationError, match=f"Field '{field}' has a name that may only contain"):
+            validate_application_profile_yaml({**self.BASE, field: value})
+
+    def test_name_with_hidden_character_is_reported_once(self):
+        with pytest.raises(ProfileValidationError) as exc:
+            validate_application_profile_yaml({**self.BASE, "Settings": {"Soft\nware": "4.3.6"}})
+        assert len(exc.value.errors) == 1
+        assert "hidden character" in exc.value.errors[0]
+
+    def test_number_application_name_is_refused(self):
+        with pytest.raises(ProfileValidationError, match="ApplicationName' may only contain"):
+            validate_application_profile_yaml({**self.BASE, "ApplicationName": 123})
+
+    def test_plain_names_are_accepted(self):
+        validate_application_profile_yaml({
+            **self.BASE,
+            "Settings": {"SoftwareVersion": "4.3.6", "Adapter_Read-1": "x"},
+            "Translate": {"IndexI7": "Index", "IndexI5": "Index2"},
+        })
+
+
+class TestProfileValuesStartingABracket:
+    """A value is written as a cell. First on its line (a data default in the
+    first column), a value starting with '[' would start a new section."""
+
+    BASE = TestProfileValuesHiddenCharacters.BASE
+
+    @pytest.mark.parametrize("field,value", [
+        pytest.param("Settings", {"SoftwareVersion": "[Junk]"}, id="settings-value"),
+        pytest.param("Data", {"Extra": "[BCLConvert_Settings]"}, id="data-value"),
+        pytest.param("Data", {"Extra": " [Junk]"}, id="data-value-space"),
+        pytest.param("Data", {"Extra": ["a"]}, id="data-list-value"),
+    ])
+    def test_value_starting_a_section_is_refused(self, field, value):
+        with pytest.raises(ProfileValidationError, match=f"Field '{field}' value .* cannot start with"):
+            validate_application_profile_yaml({**self.BASE, field: value})
+
+    def test_bracket_inside_a_value_is_accepted(self):
+        validate_application_profile_yaml({**self.BASE, "Data": {"Extra": "a[b]"}})
+
+
+class TestProfileSectionShapes:
+    """The Sample Sheet writer reads Settings, Data and Translate as mappings
+    and DataFields as a list, for every ApplicationType. Another shape was
+    skipped by the checks above, so it is refused (found by the second
+    review)."""
+
+    BASE = TestValidateApplicationProfile.VALID_NON_DRAGEN_PROFILE
+
+    @pytest.mark.parametrize("field,value,kind", [
+        pytest.param("Settings", "SoftwareVersion,4.3.6", "a mapping", id="settings"),
+        pytest.param("Data", ["Extra"], "a mapping", id="data"),
+        pytest.param("DataFields", "Sample_ID", "a list", id="datafields"),
+        pytest.param("Translate", ["Index"], "a mapping", id="translate"),
+    ])
+    def test_wrong_shape_is_refused(self, field, value, kind):
+        with pytest.raises(ProfileValidationError, match=f"'{field}' must be {kind}"):
+            validate_application_profile_yaml({**self.BASE, field: value})
+
+    def test_empty_translate_is_accepted(self):
+        """A YAML 'Translate:' key with no entries loads as None."""
+        validate_application_profile_yaml({**self.BASE, "Translate": None})
+
+    def test_dragen_wrong_shape_is_reported_once(self):
+        data = {**TestValidateApplicationProfile.VALID_DRAGEN_PROFILE, "Settings": "x"}
+        with pytest.raises(ProfileValidationError) as exc:
+            validate_application_profile_yaml(data)
+        assert exc.value.errors == ["Field 'Settings' must be a mapping"]
+
+    def test_dragen_empty_settings_is_still_refused(self):
+        data = {**TestValidateApplicationProfile.VALID_DRAGEN_PROFILE, "Settings": None}
+        with pytest.raises(ProfileValidationError, match="'Settings' must be a mapping"):
+            validate_application_profile_yaml(data)
+
+
+_SHIPPED_PROFILES = sorted(
+    (Path(__file__).parents[2] / "config" / "profiles" / "application_profiles").rglob("*.yaml")
+)
+
+
+@pytest.mark.parametrize("path", _SHIPPED_PROFILES, ids=lambda p: p.name)
+def test_shipped_application_profiles_pass(path):
+    """The profiles in config/ follow every rule above."""
+    validate_application_profile_yaml(yaml.safe_load(path.read_text()), path.name)
+
+
+def test_shipped_application_profiles_are_found():
+    assert len(_SHIPPED_PROFILES) >= 6

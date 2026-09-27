@@ -40,6 +40,12 @@ def refuse_hidden_characters(value: str, allow: str = "") -> None:
         )
 
 
+def starts_a_section(text: str) -> bool:
+    """True if ``text`` begins with ``[`` (after any spaces). Written first on
+    a line, it would start a new section of the Sample Sheet."""
+    return text.lstrip().startswith("[")
+
+
 def describe(chars: list[str]) -> str:
     """Character codes for a message: ``'U+0000, U+0009 (tab)'``."""
     parts = []

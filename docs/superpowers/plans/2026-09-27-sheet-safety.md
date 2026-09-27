@@ -1419,3 +1419,35 @@ BarcodeMismatches defaults and the final `else` default), `src/seqsetup/services
 - [ ] Run the touched test files; commit: `fix: review follow-ups for the Sample Sheet safety change`.
 - [ ] Then repeat Task 6 Steps 1–4 (full server suite, browser suite with CSS built, docs build,
   break tests for the new guards) and ask the reviewer to check the new commits.
+
+## Addendum: task 9 (after the second review)
+
+The spec's second addendum explains why. Same constraints as above.
+
+### Task 9: Plain names and no section-starting values in synced profiles
+
+**Files:** `src/seqsetup/services/sheet_text.py` (new `starts_a_section(text: str) -> bool`),
+`src/seqsetup/services/profile_validator.py` (`_is_plain_name`, shape loop, name loop, value loop,
+Dragen shape checks now only for `None`), `src/seqsetup/services/samplesheet_v2_exporter.py`
+(`_require_plain` refuses non-text; setting name and column name through `_require_plain`;
+`_escape_config_cell` refuses a value that starts a section), `docs/admin-guide/profiles.rst`,
+`docs/user-guide/run-setup.rst`. Tests: `tests/unit/test_sheet_text.py` (`TestStartsASection`),
+`tests/unit/test_profile_validator.py` (`TestProfileNames`, `TestProfileValuesStartingABracket`,
+`TestProfileSectionShapes`, `test_shipped_application_profiles_pass`),
+`tests/unit/test_samplesheet_v2_exporter.py` (`test_non_string_config_value_is_refused`,
+`TestProfileNameGuard`, `TestProfileValueBracketGuard`; the setting-key and column-name cases move
+out of `TestProfileCellGuard`), `tests/integration/test_sheet_safety.py`
+(`test_section_name_as_synced_setting_name_stops_mark_ready`).
+
+- [x] Write the failing tests; run them: 35 fail for the missing rules (no error, DID NOT RAISE,
+  200 instead of 500, ImportError for `starts_a_section`).
+- [x] Implement; the four test files pass (274).
+- [x] Break tests: undo each new guard in turn (setting name, column name, value bracket, non-text,
+  sync names, double report, sync values, sync shapes, Dragen shape, `lstrip`, ApplicationName
+  non-text); every one is caught.
+- [x] Docs build; full server suite (2041 passed); commit
+  `fix(sync, export): plain names and no section-starting values in synced profiles`.
+- [x] Reviewer checked the change: no Critical or Important issue. Doc wording fixed and a
+  test that exports every shipped profile added (break-tested); older gaps recorded as
+  follow-ups in the spec.
+- [ ] Browser suite (CSS built).
