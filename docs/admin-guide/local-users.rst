@@ -16,9 +16,8 @@ Fill in the **Create New User** form:
 3. **Email** -- optional.
 4. **Role** -- **Standard** or **Admin**.
 5. **Password** -- at least 8 characters. SeqSetup refuses a password that is
-   too short, made of a single repeated character, all digits, or on its list
-   of common weak/default passwords (for example ``password``, ``admin123``,
-   ``changeme``).
+   too short, made of a single repeated character, all digits, or one of a
+   short list of very common weak or default passwords.
 
 Select **Create User** to save the account.
 

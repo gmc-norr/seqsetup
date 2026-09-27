@@ -996,7 +996,21 @@ def test_admin_logs(demo_page, base_url, demo):
     # enclosing <form>'s inputs even without hx-include, and this button
     # sits inside the same <form> as #level/#search -- confirm that here
     # rather than assuming.
+    #
+    # hx-swap="outerHTML" (logs.html:45,67) replaces the whole #logs-page
+    # node -- .table-scroll included -- with a brand-new one carrying the
+    # same selector, so waiting on "#logs-page .table-scroll" alone can be
+    # satisfied by the PRE-refresh node that is still in the DOM the instant
+    # .click() returns (.click() does not await htmx's request). And because
+    # the row count is already 1 here (from the Filter step above), reading
+    # it off that stale node would still show refreshed_rows == 1 and pass
+    # for the wrong reason -- it would prove nothing about what Refresh
+    # actually did. Capture a handle to the current node before clicking and
+    # wait for THAT node to be detached, which can only happen once the
+    # outerHTML swap has actually completed.
+    old_table = page.locator("#logs-page .table-scroll").element_handle()
     page.get_by_role("button", name="Refresh").click()
+    page.wait_for_function("(el) => !document.contains(el)", arg=old_table)
     page.wait_for_selector("#logs-page .table-scroll")
     refreshed_rows = page.locator("#logs-page tbody tr").count()
     assert refreshed_rows == 1, (

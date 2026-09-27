@@ -146,9 +146,20 @@ Group-based roles
    * - **Admin Group DN**
      - Members of this group get the Admin role
    * - **User Group DN**
-     - Members of this group get the Standard role
+     - Accepted and stored by this form, but not read anywhere in the login
+       path. It has no effect on who can sign in or on what role they get.
    * - **Group Membership Attribute**
      - Default ``memberOf``
+
+.. warning::
+   **User Group DN** does nothing today. Role assignment checks only
+   **Admin Group DN**: every LDAP/Active Directory user who binds
+   successfully and is not a member of that group is given the Standard
+   role, regardless of what groups they belong to -- including groups
+   outside whatever DN is entered here. There is no LDAP group setting
+   anywhere on this page that restricts *who may sign in*; setting
+   **User Group DN** in the belief that it does so will leave the
+   application open to every user your directory can authenticate.
 
 Timeouts
 ~~~~~~~~~~
