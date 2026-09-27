@@ -7,6 +7,7 @@ from typing import TextIO
 
 from ..data.instruments import get_i5_read_orientation
 from ..models.sequencing_run import InstrumentPlatform, SequencingRun
+from .sheet_text import refuse_hidden_characters
 
 
 # Reverse complement lookup table
@@ -164,6 +165,7 @@ class SampleSheetV1Exporter:
         + ``,`` + ``"`` quoting, plus a leading-quote prefix on cells that
         would otherwise be interpreted as spreadsheet formulas).
         """
+        refuse_hidden_characters(value, allow="\t\n\r")
         if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
             value = "'" + value
         if "," in value or '"' in value or "\n" in value or "\r" in value:

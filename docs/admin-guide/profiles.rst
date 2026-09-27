@@ -300,6 +300,27 @@ Application Profile Validation
 
 - All four required fields must be present and non-empty
 - ``ApplicationProfileVersion`` must be a valid PEP 440 version
+- ``ApplicationName`` may only contain letters, digits, ``_`` and ``-`` --
+  it becomes a section name in the Sample Sheet (``[<name>_Settings]``),
+  written exactly as given
+- ``Settings``, ``Data``, ``DataFields`` and ``Translate`` may not hold a
+  hidden character anywhere -- no line break, tab or other invisible
+  control character, in a key or a value. They are written into the Sample
+  Sheet as cells, and a line break there would start a new line in it.
+  A YAML block value (``|`` or ``>``) ends in a line break, so it is
+  refused; write the value on one line, or use ``>-`` with no blank line
+  inside
+- Every name -- a ``Settings`` or ``Data`` key, a ``DataFields`` entry, and
+  both sides of ``Translate`` -- must be text made only of letters, digits,
+  ``_`` and ``-``. Names start a line or name a column in the Sample Sheet,
+  and a name such as ``[BCLConvert_Data]`` would start a section of its
+  own. Quote a name that YAML would read as a number or as true/false
+  (``"1"``, ``"yes"``, ``"on"``); the same goes for ``ApplicationName``
+- No ``Settings`` or ``Data`` value may start with ``[``, even after
+  spaces -- written first on a line, it would start a new section. A value
+  written as a YAML list is written as ``['a', 'b']``, so it is refused too
+- ``Settings``, ``Data`` and ``Translate`` must be mappings and
+  ``DataFields`` a list, when given
 - If ``ApplicationType`` is ``Dragen``: ``Settings`` and ``Data`` must be
   present and be dicts, and ``DataFields`` must be present and be a list
 

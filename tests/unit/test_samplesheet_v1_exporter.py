@@ -379,3 +379,18 @@ class TestSampleIdentifiersWrittenExactly:
 
     def test_leading_dash_run_name_kept_as_experiment_name(self):
         assert "\nExperiment Name,-Run1\n" in self._export(run_name="-Run1", full=True)
+
+
+class TestSheetTextGuardV1:
+    """The v1 writer refuses hidden characters it cannot make safe (audit
+    2026-09 N-12)."""
+
+    @pytest.mark.parametrize("char", ["\x00", "\x0b", "\x0c", "\x85", "\u2028"])
+    def test_escape_csv_refuses_hidden_character(self, char):
+        with pytest.raises(ValueError, match=f"U\\+{ord(char):04X}"):
+            SampleSheetV1Exporter._escape_csv(f"N{char}X")
+
+    def test_escape_csv_keeps_its_quoting_and_formula_guard(self):
+        assert SampleSheetV1Exporter._escape_csv("a,b") == '"a,b"'
+        assert SampleSheetV1Exporter._escape_csv("a\rb") == '"a\rb"'
+        assert SampleSheetV1Exporter._escape_csv("\tx") == "'\tx"

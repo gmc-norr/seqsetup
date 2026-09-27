@@ -32,6 +32,7 @@ from .application_profile_validator import ApplicationProfileValidator
 from .color_analysis_validator import ColorAnalysisValidator
 from .cycle_calculator import CycleCalculator
 from .index_collision_validator import IndexCollisionValidator
+from .sheet_text import describe, hidden_characters
 from .validation_utils import effective_index_sequence, hamming_distance
 
 
@@ -270,6 +271,12 @@ class ValidationService:
         ("description", "description"),
     )
 
+    # Free-text run fields written to the Sample Sheet header, with their UI names.
+    _RUN_TEXT_FIELDS = (
+        ("run_name", "name"),
+        ("run_description", "description"),
+    )
+
     @classmethod
     def validate_configuration(
         cls,
@@ -297,6 +304,8 @@ class ValidationService:
                 category="prerequisite_run_name",
                 message="Run has no name; give it a name in Run Setup before marking it ready.",
             ))
+
+        errors.extend(cls._validate_run_text_hidden_characters(run))
 
         # A run setting, so checked before the sample checks below.
         errors.extend(cls._validate_cycles_fit_kit(run))
@@ -332,6 +341,7 @@ class ValidationService:
 
         errors.extend(cls._validate_sample_id_characters(run))
         errors.extend(cls._validate_sample_text_line_breaks(run))
+        errors.extend(cls._validate_sample_text_hidden_characters(run))
         errors.extend(cls._validate_lane_assignments(run, total_lanes))
         errors.extend(cls._validate_no_lane_assignment(run))
         errors.extend(cls._validate_index_length_consistency(run, all_lanes))
@@ -525,6 +535,68 @@ class ValidationService:
                     sample_names=[name],
                 )
             )
+        return errors
+
+    @staticmethod
+    def _hidden_character_message(subject: str, fields: list[str], chars: list[str]) -> str:
+        many = len(chars) > 1
+        return (
+            f"{subject} has {'hidden characters' if many else 'a hidden character'} "
+            f"in its {' and '.join(fields)}: {describe(chars)}. Hidden characters "
+            f"can break the Sample Sheet. Remove {'them' if many else 'it'} before "
+            f"marking the run ready."
+        )
+
+    @classmethod
+    def _validate_run_text_hidden_characters(
+        cls, run: SequencingRun
+    ) -> list[ConfigurationError]:
+        """The run's name and description go into the Sample Sheet header. A
+        hidden character in either is an error, not something the exporter
+        writes."""
+        fields: list[str] = []
+        chars: list[str] = []
+        for attr, label in cls._RUN_TEXT_FIELDS:
+            found = hidden_characters(getattr(run, attr) or "")
+            if found:
+                fields.append(label)
+                chars.extend(c for c in found if c not in chars)
+        if not fields:
+            return []
+        return [ConfigurationError(
+            severity=ValidationSeverity.ERROR,
+            category="hidden_character_in_text",
+            message=cls._hidden_character_message("The run", fields, chars),
+        )]
+
+    @classmethod
+    def _validate_sample_text_hidden_characters(
+        cls, run: SequencingRun
+    ) -> list[ConfigurationError]:
+        """Sample name, project and description: a hidden character other than
+        a line break is an error. Line breaks have their own error above, so a
+        character is never reported twice."""
+        errors: list[ConfigurationError] = []
+        for sample in run.samples:
+            fields: list[str] = []
+            chars: list[str] = []
+            for attr, label in cls._SAMPLE_TEXT_FIELDS:
+                found = [
+                    c for c in hidden_characters(getattr(sample, attr) or "")
+                    if c not in cls._LINE_BREAK_CHARS
+                ]
+                if found:
+                    fields.append(label)
+                    chars.extend(c for c in found if c not in chars)
+            if not fields:
+                continue
+            name = sample.sample_id or sample.id
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="hidden_character_in_text",
+                message=cls._hidden_character_message(f"Sample '{name}'", fields, chars),
+                sample_names=[name],
+            ))
         return errors
 
     @classmethod

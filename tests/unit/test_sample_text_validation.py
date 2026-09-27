@@ -145,3 +145,118 @@ class TestSampleTextLineBreaks:
         errors = _errors(run, "line_break_in_sample_text")
 
         assert sorted(e.sample_names[0] for e in errors) == ["S1", "S2"]
+
+
+HIDDEN = [
+    pytest.param("\x00", "U+0000", id="NUL"),
+    pytest.param("\t", "U+0009 (tab)", id="TAB"),
+    pytest.param("\x1f", "U+001F", id="US"),
+    pytest.param("\x7f", "U+007F", id="DEL"),
+    pytest.param("\x9b", "U+009B", id="C1-CSI"),
+]
+
+
+class TestSampleTextHiddenCharacters:
+    """A hidden character other than a line break in a sample's name, project
+    or description is its own Mark Ready error (audit 2026-09 N-12)."""
+
+    @pytest.mark.parametrize("attr,label", TEXT_FIELDS)
+    @pytest.mark.parametrize("char,code", HIDDEN)
+    def test_hidden_character_in_sample_text_is_an_error(self, attr, label, char, code):
+        sample = Sample(sample_id="S1")
+        setattr(sample, attr, f"A{char}B")
+
+        errors = _errors(_run_with(sample), "hidden_character_in_text")
+
+        assert len(errors) == 1
+        assert errors[0].severity.value == "error"
+        assert errors[0].sample_names == ["S1"]
+        assert errors[0].message.startswith(
+            f"Sample 'S1' has a hidden character in its {label}: {code}."
+        )
+        assert "Remove it before marking the run ready." in errors[0].message
+
+    @pytest.mark.parametrize(
+        "line_break",
+        sorted(ValidationService._LINE_BREAK_CHARS),
+        ids=lambda c: f"U+{ord(c):04X}",
+    )
+    def test_line_break_alone_gives_only_the_line_break_error(self, line_break):
+        run = _run_with(Sample(sample_id="S1", sample_name=f"A{line_break}B"))
+
+        assert len(_errors(run, "line_break_in_sample_text")) == 1
+        assert _errors(run, "hidden_character_in_text") == []
+
+    def test_line_break_and_nul_give_each_error_once(self):
+        run = _run_with(Sample(sample_id="S1", project="A\nB\x00C"))
+
+        assert len(_errors(run, "line_break_in_sample_text")) == 1
+        hidden = _errors(run, "hidden_character_in_text")
+        assert len(hidden) == 1
+        assert "U+0000" in hidden[0].message
+        assert "U+000A" not in hidden[0].message
+
+    def test_several_fields_and_characters_make_one_error(self):
+        sample = Sample(sample_id="S1", project="P\x00", description="D\tE")
+
+        errors = _errors(_run_with(sample), "hidden_character_in_text")
+
+        assert len(errors) == 1
+        assert (
+            "has hidden characters in its project and description: U+0000, U+0009 (tab)."
+            in errors[0].message
+        )
+        assert "Remove them before marking the run ready." in errors[0].message
+
+    def test_visible_text_in_any_script_is_accepted(self):
+        sample = Sample(
+            sample_id="S1", sample_name="Åsa Öberg", project="Проект-7",
+            description="试验 2, rack A",
+        )
+
+        assert _errors(_run_with(sample), "hidden_character_in_text") == []
+
+
+RUN_TEXT_FIELDS = [
+    pytest.param("run_name", "name", id="run_name"),
+    pytest.param("run_description", "description", id="run_description"),
+]
+
+
+class TestRunTextHiddenCharacters:
+    """The run's name and description are checked for every hidden character
+    (audit 2026-09 N-12)."""
+
+    @pytest.mark.parametrize("attr,label", RUN_TEXT_FIELDS)
+    @pytest.mark.parametrize("char,code", HIDDEN + [
+        pytest.param("\x0b", "U+000B", id="VT"),
+        pytest.param("\u2028", "U+2028", id="LINE-SEPARATOR"),
+    ])
+    def test_hidden_character_in_run_text_is_an_error(self, attr, label, char, code):
+        run = _run_with(Sample(sample_id="S1"))
+        setattr(run, attr, f"Run{char}1")
+
+        errors = _errors(run, "hidden_character_in_text")
+
+        assert len(errors) == 1
+        assert errors[0].severity.value == "error"
+        assert errors[0].message.startswith(
+            f"The run has a hidden character in its {label}: {code}."
+        )
+
+    def test_run_without_samples_is_still_checked(self):
+        run = SequencingRun(run_name="Run1", run_description="a\tb")
+
+        assert len(_errors(run, "hidden_character_in_text")) == 1
+
+    def test_line_break_in_description_is_saved_as_a_space(self):
+        run = SequencingRun(run_name="Run1", run_description="line one\nline two")
+
+        assert run.run_description == "line one line two"
+        assert _errors(run, "hidden_character_in_text") == []
+
+    def test_visible_run_text_is_accepted(self):
+        run = _run_with(Sample(sample_id="S1"))
+        run.run_description = "Åsa's run, 2 × 150"
+
+        assert _errors(run, "hidden_character_in_text") == []

@@ -16,6 +16,7 @@ from seqsetup.models.sequencing_run import (
 )
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
+from seqsetup.services.sheet_text import PLAIN_VERSION_RE
 
 
 class TestSampleSheetV2Exporter:
@@ -995,3 +996,266 @@ class TestSampleIdentifiersWrittenExactly:
         output = SampleSheetV2Exporter.export(run)
         assert "\nRunName,-Run1\n" in output
         assert "\n-S1,-Run1," in self._section(output, "Cloud_Data")
+
+
+class TestSheetTextGuards:
+    """The v2 writer refuses text it cannot make safe (audit 2026-09 N-10,
+    N-11, N-12). Mark Ready then fails and the run stays Draft."""
+
+    @pytest.mark.parametrize("char", [
+        "\x00", "\x0b", "\x0c", "\x1f", "\x7f", "\x85", "\u2028", "\u2029",
+    ])
+    def test_escape_csv_refuses_hidden_character(self, char):
+        with pytest.raises(ValueError, match=f"U\\+{ord(char):04X}"):
+            SampleSheetV2Exporter._escape_csv(f"N{char}X")
+
+    def test_escape_csv_error_does_not_contain_the_text(self):
+        with pytest.raises(ValueError) as exc:
+            SampleSheetV2Exporter._escape_csv("Patient-Name\x00X")
+        assert "Patient-Name" not in str(exc.value)
+
+    def test_escape_csv_keeps_its_quoting_and_formula_guard(self):
+        assert SampleSheetV2Exporter._escape_csv("a,b") == '"a,b"'
+        assert SampleSheetV2Exporter._escape_csv('a"b') == '"a""b"'
+        assert SampleSheetV2Exporter._escape_csv("a\nb") == '"a\nb"'
+        assert SampleSheetV2Exporter._escape_csv("\tx") == "'\tx"
+        assert SampleSheetV2Exporter._escape_csv("Åsa Öberg") == "Åsa Öberg"
+
+    def test_identifier_with_hidden_character_is_refused(self):
+        with pytest.raises(ValueError):
+            SampleSheetV2Exporter._escape_identifier("S\x001")
+
+    def test_bad_samplesheet_name_is_refused(self, sample_run, monkeypatch):
+        monkeypatch.setattr(
+            "seqsetup.services.samplesheet_v2_exporter.get_samplesheet_platform_name",
+            lambda platform: "NovaSeqXSeries\n[Cloud_Data]",
+        )
+        with pytest.raises(ValueError, match="sample sheet name"):
+            SampleSheetV2Exporter.export(sample_run)
+
+    def test_bad_software_version_is_refused(self, sample_run, monkeypatch):
+        monkeypatch.setattr(
+            "seqsetup.services.samplesheet_v2_exporter.get_bclconvert_software_version",
+            lambda platform: "4.3.6\n[Junk]",
+        )
+        with pytest.raises(ValueError, match="software version"):
+            SampleSheetV2Exporter.export(sample_run)
+
+    def test_bad_application_name_is_refused(self):
+        run = SequencingRun(
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+            samples=[Sample(
+                sample_id="S1",
+                test_id="WGS",
+                index_pair=IndexPair(
+                    id="p1", name="p1",
+                    index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                    index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                ),
+            )],
+        )
+        app_profile = ApplicationProfile(
+            name="Bad", version="1.0.0", application_type="Custom",
+            application_name="BCLConvert]\n[Junk",
+            settings={}, data_fields=["Sample_ID"], data={},
+        )
+        tp = TestProfile(
+            test_type="WGS", test_name="WGS", version="1.0.0",
+            application_profiles=[ApplicationProfileReference(profile_name="Bad", profile_version="1.0.0")],
+        )
+
+        with pytest.raises(ValueError, match="ApplicationName"):
+            SampleSheetV2Exporter.export(
+                run,
+                _StubTestProfileRepo({"WGS": tp}),
+                _StubAppProfileRepo({("Bad", "1.0.0"): app_profile}),
+            )
+
+    @pytest.mark.parametrize("value", [4.3, 4.10, 7, True])
+    def test_non_string_config_value_is_refused(self, value):
+        """An unquoted YAML number (e.g. software_version: 4.10) is a float,
+        and str() would write 4.1. Refuse it rather than guess."""
+        with pytest.raises(ValueError, match="cannot be written"):
+            SampleSheetV2Exporter._require_plain(value, PLAIN_VERSION_RE, "v")
+
+    def test_plain_names_are_written_unchanged(self, sample_run):
+        output = SampleSheetV2Exporter.export(sample_run)
+
+        assert "InstrumentPlatform,NovaSeqXSeries" in output
+        assert "SoftwareVersion,4.3.6" in output
+
+
+def _export_with_profile(settings, data, data_fields, translate, **sample_fields):
+    """Export one indexed sample through a profile-driven section."""
+    run = SequencingRun(
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8),
+        samples=[Sample(
+            sample_id="S1",
+            test_id="WGS",
+            index_pair=IndexPair(
+                id="p1", name="p1",
+                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+            ),
+            **sample_fields,
+        )],
+    )
+    app_profile = ApplicationProfile(
+        name="P", version="1.0.0", application_type="Custom",
+        application_name="BCLConvert",
+        settings=settings, data_fields=data_fields, data=data, translate=translate,
+    )
+    tp = TestProfile(
+        test_type="WGS", test_name="WGS", version="1.0.0",
+        application_profiles=[ApplicationProfileReference(profile_name="P", profile_version="1.0.0")],
+    )
+    return SampleSheetV2Exporter.export(
+        run,
+        _StubTestProfileRepo({"WGS": tp}),
+        _StubAppProfileRepo({("P", "1.0.0"): app_profile}),
+    )
+
+
+class TestProfileCellGuard:
+    """Cells taken from an application profile refuse every hidden character,
+    line breaks and tab included: quoting a line break still leaves a new line
+    for a line-oriented reader."""
+
+    FIELDS = ["Sample_ID", "Index", "Index2", "Extra"]
+
+    @pytest.mark.parametrize("settings,data,fields,translate", [
+        pytest.param({"SoftwareVersion": "4.3.6\n[Junk]"}, {"Extra": "x"}, FIELDS, {}, id="setting-value"),
+        pytest.param({}, {"Extra": "x\ny"}, FIELDS, {}, id="data-default"),
+    ])
+    def test_line_break_in_profile_cell_is_refused(self, settings, data, fields, translate):
+        with pytest.raises(ValueError, match="U\\+000A"):
+            _export_with_profile(settings, data, fields, translate)
+
+    def test_line_break_in_mismatch_default_is_refused(self):
+        """The profile's BarcodeMismatches default is used when the sample
+        has no value of its own."""
+        with pytest.raises(ValueError, match="U\\+000A"):
+            _export_with_profile(
+                {}, {"BarcodeMismatchesIndex1": "1\n"}, ["Sample_ID", "BarcodeMismatchesIndex1"], {},
+                barcode_mismatches_index1=None,
+            )
+
+    def test_tab_in_profile_cell_is_refused(self):
+        with pytest.raises(ValueError, match="U\\+0009"):
+            _export_with_profile({}, {"Extra": "x\ty"}, self.FIELDS, {})
+
+    def test_plain_profile_cells_are_written(self):
+        output = _export_with_profile(
+            {"SoftwareVersion": "4.3.6"}, {"Extra": "x,y"}, self.FIELDS, {}
+        )
+
+        assert "SoftwareVersion,4.3.6" in output.split("\n")
+        assert "Sample_ID,Index,Index2,Extra" in output.split("\n")
+        assert 'S1,ATTACTCG,TATAGCCT,"x,y"' in output.split("\n")
+
+
+class TestProfileNameGuard:
+    """Setting names and column names start a line or name a column, and
+    quoting cannot stop '[BCLConvert_Data]' from starting a new section.
+    They are written only if made of letters, digits, '_' and '-'."""
+
+    FIELDS = ["Sample_ID", "Index", "Index2", "Extra"]
+
+    @pytest.mark.parametrize("key", ["[BCLConvert_Data]", "Soft\nware", "a,b", 7])
+    def test_non_plain_setting_name_is_refused(self, key):
+        with pytest.raises(ValueError, match="Setting name"):
+            _export_with_profile({key: "x"}, {"Extra": "x"}, self.FIELDS, {})
+
+    @pytest.mark.parametrize("fields,translate", [
+        pytest.param(["Sample_ID", "Ex tra"], {}, id="datafields"),
+        pytest.param(FIELDS, {"Extra": "[Junk]"}, id="translate"),
+        pytest.param(FIELDS, {"Extra": "Ex\ntra"}, id="translate-line-break"),
+    ])
+    def test_non_plain_column_name_is_refused(self, fields, translate):
+        with pytest.raises(ValueError, match="Column name"):
+            _export_with_profile({}, {"Extra": "x", "Ex tra": "x"}, fields, translate)
+
+    def test_plain_names_are_written(self):
+        output = _export_with_profile(
+            {"Adapter_Read-1": "x"}, {"Extra": "x"}, self.FIELDS, {"Extra": "My_Extra"}
+        )
+
+        assert "Adapter_Read-1,x" in output.split("\n")
+        assert "Sample_ID,Index,Index2,My_Extra" in output.split("\n")
+
+
+class TestProfileValueBracketGuard:
+    """A profile value is written as a cell. First on its line (a data
+    default in the first column), a value starting with '[' would start a
+    new section, so it is refused wherever it is written."""
+
+    @pytest.mark.parametrize("value", ["[BCLConvert_Settings]", " [Junk]"])
+    def test_data_default_starting_a_section_is_refused(self, value):
+        with pytest.raises(ValueError, match="starting with"):
+            _export_with_profile({}, {"Extra": value}, ["Extra", "Sample_ID"], {})
+
+    def test_setting_value_starting_a_section_is_refused(self):
+        with pytest.raises(ValueError, match="starting with"):
+            _export_with_profile({"SoftwareVersion": "[Junk]"}, {}, ["Sample_ID"], {})
+
+    def test_mismatch_default_starting_a_section_is_refused(self):
+        with pytest.raises(ValueError, match="starting with"):
+            _export_with_profile(
+                {}, {"BarcodeMismatchesIndex1": "[1"}, ["BarcodeMismatchesIndex1", "Sample_ID"], {},
+                barcode_mismatches_index1=None,
+            )
+
+    def test_bracket_inside_a_value_is_written(self):
+        output = _export_with_profile({}, {"Extra": "a[b]"}, ["Extra", "Sample_ID"], {})
+
+        assert "a[b],S1" in output.split("\n")
+
+
+_SHIPPED_PROFILES = sorted(
+    (Path(__file__).parents[2] / "config" / "profiles" / "application_profiles").rglob("*.yaml")
+)
+
+
+@pytest.mark.parametrize("path", _SHIPPED_PROFILES, ids=lambda p: p.name)
+def test_shipped_application_profiles_export(path):
+    """Every shipped profile passes the writer's rules too, not only the
+    sync's: a writer rule stricter than the sync would stop Mark Ready."""
+    profile = ApplicationProfile.from_yaml(yaml.safe_load(path.read_text()), path.name)
+    run = SequencingRun(
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8),
+        samples=[Sample(
+            sample_id="S1",
+            test_id="WGS",
+            lanes=[1, 2],
+            index_pair=IndexPair(
+                id="p1", name="p1",
+                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+            ),
+        )],
+    )
+    tp = TestProfile(
+        test_type="WGS", test_name="WGS", version="1.0.0",
+        application_profiles=[ApplicationProfileReference(
+            profile_name=profile.name, profile_version=profile.version,
+        )],
+    )
+
+    output = SampleSheetV2Exporter.export(
+        run,
+        _StubTestProfileRepo({"WGS": tp}),
+        _StubAppProfileRepo({(profile.name, profile.version): profile}),
+    )
+
+    assert f"[{profile.application_name}_Settings]" in output.split("\n")
+    assert f"[{profile.application_name}_Data]" in output.split("\n")
+
+
+def test_shipped_application_profiles_are_found_for_export():
+    assert len(_SHIPPED_PROFILES) >= 6

@@ -12,6 +12,12 @@ from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .samplesheet_v1_exporter import _PLAIN_IDENTIFIER_RE, _reverse_complement
+from .sheet_text import (
+    PLAIN_NAME_RE,
+    PLAIN_VERSION_RE,
+    refuse_hidden_characters,
+    starts_a_section,
+)
 
 if TYPE_CHECKING:
     from ..repositories.test_profile_repo import TestProfileRepository
@@ -80,7 +86,10 @@ class SampleSheetV2Exporter:
             output.write(f"RunDescription,{cls._escape_csv(run.run_description)}\n")
 
         # Get platform name from config (e.g., "NovaSeqXSeries" for "NovaSeq X Series")
-        platform_name = get_samplesheet_platform_name(run.instrument_platform)
+        platform_name = cls._require_plain(
+            get_samplesheet_platform_name(run.instrument_platform),
+            PLAIN_NAME_RE, "Instrument sample sheet name",
+        )
         output.write(f"InstrumentPlatform,{platform_name}\n")
 
         # Index orientation - NovaSeq X expects forward i5 in sample sheet
@@ -116,6 +125,9 @@ class SampleSheetV2Exporter:
         # Use instrument config defaults
         software_version = get_bclconvert_software_version(run.instrument_platform)
         if software_version:
+            software_version = cls._require_plain(
+                software_version, PLAIN_VERSION_RE, "BCL Convert software version"
+            )
             output.write(f"SoftwareVersion,{software_version}\n")
         output.write("FastqCompressionFormat,gzip\n")
 
@@ -386,7 +398,7 @@ class SampleSheetV2Exporter:
     def _escape_csv(cls, value: str) -> str:
         """Escape a value for CSV output.
 
-        Two independent concerns:
+        Three independent concerns:
 
         1. Structural: lone CR is quoted as well as LF — a Mac-style line
            ending pasted from an upstream source would otherwise write a
@@ -402,7 +414,13 @@ class SampleSheetV2Exporter:
            "this is text, not a formula" escape) before applying the regular
            CSV quoting. The quote becomes part of the cell text, visible to
            humans but inert to formula parsers.
+
+        3. Characters quoting cannot make safe: any other hidden character
+           (NUL, VT, FF, NEL, U+2028, ...) raises ``ValueError``. Mark Ready
+           refuses them first; this is the backstop. The error names the
+           character codes only — the text can be patient data.
         """
+        refuse_hidden_characters(value, allow="\t\n\r")
         if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
             value = "'" + value
         if "," in value or '"' in value or "\n" in value or "\r" in value:
@@ -419,6 +437,32 @@ class SampleSheetV2Exporter:
         if value and _PLAIN_IDENTIFIER_RE.fullmatch(value):
             return value
         return cls._escape_csv(value)
+
+    @classmethod
+    def _escape_config_cell(cls, value) -> str:
+        """Escape a value taken from an application profile (a setting value,
+        a default value). Quoting a line break still leaves a new line for a
+        line-oriented reader, so every hidden character — tab and line breaks
+        included — is refused before ``_escape_csv``. So is a value starting
+        with '[': first on its line, it would start a new section."""
+        text = str(value)
+        refuse_hidden_characters(text)
+        if starts_a_section(text):
+            raise ValueError(
+                f"A profile value starting with '[' cannot be written to the Sample Sheet: {text!r}"
+            )
+        return cls._escape_csv(text)
+
+    @classmethod
+    def _require_plain(cls, value: str, pattern, what: str) -> str:
+        """Return ``value`` if it may be written into the sheet's structure as
+        is (a section header, a header line, a setting or column name); raise
+        ``ValueError`` if not. These values come from the synced config, and
+        quoting cannot make a section header safe. A non-string value (an
+        unquoted YAML number) is refused: str() would write 4.10 as 4.1."""
+        if not isinstance(value, str) or not pattern.fullmatch(value):
+            raise ValueError(f"{what} {value!r} cannot be written to the Sample Sheet")
+        return value
 
     @classmethod
     def _write_application_sections_from_profiles(
@@ -487,7 +531,7 @@ class SampleSheetV2Exporter:
         run: Optional[SequencingRun] = None,
     ):
         """Write [AppName_Settings] and [AppName_Data] sections from profile."""
-        app_name = profile.application_name
+        app_name = cls._require_plain(profile.application_name, PLAIN_NAME_RE, "ApplicationName")
 
         # Write Settings section
         output.write(f"[{app_name}_Settings]\n")
@@ -507,9 +551,8 @@ class SampleSheetV2Exporter:
                     output.write(line)
 
         for key, value in profile.settings.items():
-            output.write(
-                f"{cls._escape_csv(str(key))},{cls._escape_csv(str(value))}\n"
-            )
+            name = cls._require_plain(key, PLAIN_NAME_RE, "Setting name")
+            output.write(f"{name},{cls._escape_config_cell(value)}\n")
         output.write("\n")
 
         # Write Data section
@@ -526,8 +569,11 @@ class SampleSheetV2Exporter:
         translate = profile.translate or {}
         columns = [(field, translate.get(field, field)) for field in data_fields]
 
-        # Write header row — escape admin-defined column names defensively.
-        output.write(",".join(cls._escape_csv(str(col)) for _, col in columns) + "\n")
+        # Write header row — admin-defined column names must be plain names.
+        output.write(
+            ",".join(cls._require_plain(col, PLAIN_NAME_RE, "Column name") for _, col in columns)
+            + "\n"
+        )
 
         # BCLConvert: one row per (sample, lane), as in _write_bclconvert_data —
         # writing only the first lane would send the other lanes' reads to
@@ -562,13 +608,13 @@ class SampleSheetV2Exporter:
                     val = sample.barcode_mismatches_index1
                     row.append(
                         str(val) if val is not None
-                        else cls._escape_csv(str(profile.data.get(field, "")))
+                        else cls._escape_config_cell(profile.data.get(field, ""))
                     )
                 elif col == "BarcodeMismatchesIndex2":
                     val = sample.barcode_mismatches_index2
                     row.append(
                         str(val) if val is not None
-                        else cls._escape_csv(str(profile.data.get(field, "")))
+                        else cls._escape_config_cell(profile.data.get(field, ""))
                     )
                 elif col == "OverrideCycles":
                     # Use sample's override cycles, or calculate from index lengths.
@@ -583,7 +629,7 @@ class SampleSheetV2Exporter:
                     row.append(cls._escape_csv(oc or ""))
                 else:
                     # Use default value from profile data
-                    row.append(cls._escape_csv(str(profile.data.get(field, ""))))
+                    row.append(cls._escape_config_cell(profile.data.get(field, "")))
             output.write(",".join(row) + "\n")
 
         output.write("\n")
