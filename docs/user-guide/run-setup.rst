@@ -18,9 +18,9 @@ defaults:
    Starting from a template, outlined.
 
 Choosing a template and selecting **Use template** replaces the blank run
-with a new Draft copying that template's instrument, cycles and any
-sample scaffold it was saved with, and discards the blank run this page
-had just created. This section only appears for a brand-new run, and only
+with a new Draft copying that template's instrument and cycles but no
+samples (see :doc:`templates`), and discards the blank run this page had
+just created. This section only appears for a brand-new run, and only
 when at least one template exists.
 
 Run name and description
