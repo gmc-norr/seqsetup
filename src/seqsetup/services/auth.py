@@ -1,5 +1,6 @@
 """Authentication service for user login and session management."""
 
+import dataclasses
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -132,7 +133,8 @@ class AuthService:
 
         try:
             ldap_service = LDAPService(auth_config.ldap_config)
-            return ldap_service.authenticate(username, password)
+            return dataclasses.replace(
+                ldap_service.authenticate(username, password), source="ldap")
         except LDAPError as e:
             # Log the underlying LDAP error (includes server-side detail
             # such as bind hostnames) but surface only a generic message
@@ -197,6 +199,7 @@ class AuthService:
                     display_name=user_data.get("display_name", username),
                     role=UserRole(user_data.get("role", "standard")),
                     email=user_data.get("email"),
+                    source="yaml",
                 )
 
         # Authentication failed. If we never ran a real bcrypt comparison

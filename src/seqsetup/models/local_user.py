@@ -1,5 +1,6 @@
 """Local user model for database-managed users."""
 
+import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -59,6 +60,10 @@ def assert_password_strong(plaintext: str) -> None:
         raise WeakPasswordError("Password cannot be all digits.")
 
 
+def _new_session_stamp() -> str:
+    return secrets.token_hex(16)
+
+
 @dataclass
 class LocalUser:
     """A locally managed user stored in MongoDB."""
@@ -70,6 +75,17 @@ class LocalUser:
     email: str = ""
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
+    # Changes whenever the role or password changes (see __setattr__ and
+    # set_password); a login made with an older stamp is refused.
+    session_stamp: str = field(default_factory=_new_session_stamp)
+
+    def __setattr__(self, name, value):
+        # Only after construction (session_stamp exists) and only on a real
+        # role change: logins made under the old role must stop working.
+        if (name == "role" and "session_stamp" in self.__dict__
+                and self.__dict__.get("role") != value):
+            object.__setattr__(self, "session_stamp", _new_session_stamp())
+        object.__setattr__(self, name, value)
 
     def set_password(self, plaintext: str) -> None:
         """Hash and store a plaintext password.
@@ -82,6 +98,7 @@ class LocalUser:
         self.password_hash = bcrypt.hashpw(
             plaintext.encode("utf-8"), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
         ).decode("utf-8")
+        self.session_stamp = _new_session_stamp()
         self.updated_at = datetime.now()
 
     def verify_password(self, plaintext: str) -> bool:
@@ -102,6 +119,8 @@ class LocalUser:
             display_name=self.display_name,
             role=self.role,
             email=self.email or None,
+            source="local",
+            session_stamp=self.session_stamp,
         )
 
     def to_dict(self) -> dict:
@@ -115,6 +134,7 @@ class LocalUser:
             "email": self.email,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "session_stamp": self.session_stamp,
         }
 
     @classmethod
@@ -128,4 +148,5 @@ class LocalUser:
             email=data.get("email", ""),
             created_at=data.get("created_at", datetime.now()),
             updated_at=data.get("updated_at", datetime.now()),
+            session_stamp=data.get("session_stamp", ""),
         )

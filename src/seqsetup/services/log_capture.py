@@ -185,6 +185,12 @@ class LogCaptureHandler(logging.Handler):
 _log_capture_handler: Optional[LogCaptureHandler] = None
 
 
+def _not_audit_record(record: logging.LogRecord) -> bool:
+    """Audit events are kept on the Audit trail page (/admin/audit), not in
+    this clearable, 2000-entry buffer."""
+    return record.name != "seqsetup.audit" and not record.name.startswith("seqsetup.audit.")
+
+
 def get_log_capture_handler() -> LogCaptureHandler:
     """Get or create the global log capture handler."""
     global _log_capture_handler
@@ -194,6 +200,7 @@ def get_log_capture_handler() -> LogCaptureHandler:
         _log_capture_handler.setFormatter(
             logging.Formatter("%(message)s")
         )
+        _log_capture_handler.addFilter(_not_audit_record)
     return _log_capture_handler
 
 

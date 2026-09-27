@@ -1,0 +1,95 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Audit trail" %}
+{% set active_route = "/admin/audit" %}
+
+{% block content %}
+{% block audit_page %}
+<div id="audit-page" class="space-y-4">
+    <div>
+        <h2 class="text-2xl font-semibold">Audit trail</h2>
+        <p class="text-slate-600">
+            Who did what, and when. Events are kept permanently: nothing in the app changes or deletes them. Times are UTC.
+        </p>
+    </div>
+
+    <form class="flex gap-3 items-end flex-wrap"
+          hx-get="/admin/audit"
+          hx-target="#audit-page"
+          hx-swap="outerHTML">
+        <div>
+            <label for="event" class="block text-sm font-medium mb-1">What happened</label>
+            <input type="text" name="event" id="event" value="{{ filters.event }}"
+                   placeholder="e.g. login" class="border rounded px-2 py-1">
+        </div>
+        <div>
+            <label for="actor" class="block text-sm font-medium mb-1">Who</label>
+            <input type="text" name="actor" id="actor" value="{{ filters.actor }}"
+                   placeholder="username" class="border rounded px-2 py-1">
+        </div>
+        <div class="flex-1 min-w-[200px]">
+            <label for="target" class="block text-sm font-medium mb-1">On what</label>
+            <input type="text" name="target" id="target" value="{{ filters.target }}"
+                   placeholder="run ID, username, …" class="w-full border rounded px-3 py-1">
+        </div>
+        <div>
+            <label for="date_from" class="block text-sm font-medium mb-1">From</label>
+            <input type="date" name="date_from" id="date_from" value="{{ filters.date_from }}"
+                   class="border rounded px-2 py-1">
+        </div>
+        <div>
+            <label for="date_to" class="block text-sm font-medium mb-1">To</label>
+            <input type="date" name="date_to" id="date_to" value="{{ filters.date_to }}"
+                   class="border rounded px-2 py-1">
+        </div>
+        <button type="submit" class="bg-primary text-white rounded px-3 py-1 hover:bg-primary-hover">Search</button>
+        <button type="button"
+                class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1"
+                hx-get="/admin/audit"
+                hx-target="#audit-page"
+                hx-swap="outerHTML">Clear</button>
+    </form>
+
+    {% if error %}
+        <div class="bg-red-100 border border-red-400 text-red-800 rounded px-3 py-2" role="alert">{{ error }}</div>
+    {% elif not rows %}
+        <div class="py-16 text-center">
+            <p class="text-slate-600 font-medium">No audit events match.</p>
+        </div>
+    {% else %}
+        <div class="table-scroll">
+            <table class="w-full border-collapse text-sm">
+                <thead>
+                    <tr class="bg-slate-100">
+                        <th class="border px-2 py-1 text-left" scope="col">Time (UTC)</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Who</th>
+                        <th class="border px-2 py-1 text-left" scope="col">What</th>
+                        <th class="border px-2 py-1 text-left" scope="col">On what</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Result</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td class="border px-2 py-1 whitespace-nowrap font-mono text-xs">{{ row.time }}</td>
+                        <td class="border px-2 py-1 text-xs">{{ row.actor }}</td>
+                        <td class="border px-2 py-1 whitespace-nowrap text-xs">{{ row.event }}</td>
+                        <td class="border px-2 py-1 text-xs break-all">{{ row.target }}</td>
+                        <td class="border px-2 py-1 text-xs">{{ row.outcome }}</td>
+                        <td class="border px-2 py-1"><pre class="whitespace-pre-wrap text-xs">{{ row.details }}</pre></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if older_url %}
+        <div class="flex justify-end">
+            <a href="{{ older_url }}"
+               class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1"
+               hx-get="{{ older_url }}" hx-target="#audit-page" hx-swap="outerHTML">Older</a>
+        </div>
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}
+{% endblock %}

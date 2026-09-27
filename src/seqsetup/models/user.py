@@ -20,6 +20,10 @@ class User:
     display_name: str
     role: UserRole
     email: Optional[str] = None
+    # Where this login came from ("local", "yaml", "ldap") and, for a
+    # database user, their session stamp at login. Read by the login list.
+    source: str = ""
+    session_stamp: str = ""
 
     @property
     def is_admin(self) -> bool:

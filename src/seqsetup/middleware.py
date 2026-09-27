@@ -6,11 +6,17 @@ FastHTML's ``@rt``-decorated handlers; routes registered directly on
 ``app.routes`` would have bypassed auth entirely.
 """
 
+import logging
+
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, RedirectResponse
+from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
-from .models.user import User
+from . import startup
+from .services import web_sessions
+
+logger = logging.getLogger(__name__)
 
 # Routes that don't require authentication. /api/* is owned by the
 # FastAPI sub-app and short-circuited in dispatch() below regardless of
@@ -22,6 +28,41 @@ PUBLIC_ROUTES = {"/login", "/login/submit", "/favicon.ico"}
 # future route like "/cssadmin", which CLAUDE.md treats as a hard rule
 # violation ("never add unprotected routes").
 _STATIC_PREFIXES = ("/static/", "/css/", "/js/", "/img/")
+
+# Shown in the page's error banner when a background (HTMX) action meets an
+# ended login. The page is kept, so what the user typed is not lost.
+ENDED_LOGIN_MESSAGE_HTML = (
+    '<div class="error-message">Your login has ended, so this was not saved. '
+    'What you typed is still on this page. '
+    '<a href="/login" target="_blank" rel="noopener">Log in again</a> '
+    'in a new tab, then try again here.</div>'
+)
+# The same for a background read (nothing was being saved).
+ENDED_LOGIN_READ_MESSAGE_HTML = (
+    '<div class="error-message">Your login has ended. '
+    '<a href="/login" target="_blank" rel="noopener">Log in again</a> '
+    'in a new tab, then try again here.</div>'
+)
+
+
+def _is_htmx(request: Request) -> bool:
+    return request.headers.get("HX-Request", "").lower() == "true"
+
+
+def _banner(body: str, status: int) -> HTMLResponse:
+    """An error for the page's error banner (see static/js/app.js)."""
+    # HX-Reselect "unset": an hx-select inherited by the element that sent
+    # the request would otherwise pick a part the message lacks and show
+    # nothing.
+    return HTMLResponse(body, status_code=status, headers={
+        "HX-Retarget": "#error-banner", "HX-Reswap": "innerHTML",
+        "HX-Reselect": "unset", "Cache-Control": "no-store"})
+
+
+def _resolve(ticket: str):
+    return web_sessions.resolve(
+        startup.get_web_session_repo(), startup.get_local_user_repo(), ticket,
+        web_sessions.utcnow(), web_sessions.current_policy())
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -57,7 +98,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.scope["auth"] = None
             return await call_next(request)
 
-        # Session-backed HTML routes.
+        # Session-backed HTML routes. The cookie holds only a ticket; the
+        # login itself lives server-side (services/web_sessions.py).
         try:
             sess = request.session
         except AssertionError:
@@ -65,15 +107,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # middleware in isolation). Treat as anonymous.
             sess = {}
 
-        user_data = sess.get("user")
-        if not user_data:
-            return RedirectResponse("/login", status_code=303)
-
+        ticket = sess.get("sid")
         try:
-            request.scope["auth"] = User.from_dict(user_data)
-        except (KeyError, ValueError):
-            # Invalid session payload — drop it and force re-login.
+            user = await run_in_threadpool(_resolve, ticket) if ticket else None
+        except Exception:
+            # Never let a request through on a guess.
+            logger.exception("Login check failed: database unavailable")
+            if _is_htmx(request):
+                return _banner('<div class="error-message">Database unavailable.</div>', 503)
+            return PlainTextResponse("Database unavailable", status_code=503)
+
+        if user is None:
             sess.clear()
+            if _is_htmx(request):
+                is_read = request.method in ("GET", "HEAD")
+                return _banner(ENDED_LOGIN_READ_MESSAGE_HTML if is_read
+                               else ENDED_LOGIN_MESSAGE_HTML, 401)
             return RedirectResponse("/login", status_code=303)
 
+        request.scope["auth"] = user
         return await call_next(request)

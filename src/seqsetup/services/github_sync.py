@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import yaml
 
 from ..utils.yaml_safety import safe_load_strict
+from ..data.instruments import clear_synced_instruments_cache
 from ..models.application_profile import ApplicationProfile
 from ..models.index import IndexKit
 from ..models.instrument_definition import InstrumentDefinition
@@ -287,6 +288,13 @@ class GitHubSyncService:
             if config.sync_index_kits_enabled and self.index_kit_repo:
                 self.index_kit_repo.delete_synced()
                 self.index_kit_repo.bulk_save(index_kits)
+
+            # Drop the in-memory instrument definitions so every caller of
+            # sync() — the admin route and the background scheduler — sees
+            # the new ones (i5 orientation, flowcell lanes, kit cycles).
+            # Before the validation cache below, so a validation that runs in
+            # between cannot be memoized against the old instruments.
+            clear_synced_instruments_cache()
 
             # Invalidate cached validation results. ValidationService memoizes
             # by (run.id, run.updated_at, repo identity), but a bulk_save into

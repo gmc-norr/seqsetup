@@ -132,6 +132,11 @@ def fresh_app(isolated_mongo, monkeypatch, tmp_path):
 
     yield app_module.app, app_module._ctx, isolated_mongo
 
+    # The app set the audit sink (module state) to this test's database; don't
+    # let later tests keep writing audit events into it.
+    from seqsetup.services.audit_log import set_audit_sink
+    set_audit_sink(None)
+
 
 def disable_repos(ctx, *repo_keys: str) -> None:
     """Null out repos on BOTH the test's ctx AND startup._repos.

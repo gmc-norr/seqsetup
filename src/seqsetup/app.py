@@ -32,6 +32,7 @@ from .exception_handlers import install as install_exception_handlers
 from .middleware import AuthMiddleware
 from .routes import api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, run_templates, runs, samples, validation, wizard
 from .routes.admin import (
+    audit as admin_audit,
     authentication as admin_authentication,
     config_sync as admin_config_sync,
     instruments as admin_instruments,
@@ -40,8 +41,11 @@ from .routes.admin import (
 )
 from .security_headers import SecurityHeadersMiddleware
 from .services.log_capture import setup_log_capture
+from .services import web_sessions
+from .services.audit_log import set_audit_sink
 from .startup import (
     get_app_context,
+    get_audit_event_repo,
     get_instrument_definition_repo,
     init_auth_service,
     init_repos,
@@ -79,14 +83,12 @@ app = FastAPI(
 # wrap order documented in the module docstring (Security → Origin →
 # Session → Auth → app).
 app.add_middleware(AuthMiddleware)
-# Sliding-window session lifetime: 8 hours. Starlette's default is 14 days,
-# which is far too long for a shared clinical workstation — an unattended
-# browser would stay authenticated across multiple shifts. 8 hours matches
-# a typical workday; operators who walk away for lunch will re-auth on
-# return. Override with ``SEQSETUP_SESSION_MAX_AGE_SECONDS`` if needed.
-_SESSION_MAX_AGE = int(
-    os.environ.get("SEQSETUP_SESSION_MAX_AGE_SECONDS", str(8 * 3600))
-)
+# Logins live server-side (services/web_sessions.py): 30 minutes unused or
+# 8 hours after login ends them, whatever the cookie says. The cookie's own
+# max_age is set to the same hard cap so browsers drop it too.
+# SEQSETUP_SESSION_IDLE_SECONDS / SEQSETUP_SESSION_MAX_AGE_SECONDS override.
+_SESSION_POLICY = web_sessions.SessionPolicy.from_env()
+web_sessions.set_policy(_SESSION_POLICY)
 
 # Project-specific cookie name. Starlette's default ``session`` would
 # collide with other Starlette apps that happen to share a host (an
@@ -98,7 +100,7 @@ app.add_middleware(
     secret_key=_SESSION_SECRET,
     same_site="strict",
     https_only=_SESS_HTTPS_ONLY,
-    max_age=_SESSION_MAX_AGE,
+    max_age=_SESSION_POLICY.max_age_seconds,
     session_cookie="seqsetup_session",
 )
 app.add_middleware(OriginCheckMiddleware)
@@ -127,6 +129,7 @@ def _favicon_redirect():
 
 # Initialize services
 set_instrument_definition_repo(get_instrument_definition_repo())  # Enable synced instruments
+set_audit_sink(get_audit_event_repo())  # Keep every audit event; before the scheduler starts
 auth_service = init_auth_service()
 init_scheduler()
 setup_log_capture(["seqsetup"])
@@ -151,6 +154,7 @@ app.include_router(admin_authentication.router)
 app.include_router(admin_config_sync.router)
 app.include_router(admin_instruments.router)
 app.include_router(admin_logs.router)
+app.include_router(admin_audit.router)
 app.include_router(admin_sample_api.router)
 app.include_router(api_tokens.router)
 app.include_router(local_users.router)
