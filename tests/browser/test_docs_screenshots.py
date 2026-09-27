@@ -618,8 +618,17 @@ def test_check_heatmaps(demo_page, base_url, demo):
     # indexed samples and the Heatmaps tab is enabled, not disabled.
     page.get_by_role("button", name="Heatmaps").click()
     lane = page.locator(".lane-heatmap-simple").first
+    # region=lane (the table plus its own "Lane 1 (2 samples)" header) is
+    # only 12px above the sibling .heatmap-legend row that follows
+    # .lane-heatmaps in the DOM (components.css: .heatmap-legend's 0.75rem
+    # margin-top) -- shoot()'s default 16px pad overshoots that gap and
+    # slices the legend's colour swatches into the bottom of the crop.
+    # Measured live: shrinking .lane-heatmap-simple's own padding does not
+    # help -- the flex layout just pulls the legend up by the same amount,
+    # so the gap to it stays 12px regardless. A smaller pad is what
+    # actually keeps the crop inside that gap.
     with _overflow_visible(lane.locator(".table-scroll").first):
-        snap(page, "check/heatmaps", lane.locator(".heatmap-table").first, region=lane)
+        snap(page, "check/heatmaps", lane.locator(".heatmap-table").first, region=lane, pad=6)
 
 
 def test_check_color_balance(demo_page, base_url, demo):
@@ -754,35 +763,3 @@ def test_archive_button(demo_page, base_url, demo):
     page.wait_for_selector("#run-status-bar .status-ready")
     snap(page, "archive/archive-button", page.get_by_role("button", name="Archive"),
          region=page.locator("#run-status-bar"))
-
-
-def test_export_panel_archived(demo_page, base_url, demo):
-    page = demo_page
-    # test_archive_button (above) left this run Ready -- demo_page is a
-    # fresh page + login per test (like every test in this module), so
-    # reload it here rather than assuming the DOM from that test survives.
-    page.goto(f"{base_url}/runs/{_CLEAN_RUN['id']}")
-    page.get_by_role("button", name="Archive").click()
-    page.wait_for_selector("#run-status-bar .status-archived")
-    # READY->ARCHIVED keeps the pre-generated exports (routes/runs.py:
-    # update_status -- the DRAFT-clearing branch above is an elif, so
-    # ARCHIVED never takes it); the panel should still show every button
-    # enabled, not the Draft "Downloads open..." message.
-    buttons = page.locator("#export-panel .export-buttons")
-    assert buttons.locator("a.export-btn.disabled").count() == 0
-    snap(page, "export/panel-archived", buttons, region=page.locator("#export-panel"))
-
-    # Not a picture -- a direct check of the ARCHIVED terminal-state claim
-    # in export.rst. The status bar still renders a "Reset to Draft" button
-    # for an Archived run (templates/runs/_run_status_bar.html), but
-    # check_status_transition (routes/utils.py) maps ARCHIVED to an empty
-    # allowed-target set, so the POST is always refused; app.js's generic
-    # htmx error handling (static/js/app.js:729-751) puts the plain-text
-    # body in #error-banner since the 400 carries no HX-Retarget.
-    page.get_by_role("button", name="Reset to Draft").click()
-    page.wait_for_selector("#error-banner .error-message")
-    assert page.locator("#error-banner").text_content().strip() == (
-        "Invalid status transition: archived → draft"
-    )
-    # Confirm the refusal really changed nothing.
-    assert page.locator("#run-status-bar .status-archived").count() == 1

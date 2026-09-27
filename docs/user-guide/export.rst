@@ -45,13 +45,13 @@ Downloading exports
 Once a run is **Ready** or **Archived**, its Export panel offers a
 download for each of:
 
-- **Sample Sheet v2** -- the CSV consumed by BCLConvert / DRAGEN.
-- **Sample Sheet v1** -- the legacy IEM format, only for instruments that
-  still use it (MiSeq and NovaSeq 6000).
-- **JSON** -- the complete run and sample metadata.
-- **Validation Report (JSON)** and **Validation Report (PDF)** -- the same
-  validation result the Check panel and the validation page showed at the
-  moment the run was marked Ready.
+- **Download Sample Sheet v2** -- the CSV consumed by BCLConvert / DRAGEN.
+- **Download Sample Sheet v1** -- the legacy IEM format, only for
+  instruments that still use it (MiSeq and NovaSeq 6000).
+- **Download JSON** -- the complete run and sample metadata.
+- **Download Validation Report (JSON)** and **Download Validation Report
+  (PDF)** -- the same validation result the Check panel and the validation
+  page showed at the moment the run was marked Ready.
 
 .. figure:: /_static/screenshots/export/panel-ready.png
    :alt: The Export panel on a Ready run, with every download button enabled.
@@ -153,12 +153,12 @@ A Ready run's status bar also offers **Archive**:
 
 Archiving keeps the run's already-generated exports -- unlike Return to
 Draft, nothing is discarded, and every download from the previous section
-keeps working exactly as it did while the run was Ready:
-
-.. figure:: /_static/screenshots/export/panel-archived.png
-   :alt: The Export panel on an Archived run, with every download button still enabled.
-
-   The Export panel on an Archived run, outlined.
+keeps working exactly as it did while the run was Ready. The Export panel
+itself looks no different on an Archived run -- the same buttons, all
+still enabled, as in the Ready screenshot above. What changes is the
+status bar and the transitions on offer: instead of **Return to Draft**
+and **Archive**, an Archived run's status bar shows a single **Reset to
+Draft** button.
 
 .. warning::
    Archived is a dead end. The status bar still shows a button in its
