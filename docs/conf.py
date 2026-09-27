@@ -3,7 +3,7 @@
 project = "SeqSetup"
 copyright = "2025, Pär Larsson"
 author = "Pär Larsson"
-release = "0.1.0"
+release = "0.2.0"
 
 extensions = []
 

@@ -3,7 +3,7 @@ authors = ["Pär Larsson <par.larsson@umu.se>"]
 channels = ["conda-forge"]
 name = "seqsetup"
 platforms = ["linux-64"]
-version = "0.1.0"
+version = "0.2.0"
 
 [tasks]
 serve = { cmd = "PYTHONPATH=src python -m seqsetup.app", depends-on = ["css"] }
