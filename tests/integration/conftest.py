@@ -12,6 +12,7 @@ list, so adding a new route doesn't silently bypass smoke coverage.
 """
 
 import importlib
+import re
 import sys
 from pathlib import Path
 
@@ -248,3 +249,14 @@ def logged_in_standard_client(fresh_app, standard_user_seeded):
         f"Standard-user login failed (status={response.status_code}); body={response.text[:300]}"
     )
     return c
+
+
+def mark_ready(client, run_id: str, headers: dict):
+    """POST Mark Ready; if the color-balance question comes back, answer it
+    the way its form does. Returns the last response. For tests about
+    something else that happen to use a one-sample two-color run."""
+    resp = client.post(f"/runs/{run_id}/status/ready", headers=headers)
+    if "Mark Ready anyway" not in resp.text:
+        return resp
+    fields = dict(re.findall(r'name="(color_balance_[a-z_]+)" value="([^"]*)"', resp.text))
+    return client.post(f"/runs/{run_id}/status/ready", data=fields, headers=headers)

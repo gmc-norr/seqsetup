@@ -1,0 +1,27 @@
+{#
+   Mark-Ready question when color balance has errors, swapped into
+   #ready-message (HX-Retarget). The run stays Draft until the operator
+   answers; routes/runs.py update_status accepts the answer only while the
+   run's updated_at and its error lanes are what was shown here.
+
+   Inputs:
+     run:          SequencingRun
+     lanes:        list[int] — lanes with color balance errors
+     lanes_value:  str — the same lanes, "1,2", sent back with the answer
+#}
+<div class="warning-message ready-confirm">
+    <p><strong>Color balance errors</strong></p>
+    <p>{{ "Lane" if lanes | length == 1 else "Lanes" }} {{ lanes | join(", ") }}
+       {{ "has" if lanes | length == 1 else "have" }} color balance errors: at some index
+       position, one color channel gets no signal from any sample in the lane. Reads from
+       that lane may fail to be assigned to their samples. Check the Color Balance tab of
+       the <a href="/runs/{{ run.id }}/validation">validation page</a> before going on.</p>
+    <form hx-post="/runs/{{ run.id }}/status/ready"
+          hx-target="#run-status-bar"
+          hx-swap="outerHTML"
+          hx-disabled-elt="find button">
+        <input type="hidden" name="color_balance_confirmed_at" value="{{ run.updated_at.isoformat() }}">
+        <input type="hidden" name="color_balance_lanes" value="{{ lanes_value }}">
+        <button type="submit" class="btn btn-secondary btn-small">Mark Ready anyway</button>
+    </form>
+</div>

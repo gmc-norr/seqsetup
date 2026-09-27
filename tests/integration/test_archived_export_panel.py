@@ -11,6 +11,8 @@ already has downloadable, pre-generated content.
 from .test_smoke_validation import _make_ready_eligible_run
 from seqsetup.services.samplesheet_v1_exporter import SampleSheetV1Exporter
 
+from .conftest import mark_ready
+
 
 def _origin() -> dict:
     return {"Origin": "http://testserver"}
@@ -21,7 +23,7 @@ def _make_archived_run(logged_in_client, ctx, run_id: str) -> str:
     status routes to Ready then Archived, so exports are pre-generated
     the same way production does it."""
     run_id = _make_ready_eligible_run(ctx, run_id)
-    resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=_origin())
+    resp = mark_ready(logged_in_client, run_id, _origin())
     assert resp.status_code == 200
     resp = logged_in_client.post(f"/runs/{run_id}/status/archived", headers=_origin())
     assert resp.status_code == 200
@@ -84,7 +86,7 @@ class TestArchivedExportPanelEnabled:
         """A Ready run's panel is unaffected by the fix: same links, none disabled."""
         _app, ctx, _db = fresh_app
         run_id = _make_ready_eligible_run(ctx, "ready-export-run")
-        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=_origin())
+        resp = mark_ready(logged_in_client, run_id, _origin())
         assert resp.status_code == 200
 
         response = logged_in_client.get(f"/runs/{run_id}")

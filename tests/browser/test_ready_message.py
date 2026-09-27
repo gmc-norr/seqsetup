@@ -75,3 +75,30 @@ def test_refusal_does_not_replace_a_save_failure(logged_in_page, base_url, app_c
 
     expect(page.locator("#ready-message .ready-refused")).to_contain_text("Cannot mark ready")
     expect(page.locator("#error-banner")).to_contain_text("not valid OverrideCycles")
+
+
+@pytest.mark.browser
+def test_question_survives_a_retry_after_a_failure(logged_in_page, base_url, app_ctx, cleanup):
+    """Astra's point 1: after Mark Ready failed (here a 500), the retry's
+    question must stay on screen and its button must work."""
+    run_id = _seed(app_ctx, "ready-msg-retry", "ATTACTCG", "TATAGCCT")
+    cleanup.append(run_id)
+    page = logged_in_page
+    page.goto(f"{base_url}/runs/{run_id}")
+    page.wait_for_load_state("networkidle")
+    page.route(f"**/runs/{run_id}/status/ready",
+               lambda route: route.fulfill(status=500, body="Failed to generate exports",
+                                           content_type="text/plain"),
+               times=1)
+    page.get_by_role("button", name="Mark Ready").click()
+    expect(page.locator("#error-banner")).to_contain_text("Failed to generate exports")
+
+    with page.expect_response(lambda r: r.url.endswith("/status/ready") and r.status == 200):
+        page.get_by_role("button", name="Mark Ready").click()
+    page.wait_for_load_state("networkidle")
+
+    question = page.locator("#ready-message .ready-confirm")
+    expect(question).to_be_visible()
+    question.get_by_role("button", name="Mark Ready anyway").click()
+    expect(page.locator("#run-status-bar .status-ready")).to_be_visible()
+    expect(page.locator("#ready-message")).to_be_empty()

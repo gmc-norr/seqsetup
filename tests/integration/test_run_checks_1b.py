@@ -185,3 +185,99 @@ class TestReadyMessageSlot:
         page = logged_in_client.get(f"/runs/{run_id}").text
 
         assert '<div id="ready-message" class="empty:hidden"></div>' in page
+
+
+def _question_fields(html: str) -> dict:
+    return dict(re.findall(r'name="(color_balance_[a-z_]+)" value="([^"]*)"', html))
+
+
+def _events(ctx, prefix):
+    return ctx.audit_event_repo.search(limit=50, event_prefix=prefix)
+
+
+class TestColorBalanceQuestion:
+    """Mark Ready asks before promoting a run with color-balance errors; the
+    answer counts only for the run and lanes that were shown (F13). `_seed`
+    puts samples in lane 1 only, so the error lanes are [1]."""
+
+    def _setup(self, fresh_app, run_id, pairs=(("ATTACTCG", "TATAGCCT"),)):
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        return ctx, _seed(ctx, run_id, pairs=pairs)
+
+    def test_error_lanes_ask_and_stay_draft(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "cb-ask")
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert resp.status_code == 200
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert "Color balance errors" in resp.text and "Mark Ready anyway" in resp.text
+        run = ctx.run_repo.get_by_id(run_id)
+        assert run.status.value == "draft" and run.generated_samplesheet_v2 is None
+        (event,) = _events(ctx, "run.status.denied")
+        assert event.details["reason"] == "color_balance_unconfirmed"
+        assert event.details["color_balance_lanes"] == [1]
+
+    def test_answer_makes_it_ready_and_is_recorded(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "cb-yes")
+        question = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready",
+                                     data=_question_fields(question.text), headers=ORIGIN)
+
+        assert "HX-Retarget" not in resp.headers, resp.text[:400]
+        assert ctx.run_repo.get_by_id(run_id).status.value == "ready"
+        (event,) = _events(ctx, "run.status.changed")
+        assert event.details["color_balance_accepted_lanes"] == [1]
+
+    def test_answer_for_an_older_version_asks_again(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "cb-stale")
+        fields = _question_fields(logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN).text)
+        assert logged_in_client.post(f"/runs/{run_id}/name", data={"run_name": "Edited"},
+                                     headers=ORIGIN).status_code == 200
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", data=fields, headers=ORIGIN)
+
+        assert "Mark Ready anyway" in resp.text
+        assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
+
+    def test_answer_for_other_lanes_asks_again(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "cb-lanes")
+        fields = _question_fields(logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN).text)
+        fields["color_balance_lanes"] = "2"
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", data=fields, headers=ORIGIN)
+
+        assert "Mark Ready anyway" in resp.text
+        assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
+
+    def test_no_error_lanes_do_not_ask(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "cb-none", pairs=(CLEAN_PAIR,))
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert "Mark Ready anyway" not in resp.text
+        assert ctx.run_repo.get_by_id(run_id).status.value == "ready"
+
+    def test_real_errors_are_refused_before_asking(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _seed(ctx, "cb-refused")  # profile repos on, no test_id: a real error
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert "Cannot mark ready" in resp.text and "Mark Ready anyway" not in resp.text
+
+    def test_check_panel_says_mark_ready_will_ask(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "cb-panel")
+
+        panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
+
+        assert "Mark Ready will ask" in panel
+
+    def test_check_panel_is_quiet_without_error_lanes(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "cb-panel-clean", pairs=(CLEAN_PAIR,))
+
+        panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
+
+        assert "Mark Ready will ask" not in panel

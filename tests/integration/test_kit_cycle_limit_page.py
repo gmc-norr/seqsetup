@@ -9,6 +9,7 @@ import pytest
 
 from seqsetup.models.sequencing_run import RunStatus
 
+from .conftest import mark_ready
 from .test_smoke_validation import _make_ready_eligible_run
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -110,7 +111,7 @@ class TestMarkReadyRefusesTooManyCycles:
     def test_same_run_without_limit_is_marked_ready(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _make_ready_eligible_run(ctx)
-        logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+        mark_ready(logged_in_client, run_id, ORIGIN)
         assert ctx.run_repo.get_by_id(run_id).status == RunStatus.READY
 
     def test_check_panel_is_red_on_an_empty_run(self, logged_in_client, kit_limit):

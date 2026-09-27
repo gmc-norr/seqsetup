@@ -771,11 +771,12 @@ def test_ready_mark_ready(demo_page, base_url, demo):
     # true post-refresh, once every sample is indexed), not on status_cls
     # == "ok": four distinct real 8bp sequences can still trip a lane's
     # color-balance check at some position (a real, separate, non-error
-    # finding -- see color_balance_issue_count, models/validation.py:313-
-    # 316 -- which is never added into error_count/has_errors,
-    # models/validation.py:286-304, so it cannot block Mark Ready below),
-    # which alone keeps status_cls at "has-warnings" and never "ok"
-    # (templates/runs/_validate_panel.html:27-34) even with zero errors.
+    # finding -- see color_balance_issue_count, models/validation.py -- which
+    # is never added into error_count/has_errors, so it does not refuse Mark
+    # Ready below; a color-balance *error* instead makes Mark Ready ask, and
+    # this test answers that question), which alone keeps status_cls at
+    # "has-warnings" and never "ok"
+    # (templates/runs/_validate_panel.html) even with zero errors.
     page.wait_for_selector('#validate-panel .validate-status-badges:has-text("Indexes: 4/4")')
     badges = page.locator("#validate-panel .validate-status-badges")
     assert badges.locator(".status-error").count() == 0
@@ -784,6 +785,13 @@ def test_ready_mark_ready(demo_page, base_url, demo):
     assert page.locator("#validate-panel .validate-error-list").count() == 0
 
     page.get_by_role("button", name="Mark Ready").click()
+    # DEMO-RUN-06's four pairs leave color-balance errors (i7 positions 4
+    # and 6, in every lane the samples are in), so Mark Ready asks first
+    # (spec 2026-09-27, F13).
+    question = page.locator("#ready-message .ready-confirm")
+    expect(question).to_be_visible()
+    snap(page, "ready/mark-ready-color-balance", question, region=page.locator("#ready-message"))
+    question.get_by_role("button", name="Mark Ready anyway").click()
     page.wait_for_selector("#run-status-bar .run-status-badge.status-ready")
     snap(page, "ready/mark-ready", page.locator("#run-status-bar .run-status-badge"),
          region=page.locator("#run-status-bar"))

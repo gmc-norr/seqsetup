@@ -33,6 +33,19 @@ edits, and its exports are generated:
 
    The status badge just after Mark Ready succeeds, outlined.
 
+If the run has no errors but a lane has a color balance error (see
+:doc:`validation`), **Mark Ready** does not go ahead yet. It asks, under
+the status bar, and names the lanes:
+
+.. figure:: /_static/screenshots/ready/mark-ready-color-balance.png
+   :alt: The "Color balance errors" question under the status bar, naming lane 1, with a "Mark Ready anyway" button.
+
+   The color balance question, outlined.
+
+Select **Mark Ready anyway** to promote the run; your answer, and the
+lanes it covered, are recorded in the audit trail. If the run changes
+before you answer, the question comes back for the new state.
+
 A message Mark Ready shows stays under the status bar until the run's
 status changes; an error from a save that was refused stays in the red
 banner at the top of the page, even after the run becomes Ready -- read

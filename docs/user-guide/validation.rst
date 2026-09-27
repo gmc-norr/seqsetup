@@ -17,7 +17,8 @@ The Check panel
 The panel shows a badge for the sample count, a badge for how many samples
 have an index assigned, and -- only when there is at least one -- a badge
 for the number of errors. When any lane has a color balance warning or
-error, an amber **Color balance: N lane(s)** badge appears too -- see
+error, an amber **Color balance: N lane(s)** badge appears too -- with
+"· Mark Ready will ask" when a lane has a color balance *error* -- see
 `Color balance`_ below for what that counts. Up to ten error messages are
 listed directly underneath; beyond ten, the panel says how many more there
 are and points to the full validation page. Errors it finds are the same
@@ -145,14 +146,14 @@ that position, and gives it a status:
 Which bases feed which channel is instrument-specific -- the tab's legend
 names the channels and bases for the run's own instrument.
 
-.. warning::
-   An **Error** here -- 0% signal in a channel -- is reported on this tab
-   and on the Check panel's amber **Color balance: N lane(s)** badge, but
-   it does not block **Mark Ready** (see :doc:`export`): color balance is
-   not one of the checks that transition refuses on. Read this tab
-   yourself before promoting a run on a two-color instrument -- do not
-   assume Mark Ready caught a color balance problem the way it catches an
-   index collision.
+.. note::
+   An **Error** here -- no signal in a channel from any sample in the
+   lane -- does not block **Mark Ready** on its own, because a lane with
+   one or two samples almost always has one. Instead, Mark Ready stops
+   and asks: it names the lanes and offers **Mark Ready anyway** (see
+   :doc:`export`). Your answer is kept in the audit trail. If the run
+   changes before you answer, it asks again. Read this tab before you
+   answer; a **Warning** does not make it ask.
 
 .. note::
    A dedicated check also flags any single sample whose index starts with

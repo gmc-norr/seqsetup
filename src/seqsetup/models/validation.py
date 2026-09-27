@@ -147,6 +147,13 @@ class LaneColorBalance:
         i5_issues = self.i5_balance.has_issues if self.i5_balance else False
         return i7_issues or i5_issues
 
+    @property
+    def has_errors(self) -> bool:
+        """At least one Error position (a channel with no signal) in i7 or i5."""
+        return any(
+            balance.error_count > 0 for balance in (self.i7_balance, self.i5_balance) if balance
+        )
+
 
 @dataclass
 class DarkCycleError:
@@ -313,6 +320,12 @@ class ValidationResult:
     def color_balance_issue_count(self) -> int:
         """Count lanes with color balance issues."""
         return sum(1 for lb in self.color_balance.values() if lb.has_issues)
+
+    @property
+    def color_balance_error_lanes(self) -> list[int]:
+        """Lanes with a color-balance Error — Mark Ready asks before going on
+        (warnings do not count). Empty when color balance is not analysed."""
+        return sorted(lane for lane, lb in self.color_balance.items() if lb.has_errors)
 
     def get_lane_matrix(self, lane: int) -> Optional[IndexDistanceMatrix]:
         """Get distance matrix for a specific lane."""

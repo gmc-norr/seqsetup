@@ -9,7 +9,7 @@ These cover the clinically-sensitive paths:
 
 import pytest
 
-from .conftest import disable_repos
+from .conftest import disable_repos, mark_ready
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (
@@ -101,10 +101,7 @@ class TestMarkReady:
         _app, ctx, _db = fresh_app
         run_id = _make_ready_eligible_run(ctx)
 
-        response = logged_in_client.post(
-            f"/runs/{run_id}/status/ready",
-            headers=_origin(),
-        )
+        response = mark_ready(logged_in_client, run_id, _origin())
         assert response.status_code == 200
 
         updated = ctx.run_repo.get_by_id(run_id)
