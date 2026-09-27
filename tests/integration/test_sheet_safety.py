@@ -180,3 +180,62 @@ class TestExportGuardStopsBadSyncedNames:
         finally:
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()
+
+
+class TestRunNameRouteKeepsUnsentFields:
+    """POST /runs/{id}/name writes only the fields it was sent (audit 2026-09
+    N-16; CLAUDE.md "Partial updates update only what was submitted")."""
+
+    def test_name_only_keeps_the_description(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _seed_draft(ctx, "n16-name", run_description="KEEP-THIS-DESCRIPTION")
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/name", data={"run_name": "Renamed"}, headers=ORIGIN
+        )
+
+        assert resp.status_code == 200
+        run = ctx.run_repo.get_by_id(run_id)
+        assert run.run_name == "Renamed"
+        assert run.run_description == "KEEP-THIS-DESCRIPTION"
+
+    def test_description_only_keeps_the_name(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _seed_draft(ctx, "n16-desc")
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/name", data={"run_description": "New plan"}, headers=ORIGIN
+        )
+
+        assert resp.status_code == 200
+        run = ctx.run_repo.get_by_id(run_id)
+        assert run.run_name == "Safety"
+        assert run.run_description == "New plan"
+
+    def test_both_fields_are_saved(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _seed_draft(ctx, "n16-both")
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/name",
+            data={"run_name": "Both", "run_description": ""},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200
+        run = ctx.run_repo.get_by_id(run_id)
+        assert run.run_name == "Both"
+        assert run.run_description == ""
+
+    def test_neither_field_is_refused_and_nothing_is_saved(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _seed_draft(ctx, "n16-none")
+        before = ctx.run_repo.get_by_id(run_id).updated_at
+
+        resp = logged_in_client.post(f"/runs/{run_id}/name", data={}, headers=ORIGIN)
+
+        assert resp.status_code == 400
+        assert "Nothing to save" in resp.text
+        run = ctx.run_repo.get_by_id(run_id)
+        assert run.updated_at == before
+        assert (run.run_name, run.run_description) == ("Safety", "Plan B")

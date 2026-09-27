@@ -152,12 +152,18 @@ async def update_run_name(
 ) -> Response:
     """POST /runs/{run_id}/name — update run name and description."""
     form = await request.form()
-    run_name = sanitize_string(form.get("run_name", ""), 256)
-    run_description = sanitize_string(form.get("run_description", ""), 4096)
+    # Write only the fields that were sent: a missing field must not be
+    # saved as "" over its current value.
+    has_name = "run_name" in form
+    has_description = "run_description" in form
+    if not (has_name or has_description):
+        return Response("Nothing to save", status_code=400)
 
     with saving_run(run, ctx, request):
-        run.run_name = run_name
-        run.run_description = run_description
+        if has_name:
+            run.run_name = sanitize_string(form.get("run_name", ""), 256)
+        if has_description:
+            run.run_description = sanitize_string(form.get("run_description", ""), 4096)
     return Response("")
 
 
