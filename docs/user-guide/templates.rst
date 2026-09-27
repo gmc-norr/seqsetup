@@ -14,7 +14,7 @@ Every run's page, at the bottom, has a **Save as template** box:
 .. figure:: /_static/screenshots/templates/save-as-template.png
    :alt: The Save as template box at the bottom of a run's page, with a name typed in and the Save as template button outlined.
 
-   The Save as template box, outlined.
+   The **Save as template** button, outlined.
 
 Type a name and select **Save as template**. This works on a run in any
 status -- Draft, Ready or Archived -- since a template only reads the run,
@@ -58,9 +58,10 @@ Starting a new run from a template
 Each template's row has its own **New run** button:
 
 .. figure:: /_static/screenshots/templates/new-run-from-template.png
-   :alt: A new Draft run's title and status bar, named after the template it was started from and showing Draft status.
+   :alt: A new Draft run's title, outlined, named after the template it was started from, next to its Draft status badge.
 
-   A new Draft started from a template, named after it.
+   The new run's title, outlined -- named after the template it was
+   started from.
 
 Selecting it creates a fresh Draft immediately, named after the template,
 with its setup filled in and no samples yet -- add samples and indexes the

@@ -29,9 +29,9 @@ status badge changes to **Ready**, the run is locked against further
 edits, and its exports are generated:
 
 .. figure:: /_static/screenshots/ready/mark-ready.png
-   :alt: The run status bar reading "Ready", with Return to Draft and Archive buttons.
+   :alt: The run status bar's status badge, outlined, reading "Ready", next to Return to Draft and Archive buttons.
 
-   The status bar just after Mark Ready succeeds, outlined.
+   The status badge just after Mark Ready succeeds, outlined.
 
 .. note::
    Validation runs again, in real time, at the moment you select **Mark
@@ -54,9 +54,11 @@ download for each of:
   page showed at the moment the run was marked Ready.
 
 .. figure:: /_static/screenshots/export/panel-ready.png
-   :alt: The Export panel on a Ready run, with every download button enabled.
+   :alt: The Export panel on a Ready run, outlined; Download Sample Sheet v2 stands out in teal while the other three buttons render grey.
 
-   The Export panel on a Ready run, outlined.
+   The Export panel on a Ready run, outlined. The grey buttons are styled
+   differently from **Download Sample Sheet v2**, but they are not
+   disabled -- all four are enabled here.
 
 The two Sample Sheet buttons additionally require every sample in the run
 to have an index assigned -- if any sample does not, they stay disabled
@@ -153,9 +155,9 @@ A Ready run's status bar offers **Return to Draft** instead of **Mark
 Ready**:
 
 .. figure:: /_static/screenshots/ready/back-to-draft.png
-   :alt: The run status bar reading "Draft" again, with the Mark Ready button restored, after returning from Ready.
+   :alt: The run status bar's status badge, outlined, reading "Draft" again, with the Mark Ready button restored, after returning from Ready.
 
-   The status bar just after returning a Ready run to Draft, outlined.
+   The status badge just after returning a Ready run to Draft, outlined.
 
 .. warning::
    Returning to Draft discards every export that was generated -- the

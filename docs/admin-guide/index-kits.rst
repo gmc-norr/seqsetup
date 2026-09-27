@@ -6,7 +6,7 @@ run. Every user can browse and use the index kits already in SeqSetup, from
 **Settings > Index Kits**; importing a new one requires the **Admin** role.
 
 .. figure:: /_static/screenshots/admin/index-kits-list.png
-   :alt: The Index Kits list page, with the "+ Import Index Kit" link outlined in its header.
+   :alt: The Index Kits list page, showing one kit's card below the header, with the "+ Import Index Kit" link outlined in that header.
 
    The **Index Kits** list. **+ Import Index Kit** is shown only to admins.
 

@@ -614,22 +614,66 @@ def test_check_validation_issues(demo_page, base_url, demo):
 
 def test_check_heatmaps(demo_page, base_url, demo):
     page = demo_page
-    page.goto(f"{base_url}/runs/{demo['problem']}/validation")
-    # A01 and A02 are both indexed (A03 is not), so every lane has two
-    # indexed samples and the Heatmaps tab is enabled, not disabled.
+    # demo['problem'] only has two indexed samples (A01/A02), and they carry
+    # the exact SAME index pair (a deliberate collision, for the Issues-tab
+    # picture) -- their heatmap is a single repeated "0 ⚠" cell against two
+    # names both truncated to "SAMPLE-A..", which teaches nothing about the
+    # "lower = redder = riskier" gradient validation.rst:92-95 describes,
+    # and crops out the legend and the i7/i5/combined selector entirely.
+    #
+    # Build a dedicated Draft run instead, with five samples given short,
+    # non-truncating ids and five DIFFERENT index pairs from the same Demo
+    # UDI Set A kit, chosen for a genuine spread of pairwise i7 distances --
+    # computed directly from docs_world._seq (the kit's own generator, same
+    # formula, run offline): UDI0001/UDI0016 are 2 apart (the closest pair in
+    # the whole 24-pair kit, still triggering the <=2 warning marker),
+    # UDI0009/UDI0024 are 3 apart, UDI0001/UDI0009 are 5, UDI0001/UDI0024 and
+    # UDI0016/UDI0009 are 6, and UDI0006 sits 8 away from both UDI0001 and
+    # UDI0016 -- distances 2, 3, 5, 6, 8 all appear, so every colour band
+    # from dist-2 through dist-8 shows in one table. This run is never
+    # marked Ready, so a close pair here is fine -- nothing requires it to
+    # be error-free.
+    page.goto(f"{base_url}/")
+    with page.expect_navigation(url=re.compile(r"/runs/new/step/1")):
+        page.get_by_role("button", name="New Run").click()
+    run_id = re.search(r"run_id=([^&]+)", page.url).group(1)
+    page.fill("#run_name", "DEMO-RUN-07")
+    with page.expect_navigation(url=f"{base_url}/runs/{run_id}"):
+        page.get_by_role("button", name="Continue to Run").click()
+
+    sample_ids = ["HEAT-01", "HEAT-02", "HEAT-03", "HEAT-04", "HEAT-05"]
+    page.fill("#paste_data", "sample_id\ttest_id\n" + "\n".join(
+        f"{sid}\tWGS" for sid in sample_ids
+    ))
+    page.get_by_role("button", name="Preview").click()
+    page.wait_for_selector("#paste-area .paste-counts")
+    page.get_by_role("button", name=f"Add {len(sample_ids)} samples").click()
+    page.wait_for_selector(f'tr.sample-row:has-text("{sample_ids[-1]}")')
+
+    udi_for_sample = dict(zip(
+        sample_ids, ["UDI0001", "UDI0016", "UDI0009", "UDI0024", "UDI0006"]
+    ))
+    for sid, udi in udi_for_sample.items():
+        chip = _pair_chip(page, udi)
+        row = page.locator("tr.sample-row").filter(has_text=sid)
+        _drag_index(page, chip, row.locator(".drop-zone.i7-drop"))
+        page.wait_for_selector(f'tr.sample-row:has-text("{sid}") .assigned-index.i7')
+
+    page.goto(f"{base_url}/runs/{run_id}/validation")
+    # Every sample is indexed, so the lane's Heatmaps tab is enabled.
     page.get_by_role("button", name="Heatmaps").click()
     lane = page.locator(".lane-heatmap-simple").first
-    # region=lane (the table plus its own "Lane 1 (2 samples)" header) is
-    # only 12px above the sibling .heatmap-legend row that follows
-    # .lane-heatmaps in the DOM (components.css: .heatmap-legend's 0.75rem
-    # margin-top) -- shoot()'s default 16px pad overshoots that gap and
-    # slices the legend's colour swatches into the bottom of the crop.
-    # Measured live: shrinking .lane-heatmap-simple's own padding does not
-    # help -- the flex layout just pulls the legend up by the same amount,
-    # so the gap to it stays 12px regardless. A smaller pad is what
-    # actually keeps the crop inside that gap.
+    # .heatmap-header repeats once per view (i7/i5/combined all render into
+    # the DOM at once, x-show only toggling which is visible) -- scope the
+    # count to the first (i7, the default-visible) .table-scroll.
+    assert lane.locator(".table-scroll").first.locator(".heatmap-header").count() == len(sample_ids)
+    # region is the WHOLE tab -- selector buttons, description line, the
+    # lane table and the legend -- not just the table, so the crop this
+    # time includes the i7/i5/combined selector and the colour legend that
+    # validation.rst:58 and :101 both point readers at.
     with _overflow_visible(lane.locator(".table-scroll").first):
-        snap(page, "check/heatmaps", lane.locator(".heatmap-table").first, region=lane, pad=6)
+        snap(page, "check/heatmaps", lane.locator(".heatmap-table").first,
+             region=page.locator(".heatmaps-tab-content"))
 
 
 def test_check_color_balance(demo_page, base_url, demo):
@@ -970,11 +1014,24 @@ def test_admin_logs(demo_page, base_url, demo):
     # (csrf.py:130) before the request ever reaches routing -- so the path
     # doesn't need to exist. Playwright's request client (unlike a real
     # browser fetch) sends no Origin header, so this POST is rejected for
-    # exactly that reason, producing one genuine, safe log line with no
-    # secret or patient-like content in it.
+    # exactly that reason, producing a genuine, safe log line with no secret
+    # or patient-like content in it. Two distinct paths are probed below so
+    # the buffer holds two distinguishable entries, not one.
     probe_path = "/admin/csrf-probe-for-docs"
     resp = page.request.post(f"{base_url}{probe_path}")
     assert resp.status == 403
+
+    # A second, NON-matching WARNING line, planted by the same technique with
+    # a different path -- BEFORE filtering. Without it, the buffer holds
+    # exactly one entry at the point Refresh is exercised below, so an
+    # unfiltered reload and a filtered reload would both render 1 row and the
+    # Refresh assertion could not tell "kept the filter" from "cleared it".
+    # With a second, distinguishable entry present, only an unfiltered view
+    # shows both -- the paths share no substring, so the Search filter below
+    # (which matches on probe_path) still excludes this one.
+    other_probe_path = "/admin/other-warning-for-docs"
+    other_resp = page.request.post(f"{base_url}{other_probe_path}")
+    assert other_resp.status == 403
 
     page.goto(f"{base_url}/admin/logs")
     page.select_option("#level", "WARNING")
@@ -983,7 +1040,8 @@ def test_admin_logs(demo_page, base_url, demo):
     # Waiting merely for a row containing this text would be satisfied by
     # the PRE-filter page too, if it were already within the default
     # unfiltered view -- wait instead for the row COUNT to drop to exactly
-    # the one match, which only the filtered result can satisfy.
+    # the one match, which only the filtered result can satisfy (the second
+    # probe's message does not contain probe_path, so it stays excluded).
     page.wait_for_function(
         "document.querySelectorAll('#logs-page tbody tr').length === 1"
     )
@@ -993,30 +1051,36 @@ def test_admin_logs(demo_page, base_url, demo):
 
     # Behavioural check (not a picture): does Refresh (logs.html:64-68,
     # hx-get with no explicit hx-include) keep the applied filters, or
-    # clear them? htmx's documented default is to include the closest
-    # enclosing <form>'s inputs even without hx-include, and this button
-    # sits inside the same <form> as #level/#search -- confirm that here
-    # rather than assuming.
+    # clear them? Refresh is a bare <button type="button" hx-get="/admin/logs">
+    # with no hx-include of its own and no level/search query params in its
+    # hx-get URL -- htmx does not include an enclosing form's inputs on a GET
+    # unless told to. Confirm the real behaviour here rather than assuming.
     #
     # hx-swap="outerHTML" (logs.html:45,67) replaces the whole #logs-page
     # node -- .table-scroll included -- with a brand-new one carrying the
     # same selector, so waiting on "#logs-page .table-scroll" alone can be
     # satisfied by the PRE-refresh node that is still in the DOM the instant
-    # .click() returns (.click() does not await htmx's request). And because
-    # the row count is already 1 here (from the Filter step above), reading
-    # it off that stale node would still show refreshed_rows == 1 and pass
-    # for the wrong reason -- it would prove nothing about what Refresh
-    # actually did. Capture a handle to the current node before clicking and
-    # wait for THAT node to be detached, which can only happen once the
-    # outerHTML swap has actually completed.
+    # .click() returns (.click() does not await htmx's request). Capture a
+    # handle to the current node before clicking and wait for THAT node to
+    # be detached, which can only happen once the outerHTML swap has
+    # actually completed.
     old_table = page.locator("#logs-page .table-scroll").element_handle()
     page.get_by_role("button", name="Refresh").click()
     page.wait_for_function("(el) => !document.contains(el)", arg=old_table)
     page.wait_for_selector("#logs-page .table-scroll")
+
+    # If Refresh kept the applied filters, the Level select and Search box
+    # would still read WARNING / probe_path and only the 1 filtered row would
+    # be showing. It does not: both fields reset to "All Levels" / empty, and
+    # BOTH planted entries are now visible -- proof Refresh reloads
+    # unfiltered, not "with the same filters still applied".
+    level_value = page.locator("#level").input_value()
+    search_value = page.locator("#search").input_value()
     refreshed_rows = page.locator("#logs-page tbody tr").count()
-    assert refreshed_rows == 1, (
-        "Refresh was expected to keep the current filters (htmx's closest-form "
-        f"default), but the row count changed to {refreshed_rows}"
+    assert (level_value, search_value, refreshed_rows) == ("", "", 2), (
+        "Refresh was expected to reset both filters and reload unfiltered, "
+        f"showing both planted entries, but got level={level_value!r} "
+        f"search={search_value!r} rows={refreshed_rows}"
     )
 
 
@@ -1031,9 +1095,12 @@ def test_admin_index_kits_list(demo_page, base_url, demo):
     # another, so this is still the single-kit view.
     page.goto(f"{base_url}/indexes")
     assert DEMO_KIT_NAME in page.locator("#indexes-page").text_content()
-    header = page.locator("#indexes-page > div.flex.items-center.justify-between")
+    # region was just the header div -- a crop with no kit in it, though the
+    # page is about the list. Widen it to the whole page container so the
+    # single seeded kit's card is in frame too.
     snap(page, "admin/index-kits-list",
-         page.get_by_role("link", name="+ Import Index Kit"), region=header)
+         page.get_by_role("link", name="+ Import Index Kit"),
+         region=page.locator("#indexes-page"))
 
 
 def test_admin_index_kit_upload(demo_page, base_url, demo):

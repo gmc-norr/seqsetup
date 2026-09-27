@@ -22,9 +22,9 @@ Fill in the **Create New User** form:
 Select **Create User** to save the account.
 
 .. figure:: /_static/screenshots/admin/users-list.png
-   :alt: The Users table, with a user's row and its Edit button outlined.
+   :alt: The Users table, with one user's Edit button outlined.
 
-   A user's row in the table, with **Edit** outlined.
+   A user's **Edit** button, outlined.
 
 Editing a user
 ---------------

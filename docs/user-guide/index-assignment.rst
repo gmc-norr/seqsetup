@@ -74,9 +74,10 @@ Ctrl-click (Cmd-click on a Mac) adds or removes one chip at a time instead
 of a range.
 
 .. figure:: /_static/screenshots/indexes/several-in-order.png
-   :alt: UDI0006, UDI0007 and UDI0008 highlighted as selected in the index panel after clicking UDI0006 and shift-clicking UDI0008, outlined.
+   :alt: UDI0006, UDI0007 and UDI0008 highlighted as selected in the index panel after clicking UDI0006 and shift-clicking UDI0008, with UDI0008 outlined.
 
-   Three indexes selected by click, then shift-click, outlined.
+   Three indexes selected by click, then shift-click; UDI0008, the one that
+   was shift-clicked, outlined.
 
 Drag the selection onto a sample the same way as a single index. The
 first selected index goes to the sample you drop on, the next one to the
@@ -143,9 +144,10 @@ the next unused index from the chosen kit to every sample that has none,
 in table order:
 
 .. figure:: /_static/screenshots/indexes/fill-preview.png
-   :alt: The fill-in-order preview: "Start at" set to UDI0001 (A01), and a table of the six samples that would receive UDI0001 through UDI0006.
+   :alt: The fill-in-order preview: "Start at" set to UDI0001 (A01) above a table, outlined, of the six samples that would receive UDI0001 through UDI0006.
 
-   The fill preview, outlined -- nothing is saved yet.
+   The plan table, outlined -- **Start at** and the summary line above it
+   are not part of the outline. Nothing is saved yet.
 
 Nothing is written until you confirm. The preview names how many samples
 would be filled and from where, and lists exactly which index each one

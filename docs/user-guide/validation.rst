@@ -99,9 +99,10 @@ misread as another's. Separate views are available for i7 only, i5 only,
 and the two combined.
 
 .. figure:: /_static/screenshots/check/heatmaps.png
-   :alt: The Heatmaps tab's per-lane distance table, with the diagonal and any close pairs colour-coded.
+   :alt: The Heatmaps tab, with the i7/i5/combined selector and the colour legend around a 5-sample lane table, outlined, whose cells run from dark red for the closest pair to near-white for the farthest; each sample's row against itself is a plain dash, not colour-coded.
 
-   A lane's index distance heatmap, outlined.
+   A lane's i7 index-distance table, outlined -- redder cells mark closer,
+   riskier pairs.
 
 This tab is only available once a lane has more than one indexed sample --
 there is nothing to compare a single index against.
