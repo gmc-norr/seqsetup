@@ -76,6 +76,12 @@ is one of these:
   'ID' has a line break in its description. A line break would split the
   sample's row in the Sample Sheet. Remove it before marking the run
   ready."* (The message names each field that has one.)
+- **A hidden character in a sample's name, project or description, or in
+  the run's name or description** -- a tab, a NUL or another invisible
+  control character, often carried in by pasted text. *"Sample 'ID' has a
+  hidden character in its project: U+0009 (tab). Hidden characters can
+  break the Sample Sheet. Remove it before marking the run ready."* The
+  message names each field and each character by its code.
 - **A malformed Override Cycles value**, on the sample or from a kit's
   default read-override pattern.
 - **Override Cycles that don't match the run's declared cycles** -- each

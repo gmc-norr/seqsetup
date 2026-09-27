@@ -34,7 +34,9 @@ Run name and description
 **Run Name** and **Description** save automatically when you leave the
 field or press Enter. The run name is limited to 256 characters and
 cannot contain a line break; the description is limited to 4096
-characters.
+characters, and a line break in it is saved as a space. Neither may hold
+another hidden character, such as a tab from pasted text -- **Mark Ready**
+refuses the run until it is removed (see :doc:`validation`).
 
 Instrument, flowcell and reagent kit
 --------------------------------------
