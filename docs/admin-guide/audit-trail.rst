@@ -2,8 +2,10 @@ Audit Trail
 ===========
 
 **Admin > Audit trail** is SeqSetup's permanent record of who did what, and
-when: sign-ins, user and API token changes, run and sample changes, exports,
-and configuration changes.
+when: sign-ins, user and API token changes, run status and sample changes,
+exports, and configuration changes. Changes to a run's own setup -- its
+name, instrument, flowcell, cycles -- are not here; they are in that run's
+:doc:`/user-guide/change-history`.
 
 Events are kept in the database for good. Nothing in SeqSetup can change or
 delete one -- restarting the application does not clear them, and neither
