@@ -2,8 +2,9 @@ Technology Stack
 ================
 
 SeqSetup is built using a hypermedia-driven architecture where the server
-renders HTML and dynamic updates are handled via HTML fragments rather than
-client-side JavaScript frameworks.
+renders HTML, HTMX handles dynamic updates via HTML fragments, and Alpine.js
+supplies local, UI-only interactivity -- there is no client-side SPA
+framework.
 
 Backend
 -------
@@ -46,6 +47,9 @@ Frontend
      - Purpose
    * - **HTMX**
      - Dynamic HTML updates without full page reloads (vendored in ``static/js/vendor/``)
+   * - **Alpine.js**
+     - Local UI-only state (selection, drag-over highlights, modal open/closed) via
+       ``Alpine.data(...)`` components (vendored in ``static/js/vendor/``)
    * - **Vanilla JavaScript**
      - Custom UI interactions (drag-drop, multi-select, bulk operations)
 
