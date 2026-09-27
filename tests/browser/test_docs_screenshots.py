@@ -1086,8 +1086,11 @@ def test_admin_index_kit_detail(demo_page, base_url, demo):
     with page.expect_navigation(url=re.compile(r"/indexes/detail/")):
         card.get_by_role("link", name="View").click()
     delete_button = page.get_by_role("button", name="Delete")
-    button_row = page.locator("div.flex.gap-2").filter(has=delete_button)
-    snap(page, "admin/index-kit-detail", delete_button, region=button_row)
+    # Region: the whole page's content container (indexes/detail.html:6),
+    # not just the button row -- the caption promises the kit's name,
+    # settings, and index pairs are visible, not only the buttons.
+    panel = page.locator("div.space-y-6").filter(has=delete_button)
+    snap(page, "admin/index-kit-detail", delete_button, region=panel)
 
 
 def test_admin_instruments(demo_page, base_url, demo, app_ctx):

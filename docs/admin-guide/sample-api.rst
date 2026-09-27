@@ -72,6 +72,9 @@ validated before it is sent, regardless of who is logged in:
   SeqSetup's own host or internal network (SSRF).
 - Plain **HTTP is refused** -- only HTTPS is allowed -- because the api-key
   would otherwise travel in clear text.
+- The HTTPS connection verifies the server's TLS certificate (via Python's
+  default SSL context), so a network position that cannot present a
+  certificate the client trusts cannot intercept the request.
 - The response body is capped at 10 MB.
 
 Both restrictions can be lifted, but only via environment variables the

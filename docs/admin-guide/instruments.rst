@@ -35,15 +35,31 @@ Enabling and disabling
 --------------------------
 
 Once at least one instrument is synced, each row has its own **Enabled**
-checkbox; toggling it (or **Enable All** / **Disable All**) takes effect
-immediately, with no confirmation. A disabled instrument is not offered when
-setting up a new run, but a run already using it is unaffected.
+checkbox, and there are **Enable All** / **Disable All** buttons above the
+table. Toggling any of these takes effect immediately, with no
+confirmation, and the resulting state is saved right away.
+
+.. warning::
+   Today, the **Enabled** checkbox (and **Enable All** / **Disable All**)
+   has **no effect on what a user can choose when setting up a new run**.
+   The New Run instrument list is never filtered by this flag, so
+   disabling an instrument here does not remove it from **New Run** --
+   any user can still select it and start a run on it. An administrator
+   who disables a decommissioned or unvalidated instrument here and
+   believes it is now unavailable is mistaken; nothing about the new-run
+   flow has changed. The only thing that actually removes an instrument
+   from **New Run** today is excluding it from what your synced source
+   defines and re-syncing (see the "not additive" warning above), which
+   drops the instrument from the synced set entirely rather than merely
+   hiding it while it stays synced.
 
 .. note::
-   Disabling and re-enabling an instrument survives a later sync: SeqSetup
-   matches the old and new instrument sets by their samplesheet name and
-   carries a disabled flag forward, rather than resetting everything back
-   to enabled.
+   The checkbox's state does survive a later sync: SeqSetup matches the
+   old and new instrument sets by their samplesheet name and carries the
+   disabled flag forward, rather than resetting every instrument back to
+   enabled on each sync. That persistence is all the flag does -- it is
+   saved and it survives a sync, but it is not read anywhere that decides
+   which instruments a new run may use.
 
 i5 Read Orientation and SBS Chemistry
 ------------------------------------------

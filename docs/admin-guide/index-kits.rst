@@ -69,9 +69,10 @@ pair (or i7/i5 list) with its sequence, plus the kit's adapter and
 default-override settings.
 
 .. figure:: /_static/screenshots/admin/index-kit-detail.png
-   :alt: The index kit detail page, with the Download YAML and Delete buttons at the bottom outlined.
+   :alt: The index kit detail page, showing the kit's name and version, its adapter and default-override settings, and its Index Pairs table listing each pair's name, with the Delete button outlined at the bottom next to Download YAML.
 
-   A kit's detail page, with **Delete** outlined next to **Download YAML**.
+   A kit's detail page: name, version, settings, and index pairs by name,
+   with **Delete** outlined.
 
 Select **Download YAML** to export the kit as a YAML file, in SeqSetup's own
 format -- useful for backing up a kit, or for checking it into a GitHub repo
