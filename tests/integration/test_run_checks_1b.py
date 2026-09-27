@@ -281,3 +281,21 @@ class TestColorBalanceQuestion:
         panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
 
         assert "Mark Ready will ask" not in panel
+
+
+class TestCycleTotalLine:
+    """With no cycle limit for the kit, the total says it is not checked
+    (F1/F2); with a limit, it is unchanged."""
+
+    def test_kit_without_a_limit_says_not_checked(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _seed(ctx, "total-unchecked")
+        run = ctx.run_repo.get_by_id(run_id)
+        run.reagent_cycles = 300
+        ctx.run_repo.save(run)
+
+        page = logged_in_client.get(f"/runs/new/step/1?run_id={run_id}").text
+
+        assert "Total: 322 cycles (300-cycle kit)" in page
+        assert "Not checked: no cycle limit is set for this kit." in page
+        assert "322 / 300" not in page

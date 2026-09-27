@@ -72,7 +72,7 @@ class TestInstrumentChangeReplacesUnofferedKit:
         assert 'id="cycle-total" hx-swap-oob="true"' in r.text
         # run_cycles are untouched by the instrument change (322 total),
         # only reagent_cycles (the kit label) changes to 36.
-        assert "Total: 322 / 36 cycles" in r.text
+        assert "Total: 322 cycles (36-cycle kit)" in r.text
 
 
 class TestInstrumentChangeKeepsOfferedKit:

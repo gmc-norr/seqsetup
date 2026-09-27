@@ -53,10 +53,11 @@ class TestSetupPageTotal:
         assert "Total: 322 / 338 max (300-cycle kit)" in page
         assert "Too many cycles for this kit." not in page
 
-    def test_without_limit_unchanged(self, logged_in_client):
+    def test_without_limit_says_not_checked(self, logged_in_client):
         run_id = _new_run(logged_in_client)
         page = logged_in_client.get(f"/runs/new/step/1?run_id={run_id}").text
-        assert "Total: 322 / 300 cycles" in page
+        assert "Total: 322 cycles (300-cycle kit)" in page
+        assert "Not checked: no cycle limit is set for this kit." in page
 
     def test_over_limit_after_cycle_change(self, logged_in_client, kit_limit):
         kit_limit(NOVASEQ_X, {300: 338})

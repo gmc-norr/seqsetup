@@ -1150,6 +1150,8 @@ body {
     font-weight: var(--fw-semibold);
 }
 
+.cycle-total-unchecked { display: block; margin-top: 0.25rem; }
+
 /* Run metadata display */
 .run-metadata {
     background: #f1f5f9;

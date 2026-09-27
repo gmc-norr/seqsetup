@@ -62,15 +62,16 @@ Run cycle configuration
 
    Cycle configuration, outlined.
 
-The total shown here is often higher than the reagent kit's own number --
-a 300-cycle kit's defaults already add up to 322 cycles (151 + 151 + 10 +
-10), because the kit label understates its real capacity. A total above
-the kit's label is expected and not itself a problem.
+The line below the fields adds up Read 1, Index 1, Index 2 and Read 2.
+When no cycle limit is recorded for the reagent kit -- which is how
+SeqSetup ships -- it says so: **Not checked: no cycle limit is set for
+this kit.** A 300-cycle kit's defaults already add up to 322 cycles (151
++ 151 + 10 + 10), because the kit label understates its real capacity, so
+a total a little over the label is normal.
 
 Read 1 and Read 2 are typed as whole numbers from 0 to 600; an invalid
 value is rejected and nothing is saved. Index 1 and Index 2 are chosen
-from a fixed list of cycle counts -- 8, 10, 12, 17, or 24. The line
-below the four fields totals them against the reagent kit.
+from a fixed list of cycle counts -- 8, 10, 12, 17, or 24.
 
 .. warning::
    When the selected reagent kit has a known cycle limit, going over it
@@ -86,13 +87,9 @@ below the four fields totals them against the reagent kit.
    one recorded.
 
 .. warning::
-   As shipped, no instrument's configuration records a cycle limit for
-   any kit, so this warning never appears on a default install. The
-   **Mark Ready** validation uses this same limit lookup, so it does not
-   refuse an over-long run either. Until an administrator adds a cycle
-   limit for your instrument's kit through **Admin > Config Sync**, the
-   cycle total is not checked at any stage -- a run can be marked Ready
-   and its Sample Sheet exported no matter how many cycles it totals.
+   Until an administrator adds a cycle limit for your instrument's kit
+   through **Admin > Config Sync**, nothing checks the total -- not the
+   line above, and not **Mark Ready** -- and the line says so.
 
 Finishing setup
 ----------------
