@@ -81,16 +81,38 @@ Local Development Setup
 
 5. **Log in**
 
-   Default development credentials (defined in ``config/users.yaml``):
+   ``config/users.yaml`` ships empty (``users: {}``) -- no credentials are
+   committed to the repository, so there is no default account to log in
+   with. Create a bootstrap admin account before your first login:
 
-   ============ ============= ==========
-   Username     Password      Role
-   ============ ============= ==========
-   ``admin``    ``admin123``  Admin
-   ``user``     ``user123``   Standard
-   ============ ============= ==========
+   1. Hash a strong, unique password using the project's own hashing
+      routine (this prompt does not echo or store what you type):
 
-   .. warning::
+      .. code-block:: bash
 
-      These credentials are for development only. See :doc:`configuration` for
-      instructions on disabling default credentials in production.
+         PYTHONPATH=src pixi run python -c "
+         import getpass
+         from seqsetup.services.auth import AuthService
+         print(AuthService.hash_password(getpass.getpass('Password: ')))"
+
+   2. Add an entry to ``config/users.yaml`` with that hash:
+
+      .. code-block:: yaml
+
+         users:
+           admin:
+             display_name: "Administrator"
+             email: "admin@example.com"
+             password_hash: "$2b$12$..."   # output of step 1
+             role: admin
+
+   3. Restart the application and log in with that username and the
+      password you chose.
+
+   This ``users.yaml`` entry is a file-based fallback account with no
+   password-strength check of its own -- choose the password carefully.
+   Once you can log in, create further accounts through
+   :doc:`/admin-guide/local-users`; those are stored in MongoDB and are
+   rejected if they are too short or match a list of common weak
+   passwords. See :doc:`configuration` for how to remove file-based
+   fallback users once LDAP/AD or MongoDB-managed users are in place.

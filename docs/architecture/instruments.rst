@@ -106,23 +106,25 @@ Classic four-color chemistry using blue, green, yellow, and red dye channels.
 i5 Index Read Orientation
 -------------------------
 
-The i5 (Index 2) read orientation varies by instrument. SeqSetup handles this
-automatically during SampleSheet export.
+The i5 (Index 2) *physical* read orientation varies by instrument:
 
-**Forward** (i5 read as written in the sample sheet):
-   MiSeq, MiSeq i100 Series, HiSeq 2000/2500 (Rapid Run), NextSeq 500/550,
+**Forward** (i5 read as written, physically):
+   MiSeq, MiSeq i100 Series, HiSeq 2000/2500, NextSeq 500/550,
    NextSeq 1000/2000, MiniSeq, GAIIx
 
-**Reverse-complement** (i5 read as reverse complement):
+**Reverse-complement** (i5 read as reverse complement, physically):
    NovaSeq X Series, NovaSeq 6000, HiSeq 4000, HiSeq X
+
+This physical orientation is distinct from the orientation SeqSetup writes
+into the exported SampleSheet, which is chosen per instrument so BCL Convert
+demultiplexes correctly and does not always match the physical read
+direction above. For example, NovaSeq X Series physically reads i5 as
+reverse-complement, but SeqSetup writes it forward in the exported
+SampleSheet v2 i5 column.
 
 SampleSheet v2 Export Support
 -----------------------------
 
-SeqSetup currently generates SampleSheet v2 files for:
-
-- **NovaSeq X Series**
-- **MiSeq i100 Series**
-
-Other instruments are available for run configuration and JSON metadata export,
-but SampleSheet v2 export is limited to the instruments listed above.
+SeqSetup generates SampleSheet v2 files for all instrument platforms listed
+above. The legacy SampleSheet v1 (IEM) format is also available, but only for
+**MiSeq** and **NovaSeq 6000**.

@@ -73,7 +73,7 @@ essential for making changes in the right place.
 
    Routes
         ↓
-   Components (components/*.py)  ← Generate HTML
+   Templates (templates/*.html)  ← Jinja2 renders HTML via render()
         ↓
    HTMX swaps HTML into page
 
@@ -118,7 +118,8 @@ Naming Conventions
 - **Repositories**: PascalCase with ``Repository`` suffix (``SampleRepository``)
 - **Services**: PascalCase with ``Service`` suffix or descriptive name (``AuthService``, ``CycleCalculator``)
 - **Routes**: snake_case functions (``get_sample``, ``update_run``)
-- **Components**: PascalCase functions returning HTML (``SampleTable``, ``IndexCard``)
+- **Templates**: snake_case files, one page per file, page-local partials prefixed
+  with ``_`` (``runs/edit.html``, ``runs/_paste_preview.html``)
 - **CSS classes**: kebab-case (``sample-table``, ``index-card``)
 
 Adding New Features
@@ -213,7 +214,7 @@ Repositories handle database operations in ``src/seqsetup/repositories/``.
            result = self.collection.delete_one({"id": model_id})
            return result.deleted_count > 0
 
-Register the repository in ``src/seqsetup/app.py``:
+Register the repository in ``src/seqsetup/startup.py``:
 
 .. code-block:: python
 
@@ -230,101 +231,115 @@ Register the repository in ``src/seqsetup/app.py``:
 Adding a New Route
 ~~~~~~~~~~~~~~~~~~
 
-Routes handle HTTP requests in ``src/seqsetup/routes/``.
+Routes handle HTTP requests in ``src/seqsetup/routes/`` using FastAPI's
+``APIRouter``. See ``src/seqsetup/routes/profiles.py`` for a minimal
+reference implementation.
 
 .. code-block:: python
 
    # src/seqsetup/routes/my_feature.py
-   from fasthtml.common import *
+   from typing import Annotated
+
+   from fastapi import APIRouter, Depends, Form, Request
+   from pydantic import BaseModel
+   from starlette.responses import HTMLResponse, Response
 
    from ..context import AppContext
-   from ..components.my_component import MyComponent
    from ..models.my_model import MyModel
+   from ..templating import render
+   from .dependencies import get_ctx
+
+   router = APIRouter(tags=["my-feature"])
 
 
-   def register(app, rt, ctx: AppContext):
-       """Register routes for this feature."""
+   class CreateMyModelForm(BaseModel):
+       name: str
+       description: str = ""
 
-       @rt("/my-feature")
-       def get_my_feature(req):
-           """Display the main feature page."""
-           items = ctx.my_model_repo.list_all()
-           return MyComponent(items)
 
-       @rt("/my-feature/{item_id}")
-       def get_item(req, item_id: str):
-           """Get a specific item."""
-           item = ctx.my_model_repo.get_by_id(item_id)
-           if not item:
-               return Response("Not found", status_code=404)
-           return ItemDetail(item)
+   @router.get("/my-feature", response_class=HTMLResponse)
+   def my_feature_page(request: Request, ctx: AppContext = Depends(get_ctx)):
+       """Display the main feature page."""
+       return render(request, "my_feature.html", {"items": ctx.my_model_repo.list_all()})
 
-       @rt("/my-feature", methods=["POST"])
-       def create_item(req, name: str, description: str = ""):
-           """Create a new item."""
-           item = MyModel(name=name, description=description)
-           ctx.my_model_repo.save(item)
-           # Return updated list for HTMX swap
-           return MyComponent(ctx.my_model_repo.list_all())
 
-Register the route module in ``src/seqsetup/app.py``:
+   @router.get("/my-feature/{item_id}", response_class=HTMLResponse)
+   def get_item(request: Request, item_id: str, ctx: AppContext = Depends(get_ctx)):
+       """Get a specific item."""
+       item = ctx.my_model_repo.get_by_id(item_id)
+       if not item:
+           return Response("Not found", status_code=404)
+       return render(request, "my_feature.html", {"item": item}, block_name="item_detail")
+
+
+   @router.post("/my-feature", response_class=HTMLResponse)
+   def create_item(
+       request: Request,
+       form: Annotated[CreateMyModelForm, Form()],
+       ctx: AppContext = Depends(get_ctx),
+   ):
+       """Create a new item and return the updated list for the HTMX swap."""
+       item = MyModel(name=form.name, description=form.description)
+       ctx.my_model_repo.save(item)
+       return render(
+           request, "my_feature.html",
+           {"items": ctx.my_model_repo.list_all()}, block_name="item_list",
+       )
+
+Register the router in ``src/seqsetup/app.py``:
 
 .. code-block:: python
 
    from .routes import my_feature
 
-   # In the route registration section:
-   my_feature.register(app, rt, ctx)
+   app.include_router(my_feature.router)
 
-Adding a New Component
+Adding a New Template
 ~~~~~~~~~~~~~~~~~~~~~~
 
-Components generate HTML in ``src/seqsetup/components/``.
+Pages and fragments are Jinja2 templates in ``src/seqsetup/templates/``. A
+page extends the app shell and exposes its HTMX swap target as a
+``{% block %}``; the route renders either the full page or just that block
+(via ``render(request, template, context, block_name="...")``).
 
-.. code-block:: python
+.. code-block:: jinja
 
-   # src/seqsetup/components/my_component.py
-   from fasthtml.common import *
+   {# src/seqsetup/templates/my_feature.html #}
+   {% extends "_app_shell.html" %}
+   {% set page_title = "My Feature" %}
 
-   from ..models.my_model import MyModel
+   {% block content %}
+   <div id="my-feature-page">
+     {% block item_list %}
+     <div id="item-grid">
+       {% if items %}
+         {% for item in items %}
+           {% include "_item_card.html" %}
+         {% endfor %}
+       {% else %}
+         <p>No items yet.</p>
+       {% endif %}
+     </div>
+     {% endblock %}
+   </div>
+   {% endblock %}
 
+.. code-block:: jinja
 
-   def MyComponent(items: list[MyModel]):
-       """Render a list of items."""
-       return Div(
-           H2("My Items"),
-           Div(
-               *[ItemCard(item) for item in items],
-               cls="item-grid",
-           ) if items else P("No items yet."),
-           id="my-component",
-       )
-
-
-   def ItemCard(item: MyModel):
-       """Render a single item card."""
-       return Div(
-           H3(item.name),
-           P(item.description) if item.description else None,
-           Div(
-               Button(
-                   "Edit",
-                   hx_get=f"/my-feature/{item.id}/edit",
-                   hx_target=f"#item-{item.id}",
-                   cls="btn-secondary",
-               ),
-               Button(
-                   "Delete",
-                   hx_delete=f"/my-feature/{item.id}",
-                   hx_target="#my-component",
-                   hx_confirm="Are you sure?",
-                   cls="btn-danger",
-               ),
-               cls="item-actions",
-           ),
-           id=f"item-{item.id}",
-           cls="item-card",
-       )
+   {# src/seqsetup/templates/_item_card.html #}
+   <div id="item-{{ item.id }}" class="item-card">
+     <h3>{{ item.name }}</h3>
+     {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+     <div class="item-actions">
+       <button class="btn-secondary"
+               hx-get="/my-feature/{{ item.id }}/edit"
+               hx-target="#item-{{ item.id }}">Edit</button>
+       <button class="btn-danger"
+               hx-delete="/my-feature/{{ item.id }}"
+               hx-target="#item-grid"
+               hx-confirm="Are you sure?">Delete</button>
+     </div>
+   </div>
 
 Adding a New Service
 ~~~~~~~~~~~~~~~~~~~~
@@ -372,70 +387,56 @@ HTMX Patterns
 -------------
 
 SeqSetup uses HTMX for dynamic updates. Understanding these patterns is
-essential for frontend work.
+essential for frontend work. HTMX attributes are hyphenated (``hx-post``,
+not ``hx_post``) since they are written directly in Jinja2 templates.
 
 Basic HTMX Attributes
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: python
+.. code-block:: html
 
-   # GET request, replace target content
-   Button(
-       "Load More",
-       hx_get="/items?page=2",
-       hx_target="#item-list",
-       hx_swap="beforeend",  # Append to existing content
-   )
+   <!-- GET request, replace target content -->
+   <button hx-get="/items?page=2"
+           hx-target="#item-list"
+           hx-swap="beforeend">Load More</button>
 
-   # POST request with form data
-   Form(
-       Input(name="name", type="text"),
-       Button("Save", type="submit"),
-       hx_post="/items",
-       hx_target="#item-list",
-       hx_swap="outerHTML",
-   )
+   <!-- POST request with form data -->
+   <form hx-post="/items" hx-target="#item-list" hx-swap="outerHTML">
+     <input name="name" type="text">
+     <button type="submit">Save</button>
+   </form>
 
-   # DELETE with confirmation
-   Button(
-       "Delete",
-       hx_delete=f"/items/{item_id}",
-       hx_target=f"#item-{item_id}",
-       hx_swap="outerHTML",
-       hx_confirm="Delete this item?",
-   )
+   <!-- DELETE with confirmation -->
+   <button hx-delete="/items/{{ item.id }}"
+           hx-target="#item-{{ item.id }}"
+           hx-swap="outerHTML"
+           hx-confirm="Delete this item?">Delete</button>
 
 Out-of-Band Swaps
 ~~~~~~~~~~~~~~~~~
 
-Update multiple page elements from a single response:
+Update multiple page elements from a single response by rendering a
+fragment that includes an out-of-band element alongside the primary swap:
 
-.. code-block:: python
+.. code-block:: jinja
 
-   # In route handler
-   @rt("/items/{item_id}", methods=["DELETE"])
-   def delete_item(req, item_id: str):
-       ctx.repo.delete(item_id)
-       items = ctx.repo.list_all()
-       return (
-           # Primary response (replaces hx-target)
-           ItemList(items),
-           # Out-of-band update (updates element with matching id)
-           Div(f"{len(items)} items", id="item-count", hx_swap_oob="true"),
-       )
+   {# Primary response (replaces hx-target) #}
+   {% block item_list %}...{% endblock %}
+
+   {# Out-of-band update (updates element with matching id) #}
+   <div id="item-count" hx-swap-oob="true">{{ items | length }} items</div>
 
 Triggering Events
 ~~~~~~~~~~~~~~~~~
 
-.. code-block:: python
+.. code-block:: html
 
-   # Trigger HTMX request from JavaScript
-   Button(
-       "Apply",
-       onclick="htmx.trigger('#my-form', 'submit')",
-   )
+   <!-- Trigger HTMX request from JavaScript -->
+   <button onclick="htmx.trigger('#my-form', 'submit')">Apply</button>
 
-   # In JavaScript (app.js)
+.. code-block:: javascript
+
+   // In JavaScript (static/js/app.js or a component under static/js/components/)
    htmx.ajax('POST', '/endpoint', {
        target: '#target-element',
        swap: 'outerHTML',
@@ -479,7 +480,8 @@ Test models, services, and utilities without database dependencies:
 Integration Tests
 ~~~~~~~~~~~~~~~~~
 
-Test repository operations with a real MongoDB connection:
+Test repository operations against a mongomock-backed database (no real
+MongoDB connection required):
 
 .. code-block:: python
 
@@ -490,9 +492,9 @@ Test repository operations with a real MongoDB connection:
 
 
    @pytest.fixture
-   def repo(test_db):
-       """Create a repository with test database."""
-       return MyModelRepository(test_db)
+   def repo(isolated_mongo):
+       """Create a repository against the isolated mongomock database."""
+       return MyModelRepository(isolated_mongo)
 
 
    class TestMyModelRepository:
@@ -564,9 +566,10 @@ Common Tasks
 Adding a New Admin Page
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-1. Create route in ``src/seqsetup/routes/admin.py`` or new file
-2. Create component in ``src/seqsetup/components/``
-3. Add navigation link in ``src/seqsetup/components/layout.py``
+1. Create a route module in ``src/seqsetup/routes/admin/`` (router-level
+   ``dependencies=[Depends(require_admin_dep)]``)
+2. Create a template in ``src/seqsetup/templates/admin/``
+3. Add a navigation link in ``src/seqsetup/templates/_app_shell.html``
 4. Add documentation in ``docs/admin-guide/``
 
 Adding a New API Endpoint
@@ -596,7 +599,11 @@ spec file to maintain.
 Adding CSS Styles
 ~~~~~~~~~~~~~~~~~
 
-Add styles to ``src/seqsetup/static/css/app.css``. Follow existing patterns:
+``src/seqsetup/static/css/app.css`` is a generated build artifact (from
+``pixi run css``) -- never edit it directly or commit it. Add Tailwind
+utility classes inline in templates, or shared component-level styles to
+``src/seqsetup/static/css/components.css`` (imported, alongside Tailwind
+itself, by ``static/css/input.css``). Follow existing patterns:
 
 - Use semantic class names (``sample-table``, not ``table1``)
 - Group related styles together
@@ -606,11 +613,17 @@ Add styles to ``src/seqsetup/static/css/app.css``. Follow existing patterns:
 Adding JavaScript
 ~~~~~~~~~~~~~~~~~
 
-Add to ``src/seqsetup/static/js/app.js``. Keep JavaScript minimal:
+Add to ``src/seqsetup/static/js/app.js``, or a new self-contained component
+module under ``src/seqsetup/static/js/components/`` for an Alpine component
+(registered via ``Alpine.data(...)`` on ``alpine:init``). Keep JavaScript
+minimal:
 
 - Only use JS for interactions that can't be done with HTMX
+- Use Alpine for UI-only state (selection, drag-over highlights, modal
+  open/closed); the server stays the source of truth for domain data
 - Document functions with comments
-- Use vanilla JavaScript (no frameworks)
+- HTMX and Alpine are vendored in ``static/js/vendor/``, not installed via
+  a package manager
 
 Debugging Tips
 --------------

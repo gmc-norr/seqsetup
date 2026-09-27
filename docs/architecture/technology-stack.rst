@@ -14,12 +14,12 @@ Backend
 
    * - Framework
      - Purpose
-   * - **FastHTML**
-     - Main web framework for server-side HTML generation
    * - **FastAPI**
-     - REST API endpoints for programmatic access
+     - Main web framework -- HTML routes and REST API endpoints
+   * - **Jinja2 + jinja2-fragments**
+     - Server-side HTML templating, including partial re-renders for HTMX swaps
    * - **Starlette**
-     - Underlying ASGI framework (used by both FastHTML and FastAPI)
+     - Underlying ASGI framework (used by FastAPI)
    * - **Uvicorn**
      - ASGI server for running the application
    * - **PyMongo**
@@ -45,7 +45,7 @@ Frontend
    * - Framework
      - Purpose
    * - **HTMX**
-     - Dynamic HTML updates without full page reloads (bundled with FastHTML)
+     - Dynamic HTML updates without full page reloads (vendored in ``static/js/vendor/``)
    * - **Vanilla JavaScript**
      - Custom UI interactions (drag-drop, multi-select, bulk operations)
 
@@ -54,7 +54,8 @@ Architecture Approach
 
 SeqSetup follows a **hypermedia-driven** approach:
 
-1. **Server-rendered HTML**: FastHTML generates complete HTML on the server,
+1. **Server-rendered HTML**: FastAPI routes render complete HTML on the server
+   via Jinja2 templates (with jinja2-fragments for partial re-renders),
    eliminating the need for client-side templating or state management.
 
 2. **HTMX for interactivity**: Dynamic updates are handled by HTMX, which

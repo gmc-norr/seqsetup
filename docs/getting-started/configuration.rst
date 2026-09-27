@@ -62,17 +62,19 @@ startup if it does not exist.
 Keep the session secret out of version control. If the secret changes, all
 existing sessions are invalidated.
 
-Disabling Default Credentials
------------------------------
+Disabling File-Based Fallback Users
+------------------------------------
 
-The default development users in ``config/users.yaml`` should not be available in
-production. The authentication system checks credentials in this order:
+``config/users.yaml`` ships empty (``users: {}``); no credentials are committed
+to the repository. Any bootstrap or fallback users you add to it for local
+development or initial setup should not remain available in production. The
+authentication system checks credentials in this order:
 
 1. **LDAP/AD** (if configured and enabled)
 2. **Local users in MongoDB** (managed through the admin interface)
 3. **``config/users.yaml``** (file-based fallback)
 
-To disable the default credentials, use one or more of the following approaches:
+To disable the file-based fallback users, use one or more of the following approaches:
 
 **Remove the YAML users.** Replace the contents of ``config/users.yaml`` with an
 empty user list:

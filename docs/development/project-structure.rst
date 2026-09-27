@@ -13,8 +13,8 @@ Source Layout
    │   ├── users.yaml                   # Development user credentials
    │   └── profiles/                    # Application/test profile YAML files
    ├── src/seqsetup/        # Application source code
-   │   ├── app.py                       # Application entry point (FastHTML)
-   │   ├── components/                  # UI components
+   │   ├── app.py                       # Application entry point (FastAPI)
+   │   ├── templates/                   # Jinja2 HTML templates
    │   ├── data/                        # Static data loaders
    │   ├── models/                      # Data models (dataclasses)
    │   ├── repositories/                # MongoDB data access layer
@@ -50,14 +50,15 @@ Application Layers
    authentication.
 
 **Routes** (``routes/``)
-   HTTP request handlers using FastHTML. Routes coordinate between services,
-   repositories, and components to handle user requests. Each route module covers
-   a functional area (samples, indexes, export, auth, admin).
+   HTTP request handlers using FastAPI (``APIRouter``). Routes coordinate between
+   services, repositories, and templates to handle user requests. Each route
+   module covers a functional area (samples, indexes, export, auth, admin).
 
-**Components** (``components/``)
-   FastHTML UI components that generate HTML responses. Components use HTMX for
-   dynamic updates without full page reloads. The wizard component manages the
-   multi-step run setup flow.
+**Templates** (``templates/``)
+   Jinja2 HTML templates rendered via the ``render()`` helper. Templates use
+   HTMX for dynamic updates without full page reloads -- a route can return
+   just one ``{% block %}`` fragment for an HTMX swap, or the full page. The
+   wizard templates manage the multi-step run setup flow.
 
 **Data** (``data/``)
    Static data loaders for configuration files (instruments, chemistry types).
@@ -66,7 +67,7 @@ Application Layers
 Technology Stack
 ----------------
 
-- **Backend**: Python 3.12+ with FastHTML
+- **Backend**: Python 3.14+ with FastAPI (HTML via Jinja2 + jinja2-fragments)
 - **Frontend**: Server-rendered HTML with HTMX for dynamic interactions
 - **Database**: MongoDB with PyMongo driver
 - **Authentication**: bcrypt password hashing, LDAP/AD via ldap3

@@ -43,17 +43,20 @@ Specifies the number of cycles for each segment of the run.
 .. code-block:: text
 
    [BCLConvert_Settings]
-   BarcodeMismatchesIndex1,1
-   BarcodeMismatchesIndex2,1
-   OverrideCycles,Y151;I8N2;N2I8;Y151
+   SoftwareVersion,4.3.6
    FastqCompressionFormat,gzip
+   NoLaneSplitting,false
+   CreateFastqForIndexReads,0
+   OverrideCycles,Y151;I8N2;N2I8;Y151
 
 Settings for BCLConvert demultiplexing. ``OverrideCycles`` is included here only
 when all samples share the same override cycles string. Otherwise, it appears
-per-row in ``[BCLConvert_Data]``.
+per-row in ``[BCLConvert_Data]``. ``BarcodeMismatchesIndex1``/``BarcodeMismatchesIndex2``
+are per-sample overrides and are written in ``[BCLConvert_Data]``, not here.
 
-Optional settings include ``AdapterBehavior``, ``CreateFastqForIndexReads``, and
-``NoLaneSplitting``.
+``NoLaneSplitting`` and ``CreateFastqForIndexReads`` always appear (reflecting
+the run's settings). ``SoftwareVersion`` and ``AdapterBehavior`` are optional --
+``AdapterBehavior`` is omitted when at the default ``trim``.
 
 [BCLConvert_Data]
 ^^^^^^^^^^^^^^^^^
@@ -61,18 +64,19 @@ Optional settings include ``AdapterBehavior``, ``CreateFastqForIndexReads``, and
 .. code-block:: text
 
    [BCLConvert_Data]
-   Lane,Sample_ID,index,index2,Sample_Project,OverrideCycles
-   1,Sample_001,ATTACTCG,TATAGCCT,MyProject,Y151;I8N2;N2I8;Y151
-   1,Sample_002,TCCGGAGA,ATAGAGGC,MyProject,Y151;I10;I10;Y151
+   Lane,Sample_ID,Index,Index2,OverrideCycles
+   1,Sample_001,ATTACTCG,TATAGCCT,Y151;I8N2;N2I8;Y151
+   1,Sample_002,TCCGGAGA,ATAGAGGC,Y151;I10;I10;Y151
 
 Columns:
 
 - ``Lane`` -- Present only when samples have lane assignments
 - ``Sample_ID`` -- User-provided sample identifier
-- ``index`` -- i7 index sequence
-- ``index2`` -- i5 index sequence
-- ``Sample_Project`` -- Project name
-- ``OverrideCycles`` -- Present only when samples have different override cycles
+- ``Index`` -- i7 index sequence (capitalized, for IMS compatibility)
+- ``Index2`` -- i5 index sequence, in the orientation the sample sheet expects
+  (capitalized, for IMS compatibility)
+- ``OverrideCycles`` -- Present only when samples don't all share the same
+  override cycles string (see ``[BCLConvert_Settings]`` above)
 - ``BarcodeMismatchesIndex1``, ``BarcodeMismatchesIndex2`` -- Present only when
   per-sample overrides exist
 

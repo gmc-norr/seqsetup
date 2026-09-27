@@ -25,8 +25,9 @@ Dependencies
 
 Runtime dependencies are defined in ``pixi.toml``:
 
-- **python** >= 3.12
-- **python-fasthtml** -- Web framework
+- **python** >= 3.14
+- **fastapi** -- Web framework
+- **jinja2-fragments** -- Server-side HTML templating
 - **pymongo** -- MongoDB driver
 - **bcrypt** -- Password hashing
 - **ldap3** -- LDAP/AD integration
@@ -38,7 +39,7 @@ Development dependencies:
 
 - **pytest** -- Test framework
 - **sphinx** -- Documentation generator
-- **sphinx-rtd-theme** -- ReadTheDocs theme
+- **furo** -- Documentation theme
 
 Running Tests
 -------------

@@ -36,9 +36,6 @@ Handles all override cycle computation.
    Reverses the token order within an override cycles segment. Used for
    reverse-complement i5 instruments (e.g., ``I8N2`` becomes ``N2I8``).
 
-``validate_cycles(cycles, reagent_kit_cycles)``
-   Validates that total cycles do not exceed the reagent kit capacity.
-
 SampleSheetV2Exporter
 ---------------------
 
@@ -54,17 +51,21 @@ Generates Illumina SampleSheet v2 CSV output.
 
 1. ``[Header]`` -- File format version, run name, instrument platform
 2. ``[Reads]`` -- Cycle counts for all four segments
-3. ``[BCLConvert_Settings]`` -- Barcode mismatches, global override cycles, adapter
-   settings
-4. ``[BCLConvert_Data]`` -- Per-sample rows with index sequences, projects, and
-   optionally per-sample override cycles and lane assignments
+3. ``[BCLConvert_Settings]`` -- Software version, lane-splitting and adapter
+   settings, global override cycles
+4. ``[BCLConvert_Data]`` -- Per-sample rows with index sequences, and
+   optionally per-sample override cycles, barcode mismatch overrides, and
+   lane assignments
 5. DRAGEN sections -- Generated from application profiles (if available) or
    legacy analysis objects
 
 **Instrument adjustments:**
 
-For reverse-complement i5 instruments (NovaSeq X, NovaSeq 6000, etc.), the
-Index 2 override cycles segment is automatically reversed at export time.
+For instruments whose SampleSheet v2 i5 orientation is reverse-complement
+(NovaSeq 6000, HiSeq 4000, HiSeq X, NextSeq 500/550, MiniSeq), the Index 2
+override cycles segment is automatically reversed at export time. NovaSeq X
+Series writes i5 forward in the SampleSheet v2, so its Index 2 segment is
+not reversed even though it physically reads i5 as reverse-complement.
 
 JSONExporter
 ------------
@@ -124,10 +125,12 @@ IndexParser
 Parses index kit definitions from CSV files, supporting multiple column layouts
 and index modes.
 
-ProfileValidator
-----------------
+Profile Validation
+-------------------
 
-Validates test and application profile definitions against the expected schema.
+``validate_test_profile_yaml()`` and ``validate_application_profile_yaml()``
+(in ``services/profile_validator.py``) validate test and application profile
+definitions against the expected schema.
 
 GitHubSyncService
 -----------------
@@ -135,8 +138,8 @@ GitHubSyncService
 Synchronizes application and test profiles from a GitHub repository, keeping
 local definitions up to date with a remote source.
 
-SampleAPIService
-----------------
+Sample API (LIMS Import)
+-------------------------
 
-Imports sample and test identifiers from an external API, supporting bulk
-sample creation during run setup.
+``services/sample_api.py`` imports sample and test identifiers from an
+external API, supporting bulk sample creation during run setup.
