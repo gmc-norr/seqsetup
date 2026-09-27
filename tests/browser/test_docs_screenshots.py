@@ -763,3 +763,78 @@ def test_archive_button(demo_page, base_url, demo):
     page.wait_for_selector("#run-status-bar .status-ready")
     snap(page, "archive/archive-button", page.get_by_role("button", name="Archive"),
          region=page.locator("#run-status-bar"))
+
+
+# ---------------------------------------------------------------------------
+# Run templates and change history.
+# ---------------------------------------------------------------------------
+
+
+def test_templates_save_as_template(demo_page, base_url, demo):
+    page = demo_page
+    # Save as template (routes/run_templates.py:103) depends on
+    # get_archivable_run, not get_editable_run (routes/run_templates.py:106)
+    # -- it works on a run of any status because it only reads the run. The
+    # only UI entry point for this form is this fieldset
+    # (templates/runs/edit.html:44-50); its hidden scaffold_sample_ids input
+    # is hard-coded to "[]", so this never captures the run's samples.
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    fieldset = page.locator("fieldset:has(#template-name)")
+    page.fill("#template-name", "Nightly QC Batch")
+    snap(page, "templates/save-as-template",
+         fieldset.get_by_role("button", name="Save as template"),
+         region=fieldset)
+    with page.expect_navigation(url=re.compile(r"/templates$")):
+        fieldset.get_by_role("button", name="Save as template").click()
+
+
+def test_templates_manage(demo_page, base_url, demo):
+    page = demo_page
+    # test_templates_save_as_template (above) already redirected here; go
+    # explicitly so this test does not depend on that navigation happening.
+    page.goto(f"{base_url}/templates")
+    row = page.locator("div[id^='template-item-']").filter(has_text="Nightly QC Batch")
+    snap(page, "templates/manage", row.get_by_role("button", name="Delete"),
+         region=page.locator(".border.rounded"))
+
+
+def test_templates_new_run_from_template(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/templates")
+    row = page.locator("div[id^='template-item-']").filter(has_text="Nightly QC Batch")
+    # POST /runs/new/from-template/{id} (routes/run_templates.py:212) is a
+    # plain <form method="post"> (templates/run_templates/list.html:20) --
+    # a real navigation, not HTMX -- straight to the fresh Draft, whose
+    # run_name is the template's name (services/run_builder.py:143).
+    with page.expect_navigation(url=re.compile(r"/runs/[0-9a-f-]{36}$")):
+        row.get_by_role("button", name="New run").click()
+    title = page.locator("h1.run-title")
+    assert title.text_content().strip() == "Nightly QC Batch"
+    snap(page, "templates/new-run-from-template", title, region=page.locator(".run-header"))
+
+
+def test_history_change_history(demo_page, base_url, demo):
+    page = demo_page
+    # _CLEAN_RUN (test_ready_mark_ready, above) is DEMO-RUN-06 -- a real run
+    # driven through the wizard, sample paste, index drag, and two Mark
+    # Ready promotions with a Return to Draft in between. Every one of
+    # those saves went through `with saving_run(...)` (routes/
+    # dependencies.py), so each is already in its change history.
+    # test_archive_button (above) re-promoted it to Ready and stopped just
+    # short of clicking Archive; finish that here so the trail covers this
+    # run's whole life, start to finish, including its "created" entry.
+    page.goto(f"{base_url}/runs/{_CLEAN_RUN['id']}")
+    assert page.locator("#run-status-bar .status-ready").count() == 1
+    page.get_by_role("button", name="Archive").click()
+    page.wait_for_selector("#run-status-bar .status-archived")
+
+    panel = page.locator(".run-history-panel")
+    panel.scroll_into_view_if_needed()
+    # hx-trigger="revealed" (templates/runs/edit.html:56-61) swaps this
+    # element's entire innerHTML once the history loads. Wait for a real
+    # entry row (".border-t", templates/runs/_history_list.html:6), which
+    # exists only after that swap -- the pre-load "Loading history..." text
+    # would otherwise satisfy a weaker wait and photograph the wrong state.
+    page.wait_for_selector(".run-history-panel .border-t")
+    fieldset = page.locator("fieldset:has(.run-history-panel)")
+    snap(page, "history/change-history", panel, region=fieldset)
