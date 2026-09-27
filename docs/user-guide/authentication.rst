@@ -53,11 +53,23 @@ Every user has exactly one of two roles:
 Session and logout
 -------------------
 
-After signing in, your session is kept in a server-side cookie. It lasts
-until you sign out or the session expires. Signing out is a button in the
-top-right corner of every page, next to your display name; it always
-submits as a request that changes state, so it cannot be triggered from
-another site.
+After signing in, your session is kept in a signed cookie in your browser
+-- SeqSetup keeps no matching record of it on the server. It lasts until
+you sign out or the cookie itself expires; each request you make renews
+that expiry, so an account in active use effectively never times out on
+its own, while one left idle expires after 8 hours (configurable by an
+administrator via ``SEQSETUP_SESSION_MAX_AGE_SECONDS``). Signing out is a
+button in the top-right corner of every page, next to your display name;
+it always submits as a request that changes state, so it cannot be
+triggered from another site.
+
+.. warning::
+   Because the server keeps no record of who has an active session, there
+   is no way to force-expire one. If an account is deleted or demoted from
+   Admin, any session it already has stays exactly as it was -- signed in,
+   with its old role -- until that browser signs out or the session times
+   out from its own inactivity. Removing or demoting a user does not cut
+   off access already in progress.
 
 The session's signing secret comes from the ``SEQSETUP_SESSION_SECRET``
 environment variable when set (the recommended production setup). If it

@@ -49,6 +49,46 @@ reported as a missing-test error; and so on.
    Do not assume a run is safe because it saved without complaint -- check
    the Issues tab, or the Check panel's error count, before relying on it.
 
+What else can block Mark Ready
+----------------------------------
+
+An index collision and a missing test are only two of the checks that can
+put an error on the Issues tab. If **Mark Ready** refuses a run, the reason
+is one of these:
+
+- **No run name.** *"Run has no name; give it a name in Run Setup before
+  marking it ready."*
+- **No samples.** *"Run has no samples; add samples before marking the run
+  as ready."*
+- **Sample(s) with no index assigned.**
+- **Too many cycles for the reagent kit.** The run's total cycles (Read 1 +
+  Index 1 + Index 2 + Read 2) exceed what the kit and instrument allow.
+- **Sample ID has invalid characters.** Only letters, digits, ``-`` and
+  ``_`` are allowed.
+- **A sample assigned to a lane the flowcell doesn't have.**
+- **Duplicate Sample ID.** The same Sample ID used more than once in the
+  run.
+- **Inconsistent index length in a lane.** Not every sample sharing a lane
+  has the same effective i7 (or i5) length.
+- **Mixed single- and dual-indexed samples in a lane.**
+- **An index longer than the run's index cycles for that read.**
+- **A malformed Override Cycles value**, on the sample or from a kit's
+  default read-override pattern.
+- **Override Cycles that don't match the run's declared cycles** -- each
+  segment must sum to its Read/Index cycle count.
+- **A duplicate index pair in a lane** -- two samples sharing the exact
+  same i7 (and i5) sequence. *"Demultiplexing cannot distinguish these
+  samples."*
+- **An application profile problem**: the sample's test isn't found, the
+  application profile it points to isn't found, the application isn't
+  available on the run's instrument, the required software version isn't
+  available on it, or two samples in the run need different versions of
+  the same application.
+
+Every one of these blocks **Mark Ready** exactly the way an index
+collision does (see the warning above) -- read the Issues tab for which
+one, and which samples, before assuming a run is otherwise ready.
+
 Index distance heatmaps
 -------------------------
 

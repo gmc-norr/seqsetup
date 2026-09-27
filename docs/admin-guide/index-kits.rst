@@ -48,14 +48,23 @@ Before a kit is saved, SeqSetup checks, in order:
    valid semantic version; adapter sequences, and every i7/i5 sequence, must
    be DNA (``A``, ``C``, ``G``, ``T``, ``N`` only); every index pair needs a
    name and, in Unique Dual mode, both an i7 and an i5 sequence; a duplicate
-   pair *name* is an error, a duplicate pair *sequence* under a different
-   name is only a warning (two indexes that are physically indistinguishable
-   at demultiplexing time, which is occasionally intentional).
+   pair *name* is an error and blocks the upload.
 5. **Name + version clash** -- a kit with the same name and version already
    present is rejected rather than silently overwritten.
 
-Every outcome -- success or any of the rejections above -- is written to the
-audit log.
+.. warning::
+   A duplicate pair *sequence* under a different name -- two indexes that
+   are physically indistinguishable at demultiplexing time -- is detected
+   internally but is **not shown anywhere**: it neither blocks the upload
+   nor appears on any page after it. The kit saves normally. If you
+   suspect a kit has this problem, check for it yourself by comparing
+   sequences in the downloaded YAML (**Download YAML**, below).
+
+Only the **content type** check (2) and a file that fails to **parse** (3)
+write to the audit log on rejection, alongside a **successful** upload.
+The **size** cap (1), **field validation** (4), and a **name + version
+clash** (5) reject the upload silently as far as the audit log is
+concerned -- nothing is recorded for those three.
 
 .. note::
    A rejected upload never partially saves. Nothing is added to the kit

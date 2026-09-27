@@ -3,9 +3,11 @@ Samples
 
 A sample is one DNA library to sequence. You get samples into a Draft run
 three ways: paste a single row, paste a whole block from a spreadsheet, or
-import a worklist from a configured LIMS. All three go through the same
-paste-and-preview screen -- nothing is saved until you confirm what was
-read.
+import a worklist from a configured LIMS. Pasting either way always goes
+through a preview screen -- nothing is saved until you confirm what was
+read. Importing a worklist is different: previewing it first is optional,
+and there is no separate confirm step at all (see "Importing from a
+worklist (LIMS)" below).
 
 Adding samples
 ---------------
@@ -143,7 +145,23 @@ than the letters ``Y``, ``I``, ``U``, ``N``, digits, ``;`` and ``,`` is
 rejected and nothing is saved.
 
 Sample ID is set when a sample is added and cannot be changed afterward in
-this table; to correct a typo, remove the sample and add it again.
+this table; to correct a typo, remove the sample and add it again. Test ID
+cannot be changed per row either -- the only way to change it after adding
+is the bulk **Test ID** row below.
+
+Changing several samples at once
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Tick more than one sample's checkbox to reveal the bulk-action panel above
+the table (the same panel used for :doc:`lane-assignment`). Its
+**Mismatches** row applies the i7 and i5 boxes to every ticked sample when
+you select **Apply** -- leave a box blank to reset that value to its
+default for every ticked sample, it does not leave the existing value
+alone. **Clear** resets both to their default in one step. Its **Test ID**
+row works the same way: pick a test and select **Apply** to give it to
+every ticked sample, or **Clear** to remove it. The panel's **Lanes** and
+**Override Cycles** rows are covered in :doc:`lane-assignment` and
+:doc:`override-cycles`.
 
 Removing a sample
 --------------------
@@ -151,3 +169,8 @@ Removing a sample
 Each row has a small delete button (``x``) that removes that one sample,
 after a confirmation prompt. This also drops any index and lane assignment
 that sample had -- there is no undo.
+
+To remove several samples at once, tick their checkboxes and select
+**Delete Selected** in the bulk-action panel above the table. It deletes
+every ticked sample in one action, after the same kind of confirmation
+prompt -- just as irreversible as the per-row button.

@@ -30,6 +30,11 @@ buttons on the right depend on the run's status:
 - **Delete** -- an empty Draft (no samples yet), or an Archived run if you
   are an administrator.
 
+.. warning::
+   Deleting a run deletes its :doc:`Change History <change-history>` along
+   with it -- permanently, and with no separate confirmation for the
+   history. A run whose audit trail must be kept should not be deleted.
+
 Search
 ------
 

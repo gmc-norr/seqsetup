@@ -97,9 +97,10 @@ Assigning one index to several ticked samples
 -------------------------------------------------
 
 Each row has a checkbox. Ticking one or more highlights those rows and
-enables the bulk-action tools above the table (lanes, mismatches,
-override cycles, test ID -- see :doc:`lane-assignment`); it also changes
-what a *single*-index drop does:
+enables the bulk-action tools above the table -- lanes (see
+:doc:`lane-assignment`), mismatches and test ID (see :doc:`samples`), and
+override cycles (see :doc:`override-cycles`); it also changes what a
+*single*-index drop does:
 
 .. figure:: /_static/screenshots/indexes/ticked-rows.png
    :alt: Two ticked sample rows (checkboxes checked) in the sample table, the second one outlined.

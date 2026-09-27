@@ -2,9 +2,14 @@ Lane Assignment
 ================
 
 A flowcell has one or more lanes. A sample's lane assignment decides which
-lane(s) its reads are sorted into during demultiplexing. By default a new
-sample has no lane assignment at all, which means it goes into *every* lane
-of the flowcell -- not lane 1, all of them.
+lane(s) its reads are sorted into during demultiplexing. A new sample is
+never left without a lane: pasted samples start in lane 1 (change this
+before previewing, in the **Lanes for these samples** box), a single
+sample added by hand is assigned lane 1, and samples brought in from a LIMS
+worklist are also assigned lane 1. The only way to put a sample into
+*every* lane of the flowcell is to tick it and select **Clear** in the
+bulk-action panel (see :ref:`Clearing a lane assignment
+<clearing-a-lane-assignment>` below).
 
 The Lanes column
 ------------------
@@ -51,6 +56,8 @@ table updates immediately:
 to pick "every lane except this one." Selecting **Apply** or **Clear**
 (below) without ticking any sample does nothing but remind you to tick one
 first.
+
+.. _clearing-a-lane-assignment:
 
 Clearing a lane assignment
 ------------------------------

@@ -188,16 +188,18 @@ shows recognized field names for each attribute:
 
 Every value pulled from the API is trimmed and capped at 256 characters, and
 an index sequence is uppercased and checked against ``[ACGTN]`` before it is
-accepted -- an invalid sequence rejects that one sample by name rather than
-failing with an unrelated server error later.
+accepted -- naming the offending sample instead of failing with an
+unrelated server error later.
 
 .. warning::
    A worklist row with content but no recognizable ``sample_id`` is never
    silently dropped: the **entire import is rejected**, naming the offending
    row number(s), so the missing identifier can be fixed upstream before
-   retrying. A row whose ``sample_id`` already exists in the run is skipped
-   instead, and SeqSetup says so in a banner ("Skipped N duplicate(s)
-   already in run.") -- never silently.
+   retrying. An invalid index sequence rejects the **entire import** the
+   same way, naming the sample and the bad sequence. A row whose
+   ``sample_id`` already exists in the run is skipped instead, and SeqSetup
+   says so in a banner ("Skipped N duplicate(s) already in run.") -- never
+   silently.
 
 Using it from a run
 --------------------

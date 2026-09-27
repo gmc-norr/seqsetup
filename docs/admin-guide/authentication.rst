@@ -14,10 +14,16 @@ How a login is actually checked
 
    - If it succeeds, the user is logged in with the role their LDAP group
      membership maps to.
-   - If it fails and **Allow local user fallback** is on, SeqSetup falls
-     through to local authentication (below).
-   - If it fails and fallback is off, the login is refused outright --
-     local accounts are not tried at all.
+   - If the LDAP server responds and rejects the bind (wrong username or
+     password, or no matching account) and **Allow local user fallback** is
+     on, SeqSetup falls through to local authentication (below).
+   - If the LDAP server responds and rejects the bind and fallback is off,
+     the login is refused outright -- local accounts are not tried at all.
+   - If the LDAP server cannot be reached at all -- wrong host or port, the
+     service is down, or the TLS handshake fails -- SeqSetup does **not**
+     fall back to local accounts, even with fallback on. The login fails
+     with a server error, and no account, LDAP or local, can sign in until
+     the connection problem is fixed.
 
 2. Local authentication -- used directly when the Authentication Method is
    **Local Authentication**, and as the fallback above -- checks the local
@@ -38,9 +44,18 @@ How a login is actually checked
    Enabling LDAP/Active Directory with **Allow local user fallback** turned
    off, before the connection has been confirmed working, can lock every
    account out of SeqSetup -- including every Admin account, since local
-   accounts are never tried once fallback is off. Use **Run Connection
-   Test** and **Run Auth Test** (below) to confirm LDAP works before
-   turning fallback off in production.
+   accounts are never tried once fallback is off.
+
+   **Allow local user fallback**, even turned on, does not protect against
+   every kind of LDAP outage. It only covers a bind that the LDAP server
+   actively rejects. If the server cannot be reached at all -- the wrong
+   host or port, the service is down, or a TLS handshake fails -- the login
+   attempt fails with a server error and local accounts are never tried,
+   whether fallback is on or off. Use **Run Connection Test** and **Run
+   Auth Test** (below) to confirm LDAP works before relying on it in
+   production, and keep a documented way to recover (server access to fix
+   ``config/users.yaml`` or the LDAP settings) in case the server ever
+   becomes unreachable afterwards.
 
 .. figure:: /_static/screenshots/admin/auth-settings.png
    :alt: The Authentication Method panel with LDAP selected, and the Allow local user fallback checkbox outlined.

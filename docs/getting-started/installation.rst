@@ -21,8 +21,48 @@ Docker Compose is the recommended way to run a fully functional instance.
    git clone <repository-url>
    cd seqsetup
 
-   # Start the application and MongoDB
-   docker compose up --build
+``docker-compose.yml`` will not start without a ``.env`` file in the same
+directory -- five settings have no default, and Compose aborts immediately
+if any of them is unset.
+
+1. Copy the template and open it in an editor:
+
+   .. code-block:: bash
+
+      cp .env.example .env
+
+2. Fill in the required values:
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 70
+
+      * - Variable
+        - What it's for
+      * - ``SEQSETUP_SESSION_SECRET``
+        - Signs the session cookie. Must be at least 32 characters; the app
+          refuses to start with a shorter value. The template's own comment
+          suggests generating one with Python's ``secrets.token_hex(32)``.
+      * - ``MONGO_ROOT_USER`` / ``MONGO_ROOT_PASSWORD``
+        - Root credentials for the MongoDB container itself, used only for
+          admin tasks. The template pre-fills the username (``root``); the
+          password has no default and must be set.
+      * - ``MONGO_APP_USER`` / ``MONGO_APP_PASSWORD``
+        - The credentials SeqSetup itself uses to read and write its
+          database, created automatically on first start by
+          ``docker/mongo-init.sh``. The template pre-fills the username
+          (``seqsetup_app``); the password has no default and must be set.
+
+   .. warning::
+      Choose strong, unique values for both passwords and for the session
+      secret -- do not reuse a value from another system. ``.env`` is
+      gitignored; never commit it.
+
+3. Start the application and MongoDB:
+
+   .. code-block:: bash
+
+      docker compose up --build
 
 The application will be available at ``http://localhost:5001``.
 

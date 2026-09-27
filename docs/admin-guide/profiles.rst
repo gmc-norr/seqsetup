@@ -308,7 +308,7 @@ Application Profile Validation
    <config-sync>`. A file that fails them is **not** imported, and does not
    count towards the "N profiles synced" total on the Config Sync page --
    but no per-file error is shown there either. The reason is only visible
-   on **Admin > Logs**, as a warning naming the file.
+   on :doc:`Admin > Logs <logs>`, as a warning naming the file.
 
 Runtime Validation
 ~~~~~~~~~~~~~~~~~~~

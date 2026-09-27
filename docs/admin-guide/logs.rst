@@ -25,8 +25,13 @@ Filtering
   leave it on **All Levels**.
 - **Search** -- matches text anywhere in the log message.
 
-Select **Filter** to apply both. Select **Refresh** to reload with the same
-filters still applied.
+Select **Filter** to apply both.
+
+.. warning::
+   **Refresh** does **not** keep the current filters -- it reloads the page
+   with no ``Level`` or ``Search`` filter at all, and the two fields reset
+   to **All Levels** and empty to match. Use **Filter** again (not
+   **Refresh**) to see new entries under the same filter.
 
 .. figure:: /_static/screenshots/admin/logs.png
    :alt: The log entries table filtered to a single row, a WARNING-level entry recording a rejected request, with that row outlined.
