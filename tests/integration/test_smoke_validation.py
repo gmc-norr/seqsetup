@@ -91,8 +91,8 @@ class TestMarkReady:
         # Body contains an error about samples or validation
         body_lower = response.text.lower()
         assert "sample" in body_lower or "error" in body_lower
-        # HX-Retarget is set so the message lands in #error-banner
-        assert response.headers.get("HX-Retarget") == "#error-banner"
+        # HX-Retarget is set so the message lands in #ready-message
+        assert response.headers.get("HX-Retarget") == "#ready-message"
         # Status stays DRAFT
         assert ctx.run_repo.get_by_id("empty-run").status == RunStatus.DRAFT
 

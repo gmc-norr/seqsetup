@@ -411,7 +411,7 @@ async def update_status(
 
     For DRAFT->READY, validation is run in real time. If errors are
     present the transition is refused with an inline error message
-    returned via HX-Retarget to #error-banner.
+    returned via HX-Retarget to #ready-message.
     """
     try:
         new_status = RunStatus(status)
@@ -444,7 +444,7 @@ async def update_status(
                 ),
                 headers={
                     "Cache-Control": "no-store",
-                    "HX-Retarget": "#error-banner",
+                    "HX-Retarget": "#ready-message",
                     "HX-Reswap": "innerHTML",
                 },
             )
@@ -550,7 +550,8 @@ async def update_status(
         sample_api_enabled=sample_api_enabled, oob=True,
         chosen_kit_id=selected_kit_id(request),
     )
-    return HTMLResponse(status_html + export_html + section_html, headers={"Cache-Control": "no-store"})
+    ready_html = templates.env.get_template("runs/_ready_message.html").render(oob=True)
+    return HTMLResponse(status_html + export_html + section_html + ready_html, headers={"Cache-Control": "no-store"})
 
 
 _HISTORY_PAGE = 50

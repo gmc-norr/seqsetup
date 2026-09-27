@@ -715,10 +715,10 @@ def test_ready_mark_ready_refused(demo_page, base_url, demo):
     # own real-time validation (routes/runs.py:update_status).
     page.goto(f"{base_url}/runs/{demo['problem']}")
     page.get_by_role("button", name="Mark Ready").click()
-    page.wait_for_selector("#error-banner .ready-refused")
+    page.wait_for_selector("#ready-message .ready-refused")
     banner = page.locator(".ready-refused")
     assert "Cannot mark ready" in banner.text_content()
-    snap(page, "ready/mark-ready-refused", banner, region=page.locator("#error-banner"))
+    snap(page, "ready/mark-ready-refused", banner, region=page.locator("#ready-message"))
     # Refusing must not have moved the run out of Draft.
     assert page.locator("#run-status-bar .status-draft").count() == 1
 

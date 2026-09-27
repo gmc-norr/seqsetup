@@ -63,7 +63,7 @@ class TestReadyRefusal:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
         assert resp.status_code == 200
-        assert resp.headers.get("HX-Retarget") == "#error-banner"
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert len(re.findall(r"<li>", resp.text)) == count
         assert "more)" not in resp.text
         assert f"{count} error" in resp.text

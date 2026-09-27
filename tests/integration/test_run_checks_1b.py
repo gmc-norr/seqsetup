@@ -150,3 +150,38 @@ class TestOverrideCyclesRefusedAtSave:
         assert resp.status_code == 200
         assert [s.override_cycles for s in ctx.run_repo.get_by_id(run_id).samples] == [
             "Y151;I8N2;I8N2;Y151"] * 2
+
+
+class TestReadyMessageSlot:
+    """Mark Ready's refusal goes to #ready-message, and a successful status
+    change empties it; #error-banner is left to save failures."""
+
+    def test_refusal_targets_the_ready_slot(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = SequencingRun(id="slot-refused", run_name="R", instrument_platform=InstrumentPlatform.NOVASEQ_X,
+                            flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
+        ctx.run_repo.save(run)  # no samples: a real refusal
+
+        resp = logged_in_client.post("/runs/slot-refused/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert resp.headers.get("HX-Reswap") == "innerHTML"
+        assert "Cannot mark ready" in resp.text
+
+    def test_success_empties_the_ready_slot(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run_id = _seed(ctx, "slot-ok", pairs=(CLEAN_PAIR,))
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert ctx.run_repo.get_by_id(run_id).status.value == "ready", resp.text[:400]
+        assert re.search(r'<div id="ready-message" class="empty:hidden" hx-swap-oob="true"></div>', resp.text)
+
+    def test_edit_page_has_the_ready_slot(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _seed(ctx, "slot-page")
+
+        page = logged_in_client.get(f"/runs/{run_id}").text
+
+        assert '<div id="ready-message" class="empty:hidden"></div>' in page
