@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .sheet_text import PLAIN_NAME_RE, PLAIN_VERSION_RE
+
 
 @dataclass
 class ValidationError:
@@ -64,6 +66,7 @@ def validate_instrument_yaml(yaml_data: dict, source_file: str = "") -> Validati
     # Required fields
     _validate_required_string(result, yaml_data, "name", "Instrument name is required")
     _validate_required_string(result, yaml_data, "samplesheet_name", "Samplesheet name is required")
+    _validate_plain_name(result, yaml_data, "samplesheet_name")
 
     # Version field (required for synced instruments)
     if "version" not in yaml_data or not yaml_data.get("version"):
@@ -128,6 +131,14 @@ def _validate_required_string(
     value = data.get(field)
     if not value or not isinstance(value, str):
         result.add_error(field, message, str(value) if value else None)
+
+
+def _validate_plain_name(result: ValidationResult, data: dict, field: str) -> None:
+    """The value is written into the Sample Sheet as is (the InstrumentPlatform
+    line), so it may hold only letters, digits, '_' and '-'."""
+    value = data.get(field)
+    if isinstance(value, str) and value and not PLAIN_NAME_RE.fullmatch(value):
+        result.add_error(field, "May only contain letters, digits, '_' and '-'", value)
 
 
 def _validate_boolean(result: ValidationResult, data: dict, field: str) -> None:
@@ -283,6 +294,14 @@ def _validate_onboard_applications(result: ValidationResult, data: dict) -> None
             result.add_error("onboard_applications", "Application name cannot be empty")
             continue
 
+        if not PLAIN_NAME_RE.fullmatch(str(app_name)):
+            result.add_error(
+                "onboard_applications",
+                "Application name may only contain letters, digits, '_' and '-'",
+                str(app_name),
+            )
+            continue
+
         if not isinstance(app_config, dict):
             result.add_error(f"onboard_applications.{app_name}", "Must be a configuration object")
             continue
@@ -294,6 +313,12 @@ def _validate_onboard_applications(result: ValidationResult, data: dict) -> None
                 f"onboard_applications.{app_name}.software_version",
                 "Must be a string",
                 str(version),
+            )
+        elif version and not PLAIN_VERSION_RE.fullmatch(version):
+            result.add_error(
+                f"onboard_applications.{app_name}.software_version",
+                "May only contain letters, digits, '.', '_' and '-'",
+                version,
             )
 
 

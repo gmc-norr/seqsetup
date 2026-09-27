@@ -300,6 +300,9 @@ Application Profile Validation
 
 - All four required fields must be present and non-empty
 - ``ApplicationProfileVersion`` must be a valid PEP 440 version
+- ``ApplicationName`` may only contain letters, digits, ``_`` and ``-`` --
+  it becomes a section name in the Sample Sheet (``[<name>_Settings]``),
+  written exactly as given
 - If ``ApplicationType`` is ``Dragen``: ``Settings`` and ``Data`` must be
   present and be dicts, and ``DataFields`` must be present and be a list
 

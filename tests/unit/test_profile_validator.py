@@ -338,3 +338,26 @@ class TestFromYamlValidation:
         ap = ApplicationProfile.from_yaml(data, "DragenGermline.yaml")
         assert ap.name == "DragenGermline"
         assert ap.version == "1.0.0"
+
+
+class TestApplicationNameCharacters:
+    """ApplicationName becomes a Sample Sheet section name, written as is, so
+    only letters, digits, '_' and '-' are allowed (audit 2026-09 N-10)."""
+
+    BASE = {
+        "ApplicationProfileName": "P",
+        "ApplicationProfileVersion": "1.0.0",
+        "ApplicationName": "BCLConvert",
+        "ApplicationType": "Custom",
+    }
+
+    @pytest.mark.parametrize("name", [
+        "BCLConvert]\n[BCLConvert_Data]", "a,b", "Dragen Germline", "App]", "App\x00", "Äpp",
+    ])
+    def test_non_plain_application_name_is_refused(self, name):
+        with pytest.raises(ProfileValidationError, match="ApplicationName' may only contain"):
+            validate_application_profile_yaml({**self.BASE, "ApplicationName": name})
+
+    @pytest.mark.parametrize("name", ["BCLConvert", "DragenGermline", "Custom_App-2"])
+    def test_plain_application_name_is_accepted(self, name):
+        validate_application_profile_yaml({**self.BASE, "ApplicationName": name})

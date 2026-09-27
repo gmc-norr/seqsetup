@@ -90,6 +90,16 @@ to build a correct Sample Sheet:
    those instruments (see :doc:`/user-guide/validation`) and does not for
    four-color ones.
 
+**Sample sheet name and onboard application names**
+   The sample sheet name (e.g. ``NovaSeqXSeries``) is written on the Sample
+   Sheet's ``InstrumentPlatform`` line, and each onboard application name
+   (e.g. ``BCLConvert``) decides which application profiles the instrument
+   can run. Both may only contain letters, digits, ``_`` and ``-``; an
+   onboard application's ``software_version`` may also contain ``.``. A
+   synced instrument file that breaks this is skipped, with the reason on
+   :doc:`Admin > Logs <logs>`. SeqSetup also refuses to write a Sample Sheet
+   holding such a name, so a run cannot be marked Ready with one.
+
 .. warning::
    A reagent kit's maximum total cycle count (Read 1 + Index 1 + Index 2 +
    Read 2) is an **optional** field on an instrument definition

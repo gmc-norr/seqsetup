@@ -3,6 +3,8 @@
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from .sheet_text import PLAIN_NAME_RE
+
 
 class ProfileValidationError(Exception):
     """Raised when profile YAML data fails validation."""
@@ -105,6 +107,19 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
             errors.append(f"Missing required field '{field}'")
         elif not str(yaml_data[field]).strip():
             errors.append(f"Field '{field}' must not be empty")
+
+    # ApplicationName becomes a Sample Sheet section name ([<name>_Settings]),
+    # written as is, so it may hold only letters, digits, '_' and '-'.
+    app_name = yaml_data.get("ApplicationName")
+    if (
+        app_name is not None
+        and str(app_name).strip()
+        and not PLAIN_NAME_RE.fullmatch(str(app_name))
+    ):
+        errors.append(
+            "Field 'ApplicationName' may only contain letters, digits, '_' and '-': "
+            f"{str(app_name)!r}"
+        )
 
     # Validate ApplicationProfileVersion is PEP 440 compliant
     version_val = yaml_data.get("ApplicationProfileVersion")
