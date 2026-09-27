@@ -34,13 +34,13 @@ _STATIC_PREFIXES = ("/static/", "/css/", "/js/", "/img/")
 ENDED_LOGIN_MESSAGE_HTML = (
     '<div class="error-message">Your login has ended, so this was not saved. '
     'What you typed is still on this page. '
-    '<a href="/login" target="_blank" rel="noopener">Log in again</a> '
+    '<a href="/login" target="_blank" rel="noopener" class="underline">Log in again</a> '
     'in a new tab, then try again here.</div>'
 )
 # The same for a background read (nothing was being saved).
 ENDED_LOGIN_READ_MESSAGE_HTML = (
     '<div class="error-message">Your login has ended. '
-    '<a href="/login" target="_blank" rel="noopener">Log in again</a> '
+    '<a href="/login" target="_blank" rel="noopener" class="underline">Log in again</a> '
     'in a new tab, then try again here.</div>'
 )
 
