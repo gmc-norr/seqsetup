@@ -77,12 +77,14 @@ repo's YAML files and docs examples (checked 2026-09-27).
   that are *not* line breaks — line breaks keep their existing
   `line_break_in_sample_text` error, so one character is never reported twice. One
   error per sample, naming each field that has one.
-  Message: `Sample '<id>' has a hidden character (<describe>) in its <fields>. Hidden
+  Message: `Sample '<id>' has a hidden character in its <fields>: <describe>. Hidden
   characters can break the Sample Sheet. Remove it before marking the run ready.`
 - For the run: its name and description, counting every hidden character. One error
   naming each field.
-  Message: `The run's <fields> has a hidden character (<describe>). Hidden characters
-  can break the Sample Sheet. Remove it before marking the run ready.`
+  Message: `The run has a hidden character in its <fields>: <describe>. Hidden
+  characters can break the Sample Sheet. Remove it before marking the run ready.`
+- With more than one distinct character the message says `hidden characters` and
+  `Remove them`. `<fields>` joins with ` and `, e.g. `project and description`.
 
 The run-field part runs next to the run-name prerequisite, before the early return for a
 run with no samples, so an empty run still gets it; the sample part runs next to the
@@ -97,7 +99,9 @@ Behaviour change, deliberate: a tab in any of these five fields now blocks Mark 
 value holds a hidden character other than tab, LF or CR. Tab, LF and CR keep today's
 handling (formula-guard prefix for a leading tab or CR; quoting for LF and CR), so no
 existing output changes. `_escape_identifier` falls back to `_escape_csv`, so it is
-covered too. The effect on Mark Ready is the same fail-closed 500 as above.
+covered too. The effect on Mark Ready is the same fail-closed 500 as above. The error
+names the character codes only, never the text: the text can be patient data, and the
+error is written to the log.
 
 ### 3. Run name form
 
