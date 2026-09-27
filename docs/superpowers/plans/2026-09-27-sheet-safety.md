@@ -1363,3 +1363,59 @@ Use superpowers:requesting-code-review with BASE = `bfe7be8` (main when the bran
 - [ ] **Step 7: Report**
 
 Report to the user: what changed, the real numbers from Steps 1–5, the review outcome, and that the branch is ready to merge on their "commit and merge". Do not merge or push.
+
+---
+
+## Addendum: tasks 7 and 8 (after the independent review)
+
+The spec's addendum explains why. Same constraints as above.
+
+### Task 7: No hidden characters in synced profile values
+
+**Files:** `src/seqsetup/services/sheet_text.py`, `src/seqsetup/services/profile_validator.py`,
+`src/seqsetup/services/samplesheet_v2_exporter.py` (`_escape_csv`, new `_escape_config_cell`,
+`_write_application_profile_section` cells at the Settings line, the column-name line, the two
+BarcodeMismatches defaults and the final `else` default), `src/seqsetup/services/samplesheet_v1_exporter.py`
+(`_escape_csv`), `docs/admin-guide/profiles.rst`. Tests: `tests/unit/test_sheet_text.py`,
+`tests/unit/test_profile_validator.py`, `tests/unit/test_samplesheet_v2_exporter.py`,
+`tests/integration/test_sheet_safety.py`.
+
+**Interfaces:** Produces `refuse_hidden_characters(value: str, allow: str = "") -> None` (raises
+`ValueError("Hidden character (<describe>) cannot be written to the Sample Sheet")`) and
+`SampleSheetV2Exporter._escape_config_cell(value) -> str`.
+
+- [ ] Write failing tests: `TestRefuseHiddenCharacters` (sheet_text); `TestProfileValuesHiddenCharacters`
+  (validator: LF, CR, tab, NUL, U+2028 in a Settings value, a Settings key, a Data value, a nested
+  Data value, a DataFields entry, a Translate value and key; a Dragen profile too; plain values,
+  numbers, booleans and None accepted); `TestProfileCellGuard` (writer: LF in a setting value, a
+  setting key, a Data default, a BarcodeMismatches default and a translated column name; a tab in a
+  Data default; plain cells still written); integration
+  `test_line_break_in_synced_setting_stops_mark_ready` (setup as the ApplicationName test, with
+  `Settings={"SoftwareVersion": "4.3.6\n[Junk]"}`; asserts validation passes, then 500 and Draft).
+- [ ] Run them; each must fail for the missing rule (no error / DID NOT RAISE / 200 instead of 500).
+- [ ] Implement `refuse_hidden_characters` in `sheet_text.py`; make both `_escape_csv` methods call it
+  with `allow="\t\n\r"` in place of their copied block; add `_escape_config_cell` and use it for the
+  five profile cells; add `_hidden_in` and the Settings/Data/DataFields/Translate loop to
+  `validate_application_profile_yaml`; add the rule to the profile validation list in `profiles.rst`.
+- [ ] Run the tests, the exporter and validator test files, and `test_sheet_safety.py`: all pass.
+- [ ] Commit: `fix(sync, export): no hidden characters in synced profile values`.
+
+### Task 8: Review minors
+
+- [ ] Replace every literal U+2028/U+2029 in `src/`, `tests/` and this plan with ` `/` `
+  escapes; confirm `grep -rlP '[\x{2028}\x{2029}]' src tests docs` finds nothing.
+- [ ] `test_sync_name_rules.py`: also validate every `config/instruments/*.yaml` file.
+- [ ] `test_sample_text_validation.py`: parametrize the line-break-only test over
+  `sorted(ValidationService._LINE_BREAK_CHARS)`.
+- [ ] `_require_plain`: `text = "" if value is None else str(value)`; check and return `text`.
+  Test: `_require_plain(4.3, PLAIN_VERSION_RE, "x") == "4.3"` (write it first, see it fail with
+  `TypeError`).
+- [ ] v2 `_escape_csv` docstring: "Three independent concerns".
+- [ ] `validation.py`: put `from .sheet_text import ...` after `.index_collision_validator`.
+- [ ] Docs: `instruments.rst` — the writer checks the sample sheet name (and a profile's
+  `ApplicationName`), not onboard application names; `run-setup.rst` — a line break in the name
+  or the description is saved as a space; `validation.rst` — you cannot see the character, so
+  clear the field and type the text again.
+- [ ] Run the touched test files; commit: `fix: review follow-ups for the Sample Sheet safety change`.
+- [ ] Then repeat Task 6 Steps 1–4 (full server suite, browser suite with CSS built, docs build,
+  break tests for the new guards) and ask the reviewer to check the new commits.

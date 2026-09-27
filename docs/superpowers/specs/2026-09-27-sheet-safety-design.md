@@ -160,3 +160,40 @@ TDD: each rule gets a test that fails before the code change.
   covers it.
 - `adapter_behavior` is written to the sheet raw, but no route sets it.
 - No data migration: the app has never been deployed.
+
+## Addendum after the independent review (2026-09-27)
+
+The review found, and I reproduced, that a synced application profile's `Settings`
+keys and values, `Data` keys and values, `DataFields` entries and `Translate` entries
+reach the v2 sheet through `_escape_csv`, which quotes a line break but still writes it.
+A line-oriented reader then sees extra lines, for example a fake sample row in
+`[BCLConvert_Data]`. Same actor as N-10, on the production (profile-driven) path. The
+user chose to close it in this change ("fix it here").
+
+- **At sync:** `validate_application_profile_yaml` refuses any hidden character — tab,
+  LF and CR included — in `Settings` keys and values, `Data` keys and values,
+  `DataFields` entries and `Translate` keys and values, for every `ApplicationType`,
+  looking inside nested lists and mappings. Error:
+  `Field '<field>' has a hidden character in '<key or entry>': <describe>`.
+- **At export (backstop):** the cells of a profile section that come from the profile
+  (Settings keys and values, column names, Data default values) go through a new
+  `_escape_config_cell`, which refuses any hidden character, tab/LF/CR included, and
+  then applies `_escape_csv`.
+- **One source:** `sheet_text.refuse_hidden_characters(value, allow="")` raises the
+  `ValueError` (codes only, never the text). Both `_escape_csv` methods call it with
+  `allow="\t\n\r"`; `_escape_config_cell` calls it with nothing allowed.
+
+Review minors fixed in the same change: literal U+2028/U+2029 in source replaced with
+escapes; the `instruments.rst` claim narrowed to what the writer checks; the shipped-config
+guard test also covers `config/instruments/*.yaml`; the line-break-only test covers every
+character in `_LINE_BREAK_CHARS`; the `_escape_csv` docstring count; `_require_plain`
+accepts a non-string config value (e.g. an unquoted YAML number) by converting it with
+`str`, as the old f-string did; import order; `run-setup.rst` wording (a line break in the
+name or the description is saved as a space); a sentence on how to remove an invisible
+character.
+
+More out of scope, found by the review and not changed here: the v1 writer writes index
+sequences raw (they are validated in the model); the fallback global `OverrideCycles` is
+written raw (Mark Ready refuses a malformed one); Unicode format characters (zero-width
+space, BOM, bidi controls) do not break the sheet's structure but can make two names look
+the same — a follow-up.
