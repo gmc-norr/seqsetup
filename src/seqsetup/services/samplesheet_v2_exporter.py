@@ -12,6 +12,7 @@ from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .samplesheet_v1_exporter import _PLAIN_IDENTIFIER_RE, _reverse_complement
+from .sheet_text import PLAIN_NAME_RE, PLAIN_VERSION_RE, describe, hidden_characters
 
 if TYPE_CHECKING:
     from ..repositories.test_profile_repo import TestProfileRepository
@@ -80,7 +81,10 @@ class SampleSheetV2Exporter:
             output.write(f"RunDescription,{cls._escape_csv(run.run_description)}\n")
 
         # Get platform name from config (e.g., "NovaSeqXSeries" for "NovaSeq X Series")
-        platform_name = get_samplesheet_platform_name(run.instrument_platform)
+        platform_name = cls._require_plain(
+            get_samplesheet_platform_name(run.instrument_platform),
+            PLAIN_NAME_RE, "Instrument sample sheet name",
+        )
         output.write(f"InstrumentPlatform,{platform_name}\n")
 
         # Index orientation - NovaSeq X expects forward i5 in sample sheet
@@ -116,6 +120,9 @@ class SampleSheetV2Exporter:
         # Use instrument config defaults
         software_version = get_bclconvert_software_version(run.instrument_platform)
         if software_version:
+            software_version = cls._require_plain(
+                software_version, PLAIN_VERSION_RE, "BCL Convert software version"
+            )
             output.write(f"SoftwareVersion,{software_version}\n")
         output.write("FastqCompressionFormat,gzip\n")
 
@@ -402,7 +409,17 @@ class SampleSheetV2Exporter:
            "this is text, not a formula" escape) before applying the regular
            CSV quoting. The quote becomes part of the cell text, visible to
            humans but inert to formula parsers.
+
+        3. Characters quoting cannot make safe: any other hidden character
+           (NUL, VT, FF, NEL, U+2028, ...) raises ``ValueError``. Mark Ready
+           refuses them first; this is the backstop. The error names the
+           character codes only — the text can be patient data.
         """
+        unsafe = [c for c in hidden_characters(value) if c not in "\t\n\r"]
+        if unsafe:
+            raise ValueError(
+                f"Hidden character ({describe(unsafe)}) cannot be written to the Sample Sheet"
+            )
         if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
             value = "'" + value
         if "," in value or '"' in value or "\n" in value or "\r" in value:
@@ -419,6 +436,16 @@ class SampleSheetV2Exporter:
         if value and _PLAIN_IDENTIFIER_RE.fullmatch(value):
             return value
         return cls._escape_csv(value)
+
+    @classmethod
+    def _require_plain(cls, value: str, pattern, what: str) -> str:
+        """Return ``value`` if it may be written into the sheet's structure as
+        is (a section header or a header line); raise ``ValueError`` if not.
+        These values come from the synced config, and quoting cannot make a
+        section header safe."""
+        if not pattern.fullmatch(value or ""):
+            raise ValueError(f"{what} {value!r} cannot be written to the Sample Sheet")
+        return value
 
     @classmethod
     def _write_application_sections_from_profiles(
@@ -487,7 +514,7 @@ class SampleSheetV2Exporter:
         run: Optional[SequencingRun] = None,
     ):
         """Write [AppName_Settings] and [AppName_Data] sections from profile."""
-        app_name = profile.application_name
+        app_name = cls._require_plain(profile.application_name, PLAIN_NAME_RE, "ApplicationName")
 
         # Write Settings section
         output.write(f"[{app_name}_Settings]\n")
