@@ -137,7 +137,12 @@ TDD: each rule gets a test that fails before the code change.
 - Routes (integration): Mark Ready is refused, status stays Draft, for a hidden character
   in the run description; Mark Ready with a bad synced `ApplicationName` written straight
   to the database (bypassing the validator) returns 500 and the run stays Draft with no
-  sheet stored; posting only `run_name` keeps the description and the reverse; posting
+  sheet stored. That test must also seed a synced instrument whose
+  `onboard_applications` lists the same bad name, then call
+  `clear_synced_instruments_cache()` and `clear_validation_cache()` — otherwise the
+  existing `app_not_available` check refuses Mark Ready before the exporter runs. The test
+  first asserts `validate_run` gives zero errors for the run, so a 500 can only come from
+  the export guard; posting only `run_name` keeps the description and the reverse; posting
   neither returns 400 and leaves `updated_at` unchanged.
 - Break tests: remove each guard in turn and confirm the matching test fails.
 - The audit's own proofs for N-10, N-11, N-12 and N-16 are re-run and must now fail.
