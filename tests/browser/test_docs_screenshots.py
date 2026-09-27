@@ -831,6 +831,10 @@ def test_archive_button(demo_page, base_url, demo):
     # ready, so this re-promotion is still a genuine, error-free
     # DRAFT->READY transition, not a repeat of a stale check.
     page.get_by_role("button", name="Mark Ready").click()
+    # Same four pairs, so the same color-balance errors as in
+    # test_ready_mark_ready: answer the question again (spec 2026-09-27, F13).
+    page.locator("#ready-message .ready-confirm").get_by_role(
+        "button", name="Mark Ready anyway").click()
     page.wait_for_selector("#run-status-bar .status-ready")
     snap(page, "archive/archive-button", page.get_by_role("button", name="Archive"),
          region=page.locator("#run-status-bar"))
