@@ -146,7 +146,7 @@ class TestEndedLoginResponses:
         assert r.headers["HX-Reswap"] == "innerHTML"
         assert "Your login has ended, so this was not saved." in r.text
         assert "What you typed is still on this page." in r.text
-        assert '<a href="/login" target="_blank" rel="noopener">Log in again</a>' in r.text
+        assert '<a href="/login" target="_blank" rel="noopener" class="underline">Log in again</a>' in r.text
 
     def test_plain_request_goes_to_login(self, fresh_app, admin_user_seeded):
         app, ctx, _db = fresh_app
@@ -187,7 +187,7 @@ class TestEndedLoginResponses:
         assert r.status_code == 401
         assert "Your login has ended." in r.text
         assert "not saved" not in r.text and "What you typed" not in r.text
-        assert '<a href="/login" target="_blank" rel="noopener">Log in again</a>' in r.text
+        assert '<a href="/login" target="_blank" rel="noopener" class="underline">Log in again</a>' in r.text
 
     def test_old_style_cookie_is_refused(self, fresh_app):
         app, _ctx, _db = fresh_app

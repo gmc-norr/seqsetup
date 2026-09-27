@@ -28,7 +28,9 @@ def test_paste_survives_an_ended_login(logged_in_page, base_url, admin_creds, ap
 
     banner = page.locator("#error-banner")
     expect(banner).to_contain_text("Your login has ended, so this was not saved.")
-    expect(banner.locator('a[href="/login"][target="_blank"]')).to_have_text("Log in again")
+    link = banner.locator('a[href="/login"][target="_blank"]')
+    expect(link).to_have_text("Log in again")
+    expect(link).to_have_css("text-decoration-line", "underline")   # visibly a link
     expect(page.locator("#paste_data")).to_have_value(PASTE)
     assert page.url == url
 
