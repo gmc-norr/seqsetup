@@ -1,113 +1,156 @@
 Override Cycles
-===============
+=================
 
-Override cycles control how the sequencer interprets each cycle of a run. They are
-essential when index lengths differ from the configured run cycles, or when special
-read patterns (such as UMI reads) are needed.
+Override Cycles is the instruction SeqSetup writes into the Sample Sheet
+telling BCL Convert exactly what to do with every cycle the run performs:
+read it as data, read it as part of an index, treat it as a UMI, or skip
+it. An index read one cycle short or long throws off demultiplexing for
+everyone in that lane, not just the one sample.
 
-Override Cycles Format
-----------------------
+The format
+-----------
 
-Override cycles use Illumina's notation with four semicolon-separated segments::
-
-   Y151;I8N2;I8N2;Y151
-
-The segments correspond to:
-
-1. **Read 1** -- Sequencing read
-2. **Index 1** (i7) -- First index read
-3. **Index 2** (i5) -- Second index read
-4. **Read 2** -- Sequencing read
-
-Cycle Tokens
-^^^^^^^^^^^^
-
-Each segment is composed of one or more tokens:
+An Override Cycles value is up to four segments separated by ``;``, one
+for each read the run actually performs, in order: Read 1, Index 1,
+Index 2, Read 2. (A run with no Index 2, or no Read 2, simply has one
+fewer segment -- there is a segment only for a read the run's cycle
+configuration actually includes.) Each segment is one or more tokens: a
+letter followed by a cycle count.
 
 .. list-table::
    :header-rows: 1
-   :widths: 10 40 20
+   :widths: 10 60
 
-   * - Token
+   * - Letter
      - Meaning
-     - Example
    * - ``Y``
-     - Sequencing (base call) cycles
-     - ``Y151`` = 151 sequencing cycles
+     - Sequencing (data) cycles
    * - ``I``
-     - Index read cycles
-     - ``I8`` = 8 index cycles
+     - Index-read cycles
    * - ``N``
-     - Masked/skipped cycles
-     - ``N2`` = skip 2 cycles
+     - Masked / skipped cycles
    * - ``U``
-     - UMI (Unique Molecular Identifier) cycles
-     - ``U8`` = 8 UMI cycles
+     - UMI cycles
 
-The wildcard ``*`` means "remaining cycles". For example, ``Y*`` means "use all
-remaining cycles for sequencing".
+For example, ``Y151;I8;I8;Y151`` reads a 151-cycle Read 1, an 8-cycle
+Index 1 and Index 2, and a 151-cycle Read 2. ``I8N2`` reads an 8-cycle
+index, then masks 2 more cycles the run performs but the index does not
+use.
 
-Common Patterns
-^^^^^^^^^^^^^^^
+The Override Cycles cell
+--------------------------
 
-.. list-table::
-   :header-rows: 1
-   :widths: 20 40
+Every sample's **Override Cycles** cell is in the sample table, between
+**Lanes** and the mismatch columns (see :doc:`samples` for how the cell
+itself is edited). An empty cell shows the placeholder **Auto** --
+nothing is stored for that sample yet.
 
-   * - Pattern
-     - Description
-   * - ``I10``
-     - Full 10-cycle index read
-   * - ``I8N2``
-     - 8 index cycles + 2 masked (index shorter than allocated)
-   * - ``N10``
-     - All cycles masked (no index)
-   * - ``N2I8``
-     - 2 masked + 8 index cycles (reversed for RC instruments)
-   * - ``U8Y*``
-     - 8 UMI cycles then sequencing for remaining
-   * - ``N2Y*``
-     - Skip 2 cycles then sequence remaining
+.. figure:: /_static/screenshots/override-cycles/cell.png
+   :alt: SAMPLE-A02's Override Cycles cell, empty and showing the "Auto" placeholder, outlined; the table header and neighbouring rows are visible for context.
 
-Automatic Calculation
----------------------
+   An Override Cycles cell showing the "Auto" placeholder, outlined --
+   this sample already has an index assigned, but no Override Cycles
+   value has been stored for it yet.
 
-SeqSetup automatically calculates override cycles based on:
+**Auto** does not mean SeqSetup does not know what to write -- it means
+nothing is *stored*. The value actually used (at export, or when you
+select **Auto** in the bulk panel below) is calculated fresh from the
+run's cycle configuration and the sample's assigned index length: an
+index that exactly fills its configured cycles gets a plain ``I``
+segment (``I8``); a shorter index gets the rest masked (``I8N2``); no
+index at all masks every cycle of that read (``N8``). Once a value is
+stored, the cell looks the same whether SeqSetup calculated it or you
+typed it by hand -- only an empty cell means nothing is stored.
 
-- The configured run cycles (Read 1, Read 2, Index 1, Index 2)
-- The actual index sequence lengths
-- Kit-provided effective index cycle counts
-- Kit-provided read override patterns
+.. warning::
+   Assigning or clearing a sample's index recalculates its Override
+   Cycles and *overwrites* whatever was stored before -- including a
+   value you typed by hand (see :doc:`index-assignment`). Re-dropping an
+   index on a sample that already has one has the same effect, even if
+   it is the same index as before. If you have set a manual Override
+   Cycles value for a reason (a UMI protocol, for example), re-check it
+   after any index change on that sample.
 
-When an index is assigned to a sample, the override cycles are computed
-automatically. If the index length matches the run cycles, the segment is a simple
-``I`` token (e.g., ``I10``). If shorter, the remaining cycles are masked with ``N``
-(e.g., ``I8N2``).
+Setting a value by hand
+-------------------------
 
-Global vs Per-Sample
+Type directly into a sample's own **Override Cycles** cell, or change
+several ticked samples at once from the **Override Cycles** row of the
+bulk-action panel above the table:
+
+1. Tick the checkbox of each sample you want to change.
+2. Type the value into the **Override Cycles** row of the bulk-action
+   panel.
+3. Select **Apply**.
+
+.. figure:: /_static/screenshots/override-cycles/bulk.png
+   :alt: The bulk-action panel's Override Cycles row, with "Y151;I8;I8;Y151" typed in and one sample selected, outlined.
+
+   The Override Cycles row of the bulk-action panel, outlined.
+
+Select **Auto** instead of **Apply** to drop whatever is stored for the
+ticked samples and go back to the calculated value described above.
+
+The ``*`` wildcard
 --------------------
 
-**Global override cycles**: When all samples in a run have the same override cycles
-string, it is written once in the ``[BCLConvert_Settings]`` section of the sample
-sheet.
+You may type ``*`` in place of a cycle count to mean "however many
+cycles are left in this read" -- for example ``Y*`` for a Read segment,
+or ``N2Y*`` to skip the first 2 cycles and sequence the rest. SeqSetup
+expands every ``*`` to a concrete number, against the run's configured
+cycles, before saving -- the exported Sample Sheet needs an explicit
+count, never a wildcard. Expanding a ``*`` needs the run's cycles to be
+configured and the value to have exactly as many segments as the run has
+reads, with at most one ``*`` per segment; if any of that is not true,
+nothing is saved and the reason is named in the error banner at the top
+of the page.
 
-**Per-sample override cycles**: When samples have different index lengths or patterns,
-override cycles are written per-row in the ``[BCLConvert_Data]`` section.
+What is checked, and when
+----------------------------
 
-Forward Orientation
--------------------
+An Override Cycles value may only contain the letters ``Y``, ``I``,
+``U``, ``N``, digits, and the segment separators ``;`` or ``,``, and
+each segment must be a letter followed by digits. Typing anything
+else -- a stray character, a segment missing its letter, a ``*`` that
+could not be expanded -- is refused immediately: nothing is saved, and
+the error banner names the problem. This applies the same way whether
+you typed it into the row's own cell or the bulk panel.
 
-Override cycles are always entered and displayed in forward orientation. For
-instruments that read the i5 index in reverse-complement (e.g., NovaSeq X,
-NovaSeq 6000), the Index 2 segment is automatically reversed during sample sheet
-export.
+.. warning::
+   That immediate check does **not** confirm the value actually matches
+   this run. A value with the right characters but the wrong number of
+   segments, or one whose cycle counts do not sum to the run's declared
+   Read/Index cycles, is accepted and saved without complaint -- for
+   example, typing a four-read value's worth of cycles into only two
+   segments. The mistake is only caught the next time the run is
+   checked: the **Check** panel above the table, or Mark Ready, compares
+   every sample's Override Cycles against the run's configured cycles
+   and flags anything that does not add up. Do not treat a value as
+   correct just because it was accepted when you typed it -- check the
+   run (see :doc:`validation`) before relying on it.
 
-For example, if you enter ``I8N2`` for the Index 2 pattern, the exported sample sheet
-for a NovaSeq X will contain ``N2I8`` in the Index 2 position.
+Forward orientation
+-----------------------
 
-Manual Override
----------------
+Type and read Override Cycles the same way regardless of instrument:
+index lengths and directions exactly as you see them. What ends up in
+the *exported* Sample Sheet for the Index 2 segment can differ from what
+you typed, though, because BCL Convert expects the i5 index written in
+whatever orientation that specific instrument's Sample Sheet format
+calls for -- which is not always the direction the instrument physically
+reads it in. On a NovaSeq X, the instrument this guide's screenshots
+use, that expected orientation happens to match the forward orientation
+you typed, so the Index 2 segment is exported unchanged. Other
+instruments do have their Index 2 segment reversed for export. If you
+need to know for certain what a specific instrument does, check the
+exported Sample Sheet itself (see :doc:`export`) rather than assuming.
 
-Per-sample override cycles can be edited manually in the sample table. Enter the
-full four-segment override cycles string (e.g., ``Y151;I8N2;I8N2;Y151``) to override
-the automatic calculation.
+Global vs. per-sample in the exported sheet
+-----------------------------------------------
+
+When every sample in the run ends up with the same effective Override
+Cycles, SeqSetup writes it once, for the whole run. As soon as samples
+differ from each other, each sample's own value is written per-row in
+the exported data instead. Either way, the value used is the one
+described above: what is stored on the sample if anything is, otherwise
+the calculated one.

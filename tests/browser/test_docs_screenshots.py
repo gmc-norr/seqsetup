@@ -471,3 +471,83 @@ def test_indexes_fill_assigned(demo_page, base_url, demo):
     page.wait_for_selector('tr.sample-row:has-text("SAMPLE-A02") .row-error-badge', state="detached")
     with _sample_section_unclipped(page):
         snap(page, "indexes/fill-assigned", page.locator("#sample-table"))
+
+
+# ---------------------------------------------------------------------------
+# Lane assignment and override cycles: the bulk-action panel's Lanes and
+# Override Cycles rows, the per-row Lanes display, and the per-row Override
+# Cycles cell.
+# ---------------------------------------------------------------------------
+
+
+def test_lanes_bulk_panel(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.locator("tr.sample-row").filter(has_text="SAMPLE-A02").locator(".sample-checkbox").check()
+    page.locator("tr.sample-row").filter(has_text="SAMPLE-A03").locator(".sample-checkbox").check()
+    # Ticking a sample toggles #bulk-action-panel's has-selection class
+    # (app.js updateSampleSelection(), pure client-side), which is what
+    # unhides .bulk-action-grid (components.css:633-636) -- the Lanes row
+    # lives inside it and is not interactable before this.
+    lanes_row = page.locator(".bulk-action-row").filter(has_text="Lanes:")
+    lanes_row.locator("input.bulk-lane-checkbox[value='2']").check()
+    lanes_row.locator("input.bulk-lane-checkbox[value='3']").check()
+    with _sample_section_unclipped(page):
+        snap(page, "lanes/bulk-panel", lanes_row, region=page.locator("#bulk-action-panel"), pad=16)
+
+    lanes_row.get_by_role("button", name="Apply").click()
+    # set-lanes swaps #sample-section outerHTML; wait for the saved lanes to
+    # actually be on the page, not the pre-swap "All" display -- this also
+    # proves the save reached the database before this test ends, since
+    # test_lanes_row_lanes (below) reads the same run with a fresh page load.
+    page.wait_for_selector('tr.sample-row:has-text("SAMPLE-A02") .lanes-display:has-text("2,3")')
+    assert page.locator("tr.sample-row").filter(has_text="SAMPLE-A03").locator(".lanes-display").text_content() == "2,3"
+
+
+def test_lanes_row_lanes(demo_page, base_url, demo):
+    page = demo_page
+    # test_lanes_bulk_panel (above) already applied lanes 2,3 to SAMPLE-A02
+    # and SAMPLE-A03 and confirmed the save landed before returning; this is
+    # a fresh full-page load (not an HTMX swap), so the saved lanes are
+    # simply what the initial render shows.
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A02")
+    assert row.locator(".lanes-display").text_content() == "2,3"
+    table = page.locator("table.sample-table")
+    with _sample_section_unclipped(page):
+        snap(page, "lanes/row-lanes", row.locator(".lanes-display"), region=table, pad=24)
+
+
+def test_override_cycles_cell(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    # SAMPLE-A02 was seeded with an index pair written straight into the
+    # database (docs_world._sample), bypassing the app's own assign-index
+    # routes -- unlike SAMPLE-A05..A08 (assigned by drag-and-drop earlier in
+    # this module, which recalculates and stores Override Cycles), A02's
+    # Override Cycles was never computed: the cell is empty and shows the
+    # "Auto" placeholder even though a real index is assigned.
+    row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A02")
+    box = row.locator('input[name="override_cycles"]')
+    assert box.input_value() == ""
+    assert row.locator(".assigned-index.i7").count() == 1
+    table = page.locator("table.sample-table")
+    with _sample_section_unclipped(page):
+        snap(page, "override-cycles/cell", box, region=table, pad=24)
+
+
+def test_override_cycles_bulk(demo_page, base_url, demo):
+    page = demo_page
+    page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.locator("tr.sample-row").filter(has_text="SAMPLE-A02").locator(".sample-checkbox").check()
+    override_row = page.locator(".bulk-action-row").filter(has_text="Override Cycles:")
+    override_row.locator("#bulk-override-cycles-input").fill("Y151;I8;I8;Y151")
+    with _sample_section_unclipped(page):
+        snap(page, "override-cycles/bulk", override_row, region=page.locator("#bulk-action-panel"), pad=16)
+
+    override_row.get_by_role("button", name="Apply").click()
+    # set-override-cycles swaps #sample-section outerHTML; wait for the
+    # saved value to actually be on the page, not the pre-swap empty input.
+    page.wait_for_selector(
+        'tr.sample-row:has-text("SAMPLE-A02") input[name="override_cycles"][value="Y151;I8;I8;Y151"]'
+    )

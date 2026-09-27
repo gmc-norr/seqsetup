@@ -1,38 +1,83 @@
 Lane Assignment
-===============
+================
 
-For multi-lane flowcells, samples can be assigned to specific lanes.
+A flowcell has one or more lanes. A sample's lane assignment decides which
+lane(s) its reads are sorted into during demultiplexing. By default a new
+sample has no lane assignment at all, which means it goes into *every* lane
+of the flowcell -- not lane 1, all of them.
 
-Default Behavior
-----------------
+The Lanes column
+------------------
 
-By default, samples are not assigned to any specific lane. This means the sample
-will be sequenced on all lanes of the flowcell (default BCLConvert behavior).
+The sample table's **Lanes** column shows each sample's current assignment:
+a sorted, comma-separated list of lane numbers (for example ``2,3``), or
+``All`` when no specific lane is set.
 
-Assigning Lanes
----------------
+This column is display only -- there is no field in the row itself to type
+a lane number into. Changing a sample's lanes, even one sample, is a
+separate select-and-apply action described below (see also
+:doc:`samples`).
 
-1. Select one or more samples in the sample table
-2. Click **Set Lanes**
-3. A selection menu displays all available lanes for the current flowcell type
-4. Select the desired lanes
-5. Click **Apply** to assign the selected lanes to all selected samples
+How many lanes a flowcell offers depends on the flowcell type -- for
+example, a NovaSeq X ``10B`` flowcell, the one this guide's screenshots
+use, has 8.
 
-The number of available lanes depends on the flowcell type. For example, a NovaSeq X
-10B flowcell has 8 lanes.
+Setting lanes for one or more samples
+----------------------------------------
 
-Lane Display
-------------
+1. Tick the checkbox of each sample you want to change -- one is enough
+   for a single sample.
+2. In the **Lanes** row of the bulk-action panel above the table, tick
+   each lane number you want those samples assigned to.
+3. Select **Apply**.
 
-In the sample table, lanes are displayed as a comma-separated list (e.g., ``1,2,3``)
-or ``All`` if no specific lanes are assigned.
+.. figure:: /_static/screenshots/lanes/bulk-panel.png
+   :alt: The bulk-action panel's Lanes row, with lanes 2 and 3 ticked and two samples selected, outlined.
 
-In the exported sample sheet, each sample-lane combination becomes a separate row in
-the ``[BCLConvert_Data]`` section. A sample assigned to lanes 1 and 2 produces two
-rows.
+   The Lanes row of the bulk-action panel, outlined -- the ticked lane
+   numbers, and the Apply / Clear / Toggle buttons that act on every
+   ticked sample.
 
-Clearing Lanes
---------------
+Applying replaces the lanes on every ticked sample with exactly the lanes
+you ticked -- it does not add to whatever lanes were already there. The
+table updates immediately:
 
-To remove lane assignments, select the sample(s), click **Set Lanes**, deselect all
-lanes, and apply. The sample returns to the default "all lanes" behavior.
+.. figure:: /_static/screenshots/lanes/row-lanes.png
+   :alt: A sample's Lanes cell reading "2,3" in the sample table, outlined; the table header and neighbouring rows are visible for context.
+
+   A sample's Lanes cell after applying lanes 2 and 3, outlined.
+
+**Toggle** inverts which lane checkboxes are ticked, which is a quick way
+to pick "every lane except this one." Selecting **Apply** or **Clear**
+(below) without ticking any sample does nothing but remind you to tick one
+first.
+
+Clearing a lane assignment
+------------------------------
+
+Tick the sample(s) and select **Clear** instead of **Apply**. This applies
+an empty lane list, which returns those samples to the default "all lanes"
+behavior -- the same as a sample that has never had lanes set.
+
+.. warning::
+   Two samples that share a lane must not share an index -- with nothing
+   to tell their reads apart, demultiplexing cannot say which sample a
+   read actually came from. SeqSetup does not refuse this while a run is
+   still a Draft: as soon as it happens, the **Check** panel above the
+   table marks it as an error, and the full report on :doc:`validation`
+   names the samples and the lane. A Draft with two same-lane, same-index
+   samples saves and stays saved -- it is only actually *refused* at
+   **Mark Ready**: if this error (or any other) is still present,
+   transitioning to Ready is refused and the problem is listed in the
+   banner at the top of the page. Do not assume a run is safe just
+   because lanes are assigned -- check the **Check** panel (or
+   :doc:`validation`) before relying on it.
+
+Lanes in the exported Sample Sheet
+--------------------------------------
+
+A run where every sample is left on "All" (no explicit lane) exports
+without a ``Lane`` column at all. As soon as *any* sample in the run has
+an explicit lane, the column appears for every sample, and a sample
+assigned to more than one lane produces one row per lane in the exported
+data section -- a sample in lanes 2 and 3 becomes two rows.
