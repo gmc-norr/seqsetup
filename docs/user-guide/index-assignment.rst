@@ -45,7 +45,7 @@ Each sample row that has no i7 (or i5) yet shows a dashed **Drop i7** or
 onto that target to assign it:
 
 .. figure:: /_static/screenshots/indexes/drag-drop.png
-   :alt: SAMPLE-A05's row after a UDI0005 pair chip was dragged onto its i7 drop target; both the i7 and i5 index cells now show the assigned index, outlined.
+   :alt: SAMPLE-A05's row after a UDI0005 pair chip was dragged onto its i7 drop target; both the i7 and i5 index cells now show the assigned index, with the i7 cell outlined.
 
    The index just dropped, outlined -- assigning a unique-dual pair fills
    both the i7 and i5 cells at once, whichever of the two you drop it on.
@@ -176,10 +176,10 @@ When an index is assigned -- by any of the methods above -- and its kit
 declares defaults, they are copied onto the sample automatically:
 
 - **Index cycles** -- the number of cycles the kit expects for its i7 and/or i5
-- **Read and index override patterns** -- pre-defined override patterns
-  the kit specifies (for example ``I8N2`` for an index read, or ``N2Y*``
-  for a data read)
+- **Read override patterns** -- pre-defined patterns the kit specifies for its
+  data reads (for example ``N2Y*``)
 
-Override Cycles is then recalculated from these and the run's cycle
-configuration. Any of it can still be changed by hand afterward on the
-sample table -- see :doc:`override-cycles`.
+SeqSetup computes the index override pattern (for example ``I8N2``) from the
+index cycles above and the run's cycle configuration, then recalculates
+Override Cycles from both. Any of it can still be changed by hand afterward
+on the sample table -- see :doc:`override-cycles`.

@@ -361,7 +361,7 @@ def test_indexes_kit_picker(demo_page, base_url, demo):
     # it, not just that a <select> exists.
     assert DEMO_KIT_NAME in dropdown.locator("option:checked").text_content()
     with _sample_section_unclipped(page):
-        snap(page, "indexes/kit-picker", dropdown, pad=24)
+        snap(page, "indexes/kit-picker", dropdown, pad=8)
 
 
 def test_indexes_drag_drop(demo_page, base_url, demo):
