@@ -259,4 +259,10 @@ def mark_ready(client, run_id: str, headers: dict):
     if "Mark Ready anyway" not in resp.text:
         return resp
     fields = dict(re.findall(r'name="(color_balance_[a-z_]+)" value="([^"]*)"', resp.text))
-    return client.post(f"/runs/{run_id}/status/ready", data=fields, headers=headers)
+    answered = client.post(f"/runs/{run_id}/status/ready", data=fields, headers=headers)
+    # Re-asking is also a 200, so a caller that only checks the status code
+    # would pass on a run that stayed Draft. Fail here instead.
+    assert "Mark Ready anyway" not in answered.text, (
+        "the color-balance answer was not accepted; the question came back"
+    )
+    return answered

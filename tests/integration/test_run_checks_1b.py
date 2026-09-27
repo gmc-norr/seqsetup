@@ -25,6 +25,20 @@ def _pair(i7: str, i5: str, name: str = "p1") -> IndexPair:
 # read as CCCCCCCC (i5 CCCCCCCC would be read GGGGGGGG: a dark-cycle error).
 CLEAN_PAIR = ("CCCCCCCC", "GGGGGGGG")
 
+# Five pairs that give lane 1 color balance WARNINGS and no errors: at every
+# index position exactly one of the five reads T and the other four read A, so
+# channel 1 (A+C) gets 80 % and channel 2 (C+T) 20 % — under 25 %, never 0 %.
+# The i5 values are the reverse complement of what the instrument reads.
+# Measured: i7 (0 errors, 8 warnings), i5 (0 errors, 8 warnings), no collisions,
+# no dark cycles, no blocking configuration error.
+WARNING_PAIRS = (
+    ("TAAAATAA", "TTTTATTT"),
+    ("ATAAAATA", "TTTATTTT"),
+    ("AATAAAAT", "TTATTTTA"),
+    ("AAATAAAA", "TATTTTAT"),
+    ("AAAATAAA", "ATTTTATT"),
+)
+
 
 def _seed(ctx, run_id: str, pairs=(("ATTACTCG", "TATAGCCT"),), platform=InstrumentPlatform.NOVASEQ_X,
           flowcell="10B", read1_pattern: str | None = None, lanes=(1,)) -> str:
@@ -275,12 +289,51 @@ class TestColorBalanceQuestion:
 
         assert "Mark Ready will ask" in panel
 
-    def test_check_panel_is_quiet_without_error_lanes(self, logged_in_client, fresh_app):
+    def test_check_panel_has_no_badge_at_all_for_a_clean_run(self, logged_in_client, fresh_app):
         ctx, run_id = self._setup(fresh_app, "cb-panel-clean", pairs=(CLEAN_PAIR,))
 
         panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
 
+        assert "Color balance:" not in panel
         assert "Mark Ready will ask" not in panel
+
+    def test_warnings_only_do_not_ask(self, logged_in_client, fresh_app):
+        """The spec's boundary: a channel under 25 % is a Warning, and a
+        Warning must not make Mark Ready ask."""
+        ctx, run_id = self._setup(fresh_app, "cb-warn", pairs=WARNING_PAIRS)
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert "Mark Ready anyway" not in resp.text, resp.text[:400]
+        assert ctx.run_repo.get_by_id(run_id).status.value == "ready"
+
+    def test_check_panel_shows_the_badge_without_the_suffix_for_warnings(
+        self, logged_in_client, fresh_app
+    ):
+        ctx, run_id = self._setup(fresh_app, "cb-panel-warn", pairs=WARNING_PAIRS)
+
+        panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
+
+        assert "Color balance: 1 lane(s)" in panel
+        assert "Mark Ready will ask" not in panel
+
+    def test_archiving_neither_asks_nor_records_lanes(self, logged_in_client, fresh_app):
+        """READY->ARCHIVED must not inherit the Ready transition's question or
+        its audit details, even for a run whose lanes had color balance errors."""
+        ctx, run_id = self._setup(fresh_app, "cb-archive")
+        question = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+        assert logged_in_client.post(f"/runs/{run_id}/status/ready",
+                                     data=_question_fields(question.text),
+                                     headers=ORIGIN).status_code == 200
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/archived", headers=ORIGIN)
+
+        assert "HX-Retarget" not in resp.headers and "Mark Ready anyway" not in resp.text
+        assert ctx.run_repo.get_by_id(run_id).status.value == "archived"
+        archived = [e for e in _events(ctx, "run.status.changed")
+                    if e.details.get("to_status") == "archived"]
+        assert len(archived) == 1
+        assert "color_balance_accepted_lanes" not in archived[0].details
 
 
 class TestCycleTotalLine:
