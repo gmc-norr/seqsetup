@@ -114,7 +114,7 @@ class Sample:
         """
         if value is not None:
             if name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
-                value = max(0, min(3, value))
+                value = max(0, min(2, value))
             elif name in ("index1_cycles", "index2_cycles"):
                 value = max(1, value)
             elif name == "override_cycles":
