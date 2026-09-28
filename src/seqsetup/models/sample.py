@@ -102,7 +102,7 @@ class Sample:
 
         Invariants enforced (matches the previous ``__post_init__`` set):
           - ``barcode_mismatches_index1`` / ``barcode_mismatches_index2``
-            clamped to [0, 3].
+            clamped to [0, 2] — the values BCL Convert accepts.
           - ``index1_cycles`` / ``index2_cycles`` clamped to >= 1.
           - ``lanes`` filtered to positive non-bool ints.
           - ``override_cycles`` uppercased + rejected if outside the

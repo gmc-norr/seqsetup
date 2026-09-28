@@ -94,6 +94,39 @@ class TestMismatchLimit:
         assert REFUSAL in resp.text
         assert _mismatches(ctx, run.id) == before
 
+    def test_row_refuses_bad_value_in_the_index2_box(self, logged_in_client, fresh_app):
+        """The i5 box on a row is a second call site of the parser; without
+        its own test a revert there would go unnoticed."""
+        _app, ctx, _db = fresh_app
+        run = _mismatch_run(ctx, "f6-row-bad-i5")
+        before = _mismatches(ctx, run.id)
+
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
+            data={"barcode_mismatches_index2": "1e"}, headers=ORIGIN,
+        )
+
+        assert resp.status_code == 400
+        assert REFUSAL in resp.text
+        assert _mismatches(ctx, run.id) == before
+
+    def test_bulk_refuses_bad_value_in_the_index1_box(self, logged_in_client, fresh_app):
+        """The bulk i7 box is a third call site; same reason."""
+        _app, ctx, _db = fresh_app
+        run = _mismatch_run(ctx, "f6-bulk-bad-i7")
+        before = _mismatches(ctx, run.id)
+
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/set-mismatches",
+            data={"sample_ids": json.dumps([s.id for s in run.samples]),
+                  "mismatch_index1": "1e", "mismatch_index2": "1"},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 400
+        assert REFUSAL in resp.text
+        assert _mismatches(ctx, run.id) == before
+
     def test_bulk_saves_allowed_values(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run = _mismatch_run(ctx, "f6-bulk-ok")
