@@ -68,24 +68,51 @@ The other refusals keep today's messages.
   field, so no export changes. A test proves the v2 sheet and the JSON export are the same
   bytes whether `was_ready` is True or False.
 
+### Deleting only the version that was checked
+
+Today `BaseRepository.delete` deletes by id alone. Between the rules check and the delete,
+another request can add samples to an empty Draft (or change it in any other way); the
+delete then removes those samples too, and the kept copy would miss them. (Review P1.)
+
+- New `RunRepository.delete_if_unchanged(run: SequencingRun) -> bool`:
+  `delete_one({"_id": run.id, "updated_at": run._loaded_updated_at.isoformat()})`, the same
+  version check `RunRepository.save` already uses. It returns True if it deleted the run,
+  False if nothing matched (the run changed, or is already gone).
+  - If `run._loaded_updated_at` is None (a run that was never loaded) it raises
+    `ValueError` — it never falls back to an id-only delete.
+- **Both** delete paths use it: `delete_run` on the dashboard and the blank-run discard in
+  `new_run_from_chosen_template`. The id-only `delete` is no longer called for runs.
+- Every run edit bumps `updated_at` (`saving_run` → `touch`), so "unchanged" means
+  "exactly the version whose rules were checked and whose copy was taken".
+
 ### The copy store
 
+A copy is written **before** the run is deleted, so a failed delete can never lose the run
+and its copy both. Each delete attempt writes its own copy, and a copy is only ever
+**added** or moved forward from `pending` — never replaced or removed. (Review P1 #2.)
+
 - New model `models/deleted_run.py`, `DeletedRun`:
-  - `run_id: str`, `run_name: str`, `status: str` (the status when deleted),
-    `sample_count: int`, `created_by: str`, `deleted_by: str` (256-char cap, like
-    `created_by`), `deleted_at: datetime`;
-  - `run: dict` — the whole `run.to_dict()` at the moment of deletion, including the
+  - `copy_id: str` (a new uuid per attempt — the document `_id`), `run_id: str`;
+  - `state: str` — `"pending"` → `"completed"` or `"abandoned"`; nothing else;
+  - summary fields copied from the run so the list page never loads a snapshot:
+    `run_name`, `status` (the status at the time), `sample_count`, `created_by`;
+  - `deleted_by: str` (256-char cap, like `created_by`), `started_at: datetime`,
+    `finished_at: Optional[datetime]` (set when the state leaves `pending`),
+    `abandon_reason: str` (`""` unless abandoned);
+  - `run: dict` — the whole `run.to_dict()` of the checked version, including the
     pre-generated sheets, JSON and validation PDF exactly as they were made.
-  - The summary fields are copied from the run so the list page never loads the snapshots.
 - New repository `repositories/deleted_run_repo.py`, `DeletedRunRepository`, collection
-  `deleted_runs`, `_id` = the run id, index on `deleted_at`:
-  - `keep(deleted: DeletedRun) -> None` — `replace_one({"_id": run_id}, doc, upsert=True)`.
-    Upsert, so a retry after a half-finished delete (copy saved, run delete failed) does
-    not fail; the newer copy is at least as recent.
-  - `list_summaries() -> list[dict]` — every copy, newest `deleted_at` first, projection of
-    the summary fields only.
-  - `get(run_id) -> Optional[DeletedRun]`.
-  - **No delete method.** Nothing in the app can remove a kept copy.
+  `deleted_runs`, indexes on `(run_id, state)` and `started_at`:
+  - `start(copy: DeletedRun) -> None` — `insert_one`, state `pending`. Never replaces
+    anything: a clash on `_id` raises.
+  - `mark_completed(copy_id, at) -> bool` and `mark_abandoned(copy_id, at, reason) -> bool`
+    — `update_one({"_id": copy_id, "state": "pending"}, {"$set": …})`. They move only a
+    `pending` copy, so a `completed` copy can never be changed by a later request. True if
+    the copy moved.
+  - `list_for_page() -> list[dict]` — summaries only (no `run` snapshot) of every
+    `completed` or `pending` copy, newest `started_at` first.
+  - `get(copy_id) -> Optional[DeletedRun]` and `has_completed(run_id) -> bool`.
+  - **No delete and no replace method.** Nothing in the app can remove or overwrite a copy.
 - `context.py`: `deleted_run_repo: Optional[DeletedRunRepository] = None`; `startup.py`
   wires it next to `run_history_repo`.
 
@@ -94,19 +121,38 @@ The other refusals keep today's messages.
 1. The rules in the table above. Same order as today; the new once-Ready check sits in the
    empty-Draft branch.
 2. If the run needs a copy (`run.was_ready`, which covers Archived):
-   - if `ctx.deleted_run_repo` is None, refuse — fail closed, never delete without the
-     copy;
-   - otherwise `keep(...)`. If that raises, refuse.
-   - A refusal is **HTTP 500** with **"Could not keep a copy of this run, so it was not
+   - `ctx.deleted_run_repo` is None → refuse, `reason="no_copy_store"` — fail closed,
+     never delete without the copy;
+   - `start(pending copy)` raises → refuse, `reason="copy_failed"`.
+   - Either refusal: **HTTP 500** with **"Could not keep a copy of this run, so it was not
      deleted. Nothing was changed."**, and an audit event `run.delete.failed`
-     (`outcome="failure"`, `reason="copy_failed"` or `"no_copy_store"`). The run is not
-     touched.
-3. `ctx.run_repo.delete(run.id)`.
-4. The history is **not** deleted.
-5. `audit("run.deleted", …)` as today, plus `kept_copy=True/False`.
+     (`outcome="failure"`). The run is not touched.
+3. `ctx.run_repo.delete_if_unchanged(run)`.
+   - **Raises** (database error): the copy stays `pending` (we cannot know whether the run
+     went); audit `run.delete.failed`, `reason="delete_error"`, `copy_id`; **HTTP 500**
+     "Could not delete this run. Reload the page to see whether it is still there." The
+     Deleted runs page shows the truth (below).
+   - **False** (the run changed, or another request deleted it first):
+     `mark_abandoned(copy_id, reason="run_changed")`; audit `run.delete.failed`,
+     `reason="run_changed"`; `ConflictError` → **HTTP 409** "Someone else changed or
+     deleted this run at the same moment, so your delete did nothing. Reload the page to
+     see where it stands." No `run.deleted` event is written.
+   - **True**: continue.
+4. `mark_completed(copy_id)`. If that raises, the run is already gone: log the error, audit
+   `run.delete.copy_unconfirmed` (`outcome="failure"`, `copy_id`), and still answer as a
+   successful delete. The page shows the copy as "Deleted — not confirmed" (below).
+5. The history is **not** deleted.
+6. `audit("run.deleted", …)` as today, plus `kept_copy=True/False` and `copy_id` when kept.
+   Written only after step 3 returned True.
+
+A run that needs no copy (empty, never Ready) skips steps 2 and 4: `delete_if_unchanged`
+False → the same 409 and `run.delete.failed` (`reason="run_changed"`), no `run.deleted`.
 
 `routes/run_templates.py` `new_run_from_chosen_template` deletes the New Run page's blank
-run. Its condition gains `and not blank.was_ready`, and it no longer deletes history.
+run. Its condition gains `and not blank.was_ready`; it uses `delete_if_unchanged`; if that
+returns False the blank run is left alone (someone is using it), the template run is still
+opened, `run.delete.failed` (`reason="run_changed"`, `context="replaced_by_template"`) is
+audited, and no `run.deleted` is written. It no longer deletes history.
 
 Removed, because nothing may delete history any more:
 `services/run_history.cascade_delete_history_safe` and
@@ -128,16 +174,33 @@ New `routes/admin/deleted_runs.py`, router-level `require_admin_dep`, registered
 `app.py`, plus a sidebar link **Deleted runs** under **Audit trail**.
 
 - `GET /admin/deleted-runs` — a table, newest first: run name (links to the detail page),
-  status when deleted, samples, created by, deleted by, deleted at. Empty state: "No runs
-  have been deleted."
-- `GET /admin/deleted-runs/{run_id}` — read only:
-  - run name, description, status when deleted, instrument and flowcell, created by/at,
-    last changed by/at, deleted by/at;
+  status when deleted, samples, created by, deleted by, deleted at, and a **State** column.
+  Empty state: "No runs have been deleted."
+- What the page shows is decided when the page is read, from the copy **and** the live
+  `runs` collection, so a failed delete never looks like a finished one (review P2). The
+  page only reads; it never changes a copy.
+
+  | Copy state | Also true | Shown? | State column |
+  |---|---|---|---|
+  | `completed` | — | yes | **Deleted** |
+  | `pending` | a `completed` copy exists for the same run | no (another attempt finished) | — |
+  | `pending` | the run is still in `runs` | no — nothing was deleted, or a delete is still under way | — |
+  | `pending` | the run is gone, no `completed` copy, and this is the newest pending copy of that run | yes | **Deleted — not confirmed** |
+  | `abandoned` | — | no (the run was not deleted; the audit trail has `run.delete.failed`) | — |
+
+  "Deleted — not confirmed" means the app stopped (or its database write failed) after
+  the run was deleted but before it marked the copy done; the copy is still the run as it
+  was deleted. A note under the table says so in one sentence.
+- `GET /admin/deleted-runs/{copy_id}` — read only, for a copy the list would show;
+  otherwise 404 "No deleted run with that id.":
+  - the State (as above), run name, description, status when deleted, instrument and
+    flowcell, created by/at, last changed by/at, deleted by, deleted at (`finished_at`, or
+    `started_at` for "not confirmed");
   - the Sample IDs, one per line, in the run's order;
   - the change history panel (the first 50 entries, with **Load older**).
-  - 404 "No deleted run with that id." if there is no copy.
-- `GET /admin/deleted-runs/{run_id}/history?before_ts=&before_id=` — the next history page,
-  same rules as `/runs/{run_id}/history` (half a cursor → 400).
+- `GET /admin/deleted-runs/{copy_id}/history?before_ts=&before_id=` — the next history
+  page, for the copy's `run_id`, same rules as `/runs/{run_id}/history` (half a cursor →
+  400; 404 for a copy the list would not show).
 - `templates/runs/_history_list.html` gets one variable, `history_url` (default
   `/runs/{run.id}/history`), used by its **Load older** button; the admin page passes its
   own URL. Nothing else in the template changes.
@@ -186,24 +249,54 @@ Unit:
   key gives False; round-trips through `to_dict`/`from_dict`.
 - The history diff of a DRAFT→READY save has a status line and no `was_ready` line.
 - Exports are byte-identical with `was_ready` True vs False (v2 sheet, JSON).
-- `DeletedRunRepository`: `keep` then `get` returns the snapshot; `keep` twice for one run
-  gives one copy; `list_summaries` is newest first and has no `run` snapshot; the class has
-  no delete method.
+- `DeletedRunRepository`: `start` then `get` returns the snapshot as `pending`; `start`
+  with an existing `copy_id` raises and leaves the first copy unchanged; `mark_completed`
+  and `mark_abandoned` move only a `pending` copy (a second call, or a call on a
+  `completed` copy, returns False and changes nothing); `list_for_page` is newest first,
+  has no `run` snapshot, and leaves out `abandoned` copies; the class has no delete or
+  replace method.
+- `RunRepository.delete_if_unchanged`: deletes the loaded version (True); returns False
+  and deletes nothing when the stored `updated_at` differs; returns False when the run is
+  gone; raises `ValueError` for a never-loaded run.
 
 Integration:
 - A standard user cannot delete an empty Draft that was Ready once (403, message, run
-  still there, no copy); an admin can (copy kept, history kept, `kept_copy=True` audited).
-- An admin deletes an Archived run: copy kept with the sheet bytes, history kept.
+  still there, no copy); an admin can (copy `completed`, history kept, `run.deleted` with
+  `kept_copy=True` audited).
+- An admin deletes an Archived run: copy `completed` with the sheet bytes, history kept.
 - An empty never-Ready Draft: anyone deletes it; no copy; its history rows stay.
-- The copy fails (monkeypatched `keep` raises): 500, message, run still there, history
-  still there, `run.delete.failed` audited. Same with no copy store.
+- The copy fails (monkeypatched `start` raises): 500, message, run still there, history
+  still there, `run.delete.failed` audited, no `run.deleted`. Same with no copy store.
+- **Review case 1 — the run changes after the copy is taken.** `start` is wrapped so that,
+  right after the copy is written, another request adds a sample to the run in the
+  database. The delete answers 409 with the message; the run is still there **with the
+  new sample**; the copy is `abandoned`; `run.delete.failed` (`run_changed`) is audited
+  and `run.deleted` is not; the Deleted runs page does not list it. The same case for a
+  never-Ready empty Draft (no copy): 409, the run and its new sample remain.
+- **Review case 2 — two overlapping deletes.** Request A loads the run (version 1); the
+  run is edited (version 2); request B loads version 2 and deletes it (copy `completed`,
+  `deleted_by` B, snapshot version 2). A then runs: its own copy is written as a
+  separate record, its delete matches nothing, its copy is `abandoned`, it answers 409,
+  and B's `completed` copy is byte-for-byte unchanged — same snapshot, same `deleted_by`.
+  The page lists exactly one entry for the run: B's. Also the same-version case: A and B
+  both load version 1, B finishes first; A is refused the same way.
+- **Review case 3 — the copy is saved but the delete fails.** `delete_if_unchanged`
+  monkeypatched to raise: 500, "Could not delete this run…", the run is still live, the
+  copy stays `pending`, `run.delete.failed` (`delete_error`) is audited, no `run.deleted`;
+  the Deleted runs page does **not** list it and its detail URL is 404.
+- The delete succeeds but `mark_completed` raises: the run is gone, the answer is a
+  successful delete, `run.delete.copy_unconfirmed` and `run.deleted` are audited, and the
+  page lists the run as "Deleted — not confirmed" with its detail page.
+- A stale `pending` copy of a run that was later deleted properly is not listed; only the
+  `completed` copy is.
 - New Run's "Start from a template" still discards the blank run and keeps a once-Ready
-  empty draft passed as `discard_run_id`.
+  empty draft passed as `discard_run_id`; if the blank run changed first, it is kept, the
+  template run still opens, and no `run.deleted` is written.
 - Dashboard: Delete shows for a once-Ready empty Draft to an admin, not to a standard user.
 - `/admin/deleted-runs`: 403 for a standard user; lists copies newest first; the empty
-  state; the detail page shows Sample IDs and the history; 404 for an unknown id; the
-  history page URL pages older entries and refuses half a cursor; a run name with HTML
-  in it is escaped.
+  state; the detail page shows the State, Sample IDs and the history; 404 for an unknown
+  id and for an `abandoned` copy; the history page URL pages older entries and refuses
+  half a cursor; a run name with HTML in it is escaped.
 - Templates: user B cannot rename or delete user A's template (403, message, template
   unchanged); A can; an admin can; a template with no maker is admin-only; missing → 404;
   the list page shows Delete to A and to an admin, not to B.
@@ -223,9 +316,31 @@ Browser:
   delete one".
 - New `admin-guide/deleted-runs.rst` (in the toctree after `audit-trail`) with two
   pictures: the list and the detail page.
-- `admin-guide/audit-trail.rst` — `run.delete.failed` and the `kept_copy` detail.
+- `admin-guide/audit-trail.rst` — `run.delete.failed` (its reasons),
+  `run.delete.copy_unconfirmed`, and the `kept_copy` / `copy_id` details.
+- `admin-guide/deleted-runs.rst` explains the two States, and that a delete refused with
+  "Someone else changed or deleted this run…" leaves the run as it is.
 - Pictures regenerated only where the page changed; regenerate twice and diff to separate
   real changes from drift (see the 1c lesson).
+
+## Review changes (2026-09-28, before the plan)
+
+An outside review (Astra) of `f01e6b1` found three problems. It reproduced each one with
+the existing repository code and a stand-in copy store. All three were checked against
+the code and accepted:
+
+- **P1: deletion must check the saved run version.** The delete was id-only, so a sample
+  added after the copy was taken would be deleted too and missing from the copy. Now it
+  uses `delete_if_unchanged`, on both delete paths, and refuses with 409 if the run changed.
+- **P1: an older request could overwrite a finished copy.** The copy was an upsert keyed by
+  run id. Now each attempt inserts its own copy, and only a `pending` copy can move; a
+  `completed` copy can never be changed. `run.deleted` is written only after the run delete
+  really matched.
+- **P2: a failed delete looked like a finished one.** Now copies have states, and the page
+  decides what to show from the state and the live `runs` collection (table above). The
+  audit events say what really happened.
+
+The three reproductions are review cases 1–3 in the tests above.
 
 ## Not in scope (later groups)
 
