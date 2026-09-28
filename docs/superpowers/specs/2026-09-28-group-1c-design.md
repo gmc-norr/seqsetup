@@ -67,8 +67,19 @@ limit can be widened with that evidence.
   never been deployed, so no stored value of 3 exists; one would load as 2.
 - `routes/runs.py` `update_bclconvert` (no UI posts to it; group 4 decides its fate):
   its two `min(..., 3)` become `min(..., 2)`, so no code states 3.
-- The inputs (`_sample_row.html`, `_bulk_lane_panel.html`) already say `max="2"`:
-  unchanged.
+- The four inputs (two per row in `_sample_row.html`, two in the bulk box in
+  `_bulk_lane_panel.html`) change from `type="number" min="0" max="2"` to
+  `type="text" inputmode="numeric"`, so the text a user typed reaches the server.
+  - **Why (review, P1):** a number box turns text it cannot read, such as `1e`, into an
+    empty value before anything is sent (HTML value sanitization). The server would read
+    that as "clear the override", and would clear it on the row, or on every selected row
+    in the bulk box, with no message. Reproduced in Chromium for both paths. A server
+    check alone cannot tell "cleared" from "unreadable".
+  - With a text box the server gets `1e` and refuses it with the message above.
+    `app.js` `applyBulkMismatchesForm` copies the box's `.value`, which is now the raw
+    text, so `app.js` still does not change.
+  - The small up/down arrows of the number box go away. Mobile keyboards still open in
+    number mode (`inputmode`).
 - `CLAUDE.md`: "clamp 0–3" becomes "clamp 0–2".
 
 ### Existing tests
@@ -143,6 +154,27 @@ draft may predate the switch.
 
   Mark Ready already refuses when `error_count > 0`. The validation cache is already
   cleared on every toggle.
+- `routes/runs.py` `update_status`, re-check before saving Ready:
+  - **Why (review, P2):** Mark Ready validates first, then spends time generating the
+    exports, then saves. An admin who disables the instrument during that window would
+    still get a Ready run, and the audit trail would show the run marked Ready after the
+    instrument was disabled.
+  - The handler already re-reads the run after export generation and refuses a run
+    edited meanwhile (`_export_input_fingerprint`, reason
+    `concurrent_edit_during_export`). Right after that check, and before `saving_run`, it
+    now reads the instrument's definition **from the database**
+    (`ctx.instrument_definition_repo.get_by_name(...)`, not the in-process cache). If
+    that definition exists and is disabled, the transition is refused the same way:
+    - audit `run.status.denied`, reason `instrument_disabled_during_export`;
+    - `ConflictError` with **"{name} was disabled by an administrator while the exports
+      were being generated. The run is still a Draft. Pick another instrument in Run
+      Setup."**
+    - Nothing is saved; the generated exports are discarded.
+  - This narrows the window to the moment between that read and the save. No
+    cross-document transaction exists to close it fully, and none is added.
+- The app runs as one process (`uvicorn.run` in `app.py`), which the process-local
+  caches (instruments and validation) already assume. The database read above keeps the
+  final gate correct even if that ever changes.
 
 "Not available" instruments (left out of a sync) are marked in the list only. They are
 not refused and do not block Mark Ready; that is F28's territory.
@@ -191,9 +223,14 @@ not refused and do not block Mark Ready; that is F28's territory.
 
 - F6, unit: the model clamps high values to 2 (the edited tests).
 - F6, integration:
-  - per row: `"3"`, `"-1"`, `"1.5"` are refused with the message and nothing changes;
-    `""`, `"0"`, `"2"` save;
+  - per row: `"3"`, `"-1"`, `"1.5"`, `"1e"` are refused with the message and nothing
+    changes; `""`, `"0"`, `"2"` save;
   - bulk: one bad value refuses the whole request and no sample changes.
+- F6, browser (the review's P1 paths, real Chromium):
+  - a row with an override of 2: typing `1e` in its box shows the refusal in the banner,
+    and the stored value is still 2;
+  - two selected rows with overrides: `1e` in the bulk box shows the refusal, and neither
+    row's value changes.
 - F27, unit:
   - `is_instrument_enabled_by_name` for synced-disabled, synced-enabled, and yaml-only;
   - `get_enabled_instruments` drops a disabled synced instrument.
@@ -204,7 +241,11 @@ not refused and do not block Mark Ready; that is F28's territory.
   - `POST /runs/{id}/instrument` for a disabled one is refused;
   - the Check panel shows the Error and Mark Ready refuses;
   - after enabling again, Mark Ready works;
-  - a Ready run on a disabled instrument has no such error.
+  - a Ready run on a disabled instrument has no such error;
+  - the timing gap (review P2): with export generation patched to disable the instrument
+    in the database while it runs, Mark Ready is refused with reason
+    `instrument_disabled_during_export`, and the run stays a Draft with no stored
+    exports.
 - F31/F32, integration: a unique-dual kit page shows every pair's i7 and i5 sequence; a
   pair without an i5 shows "—"; the page has no `&amp;mdash;`.
 - F5, browser: in a run with a 30-character Sample ID on a flagged row and on a clean row,
