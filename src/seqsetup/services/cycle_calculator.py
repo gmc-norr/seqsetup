@@ -211,6 +211,26 @@ class CycleCalculator:
         return pattern.fullmatch(segment) is not None
 
     @classmethod
+    def override_cycles_problem(
+        cls, override_cycles: str, run_cycles: RunCycles
+    ) -> Optional[str]:
+        """Whether a sample's OverrideCycles fits the run. ``None`` if it
+        does; ``"invalid"`` if a segment is malformed (a digit sum can match
+        while BCL Convert rejects the value: '151' has no letter, 'Y151N' a
+        dangling one); ``"mismatch"`` if a '*' is left in it — internal
+        shorthand, never valid in a sheet — or its segments do not match the
+        run's reads: one per read of more than 0 cycles, each summing to that
+        read's cycles. Mark Ready and the save routes use this one rule."""
+        if "*" in override_cycles:
+            return "mismatch"
+        segments = re.split(r"[;,]", override_cycles)
+        if not all(cls.is_valid_override_segment(seg.upper()) for seg in segments):
+            return "invalid"
+        sums = [sum(int(n) for n in re.findall(r"\d+", seg)) for seg in segments if seg]
+        expected = [cycles for _, _, cycles in cls.read_structure(run_cycles)]
+        return "mismatch" if sums != expected else None
+
+    @classmethod
     def _build_index_segment(cls, index_len: int, run_cycles: int) -> str:
         """
         Build the override cycles segment for an index read.

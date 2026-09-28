@@ -50,7 +50,7 @@ class TestUpdateCycles:
         _app, ctx, _db = fresh_app
         run_id = _make_run(ctx)
         resp = logged_in_client.post(f"/runs/{run_id}/cycles", data=CYCLES, headers=ORIGIN)
-        assert "Total: 117 /" in resp.text
+        assert "Total: 117 cycles" in resp.text
 
     def test_missing_field_rejected_and_nothing_saved(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app

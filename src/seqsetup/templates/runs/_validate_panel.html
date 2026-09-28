@@ -26,6 +26,7 @@
 #}
 {% set error_count = validation_result.error_count %}
 {% set color_balance_issues = validation_result.color_balance_issue_count if validation_result.color_balance_enabled else 0 %}
+{% set color_balance_asks = validation_result.color_balance_error_lanes | length > 0 %}
 {% set has_samples = run.has_samples %}
 {% set all_have_indexes = run.all_samples_have_indexes if has_samples else False %}
 {% set samples_with_indexes = run.samples|selectattr('has_index')|list|length %}
@@ -66,7 +67,7 @@
                 <span class="status-error">Errors: {{ error_count }}</span>
             {% endif %}
             {% if color_balance_issues > 0 %}
-                <span class="status-warning">Color balance: {{ color_balance_issues }} lane(s)</span>
+                <span class="status-warning">Color balance: {{ color_balance_issues }} lane(s){% if color_balance_asks %} · Mark Ready will ask{% endif %}</span>
             {% endif %}
         </div>
         {% if error_lines %}

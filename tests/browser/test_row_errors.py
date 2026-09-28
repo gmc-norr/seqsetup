@@ -40,7 +40,7 @@ def test_refusal_is_a_list(logged_in_page, base_url, seeded_ids):
     page.wait_for_load_state("networkidle")
 
     page.click("text=Mark Ready")
-    banner = page.locator("#error-banner")
+    banner = page.locator("#ready-message")
     expect(banner.locator("li").first).to_be_visible()
     expect(banner).to_contain_text("Cannot mark ready")
     expect(banner).not_to_contain_text("more)")

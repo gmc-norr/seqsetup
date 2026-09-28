@@ -14,7 +14,7 @@ from seqsetup.models.sequencing_run import (
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
-from .conftest import disable_repos
+from .conftest import disable_repos, mark_ready
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -58,7 +58,7 @@ class TestMarkReadyRefusesHiddenCharacters:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
-        assert resp.headers.get("HX-Retarget") == "#error-banner"
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert "hidden character" in resp.text
         assert "U+0009" in resp.text
         run = ctx.run_repo.get_by_id(run_id)
@@ -78,7 +78,7 @@ class TestMarkReadyRefusesHiddenCharacters:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
-        assert resp.headers.get("HX-Retarget") == "#error-banner"
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert "U+0000" in resp.text
         assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
 
@@ -87,7 +87,7 @@ class TestMarkReadyRefusesHiddenCharacters:
         disable_repos(ctx, "test_profile", "app_profile")
         run_id = _seed_draft(ctx, "hc-control", run_description="Åsa's run, 2 × 150")
 
-        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+        resp = mark_ready(logged_in_client, run_id, ORIGIN)
 
         assert "HX-Retarget" not in resp.headers, resp.text[:400]
         assert ctx.run_repo.get_by_id(run_id).status.value == "ready"

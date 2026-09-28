@@ -6,7 +6,7 @@
      cycles:          RunCycles
      kit_max_cycles:  int | None — most cycles the kit allows, when the
                       instrument's config gives a number (Check refuses a
-                      run over it); None shows the kit label as before
+                      run over it); None: the total is shown as not checked
      oob:             bool — swap in out of band (instrument or flowcell
                       change, which can change the limit)
 #}
@@ -17,6 +17,7 @@
     <span class="cycle-total-over">Too many cycles for this kit.</span>
     {% endif %}
     {% else %}
-    <span>Total: {{ cycles.total_cycles }} / {{ run.reagent_cycles }} cycles</span>
+    <span>Total: {{ cycles.total_cycles }} cycles ({{ run.reagent_cycles }}-cycle kit)</span>
+    <span class="cycle-total-unchecked">Not checked: no cycle limit is set for this kit. Kits hold a few extra cycles, so a total a little over the kit's label is normal.</span>
     {% endif %}
 </div>

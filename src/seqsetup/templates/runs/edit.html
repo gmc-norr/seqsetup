@@ -13,6 +13,9 @@
             {% include "runs/_run_status_bar.html" %}
             {% endwith %}
         </div>
+        {% with oob=False %}
+        {% include "runs/_ready_message.html" %}
+        {% endwith %}
         {% with run=run, steps=steps %}
         {% include "runs/_step_bar.html" %}
         {% endwith %}

@@ -70,7 +70,7 @@ class TestMarkReadyRefusesLineBreaks:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
-        assert resp.headers.get("HX-Retarget") == "#error-banner"
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert "line break" in resp.text
         run = ctx.run_repo.get_by_id(run_id)
         assert run.status.value == "draft"
@@ -87,7 +87,7 @@ class TestMarkReadyRefusesLineBreaks:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
-        assert resp.headers.get("HX-Retarget") == "#error-banner"
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
 
     def test_sample_id_clamped_to_end_in_newline_is_refused(
@@ -105,7 +105,7 @@ class TestMarkReadyRefusesLineBreaks:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
-        assert resp.headers.get("HX-Retarget") == "#error-banner"
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert "invalid characters" in resp.text
         run = ctx.run_repo.get_by_id(run_id)
         assert run.status.value == "draft"

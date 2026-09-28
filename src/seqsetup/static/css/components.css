@@ -1150,6 +1150,8 @@ body {
     font-weight: var(--fw-semibold);
 }
 
+.cycle-total-unchecked { display: block; margin-top: 0.25rem; }
+
 /* Run metadata display */
 .run-metadata {
     background: #f1f5f9;
@@ -1839,6 +1841,10 @@ body {
 }
 .validate-error-list li + li,
 .ready-refused li + li { margin-top: 0.2rem; }
+
+/* Mark Ready's color-balance question (runs/_ready_color_balance.html). */
+.ready-confirm p + p { margin-top: var(--space-1); }
+.ready-confirm form { margin-top: var(--space-2); }
 .validate-error-more {
     margin: var(--space-1) 0 0;
     font-size: var(--fs-xs);

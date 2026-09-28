@@ -60,7 +60,7 @@ def test_cycle_change_saves_and_updates_total(logged_in_page, base_url, app_ctx,
     with page.expect_response(lambda r: r.url.endswith("/cycles") and r.status == 200):
         page.select_option("#index2_cycles", "8")
     expected = before.read1_cycles + before.read2_cycles + before.index1_cycles + 8
-    expect(page.locator(".cycle-total")).to_contain_text(f"Total: {expected} /")
+    expect(page.locator(".cycle-total")).to_contain_text(f"Total: {expected} cycles")
     assert app_ctx.run_repo.get_by_id(run_id).run_cycles.index2_cycles == 8
 
 

@@ -411,7 +411,7 @@ async def update_status(
 
     For DRAFT->READY, validation is run in real time. If errors are
     present the transition is refused with an inline error message
-    returned via HX-Retarget to #error-banner.
+    returned via HX-Retarget to #ready-message.
     """
     try:
         new_status = RunStatus(status)
@@ -421,6 +421,7 @@ async def update_status(
     if err := check_status_transition(run.status, new_status):
         return err
 
+    color_balance_lanes: list[int] = []
     if new_status == RunStatus.READY:
         validation_result = ValidationService.validate_run(
             run,
@@ -444,10 +445,43 @@ async def update_status(
                 ),
                 headers={
                     "Cache-Control": "no-store",
-                    "HX-Retarget": "#error-banner",
+                    "HX-Retarget": "#ready-message",
                     "HX-Reswap": "innerHTML",
                 },
             )
+
+        color_balance_lanes = validation_result.color_balance_error_lanes
+        if color_balance_lanes:
+            # Poor color balance costs read quality in a lane but does not
+            # mix up patients, and one-sample lanes almost always show it —
+            # so ask, and record the answer (spec 2026-09-27, F13). The
+            # answer counts only for the run version and lanes shown.
+            form = await request.form()
+            shown = ",".join(str(lane) for lane in color_balance_lanes)
+            confirmed = (
+                form.get("color_balance_confirmed_at") == run.updated_at.isoformat()
+                and form.get("color_balance_lanes") == shown
+            )
+            if not confirmed:
+                audit(
+                    "run.status.denied",
+                    actor=get_username(request),
+                    target=run.id,
+                    outcome="denied",
+                    reason="color_balance_unconfirmed",
+                    attempted_status=new_status.value,
+                    color_balance_lanes=color_balance_lanes,
+                )
+                return HTMLResponse(
+                    templates.env.get_template("runs/_ready_color_balance.html").render(
+                        run=run, lanes=color_balance_lanes, lanes_value=shown,
+                    ),
+                    headers={
+                        "Cache-Control": "no-store",
+                        "HX-Retarget": "#ready-message",
+                        "HX-Reswap": "innerHTML",
+                    },
+                )
 
     previous_status = run.status.value
 
@@ -529,6 +563,7 @@ async def update_status(
         target=run.id,
         from_status=previous_status,
         to_status=new_status.value,
+        **({"color_balance_accepted_lanes": color_balance_lanes} if color_balance_lanes else {}),
     )
 
     test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
@@ -550,7 +585,8 @@ async def update_status(
         sample_api_enabled=sample_api_enabled, oob=True,
         chosen_kit_id=selected_kit_id(request),
     )
-    return HTMLResponse(status_html + export_html + section_html, headers={"Cache-Control": "no-store"})
+    ready_html = templates.env.get_template("runs/_ready_message.html").render(oob=True)
+    return HTMLResponse(status_html + export_html + section_html + ready_html, headers={"Cache-Control": "no-store"})
 
 
 _HISTORY_PAGE = 50

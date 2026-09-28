@@ -20,7 +20,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos
+from .conftest import disable_repos, mark_ready
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -83,7 +83,7 @@ class TestAuditEventsAreRecorded:
             ),
         ))
         ctx.run_repo.save(run)
-        logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+        mark_ready(logged_in_client, run.id, ORIGIN)
         assert ctx.run_repo.get_by_id(run.id).status.value == "ready"
 
         assert _events(ctx, event_prefix="run.status.changed", target="audit-visible")

@@ -17,7 +17,7 @@ from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
 from ..models.sample import Sample
 from ..models import sequencing_run as sequencing_run_module
-from ..models.sequencing_run import SequencingRun
+from ..models.sequencing_run import RunCycles, SequencingRun
 from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
 from ..services.index_fill import build_fill_plan
@@ -124,6 +124,30 @@ def _render_sample_row(
         "show_checkboxes": None,
     })
 
+
+
+def _override_cycles_refusal(
+    value: str, run_cycles: RunCycles, calculated_for: Optional[str] = None, more: int = 0
+) -> str:
+    """The 400 message for an Override Cycles value that does not fit the
+    run (spec 2026-09-27 run checks 1b, F11). Escaped by the error banner."""
+    cycles = (
+        f"Read1 {run_cycles.read1_cycles} / Index1 {run_cycles.index1_cycles} / "
+        f"Index2 {run_cycles.index2_cycles} / Read2 {run_cycles.read2_cycles}"
+    )
+    if calculated_for is None:
+        return (
+            f"Override Cycles {value!r} does not fit this run's cycles ({cycles}): each "
+            f"part must add up to its read's cycles, one part per read of more than 0 "
+            f"cycles. Nothing was saved. Leave the field empty to calculate it from the "
+            f"run's cycles."
+        )
+    others = f" (and {more} more sample(s))" if more else ""
+    return (
+        f"The Override Cycles calculated for {calculated_for}{others} ({value!r}) do not "
+        f"fit this run's cycles ({cycles}). They come from the index kit's default read "
+        f"override, which an admin must correct. Nothing was saved."
+    )
 
 
 def _update_override_cycles(sample, run) -> None:
@@ -1085,18 +1109,36 @@ async def set_override_cycles_bulk(
             override_cycles = CycleCalculator.expand_override_cycles(
                 override_cycles, run.run_cycles
             )
+        # Compute every selected sample's final value, then refuse the whole
+        # request if any one does not fit the run — no sample is changed
+        # (spec 2026-09-27 run checks 1b, F11).
+        finals: dict[str, Optional[str]] = {}
+        failing: list[tuple[str, str]] = []
+        for sample in run.samples:
+            if sample.id not in sample_ids:
+                continue
+            if override_cycles:
+                finals[sample.id] = override_cycles
+            elif run.run_cycles and sample.has_index:
+                value = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
+                finals[sample.id] = value
+                if CycleCalculator.override_cycles_problem(value, run.run_cycles):
+                    failing.append((sample.sample_id or sample.id, value))
+            else:
+                finals[sample.id] = None
+        if override_cycles and run.run_cycles and finals and CycleCalculator.override_cycles_problem(
+            override_cycles, run.run_cycles
+        ):
+            raise HTTPException(status_code=400, detail=_override_cycles_refusal(
+                override_cycles, run.run_cycles))
+        if failing:
+            name, value = failing[0]
+            raise HTTPException(status_code=400, detail=_override_cycles_refusal(
+                value, run.run_cycles, calculated_for=name, more=len(failing) - 1))
         with saving_run(run, ctx, request):
             for sample in run.samples:
-                if sample.id in sample_ids:
-                    if override_cycles:
-                        sample.override_cycles = override_cycles
-                    else:
-                        if run.run_cycles and sample.has_index:
-                            sample.override_cycles = CycleCalculator.calculate_override_cycles(
-                                sample, run.run_cycles
-                            )
-                        else:
-                            sample.override_cycles = None
+                if sample.id in finals:
+                    sample.override_cycles = finals[sample.id]
     except ValueError as exc:
         # Sample model rejected an invariant violation; refuse the bulk save
         # so a single bad value does not invalidate every selected row.
@@ -1433,16 +1475,29 @@ async def update_sample_settings(
             override_cycles = CycleCalculator.expand_override_cycles(
                 override_cycles, run.run_cycles
             )
+        # Work out the final value first and refuse it before anything is
+        # saved: a value that does not fit the run's reads would otherwise be
+        # stored and only caught later by the Check panel or Mark Ready
+        # (spec 2026-09-27 run checks 1b, F11). The calculated ("Auto") value
+        # can be wrong too — it carries the index kit's default read override.
+        final_override = None
+        if has_override:
+            calculated = False
+            if override_cycles:
+                final_override = override_cycles
+            elif run.run_cycles and sample.has_index:
+                final_override = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
+                calculated = True
+            if final_override and run.run_cycles and CycleCalculator.override_cycles_problem(
+                final_override, run.run_cycles
+            ):
+                raise HTTPException(status_code=400, detail=_override_cycles_refusal(
+                    final_override, run.run_cycles,
+                    calculated_for=(sample.sample_id or sample.id) if calculated else None,
+                ))
         with saving_run(run, ctx, request):
             if has_override:
-                if override_cycles:
-                    sample.override_cycles = override_cycles
-                elif run.run_cycles and sample.has_index:
-                    sample.override_cycles = CycleCalculator.calculate_override_cycles(
-                        sample, run.run_cycles
-                    )
-                else:
-                    sample.override_cycles = None
+                sample.override_cycles = final_override
             if has_bmi1:
                 sample.barcode_mismatches_index1 = bmi1
             if has_bmi2:

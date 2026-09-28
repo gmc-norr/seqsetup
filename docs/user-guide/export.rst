@@ -16,13 +16,13 @@ run; there is nothing to unlock first. A hint next to the button reads
 "Check must pass first" until the Check panel's error count reaches zero.
 
 If the run still has errors, **Mark Ready** refuses the transition and
-lists every one of them in a banner at the top of the page -- the same
+lists every one of them right under the status bar -- the same
 messages the Check panel and the Issues tab already show:
 
 .. figure:: /_static/screenshots/ready/mark-ready-refused.png
-   :alt: The "Cannot mark ready" banner, listing every blocking validation error.
+   :alt: The "Cannot mark ready" message, under the status bar, listing every blocking validation error.
 
-   The Mark Ready refusal banner, outlined.
+   The Mark Ready refusal, under the status bar, outlined.
 
 Once every error is fixed, selecting **Mark Ready** again succeeds: the
 status badge changes to **Ready**, the run is locked against further
@@ -32,6 +32,24 @@ edits, and its exports are generated:
    :alt: The run status bar's status badge, outlined, reading "Ready", next to Return to Draft and Archive buttons.
 
    The status badge just after Mark Ready succeeds, outlined.
+
+If the run has no errors but a lane has a color balance error (see
+:doc:`validation`), **Mark Ready** does not go ahead yet. It asks, under
+the status bar, and names the lanes:
+
+.. figure:: /_static/screenshots/ready/mark-ready-color-balance.png
+   :alt: The "Color balance errors" question under the status bar, naming lane 1, with a "Mark Ready anyway" button.
+
+   The color balance question, outlined.
+
+Select **Mark Ready anyway** to promote the run; your answer, and the
+lanes it covered, are recorded in the audit trail. If the run changes
+before you answer, the question comes back for the new state.
+
+A message Mark Ready shows stays under the status bar until the run's
+status changes; an error from a save that was refused stays in the red
+banner at the top of the page, even after the run becomes Ready -- read
+it before you rely on the value you typed.
 
 .. note::
    Validation runs again, in real time, at the moment you select **Mark
