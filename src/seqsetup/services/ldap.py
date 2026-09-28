@@ -6,36 +6,44 @@ from ..models.auth_config import AuthConfig, LDAPConfig
 from ..models.user import User, UserRole
 
 
-def _normalize_dn(dn: str) -> str:
-    """Lowercase + collapse-whitespace canonicalisation for DN comparison.
+def _dn_parts(dn: str) -> list:
+    """The DN's components (RDNs), each a tuple of (type, value) pairs, both
+    lower-cased. Values joined by ``+`` stay one component, in the order
+    written: ``ou=people+dc=example`` is one component, never the two
+    components ``ou=people,dc=example`` (plan review 1, P2). Each value
+    keeps its escapes exactly as written, so an escaped comma stays part of
+    its value. Raises on a DN that cannot be parsed."""
+    from ldap3.utils.dn import parse_dn
 
-    LDAP DNs are case-insensitive for both attribute names and (in most
-    practical AD/OpenLDAP setups) the RDN values we care about for the
-    base-tree check. We compare suffixes after stripping leading/trailing
-    whitespace from each comma-delimited RDN. Anything that wants real
-    RFC 4514 parsing should use ldap3.utils.dn.parse_dn; the structural
-    check we need here is "does ``dn`` end with ``base``", which the
-    lowercased suffix comparison handles correctly across whitespace
-    variants.
-    """
-    return ",".join(rdn.strip().lower() for rdn in dn.split(","))
+    parts, current = [], []
+    for attr, value, separator in parse_dn(dn, strip=True):
+        current.append((attr.lower(), value.lower()))
+        if separator != "+":
+            parts.append(tuple(current))
+            current = []
+    if current:
+        raise ValueError("a DN cannot end with '+'")
+    return parts
 
 
 def _dn_is_within(dn: str, base: str) -> bool:
-    """True if ``dn`` is the same as ``base`` or a descendant of it.
+    """True if ``dn`` is ``base`` or below it (spec 2026-09-28 group 2b, review P1).
 
-    Used to refuse a directory entry whose DN points outside the
-    configured search base. Both sides are normalised before comparison.
-    Empty ``base`` is treated as "no constraint" (the LDAP root); the
-    caller should pass the actual configured base_dn, not "".
+    Compares whole parsed components, never strings split on commas. A DN
+    that cannot be parsed is never inside. A value written with different
+    escapes (``\\,`` against ``\\2c``), or ``+``-joined values written in
+    another order, count as different, so the check fails on the safe
+    side. Empty ``base`` means no constraint.
     """
     if not base:
         return True
-    dn_n = _normalize_dn(dn)
-    base_n = _normalize_dn(base)
-    if dn_n == base_n:
-        return True
-    return dn_n.endswith("," + base_n)
+    try:
+        dn_parts, base_parts = _dn_parts(dn), _dn_parts(base)
+    except Exception:
+        return False
+    if len(dn_parts) < len(base_parts):
+        return False
+    return dn_parts[len(dn_parts) - len(base_parts):] == base_parts
 
 
 class LDAPError(Exception):
