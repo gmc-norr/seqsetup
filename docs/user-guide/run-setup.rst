@@ -48,7 +48,12 @@ Instrument, flowcell and reagent kit
    Instrument configuration, outlined.
 
 - **Platform** -- the sequencing instrument. Changing it refreshes the
-  Flowcell and Reagent Kit choices to match.
+  Flowcell and Reagent Kit choices to match. Only instruments an
+  administrator has enabled are offered. If the run's own instrument is
+  not one of them, it still shows, selected and marked: **(disabled)**
+  means an administrator switched it off -- pick another, because
+  **Mark Ready** refuses the run until you do; **(not available)** means
+  the last instrument sync left it out (see :doc:`/admin-guide/instruments`).
 - **Flowcell** -- the flowcell type for that instrument. Changing it
   refreshes the Reagent Kit choices.
 - **Reagent Kit (cycles)** -- the reagent kit. Changing it resets Read 1,

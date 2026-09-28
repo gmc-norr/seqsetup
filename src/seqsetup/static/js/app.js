@@ -502,6 +502,8 @@ function applyBulkMismatchesForm() {
     document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-mismatch-index1').value = mismatchI7;
     document.getElementById('bulk-mismatch-index2').value = mismatchI5;
+    // Apply writes only the boxes that were filled in.
+    document.getElementById('bulk-mismatch-mode').value = 'apply';
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-mismatches-form', 'submit');
@@ -518,6 +520,8 @@ function clearBulkMismatchesForm() {
     document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-mismatch-index1').value = '';
     document.getElementById('bulk-mismatch-index2').value = '';
+    // Clear resets both columns; an empty box on Apply would leave them alone.
+    document.getElementById('bulk-mismatch-mode').value = 'clear';
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-mismatches-form', 'submit');

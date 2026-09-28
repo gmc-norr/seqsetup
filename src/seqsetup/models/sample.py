@@ -102,7 +102,7 @@ class Sample:
 
         Invariants enforced (matches the previous ``__post_init__`` set):
           - ``barcode_mismatches_index1`` / ``barcode_mismatches_index2``
-            clamped to [0, 3].
+            clamped to [0, 2] — the values BCL Convert accepts.
           - ``index1_cycles`` / ``index2_cycles`` clamped to >= 1.
           - ``lanes`` filtered to positive non-bool ints.
           - ``override_cycles`` uppercased + rejected if outside the
@@ -114,7 +114,7 @@ class Sample:
         """
         if value is not None:
             if name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
-                value = max(0, min(3, value))
+                value = max(0, min(2, value))
             elif name in ("index1_cycles", "index2_cycles"):
                 value = max(1, value)
             elif name == "override_cycles":

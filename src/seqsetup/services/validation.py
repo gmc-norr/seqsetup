@@ -21,8 +21,9 @@ from ..data.instruments import (
     get_lanes_for_flowcell,
     get_reagent_kit_max_cycles,
     is_color_balance_enabled,
+    is_instrument_enabled_by_name,
 )
-from ..models.sequencing_run import SequencingRun
+from ..models.sequencing_run import RunStatus, SequencingRun
 from ..models.validation import (
     ConfigurationError,
     ValidationResult,
@@ -309,6 +310,7 @@ class ValidationService:
 
         # A run setting, so checked before the sample checks below.
         errors.extend(cls._validate_cycles_fit_kit(run))
+        errors.extend(cls._validate_instrument_enabled(run))
 
         # Prerequisite: at least one sample
         if not run.samples:
@@ -374,6 +376,25 @@ class ValidationService:
                 f"Too many cycles: {total}. A {run.reagent_cycles}-cycle kit on "
                 f"{run.instrument_platform.value} allows {limit}. "
                 f"Lower the cycles in Run Setup."
+            ),
+        )]
+
+    @classmethod
+    def _validate_instrument_enabled(cls, run: SequencingRun) -> list[ConfigurationError]:
+        """A Draft on an instrument an admin has disabled cannot be marked
+        Ready (spec 2026-09-28 group 1c, F27). Ready and Archived runs are
+        left alone: they keep the exports made before the switch."""
+        if run.status != RunStatus.DRAFT:
+            return []
+        name = run.instrument_platform.value
+        if is_instrument_enabled_by_name(name):
+            return []
+        return [ConfigurationError(
+            severity=ValidationSeverity.ERROR,
+            category="instrument_disabled",
+            message=(
+                f"{name} is disabled by an administrator. Pick another instrument "
+                f"in Run Setup before marking the run ready."
             ),
         )]
 

@@ -459,6 +459,18 @@ body {
     white-space: nowrap;
 }
 
+/* The Sample ID is never cut: it names a patient's reads, and two long IDs
+   can differ only at the end. A long one wraps instead (spec 2026-09-28
+   group 1c, F5). */
+.sample-table td.sample-id-cell {
+    min-width: 7rem;
+    max-width: 16rem;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 .worksheet-cell {
     font-size: 0.75rem;
     color: var(--text-muted);

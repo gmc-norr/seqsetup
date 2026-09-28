@@ -39,27 +39,25 @@ checkbox, and there are **Enable All** / **Disable All** buttons above the
 table. Toggling any of these takes effect immediately, with no
 confirmation, and the resulting state is saved right away.
 
-.. warning::
-   Today, the **Enabled** checkbox (and **Enable All** / **Disable All**)
-   has **no effect on what a user can choose when setting up a new run**.
-   The New Run instrument list is never filtered by this flag, so
-   disabling an instrument here does not remove it from **New Run** --
-   any user can still select it and start a run on it. An administrator
-   who disables a decommissioned or unvalidated instrument here and
-   believes it is now unavailable is mistaken; nothing about the new-run
-   flow has changed. The only thing that actually removes an instrument
-   from **New Run** today is excluding it from what your synced source
-   defines and re-syncing (see the "not additive" warning above), which
-   drops the instrument from the synced set entirely rather than merely
-   hiding it while it stays synced.
+Switching an instrument off does three things:
+
+- **New Run** no longer offers it, and choosing it from a page opened
+  earlier is refused.
+- A **Draft** run already on it shows an error in the Check panel --
+  *"NovaSeq X Series is disabled by an administrator. Pick another
+  instrument in Run Setup before marking the run ready."* -- and **Mark
+  Ready** refuses it until another instrument is picked. This includes a
+  new run, which starts on NovaSeq X Series, and a run made from a
+  template, which copies the template's instrument. **Mark Ready** reads
+  the switch again just before it saves the run as Ready.
+- **Ready** and **Archived** runs are not touched: they keep their Sample
+  Sheets.
 
 .. note::
-   The checkbox's state does survive a later sync: SeqSetup matches the
-   old and new instrument sets by their samplesheet name and carries the
+   The checkbox's state survives a later sync: SeqSetup matches the old
+   and new instrument sets by their samplesheet name and carries the
    disabled flag forward, rather than resetting every instrument back to
-   enabled on each sync. That persistence is all the flag does -- it is
-   saved and it survives a sync, but it is not read anywhere that decides
-   which instruments a new run may use.
+   enabled on each sync.
 
 i5 Read Orientation and SBS Chemistry
 ------------------------------------------

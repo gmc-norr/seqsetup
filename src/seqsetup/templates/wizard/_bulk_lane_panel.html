@@ -38,6 +38,7 @@
         <input type="hidden" name="sample_ids" id="bulk-mismatch-sample-ids">
         <input type="hidden" name="mismatch_index1" id="bulk-mismatch-index1">
         <input type="hidden" name="mismatch_index2" id="bulk-mismatch-index2">
+        <input type="hidden" name="mode" id="bulk-mismatch-mode" value="apply">
     </form>
     <form id="bulk-override-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-override-cycles"
@@ -93,9 +94,9 @@
                 <span class="bulk-action-label">Mismatches:</span>
                 <div class="bulk-action-inputs">
                     <label class="mismatch-label">i7:</label>
-                    <input type="number" id="bulk-mismatch-i7-input" placeholder="-" min="0" max="2" class="mismatch-input bulk-mismatch-input">
+                    <input type="text" inputmode="numeric" autocomplete="off" id="bulk-mismatch-i7-input" placeholder="-" class="mismatch-input bulk-mismatch-input">
                     <label class="mismatch-label">i5:</label>
-                    <input type="number" id="bulk-mismatch-i5-input" placeholder="-" min="0" max="2" class="mismatch-input bulk-mismatch-input">
+                    <input type="text" inputmode="numeric" autocomplete="off" id="bulk-mismatch-i5-input" placeholder="-" class="mismatch-input bulk-mismatch-input">
                 </div>
                 <div class="bulk-action-buttons">
                     <button type="button" class="btn btn-primary btn-small" data-action="bulk-apply-mismatches">Apply</button>

@@ -5,6 +5,7 @@ import pytest
 from seqsetup.models.index import Index, IndexKit, IndexType, IndexMode
 from seqsetup.models.sample import Sample
 from seqsetup.models import sequencing_run as sequencing_run_module
+from seqsetup.models.run_template import RunTemplate
 from seqsetup.models.sequencing_run import RunCycles, SequencingRun
 
 
@@ -322,8 +323,8 @@ class TestSampleValidation:
 
     def test_barcode_mismatches_clamped_high(self):
         sample = Sample(barcode_mismatches_index1=10, barcode_mismatches_index2=5)
-        assert sample.barcode_mismatches_index1 == 3
-        assert sample.barcode_mismatches_index2 == 3
+        assert sample.barcode_mismatches_index1 == 2
+        assert sample.barcode_mismatches_index2 == 2
 
     def test_barcode_mismatches_clamped_negative(self):
         sample = Sample(barcode_mismatches_index1=-1, barcode_mismatches_index2=-5)
@@ -493,8 +494,8 @@ class TestSequencingRunValidation:
 
     def test_barcode_mismatches_clamped_high(self):
         run = SequencingRun(barcode_mismatches_index1=10, barcode_mismatches_index2=99)
-        assert run.barcode_mismatches_index1 == 3
-        assert run.barcode_mismatches_index2 == 3
+        assert run.barcode_mismatches_index1 == 2
+        assert run.barcode_mismatches_index2 == 2
 
     def test_barcode_mismatches_clamped_negative(self):
         run = SequencingRun(barcode_mismatches_index1=-1, barcode_mismatches_index2=-5)
@@ -820,3 +821,27 @@ class TestSequencingRunExportClearing:
         r.generated_samplesheet_v2 = "fake"
         r.generated_samplesheet_v2 = None
         assert r.generated_samplesheet_v2 is None
+
+
+class TestMismatchLimitIsBclConvertRange:
+    """BCL Convert accepts BarcodeMismatchesIndex1/2 of 0, 1 or 2 only; the
+    models cap at 2 as the backstop on every assignment (spec 2026-09-28
+    group 1c, F6)."""
+
+    def test_sample_caps_at_two_on_assignment(self):
+        sample = Sample(sample_id="S1")
+        sample.barcode_mismatches_index1 = 3
+        sample.barcode_mismatches_index2 = 3
+        assert (sample.barcode_mismatches_index1, sample.barcode_mismatches_index2) == (2, 2)
+
+    def test_run_caps_at_two_on_assignment(self):
+        run = SequencingRun()
+        run.barcode_mismatches_index1 = 3
+        run.barcode_mismatches_index2 = 3
+        assert (run.barcode_mismatches_index1, run.barcode_mismatches_index2) == (2, 2)
+
+    def test_template_caps_at_two_on_assignment(self):
+        template = RunTemplate(name="T")
+        template.barcode_mismatches_index1 = 3
+        template.barcode_mismatches_index2 = 3
+        assert (template.barcode_mismatches_index1, template.barcode_mismatches_index2) == (2, 2)

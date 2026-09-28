@@ -74,16 +74,14 @@ Viewing a kit
 ----------------
 
 Select a kit's name, or **View**, to see its full contents: every index
-pair (or i7/i5 list) by name, plus the kit's adapter and default-override
-settings. For a **Unique Dual** kit, the i7 Sequence and i5 Sequence
-columns are blank -- select **Download YAML** below for the actual
-sequences.
+pair (or i7/i5 list) with its name and sequence, plus the kit's adapter
+and default-override settings. An empty field shows a dash.
 
 .. figure:: /_static/screenshots/admin/index-kit-detail.png
-   :alt: The index kit detail page, showing the kit's name and version, its adapter and default-override settings, and its Index Pairs table listing each pair's name, with the Delete button outlined at the bottom next to Download YAML.
+   :alt: The index kit detail page, showing the kit's name and version, its adapter and default-override settings, and its Index Pairs table listing each pair's name and its i7 and i5 sequences, with the Delete button outlined at the bottom next to Download YAML.
 
-   A kit's detail page: name, version, settings, and index pairs by name,
-   with **Delete** outlined.
+   A kit's detail page: name, version, settings, and index pairs with
+   their sequences, with **Delete** outlined.
 
 Select **Download YAML** to export the kit as a YAML file, in SeqSetup's own
 format -- useful for backing up a kit, or for checking it into a GitHub repo

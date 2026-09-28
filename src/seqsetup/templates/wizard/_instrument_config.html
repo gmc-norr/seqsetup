@@ -3,7 +3,7 @@
 
    Inputs:
      run:                  SequencingRun
-     instruments:          list[dict{"name": str, "platform": Enum}]
+     instruments:          list[dict{"name": str, "platform": Enum, "unavailable"?: str}]
      current_flowcells:    dict — passed through to _flowcell_select.html
      current_reagent_kits: list[int] — passed through to _reagent_kit_select.html
 #}
@@ -17,7 +17,7 @@
                 hx-swap="outerHTML">
             {% for inst in instruments %}
             <option value="{{ inst["platform"].value }}"
-                    {% if run.instrument_platform == inst["platform"] %}selected{% endif %}>{{ inst["name"] }}</option>
+                    {% if run.instrument_platform == inst["platform"] %}selected{% endif %}>{{ inst["name"] }}{% if inst.get("unavailable") %} ({{ inst["unavailable"] }}){% endif %}</option>
             {% endfor %}
         </select>
     </div>

@@ -37,7 +37,7 @@
     </td>
 {%- endif %}
 {%- if show_drop_zones %}
-    <td title="{{ sample.sample_id }}">{{ sample.sample_id }}</td>
+    <td class="sample-id-cell" title="{{ sample.sample_id }}">{{ sample.sample_id }}</td>
     <td title="{{ sample.test_id }}">{{ sample.test_id }}</td>
     <td class="worksheet-cell" title="{{ sample.worksheet_id or '' }}">{{ sample.worksheet_id or '-' }}</td>
     <td class="kit-name-cell" title="{{ sample.index_kit_name or '' }}">
@@ -122,9 +122,9 @@
                        hx-include="this">
             </td>
             <td class="mismatch-cell">
-                <input type="number" name="barcode_mismatches_index1"
+                <input type="text" inputmode="numeric" autocomplete="off" name="barcode_mismatches_index1"
                        value="{{ sample.barcode_mismatches_index1 if sample.barcode_mismatches_index1 is not none else '' }}"
-                       placeholder="-" min="0" max="2"
+                       placeholder="-"
                        class="mismatch-input"
                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
                        hx-target="#sample-row-{{ sample.id }}"
@@ -133,9 +133,9 @@
                        hx-include="this">
             </td>
             <td class="mismatch-cell">
-                <input type="number" name="barcode_mismatches_index2"
+                <input type="text" inputmode="numeric" autocomplete="off" name="barcode_mismatches_index2"
                        value="{{ sample.barcode_mismatches_index2 if sample.barcode_mismatches_index2 is not none else '' }}"
-                       placeholder="-" min="0" max="2"
+                       placeholder="-"
                        class="mismatch-input"
                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
                        hx-target="#sample-row-{{ sample.id }}"
@@ -161,7 +161,7 @@
         </td>
     {%- endif %}
 {%- else %}
-    <td title="{{ sample.sample_id }}">{{ sample.sample_id }}</td>
+    <td class="sample-id-cell" title="{{ sample.sample_id }}">{{ sample.sample_id }}</td>
     <td title="{{ sample.test_id }}">{{ sample.test_id }}</td>
     <td class="worksheet-cell" title="{{ sample.worksheet_id or '' }}">{{ sample.worksheet_id or '-' }}</td>
     {%- if editable %}

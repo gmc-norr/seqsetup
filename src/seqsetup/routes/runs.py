@@ -16,7 +16,7 @@ import json
 import logging
 import re
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
@@ -27,6 +27,7 @@ from ..data.instruments import (
     get_lanes_for_flowcell,
     get_reagent_kit_max_cycles,
     get_reagent_kits_for_flowcell,
+    is_instrument_enabled_by_name,
 )
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from ..repositories.base import ConflictError
@@ -207,6 +208,15 @@ async def update_instrument(
             status_code=400,
         )
 
+    if not is_instrument_enabled_by_name(matched.value):
+        # Only a page opened before an admin switched it off still offers it
+        # (F27). HTTPException: the error handler escapes the message.
+        raise HTTPException(status_code=400, detail=(
+            f"{matched.value} is disabled by an administrator. The run still uses "
+            f"{run.instrument_platform.value}. Reload the page to see the instruments "
+            f"you can pick."
+        ))
+
     flowcells = get_flowcells_for_instrument(matched)
     with saving_run(run, ctx, request):
         run.instrument_platform = matched
@@ -381,8 +391,8 @@ async def update_bclconvert(
 ) -> Response:
     """POST /runs/{run_id}/bclconvert — update BCLConvert settings."""
     form = await request.form()
-    barcode_mismatches_index1 = max(0, min(_int_field(form, "barcode_mismatches_index1", 1), 3))
-    barcode_mismatches_index2 = max(0, min(_int_field(form, "barcode_mismatches_index2", 1), 3))
+    barcode_mismatches_index1 = max(0, min(_int_field(form, "barcode_mismatches_index1", 1), 2))
+    barcode_mismatches_index2 = max(0, min(_int_field(form, "barcode_mismatches_index2", 1), 2))
     no_lane_splitting = _bool_field(form, "no_lane_splitting")
 
     with saving_run(run, ctx, request):
@@ -534,6 +544,28 @@ async def update_status(
             )
         # Same content, possibly newer token — adopt the fresh instance.
         run = fresh
+
+        # The instrument may have been switched off while the exports were
+        # being generated. Read the switch from the database, not the
+        # in-process cache (spec 2026-09-28 group 1c, F27, review P2).
+        definition = (
+            ctx.instrument_definition_repo.get_by_name(run.instrument_platform.value)
+            if ctx.instrument_definition_repo is not None else None
+        )
+        if definition is not None and not definition.enabled:
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="instrument_disabled_during_export",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(
+                f"{run.instrument_platform.value} was disabled by an administrator "
+                "while the exports were being generated. The run is still a Draft. "
+                "Pick another instrument in Run Setup."
+            )
 
     with saving_run(run, ctx, request):
         run.status = new_status
