@@ -15,6 +15,7 @@ from .repositories.sample_api_config_repo import SampleApiConfigRepository
 from .repositories.test_profile_repo import TestProfileRepository
 from .repositories.run_template_repo import RunTemplateRepository
 from .repositories.run_history_repo import RunHistoryRepository
+from .repositories.deleted_run_repo import DeletedRunRepository
 from .repositories.audit_event_repo import AuditEventRepository
 from .repositories.web_session_repo import WebSessionRepository
 
@@ -54,6 +55,7 @@ class AppContext:
     profile_sync_config_repo: Optional[ProfileSyncConfigRepository] = None
     run_template_repo: Optional[RunTemplateRepository] = None
     run_history_repo: Optional[RunHistoryRepository] = None
+    deleted_run_repo: Optional[DeletedRunRepository] = None
     audit_event_repo: Optional[AuditEventRepository] = None
     web_session_repo: Optional[WebSessionRepository] = None
 

@@ -7,7 +7,7 @@ ctx.run_template_repo and live entirely outside the run state machine.
 
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..context import AppContext
@@ -15,7 +15,7 @@ from ..models.run_template import RunTemplate
 from ..models.sample import Sample
 from ..models.sequencing_run import RunCycles, RunStatus
 from ..services.audit_log import audit
-from ..services.run_history import cascade_delete_history_safe, record_run_created_safe
+from ..services.run_history import record_run_created_safe
 from ..services.run_builder import build_draft_run, RunInstantiationError, _filter_analyses
 from ..templating import render
 from .dependencies import get_archivable_run, get_ctx
@@ -135,9 +135,25 @@ async def save_as_template(
     return RedirectResponse("/templates", status_code=303)
 
 
+_NOT_YOURS = "You can only change templates you made. Ask the person who made it, or an admin."
+
+
+def _require_template_owner_or_admin(request: Request, template: RunTemplate) -> None:
+    """Only the maker or an admin may rename or delete a template — the rule
+    remove_index_kit uses for kits (spec 2026-09-28 group 2a, N-27)."""
+    user = request.scope.get("auth")
+    if not user:
+        raise HTTPException(status_code=403, detail="Authentication required")
+    if user.is_admin:
+        return
+    if not template.created_by or template.created_by != user.username:
+        raise HTTPException(status_code=403, detail=_NOT_YOURS)
+
+
 @router.get("/templates", response_class=HTMLResponse)
 def list_templates(request: Request, ctx: AppContext = Depends(get_ctx)) -> Response:
-    """GET /templates — org-wide template library."""
+    """GET /templates — org-wide template library: anyone may use a template;
+    only its maker or an admin may rename or delete it."""
     templates = sorted(
         ctx.run_template_repo.list_all(),
         key=lambda t: t.updated_at, reverse=True,
@@ -155,6 +171,7 @@ async def update_template(
     template = ctx.run_template_repo.get_by_id(template_id)
     if template is None:
         return Response("Template not found", status_code=404)
+    _require_template_owner_or_admin(request, template)
     form = await request.form()
     name = sanitize_string(form.get("name", ""), 256)
     if not name:
@@ -171,9 +188,11 @@ async def update_template(
 def delete_template(
     template_id: str, request: Request, ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """DELETE /templates/{id}."""
-    if ctx.run_template_repo.get_by_id(template_id) is None:
+    """DELETE /templates/{id} — the maker or an admin only."""
+    template = ctx.run_template_repo.get_by_id(template_id)
+    if template is None:
         return Response("Template not found", status_code=404)
+    _require_template_owner_or_admin(request, template)
     ctx.run_template_repo.delete(template_id)
     audit("template.deleted", actor=get_username(request), target=template_id)
     return Response("", status_code=200)
@@ -224,9 +243,9 @@ async def new_run_from_chosen_template(
     """POST /runs/new/from-template — the New Run page's "Start from a template".
 
     Makes the run from the chosen template, then deletes the blank run the
-    New Run page had just made (``discard_run_id``) — only if it is still an
-    empty draft, the same rule as that page's Cancel. If the template can't
-    be used, nothing is deleted.
+    New Run page had just made (``discard_run_id``) — only if it is still the
+    empty, never-Ready draft that was checked (spec 2026-09-28 group 2a); its
+    change history is kept. If the template can't be used, nothing is deleted.
     """
     form = await request.form()
     template_id = sanitize_string(form.get("template_id", ""), 256)
@@ -235,15 +254,27 @@ async def new_run_from_chosen_template(
         return response
 
     blank = ctx.run_repo.get_by_id(sanitize_string(form.get("discard_run_id", ""), 256))
-    if blank is not None and blank.status == RunStatus.DRAFT and not blank.samples:
-        ctx.run_repo.delete(blank.id)
-        cascade_delete_history_safe(ctx, blank.id, get_username(request))
-        audit(
-            "run.deleted",
-            actor=get_username(request),
-            target=blank.id,
-            previous_status=blank.status.value,
-            run_name=blank.run_name,
-            reason="replaced_by_template",
-        )
+    if (blank is not None and blank.status == RunStatus.DRAFT and not blank.samples
+            and not blank.was_ready):
+        if ctx.run_repo.delete_if_unchanged(blank):
+            audit(
+                "run.deleted",
+                actor=get_username(request),
+                target=blank.id,
+                previous_status=blank.status.value,
+                run_name=blank.run_name,
+                reason="replaced_by_template",
+                kept_copy=False,
+            )
+        else:
+            # The blank run changed in the meantime: someone is using it, so
+            # leave it alone (spec 2026-09-28 group 2a, review P1).
+            audit(
+                "run.delete.failed",
+                actor=get_username(request),
+                target=blank.id,
+                outcome="failure",
+                reason="run_changed",
+                context="replaced_by_template",
+            )
     return response

@@ -1,0 +1,54 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Deleted runs" %}
+{% set active_route = "/admin/deleted-runs" %}
+
+{% block content %}
+<div id="deleted-runs-page" class="space-y-4">
+    <div>
+        <h2 class="text-2xl font-semibold">Deleted runs</h2>
+        <p class="text-slate-600">
+            A copy of every run that was deleted after it had been Ready, with its change history. Copies are kept permanently: nothing in the app changes or removes them.
+        </p>
+    </div>
+
+    {% if not rows %}
+        <div class="py-16 text-center">
+            <p class="text-slate-600 font-medium">No runs have been deleted.</p>
+        </div>
+    {% else %}
+        <div class="table-scroll">
+            <table class="w-full border-collapse text-sm">
+                <thead>
+                    <tr class="bg-slate-100">
+                        <th class="border px-2 py-1 text-left" scope="col">Run</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Status when deleted</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Samples</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Created by</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Deleted by</th>
+                        <th class="border px-2 py-1 text-left" scope="col">Deleted at</th>
+                        <th class="border px-2 py-1 text-left" scope="col">State</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td class="border px-2 py-1"><a class="underline" href="/admin/deleted-runs/{{ row.copy_id }}">{{ row.run_name or "(no name)" }}</a></td>
+                        <td class="border px-2 py-1">{{ row.status | capitalize }}</td>
+                        <td class="border px-2 py-1">{{ row.sample_count }}</td>
+                        <td class="border px-2 py-1">{{ row.created_by }}</td>
+                        <td class="border px-2 py-1">{{ row.shown_deleted_by }}</td>
+                        <td class="border px-2 py-1 whitespace-nowrap font-mono text-xs">{{ row.when }}</td>
+                        <td class="border px-2 py-1">{{ row.shown_state }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if any_not_confirmed %}
+        <p class="text-xs text-slate-500">
+            “Deleted — not confirmed”: the run was deleted, but the app stopped before it could mark this copy done. The copy is the run as it was when it was deleted.
+        </p>
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

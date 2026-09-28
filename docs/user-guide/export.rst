@@ -211,7 +211,7 @@ Draft** button.
    Double-check a run before archiving it: once archived, the only way to
    sequence it again is to build a new run.
 
-Archiving does not touch the run's :doc:`Change History <change-history>`
--- it is *deleting* the run, not archiving it, that discards that history
-for good (an Archived run can be deleted by an administrator; see
-:doc:`dashboard`).
+Archiving does not touch the run's :doc:`Change History <change-history>`.
+An administrator can still delete an Archived run (see :doc:`dashboard`); a
+copy of it, with its history, is then kept on
+:doc:`/admin-guide/deleted-runs`.

@@ -17,3 +17,4 @@ anyone can view them, and only changing what they hold needs Admin.
    sample-api
    logs
    audit-trail
+   deleted-runs

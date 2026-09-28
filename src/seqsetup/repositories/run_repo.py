@@ -67,6 +67,22 @@ class RunRepository(BaseRepository[SequencingRun]):
             )
         run._loaded_updated_at = run.updated_at
 
+    def delete_if_unchanged(self, run: SequencingRun) -> bool:
+        """Delete ``run`` only if the stored version is the one that was loaded.
+
+        Returns True if it was deleted, False if nothing matched (the run was
+        changed or deleted since it was loaded). Never falls back to an
+        id-only delete (spec 2026-09-28 group 2a, review P1).
+        """
+        if run._loaded_updated_at is None:
+            raise ValueError(
+                f"Run {run.id} was never loaded; refusing to delete it without a version check"
+            )
+        result = self.collection.delete_one(
+            {"_id": run.id, "updated_at": run._loaded_updated_at.isoformat()}
+        )
+        return result.deleted_count == 1
+
     def create_run(self, created_by: str = "") -> SequencingRun:
         """Create a new run with default settings and save to database."""
         defaults = get_default_cycles(300)

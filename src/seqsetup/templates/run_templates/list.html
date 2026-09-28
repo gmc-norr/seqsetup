@@ -20,11 +20,13 @@
           <form method="post" action="/runs/new/from-template/{{ t.id }}">
             <button class="bg-primary text-white rounded px-2 py-1 text-xs">New run</button>
           </form>
+          {% if user and (user.is_admin or (t.created_by and t.created_by == user.username)) %}
           <button class="bg-slate-200 hover:bg-red-200 rounded px-2 py-1 text-xs"
                   hx-delete="/templates/{{ t.id }}"
                   hx-target="#template-item-{{ t.id }}"
                   hx-swap="outerHTML"
                   hx-confirm="Delete template &quot;{{ t.name }}&quot;?">Delete</button>
+          {% endif %}
         </span>
       </div>
       {% endfor %}

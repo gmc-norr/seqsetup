@@ -191,6 +191,11 @@ class SequencingRun:
     generated_validation_json: Optional[str] = None
     generated_validation_pdf: Optional[bytes] = None  # PDF bytes, base64-encoded in MongoDB
 
+    # True once the run has been Ready (or Archived). Kept by __setattr__ and
+    # never cleared: it decides who may delete an emptied draft and whether a
+    # copy is kept (spec 2026-09-28 group 2a, F16).
+    was_ready: bool = False
+
     # Optimistic-locking token captured at load time. Set by from_dict to the
     # parsed updated_at; touch() does NOT change this. The RunRepository.save
     # path uses this value in the document filter and raises ConflictError if
@@ -223,6 +228,16 @@ class SequencingRun:
             value = value.replace("\r", " ").replace("\n", " ")[:4096]
         elif name in ("created_by", "updated_by", "flowcell_type", "reagent_cycles_kit") and isinstance(value, str):
             value = value[:256]
+        elif name == "status" and value in (RunStatus.READY, RunStatus.ARCHIVED):
+            object.__setattr__(self, "was_ready", True)
+        elif name == "was_ready":
+            # Never cleared. During __init__ ``status`` is assigned before
+            # ``was_ready``, so read both with getattr.
+            value = (
+                bool(value)
+                or getattr(self, "was_ready", False)
+                or getattr(self, "status", None) in (RunStatus.READY, RunStatus.ARCHIVED)
+            )
         object.__setattr__(self, name, value)
 
     def add_sample(self, sample: Sample) -> None:
@@ -319,6 +334,7 @@ class SequencingRun:
             "run_name": self.run_name,
             "run_description": self.run_description,
             "status": self.status.value,
+            "was_ready": self.was_ready,
             "created_by": self.created_by,
             "updated_by": self.updated_by,
             "created_at": self.created_at.isoformat(),
@@ -403,6 +419,7 @@ class SequencingRun:
             run_name=data.get("run_name", ""),
             run_description=data.get("run_description", ""),
             status=status,
+            was_ready=data.get("was_ready", False),
             created_by=data.get("created_by", ""),
             updated_by=data.get("updated_by", ""),
             created_at=created_at,

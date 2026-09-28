@@ -49,13 +49,10 @@ If a run has no history entries and no record of how it was created, a
 note explains that change history began when this feature was deployed,
 and that edits made before that point were never captured.
 
-.. warning::
-   Change history is **not retained after the run itself is deleted**.
-   Deleting an empty Draft, or an Archived run (administrators only),
-   removes its entire change history at the same time -- there is no way
-   to recover it afterward. The :doc:`/admin-guide/audit-trail` records
-   that the run was deleted, and by whom, but not what its history said.
-   A run whose history must be kept should not be deleted.
+Change history is never deleted. If a run that was ever Ready is deleted,
+an administrator can still read its history, with a copy of the run, on
+:doc:`/admin-guide/deleted-runs`. An empty Draft that was never Ready is
+deleted without a copy; its history is kept, but no page shows it.
 
 Who can see it
 ---------------

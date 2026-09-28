@@ -50,25 +50,26 @@
                 <button type="submit" class="btn btn-secondary btn-small">Duplicate</button>
             </form>
             {# Only the actions this run may take (see routes/dashboard.py):
-               Archive from Ready; Delete an empty draft, or (admins) an archived run. #}
+               Archive from Ready; Delete an empty draft (admins only if it
+               was Ready once), or (admins) an archived run. #}
             {% if run.status.value == 'ready' %}
             <button class="btn btn-secondary btn-small"
                     hx-post="/runs/{{ run.id }}/archive"
                     hx-target="#dashboard"
                     hx-swap="outerHTML"
                     hx-confirm="Archive this run?">Archive</button>
-            {% elif run.status.value == 'draft' and not run.samples %}
+            {% elif run.status.value == 'draft' and not run.samples and (not run.was_ready or (user and user.is_admin)) %}
             <button class="btn btn-danger btn-small"
                     hx-delete="/runs/{{ run.id }}"
                     hx-target="#dashboard"
                     hx-swap="outerHTML"
-                    hx-confirm="Delete this empty draft run?">Delete</button>
+                    hx-confirm="{% if run.was_ready %}This run was Ready once. Delete it? A copy and its change history are kept on Admin → Deleted runs.{% else %}Delete this empty draft run?{% endif %}">Delete</button>
             {% elif is_archived and user and user.is_admin %}
             <button class="btn btn-danger btn-small"
                     hx-delete="/runs/{{ run.id }}"
                     hx-target="#dashboard"
                     hx-swap="outerHTML"
-                    hx-confirm="Are you sure you want to delete this run?">Delete</button>
+                    hx-confirm="Delete this archived run? A copy and its change history are kept on Admin → Deleted runs.">Delete</button>
             {% endif %}
         </div>
     </div>
