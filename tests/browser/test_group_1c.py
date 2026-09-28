@@ -86,3 +86,17 @@ def test_unreadable_bulk_value_is_refused_not_cleared(logged_in_page, base_url, 
 
     expect(page.locator("#error-banner")).to_contain_text(REFUSAL)
     assert _stored(app_ctx, group_1c_run_id) == [(2, 2), (2, 2)]
+
+
+@pytest.mark.browser
+def test_long_sample_ids_are_shown_whole(logged_in_page, base_url, group_1c_run_id):
+    page = logged_in_page
+    _open(page, base_url, group_1c_run_id)
+
+    for n, sample_id in enumerate(LONG_IDS, start=1):
+        cell = page.locator(f'#sample-row-{group_1c_run_id}-s{n} td[title="{sample_id}"]')
+        expect(cell.locator(".row-error-badge")).to_have_count(1)
+        scroll, client, overflow = cell.evaluate(
+            "el => [el.scrollWidth, el.clientWidth, getComputedStyle(el).textOverflow]")
+        assert overflow != "ellipsis", sample_id
+        assert scroll <= client, (sample_id, scroll, client)

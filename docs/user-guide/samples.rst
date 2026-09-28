@@ -120,6 +120,9 @@ tinted red and marked with a **!** is flagged by validation -- for any
 problem, not only a missing index -- so check :doc:`validation` for what
 it found before you rely on that row.
 
+The Sample ID is always shown in full: a long one wraps onto a second line
+instead of being cut short, on flagged rows too.
+
 Editing a sample
 ^^^^^^^^^^^^^^^^^^
 

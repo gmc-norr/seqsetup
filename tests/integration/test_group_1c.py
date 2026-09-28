@@ -315,3 +315,31 @@ class TestKitPage:
         page = self._kit_page(logged_in_client, ctx)
 
         assert "&amp;mdash;" not in page
+
+
+class TestSampleIdCell:
+    """Both sample-row layouts mark the Sample ID cell, which the CSS shows
+    whole (F5)."""
+
+    LONG_ID = "LONG-SAMPLE-ID-0000000001-A"
+
+    def test_run_page_marks_the_sample_id_cell(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = SequencingRun(id="f5-page", run_name="R", flowcell_type="10B",
+                            run_cycles=RunCycles(151, 151, 10, 10))
+        run.add_sample(Sample(sample_id=self.LONG_ID, lanes=[1]))
+        ctx.run_repo.save(run)
+
+        page = logged_in_client.get("/runs/f5-page").text
+
+        assert f'<td class="sample-id-cell" title="{self.LONG_ID}">' in page
+
+    def test_added_row_marks_the_sample_id_cell(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        ctx.run_repo.save(SequencingRun(id="f5-add", run_name="R", flowcell_type="10B",
+                                        run_cycles=RunCycles(151, 151, 10, 10)))
+
+        resp = logged_in_client.post("/runs/f5-add/samples", data={"sample_id": self.LONG_ID}, headers=ORIGIN)
+
+        assert resp.status_code == 200
+        assert f'<td class="sample-id-cell" title="{self.LONG_ID}">' in resp.text
