@@ -333,6 +333,17 @@ def is_color_balance_enabled_by_name(name: str) -> bool:
     return False
 
 
+def is_instrument_enabled_by_name(name: str) -> bool:
+    """False only for a synced instrument an admin has switched off.
+
+    Only synced instruments have an Enabled switch (Admin → Instruments); an
+    instrument known only from instruments.yaml is always enabled
+    (spec 2026-09-28 group 1c, F27).
+    """
+    inst = _get_synced_instruments().get(name)
+    return inst is None or inst.enabled
+
+
 def get_i5_read_orientation_by_name(name: str) -> str:
     """Get i5 (Index 2) read orientation for an instrument by name.
 
@@ -468,7 +479,11 @@ def get_enabled_instruments(instrument_config) -> list[dict]:
         Filtered list of instrument dicts (same format as get_all_instruments).
         If no config exists (empty dict), returns all instruments.
     """
-    all_instruments = get_all_instruments_with_custom(instrument_config)
+    # A synced instrument an admin switched off is not offered (F27).
+    all_instruments = [
+        inst for inst in get_all_instruments_with_custom(instrument_config)
+        if inst.get("enabled", True)
+    ]
     if not instrument_config.enabled_instruments:
         return all_instruments
     return [
@@ -577,6 +592,7 @@ def get_all_instruments() -> list[dict]:
                 },
                 "has_dragen_onboard": inst.has_dragen_onboard,
                 "is_synced": True,
+                "enabled": inst.enabled,
                 "samplesheet_name": inst.samplesheet_name,
                 "i5_read_orientation": inst.i5_read_orientation,
                 "samplesheet_v2_i5_orientation": inst.samplesheet_v2_i5_orientation,

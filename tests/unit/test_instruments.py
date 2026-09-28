@@ -210,3 +210,54 @@ class TestSyncedInstrumentsUnknownPlatform:
         finally:
             instruments_module.set_instrument_definition_repo(None)
             instruments_module.clear_synced_instruments_cache()
+
+
+class TestInstrumentEnabledSwitch:
+    """Only a synced instrument an admin switched off counts as disabled; the
+    New Run list leaves it out (spec 2026-09-28 group 1c, F27)."""
+
+    def _use(self, *definitions):
+        from seqsetup.data import instruments as instruments_module
+
+        class _StubRepo:
+            def list_all(self_inner):
+                return list(definitions)
+
+        instruments_module.set_instrument_definition_repo(_StubRepo())
+
+    def teardown_method(self):
+        from seqsetup.data import instruments as instruments_module
+        instruments_module.set_instrument_definition_repo(None)
+        instruments_module.clear_synced_instruments_cache()
+
+    def _definition(self, name, enabled=True):
+        from seqsetup.models.instrument_definition import FlowcellDefinition, InstrumentDefinition
+        return InstrumentDefinition(
+            name=name, samplesheet_name=name, enabled=enabled,
+            flowcells=[FlowcellDefinition(name="FC1", lanes=1)],
+        )
+
+    def test_synced_instrument_switched_off_is_disabled(self):
+        from seqsetup.data.instruments import is_instrument_enabled_by_name
+        self._use(self._definition("NovaSeq X Series", enabled=False))
+        assert is_instrument_enabled_by_name("NovaSeq X Series") is False
+
+    def test_synced_instrument_switched_on_is_enabled(self):
+        from seqsetup.data.instruments import is_instrument_enabled_by_name
+        self._use(self._definition("NovaSeq X Series", enabled=True))
+        assert is_instrument_enabled_by_name("NovaSeq X Series") is True
+
+    def test_instrument_that_is_not_synced_is_enabled(self):
+        from seqsetup.data.instruments import is_instrument_enabled_by_name
+        self._use(self._definition("MiSeq i100 Series"))
+        assert is_instrument_enabled_by_name("NovaSeq X Series") is True
+
+    def test_new_run_list_leaves_out_a_disabled_instrument(self):
+        from seqsetup.data.instruments import get_enabled_instruments
+        from seqsetup.models.instrument_config import InstrumentConfig
+        self._use(
+            self._definition("NovaSeq X Series", enabled=False),
+            self._definition("MiSeq i100 Series"),
+        )
+        names = [inst["name"] for inst in get_enabled_instruments(InstrumentConfig())]
+        assert names == ["MiSeq i100 Series"]
