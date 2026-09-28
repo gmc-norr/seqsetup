@@ -417,3 +417,7 @@ Plan review 1 (Astra, on the plan at `017339c`), all four reproduced, all fixed:
 Both branches start at `62706ad`. They share only `tests/browser/test_docs_screenshots.py`
 (different tests) and doc pictures. Whichever merges second first merges `main` into its
 branch (never a rebase) and runs every suite again.
+
+2a merged first (`add956b`, 2026-09-29). `main` was then merged into `fix/group-2b` before
+the build (never a rebase), and the plan was dry-run again on `add956b`: 2351 passed, 2a's
+2201 plus 2b's 150. The build starts from there.
