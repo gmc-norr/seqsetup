@@ -19,7 +19,7 @@ def _repo():
 
 
 def _user(name, role=UserRole.STANDARD):
-    return User(username=name, display_name=name, role=role, source="yaml")
+    return User(username=name, display_name=name, role=role, source="ldap")
 
 
 class TestLoginUserSessionFixationDefence:

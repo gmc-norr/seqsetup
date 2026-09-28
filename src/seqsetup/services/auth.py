@@ -1,16 +1,23 @@
-"""Authentication service for user login and session management."""
+"""Sign-in: directory accounts and local (database) accounts.
+
+Spec 2026-09-28 group 2b: local accounts live only in the database; the
+old users file is no longer read. Every refusal carries a reason for the
+audit trail, while the sign-in page shows one message.
+"""
 
 import dataclasses
 import logging
-from pathlib import Path
 from typing import Callable, Optional
 
-import yaml
+from ..models.auth_config import AuthConfig, AuthMethod
+from ..models.local_user import MAX_USERNAME_LENGTH
+from ..models.user import User
 
 logger = logging.getLogger(__name__)
 
-from ..models.auth_config import AuthConfig, AuthMethod
-from ..models.user import User, UserRole
+# The one message every failed sign-in shows. It never says which part failed.
+SIGN_IN_FAILED = ("Sign-in failed. Check your name and password, or ask an admin "
+                  "whether you have access to SeqSetup.")
 
 
 # Sentinel bcrypt hash for timing equalisation. Computed once on first use so
@@ -31,185 +38,90 @@ def _dummy_bcrypt_hash() -> str:
 
 
 class AuthenticationError(Exception):
-    """Raised when authentication fails."""
+    """A refused sign-in. Its text is always SIGN_IN_FAILED.
 
-    pass
+    ``reason`` is for the audit trail only: bad_name, directory_refused,
+    not_found, not_in_group, server_error or local_refused. ``local_tried``
+    is True when the directory refused and the local fallback was also
+    tried and refused.
+    """
+
+    def __init__(self, reason: str = "local_refused", local_tried: bool = False):
+        super().__init__(SIGN_IN_FAILED)
+        self.reason = reason
+        self.local_tried = local_tried
 
 
 class AuthService:
-    """Service for authenticating users against config file, database, or LDAP."""
+    """Checks a sign-in against the directory (when set up) and the local accounts."""
 
     def __init__(
         self,
-        config_path: Path,
         get_auth_config: Optional[Callable[[], AuthConfig]] = None,
         get_local_user_repo: Optional[Callable] = None,
     ):
-        """
-        Initialize auth service.
-
-        Args:
-            config_path: Path to users.yaml config file
-            get_auth_config: Optional callable to get auth configuration (for LDAP support)
-            get_local_user_repo: Optional callable to get the local user repository (MongoDB)
-        """
-        self.config_path = config_path
-        self._users_cache: Optional[dict] = None
         self._get_auth_config = get_auth_config
         self._get_local_user_repo = get_local_user_repo
 
-    def _load_users(self) -> dict:
-        """Load users from config file."""
-        if self._users_cache is None:
-            if not self.config_path.exists():
-                raise FileNotFoundError(
-                    f"User config file not found: {self.config_path}"
-                )
-            with open(self.config_path) as f:
-                config = yaml.safe_load(f) or {}
-
-            if not isinstance(config, dict):
-                raise ValueError("Invalid user config format: expected a mapping at top level")
-
-            users = config.get("users", {})
-            if not isinstance(users, dict):
-                raise ValueError("Invalid user config format: 'users' must be a mapping")
-
-            self._users_cache = users
-        return self._users_cache
-
-    def reload_config(self) -> None:
-        """Force reload of user configuration."""
-        self._users_cache = None
-
     def authenticate(self, username: str, password: str) -> User:
+        """The signed-in User, or AuthenticationError.
+
+        A name longer than MAX_USERNAME_LENGTH is refused first, never cut
+        (review P3). With directory sign-in on, the directory is asked first;
+        when it refuses for any reason (an unreachable server included) and
+        local fallback is on, the local accounts are tried.
         """
-        Authenticate user with username and password.
-
-        Uses LDAP/AD if configured, otherwise falls back to local authentication.
-
-        Args:
-            username: Username to authenticate
-            password: Plain-text password
-
-        Returns:
-            User object if authentication succeeds
-
-        Raises:
-            AuthenticationError: If credentials are invalid
-        """
-        # Check if LDAP authentication is configured
+        if len(username) > MAX_USERNAME_LENGTH:
+            raise AuthenticationError("bad_name")
         auth_config = self._get_auth_config() if self._get_auth_config else None
-
         if auth_config and auth_config.is_ldap_enabled:
-            # Try LDAP authentication first
             try:
                 return self._authenticate_ldap(username, password, auth_config)
-            except AuthenticationError:
-                # If LDAP fails and local fallback is allowed, try local
-                if auth_config.allow_local_fallback:
+            except AuthenticationError as refused:
+                if not auth_config.allow_local_fallback:
+                    raise
+                try:
                     return self._authenticate_local(username, password)
-                raise
-
-        # Default to local authentication
+                except AuthenticationError:
+                    raise AuthenticationError(refused.reason, local_tried=True) from None
         return self._authenticate_local(username, password)
 
     def _authenticate_ldap(self, username: str, password: str, auth_config: AuthConfig) -> User:
-        """
-        Authenticate user against LDAP/Active Directory.
-
-        Args:
-            username: Username to authenticate
-            password: Plain-text password
-            auth_config: Authentication configuration
-
-        Returns:
-            User object if authentication succeeds
-
-        Raises:
-            AuthenticationError: If credentials are invalid
-        """
-        from .ldap import LDAPService, LDAPError
+        """A directory sign-in as the person (services/ldap.py)."""
+        from .ldap import LDAPService, SignInRefused
 
         try:
             ldap_service = LDAPService(
                 auth_config.ldap_config,
                 active_directory=auth_config.auth_method is AuthMethod.ACTIVE_DIRECTORY)
-            return dataclasses.replace(
-                ldap_service.authenticate(username, password), source="ldap")
-        except LDAPError as e:
-            # Log the underlying LDAP error (includes server-side detail
-            # such as bind hostnames) but surface only a generic message
-            # to the user — the response template echoes this string into
-            # the login page, where exposing infra detail is harmful.
-            import logging
-            logging.getLogger(__name__).warning(
-                "LDAP authentication failed: %s", e, exc_info=True,
-            )
-            raise AuthenticationError("Invalid username or password")
+            return dataclasses.replace(ldap_service.authenticate(username, password), source="ldap")
+        except SignInRefused as e:
+            # The detail can name a host; it goes to the server log, never to
+            # the sign-in page.
+            logger.warning("Directory sign-in refused: %s", e)
+            raise AuthenticationError(e.reason) from None
+        except Exception:
+            logger.warning("Directory sign-in failed unexpectedly", exc_info=True)
+            raise AuthenticationError("server_error") from None
 
     def _authenticate_local(self, username: str, password: str) -> User:
-        """
-        Authenticate user against local sources.
-
-        Checks MongoDB users first, then falls back to users.yaml config file.
-
-        Args:
-            username: Username to authenticate
-            password: Plain-text password
-
-        Returns:
-            User object if authentication succeeds
-
-        Raises:
-            AuthenticationError: If credentials are invalid
-        """
-        # Track whether any real bcrypt comparison ran. If the username is
-        # unknown, we still run one comparison against a sentinel hash before
-        # failing so response timing doesn't reveal account existence (user
-        # enumeration). Mirrors ApiTokenRepository.verify_token's sentinel.
+        """A database account. An unknown name still costs one bcrypt
+        comparison, so timing does not reveal which accounts exist."""
         did_verify = False
-
-        # Try MongoDB users first
         if self._get_local_user_repo:
             try:
-                repo = self._get_local_user_repo()
-                local_user = repo.get_by_username(username)
+                local_user = self._get_local_user_repo().get_by_username(username)
                 if local_user:
                     did_verify = True
                     if local_user.verify_password(password):
                         return local_user.to_user()
             except (ConnectionError, OSError) as e:
-                logger.warning("Local user database unavailable, falling back to YAML auth: %s", e)
+                logger.warning("Local user database unavailable: %s", e)
             except Exception as e:
                 logger.error("Unexpected error during local user lookup: %s", e)
-
-        # Fall back to YAML config file
-        try:
-            users = self._load_users()
-        except (FileNotFoundError, ValueError, yaml.YAMLError):
-            logger.error("Invalid YAML user configuration in %s", self.config_path)
-            users = {}
-
-        user_data = users.get(username)
-        if user_data is not None:
-            did_verify = True
-            stored_hash = user_data.get("password_hash", "")
-            if self._verify_password(password, stored_hash):
-                return User(
-                    username=username,
-                    display_name=user_data.get("display_name", username),
-                    role=UserRole(user_data.get("role", "standard")),
-                    email=user_data.get("email"),
-                    source="yaml",
-                )
-
-        # Authentication failed. If we never ran a real bcrypt comparison
-        # (unknown username on every source), run one against a sentinel hash
-        # so the unknown-user path costs the same as wrong-password.
         if not did_verify:
             self._verify_password(password, _dummy_bcrypt_hash())
-        raise AuthenticationError("Invalid username or password")
+        raise AuthenticationError("local_refused")
 
     def _verify_password(self, password: str, stored_hash: str) -> bool:
         """Verify password against stored hash."""
@@ -222,22 +134,3 @@ class AuthService:
         except (ValueError, TypeError) as e:
             logger.warning("Password verification failed (invalid hash format): %s", e)
             return False
-
-    @staticmethod
-    def hash_password(password: str) -> str:
-        """
-        Hash a password for storage.
-
-        Utility method for creating config file entries.
-
-        Args:
-            password: Plain-text password to hash
-
-        Returns:
-            bcrypt hash string
-        """
-        import bcrypt
-
-        # Pinned cost factor — keep in sync with LocalUser._BCRYPT_ROUNDS.
-        salt = bcrypt.gensalt(rounds=12)
-        return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")

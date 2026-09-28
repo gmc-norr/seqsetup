@@ -23,8 +23,8 @@ def repos():
     return WebSessionRepository(db), LocalUserRepository(db)
 
 
-def _yaml_user(name="bob"):
-    return User(username=name, display_name=name, role=UserRole.STANDARD, source="yaml")
+def _directory_user(name="bob"):
+    return User(username=name, display_name=name, role=UserRole.STANDARD, source="ldap")
 
 
 def _db_user(users, name="alice", role=UserRole.ADMIN):
@@ -70,7 +70,7 @@ class TestResolve:
 
     def test_db_stores_the_hash_not_the_ticket(self, repos):
         sessions, _ = repos
-        ticket = ws.start(sessions, _yaml_user(), T0, POLICY)
+        ticket = ws.start(sessions, _directory_user(), T0, POLICY)
         doc = sessions.collection.find_one()
         assert doc["_id"] == ws.ticket_id(ticket) != ticket
         assert ticket not in str(doc)
@@ -80,16 +80,16 @@ class TestResolve:
 
     @pytest.mark.parametrize("after,ok", [(1799, True), (1800, True), (1801, False)])
     def test_idle_limit(self, repos, after, ok):
-        t = ws.start(repos[0], _yaml_user(), T0, POLICY)
+        t = ws.start(repos[0], _directory_user(), T0, POLICY)
         assert (ws.resolve(*repos, t, T0 + timedelta(seconds=after), POLICY) is not None) == ok
 
     def test_idle_refusal_removes_the_row(self, repos):
-        t = ws.start(repos[0], _yaml_user(), T0, POLICY)
+        t = ws.start(repos[0], _directory_user(), T0, POLICY)
         ws.resolve(*repos, t, T0 + timedelta(minutes=31), POLICY)
         assert repos[0].get(ws.ticket_id(t)) is None
 
     def test_activity_every_29_minutes_lasts_until_the_cap(self, repos):
-        t = ws.start(repos[0], _yaml_user(), T0, POLICY)
+        t = ws.start(repos[0], _directory_user(), T0, POLICY)
         now = T0
         while now + timedelta(minutes=29) <= T0 + timedelta(hours=8):
             now += timedelta(minutes=29)
@@ -98,22 +98,29 @@ class TestResolve:
 
     def test_short_idle_with_requests_every_59_seconds(self, repos):
         p = SessionPolicy(idle_seconds=60, max_age_seconds=28800)
-        t = ws.start(repos[0], _yaml_user(), T0, p)
+        t = ws.start(repos[0], _directory_user(), T0, p)
         for i in range(1, 11):
             assert ws.resolve(*repos, t, T0 + timedelta(seconds=59 * i), p) is not None, i
 
     @pytest.mark.parametrize("age,ok", [(timedelta(hours=7, minutes=59), True),
                                         (timedelta(hours=8, minutes=1), False)])
     def test_hard_cap(self, repos, age, ok):
-        t = ws.start(repos[0], _yaml_user(), T0, POLICY)
+        t = ws.start(repos[0], _directory_user(), T0, POLICY)
         repos[0].touch(ws.ticket_id(t), T0 + age)          # in use until now
         assert (ws.resolve(*repos, t, T0 + age, POLICY) is not None) == ok
 
-    def test_yaml_user_needs_no_user_record(self, repos):
+    def test_directory_user_needs_no_user_record(self, repos):
         sessions, _ = repos
-        t = ws.start(sessions, _yaml_user(), T0, POLICY)
+        t = ws.start(sessions, _directory_user(), T0, POLICY)
         user = ws.resolve(sessions, None, t, T0, POLICY)
-        assert (user.username, user.source) == ("bob", "yaml")
+        assert (user.username, user.source) == ("bob", "ldap")
+
+    def test_file_account_login_is_refused(self, repos):
+        # Sign-in with file accounts was removed (spec 2026-09-28 group 2b).
+        sessions, _ = repos
+        t = ws.start(sessions, User(username="bob", display_name="bob",
+                                    role=UserRole.ADMIN, source="yaml"), T0, POLICY)
+        assert ws.resolve(sessions, None, t, T0, POLICY) is None
 
     def test_db_user_stamp_mismatch_is_refused(self, repos):
         sessions, users = repos
@@ -145,8 +152,8 @@ class TestResolve:
         assert ws.resolve(*repos, t, T0, POLICY) is None
 
     def test_start_clears_expired_rows(self, repos):
-        old = ws.start(repos[0], _yaml_user("old"), T0, POLICY)
-        ws.start(repos[0], _yaml_user("new"), T0 + timedelta(hours=1), POLICY)
+        old = ws.start(repos[0], _directory_user("old"), T0, POLICY)
+        ws.start(repos[0], _directory_user("new"), T0 + timedelta(hours=1), POLICY)
         assert repos[0].get(ws.ticket_id(old)) is None
 
 
@@ -154,15 +161,15 @@ class TestEnd:
     """Logout ends one login; revocation ends all of a user's."""
 
     def test_end_one(self, repos):
-        a = ws.start(repos[0], _yaml_user(), T0, POLICY)
-        b = ws.start(repos[0], _yaml_user(), T0, POLICY)
+        a = ws.start(repos[0], _directory_user(), T0, POLICY)
+        b = ws.start(repos[0], _directory_user(), T0, POLICY)
         ws.end(repos[0], a)
         assert ws.resolve(*repos, a, T0, POLICY) is None
         assert ws.resolve(*repos, b, T0, POLICY) is not None
 
     def test_end_all_for(self, repos):
-        ws.start(repos[0], _yaml_user("bob"), T0, POLICY)
-        ws.start(repos[0], _yaml_user("bob"), T0, POLICY)
-        keep = ws.start(repos[0], _yaml_user("eve"), T0, POLICY)
+        ws.start(repos[0], _directory_user("bob"), T0, POLICY)
+        ws.start(repos[0], _directory_user("bob"), T0, POLICY)
+        keep = ws.start(repos[0], _directory_user("eve"), T0, POLICY)
         assert ws.end_all_for(repos[0], "bob") == 2
         assert ws.resolve(*repos, keep, T0, POLICY) is not None

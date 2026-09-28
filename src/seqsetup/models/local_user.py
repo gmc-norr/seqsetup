@@ -17,6 +17,11 @@ _BCRYPT_ROUNDS = 12
 # Minimum acceptable password length.
 _MIN_PASSWORD_LENGTH = 8
 
+# The longest username anywhere: Admin → Users, create-admin and sign-in
+# (spec 2026-09-28 group 2b, review P3). Sign-in refuses a longer name; it
+# never cuts one.
+MAX_USERNAME_LENGTH = 64
+
 # Well-known weak/default passwords. Not exhaustive — defends against the
 # most obvious clinical-deployment footguns (default admin/admin123,
 # operator who picks "password", etc.). Always lowercased for comparison.
