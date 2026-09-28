@@ -195,7 +195,6 @@ def update_ldap_config(
         connect_timeout=form.connect_timeout,
         receive_timeout=form.receive_timeout,
     )
-    config.ldap_configured = bool(config.ldap_config.server_url and config.ldap_config.base_dn)
     config.ldap_tested = False
     ctx.auth_config_repo.save(config)
     audit(

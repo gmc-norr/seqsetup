@@ -13,33 +13,51 @@ _BIND_PASSWORD_ENV = "SEQSETUP_LDAP_BIND_PASSWORD"
 
 
 # Allowed characters in a user_dn_pattern: letters/digits, RDN separators
-# (= and ,), names/spacing chars (- . _ space), and the {username} marker.
-# Anything else — wildcards, parentheses, backslashes, control chars — can
-# be used to inject LDAP filter syntax or DN escapes, so reject them at
-# config-save time. Existing stored values are not re-validated.
-_USER_DN_PATTERN_RE = re.compile(r"^[A-Za-z0-9=,\-\._ {}]+$")
+# (= and ,), names/spacing chars (- . _ space), '@' for an Active Directory
+# user principal name, and the {username} marker. Anything else — wildcards,
+# parentheses, backslashes, control chars — can be used to inject LDAP
+# filter syntax or DN escapes, so reject them at config-save time.
+_USER_DN_PATTERN_RE = re.compile(r"^[A-Za-z0-9=,\-\._ {}@]+$")
+
+# The Active Directory shape: {username}@domain, a user principal name
+# (spec 2026-09-28 group 2b).
+_AD_PATTERN_RE = re.compile(r"^\{username\}@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$")
+
+# An LDAP attribute name. The group attribute goes into a search filter,
+# so it must be a plain name, never filter syntax.
+_ATTRIBUTE_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,127}$")
 
 
 def validate_user_dn_pattern(value: str) -> None:
     """Raise ValueError if ``value`` contains chars unsafe for a DN template.
 
-    An empty value is OK — that means "fall back to search-based lookup".
+    An empty value can be saved; directory sign-in stays off until a
+    pattern of the right shape is set (``AuthConfig.missing_settings``).
     """
     if not value:
         return
-    if "{username}" not in value:
+    if value.count("{username}") != 1:
         raise ValueError(
-            "user_dn_pattern must contain the '{username}' placeholder"
+            "user_dn_pattern must contain the '{username}' placeholder exactly once"
         )
     if not _USER_DN_PATTERN_RE.match(value):
         bad = sorted(set(value) - set("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                                       "abcdefghijklmnopqrstuvwxyz"
-                                      "0123456789=,-._ {}"))
+                                      "0123456789=,-._ {}@"))
         raise ValueError(
             f"user_dn_pattern contains disallowed characters "
             f"({', '.join(repr(c) for c in bad)}). "
-            f"Allowed: letters, digits, '=', ',', '-', '.', '_', space, "
+            f"Allowed: letters, digits, '=', ',', '-', '.', '_', '@', space, "
             f"and '{{username}}'."
+        )
+
+
+def validate_attribute_name(value: str) -> None:
+    """Raise ValueError unless ``value`` is a plain LDAP attribute name."""
+    if not _ATTRIBUTE_NAME_RE.match(value or ""):
+        raise ValueError(
+            "An attribute name is a letter followed by letters, digits or '-' "
+            "(at most 128 characters)."
         )
 
 
@@ -49,6 +67,30 @@ class AuthMethod(Enum):
     LOCAL = "local"
     LDAP = "ldap"
     ACTIVE_DIRECTORY = "active_directory"
+
+
+_PATTERN_SHAPES = {
+    AuthMethod.ACTIVE_DIRECTORY:
+        "sign-in name pattern ({username}@domain for Active Directory)",
+    AuthMethod.LDAP:
+        "sign-in name pattern (a DN like uid={username},ou=people,dc=example,dc=org for LDAP)",
+}
+
+
+def pattern_fits(method: AuthMethod, pattern: str) -> bool:
+    """True if ``pattern`` has the shape ``method`` signs in with: a user
+    principal name for Active Directory, a DN for LDAP."""
+    if not pattern:
+        return False
+    try:
+        validate_user_dn_pattern(pattern)
+    except ValueError:
+        return False
+    if method is AuthMethod.ACTIVE_DIRECTORY:
+        return bool(_AD_PATTERN_RE.match(pattern))
+    if method is AuthMethod.LDAP:
+        return "=" in pattern
+    return False
 
 
 @dataclass
@@ -162,8 +204,7 @@ class AuthConfig:
     # LDAP configuration (used when auth_method is LDAP or ACTIVE_DIRECTORY)
     ldap_config: LDAPConfig = field(default_factory=LDAPConfig)
 
-    # Whether the config has been saved/tested
-    ldap_configured: bool = False
+    # Whether the connection test has passed since the settings were saved
     ldap_tested: bool = False
 
     def to_dict(self) -> dict:
@@ -172,7 +213,6 @@ class AuthConfig:
             "auth_method": self.auth_method.value,
             "allow_local_fallback": self.allow_local_fallback,
             "ldap_config": self.ldap_config.to_dict(),
-            "ldap_configured": self.ldap_configured,
             "ldap_tested": self.ldap_tested,
         }
 
@@ -192,11 +232,40 @@ class AuthConfig:
             auth_method=auth_method,
             allow_local_fallback=data.get("allow_local_fallback", True),
             ldap_config=ldap_config,
-            ldap_configured=data.get("ldap_configured", False),
             ldap_tested=data.get("ldap_tested", False),
         )
 
+    def missing_settings(self, method: Optional[AuthMethod] = None) -> list[str]:
+        """What directory sign-in still needs, in the page's order (F24).
+
+        Empty for Local sign-in. A pattern of the wrong shape for the method
+        is listed with the shape it needs.
+        """
+        method = method or self.auth_method
+        if method not in (AuthMethod.LDAP, AuthMethod.ACTIVE_DIRECTORY):
+            return []
+        ldap = self.ldap_config
+        missing = []
+        if not ldap.server_url:
+            missing.append("server URL")
+        if not ldap.base_dn:
+            missing.append("base DN")
+        if not ldap.user_dn_pattern:
+            missing.append("sign-in name pattern")
+        elif not pattern_fits(method, ldap.user_dn_pattern):
+            missing.append(_PATTERN_SHAPES[method])
+        if not ldap.user_group_dn:
+            missing.append("Users group")
+        if not ldap.admin_group_dn:
+            missing.append("Admins group")
+        if method is AuthMethod.LDAP and not _ATTRIBUTE_NAME_RE.match(
+                ldap.group_membership_attribute or ""):
+            missing.append("group attribute")
+        return missing
+
     @property
     def is_ldap_enabled(self) -> bool:
-        """Check if LDAP/AD authentication is enabled."""
-        return self.auth_method in (AuthMethod.LDAP, AuthMethod.ACTIVE_DIRECTORY) and self.ldap_configured
+        """Directory sign-in is on: a directory method is chosen and nothing
+        it needs is missing. Computed every time from the saved settings."""
+        return (self.auth_method in (AuthMethod.LDAP, AuthMethod.ACTIVE_DIRECTORY)
+                and not self.missing_settings())
