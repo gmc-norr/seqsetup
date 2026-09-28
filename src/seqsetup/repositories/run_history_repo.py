@@ -1,9 +1,9 @@
 """Insert-only repository for run change-history entries.
 
-Application-level append-only: it exposes `append` (insert_one) and read/delete,
-but NO update/upsert path — `RunHistoryEntry` documents are never rewritten
-through the app. This is not cryptographic tamper-evidence (a DB admin can edit
-the collection); that is out of scope.
+Application-level append-only: it exposes `append` (insert_one) and reads only
+— no update, upsert or delete path, so `RunHistoryEntry` documents are never
+rewritten or removed through the app. This is not cryptographic tamper-evidence
+(a DB admin can edit the collection); that is out of scope.
 """
 
 from typing import Optional
@@ -54,7 +54,3 @@ class RunHistoryRepository:
             .limit(limit)
         )
         return [RunHistoryEntry.from_dict(doc) for doc in cur]
-
-    def delete_by_run(self, run_id: str) -> int:
-        """Delete all history for a run (cascade). Returns count deleted."""
-        return self.collection.delete_many({"run_id": run_id}).deleted_count

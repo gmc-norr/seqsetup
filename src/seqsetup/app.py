@@ -35,6 +35,7 @@ from .routes.admin import (
     audit as admin_audit,
     authentication as admin_authentication,
     config_sync as admin_config_sync,
+    deleted_runs as admin_deleted_runs,
     instruments as admin_instruments,
     logs as admin_logs,
     sample_api as admin_sample_api,
@@ -155,6 +156,7 @@ app.include_router(admin_config_sync.router)
 app.include_router(admin_instruments.router)
 app.include_router(admin_logs.router)
 app.include_router(admin_audit.router)
+app.include_router(admin_deleted_runs.router)
 app.include_router(admin_sample_api.router)
 app.include_router(api_tokens.router)
 app.include_router(local_users.router)

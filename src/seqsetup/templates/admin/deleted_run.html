@@ -1,0 +1,42 @@
+{% extends "_app_shell.html" %}
+{% set page_title = "Deleted run" %}
+{% set active_route = "/admin/deleted-runs" %}
+
+{% block content %}
+<div id="deleted-run-page" class="space-y-4">
+    <p><a href="/admin/deleted-runs" class="underline text-sm">← Deleted runs</a></p>
+    <h2 class="text-2xl font-semibold">{{ run.run_name or "(no name)" }}</h2>
+
+    <dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+        <dt class="font-medium">State</dt><dd>{{ shown_state }}</dd>
+        <dt class="font-medium">Description</dt><dd>{{ run.run_description or "—" }}</dd>
+        <dt class="font-medium">Status when deleted</dt><dd>{{ copy.status | capitalize }}</dd>
+        <dt class="font-medium">Instrument</dt><dd>{{ run.instrument_platform.value }}{% if run.flowcell_type %}, {{ run.flowcell_type }}{% endif %}</dd>
+        <dt class="font-medium">Created</dt><dd>{{ run.created_by or "unknown" }}, {{ run.created_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+        <dt class="font-medium">Last changed</dt><dd>{{ run.updated_by or "unknown" }}, {{ run.updated_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+        <dt class="font-medium">Deleted</dt><dd>{{ shown_deleted_by }}, {{ deleted_when }}</dd>
+    </dl>
+
+    <fieldset class="config-panel">
+        <legend>Sample IDs ({{ run.samples | length }})</legend>
+        {% if run.samples %}
+        <ul class="font-mono text-sm">
+            {% for s in run.samples %}<li>{{ s.sample_id }}</li>{% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-slate-500 text-sm">No samples.</p>
+        {% endif %}
+    </fieldset>
+
+    <fieldset class="config-panel">
+        <legend>Change history</legend>
+        <div class="run-history-panel"
+             aria-live="polite"
+             hx-get="/admin/deleted-runs/{{ copy.copy_id }}/history"
+             hx-trigger="revealed"
+             hx-swap="innerHTML">
+            <p class="text-slate-500 text-sm">Loading history…</p>
+        </div>
+    </fieldset>
+</div>
+{% endblock %}

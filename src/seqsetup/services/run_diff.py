@@ -14,6 +14,8 @@ RUN_DIFF_IGNORED_KEYS = {
     "updated_at", "updated_by", "_loaded_updated_at", "wizard_step",
     "generated_samplesheet_v2", "generated_samplesheet_v1", "generated_json",
     "generated_validation_json", "generated_validation_pdf",
+    # Follows status, whose change is already recorded (spec 2026-09-28 group 2a).
+    "was_ready",
 }
 
 # Sample keys excluded from the per-sample diff: only the pairing uuid. Every

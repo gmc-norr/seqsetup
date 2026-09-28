@@ -38,9 +38,9 @@ Managing templates
 instrument platform, how many samples it will pre-load, and who last
 changed it.
 
-Any signed-in user can create a template, and any signed-in user can
-delete one -- including a template someone else created. There is no
-owner or admin restriction on either action.
+Any signed-in user can create a template and start a run from any template.
+Only the person who made a template, or an administrator, can delete it; the
+**Delete** button shows only for them.
 
 .. figure:: /_static/screenshots/templates/manage.png
    :alt: The Run Templates list, with one template's Delete button outlined.

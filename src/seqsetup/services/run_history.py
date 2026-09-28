@@ -135,19 +135,3 @@ def record_run_created_safe(
         )
         audit("run.history.record_failed", actor=actor, target=run.id,
               outcome="failure", reason="create_append_error", source=source)
-
-
-def cascade_delete_history_safe(ctx: AppContext, run_id: str, actor: str) -> None:
-    """Best-effort cascade delete of a run's history on run deletion. A failure
-    must never break run deletion, so swallow + log + audit. Orphaned rows keyed
-    by an absent run_id are harmless and removable by a reconciliation sweep."""
-    if ctx.run_history_repo is None:
-        return
-    try:
-        ctx.run_history_repo.delete_by_run(run_id)
-    except Exception:
-        _log.error(
-            "Failed to cascade-delete history for run %s", run_id, exc_info=True,
-        )
-        audit("run.history.record_failed", actor=actor, target=run_id,
-              outcome="failure", reason="cascade_delete_error")

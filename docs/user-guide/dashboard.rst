@@ -28,14 +28,17 @@ buttons on the right depend on the run's status:
 - **Duplicate** -- start a new Draft copying this run's configuration.
 - **Archive** -- Ready runs only.
 - **Delete** -- an empty Draft (no samples yet), or an Archived run if you
-  are an administrator.
+  are an administrator. An empty Draft that was Ready once -- sent back to
+  Draft and emptied -- can only be deleted by an administrator.
 
-.. warning::
-   Deleting a run deletes its :doc:`Change History <change-history>` along
-   with it -- permanently, and with no separate confirmation for the
-   history. The :doc:`/admin-guide/audit-trail` keeps a record that the
-   run was deleted, and by whom, but not its change history -- a run whose
-   history must be kept should not be deleted.
+Deleting never deletes a run's :doc:`Change History <change-history>`. A
+run that was ever Ready is copied first, as it is at that moment, and the
+copy is kept on :doc:`/admin-guide/deleted-runs`. An Archived run's copy
+has its sample sheet exactly as it was made. A Draft that was sent back
+from Ready has no sample sheet any more -- sending a run back to Draft
+clears it -- so its copy has none either. If the copy cannot be saved, the
+run is not deleted. If someone changes the run at the moment you delete
+it, nothing is deleted and you are asked to reload the page.
 
 Search
 ------

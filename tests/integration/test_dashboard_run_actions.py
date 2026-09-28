@@ -2,9 +2,10 @@
 
 - Archive is offered only where it is allowed (READY -> ARCHIVED); a DRAFT
   cannot be archived, so offering the button there only produced an error.
-- An EMPTY draft (no samples) can be deleted by anyone: it can never have
-  been Ready, so no sheet from it can have been used. A draft with samples
-  may have been Ready and sent back, so it cannot be deleted.
+- An EMPTY draft (no samples) that was never Ready can be deleted by anyone.
+  An empty draft that was Ready once (sent back and emptied) can only be
+  deleted by an admin (spec 2026-09-28 group 2a). A draft with samples
+  cannot be deleted.
 - An ARCHIVED run is the clinical record: only admins may delete it.
 """
 
@@ -16,12 +17,14 @@ from seqsetup.models.sequencing_run import RunStatus
 HX = {"Origin": "http://testserver", "HX-Request": "true"}
 
 
-def _make_run(ctx, status=RunStatus.DRAFT, samples=0):
+def _make_run(ctx, status=RunStatus.DRAFT, samples=0, was_ready=False):
     run = ctx.run_repo.create_run("tester")
     run = ctx.run_repo.get_by_id(run.id)
     run.run_name = "Run"
     for i in range(samples):
         run.add_sample(Sample(sample_id=f"S{i}"))
+    if was_ready:
+        run.status = RunStatus.READY
     run.status = status
     ctx.run_repo.save(run)
     return run.id
@@ -65,6 +68,26 @@ class TestDashboardButtons:
         _app, ctx, _db = fresh_app
         run_id = _make_run(ctx, RunStatus.ARCHIVED, samples=1)
         assert f'hx-delete="/runs/{run_id}"' not in _tab(logged_in_standard_client, "archived")
+
+    def test_empty_draft_that_was_ready_offers_delete_to_admin(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _make_run(ctx, was_ready=True)
+        page = _tab(logged_in_client, "draft")
+        assert f'hx-delete="/runs/{run_id}"' in page
+        assert ("This run was Ready once. Delete it? A copy and its change history "
+                "are kept on Admin → Deleted runs.") in page
+
+    def test_empty_draft_that_was_ready_offers_no_delete_to_standard_user(
+            self, logged_in_standard_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _make_run(ctx, was_ready=True)
+        assert f'hx-delete="/runs/{run_id}"' not in _tab(logged_in_standard_client, "draft")
+
+    def test_archived_delete_says_a_copy_is_kept(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _make_run(ctx, RunStatus.ARCHIVED, samples=1)
+        assert ("Delete this archived run? A copy and its change history are kept "
+                "on Admin → Deleted runs.") in _tab(logged_in_client, "archived")
 
 
 class TestDeleteRunRoute:
