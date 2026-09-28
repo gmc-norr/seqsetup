@@ -14,6 +14,7 @@ from ..data.instruments import (
     get_index_cycle_options,
     get_reagent_kit_max_cycles,
     get_reagent_kits_for_flowcell,
+    is_instrument_enabled_by_name,
 )
 from ..models.sequencing_run import RunCycles, RunStatus
 from ..startup import get_instrument_config_repo
@@ -60,6 +61,15 @@ def wizard_step1(
 
     instrument_config = get_instrument_config_repo().get()
     instruments = get_enabled_instruments(instrument_config)
+    if all(inst["platform"] != run.instrument_platform for inst in instruments):
+        # Always show the run's own instrument, marked, so the select never
+        # shows a different instrument than the run uses (F27).
+        own = run.instrument_platform.value
+        instruments = instruments + [{
+            "name": own,
+            "platform": run.instrument_platform,
+            "unavailable": "disabled" if not is_instrument_enabled_by_name(own) else "not available",
+        }]
     current_flowcells = get_flowcells_for_instrument(run.instrument_platform)
     current_reagent_kits = get_reagent_kits_for_flowcell(
         run.instrument_platform, run.flowcell_type

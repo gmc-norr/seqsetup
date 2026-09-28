@@ -107,3 +107,108 @@ class TestMismatchLimit:
 
         assert resp.status_code == 200
         assert _mismatches(ctx, run.id)[0] == [(0, None), (0, None)]
+
+
+def _sync(ctx, names=(NOVASEQ_X, MISEQ_I100), disabled=()) -> None:
+    """Store synced definitions made from the shipped instruments.yaml, as a
+    sync would, with the `disabled` ones switched off."""
+    for name in names:
+        definition = InstrumentDefinition.from_yaml(
+            dict(instruments_module._instruments[name], name=name), "instruments.yaml"
+        )
+        definition.enabled = name not in disabled
+        ctx.instrument_definition_repo.save(definition)
+    instruments_module.clear_synced_instruments_cache()
+    clear_validation_cache()
+
+
+def _clean_run(ctx, run_id: str, platform=InstrumentPlatform.NOVASEQ_X, flowcell: str = "10B",
+               status: RunStatus = RunStatus.DRAFT) -> SequencingRun:
+    """One indexed sample in lane 1 with no blocking error and, on NovaSeq X,
+    no color-balance error: i7 CCCCCCCC lights both channels, and the
+    instrument reads i5 GGGGGGGG reverse-complemented, as CCCCCCCC."""
+    run = SequencingRun(
+        id=run_id, run_name="Group 1c", instrument_platform=platform,
+        flowcell_type=flowcell, run_cycles=RunCycles(151, 151, 10, 10), status=status,
+    )
+    run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
+    ctx.run_repo.save(run)
+    return run
+
+
+def _platform_options(page: str) -> list[tuple[str, bool, str]]:
+    """(value, selected, label) of each option in the New Run Platform select."""
+    select = re.search(r'<select name="instrument_platform".*?</select>', page, re.S).group(0)
+    return [
+        (value, bool(selected), label.strip())
+        for value, selected, label in re.findall(
+            r'<option value="([^"]*)"\s*(selected)?\s*>([^<]*)</option>', select)
+    ]
+
+
+class TestDisabledInstrument:
+    """A synced instrument switched off is not offered, is refused when
+    chosen, and a run already on one still shows it, marked (F27)."""
+
+    def test_toggle_hides_instrument_from_new_run_at_once(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _sync(ctx)
+        run = _clean_run(ctx, "f27-toggle", platform=InstrumentPlatform.MISEQ_I100, flowcell="5M")
+        url = f"/runs/new/step/1?run_id={run.id}"
+        # This first page load fills the synced-instrument cache.
+        assert NOVASEQ_X in [v for v, _s, _l in _platform_options(logged_in_client.get(url).text)]
+        novaseq = ctx.instrument_definition_repo.get_by_name(NOVASEQ_X)
+
+        resp = logged_in_client.post(
+            "/admin/instruments/synced/toggle",
+            data={"instrument_id": novaseq.id, "enabled": "false"}, headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200
+        assert NOVASEQ_X not in [v for v, _s, _l in _platform_options(logged_in_client.get(url).text)]
+
+    def test_run_on_disabled_instrument_shows_it_marked(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _sync(ctx, disabled=(NOVASEQ_X,))
+        run = _clean_run(ctx, "f27-marked")
+
+        options = _platform_options(logged_in_client.get(f"/runs/new/step/1?run_id={run.id}").text)
+
+        assert options == [(MISEQ_I100, False, MISEQ_I100), (NOVASEQ_X, True, f"{NOVASEQ_X} (disabled)")]
+
+    def test_run_on_instrument_left_out_of_sync_shows_not_available(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _sync(ctx, names=(MISEQ_I100,))
+        run = _clean_run(ctx, "f27-not-synced")
+
+        options = _platform_options(logged_in_client.get(f"/runs/new/step/1?run_id={run.id}").text)
+
+        assert options == [(MISEQ_I100, False, MISEQ_I100), (NOVASEQ_X, True, f"{NOVASEQ_X} (not available)")]
+
+    def test_choosing_disabled_instrument_is_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _sync(ctx, disabled=(NOVASEQ_X,))
+        run = _clean_run(ctx, "f27-choose", platform=InstrumentPlatform.MISEQ_I100, flowcell="5M")
+        before = ctx.run_repo.get_by_id(run.id).updated_at
+
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/instrument", data={"instrument_platform": NOVASEQ_X}, headers=ORIGIN,
+        )
+
+        assert resp.status_code == 400
+        assert f"{NOVASEQ_X} is disabled by an administrator. The run still uses {MISEQ_I100}." in resp.text
+        after = ctx.run_repo.get_by_id(run.id)
+        assert (after.instrument_platform, after.updated_at) == (InstrumentPlatform.MISEQ_I100, before)
+
+    def test_choosing_enabled_instrument_still_works(self, logged_in_client, fresh_app):
+        """Control: moving a run off a disabled instrument works."""
+        _app, ctx, _db = fresh_app
+        _sync(ctx, disabled=(NOVASEQ_X,))
+        run = _clean_run(ctx, "f27-choose-ok")
+
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/instrument", data={"instrument_platform": MISEQ_I100}, headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200
+        assert ctx.run_repo.get_by_id(run.id).instrument_platform == InstrumentPlatform.MISEQ_I100

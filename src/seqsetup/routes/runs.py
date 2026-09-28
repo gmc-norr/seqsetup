@@ -16,7 +16,7 @@ import json
 import logging
 import re
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
@@ -27,6 +27,7 @@ from ..data.instruments import (
     get_lanes_for_flowcell,
     get_reagent_kit_max_cycles,
     get_reagent_kits_for_flowcell,
+    is_instrument_enabled_by_name,
 )
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from ..repositories.base import ConflictError
@@ -206,6 +207,15 @@ async def update_instrument(
             f"Unknown instrument platform: {instrument_platform!r}",
             status_code=400,
         )
+
+    if not is_instrument_enabled_by_name(matched.value):
+        # Only a page opened before an admin switched it off still offers it
+        # (F27). HTTPException: the error handler escapes the message.
+        raise HTTPException(status_code=400, detail=(
+            f"{matched.value} is disabled by an administrator. The run still uses "
+            f"{run.instrument_platform.value}. Reload the page to see the instruments "
+            f"you can pick."
+        ))
 
     flowcells = get_flowcells_for_instrument(matched)
     with saving_run(run, ctx, request):

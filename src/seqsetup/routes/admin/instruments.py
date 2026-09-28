@@ -20,6 +20,7 @@ from pydantic.functional_validators import BeforeValidator
 from starlette.responses import HTMLResponse, Response
 
 from ...context import AppContext
+from ...data.instruments import clear_synced_instruments_cache
 from ...forms.validators import strip_and_truncate
 from ...services.audit_log import audit
 from ...services.validation import clear_validation_cache
@@ -74,6 +75,9 @@ def toggle_synced_instrument(
     if ctx.instrument_definition_repo is None:
         return Response("Instrument repo not configured", status_code=404)
     ctx.instrument_definition_repo.set_enabled(form.instrument_id, form.enabled)
+    # New Run, the instrument route and Mark Ready read the flag through the
+    # synced-instrument cache; drop it so they see this change now (F27).
+    clear_synced_instruments_cache()
     # Instrument enable/disable changes which color-chemistry rules apply at
     # validation time; invalidate the cache so stale results don't survive.
     clear_validation_cache()
@@ -116,6 +120,7 @@ def _bulk_set(request: Request, ctx: AppContext, *, enabled: bool, message: str)
     repo = ctx.instrument_definition_repo
     for inst in repo.list_all():
         repo.set_enabled(inst.id, enabled)
+    clear_synced_instruments_cache()  # see toggle_synced_instrument
     # See toggle_synced_instrument — invalidate stale validation results.
     clear_validation_cache()
     audit(
