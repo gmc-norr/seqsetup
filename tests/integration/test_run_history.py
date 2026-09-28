@@ -222,20 +222,24 @@ class TestCreationEntries:
         assert created[0].provenance == {"source": "template", "ref": tid}
 
 
-class TestCascadeDelete:
-    def test_deleting_archived_run_removes_its_history(self, logged_in_client, fresh_app):
+class TestDeleteKeepsHistory:
+    """History is never deleted (spec 2026-09-28 group 2a, F16)."""
+
+    def test_deleting_archived_run_keeps_its_history(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _create_run(logged_in_client)
         logged_in_client.post(f"/runs/{run_id}/name",
                               data={"run_name": "X", "run_description": ""},
                               headers=_origin())
-        assert ctx.run_history_repo.list_by_run(run_id, limit=10)   # has history
+        before = ctx.run_history_repo.list_by_run(run_id, limit=10)
+        assert before
         run = ctx.run_repo.get_by_id(run_id)
         run.status = RunStatus.ARCHIVED
         ctx.run_repo.save(run)
         r = logged_in_client.delete(f"/runs/{run_id}", headers=_origin())
         assert r.status_code == 200
-        assert ctx.run_history_repo.list_by_run(run_id, limit=10) == []
+        assert ctx.run_repo.get_by_id(run_id) is None
+        assert [e.id for e in ctx.run_history_repo.list_by_run(run_id, limit=10)] == [e.id for e in before]
 
 
 class TestHistoryRouteAndPanel:
@@ -510,20 +514,6 @@ class TestHistoryFailureNonFatal:
         r = logged_in_client.post("/runs/new", follow_redirects=False, headers=_origin())
         assert r.status_code == 303
         assert len(ctx.run_repo.list_all()) == before + 1   # run still created
-
-    def test_cascade_delete_survives_history_failure(
-        self, logged_in_client, fresh_app, monkeypatch
-    ):
-        _app, ctx, _db = fresh_app
-        run_id = _create_run(logged_in_client)
-        run = ctx.run_repo.get_by_id(run_id)
-        run.status = RunStatus.ARCHIVED
-        ctx.run_repo.save(run)
-        monkeypatch.setattr(ctx.run_history_repo, "delete_by_run",
-                            lambda rid: (_ for _ in ()).throw(RuntimeError("boom")))
-        r = logged_in_client.delete(f"/runs/{run_id}", headers=_origin())
-        assert r.status_code == 200
-        assert ctx.run_repo.get_by_id(run_id) is None   # run still deleted
 
     def test_edit_persists_and_audits_when_history_append_fails(
         self, logged_in_client, fresh_app, monkeypatch
