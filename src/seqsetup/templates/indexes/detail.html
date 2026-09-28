@@ -12,13 +12,13 @@
 
     <div class="bg-slate-50 border rounded p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
         <div><div class="text-slate-500">Mode</div><div class="font-medium">{{ kit.index_mode.value }}</div></div>
-        <div><div class="text-slate-500">Created by</div><div class="font-medium">{{ kit.created_by or "&mdash;" }}</div></div>
-        <div><div class="text-slate-500">Adapter R1</div><div class="font-mono text-xs">{{ kit.adapter_read1 or "&mdash;" }}</div></div>
-        <div><div class="text-slate-500">Adapter R2</div><div class="font-mono text-xs">{{ kit.adapter_read2 or "&mdash;" }}</div></div>
-        <div><div class="text-slate-500">Default Index1</div><div class="font-mono text-xs">{{ kit.default_index1_cycles or "&mdash;" }}</div></div>
-        <div><div class="text-slate-500">Default Index2</div><div class="font-mono text-xs">{{ kit.default_index2_cycles or "&mdash;" }}</div></div>
-        <div><div class="text-slate-500">Default Read1</div><div class="font-mono text-xs">{{ kit.default_read1_override or "&mdash;" }}</div></div>
-        <div><div class="text-slate-500">Default Read2</div><div class="font-mono text-xs">{{ kit.default_read2_override or "&mdash;" }}</div></div>
+        <div><div class="text-slate-500">Created by</div><div class="font-medium">{{ kit.created_by or "—" }}</div></div>
+        <div><div class="text-slate-500">Adapter R1</div><div class="font-mono text-xs">{{ kit.adapter_read1 or "—" }}</div></div>
+        <div><div class="text-slate-500">Adapter R2</div><div class="font-mono text-xs">{{ kit.adapter_read2 or "—" }}</div></div>
+        <div><div class="text-slate-500">Default Index1</div><div class="font-mono text-xs">{{ kit.default_index1_cycles or "—" }}</div></div>
+        <div><div class="text-slate-500">Default Index2</div><div class="font-mono text-xs">{{ kit.default_index2_cycles or "—" }}</div></div>
+        <div><div class="text-slate-500">Default Read1</div><div class="font-mono text-xs">{{ kit.default_read1_override or "—" }}</div></div>
+        <div><div class="text-slate-500">Default Read2</div><div class="font-mono text-xs">{{ kit.default_read2_override or "—" }}</div></div>
     </div>
 
     {% if kit.is_combinatorial() %}
@@ -72,7 +72,7 @@
                 <thead><tr class="bg-slate-100"><th class="border px-2 py-1 text-left" scope="col">Name</th><th class="border px-2 py-1 text-left" scope="col">i7 Sequence</th><th class="border px-2 py-1 text-left" scope="col">i5 Sequence</th></tr></thead>
                 <tbody>
                 {% for pair in kit.index_pairs %}
-                <tr><td class="border px-2 py-1">{{ pair.name }}</td><td class="border px-2 py-1 font-mono">{{ pair.i7_sequence }}</td><td class="border px-2 py-1 font-mono">{{ pair.i5_sequence }}</td></tr>
+                <tr><td class="border px-2 py-1">{{ pair.name }}</td><td class="border px-2 py-1 font-mono">{{ pair.index1_sequence }}</td><td class="border px-2 py-1 font-mono">{{ pair.index2_sequence or "—" }}</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

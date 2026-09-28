@@ -287,3 +287,31 @@ class TestDisabledInstrumentBlocksMarkReady:
         assert run.status == RunStatus.DRAFT and run.generated_samplesheet_v2 is None
         (event,) = ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied")
         assert event.details["reason"] == "instrument_disabled_during_export"
+
+
+class TestKitPage:
+    """The unique-dual pair table shows each pair's sequences, and an empty
+    field shows a dash, not the text "&mdash;" (F31, F32)."""
+
+    def _kit_page(self, client, ctx) -> str:
+        ctx.index_kit_repo.save(IndexKit(name="Kit1c", index_pairs=[
+            _pair("ATTACTCG", "TATAGCCT", "A01"),
+            _pair("TCCGGAGA", None, "A02"),
+        ]))
+        return client.get("/indexes/detail/Kit1c/1.0").text
+
+    def test_unique_dual_pairs_show_their_sequences(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+
+        page = self._kit_page(logged_in_client, ctx)
+
+        rows = {name: (i7, i5) for name, i7, i5 in re.findall(
+            r'<tr><td[^>]*>(A0\d)</td><td[^>]*>([^<]*)</td><td[^>]*>([^<]*)</td></tr>', page)}
+        assert rows == {"A01": ("ATTACTCG", "TATAGCCT"), "A02": ("TCCGGAGA", "—")}
+
+    def test_empty_fields_show_a_dash_not_the_entity(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+
+        page = self._kit_page(logged_in_client, ctx)
+
+        assert "&amp;mdash;" not in page
