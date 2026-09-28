@@ -1,84 +1,53 @@
-"""Tests for the LDAP authentication service.
+"""Directory sign-in as the user (spec 2026-09-28 group 2b).
 
-Focus: the ordering invariant that user-bind (password verification) must
-happen *before* any role-determining attribute lookup. A misconfigured or
-wildcard-loose user_dn_pattern would otherwise let attributes from a
-different LDAP entry inform the User.role.
+SeqSetup binds as the person signing in and never as itself; it reads the
+person's own entry and asks the server about both groups over that one
+connection. The fake directory answers searches only by their exact
+(base, filter) pair, so group membership is decided "by the server".
 """
 
-from typing import Any
-from unittest.mock import patch
-
+import ldap3
 import pytest
 
 from seqsetup.models.auth_config import LDAPConfig
-from seqsetup.services.ldap import LDAPError, LDAPService
+from seqsetup.models.user import UserRole
+from seqsetup.services.ldap import DirectorySignIn, LDAPError, LDAPService, SignInRefused
+from tests.fake_directory import (ADMINS, AD_PATTERN, BASE, IN_CHAIN, LDAP_PATTERN, PASSWORD,
+                                  USERS, FakeDirectory, FakeEntry, ad_account, ldap_account)
 
 
 @pytest.fixture(autouse=True)
 def _allow_cleartext_ldap_in_unit_tests(monkeypatch):
-    """These unit tests exercise the auth flow against a MOCKED cleartext
-    ldap:// connection; opt into cleartext so the transport gate (which
-    fails closed in production) doesn't block them. Tests that assert the
-    gate itself delete this var explicitly."""
+    """The transport-gate tests below build cleartext ldap:// servers; opt in
+    so the gate (which fails closed in production) does not block them.
+    Tests that assert the gate itself delete this var explicitly."""
     monkeypatch.setenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", "1")
 
 
-class _FakeAttr:
-    """ldap3-attribute stand-in: exposes .value and .values."""
-
-    def __init__(self, value: Any = None, values: list = None):
-        self.value = value
-        self.values = values or ([] if value is None else [value])
-
-
-class _FakeEntry:
-    """ldap3-entry stand-in. Honors hasattr/getattr for attribute names."""
-
-    def __init__(self, entry_dn: str, attrs: dict):
-        self.entry_dn = entry_dn
-        for name, attr in attrs.items():
-            setattr(self, name, attr)
+@pytest.fixture
+def directory(monkeypatch):
+    d = FakeDirectory()
+    monkeypatch.setattr(ldap3, "Connection", d.connection)
+    return d
 
 
-class _OrderRecordingConnection:
-    """Minimal ldap3 Connection stand-in that records the order of operations.
+def _config(pattern, **changes):
+    values = {"server_url": "ldaps://dc.example.org", "base_dn": BASE, "user_dn_pattern": pattern,
+              "user_group_dn": USERS, "admin_group_dn": ADMINS}
+    values.update(changes)
+    return LDAPConfig(**values)
 
-    Each instance is identified by the ``user`` kwarg passed at construction so
-    a test can distinguish the service-account bind from the user-bind.
-    """
 
-    # Class-level shared call log across every instance of a single test.
-    log: list = []
-    # Map of (user, password) → attribute entries returned by the next .search().
-    next_entries: dict = {}
+def _ad(**changes):
+    return LDAPService(_config(AD_PATTERN, **changes), active_directory=True)
 
-    def __init__(self, server, user="", password="", authentication=None,
-                 read_only=False, receive_timeout=None):
-        self.user = user
-        self.password = password
-        self.entries: list = []
-        # Capture bind/search/unbind events with the bind-identity context.
-        self._bound = False
 
-    def bind(self) -> bool:
-        type(self).log.append(("bind", self.user))
-        # Fail the user-bind on wrong password; service-bind always succeeds.
-        if self.user == "CN=alice,OU=Users,DC=example,DC=com":
-            self._bound = self.password == "correct-password"
-            return self._bound
-        # Service bind
-        self._bound = True
-        return True
+def _ldap(**changes):
+    return LDAPService(_config(LDAP_PATTERN, **changes), active_directory=False)
 
-    def search(self, search_base="", search_filter="", search_scope=None,
-               attributes=None, size_limit=None):
-        type(self).log.append(("search", self.user, search_base))
-        # Return entries staged by the test for this connection identity.
-        self.entries = type(self).next_entries.get(self.user, [])
 
-    def unbind(self):
-        type(self).log.append(("unbind", self.user))
+def _searches(directory):
+    return [entry[2] for entry in directory.log if entry[0] == "search"]
 
 
 def _build_config() -> LDAPConfig:
@@ -86,27 +55,25 @@ def _build_config() -> LDAPConfig:
         server_url="ldap://test.example.com",
         use_ssl=False,
         base_dn="DC=example,DC=com",
-        bind_dn="CN=service,OU=Services,DC=example,DC=com",
-        bind_password="service-pw",
         user_dn_pattern="CN={username},OU=Users,DC=example,DC=com",
         admin_group_dn="CN=SeqSetup-Admins,OU=Groups,DC=example,DC=com",
     )
 
 
 class TestCleartextTransportGate:
-    """Plaintext LDAP must be refused by default: the service-account bind
-    password and every user's login password would otherwise traverse the wire
-    in clear. Mirrors the LIMS plain-HTTP opt-in."""
+    """Plaintext LDAP must be refused by default: every user's login password
+    would otherwise traverse the wire in clear. Mirrors the LIMS plain-HTTP
+    opt-in."""
 
     def test_cleartext_refused_without_optin(self, monkeypatch):
         monkeypatch.delenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", raising=False)
-        svc = LDAPService(_build_config())  # ldap://, use_ssl=False
+        svc = LDAPService(_build_config(), active_directory=False)  # ldap://, use_ssl=False
         with pytest.raises(LDAPError, match="(?i)cleartext|plaintext|tls|ssl"):
             svc._get_server()
 
     def test_cleartext_allowed_with_optin(self, monkeypatch):
         monkeypatch.setenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", "1")
-        svc = LDAPService(_build_config())
+        svc = LDAPService(_build_config(), active_directory=False)
         svc._get_server()  # no raise
 
     def test_ldaps_url_not_gated(self, monkeypatch):
@@ -114,7 +81,7 @@ class TestCleartextTransportGate:
         cfg = _build_config()
         cfg.server_url = "ldaps://secure.example.com"
         cfg.use_ssl = True
-        svc = LDAPService(cfg)
+        svc = LDAPService(cfg, active_directory=False)
         svc._get_server()  # no raise — TLS transport
 
     def test_explicit_ldap_scheme_with_use_ssl_is_still_gated(self, monkeypatch):
@@ -125,7 +92,7 @@ class TestCleartextTransportGate:
         cfg = _build_config()
         cfg.server_url = "ldap://dc.example.com"
         cfg.use_ssl = True
-        svc = LDAPService(cfg)
+        svc = LDAPService(cfg, active_directory=False)
         with pytest.raises(LDAPError, match="(?i)cleartext|plaintext|tls|ssl"):
             svc._get_server()
 
@@ -135,149 +102,325 @@ class TestCleartextTransportGate:
         cfg = _build_config()
         cfg.server_url = "dc.example.com"
         cfg.use_ssl = True
-        server = LDAPService(cfg)._get_server()  # no raise
+        server = LDAPService(cfg, active_directory=False)._get_server()  # no raise
         assert server.ssl is True  # actually uses TLS
 
 
-class TestUserDnPatternEscaping:
-    """A login username substituted into user_dn_pattern must be escaped for
-    the DN (RFC 4514) context, not the search-filter (RFC 4515) context.
+class TestBindName:
+    """A typed name becomes a bind name only through the pattern, lower-cased."""
 
-    The login form does not constrain the username's character set, so DN
-    metacharacters (',', '=', '+') would otherwise pass through unescaped and
-    relocate/alter the bind DN (CWE-90).
-    """
+    def test_ad_bind_name_is_the_upn(self):
+        assert _ad().bind_name("Anna") == "anna@lab.example.org"
 
-    def test_dn_metacharacters_in_username_are_escaped(self):
-        service = LDAPService(_build_config())
-        user_dn = service._get_user_dn("eviluser,OU=Admins", conn=None)
-        # The injected RDN separator/assignment must be escaped so it can't
-        # relocate the bind DN; the configured suffix stays intact.
-        assert "eviluser\\,OU\\=Admins" in user_dn
-        assert user_dn.endswith(",OU=Users,DC=example,DC=com")
+    def test_ldap_bind_name_is_the_dn(self):
+        assert _ldap().bind_name("Anna") == "uid=anna,ou=people,dc=example,dc=org"
 
-    def test_plus_in_username_is_escaped(self):
-        service = LDAPService(_build_config())
-        user_dn = service._get_user_dn("a+b", conn=None)
-        assert "a\\+b" in user_dn
+    @pytest.mark.parametrize("name", ["anna@lab.example.org", "eviluser,OU=Admins", "a+b",
+                                      "anna smith", "", "åsa", "a" * 65])
+    def test_other_names_are_refused(self, name):
+        with pytest.raises(SignInRefused) as refused:
+            _ad().bind_name(name)
+        assert refused.value.reason == "bad_name"
 
-    def test_plain_username_unchanged(self):
-        service = LDAPService(_build_config())
-        user_dn = service._get_user_dn("jdoe", conn=None)
-        assert user_dn == "CN=jdoe,OU=Users,DC=example,DC=com"
+    def test_64_characters_is_allowed(self):
+        assert _ad().bind_name("a" * 64) == "a" * 64 + "@lab.example.org"
 
 
-class TestLdapAuthOrderingInvariant:
-    """The user-bind that verifies the password must precede any conn.search()
-    used to derive the user's role.
-    """
+class TestOneConnectionAsTheUser:
+    """No service account: one connection, with the person's own name and password."""
 
-    def _patch_ldap(self, conn_cls):
-        """Patch the ldap3.Connection used in services.ldap with conn_cls."""
-        import ldap3
-        return patch.object(ldap3, "Connection", conn_cls)
+    def test_only_the_persons_own_credentials_are_used(self, directory):
+        upn = ad_account(directory)
+        _ad().sign_in("anna", PASSWORD)
+        assert len(directory.connections) == 1
+        made = directory.connections[0]
+        assert (made["user"], made["password"], made["auto_referrals"]) == (upn, PASSWORD, False)
 
-    def test_user_bind_precedes_role_attribute_search(self):
-        # Reset shared log
-        _OrderRecordingConnection.log = []
-        # Stage attribute entries returned to the *service* connection — this
-        # mirrors today's flow where the service does the attribute lookup.
-        # If the fix is in place, the search should happen on the user connection
-        # OR after the user-bind has been recorded.
-        _OrderRecordingConnection.next_entries = {
-            "CN=service,OU=Services,DC=example,DC=com": [
-                _FakeEntry(
-                    "CN=alice,OU=Users,DC=example,DC=com",
-                    {
-                        "displayName": _FakeAttr(value="Alice"),
-                        "mail": _FakeAttr(value="alice@example.com"),
-                        "memberOf": _FakeAttr(values=[
-                            "CN=SeqSetup-Admins,OU=Groups,DC=example,DC=com",
-                        ]),
-                    },
-                )
-            ],
-            "CN=alice,OU=Users,DC=example,DC=com": [
-                _FakeEntry(
-                    "CN=alice,OU=Users,DC=example,DC=com",
-                    {
-                        "displayName": _FakeAttr(value="Alice"),
-                        "mail": _FakeAttr(value="alice@example.com"),
-                        "memberOf": _FakeAttr(values=[
-                            "CN=SeqSetup-Admins,OU=Groups,DC=example,DC=com",
-                        ]),
-                    },
-                )
-            ],
-        }
+    def test_nothing_is_read_before_the_bind(self, directory):
+        upn = ad_account(directory)
+        _ad().sign_in("anna", PASSWORD)
+        assert directory.log[0] == ("bind", upn)
 
-        service = LDAPService(_build_config())
-        with self._patch_ldap(_OrderRecordingConnection):
-            user = service.authenticate("alice", "correct-password")
+    def test_empty_password_never_reaches_the_server(self, directory):
+        ad_account(directory)
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", "")
+        assert refused.value.reason == "directory_refused"
+        assert directory.connections == []
 
-        assert user.username == "alice"
+    def test_bad_name_never_reaches_the_server(self, directory):
+        with pytest.raises(SignInRefused):
+            _ad().sign_in("anna,ou=admins", PASSWORD)
+        assert directory.connections == []
 
-        # Find positions in the call log.
-        log = _OrderRecordingConnection.log
-        user_bind_idx = next(
-            i for i, e in enumerate(log)
-            if e[0] == "bind" and e[1] == "CN=alice,OU=Users,DC=example,DC=com"
-        )
-        # Find any search that returned role-determining attributes — that is,
-        # a search whose entries include 'memberOf' (used by _determine_role).
-        attribute_search_idx = next(
-            (i for i, e in enumerate(log) if e[0] == "search"),
-            None,
-        )
-        assert attribute_search_idx is not None, "No attribute search recorded"
-        # The invariant: user-bind precedes any conn.search used for role lookup.
-        assert user_bind_idx < attribute_search_idx, (
-            f"User-bind must precede the role-attribute search. "
-            f"user_bind at {user_bind_idx}, attribute_search at {attribute_search_idx}. "
-            f"Full log: {log}"
-        )
 
-    def test_wrong_password_fails_before_attribute_search_leaks(self):
-        """If the user-bind fails, we must not have already trusted the DN's attributes."""
-        _OrderRecordingConnection.log = []
-        _OrderRecordingConnection.next_entries = {
-            "CN=service,OU=Services,DC=example,DC=com": [
-                _FakeEntry(
-                    "CN=alice,OU=Users,DC=example,DC=com",
-                    {"memberOf": _FakeAttr(values=[
-                        "CN=SeqSetup-Admins,OU=Groups,DC=example,DC=com",
-                    ])},
-                )
-            ],
-            "CN=alice,OU=Users,DC=example,DC=com": [],
-        }
+class TestOwnEntry:
+    """The person's own entry is read over their own connection."""
 
-        service = LDAPService(_build_config())
-        import pytest
-        from seqsetup.services.ldap import LDAPError
-        with self._patch_ldap(_OrderRecordingConnection):
-            with pytest.raises(LDAPError):
-                service.authenticate("alice", "wrong-password")
+    def test_ad_reads_name_and_email(self, directory):
+        ad_account(directory)
+        user = _ad().sign_in("Anna", PASSWORD).user
+        assert (user.username, user.display_name, user.email, user.source) == (
+            "anna", "Anna Svensson", "anna@example.org", "ldap")
+
+    def test_ldap_reads_name_and_email(self, directory):
+        ldap_account(directory)
+        user = _ldap().sign_in("anna", PASSWORD).user
+        assert (user.username, user.display_name, user.email) == (
+            "anna", "Anna Svensson", "anna@example.org")
+
+    def test_ad_account_with_no_entry_is_not_found(self, directory):
+        upn = ad_account(directory)
+        directory.answer(BASE, f"(userPrincipalName={upn})")
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", PASSWORD)
+        assert refused.value.reason == "not_found"
+
+    def test_two_ad_entries_is_not_found(self, directory):
+        upn = ad_account(directory)
+        directory.answer(BASE, f"(userPrincipalName={upn})",
+                         FakeEntry("cn=a," + BASE), FakeEntry("cn=b," + BASE))
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", PASSWORD)
+        assert refused.value.reason == "not_found"
+
+    def test_ldap_dn_outside_the_base_is_not_found(self, directory):
+        service = LDAPService(_config("uid={username},ou=people,dc=other,dc=org"),
+                              active_directory=False)
+        directory.passwords["uid=anna,ou=people,dc=other,dc=org"] = PASSWORD
+        with pytest.raises(SignInRefused) as refused:
+            service.sign_in("anna", PASSWORD)
+        assert refused.value.reason == "not_found"
+
+    def test_missing_display_name_uses_the_name(self, directory):
+        ad_account(directory, display_name=None)
+        assert _ad().sign_in("anna", PASSWORD).user.display_name == "anna"
+
+
+class TestGroups:
+    """Two required groups; the server decides membership (F23, review P1)."""
+
+    @pytest.mark.parametrize("groups, role", [
+        ((ADMINS,), UserRole.ADMIN), ((USERS,), UserRole.STANDARD),
+        ((ADMINS, USERS), UserRole.ADMIN),
+    ])
+    def test_ad_role_comes_from_the_groups(self, directory, groups, role):
+        ad_account(directory, groups=groups)
+        assert _ad().sign_in("anna", PASSWORD).user.role is role
+
+    @pytest.mark.parametrize("groups, role", [
+        ((ADMINS,), UserRole.ADMIN), ((USERS,), UserRole.STANDARD),
+        ((ADMINS, USERS), UserRole.ADMIN),
+    ])
+    def test_ldap_role_comes_from_the_groups(self, directory, groups, role):
+        ldap_account(directory, groups=groups)
+        assert _ldap().sign_in("anna", PASSWORD).user.role is role
+
+    def test_ad_in_neither_group_is_refused(self, directory):
+        ad_account(directory, groups=())
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", PASSWORD)
+        assert refused.value.reason == "not_in_group"
+
+    def test_ldap_in_neither_group_is_refused(self, directory):
+        ldap_account(directory, groups=())
+        with pytest.raises(SignInRefused) as refused:
+            _ldap().sign_in("anna", PASSWORD)
+        assert refused.value.reason == "not_in_group"
+
+    def test_ad_counts_groups_inside_groups(self, directory):
+        upn = ad_account(directory)
+        _ad().sign_in("anna", PASSWORD)
+        asked = _searches(directory)
+        assert f"(&(userPrincipalName={upn})(memberOf:{IN_CHAIN}:={ADMINS}))" in asked
+        assert f"(&(userPrincipalName={upn})(memberOf:{IN_CHAIN}:={USERS}))" in asked
+
+    def test_ldap_asks_the_server_about_each_group(self, directory):
+        dn = ldap_account(directory)
+        _ldap().sign_in("anna", PASSWORD)
+        asked = [(e[1], e[2], e[3]) for e in directory.log if e[0] == "search"]
+        assert (dn, f"(memberOf={ADMINS})", "BASE") in asked
+        assert (dn, f"(memberOf={USERS})", "BASE") in asked
+
+    def test_a_similar_group_name_does_not_count(self, directory):
+        # "cn=SeqSetup\, Admins" and "cn=SeqSetup\,Admins" are two groups; the
+        # old string compare made them equal (review P1). The entry lists only
+        # the other one, and the server is asked about the configured one.
+        configured = "cn=SeqSetup\\, Admins,ou=groups,dc=example,dc=org"
+        other = "cn=SeqSetup\\,Admins,ou=groups,dc=example,dc=org"
+        dn = ldap_account(directory, groups=(USERS,), member_of_listed=[other, USERS])
+        directory.answer(dn, "(memberOf=cn=SeqSetup\\5c,Admins,ou=groups,dc=example,dc=org)",
+                         FakeEntry(dn))
+        result = _ldap(admin_group_dn=configured).sign_in("anna", PASSWORD)
+        assert (result.in_admins, result.user.role) == (False, UserRole.STANDARD)
+        assert ("(memberOf=cn=SeqSetup\\5c, Admins,ou=groups,dc=example,dc=org)"
+                in _searches(directory))
+
+    def test_group_dn_is_filter_escaped(self, directory):
+        upn = ad_account(directory)
+        _ad(admin_group_dn="cn=Lab (Seq)*,ou=groups,dc=example,dc=org").sign_in("anna", PASSWORD)
+        assert (f"(&(userPrincipalName={upn})(memberOf:{IN_CHAIN}:="
+                f"cn=Lab \\28Seq\\29\\2a,ou=groups,dc=example,dc=org))") in _searches(directory)
+
+    def test_sign_in_reports_both_groups(self, directory):
+        ad_account(directory, groups=(USERS,))
+        result = _ad().sign_in("anna", PASSWORD)
+        assert isinstance(result, DirectorySignIn)
+        assert (result.in_admins, result.in_users) == (False, True)
+
+
+class TestServerErrors:
+    """Every directory failure is a refusal with a reason, never a crash."""
+
+    def test_wrong_password_is_directory_refused(self, directory):
+        ad_account(directory)
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", "Wrong-Horse-7")
+        assert refused.value.reason == "directory_refused"
+
+    def test_unreachable_server_is_a_server_error(self, directory):
+        ad_account(directory)
+        directory.unreachable = True
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", PASSWORD)
+        assert refused.value.reason == "server_error"
+        assert refused.value.message.startswith("Could not reach the directory server:")
+
+    def test_refused_cleartext_is_a_server_error(self, directory, monkeypatch):
+        monkeypatch.delenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", raising=False)
+        ad_account(directory)
+        with pytest.raises(SignInRefused) as refused:
+            _ad(server_url="ldap://dc.example.org").sign_in("anna", PASSWORD)
+        assert refused.value.reason == "server_error"
+        assert "SEQSETUP_LDAP_ALLOW_CLEARTEXT" in refused.value.message
+        assert directory.connections == []
+
+
+def _answered_error(refused):
+    return (refused.value.reason, refused.value.message)
+
+
+class TestUnfinishedSearches:
+    """A search the server did not finish is a server error, even when some
+    entries came back (plan review 1, P1). ldap3 reports it in conn.result
+    and does not raise, so SeqSetup must check every search."""
+
+    def test_a_partial_admins_answer_does_not_make_an_admin(self, directory):
+        upn = ad_account(directory, groups=())
+        directory.answer(BASE, f"(&(userPrincipalName={upn})(memberOf:{IN_CHAIN}:={ADMINS}))",
+                         FakeEntry(f"cn=anna,ou=staff,{BASE}"), result=4)
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", PASSWORD)
+        assert _answered_error(refused) == ("server_error", (
+            "The directory server answered with an error: sizeLimitExceeded (code 4) "
+            "while checking the Admins group"))
+
+    def test_access_denied_on_the_users_group_is_not_not_in_group(self, directory):
+        upn = ad_account(directory, groups=())
+        directory.answer(BASE, f"(&(userPrincipalName={upn})(memberOf:{IN_CHAIN}:={USERS}))",
+                         result=50)
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", PASSWORD)
+        assert _answered_error(refused) == ("server_error", (
+            "The directory server answered with an error: insufficientAccessRights (code 50) "
+            "while checking the Users group"))
+
+    def test_access_denied_on_the_admins_group_is_not_a_standard_sign_in(self, directory):
+        upn = ad_account(directory, groups=(ADMINS, USERS))
+        directory.answer(BASE, f"(&(userPrincipalName={upn})(memberOf:{IN_CHAIN}:={ADMINS}))",
+                         result=50)
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", PASSWORD)
+        assert refused.value.reason == "server_error"
+
+    def test_a_partial_own_entry_answer_is_a_server_error(self, directory):
+        # One entry came back, but the server stopped early: there may be more.
+        upn = ad_account(directory)
+        directory.answer(BASE, f"(userPrincipalName={upn})",
+                         FakeEntry(f"cn=anna,ou=staff,{BASE}",
+                                   {"displayName": "Anna Svensson", "mail": "anna@example.org"}),
+                         result=4)
+        with pytest.raises(SignInRefused) as refused:
+            _ad().sign_in("anna", PASSWORD)
+        assert _answered_error(refused) == ("server_error", (
+            "The directory server answered with an error: sizeLimitExceeded (code 4) "
+            "while reading the account's own entry"))
+
+    def test_ldap_access_denied_on_the_own_entry_is_not_not_found(self, directory):
+        dn = ldap_account(directory)
+        directory.answer(dn, "(objectClass=*)", result=50)
+        with pytest.raises(SignInRefused) as refused:
+            _ldap().sign_in("anna", PASSWORD)
+        assert refused.value.reason == "server_error"
+
+    def test_ldap_referral_on_a_group_does_not_make_an_admin(self, directory):
+        dn = ldap_account(directory, groups=())
+        directory.answer(dn, f"(memberOf={ADMINS})", FakeEntry(dn), result=10)
+        with pytest.raises(SignInRefused) as refused:
+            _ldap().sign_in("anna", PASSWORD)
+        assert _answered_error(refused) == ("server_error", (
+            "The directory server answered with an error: referral (code 10) "
+            "while checking the Admins group"))
+
+
+class TestTestConnection:
+    """Test connection binds nobody and names the transport it used (review P4)."""
+
+    def test_tls_with_the_certificate_checked(self, directory):
+        assert _ad().test_connection() == (True, (
+            "The server answered over an encrypted connection (TLS), and its certificate "
+            "was checked. No password was checked; use Test sign-in for that."))
+
+    def test_tls_without_the_certificate_check(self, directory):
+        assert _ad(verify_ssl_cert=False).test_connection() == (True, (
+            "The server answered over an encrypted connection (TLS), but its certificate "
+            "was NOT checked (Verify certificate is off). No password was checked; use "
+            "Test sign-in for that."))
+
+    def test_cleartext_opt_in_says_unencrypted(self, directory, monkeypatch):
+        monkeypatch.setenv("SEQSETUP_LDAP_ALLOW_CLEARTEXT", "1")
+        assert _ad(server_url="ldap://dc.example.org").test_connection() == (True, (
+            "The server answered over an UNENCRYPTED connection (allowed by "
+            "SEQSETUP_LDAP_ALLOW_CLEARTEXT). Passwords would be sent readable. No password "
+            "was checked; use Test sign-in for that."))
+
+    def test_it_binds_nobody(self, directory):
+        _ad().test_connection()
+        assert directory.connections[0]["user"] is None
+        assert ("open",) in directory.log
+        assert not [entry for entry in directory.log if entry[0] == "bind"]
+
+    def test_unreachable_server(self, directory):
+        directory.unreachable = True
+        ok, message = _ad().test_connection()
+        assert not ok and message.startswith("Could not reach the directory server:")
+
+
+class TestNoServiceAccount:
+    """SeqSetup never signs in to the directory as itself (N-17)."""
+
+    def test_the_service_account_code_is_gone(self):
+        for name in ("_bind_connection", "_get_user_dn", "_get_user_groups",
+                     "_determine_role", "search_users"):
+            assert not hasattr(LDAPService, name), name
 
 
 class TestEffectiveBindPassword:
     """The LDAP bind password must prefer the env var over the stored field
-    so production deployments can keep the secret out of MongoDB."""
+    so production deployments can keep the secret out of MongoDB.
+    (Removed in Task 6, with the field.)"""
 
     def test_env_var_overrides_stored_password(self, monkeypatch):
-        from seqsetup.models.auth_config import LDAPConfig
         monkeypatch.setenv("SEQSETUP_LDAP_BIND_PASSWORD", "env-secret")
         cfg = LDAPConfig(bind_dn="CN=svc,DC=ex", bind_password="stored-secret")
         assert cfg.effective_bind_password() == "env-secret"
 
     def test_falls_back_to_stored_when_env_absent(self, monkeypatch):
-        from seqsetup.models.auth_config import LDAPConfig
         monkeypatch.delenv("SEQSETUP_LDAP_BIND_PASSWORD", raising=False)
         cfg = LDAPConfig(bind_dn="CN=svc,DC=ex", bind_password="stored-secret")
         assert cfg.effective_bind_password() == "stored-secret"
 
     def test_empty_env_value_treated_as_unset(self, monkeypatch):
-        from seqsetup.models.auth_config import LDAPConfig
         monkeypatch.setenv("SEQSETUP_LDAP_BIND_PASSWORD", "")
         cfg = LDAPConfig(bind_dn="CN=svc,DC=ex", bind_password="stored-secret")
         assert cfg.effective_bind_password() == "stored-secret"

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import bcrypt
 
+from seqsetup.models.auth_config import AuthMethod
 from seqsetup.models.local_user import LocalUser
 from seqsetup.models.user import User, UserRole
 from seqsetup.services.auth import AuthService
@@ -70,6 +71,7 @@ class TestLoginSource:
 
     def test_ldap_user_is_ldap(self, tmp_path):
         class _Cfg:
+            auth_method = AuthMethod.LDAP
             is_ldap_enabled = True
             allow_local_fallback = False
             ldap_config = object()

@@ -226,7 +226,9 @@ def test_ldap_connection(
     if not config.ldap_config.server_url:
         return _test_result(request, False, "LDAP server URL is not configured")
     try:
-        ldap_service = LDAPService(config.ldap_config)
+        ldap_service = LDAPService(
+            config.ldap_config,
+            active_directory=config.auth_method is AuthMethod.ACTIVE_DIRECTORY)
         success, message = ldap_service.test_connection()
         if success:
             config.ldap_tested = True
@@ -275,7 +277,9 @@ def test_ldap_auth(
     if not config.ldap_config.server_url:
         return _test_result(request, False, "LDAP server URL is not configured")
     try:
-        ldap_service = LDAPService(config.ldap_config)
+        ldap_service = LDAPService(
+            config.ldap_config,
+            active_directory=config.auth_method is AuthMethod.ACTIVE_DIRECTORY)
         user = ldap_service.authenticate(form.test_username, form.test_password)
         return _test_result(
             request, True,

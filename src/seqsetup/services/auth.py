@@ -132,7 +132,9 @@ class AuthService:
         from .ldap import LDAPService, LDAPError
 
         try:
-            ldap_service = LDAPService(auth_config.ldap_config)
+            ldap_service = LDAPService(
+                auth_config.ldap_config,
+                active_directory=auth_config.auth_method is AuthMethod.ACTIVE_DIRECTORY)
             return dataclasses.replace(
                 ldap_service.authenticate(username, password), source="ldap")
         except LDAPError as e:
