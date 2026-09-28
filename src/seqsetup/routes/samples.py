@@ -1068,22 +1068,40 @@ async def set_mismatches_bulk(
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
 
-    mismatch_index1 = _parse_mismatches(mismatch_index1_str)
-    mismatch_index2 = _parse_mismatches(mismatch_index2_str)
+    # Clear puts both columns back to the run default. Apply writes only the
+    # boxes that were filled in: a box left blank leaves that column alone on
+    # every ticked sample, so a deliberate override is never wiped by a box
+    # the user did not touch (group 1c, the user's decision after the build
+    # review, 2026-09-28).
+    if form.get("mode", "apply") == "clear":
+        mismatch_index1 = mismatch_index2 = None
+        write_index1 = write_index2 = True
+    else:
+        mismatch_index1 = _parse_mismatches(mismatch_index1_str)
+        mismatch_index2 = _parse_mismatches(mismatch_index2_str)
+        write_index1 = mismatch_index1 is not None
+        write_index2 = mismatch_index2 is not None
+        if not (write_index1 or write_index2):
+            raise HTTPException(status_code=400, detail=(
+                "Type a barcode mismatch value (0, 1 or 2) to apply, or use Clear to "
+                "reset both to the run default. Nothing was saved."
+            ))
 
     with saving_run(run, ctx, request):
         for sample in run.samples:
             if sample.id in sample_ids:
-                sample.barcode_mismatches_index1 = mismatch_index1
-                sample.barcode_mismatches_index2 = mismatch_index2
+                if write_index1:
+                    sample.barcode_mismatches_index1 = mismatch_index1
+                if write_index2:
+                    sample.barcode_mismatches_index2 = mismatch_index2
 
     audit(
         "sample.bulk_mismatches_set",
         actor=get_username(request),
         target=run_id,
         sample_count=len(sample_ids),
-        mismatch_index1=mismatch_index1,
-        mismatch_index2=mismatch_index2,
+        mismatch_index1=mismatch_index1 if write_index1 else "unchanged",
+        mismatch_index2=mismatch_index2 if write_index2 else "unchanged",
     )
 
     return _render_sample_section(run, request, ctx)

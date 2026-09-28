@@ -20,7 +20,8 @@ Branch `fix/group-1c` from `main` at `caa51c7`.
 - Every change updates its doc page and picture in the same change.
 - Every message shown to a user is escaped like every other banner message.
 - `static/js/app.js` is not changed: the refusals below use the existing error banner,
-  and F5 is a template class and CSS only.
+  and F5 is a template class and CSS only. (One exception, added after the build review:
+  see the addendum at the end.)
 
 ## F6 — barcode mismatches are 0, 1 or 2
 
@@ -261,3 +262,28 @@ doc pictures regenerated with the whole picture file.
 - "Not available" (sync-excluded) instruments are shown but not refused (F28).
 - The legacy `InstrumentConfig.enabled_instruments` filter is dead (group 4).
 - Test ID and Worksheet still truncate with "…".
+
+## Addendum, after the build review (2026-09-28)
+
+The whole-branch review rated one behaviour Important: in the bulk **Mismatches** row,
+**Apply** with one box blank reset that column to the run default on every ticked
+sample, with no message. A deliberate i5 override on 40 samples was wiped by changing
+their i7. The user chose to change it. This replaces "Blank stays 'clear the override'"
+for the **bulk** route only; a blank per-row box still clears that one value.
+
+- `#bulk-mismatches-form` carries a hidden `mode`. `app.js` sets it to `apply` in
+  `applyBulkMismatchesForm` and to `clear` in `clearBulkMismatchesForm`. This is the one
+  change to `app.js` in 1c: without it the server cannot tell **Clear** (two empty boxes)
+  from **Apply** with two empty boxes.
+- `set_mismatches_bulk`:
+  - `mode=clear` sets both columns to `None` (the run default), as **Clear** always did.
+  - Otherwise (`apply`, or no `mode`), only a filled box is written; a blank box leaves
+    that column alone.
+  - **Apply** with both boxes blank is refused with 400, **"Type a barcode mismatch value
+    (0, 1 or 2) to apply, or use Clear to reset both to the run default. Nothing was
+    saved."**
+  - The audit event records `"unchanged"` for a column that was not written.
+- `docs/user-guide/samples.rst` says so.
+- Also added: a test that a Draft with no samples on a disabled instrument gets the
+  `instrument_disabled` error. The spec promised it; my own break test (moving the check
+  below the no-samples return) showed nothing covered it.

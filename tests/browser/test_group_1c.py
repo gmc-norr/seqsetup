@@ -89,6 +89,37 @@ def test_unreadable_bulk_value_is_refused_not_cleared(logged_in_page, base_url, 
 
 
 @pytest.mark.browser
+def test_bulk_apply_with_i5_blank_leaves_i5_alone(logged_in_page, base_url, group_1c_run_id, app_ctx):
+    """A box left blank leaves that column alone (the user's decision after
+    the build review, 2026-09-28)."""
+    page = logged_in_page
+    _open(page, base_url, group_1c_run_id)
+    page.locator(f"#sample-row-{group_1c_run_id}-s1 .sample-checkbox").check()
+    page.locator(f"#sample-row-{group_1c_run_id}-s2 .sample-checkbox").check()
+
+    _type(page.locator("#bulk-mismatch-i7-input"), "1")
+    with page.expect_response(lambda r: r.url.endswith("/samples/set-mismatches")) as resp_info:
+        page.locator('[data-action="bulk-apply-mismatches"]').click()
+
+    assert resp_info.value.status == 200
+    assert _stored(app_ctx, group_1c_run_id) == [(1, 2), (1, 2)]
+
+
+@pytest.mark.browser
+def test_bulk_clear_resets_both_columns(logged_in_page, base_url, group_1c_run_id, app_ctx):
+    page = logged_in_page
+    _open(page, base_url, group_1c_run_id)
+    page.locator(f"#sample-row-{group_1c_run_id}-s1 .sample-checkbox").check()
+    page.locator(f"#sample-row-{group_1c_run_id}-s2 .sample-checkbox").check()
+
+    with page.expect_response(lambda r: r.url.endswith("/samples/set-mismatches")) as resp_info:
+        page.locator('[data-action="bulk-clear-mismatches"]').click()
+
+    assert resp_info.value.status == 200
+    assert _stored(app_ctx, group_1c_run_id) == [(None, None), (None, None)]
+
+
+@pytest.mark.browser
 def test_long_sample_ids_are_shown_whole(logged_in_page, base_url, group_1c_run_id):
     page = logged_in_page
     _open(page, base_url, group_1c_run_id)

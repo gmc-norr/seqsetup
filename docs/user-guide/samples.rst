@@ -163,9 +163,10 @@ Changing several samples at once
 Tick more than one sample's checkbox to reveal the bulk-action panel above
 the table (the same panel used for :doc:`lane-assignment`). Its
 **Mismatches** row applies the i7 and i5 boxes to every ticked sample when
-you select **Apply** -- leave a box blank to reset that value to its
-default for every ticked sample, it does not leave the existing value
-alone. **Clear** resets both to their default in one step. Its **Test ID**
+you select **Apply**. A box left blank leaves that value as it is on every
+ticked sample, so you can change i7 without touching i5. **Clear** resets
+both to the run's default in one step. **Apply** with both boxes blank
+changes nothing and says so. Its **Test ID**
 row works the same way: pick a test and select **Apply** to give it to
 every ticked sample, or **Clear** to remove it. The panel's **Lanes** and
 **Override Cycles** rows are covered in :doc:`lane-assignment` and

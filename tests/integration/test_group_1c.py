@@ -127,19 +127,66 @@ class TestMismatchLimit:
         assert REFUSAL in resp.text
         assert _mismatches(ctx, run.id) == before
 
-    def test_bulk_saves_allowed_values(self, logged_in_client, fresh_app):
+    def test_bulk_apply_writes_only_the_typed_i7_column(self, logged_in_client, fresh_app):
+        """Apply with the i5 box blank leaves every ticked sample's i5 value
+        alone (the user's decision after the build review, 2026-09-28)."""
         _app, ctx, _db = fresh_app
         run = _mismatch_run(ctx, "f6-bulk-ok")
 
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/set-mismatches",
             data={"sample_ids": json.dumps([s.id for s in run.samples]),
-                  "mismatch_index1": "0", "mismatch_index2": ""},
+                  "mismatch_index1": "0", "mismatch_index2": "", "mode": "apply"},
             headers=ORIGIN,
         )
 
         assert resp.status_code == 200
-        assert _mismatches(ctx, run.id)[0] == [(0, None), (0, None)]
+        assert _mismatches(ctx, run.id)[0] == [(0, 2), (0, 2)]
+
+    def test_bulk_apply_writes_only_the_typed_i5_column(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = _mismatch_run(ctx, "f6-bulk-i5-only")
+
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/set-mismatches",
+            data={"sample_ids": json.dumps([s.id for s in run.samples]),
+                  "mismatch_index1": "", "mismatch_index2": "0", "mode": "apply"},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200
+        assert _mismatches(ctx, run.id)[0] == [(2, 0), (2, 0)]
+
+    def test_bulk_apply_with_both_boxes_blank_is_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = _mismatch_run(ctx, "f6-bulk-blank")
+        before = _mismatches(ctx, run.id)
+
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/set-mismatches",
+            data={"sample_ids": json.dumps([s.id for s in run.samples]),
+                  "mismatch_index1": "", "mismatch_index2": "", "mode": "apply"},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 400
+        assert "use Clear to reset both" in resp.text
+        assert _mismatches(ctx, run.id) == before
+
+    def test_bulk_clear_resets_both_columns(self, logged_in_client, fresh_app):
+        """Control: Clear sends mode=clear and puts both back to the run default."""
+        _app, ctx, _db = fresh_app
+        run = _mismatch_run(ctx, "f6-bulk-clear")
+
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/set-mismatches",
+            data={"sample_ids": json.dumps([s.id for s in run.samples]),
+                  "mismatch_index1": "", "mismatch_index2": "", "mode": "clear"},
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 200
+        assert _mismatches(ctx, run.id)[0] == [(None, None), (None, None)]
 
 
 def _sync(ctx, names=(NOVASEQ_X, MISEQ_I100), disabled=()) -> None:
@@ -298,6 +345,17 @@ class TestDisabledInstrumentBlocksMarkReady:
 
         assert "instrument_disabled" in [e.category for e in ValidationService.validate_configuration(draft)]
         assert "instrument_disabled" not in [e.category for e in ValidationService.validate_configuration(ready)]
+
+    def test_draft_without_samples_gets_the_error_too(self, fresh_app):
+        """The instrument is a run setting, so the error shows before any
+        sample is added (spec § F27). Proven by moving the check below the
+        no-samples early return: this test then fails."""
+        _app, ctx, _db = fresh_app
+        _sync(ctx, disabled=(NOVASEQ_X,))
+        empty = SequencingRun(id="f27-empty", run_name="Empty", flowcell_type="10B",
+                              run_cycles=RunCycles(151, 151, 10, 10))
+
+        assert "instrument_disabled" in [e.category for e in ValidationService.validate_configuration(empty)]
 
     def test_disabled_while_exports_are_generated_is_refused(self, logged_in_client, fresh_app, monkeypatch):
         ctx, run_id = self._setup(fresh_app, "f27-race", disabled=())

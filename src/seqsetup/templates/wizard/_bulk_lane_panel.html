@@ -38,6 +38,7 @@
         <input type="hidden" name="sample_ids" id="bulk-mismatch-sample-ids">
         <input type="hidden" name="mismatch_index1" id="bulk-mismatch-index1">
         <input type="hidden" name="mismatch_index2" id="bulk-mismatch-index2">
+        <input type="hidden" name="mode" id="bulk-mismatch-mode" value="apply">
     </form>
     <form id="bulk-override-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-override-cycles"
