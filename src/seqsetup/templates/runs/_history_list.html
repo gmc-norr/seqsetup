@@ -44,7 +44,7 @@
   <button type="button"
           class="mt-2 bg-slate-200 hover:bg-slate-300 rounded px-2 py-1 text-xs"
           aria-label="Load older history entries"
-          hx-get="/runs/{{ run.id }}/history?before_ts={{ next_ts | urlencode }}&before_id={{ next_id | urlencode }}"
+          hx-get="{{ history_url | default('/runs/' ~ run.id ~ '/history') }}?before_ts={{ next_ts | urlencode }}&before_id={{ next_id | urlencode }}"
           hx-target="closest .run-history-panel"
           hx-swap="innerHTML">Load older</button>
   {% endif %}
