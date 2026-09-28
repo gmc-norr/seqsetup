@@ -122,9 +122,9 @@
                        hx-include="this">
             </td>
             <td class="mismatch-cell">
-                <input type="number" name="barcode_mismatches_index1"
+                <input type="text" inputmode="numeric" autocomplete="off" name="barcode_mismatches_index1"
                        value="{{ sample.barcode_mismatches_index1 if sample.barcode_mismatches_index1 is not none else '' }}"
-                       placeholder="-" min="0" max="2"
+                       placeholder="-"
                        class="mismatch-input"
                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
                        hx-target="#sample-row-{{ sample.id }}"
@@ -133,9 +133,9 @@
                        hx-include="this">
             </td>
             <td class="mismatch-cell">
-                <input type="number" name="barcode_mismatches_index2"
+                <input type="text" inputmode="numeric" autocomplete="off" name="barcode_mismatches_index2"
                        value="{{ sample.barcode_mismatches_index2 if sample.barcode_mismatches_index2 is not none else '' }}"
-                       placeholder="-" min="0" max="2"
+                       placeholder="-"
                        class="mismatch-input"
                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
                        hx-target="#sample-row-{{ sample.id }}"

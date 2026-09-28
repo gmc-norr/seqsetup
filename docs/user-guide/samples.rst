@@ -136,6 +136,11 @@ saved.
    Editing Override Cycles inline, outlined -- the table around it gives
    context for the edited row.
 
+A mismatch count is 0, 1 or 2 -- the values Illumina's BCL Convert
+accepts -- or blank for the run's default. Anything else, such as ``3`` or
+a mistyped ``1e``, is refused with a message in the banner, and nothing is
+saved. The bulk **Mismatches** row below works the same way.
+
 Each of these three fields saves independently -- changing one does not
 touch the others on that row. For a sample that already has an index,
 clearing Override Cycles back to blank does not leave it empty: SeqSetup
