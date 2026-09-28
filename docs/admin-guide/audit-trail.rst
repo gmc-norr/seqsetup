@@ -51,9 +51,13 @@ The event name says what happened. The main groups are:
   ``api.auth.failure`` for a refused API token.
 - **Runs and samples** -- ``run.status.changed`` (Mark Ready, back to
   Draft), ``run.status.denied``, ``run.archived``, ``run.deleted``,
-  ``run.cloned``, ``run.created_from_template``, every ``sample.`` change
-  (added, edited, deleted, index assigned or cleared, and the bulk
-  actions), and ``template.`` changes.
+  ``run.delete.failed``, ``run.delete.copy_unconfirmed``, ``run.cloned``,
+  ``run.created_from_template``, every ``sample.`` change (added, edited,
+  deleted, index assigned or cleared, and the bulk actions), and
+  ``template.`` changes. ``run.deleted`` says whether a copy was kept
+  (``kept_copy``) and which one (``copy_id``); ``run.delete.failed`` gives
+  the reason: ``copy_failed``, ``no_copy_store``, ``delete_error`` or
+  ``run_changed``. See :doc:`deleted-runs`.
 - **Exports and the API** -- ``export.downloaded``, ``api.run.read``,
   ``api.runs.listed``.
 - **Configuration** -- ``config_sync.`` (manual and scheduled syncs),

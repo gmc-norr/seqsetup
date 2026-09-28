@@ -11,6 +11,7 @@ import os
 import re
 import tempfile
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -18,10 +19,14 @@ from playwright.sync_api import expect
 
 from seqsetup.data.instruments import clear_synced_instruments_cache
 from seqsetup.models.instrument_definition import FlowcellDefinition, InstrumentDefinition
+from seqsetup.models.deleted_run import DeletedRun
+from seqsetup.models.run_history import RunHistoryEntry
+from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services import database
 
 from .docs_shots import shoot
-from .docs_world import DEMO_ADMIN, DEMO_KIT_NAME, clear, reset_caches, restore, seed_demo, snapshot
+from .docs_world import (DEMO_ADMIN, DEMO_KIT_NAME, _pair, _run, _sample, clear, reset_caches,
+                         restore, seed_demo, snapshot)
 
 SHOTS = Path(__file__).resolve().parents[2] / "docs" / "_static" / "screenshots"
 
@@ -1122,6 +1127,52 @@ def test_admin_audit_trail(demo_page, base_url, demo):
     )
     table = page.locator("#audit-page .table-scroll")
     snap(page, "admin/audit-trail", table, region=page.locator("#audit-page"))
+
+
+# DEMO-RUN-06 and -07 are used by earlier pictures; this made-up deleted run
+# is DEMO-RUN-08. Fixed times, so the pictures do not drift.
+DELETED_COPY_ID = "demo-deleted-copy-01"
+
+
+def _seed_deleted_run(app_ctx):
+    if app_ctx.deleted_run_repo.get(DELETED_COPY_ID) is not None:
+        return
+    run_id = "demo-run-08"
+    run = _run(run_id, "DEMO-RUN-08", RunStatus.ARCHIVED,
+               samples=[_sample(run_id, n, _pair(n)) for n in range(9, 13)])
+    app_ctx.run_history_repo.append(RunHistoryEntry(
+        run_id=run_id, timestamp=datetime(2026, 3, 2, 9, 0), actor=DEMO_ADMIN["username"],
+        kind="created", provenance={"source": "blank", "ref": None}))
+    for when, before, after in ((datetime(2026, 3, 3, 10, 0), "draft", "ready"),
+                                (datetime(2026, 3, 5, 16, 0), "ready", "archived")):
+        app_ctx.run_history_repo.append(RunHistoryEntry(
+            run_id=run_id, timestamp=when, actor=DEMO_ADMIN["username"], kind="updated",
+            field_changes=[{"field": "status", "before": before, "after": after}]))
+    copy = DeletedRun.of(run, DEMO_ADMIN["username"], datetime(2026, 3, 9, 14, 30))
+    copy.copy_id = DELETED_COPY_ID
+    app_ctx.deleted_run_repo.start(copy)
+    app_ctx.deleted_run_repo.mark_completed(DELETED_COPY_ID, datetime(2026, 3, 9, 14, 30))
+
+
+def test_admin_deleted_runs(demo_page, base_url, demo, app_ctx):
+    page = demo_page
+    _seed_deleted_run(app_ctx)
+    page.goto(f"{base_url}/admin/deleted-runs")
+    table = page.locator("#deleted-runs-page .table-scroll")
+    expect(table).to_contain_text("DEMO-RUN-08")
+    snap(page, "admin/deleted-runs", table, region=page.locator("#deleted-runs-page"))
+
+
+def test_admin_deleted_run(demo_page, base_url, demo, app_ctx):
+    page = demo_page
+    _seed_deleted_run(app_ctx)
+    page.goto(f"{base_url}/admin/deleted-runs/{DELETED_COPY_ID}")
+    panel = page.locator("#deleted-run-page .run-history-panel")
+    panel.scroll_into_view_if_needed()
+    # hx-trigger="revealed": wait for a real entry row, not "Loading history…".
+    page.wait_for_selector("#deleted-run-page .run-history-panel .border-t")
+    samples = page.locator("#deleted-run-page fieldset").filter(has_text="Sample IDs")
+    snap(page, "admin/deleted-run", samples, region=page.locator("#deleted-run-page"))
 
 
 def test_admin_index_kits_list(demo_page, base_url, demo):
