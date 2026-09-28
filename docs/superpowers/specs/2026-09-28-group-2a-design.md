@@ -99,8 +99,12 @@ and its copy both. Each delete attempt writes its own copy, and a copy is only e
   - `deleted_by: str` (256-char cap, like `created_by`), `started_at: datetime`,
     `finished_at: Optional[datetime]` (set when the state leaves `pending`),
     `abandon_reason: str` (`""` unless abandoned);
-  - `run: dict` — the whole `run.to_dict()` of the checked version, including the
-    pre-generated sheets, JSON and validation PDF exactly as they were made.
+  - `run_version: str` — the checked version, `run.updated_at.isoformat()` (second review
+    P1: the page picks among unfinished attempts by this);
+  - `run: dict` — the whole `run.to_dict()` of the checked version, with whatever
+    pre-generated exports the run still has at that moment. An Archived run still has its
+    sheets, JSON and validation PDF exactly as they were made. A Draft sent back from
+    Ready has none: READY→DRAFT clears them (second review P3).
 - New repository `repositories/deleted_run_repo.py`, `DeletedRunRepository`, collection
   `deleted_runs`, indexes on `(run_id, state)` and `started_at`:
   - `start(copy: DeletedRun) -> None` — `insert_one`, state `pending`. Never replaces
@@ -111,7 +115,9 @@ and its copy both. Each delete attempt writes its own copy, and a copy is only e
     the copy moved.
   - `list_for_page() -> list[dict]` — summaries only (no `run` snapshot) of every
     `completed` or `pending` copy, newest `started_at` first.
-  - `get(copy_id) -> Optional[DeletedRun]` and `has_completed(run_id) -> bool`.
+  - `list_for_run(run_id) -> list[dict]` — the same summaries for one run, read at the
+    moment of the call (the page re-reads a run's copies after seeing the run gone).
+  - `get(copy_id) -> Optional[DeletedRun]`.
   - **No delete and no replace method.** Nothing in the app can remove or overwrite a copy.
 - `context.py`: `deleted_run_repo: Optional[DeletedRunRepository] = None`; `startup.py`
   wires it next to `run_history_repo`.
@@ -180,13 +186,27 @@ New `routes/admin/deleted_runs.py`, router-level `require_admin_dep`, registered
   `runs` collection, so a failed delete never looks like a finished one (review P2). The
   page only reads; it never changes a copy.
 
-  | Copy state | Also true | Shown? | State column |
+  One row per deleted run at most:
+
+  | A run's copies | Also true | Row | State column |
   |---|---|---|---|
-  | `completed` | — | yes | **Deleted** |
-  | `pending` | a `completed` copy exists for the same run | no (another attempt finished) | — |
-  | `pending` | the run is still in `runs` | no — nothing was deleted, or a delete is still under way | — |
-  | `pending` | the run is gone, no `completed` copy, and this is the newest pending copy of that run | yes | **Deleted — not confirmed** |
-  | `abandoned` | — | no (the run was not deleted; the audit trail has `run.delete.failed`) | — |
+  | one is `completed` | — | that copy; its `deleted_by` | **Deleted** |
+  | only `pending` ones | the run is still in `runs` | none — nothing was deleted, or a delete is still under way | — |
+  | only `pending` ones | the run is gone | see below | **Deleted — not confirmed**, unless the re-read finds a `completed` one |
+  | `abandoned` ones | — | never listed (the run was not deleted; the audit trail has `run.delete.failed`) | — |
+
+  When a run with only pending copies is seen gone:
+  1. The page reads that run's copies **again** (`list_for_run`), after seeing it gone. A
+     delete may have finished between the first read and the check (second review P2). If
+     a `completed` copy is there now, the row is that copy, **Deleted**.
+  2. Otherwise the row is the pending copy with the **newest `run_version`**, not the newest
+     attempt (second review P1). A delete matches only the version stored at that moment,
+     and a deleted run gets no newer version. So the attempt that deleted the run checked
+     the newest version any attempt saw.
+  3. Several attempts may have checked that same version. They hold the same run, but
+     which one deleted it is not known. **Deleted by** then names each of their users,
+     sorted, joined by " or " (e.g. "anna or bo"). Pending copies of older versions are not
+     shown.
 
   "Deleted — not confirmed" means the app stopped (or its database write failed) after
   the run was deleted but before it marked the copy done; the copy is still the run as it
@@ -194,8 +214,8 @@ New `routes/admin/deleted_runs.py`, router-level `require_admin_dep`, registered
 - `GET /admin/deleted-runs/{copy_id}` — read only, for a copy the list would show;
   otherwise 404 "No deleted run with that id.":
   - the State (as above), run name, description, status when deleted, instrument and
-    flowcell, created by/at, last changed by/at, deleted by, deleted at (`finished_at`, or
-    `started_at` for "not confirmed");
+    flowcell, created by/at, last changed by/at, deleted by (as in the list, so possibly
+    "anna or bo"), deleted at (`finished_at`, or `started_at` for "not confirmed");
   - the Sample IDs, one per line, in the run's order;
   - the change history panel (the first 50 entries, with **Load older**).
 - `GET /admin/deleted-runs/{copy_id}/history?before_ts=&before_id=` — the next history
@@ -253,8 +273,9 @@ Unit:
   with an existing `copy_id` raises and leaves the first copy unchanged; `mark_completed`
   and `mark_abandoned` move only a `pending` copy (a second call, or a call on a
   `completed` copy, returns False and changes nothing); `list_for_page` is newest first,
-  has no `run` snapshot, and leaves out `abandoned` copies; the class has no delete or
-  replace method.
+  has no `run` snapshot, and leaves out `abandoned` copies; `list_for_run` returns one
+  run's completed and pending copies only; a copy records the checked version as
+  `run_version`; the class has no delete or replace method.
 - `RunRepository.delete_if_unchanged`: deletes the loaded version (True); returns False
   and deletes nothing when the stored `updated_at` differs; returns False when the run is
   gone; raises `ValueError` for a never-loaded run.
@@ -289,6 +310,19 @@ Integration:
   page lists the run as "Deleted — not confirmed" with its detail page.
 - A stale `pending` copy of a run that was later deleted properly is not listed; only the
   `completed` copy is.
+- **Second review, P1 — two unfinished attempts.** A pending copy of version 2 (user B,
+  started first) and a pending copy of version 1 (user A, started later), run gone: the
+  page shows B's copy — version 2, "Deleted by" B — and A's copy is 404. Two pending copies
+  of the same version: one row, "Deleted by" names both ("first or second").
+- **Second review, P2 — a delete finishes while the page is read.** A stale pending copy
+  exists; while the page checks whether the run exists, another attempt deletes the run
+  and completes its copy. The page shows that completed copy as **Deleted**, not the stale
+  one as "not confirmed".
+- **Second review, P3 — what the copy holds.** A Ready run with exports is sent back to
+  Draft through the real status route (which clears the exports), its sample is deleted,
+  and an admin deletes it: the copy is `completed`, has no samples, and its
+  `generated_samplesheet_v2` and `generated_json` are `None`. An Archived run's copy holds
+  its sheet (the case above).
 - New Run's "Start from a template" still discards the blank run and keeps a once-Ready
   empty draft passed as `discard_run_id`; if the blank run changed first, it is kept, the
   template run still opens, and no `run.deleted` is written.
@@ -310,7 +344,9 @@ Browser:
 - `user-guide/change-history.rst` — the warning goes; history is never deleted, and an
   admin can read a deleted run's history on Admin → Deleted runs.
 - `user-guide/dashboard.rst` — the delete rules (the table above, in words) and that a copy
-  is kept; the warning goes.
+  is kept; the warning goes. It says the copy is the run **as it is at that moment**: an
+  Archived run's copy has its sample sheet exactly as it was made, and a Draft sent back
+  from Ready has none (sending a run back to Draft clears it).
 - `user-guide/export.rst` (about line 214) — the sentence saying deletion discards history.
 - `user-guide/templates.rst` — the maker-or-admin rule replaces "any signed-in user can
   delete one".
@@ -318,8 +354,10 @@ Browser:
   pictures: the list and the detail page.
 - `admin-guide/audit-trail.rst` — `run.delete.failed` (its reasons),
   `run.delete.copy_unconfirmed`, and the `kept_copy` / `copy_id` details.
-- `admin-guide/deleted-runs.rst` explains the two States, and that a delete refused with
-  "Someone else changed or deleted this run…" leaves the run as it is.
+- `admin-guide/deleted-runs.rst` explains the two States; that "Deleted by" may name more
+  than one user for "not confirmed"; that a delete refused with "Someone else changed or
+  deleted this run…" leaves the run as it is; and the same "as it is at that moment" rule
+  for exports as the dashboard page.
 - Pictures regenerated only where the page changed; regenerate twice and diff to separate
   real changes from drift (see the 1c lesson).
 
@@ -341,6 +379,21 @@ the code and accepted:
   audit events say what really happened.
 
 The three reproductions are review cases 1–3 in the tests above.
+
+### Second review (2026-09-28, of the plan at `e1be69e`)
+
+Astra reviewed the plan and reproduced three more problems with the plan's code and
+mongomock. All three were checked against the code and accepted:
+
+- **P1: the newest pending copy can hold the wrong version.** If two attempts both stop
+  before marking their copies, "newest attempt" can pick an older version and the wrong
+  user. Now the page picks the newest **version** (`run_version`) and names every user
+  whose attempt saw it.
+- **P2: the page read could miss a delete that finished meanwhile.** Now the page re-reads
+  a run's copies after seeing the run gone.
+- **P3: the docs promised exports that a Draft sent back from Ready no longer has.** Now
+  the spec and the docs say the copy is the run as it is at that moment, and a test covers
+  that lifecycle.
 
 ## Not in scope (later groups)
 
