@@ -51,6 +51,13 @@ class TestRunHistoryRepository:
         # The append-only guarantee: no `save` upsert method is exposed.
         assert not hasattr(ctx.run_history_repo, "save")
 
+    def test_nothing_can_delete_history(self, fresh_app):
+        # History is never deleted from inside the app (spec 2026-09-28 group 2a, F16).
+        from seqsetup.services import run_history as run_history_service
+        _app, ctx, _db = fresh_app
+        assert [n for n in dir(ctx.run_history_repo) if "delete" in n] == []
+        assert not hasattr(run_history_service, "cascade_delete_history_safe")
+
     def test_list_is_bounded_and_pageable(self, fresh_app):
         _app, ctx, _db = fresh_app
         repo = ctx.run_history_repo
@@ -99,16 +106,6 @@ class TestRunHistoryRepository:
         page2 = repo.list_by_run(rid, limit=5, before_ts=cur_ts, before_id=cur_id)
         assert [e.id for e in page2] == ["LEGACY_A"]   # no LEGACY_B duplicate
 
-    def test_delete_by_run(self, fresh_app):
-        _app, ctx, _db = fresh_app
-        repo = ctx.run_history_repo
-        run, other = "rdel-run", "rdel-other"
-        repo.append(_entry(run, datetime(2026, 6, 11, 10, 0, 0)))
-        repo.append(_entry(run, datetime(2026, 6, 11, 11, 0, 0)))
-        repo.append(_entry(other, datetime(2026, 6, 11, 10, 0, 0)))
-        assert repo.delete_by_run(run) == 2
-        assert repo.list_by_run(run, limit=10) == []
-        assert len(repo.list_by_run(other, limit=10)) == 1
 
 
 def _create_run(client) -> str:
@@ -331,7 +328,7 @@ class TestHistoryRouteAndPanel:
     ):
         _app, ctx, _db = fresh_app
         run_id = _create_run(logged_in_client)
-        ctx.run_history_repo.delete_by_run(run_id)   # drop the auto 'created'
+        _db["run_history"].delete_many({"run_id": run_id})   # drop the auto 'created'
         ctx.run_history_repo.append(RunHistoryEntry(
             run_id=run_id, timestamp=datetime(2026, 6, 11, 9, 0, 0),
             actor="alice", kind="updated",

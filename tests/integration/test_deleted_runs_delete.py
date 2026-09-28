@@ -285,3 +285,55 @@ class TestWhatTheCopyHolds:
         assert copy["state"] == "completed"
         assert copy["run"]["samples"] == []
         assert (copy["run"]["generated_samplesheet_v2"], copy["run"]["generated_json"]) == (None, None)
+
+
+class TestNewRunTemplateDiscard:
+    """"Start from a template" on New Run deletes the blank run only while it
+    is still the empty, never-Ready version that was checked (review P1)."""
+
+    def _template(self, client, ctx):
+        r = client.post("/runs/new", headers=ORIGIN, follow_redirects=False)
+        source = r.headers["location"].split("run_id=", 1)[1].split("&", 1)[0]
+        client.post(f"/runs/{source}/save-as-template",
+                    data={"name": "T", "description": "", "scaffold_sample_ids": "[]"},
+                    headers=ORIGIN, follow_redirects=False)
+        return ctx.run_template_repo.list_all()[0].id
+
+    def _choose(self, client, template_id, blank_id):
+        return client.post("/runs/new/from-template",
+                           data={"template_id": template_id, "discard_run_id": blank_id},
+                           headers=ORIGIN, follow_redirects=False)
+
+    def test_blank_is_deleted_and_its_history_kept(self, logged_in_client, fresh_app):
+        _app, ctx, db = fresh_app
+        tid = self._template(logged_in_client, ctx)
+        blank = _make_run(ctx)
+        _history(ctx, blank)
+        assert self._choose(logged_in_client, tid, blank).status_code == 303
+        assert ctx.run_repo.get_by_id(blank) is None
+        assert ctx.run_history_repo.list_by_run(blank, limit=10)
+
+    def test_empty_draft_that_was_ready_is_not_discarded(self, logged_in_client, fresh_app):
+        _app, ctx, db = fresh_app
+        tid = self._template(logged_in_client, ctx)
+        once_ready = _make_run(ctx, was_ready=True)
+        assert self._choose(logged_in_client, tid, once_ready).status_code == 303
+        assert ctx.run_repo.get_by_id(once_ready) is not None
+        assert _copies(db, once_ready) == []
+
+    def test_blank_changed_first_is_kept(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, db = fresh_app
+        tid = self._template(logged_in_client, ctx)
+        blank = _make_run(ctx)
+        real = ctx.run_repo.delete_if_unchanged
+
+        def someone_adds_a_sample_first(run):
+            _bump(ctx, run.id)
+            return real(run)
+
+        monkeypatch.setattr(ctx.run_repo, "delete_if_unchanged", someone_adds_a_sample_first)
+        assert self._choose(logged_in_client, tid, blank).status_code == 303   # the template run still opens
+        assert [s.sample_id for s in ctx.run_repo.get_by_id(blank).samples] == ["LATE"]
+        assert [e for e in _events(ctx, "run.deleted") if e.target == blank] == []
+        (failed,) = _events(ctx, "run.delete.failed")
+        assert (failed.details["reason"], failed.details["context"]) == ("run_changed", "replaced_by_template")
