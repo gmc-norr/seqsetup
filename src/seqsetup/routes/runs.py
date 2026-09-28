@@ -381,8 +381,8 @@ async def update_bclconvert(
 ) -> Response:
     """POST /runs/{run_id}/bclconvert — update BCLConvert settings."""
     form = await request.form()
-    barcode_mismatches_index1 = max(0, min(_int_field(form, "barcode_mismatches_index1", 1), 3))
-    barcode_mismatches_index2 = max(0, min(_int_field(form, "barcode_mismatches_index2", 1), 3))
+    barcode_mismatches_index1 = max(0, min(_int_field(form, "barcode_mismatches_index1", 1), 2))
+    barcode_mismatches_index2 = max(0, min(_int_field(form, "barcode_mismatches_index2", 1), 2))
     no_lane_splitting = _bool_field(form, "no_lane_splitting")
 
     with saving_run(run, ctx, request):

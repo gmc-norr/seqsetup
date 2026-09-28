@@ -150,6 +150,28 @@ def _override_cycles_refusal(
     )
 
 
+MISMATCH_REFUSAL = (
+    "Barcode mismatches must be 0, 1 or 2 — the values BCL Convert accepts. "
+    "Nothing was saved."
+)
+
+
+def _parse_mismatches(raw: str) -> Optional[int]:
+    """A barcode-mismatch value from a form: blank means "use the run
+    default" (None); 0, 1 or 2 is kept; anything else is refused before
+    anything is saved (spec 2026-09-28 group 1c, F6)."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        value = int(text)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=MISMATCH_REFUSAL)
+    if not 0 <= value <= 2:
+        raise HTTPException(status_code=400, detail=MISMATCH_REFUSAL)
+    return value
+
+
 def _update_override_cycles(sample, run) -> None:
     """Recalculate override cycles for a sample from run configuration."""
     if run.run_cycles and sample.has_index:
@@ -1046,19 +1068,8 @@ async def set_mismatches_bulk(
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
 
-    mismatch_index1 = None
-    if mismatch_index1_str.strip():
-        try:
-            mismatch_index1 = max(0, min(3, int(mismatch_index1_str)))
-        except ValueError:
-            pass
-
-    mismatch_index2 = None
-    if mismatch_index2_str.strip():
-        try:
-            mismatch_index2 = max(0, min(3, int(mismatch_index2_str)))
-        except ValueError:
-            pass
+    mismatch_index1 = _parse_mismatches(mismatch_index1_str)
+    mismatch_index2 = _parse_mismatches(mismatch_index2_str)
 
     with saving_run(run, ctx, request):
         for sample in run.samples:
@@ -1452,21 +1463,11 @@ async def update_sample_settings(
 
     bmi1: Optional[int] = None
     if has_bmi1:
-        bmi1_str = form.get("barcode_mismatches_index1", "").strip()
-        if bmi1_str:
-            try:
-                bmi1 = max(0, min(3, int(bmi1_str)))
-            except ValueError:
-                bmi1 = None
+        bmi1 = _parse_mismatches(form.get("barcode_mismatches_index1", ""))
 
     bmi2: Optional[int] = None
     if has_bmi2:
-        bmi2_str = form.get("barcode_mismatches_index2", "").strip()
-        if bmi2_str:
-            try:
-                bmi2 = max(0, min(3, int(bmi2_str)))
-            except ValueError:
-                bmi2 = None
+        bmi2 = _parse_mismatches(form.get("barcode_mismatches_index2", ""))
 
     try:
         if has_override and override_cycles:
