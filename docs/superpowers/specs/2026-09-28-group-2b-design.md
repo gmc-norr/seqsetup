@@ -132,6 +132,12 @@ so the user's password is never sent to a server named in a referral.
 A server that cannot be reached, a TLS failure or any other directory error → refused,
 reason `server_error`. The error is logged without the password.
 
+Every search's result is checked (plan review 1, P1). ldap3 reports a search the server did
+not finish (a size limit, an access error, a referral) in `conn.result` without raising, and
+may still return some entries. Anything but success → refused, reason `server_error`. So a
+partial answer never makes an admin, an access error is never read as "not in the group",
+and one entry from an unfinished search never passes as "exactly one".
+
 ### Comparing DNs (review P1)
 
 The old `_normalize_dn` splits on every comma, so `cn=SeqSetup\, Admins,...` and
@@ -142,7 +148,11 @@ The old `_normalize_dn` splits on every comma, so `cn=SeqSetup\, Admins,...` and
 - `_dn_is_within(dn, base)` compares parsed DNs: `ldap3.utils.dn.parse_dn(..., strip=True)`
   on both (so `uid=a, dc=org` parses like `uid=a,dc=org`); attribute types lower-cased;
   values lower-cased with their escapes kept as written; the DN is inside the base when its
-  last components equal the base's components, one for one. A DN that cannot be parsed is
+  last components equal the base's components, one for one. A component is a whole RDN:
+  values joined by `+` (`ou=people+dc=example`) are one component, never two, so
+  `uid=anna,ou=people,dc=example,dc=org` is not inside `ou=people+dc=example,dc=org`
+  (plan review 1, P2). `+`-joined values written in another order count as different
+  (refused). A DN that cannot be parsed is
   not inside (refused). A value written with different escapes (`\,` against `\2c`) counts
   as different, so the check fails on the safe side (refused). Probed on 2026-09-28 against
   the installed ldap3: plain, spaced and mixed-case DNs inside the base pass; an escaped
@@ -212,7 +222,9 @@ It says nothing about which part failed. The rate-limit message is unchanged.
   - `directory_refused`: `The directory refused that name and password.`
   - `not_found`: `Signed in, but could not read the account's own entry. Check the base DN and the sign-in name pattern (on Active Directory it must match the account's userPrincipalName).`
   - `not_in_group`: `The name and password are right, but the account is in neither the Users group nor the Admins group.`
-  - `server_error`: `Could not reach the directory server: <error>` (as today).
+  - `server_error`: `Could not reach the directory server: <error>` (as today). When the
+    server was reached and ended a search with an error:
+    `The directory server answered with an error: <result name> (code <n>) while <reading the account's own entry | checking the Admins group | checking the Users group>`.
 
   Every value in these messages is escaped by the template, as today.
 
@@ -249,9 +261,20 @@ If `SEQSETUP_LDAP_BIND_PASSWORD` is set, the app logs a warning at start:
 - It stops, changing nothing, with exit code 1 and a one-line reason, when:
   - the name breaks the rule or the display name is empty;
   - the two passwords differ;
-  - the password breaks the rules (`assert_password_strong`, via `LocalUser.set_password`);
+  - the password breaks the rules (`assert_password_strong`, via `LocalUser.set_password`),
+    including more than 72 bytes (plan review 1, P4; see below);
   - an account with that name already exists (it never changes or resets an account);
-  - the database cannot be reached.
+  - the database cannot be reached, or fails while reading.
+- It reads everything it needs (the name check, the sign-in settings) before its one write.
+  If the database fails during the write, the account may or may not have been saved: it
+  says the outcome is not known, exits 1, and says to run it again with the same name,
+  which answers "already exists" if the account was made (plan review 1, P3).
+- **At most 72 bytes per password.** bcrypt reads at most 72 bytes, and bcrypt 5 raises a
+  plain `ValueError` above that. The rule goes into `assert_password_strong`, with the
+  message `Password must be at most 72 bytes. Most characters are 1 byte; letters like å, ä and ö are 2.`
+  Admin → Users uses the same rule, so a long password there is refused instead of
+  failing with an error page (a visible fix to an existing page). Sign-in is unchanged:
+  its password checks already refuse such a password.
 - On success it saves a `LocalUser` with role admin, records the audit event `user.created`
   (`actor="create-admin"`, target the name, `role="admin"`, `via="server command"`) in the
   audit trail, prints `Admin '<name>' created. Sign in on the web page.` and exits 0.
@@ -274,7 +297,10 @@ local admin does not help. This server command is the way back in.
   `via="server command"`), prints
   `Sign-in is now local only. The directory settings were kept; switch back on Admin → Authentication.`
   and exits 0. When the method is already Local it prints `Sign-in is already local only.`,
-  changes nothing and exits 0. When the database cannot be reached it exits 1.
+  changes nothing and exits 0. When the database cannot be reached, or fails while reading,
+  it exits 1 and says nothing was changed. When it fails while saving, it says the outcome
+  is not known and to run the command again, which answers "already local only" if the
+  switch was saved (plan review 1, P3).
 
 **Recovery, written in the admin guide:**
 1. `pixi run use-local-sign-in`.
@@ -326,6 +352,18 @@ Review regression tests (unit):
 - P4: Test connection's message for TLS with and without the certificate check, and for
   the cleartext opt-in.
 
+Plan review 1 regression tests:
+- P1 (unit): searches ended with sizeLimitExceeded, insufficientAccessRights or a referral,
+  with and without entries, on the own entry and on each group, for both shapes → refused,
+  reason `server_error`.
+- P2 (unit): `uid=anna,ou=people,dc=example,dc=org` is not inside
+  `ou=people+dc=example,dc=org`; `uid=anna,ou=people+dc=example,dc=org` is inside it and is
+  not inside `dc=example,dc=org`.
+- P3 (integration): each command, with a failed read (nothing changed) and with a save
+  whose answer is lost (the outcome is not known; running it again tells).
+- P4: 72 bytes accepted and 73 refused, in ASCII and in two-byte letters (unit);
+  `create-admin` and Admin → Users refuse a longer password with the message (integration).
+
 Integration tests check: the sign-in page message and the audit `reason`; local fallback;
 the settings page form, warning, and both test buttons; the users file is not read (an
 admin in it cannot sign in); a session with source `yaml` is not accepted; `create-admin`
@@ -362,6 +400,17 @@ Review 1 (Astra, on `7145d38`), all four reproduced or confirmed in the code, al
 - P3: 128-character names at creation, cut to 64 at sign-in → one 64 limit, never cut.
 - P4: Test connection called a cleartext connection "secure" → the message states the
   transport actually used.
+
+Plan review 1 (Astra, on the plan at `017339c`), all four reproduced, all fixed:
+- P1: a search result was used without checking its result code, so a partial answer
+  (sizeLimitExceeded) could make an admin and an access error read as "not in the group"
+  → every search's result code is checked.
+- P2: the DN comparison dropped the `+` between values, so `ou=people+dc=example,dc=org`
+  looked like the parent of `ou=people,dc=example,dc=org` → components are whole RDNs.
+- P3: database failures after connecting were not caught in either command → reads before
+  the write say "Nothing was changed"; a failed write says the outcome is not known.
+- P4: a password over 72 bytes crashed `create-admin` (and Admin → Users) → a clear
+  refusal from the model's password rules.
 
 ## Merging with 2a
 
