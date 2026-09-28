@@ -90,6 +90,18 @@ shape for the chosen method counts as missing and is listed as
 - An empty password is refused before the server is contacted (an LDAP simple bind with
   a name and no password can succeed as an unauthenticated bind).
 
+### One name limit: 64 characters (review P3)
+
+Today the sign-in form cuts a typed name to 64 characters, while Admin → Users accepts
+128. A 65-character account can never sign in, and its cut name can point at a different
+account.
+
+- The sign-in form trims spaces but **never cuts** the name. A name longer than 64 is
+  refused with the normal failure message, audit reason `bad_name`, before any account or
+  server is checked.
+- Admin → Users and `create-admin` use one rule: `^[A-Za-z0-9._@-]{1,64}$` (was 128 on the
+  Users page).
+
 ### Steps
 
 One connection, opened with the user's own bind name and password. `auto_referrals` is off,
@@ -100,15 +112,17 @@ so the user's password is never sent to a server named in a referral.
    - Active Directory: search `base_dn` (subtree) for
      `(userPrincipalName=<bind name, filter-escaped>)`, reading the display-name and email
      attributes. Exactly one entry is required.
-   - LDAP: read the bind DN itself (base scope), with the display-name, email and group
-     attributes. The DN must be inside `base_dn` (the existing `_dn_is_within` check).
+   - LDAP: read the bind DN itself (base scope), with the display-name and email
+     attributes. The DN must be inside `base_dn` (see "Comparing DNs" below).
    - Anything else → refused, reason `not_found`.
-3. **Groups**, over the same connection:
+3. **Groups**, over the same connection. **The server decides membership**, with its own
+   DN matching rules; SeqSetup never compares group DNs itself.
    - Active Directory: for each group, search `base_dn` for
      `(&(userPrincipalName=<upn>)(memberOf:1.2.840.113556.1.4.1941:=<group DN, filter-escaped>))`
      with no attributes. A result means "member", counting groups inside groups.
-   - LDAP: the entry's `group_membership_attribute` values, compared with the group DN
-     after `_normalize_dn`. Direct members only. (The server must provide `memberOf`;
+   - LDAP: for each group, search the bind DN (base scope) for
+     `(<group_membership_attribute>=<group DN, filter-escaped>)` with no attributes. A
+     result means "member". Direct members only. (The server must provide `memberOf`;
      OpenLDAP needs its memberOf overlay.)
 4. **Role.** Admins group → admin (also when in both). Users group only → standard.
    Neither → refused, reason `not_in_group`.
@@ -117,6 +131,23 @@ so the user's password is never sent to a server named in a referral.
 
 A server that cannot be reached, a TLS failure or any other directory error → refused,
 reason `server_error`. The error is logged without the password.
+
+### Comparing DNs (review P1)
+
+The old `_normalize_dn` splits on every comma, so `cn=SeqSetup\, Admins,...` and
+`cn=SeqSetup\,Admins,...` (two different groups) compare equal, and
+`uid=x\,dc=example,dc=org` looks inside `dc=example,dc=org` when it is not.
+
+- Group membership is decided by the server (step 3), never by comparing strings.
+- `_dn_is_within(dn, base)` compares parsed DNs: `ldap3.utils.dn.parse_dn(..., strip=True)`
+  on both (so `uid=a, dc=org` parses like `uid=a,dc=org`); attribute types lower-cased;
+  values lower-cased with their escapes kept as written; the DN is inside the base when its
+  last components equal the base's components, one for one. A DN that cannot be parsed is
+  not inside (refused). A value written with different escapes (`\,` against `\2c`) counts
+  as different, so the check fails on the safe side (refused). Probed on 2026-09-28 against
+  the installed ldap3: plain, spaced and mixed-case DNs inside the base pass; an escaped
+  comma, another base and an unparsable DN are refused.
+- `_normalize_dn` is removed; nothing may use it for a decision.
 
 ### Local fallback
 
@@ -133,8 +164,9 @@ It says nothing about which part failed. The rate-limit message is unchanged.
 
 ### Audit
 
-- `login.failure` gains `reason`: `bad_name`, `directory_refused`, `not_found`,
-  `not_in_group`, `server_error` (from the directory) or `local_refused`. When the
+- `login.failure` gains `reason`: `bad_name` (a name over 64 characters, for any sign-in;
+  or a name the directory rule refuses), `directory_refused`, `not_found`, `not_in_group`,
+  `server_error` (from the directory) or `local_refused`. When the
   directory refused and the local fallback was also tried and refused, `reason` is the
   directory's and `local_tried` is `true`.
 - `login.success` uses the signed-in user's name (lower-cased for directory users) and
@@ -153,9 +185,20 @@ It says nothing about which part failed. The rate-limit message is unchanged.
 
   > Directory sign-in is chosen but not fully set up, so everyone signs in with local accounts. Missing: <labels, joined by ", ">.
 
-- **Test connection** opens a connection (TCP and TLS) and binds nobody. Success:
+- **Test connection** opens a connection and binds nobody. On success the message states
+  the transport actually used (review P4). It is decided by the same code that builds the
+  connection (`_get_server`), so the message cannot disagree with the connection:
+  - TLS, certificate checked:
 
-  > The server answered over a secure connection. No password was checked; use Test sign-in for that.
+    > The server answered over an encrypted connection (TLS), and its certificate was checked. No password was checked; use Test sign-in for that.
+
+  - TLS, **Verify certificate** off:
+
+    > The server answered over an encrypted connection (TLS), but its certificate was NOT checked (Verify certificate is off). No password was checked; use Test sign-in for that.
+
+  - No TLS (only possible with `SEQSETUP_LDAP_ALLOW_CLEARTEXT=1`):
+
+    > The server answered over an UNENCRYPTED connection (allowed by SEQSETUP_LDAP_ALLOW_CLEARTEXT). Passwords would be sent readable. No password was checked; use Test sign-in for that.
 
   A success still sets `ldap_tested` as today (it is not shown anywhere; F26 is later).
 - **Test sign-in** runs the same steps as a real sign-in and never starts a session. It is
@@ -200,7 +243,7 @@ If `SEQSETUP_LDAP_BIND_PASSWORD` is set, the app logs a warning at start:
 - A pixi task runs `python -m seqsetup.create_admin` with `PYTHONPATH=src`. In Docker:
   `docker compose exec app pixi run create-admin`.
 - It connects to the same database as the app, with the same settings.
-- It asks for: username (the Users page rule, `^[A-Za-z0-9._@-]{1,128}$`), display name
+- It asks for: username (the Users page rule, `^[A-Za-z0-9._@-]{1,64}$`), display name
   (required), email (optional), password, and the password again. Passwords are read with
   `getpass` and are never printed or logged.
 - It stops, changing nothing, with exit code 1 and a one-line reason, when:
@@ -212,8 +255,33 @@ If `SEQSETUP_LDAP_BIND_PASSWORD` is set, the app logs a warning at start:
 - On success it saves a `LocalUser` with role admin, records the audit event `user.created`
   (`actor="create-admin"`, target the name, `role="admin"`, `via="server command"`) in the
   audit trail, prints `Admin '<name>' created. Sign in on the web page.` and exits 0.
-- A locked-out site makes a second admin with a new name, then fixes the old account on
-  Admin → Users.
+- If directory sign-in is on and **Allow local fallback** is off, the new admin cannot sign
+  in yet. `create-admin` still saves it, then prints:
+
+  > Directory sign-in is on and local fallback is off, so this admin cannot sign in yet. Run 'pixi run use-local-sign-in' first, or turn on local fallback.
+
+### `pixi run use-local-sign-in` (review P2)
+
+With directory sign-in on and local fallback off, local accounts are never tried. A broken
+directory, a wrong group setting or a lost admin group then locks everyone out, and a new
+local admin does not help. This server command is the way back in.
+
+- A pixi task runs `python -m seqsetup.use_local_sign_in` with `PYTHONPATH=src`. In
+  Docker: `docker compose exec app pixi run use-local-sign-in`.
+- It sets the sign-in method to Local. The directory settings are kept, so switching back
+  on Admin → Authentication needs no retyping.
+- It records `auth.method.changed` (`actor="use-local-sign-in"`, `method="local"`,
+  `via="server command"`), prints
+  `Sign-in is now local only. The directory settings were kept; switch back on Admin → Authentication.`
+  and exits 0. When the method is already Local it prints `Sign-in is already local only.`,
+  changes nothing and exits 0. When the database cannot be reached it exits 1.
+
+**Recovery, written in the admin guide:**
+1. `pixi run use-local-sign-in`.
+2. If no local admin can sign in: `pixi run create-admin` (a new name). If an old local
+   admin only forgot the password, sign in as the new admin and reset it on Admin → Users.
+3. Sign in, fix the directory settings, and use **Test sign-in**.
+4. Switch the method back.
 
 ## Docs
 
@@ -225,7 +293,7 @@ If `SEQSETUP_LDAP_BIND_PASSWORD` is set, the app logs a warning at start:
     non-member.
   - No `config/users.yaml` and no `SEQSETUP_LDAP_BIND_PASSWORD` on the server.
 - `docs/admin-guide/authentication.rst`: rewritten for the new settings, the two groups,
-  the warning and the two test buttons.
+  the warning, the two test buttons and the recovery steps (`use-local-sign-in`).
 - `docs/admin-guide/local-users.rst`, `docs/user-guide/authentication.rst`,
   `docs/architecture/services.rst`, `docs/development/project-structure.rst`: remove the
   users file.
@@ -250,10 +318,24 @@ today. They check:
   without it;
 - the start-up warnings.
 
+Review regression tests (unit):
+- P1: with Admins group `cn=SeqSetup\, Admins,...`, an account whose entry lists only
+  `cn=SeqSetup\,Admins,...` is not an admin (the decision comes from the filter sent to the
+  server, and SeqSetup does no DN comparison of its own); `_dn_is_within` refuses
+  `uid=x\,dc=example,dc=org` inside `dc=example,dc=org`.
+- P4: Test connection's message for TLS with and without the certificate check, and for
+  the cleartext opt-in.
+
 Integration tests check: the sign-in page message and the audit `reason`; local fallback;
 the settings page form, warning, and both test buttons; the users file is not read (an
 admin in it cannot sign in); a session with source `yaml` is not accepted; `create-admin`
-(success, each refusal, the audit event, nothing changed on refusal).
+(success, each refusal, the audit event, nothing changed on refusal); and:
+- P3: an admin made by `create-admin` signs in through `/login/submit`; a 64-character
+  name works end to end; a 65-character name is refused by `create-admin`, by
+  Admin → Users and at sign-in (where it is never cut to a shorter account's name).
+- P2: with directory sign-in on and local fallback off, a local admin is refused; after
+  `use-local-sign-in` the same admin signs in; `create-admin` prints its warning in that
+  setting; `use-local-sign-in` keeps the directory settings and records its audit event.
 
 Existing tests of removed behaviour (the users file, the service account, search-based
 lookup) are removed or rewritten; the plan lists each one.
@@ -269,6 +351,17 @@ against the lab's Active Directory (see the Production Checklist).
   at the next sign-in (sessions end after 30 minutes idle or 8 hours).
 - Sign-in names with `@` or non-ASCII letters for directory accounts.
 - A test against a real LDAP or AD server.
+
+## Review changes
+
+Review 1 (Astra, on `7145d38`), all four reproduced or confirmed in the code, all fixed:
+- P1: string DN comparison could make one group count as another → the server decides
+  membership; `_dn_is_within` parses DNs; `_normalize_dn` removed.
+- P2: no way back in with the directory on and local fallback off → `use-local-sign-in`
+  and written recovery steps.
+- P3: 128-character names at creation, cut to 64 at sign-in → one 64 limit, never cut.
+- P4: Test connection called a cleartext connection "secure" → the message states the
+  transport actually used.
 
 ## Merging with 2a
 
