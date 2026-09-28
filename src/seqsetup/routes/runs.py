@@ -545,6 +545,28 @@ async def update_status(
         # Same content, possibly newer token — adopt the fresh instance.
         run = fresh
 
+        # The instrument may have been switched off while the exports were
+        # being generated. Read the switch from the database, not the
+        # in-process cache (spec 2026-09-28 group 1c, F27, review P2).
+        definition = (
+            ctx.instrument_definition_repo.get_by_name(run.instrument_platform.value)
+            if ctx.instrument_definition_repo is not None else None
+        )
+        if definition is not None and not definition.enabled:
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="instrument_disabled_during_export",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(
+                f"{run.instrument_platform.value} was disabled by an administrator "
+                "while the exports were being generated. The run is still a Draft. "
+                "Pick another instrument in Run Setup."
+            )
+
     with saving_run(run, ctx, request):
         run.status = new_status
         if new_status == RunStatus.READY:

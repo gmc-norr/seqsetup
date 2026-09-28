@@ -64,6 +64,9 @@ is one of these:
 - **Sample(s) with no index assigned.**
 - **Too many cycles for the reagent kit.** The run's total cycles (Read 1 +
   Index 1 + Index 2 + Read 2) exceed what the kit and instrument allow.
+- **Instrument disabled.** An administrator has switched the run's
+  instrument off. Pick another in Run Setup. Only Draft runs get this
+  error.
 - **Sample ID has invalid characters.** Only letters, digits, ``-`` and
   ``_`` are allowed.
 - **A sample assigned to a lane the flowcell doesn't have.**

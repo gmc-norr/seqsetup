@@ -212,3 +212,78 @@ class TestDisabledInstrument:
 
         assert resp.status_code == 200
         assert ctx.run_repo.get_by_id(run.id).instrument_platform == InstrumentPlatform.MISEQ_I100
+
+
+class TestDisabledInstrumentBlocksMarkReady:
+    """A Draft on a disabled instrument shows an Error and cannot be marked
+    Ready, even when the switch goes off while the exports are being
+    generated; Ready runs are left alone (F27, review P2)."""
+
+    def _setup(self, fresh_app, run_id, disabled=(NOVASEQ_X,)):
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        _sync(ctx, disabled=disabled)
+        return ctx, _clean_run(ctx, run_id).id
+
+    def test_check_panel_shows_the_error(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "f27-panel")
+
+        panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
+
+        assert f"{NOVASEQ_X} is disabled by an administrator" in panel
+
+    def test_mark_ready_is_refused(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "f27-ready")
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert (f"{NOVASEQ_X} is disabled by an administrator. Pick another instrument "
+                f"in Run Setup before marking the run ready.") in resp.text
+        run = ctx.run_repo.get_by_id(run_id)
+        assert run.status == RunStatus.DRAFT and run.generated_samplesheet_v2 is None
+
+    def test_enabling_again_allows_mark_ready(self, logged_in_client, fresh_app):
+        ctx, run_id = self._setup(fresh_app, "f27-again")
+        refused = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+        assert refused.headers.get("HX-Retarget") == "#ready-message"
+        novaseq = ctx.instrument_definition_repo.get_by_name(NOVASEQ_X)
+        logged_in_client.post(
+            "/admin/instruments/synced/toggle",
+            data={"instrument_id": novaseq.id, "enabled": "true"}, headers=ORIGIN,
+        )
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert ctx.run_repo.get_by_id(run_id).status == RunStatus.READY, resp.text[:400]
+
+    def test_only_drafts_get_the_error(self, fresh_app):
+        _app, ctx, _db = fresh_app
+        _sync(ctx, disabled=(NOVASEQ_X,))
+        draft = _clean_run(ctx, "f27-draft-run")
+        ready = _clean_run(ctx, "f27-ready-run", status=RunStatus.READY)
+
+        assert "instrument_disabled" in [e.category for e in ValidationService.validate_configuration(draft)]
+        assert "instrument_disabled" not in [e.category for e in ValidationService.validate_configuration(ready)]
+
+    def test_disabled_while_exports_are_generated_is_refused(self, logged_in_client, fresh_app, monkeypatch):
+        ctx, run_id = self._setup(fresh_app, "f27-race", disabled=())
+        from seqsetup.routes import runs as runs_module
+        generate = runs_module._pregenerate_exports
+
+        def disable_during_generation(run, ctx_):
+            novaseq = ctx.instrument_definition_repo.get_by_name(NOVASEQ_X)
+            # The database only: the in-process cache still says enabled.
+            ctx.instrument_definition_repo.set_enabled(novaseq.id, False)
+            return generate(run, ctx_)
+
+        monkeypatch.setattr(runs_module, "_pregenerate_exports", disable_during_generation)
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert resp.status_code == 409
+        assert "was disabled by an administrator while the exports were being generated" in resp.text
+        run = ctx.run_repo.get_by_id(run_id)
+        assert run.status == RunStatus.DRAFT and run.generated_samplesheet_v2 is None
+        (event,) = ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied")
+        assert event.details["reason"] == "instrument_disabled_during_export"
