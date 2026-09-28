@@ -7,7 +7,7 @@ ctx.run_template_repo and live entirely outside the run state machine.
 
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..context import AppContext
@@ -135,9 +135,25 @@ async def save_as_template(
     return RedirectResponse("/templates", status_code=303)
 
 
+_NOT_YOURS = "You can only change templates you made. Ask the person who made it, or an admin."
+
+
+def _require_template_owner_or_admin(request: Request, template: RunTemplate) -> None:
+    """Only the maker or an admin may rename or delete a template — the rule
+    remove_index_kit uses for kits (spec 2026-09-28 group 2a, N-27)."""
+    user = request.scope.get("auth")
+    if not user:
+        raise HTTPException(status_code=403, detail="Authentication required")
+    if user.is_admin:
+        return
+    if not template.created_by or template.created_by != user.username:
+        raise HTTPException(status_code=403, detail=_NOT_YOURS)
+
+
 @router.get("/templates", response_class=HTMLResponse)
 def list_templates(request: Request, ctx: AppContext = Depends(get_ctx)) -> Response:
-    """GET /templates — org-wide template library."""
+    """GET /templates — org-wide template library: anyone may use a template;
+    only its maker or an admin may rename or delete it."""
     templates = sorted(
         ctx.run_template_repo.list_all(),
         key=lambda t: t.updated_at, reverse=True,
@@ -155,6 +171,7 @@ async def update_template(
     template = ctx.run_template_repo.get_by_id(template_id)
     if template is None:
         return Response("Template not found", status_code=404)
+    _require_template_owner_or_admin(request, template)
     form = await request.form()
     name = sanitize_string(form.get("name", ""), 256)
     if not name:
@@ -171,9 +188,11 @@ async def update_template(
 def delete_template(
     template_id: str, request: Request, ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """DELETE /templates/{id}."""
-    if ctx.run_template_repo.get_by_id(template_id) is None:
+    """DELETE /templates/{id} — the maker or an admin only."""
+    template = ctx.run_template_repo.get_by_id(template_id)
+    if template is None:
         return Response("Template not found", status_code=404)
+    _require_template_owner_or_admin(request, template)
     ctx.run_template_repo.delete(template_id)
     audit("template.deleted", actor=get_username(request), target=template_id)
     return Response("", status_code=200)
