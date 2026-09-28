@@ -56,3 +56,6 @@ src/seqsetup/static/css/app.css
 
 # Brainstorming visual-companion mockups (local only)
 .superpowers/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
