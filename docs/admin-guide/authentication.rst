@@ -55,6 +55,10 @@ The :doc:`audit-trail` records the real reason.
    The Authentication Method panel, with **Allow local user fallback**
    outlined.
 
+Choosing a method, or ticking or clearing **Allow local user fallback**,
+saves at once. The checkbox changes only the fallback; the method stays as
+it is.
+
 Directory settings
 --------------------
 

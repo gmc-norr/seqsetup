@@ -45,7 +45,11 @@
                     <label class="flex items-center gap-2">
                         <input type="checkbox"
                                name="allow_local_fallback"
-                               {% if config.allow_local_fallback %}checked{% endif %}>
+                               {% if config.allow_local_fallback %}checked{% endif %}
+                               hx-post="/admin/settings/auth-method"
+                               hx-trigger="change"
+                               hx-target="#ldap-config-form"
+                               hx-swap="outerHTML">
                         <span class="font-medium">Allow local user fallback</span>
                     </label>
                     <p class="text-xs text-slate-500 mt-1">If directory sign-in refuses, or its server cannot be reached, try local accounts.</p>

@@ -2,7 +2,8 @@
 
 Five endpoints:
   GET  /admin/authentication           — full page
-  POST /admin/settings/auth-method     — change auth method radio
+  POST /admin/settings/auth-method     — a method radio, or the fallback
+                                          checkbox on its own
                                           (HTMX fragment swap into
                                           #ldap-config-form)
   POST /admin/settings/ldap            — save LDAP connection config
@@ -33,7 +34,7 @@ Clinical/security invariants preserved:
 """
 
 import logging
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from pydantic import BaseModel, Field
@@ -72,9 +73,11 @@ class AuthMethodForm(BaseModel):
         handler's defensive "if not in enum: AuthMethod.LOCAL" branch.
         Done in the handler (not Pydantic) because Pydantic 422 would
         be wrong UX for a radio change that's likely a developer typo.
+        Absent (None) keeps the current method: the fallback checkbox
+        posts only itself, and must never switch directory sign-in off.
     allow_local_fallback: checkbox; default False (unchecked).
     """
-    auth_method: Annotated[str, BeforeValidator(strip_and_truncate(64))] = ""
+    auth_method: Annotated[Optional[str], BeforeValidator(strip_and_truncate(64))] = None
     allow_local_fallback: bool = False
 
 
@@ -134,12 +137,14 @@ def update_auth_method(
     form: Annotated[AuthMethodForm, Form()],
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /admin/settings/auth-method — radio change; fragment swap."""
+    """POST /admin/settings/auth-method — a method radio, or the fallback
+    checkbox on its own; fragment swap. Only what was sent changes."""
     config = ctx.auth_config_repo.get()
-    try:
-        config.auth_method = AuthMethod(form.auth_method)
-    except ValueError:
-        config.auth_method = AuthMethod.LOCAL
+    if form.auth_method is not None:
+        try:
+            config.auth_method = AuthMethod(form.auth_method)
+        except ValueError:
+            config.auth_method = AuthMethod.LOCAL
     config.allow_local_fallback = form.allow_local_fallback
     ctx.auth_config_repo.save(config)
     audit(

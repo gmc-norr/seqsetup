@@ -166,3 +166,45 @@ class TestButtons:
         logged_in_client.post("/admin/settings/ldap/test-auth", headers=HX, data={
             "test_username": "anna", "test_password": PASSWORD})
         assert ctx.web_session_repo.collection.count_documents({}) == before
+
+
+class TestFallbackCheckbox:
+    """Ticking Allow local user fallback saves it on its own, and never
+    changes the sign-in method (2b handback, ESCALATE E1: the box had no
+    trigger, while 2b's own text tells admins to turn it on)."""
+
+    def test_the_checkbox_saves_itself(self, logged_in_client):
+        page = _page(logged_in_client)
+        start = page.index('name="allow_local_fallback"')
+        box = page[page.rindex("<input", 0, start):page.index(">", start) + 1]
+        assert 'hx-post="/admin/settings/auth-method"' in box
+        assert 'hx-trigger="change"' in box
+
+    @pytest.mark.parametrize("sent, fallback", [({"allow_local_fallback": "on"}, True), ({}, False)],
+                             ids=["ticked", "unticked"])
+    def test_the_checkbox_alone_keeps_the_method(self, logged_in_client, fresh_app, sent,
+                                                 fallback):
+        # The box sends only itself. The method must stay as it is, not
+        # fall back to Local, which would switch directory sign-in off.
+        _app, ctx, _db = fresh_app
+        use_directory(ctx, fallback=not fallback)
+        r = logged_in_client.post("/admin/settings/auth-method", headers=HX, data=sent)
+        assert r.status_code == 200
+        config = ctx.auth_config_repo.get()
+        assert (config.auth_method, config.allow_local_fallback) == (
+            AuthMethod.ACTIVE_DIRECTORY, fallback)
+
+    def test_a_method_radio_still_changes_the_method(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        use_directory(ctx, fallback=False)
+        logged_in_client.post("/admin/settings/auth-method", headers=HX,
+                              data={"auth_method": "ldap", "allow_local_fallback": "on"})
+        config = ctx.auth_config_repo.get()
+        assert (config.auth_method, config.allow_local_fallback) == (AuthMethod.LDAP, True)
+
+    def test_an_unknown_method_is_still_local(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        use_directory(ctx)
+        logged_in_client.post("/admin/settings/auth-method", headers=HX,
+                              data={"auth_method": "kerberos"})
+        assert ctx.auth_config_repo.get().auth_method is AuthMethod.LOCAL
