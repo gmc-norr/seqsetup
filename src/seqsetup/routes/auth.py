@@ -25,7 +25,7 @@ from ..forms.validators import strip_and_truncate
 from ..rate_limit import client_identity, get_login_limiter
 from ..services.audit_log import audit
 from ..services import web_sessions
-from ..services.auth import AuthenticationError
+from ..services.auth import SIGN_IN_FAILED, AuthenticationError
 from ..templating import render
 from .utils import get_username
 
@@ -35,8 +35,10 @@ logger = logging.getLogger(__name__)
 class LoginForm(BaseModel):
     """Login credentials form.
 
-    username: CLAMP (strip + truncate to 64). Defensive length cap;
-        auth_service does the actual existence check.
+    username: trimmed, never cut to a shorter account's name (review P3).
+        AuthService refuses any name over 64 characters, the longest an
+        account can have, so the 512 cap here only bounds a scripted
+        oversize post; a name that long can never match an account.
     password: PASS-THROUGH, REJECT if oversize. NOT stripped (whitespace
         in a password may be intentional; silent strip would cause
         lockouts), NOT truncated (silently chopping a password is wrong
@@ -46,7 +48,7 @@ class LoginForm(BaseModel):
         (browser-side `required` already blocks the common case; this
         handles scripted/bypassed posts).
     """
-    username: Annotated[str, BeforeValidator(strip_and_truncate(64))]
+    username: Annotated[str, BeforeValidator(strip_and_truncate(512))]
     password: str = Field(min_length=1, max_length=512)
 
 
@@ -137,17 +139,19 @@ def make_router(auth_service) -> APIRouter:
             user = auth_service.authenticate(username, password)
             _login_user(sess, user, startup.get_web_session_repo(),
                         web_sessions.utcnow(), web_sessions.current_policy())
-            audit("login.success", actor=actor)
+            audit("login.success", actor=user.username, source=user.source)
             return RedirectResponse("/", status_code=303)
         except AuthenticationError as e:
-            # Log the reason category but not the raw error text — it
-            # can echo back the supplied username and would inflate
-            # the log.
-            audit("login.failure", actor=actor, outcome="failure")
+            # The reason goes to the audit trail; the page shows one message
+            # that never says which part failed.
+            details = {"reason": e.reason}
+            if e.local_tried:
+                details["local_tried"] = True
+            audit("login.failure", actor=actor, outcome="failure", **details)
             return render(
                 request,
                 "login.html",
-                {"error_message": str(e)},
+                {"error_message": SIGN_IN_FAILED},
                 status_code=200,
             )
 

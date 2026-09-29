@@ -22,6 +22,10 @@ _MIN_PASSWORD_LENGTH = 8
 # never cuts one.
 MAX_USERNAME_LENGTH = 64
 
+# The username rule for Admin → Users and create-admin: it appears in URLs
+# and HTML ids, so only this alphabet, and at most MAX_USERNAME_LENGTH.
+USERNAME_PATTERN = r"^[A-Za-z0-9._@\-]{1,64}$"
+
 # Well-known weak/default passwords. Not exhaustive — defends against the
 # most obvious clinical-deployment footguns (default admin/admin123,
 # operator who picks "password", etc.). Always lowercased for comparison.

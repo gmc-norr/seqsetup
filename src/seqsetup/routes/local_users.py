@@ -26,7 +26,7 @@ from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
 from ..forms.validators import strip_and_truncate
-from ..models.local_user import LocalUser, WeakPasswordError
+from ..models.local_user import USERNAME_PATTERN, LocalUser, WeakPasswordError
 from ..models.user import UserRole
 from ..services import web_sessions
 from ..services.audit_log import audit
@@ -43,7 +43,7 @@ router = APIRouter(
 )
 
 
-_USERNAME_RE = r"^[A-Za-z0-9._@\-]{1,128}$"
+_USERNAME_RE = USERNAME_PATTERN      # one limit with sign-in and create-admin (review P3)
 
 
 class CreateUserForm(BaseModel):
