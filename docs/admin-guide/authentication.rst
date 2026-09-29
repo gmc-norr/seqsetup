@@ -1,61 +1,53 @@
 Authentication Settings
 =========================
 
-SeqSetup supports three ways to authenticate a login, configured from
-**Admin > Authentication**: **Local Authentication**, **Active Directory**,
-and **LDAP**.
+SeqSetup supports three ways to sign in, chosen on **Admin > Authentication**:
+**Local Authentication**, **Active Directory**, and **LDAP**.
 
-How a login is actually checked
----------------------------------
+- **Local Authentication** uses the accounts on :doc:`local-users`, kept in
+  the SeqSetup database.
+- **Active Directory** and **LDAP** ("directory sign-in") check the name and
+  password against your directory server.
 
-1. If the Authentication Method is **Active Directory** or **LDAP**, *and*
-   the connection settings have been saved with both a **Server URL** and a
-   **Base DN**, SeqSetup tries an LDAP bind first.
+SeqSetup never signs in to the directory as itself, and it stores no
+directory password. It signs in *as the person signing in*, with the name
+and password they typed, and reads their own name, email and groups over
+that one connection.
 
-   - If it succeeds, the user is logged in with the role their LDAP group
-     membership maps to.
-   - If the LDAP server responds and rejects the bind (wrong username or
-     password, or no matching account) and **Allow local user fallback** is
-     on, SeqSetup falls through to local authentication (below).
-   - If the LDAP server responds and rejects the bind and fallback is off,
-     the login is refused outright -- local accounts are not tried at all.
-   - If the LDAP server cannot be reached at all -- wrong host or port, the
-     service is down, or the TLS handshake fails -- SeqSetup does **not**
-     fall back to local accounts, even with fallback on. The login fails
-     with a server error, and no account, LDAP or local, can sign in until
-     the connection problem is fixed.
+How a sign-in is checked
+--------------------------
 
-2. Local authentication -- used directly when the Authentication Method is
-   **Local Authentication**, and as the fallback above -- checks the local
-   user database first, then the ``config/users.yaml`` file, and logs the
-   user in on the first matching username *and* password it finds. If the
-   username exists in the local database but the password given does not
-   match, SeqSetup does not fail immediately -- it also checks
-   ``config/users.yaml`` for a user of the same name before finally
-   refusing the login.
+1. A name longer than 64 characters is refused at once.
+2. If directory sign-in is on -- the method is **Active Directory** or
+   **LDAP** *and* every setting it needs is filled in (see below) --
+   SeqSetup signs in to the directory as that person:
 
-.. note::
-   Selecting **Active Directory** or **LDAP** only reveals the connection
-   settings below -- it does not turn LDAP authentication on by itself.
-   LDAP is only actually used once the connection settings have also been
-   saved with a **Server URL** and a **Base DN** filled in.
+   - The name must be letters, digits, ``.``, ``_`` and ``-``, up to 64
+     characters. It is used in lower case, so ``Anna`` and ``anna`` are the
+     same person.
+   - A member of the **Admins group** gets the Admin role. A member of only
+     the **Users group** gets the Standard role. On Active Directory,
+     membership through groups inside those groups counts too; on LDAP,
+     only direct members count.
+   - Someone in neither group is refused, even with the right password.
+
+3. If the directory refuses -- a wrong name or password, in neither group,
+   or the server cannot be reached -- and **Allow local user fallback** is
+   on, the local accounts are tried next. With fallback off, the sign-in is
+   refused.
+4. With **Local Authentication**, only the local accounts are checked. A
+   wrong password is refused; there is no second place with another
+   password.
+
+Every failed sign-in shows the same message: *"Sign-in failed. Check your
+name and password, or ask an admin whether you have access to SeqSetup."*
+The :doc:`audit-trail` records the real reason.
 
 .. warning::
-   Enabling LDAP/Active Directory with **Allow local user fallback** turned
-   off, before the connection has been confirmed working, can lock every
-   account out of SeqSetup -- including every Admin account, since local
-   accounts are never tried once fallback is off.
-
-   **Allow local user fallback**, even turned on, does not protect against
-   every kind of LDAP outage. It only covers a bind that the LDAP server
-   actively rejects. If the server cannot be reached at all -- the wrong
-   host or port, the service is down, or a TLS handshake fails -- the login
-   attempt fails with a server error and local accounts are never tried,
-   whether fallback is on or off. Use **Run Connection Test** and **Run
-   Auth Test** (below) to confirm LDAP works before relying on it in
-   production, and keep a documented way to recover (server access to fix
-   ``config/users.yaml`` or the LDAP settings) in case the server ever
-   becomes unreachable afterwards.
+   With directory sign-in on and **Allow local user fallback** off, a broken
+   directory, a wrong group setting or an empty Admins group locks everyone
+   out, every admin included. Use **Run Sign-in Test** before relying on the
+   directory, and see `Getting back in`_ below.
 
 .. figure:: /_static/screenshots/admin/auth-settings.png
    :alt: The Authentication Method panel with LDAP selected, and the Allow local user fallback checkbox outlined.
@@ -63,8 +55,15 @@ How a login is actually checked
    The Authentication Method panel, with **Allow local user fallback**
    outlined.
 
-Connection settings
----------------------
+Directory settings
+--------------------
+
+These appear when **Active Directory** or **LDAP** is chosen. Select **Save
+LDAP Configuration** to store them.
+
+Until every required setting is filled in, the page says *"Directory sign-in
+is chosen but not fully set up, so everyone signs in with local accounts"*
+and lists what is missing. Nothing changes for anyone until then.
 
 .. list-table::
    :header-rows: 1
@@ -72,128 +71,84 @@ Connection settings
 
    * - Setting
      - Description
-   * - **Server URL**
-     - e.g. ``ldap://dc.example.com`` or ``ldaps://dc.example.com:636``
+   * - **Server URL** (required)
+     - e.g. ``ldaps://dc.example.com`` or ``ldaps://dc.example.com:636``
    * - **Use SSL/TLS (LDAPS)**
-     - Connect over LDAPS instead of plain LDAP
+     - Only for a URL without ``ldap://`` or ``ldaps://``: connect over TLS.
    * - **Verify SSL certificate**
-     - Validate the server's certificate. See the warning below.
-   * - **Base DN**
-     - e.g. ``dc=example,dc=com``
+     - Check the server's certificate. See the warning below.
+   * - **Base DN** (required)
+     - The top of your directory, e.g. ``dc=example,dc=com``
+   * - **Sign-in name pattern** (required)
+     - How a typed name becomes a directory sign-in name; ``{username}`` is
+       replaced by the typed name.
+
+       - Active Directory: ``{username}@example.com``, the accounts' user
+         principal name. It must match each account's ``userPrincipalName``.
+       - LDAP: a DN inside the Base DN, e.g.
+         ``uid={username},ou=people,dc=example,dc=com``.
+   * - **Users group** (required)
+     - The DN of the group whose members sign in as Standard users.
+   * - **Admins group** (required)
+     - The DN of the group whose members sign in as Admins.
+   * - **Group attribute** (LDAP only)
+     - The attribute on a person's entry that lists their groups, default
+       ``memberOf``. The server must provide it (OpenLDAP needs its
+       ``memberOf`` overlay).
+   * - **Display Name Attribute**, **Email Attribute**
+     - Defaults ``displayName`` and ``mail``.
+   * - **Connect Timeout (s)**, **Receive Timeout (s)**
+     - 1-300 seconds each, default 10.
 
 .. warning::
-   **Verify SSL certificate** defaults to on. Turning it off lets an
-   attacker positioned on the network intercept LDAP credentials -- both
-   the bind password below and every user's login password -- with a
-   forged certificate. Only disable it for testing against a server whose
-   certificate the host does not yet trust.
-
-Bind credentials
-~~~~~~~~~~~~~~~~~~
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 75
-
-   * - Setting
-     - Description
-   * - **Bind DN**
-     - The service account SeqSetup uses to search for users, e.g.
-       ``cn=admin,dc=example,dc=com``
-   * - **Bind Password**
-     - Left blank on save, the existing password is kept -- there is no way
-       to blank it out from this form, only replace it.
+   **Verify SSL certificate** defaults to on. Turning it off lets an attacker
+   on the network read every user's password with a forged certificate.
+   Only turn it off to test against a server whose certificate the host does
+   not trust yet.
 
 .. note::
-   Set the ``SEQSETUP_LDAP_BIND_PASSWORD`` environment variable on the
-   server to supply the bind password instead of storing it in this form.
-   When set, it is always used in place of whatever is saved here, so the
-   secret never has to live in the database.
+   SeqSetup refuses an unencrypted (``ldap://``) connection unless the server
+   sets ``SEQSETUP_LDAP_ALLOW_CLEARTEXT=1``; see
+   :doc:`/getting-started/deployment`.
 
-User search
-~~~~~~~~~~~~~
+Testing
+---------
 
-.. list-table::
-   :header-rows: 1
-   :widths: 25 75
+**Run Connection Test** checks that the server answers, and says over which
+kind of connection: encrypted with the certificate checked, encrypted
+*without* the certificate checked, or **unencrypted**. It checks no
+password.
 
-   * - Setting
-     - Description
-   * - **User Search Base**
-     - e.g. ``ou=users,dc=example,dc=com``
-   * - **User Search Filter**
-     - Default ``(sAMAccountName={username})``
-   * - **User DN Pattern (optional)**
-     - If set, used instead of the search filter for a direct bind, e.g.
-       ``uid={username},ou=users,dc=example,dc=com``
+**Run Sign-in Test** signs in as the account you type, exactly as the
+sign-in page would, without signing you in as that person. It shows the
+name, email, role and which of the two groups matched -- or why the
+directory refused. It is rate-limited like the sign-in page.
 
-.. note::
-   **User DN Pattern** must contain the literal ``{username}`` placeholder,
-   and only accepts letters, digits, ``=``, ``,``, ``-``, ``.``, ``_``,
-   spaces and that placeholder. SeqSetup rejects anything else with an
-   error, so a value cannot be used to inject LDAP filter syntax.
+Before relying on directory sign-in, test once with a member of each group
+and with someone in neither.
 
-User attributes
-~~~~~~~~~~~~~~~~~
+Getting back in
+-----------------
 
-.. list-table::
-   :header-rows: 1
-   :widths: 25 75
+If nobody can sign in -- for example the directory is down or a group is
+wrong, and local fallback is off -- someone with access to the server:
 
-   * - Setting
-     - Description
-   * - **Username Attribute**
-     - Default ``sAMAccountName``
-   * - **Display Name Attribute**
-     - Default ``displayName``
-   * - **Email Attribute**
-     - Default ``mail``
+1. Runs ``pixi run use-local-sign-in`` (with Docker:
+   ``docker compose exec app pixi run use-local-sign-in``). Sign-in becomes
+   local only; the directory settings are kept.
+2. If no local admin can sign in, runs ``pixi run create-admin`` to make a
+   new one (see :doc:`/getting-started/installation`). If an old local admin
+   only forgot the password, signs in as the new admin and resets it on
+   :doc:`local-users`.
+3. Signs in, fixes the directory settings, and runs **Run Sign-in Test**.
+4. Chooses **Active Directory** or **LDAP** again.
 
-Group-based roles
-~~~~~~~~~~~~~~~~~~~
+Group changes
+---------------
 
-.. list-table::
-   :header-rows: 1
-   :widths: 25 75
-
-   * - Setting
-     - Description
-   * - **Admin Group DN**
-     - Members of this group get the Admin role
-   * - **User Group DN**
-     - Accepted and stored by this form, but not read anywhere in the login
-       path. It has no effect on who can sign in or on what role they get.
-   * - **Group Membership Attribute**
-     - Default ``memberOf``
-
-.. warning::
-   **User Group DN** does nothing today. Role assignment checks only
-   **Admin Group DN**: every LDAP/Active Directory user who binds
-   successfully and is not a member of that group is given the Standard
-   role, regardless of what groups they belong to -- including groups
-   outside whatever DN is entered here. There is no LDAP group setting
-   anywhere on this page that restricts *who may sign in*; setting
-   **User Group DN** in the belief that it does so will leave the
-   application open to every user your directory can authenticate.
-
-Timeouts
-~~~~~~~~~~
-
-**Connect Timeout (s)** and **Receive Timeout (s)** bound how long SeqSetup
-waits on the LDAP server, 1-300 seconds each (default 10).
-
-Select **Save LDAP Configuration** to store these settings.
-
-Testing the connection
--------------------------
-
-**Run Connection Test** checks that the server is reachable and the bind
-credentials work, without authenticating as any particular user.
-
-**Run Auth Test** performs a real LDAP bind with a username and password you
-supply, so you can confirm a specific account resolves correctly before
-relying on it. This is rate-limited the same way the login page itself is,
-since it triggers a real credential check against LDAP.
+A change to someone's groups takes effect the next time they sign in. A
+sign-in already open keeps its role until it ends (30 minutes unused, or 8
+hours at most).
 
 Who can do this
 -------------------

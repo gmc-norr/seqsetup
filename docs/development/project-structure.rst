@@ -10,7 +10,6 @@ Source Layout
    ├── config/                          # Configuration files
    │   ├── instruments.yaml             # Instrument and flowcell definitions
    │   ├── mongodb.yaml                 # Database connection settings
-   │   ├── users.yaml                   # Development user credentials
    │   └── profiles/                    # Application/test profile YAML files
    ├── src/seqsetup/        # Application source code
    │   ├── app.py                       # Application entry point (FastAPI)
