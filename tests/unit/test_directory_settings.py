@@ -110,3 +110,20 @@ class TestGroupAttributeName:
     def test_anything_else_is_refused(self, name):
         with pytest.raises(ValueError):
             validate_attribute_name(name)
+
+
+class TestNoServiceAccountSettings:
+    """No bind DN or password is kept anywhere (N-17)."""
+
+    REMOVED = ("bind_dn", "bind_password", "user_search_base", "user_search_filter",
+               "username_attribute")
+
+    def test_removed_keys_are_not_written(self):
+        written = LDAPConfig().to_dict()
+        assert [key for key in self.REMOVED if key in written] == []
+
+    def test_an_old_document_loads_and_saves_without_them(self):
+        old = {"server_url": "ldaps://x", "bind_dn": "cn=svc", "bind_password": "old-secret"}
+        again = LDAPConfig.from_dict(old).to_dict()
+        assert again["server_url"] == "ldaps://x"
+        assert "old-secret" not in str(again)
