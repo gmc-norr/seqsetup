@@ -8,7 +8,7 @@ from seqsetup.models.instrument_definition import InstrumentDefinition, OnboardA
 from seqsetup.services.validation import clear_validation_cache
 
 from .conftest import disable_repos
-from .test_sheet_safety import _assert_validation_passes, _seed_draft
+from .test_sheet_safety import _assert_validation_passes, _seed_draft, _seed_synced_profile
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -206,3 +206,29 @@ class TestSyncIntoStoredProfiles:
         assert "Refusing to replace 1 existing application profiles with 0 fetched items" in message
         (profile,) = ctx.app_profile_repo.list_all()
         assert profile.settings["SoftwareVersion"] == "4.3.6"
+
+
+class TestStoredProfileMismatchStopsMarkReady:
+    """A stored profile whose Settings say BarcodeMismatchesIndex1: 3 (written
+    straight into the database, past the sync check) stops Mark Ready at the
+    writer; the run stays Draft (spec §1)."""
+
+    def test_a_setting_of_3_stops_mark_ready(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        try:
+            _seed_synced_profile(ctx, "GuardApp", settings={
+                "SoftwareVersion": "4.3.6", "BarcodeMismatchesIndex1": 3,
+            })
+            run_id = _seed_draft(ctx, "mm-profile", test_id="GUARD_T")
+            _assert_validation_passes(ctx, run_id)
+
+            resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+            assert resp.status_code == 500
+            assert "Failed to generate exports" in resp.text
+            run = ctx.run_repo.get_by_id(run_id)
+            assert run.status.value == "draft"
+            assert run.generated_samplesheet_v2 is None
+        finally:
+            instruments_module.clear_synced_instruments_cache()
+            clear_validation_cache()

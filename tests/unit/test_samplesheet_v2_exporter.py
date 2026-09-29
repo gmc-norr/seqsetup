@@ -1324,3 +1324,112 @@ class TestEmptyProfileSections:
         output = _export_stored_profile(profile)
 
         assert "[DragenGermline_Settings]\n\n[DragenGermline_Data]\nSample_ID\nS1\n" in output
+
+
+class TestProfileSafetyNet:
+    """A profile already in the database is checked again by the writer,
+    which raises rather than write what the sync now refuses. These profiles
+    are built directly, not through the sync check (spec 2026-09-29 Sample
+    Sheet follow-ups, §1)."""
+
+    FIELDS = ["Sample_ID", "Index", "Index2", "Extra"]
+    WRONG_KIND = [
+        pytest.param(4.1, id="decimal"),
+        pytest.param(None, id="empty"),
+        pytest.param({"SoftwareVersion": "4.10"}, id="mapping"),
+        pytest.param(["a"], id="list"),
+        # Astra plan review P1: a date, bytes or a set was written in
+        # Python's own form (b'4.10').
+        pytest.param(yaml.safe_load("2024-01-01"), id="date"),
+        pytest.param(yaml.safe_load("2024-01-01T10:00:00Z"), id="timestamp"),
+        pytest.param(b"4.10", id="bytes"),
+        pytest.param({"a"}, id="set"),
+    ]
+    KIND_ERROR = "A profile value must be text, a whole number or true/false"
+
+    @pytest.mark.parametrize("value", WRONG_KIND)
+    def test_setting_value_of_the_wrong_kind_is_refused(self, value):
+        with pytest.raises(ValueError, match=self.KIND_ERROR):
+            _export_with_profile({"Extra": value}, {"Extra": "x"}, self.FIELDS, {})
+
+    @pytest.mark.parametrize("value", WRONG_KIND)
+    def test_data_default_of_the_wrong_kind_is_refused(self, value):
+        with pytest.raises(ValueError, match=self.KIND_ERROR):
+            _export_with_profile({}, {"Extra": value}, self.FIELDS, {})
+
+    @pytest.mark.parametrize("value", [
+        pytest.param(3, id="3"),
+        pytest.param("3", id="text-3"),
+        pytest.param(True, id="true"),
+        pytest.param("na", id="na"),
+        pytest.param("", id="blank"),
+    ])
+    def test_setting_mismatch_outside_0_to_2_is_refused(self, value):
+        with pytest.raises(
+            ValueError, match="BarcodeMismatchesIndex1 in the profile's Settings must be 0, 1 or 2"
+        ):
+            _export_with_profile({"BarcodeMismatchesIndex1": value}, {}, ["Sample_ID"], {})
+
+    @pytest.mark.parametrize("value", [
+        pytest.param(3, id="3"),
+        pytest.param("3", id="text-3"),
+        pytest.param(True, id="true"),
+        pytest.param("NA", id="upper-NA"),
+    ])
+    def test_data_mismatch_default_outside_the_allowed_values_is_refused(self, value):
+        # The sample's own value must be None, or the default is never used
+        # (a new sample's own value is 1).
+        with pytest.raises(
+            ValueError,
+            match="BarcodeMismatchesIndex2 in the profile's Data must be 0, 1, 2, blank or na",
+        ):
+            _export_with_profile(
+                {}, {"BarcodeMismatchesIndex2": value},
+                ["Sample_ID", "BarcodeMismatchesIndex2"], {},
+                barcode_mismatches_index2=None,
+            )
+
+    def test_a_translated_mismatch_default_is_checked(self):
+        with pytest.raises(ValueError, match="BarcodeMismatchesIndex1 in the profile's Data"):
+            _export_with_profile(
+                {}, {"Mm1": 3}, ["Sample_ID", "Mm1"], {"Mm1": "BarcodeMismatchesIndex1"},
+                barcode_mismatches_index1=None,
+            )
+
+    def test_na_default_is_written(self):
+        output = _export_with_profile(
+            {}, {"BarcodeMismatchesIndex2": "na"}, ["Sample_ID", "BarcodeMismatchesIndex2"], {},
+            barcode_mismatches_index2=None,
+        )
+
+        assert "S1,na" in output.split("\n")
+
+    def test_the_samples_own_value_is_written(self):
+        # Decision 5: the default is checked only where it is used.
+        output = _export_with_profile(
+            {}, {"BarcodeMismatchesIndex1": 3}, ["Sample_ID", "BarcodeMismatchesIndex1"], {},
+            barcode_mismatches_index1=2,
+        )
+
+        assert "S1,2" in output.split("\n")
+
+    @pytest.mark.parametrize("fields,data,translate", [
+        pytest.param([], {}, {}, id="no-columns"),
+        pytest.param(["Extra"], {"Sample_ID": ""}, {}, id="datafields-without-sample-id"),
+        pytest.param(["Sample_ID"], {}, {"Sample_ID": "Name"}, id="renamed-by-translate"),
+    ])
+    def test_data_section_without_sample_id_is_refused(self, fields, data, translate):
+        with pytest.raises(ValueError, match="The BCLConvert_Data section has no Sample_ID column"):
+            _export_with_profile({}, data, fields, translate)
+
+    def test_whole_numbers_and_true_false_are_written_as_today(self):
+        output = _export_with_profile(
+            {"Threads": 8, "KeepFastq": True, "BarcodeMismatchesIndex1": 0},
+            {"Extra": 2}, self.FIELDS, {},
+        )
+
+        lines = output.split("\n")
+        assert "Threads,8" in lines
+        assert "KeepFastq,True" in lines
+        assert "BarcodeMismatchesIndex1,0" in lines
+        assert "S1,ATTACTCG,TATAGCCT,2" in lines
