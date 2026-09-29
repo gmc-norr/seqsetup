@@ -2,6 +2,9 @@
 so their removal is never silent (spec 2026-09-28 group 2b)."""
 
 import logging
+from pathlib import Path
+
+import pytest
 
 from seqsetup.startup import warn_removed_sign_in_settings
 
@@ -45,3 +48,16 @@ class TestRemovedSignInSettings:
     def test_nothing_to_warn_about(self, tmp_path):
         assert warn_removed_sign_in_settings(
             {"SEQSETUP_LDAP_BIND_PASSWORD": ""}, tmp_path / "users.yaml") == []
+
+
+class TestDeploymentFilesDoNotAskForABindPassword:
+    """The deployment samples must not tell an operator to set a directory
+    password that SeqSetup no longer uses (spec 2026-09-28 group 2b; found by
+    the Task 10 review). A value put there would sit in .env and in the
+    container's environment for nothing."""
+
+    ROOT = Path(__file__).resolve().parents[2]
+
+    @pytest.mark.parametrize("name", [".env.example", "docker-compose.yml"])
+    def test_no_bind_password_variable(self, name):
+        assert "SEQSETUP_LDAP_BIND_PASSWORD" not in (self.ROOT / name).read_text()
