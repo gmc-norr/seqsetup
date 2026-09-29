@@ -1,6 +1,7 @@
 # Sample Sheet follow-ups — design
 
-Date: 2026-09-29. Branch `fix/sheet-followups`, from `main` at `add956b`.
+Date: 2026-09-29. Branch `fix/sheet-followups`, from `main` at `add956b`; `main` at
+`97dc047` (group 2b) merged in.
 
 ## Why
 
@@ -214,6 +215,7 @@ Break tests (in the plan): each new check removed in turn must turn a test red.
 
 ## Merging with 2b
 
-Group 2b is being built at the same time on `fix/group-2b` (also from `add956b`). The two
-share no source file and no docs page. Whichever merges second first merges `main` into
-its branch (never a rebase) and runs every suite again.
+Group 2b is merged (`main` at `97dc047`) and `main` is merged into this branch. 2b changed
+none of the files this change touches (checked: no source file or docs page in common), so
+every claim above about the code still holds. If `main` moves again before this merges,
+merge `main` in again (never a rebase) and run every suite again.
