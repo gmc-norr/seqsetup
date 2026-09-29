@@ -45,22 +45,34 @@
                     <label class="flex items-center gap-2">
                         <input type="checkbox"
                                name="allow_local_fallback"
-                               {% if config.allow_local_fallback %}checked{% endif %}>
+                               {% if config.allow_local_fallback %}checked{% endif %}
+                               hx-post="/admin/settings/auth-method"
+                               hx-trigger="change"
+                               hx-target="#ldap-config-form"
+                               hx-swap="outerHTML">
                         <span class="font-medium">Allow local user fallback</span>
                     </label>
-                    <p class="text-xs text-slate-500 mt-1">If LDAP authentication fails, try local authentication.</p>
+                    <p class="text-xs text-slate-500 mt-1">If directory sign-in refuses, or its server cannot be reached, try local accounts.</p>
                 </div>
             </fieldset>
         </form>
 
-        {# LDAP settings (only when LDAP or AD is selected) #}
+        {# Directory settings (only when LDAP or AD is selected) #}
         {% if config.auth_method.value in ('ldap', 'active_directory') %}
         {% set ldap = config.ldap_config %}
+        {% set missing = config.missing_settings() %}
+        {% if missing %}
+        <div id="directory-not-ready" role="alert"
+             class="bg-amber-50 border border-amber-400 text-amber-900 rounded px-3 py-2">
+            Directory sign-in is chosen but not fully set up, so everyone signs in with local accounts. Missing: {{ missing | join(", ") }}.
+        </div>
+        {% endif %}
         <form class="bg-white border rounded-lg p-6 shadow-sm space-y-4"
               hx-post="/admin/settings/ldap"
               hx-target="#ldap-config-form"
               hx-swap="outerHTML">
             <h3 class="text-xl font-semibold">LDAP/AD Connection Settings</h3>
+            <p class="text-sm text-slate-600">SeqSetup signs in to the directory as the person signing in. No service account and no directory password are stored.</p>
 
             <fieldset class="config-panel space-y-3">
                 <legend class="text-lg font-semibold">Server Connection</legend>
@@ -68,7 +80,7 @@
                     <label for="server_url" class="block text-sm font-medium mb-1">Server URL</label>
                     <input type="text" name="server_url" id="server_url"
                            value="{{ ldap.server_url }}"
-                           placeholder="ldap://example.com:389"
+                           placeholder="ldaps://dc.example.com"
                            class="w-full border rounded px-3 py-2">
                 </div>
                 <label class="flex items-center gap-2">
@@ -86,50 +98,19 @@
                            placeholder="dc=example,dc=com"
                            class="w-full border rounded px-3 py-2">
                 </div>
-                <div>
-                    <label for="bind_dn" class="block text-sm font-medium mb-1">Bind DN</label>
-                    <input type="text" name="bind_dn" id="bind_dn"
-                           value="{{ ldap.bind_dn }}"
-                           placeholder="cn=admin,dc=example,dc=com"
-                           class="w-full border rounded px-3 py-2">
-                </div>
-                <div>
-                    <label for="bind_password" class="block text-sm font-medium mb-1">Bind Password</label>
-                    <input type="password" name="bind_password" id="bind_password"
-                           placeholder="Leave blank to keep existing"
-                           class="w-full border rounded px-3 py-2">
-                </div>
             </fieldset>
 
             <fieldset class="config-panel space-y-3">
-                <legend class="text-lg font-semibold">User Search</legend>
+                <legend class="text-lg font-semibold">Sign-in</legend>
                 <div>
-                    <label for="user_search_base" class="block text-sm font-medium mb-1">User Search Base</label>
-                    <input type="text" name="user_search_base" id="user_search_base"
-                           value="{{ ldap.user_search_base }}"
-                           placeholder="ou=users,dc=example,dc=com"
-                           class="w-full border rounded px-3 py-2">
-                </div>
-                <div>
-                    <label for="user_search_filter" class="block text-sm font-medium mb-1">User Search Filter</label>
-                    <input type="text" name="user_search_filter" id="user_search_filter"
-                           value="{{ ldap.user_search_filter }}"
-                           class="w-full border rounded px-3 py-2">
-                </div>
-                <div>
-                    <label for="user_dn_pattern" class="block text-sm font-medium mb-1">User DN Pattern (optional)</label>
+                    <label for="user_dn_pattern" class="block text-sm font-medium mb-1">Sign-in name pattern</label>
                     <input type="text" name="user_dn_pattern" id="user_dn_pattern"
                            value="{{ ldap.user_dn_pattern }}"
-                           placeholder="uid={username},ou=users,dc=example,dc=com"
+                           placeholder="{% if config.auth_method.value == 'active_directory' %}{username}@example.com{% else %}uid={username},ou=people,dc=example,dc=com{% endif %}"
                            class="w-full border rounded px-3 py-2">
-                    <p class="text-xs text-slate-500 mt-1">If set, used instead of search filter for direct bind.</p>
+                    <p class="text-xs text-slate-500 mt-1">{username} is replaced by the name typed at sign-in. Active Directory: {username}@example.com (the accounts' user principal name). LDAP: a DN such as uid={username},ou=people,dc=example,dc=com.</p>
                 </div>
-            </fieldset>
-
-            <fieldset class="config-panel space-y-3">
-                <legend class="text-lg font-semibold">User Attributes</legend>
                 {% for field, label in [
-                    ('username_attribute', 'Username Attribute'),
                     ('display_name_attribute', 'Display Name Attribute'),
                     ('email_attribute', 'Email Attribute'),
                 ] %}
@@ -143,25 +124,33 @@
             </fieldset>
 
             <fieldset class="config-panel space-y-3">
-                <legend class="text-lg font-semibold">Group-Based Roles</legend>
+                <legend class="text-lg font-semibold">Groups</legend>
+                <p class="text-xs text-slate-500">Only members of these two groups can sign in. {% if config.auth_method.value == 'active_directory' %}Members through groups inside these groups count too.{% else %}Only direct members count.{% endif %}</p>
                 <div>
-                    <label for="admin_group_dn" class="block text-sm font-medium mb-1">Admin Group DN</label>
-                    <input type="text" name="admin_group_dn" id="admin_group_dn"
-                           value="{{ ldap.admin_group_dn }}"
-                           class="w-full border rounded px-3 py-2">
-                </div>
-                <div>
-                    <label for="user_group_dn" class="block text-sm font-medium mb-1">User Group DN</label>
+                    <label for="user_group_dn" class="block text-sm font-medium mb-1">Users group</label>
                     <input type="text" name="user_group_dn" id="user_group_dn"
                            value="{{ ldap.user_group_dn }}"
+                           placeholder="cn=SeqSetup-Users,ou=groups,dc=example,dc=com"
                            class="w-full border rounded px-3 py-2">
+                    <p class="text-xs text-slate-500 mt-1">Members sign in as Standard users.</p>
                 </div>
                 <div>
-                    <label for="group_membership_attribute" class="block text-sm font-medium mb-1">Group Membership Attribute</label>
+                    <label for="admin_group_dn" class="block text-sm font-medium mb-1">Admins group</label>
+                    <input type="text" name="admin_group_dn" id="admin_group_dn"
+                           value="{{ ldap.admin_group_dn }}"
+                           placeholder="cn=SeqSetup-Admins,ou=groups,dc=example,dc=com"
+                           class="w-full border rounded px-3 py-2">
+                    <p class="text-xs text-slate-500 mt-1">Members sign in as Admins.</p>
+                </div>
+                {% if config.auth_method.value == 'ldap' %}
+                <div>
+                    <label for="group_membership_attribute" class="block text-sm font-medium mb-1">Group attribute</label>
                     <input type="text" name="group_membership_attribute" id="group_membership_attribute"
                            value="{{ ldap.group_membership_attribute }}"
                            class="w-full border rounded px-3 py-2">
+                    <p class="text-xs text-slate-500 mt-1">The attribute on a person's entry that lists their groups, usually memberOf.</p>
                 </div>
+                {% endif %}
             </fieldset>
 
             <fieldset class="config-panel space-y-3">
@@ -188,7 +177,7 @@
         {# Connection test #}
         <div class="bg-white border rounded-lg p-6 shadow-sm space-y-3">
             <h3 class="text-xl font-semibold">Test Connection</h3>
-            <p class="text-sm text-slate-600">Verify the server is reachable and bind credentials are valid.</p>
+            <p class="text-sm text-slate-600">Checks that the server answers, and over which kind of connection. No password is checked.</p>
             <button type="button"
                     class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1"
                     hx-post="/admin/settings/ldap/test"
@@ -199,13 +188,13 @@
             <div id="ldap-test-result"></div>
         </div>
 
-        {# Auth test #}
+        {# Sign-in test #}
         <form class="bg-white border rounded-lg p-6 shadow-sm space-y-3"
               hx-post="/admin/settings/ldap/test-auth"
               hx-target="#ldap-auth-test-result"
               hx-swap="innerHTML">
-            <h3 class="text-xl font-semibold">Test User Authentication</h3>
-            <p class="text-sm text-slate-600">Try a real LDAP bind with these credentials (rate-limited).</p>
+            <h3 class="text-xl font-semibold">Test Sign-in</h3>
+            <p class="text-sm text-slate-600">Signs in as this account the way the sign-in page would, without signing you in as them, and shows the role and groups. Rate-limited.</p>
             <div>
                 <label for="test_username" class="block text-sm font-medium mb-1">Test Username</label>
                 <input type="text" name="test_username" id="test_username" required
@@ -216,7 +205,7 @@
                 <input type="password" name="test_password" id="test_password" required
                        class="w-full border rounded px-3 py-2">
             </div>
-            <button type="submit" class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1">Run Auth Test</button>
+            <button type="submit" class="bg-slate-200 hover:bg-slate-300 text-slate-800 rounded px-3 py-1">Run Sign-in Test</button>
             <div id="ldap-auth-test-result"></div>
         </form>
         {% endif %}

@@ -2,7 +2,8 @@
 
 Five endpoints:
   GET  /admin/authentication           — full page
-  POST /admin/settings/auth-method     — change auth method radio
+  POST /admin/settings/auth-method     — a method radio, or the fallback
+                                          checkbox on its own
                                           (HTMX fragment swap into
                                           #ldap-config-form)
   POST /admin/settings/ldap            — save LDAP connection config
@@ -20,17 +21,20 @@ Five endpoints:
 Admin-only via router-level require_admin_dep.
 
 Clinical/security invariants preserved:
-  - user_dn_pattern validation REJECTS injection attempts (400)
-  - bind_password empty = keep existing (no silent clearing)
+  - No service account: SeqSetup binds as the person signing in, so no
+    bind DN or password is taken or stored (spec 2026-09-28 group 2b)
+  - user_dn_pattern and the group attribute are validated; a bad value is
+    REJECTED (400)
   - Auth-method clamp: unknown value falls back to LOCAL (matches
     the previous handler — defensive)
-  - Saving config flips ldap_configured (derived) AND resets
-    ldap_tested to False
-  - test_ldap_auth is rate-limited identically to /login/submit
+  - Saving config resets ldap_tested to False; whether directory sign-in
+    is on is computed from the saved settings (AuthConfig.is_ldap_enabled)
+  - test_ldap_auth is rate-limited identically to /login/submit and
+    never starts a session
 """
 
 import logging
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from pydantic import BaseModel, Field
@@ -39,10 +43,10 @@ from starlette.responses import HTMLResponse, Response
 
 from ...context import AppContext
 from ...forms.validators import clamp, strip_and_truncate
-from ...models.auth_config import AuthMethod, LDAPConfig, validate_user_dn_pattern
+from ...models.auth_config import AuthMethod, LDAPConfig, validate_attribute_name, validate_user_dn_pattern
 from ...rate_limit import client_identity, get_login_limiter
 from ...services.audit_log import audit
-from ...services.ldap import LDAPError, LDAPService
+from ...services.ldap import LDAPError, LDAPService, SignInRefused
 from ...templating import render
 from ..dependencies import get_ctx, require_admin_dep
 from ..utils import get_username
@@ -69,29 +73,26 @@ class AuthMethodForm(BaseModel):
         handler's defensive "if not in enum: AuthMethod.LOCAL" branch.
         Done in the handler (not Pydantic) because Pydantic 422 would
         be wrong UX for a radio change that's likely a developer typo.
+        Absent (None) keeps the current method: the fallback checkbox
+        posts only itself, and must never switch directory sign-in off.
     allow_local_fallback: checkbox; default False (unchecked).
     """
-    auth_method: Annotated[str, BeforeValidator(strip_and_truncate(64))] = ""
+    auth_method: Annotated[Optional[str], BeforeValidator(strip_and_truncate(64))] = None
     allow_local_fallback: bool = False
 
 
 class LDAPConfigFormModel(BaseModel):
-    """LDAP connection configuration.
+    """Directory connection settings (spec 2026-09-28 group 2b).
 
-    Every text field CLAMP. bind_password is special: empty means
-    "keep existing" (preserved verbatim from the original handler).
-    Numeric timeouts CLAMP via clamp(1, 300) to keep them sane.
+    Every text field CLAMP. There is no service account: SeqSetup binds as
+    the person signing in, so no bind DN or password is taken. Numeric
+    timeouts CLAMP via clamp(1, 300) to keep them sane.
     """
     server_url: Annotated[str, BeforeValidator(strip_and_truncate(1024))] = ""
     use_ssl: bool = False
     verify_ssl_cert: bool = True
     base_dn: Annotated[str, BeforeValidator(strip_and_truncate(512))] = ""
-    bind_dn: Annotated[str, BeforeValidator(strip_and_truncate(512))] = ""
-    bind_password: Annotated[str, BeforeValidator(strip_and_truncate(512))] = ""
-    user_search_base: Annotated[str, BeforeValidator(strip_and_truncate(512))] = ""
-    user_search_filter: Annotated[str, BeforeValidator(strip_and_truncate(512))] = "(sAMAccountName={username})"
     user_dn_pattern: Annotated[str, BeforeValidator(strip_and_truncate(512))] = ""
-    username_attribute: Annotated[str, BeforeValidator(strip_and_truncate(128))] = "sAMAccountName"
     display_name_attribute: Annotated[str, BeforeValidator(strip_and_truncate(128))] = "displayName"
     email_attribute: Annotated[str, BeforeValidator(strip_and_truncate(128))] = "mail"
     admin_group_dn: Annotated[str, BeforeValidator(strip_and_truncate(512))] = ""
@@ -136,12 +137,14 @@ def update_auth_method(
     form: Annotated[AuthMethodForm, Form()],
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /admin/settings/auth-method — radio change; fragment swap."""
+    """POST /admin/settings/auth-method — a method radio, or the fallback
+    checkbox on its own; fragment swap. Only what was sent changes."""
     config = ctx.auth_config_repo.get()
-    try:
-        config.auth_method = AuthMethod(form.auth_method)
-    except ValueError:
-        config.auth_method = AuthMethod.LOCAL
+    if form.auth_method is not None:
+        try:
+            config.auth_method = AuthMethod(form.auth_method)
+        except ValueError:
+            config.auth_method = AuthMethod.LOCAL
     config.allow_local_fallback = form.allow_local_fallback
     ctx.auth_config_repo.save(config)
     audit(
@@ -167,11 +170,11 @@ def update_ldap_config(
 ) -> Response:
     """POST /admin/settings/ldap — save LDAP config; fragment swap.
 
-    user_dn_pattern is validated by validate_user_dn_pattern which
-    REJECTS injection attempts (returns 400 — strict reject).
+    user_dn_pattern and the group attribute are validated and REJECTED (400) when unsafe. No bind DN or password is taken.
     """
     try:
         validate_user_dn_pattern(form.user_dn_pattern)
+        validate_attribute_name(form.group_membership_attribute)
     except ValueError as e:
         return Response(str(e), status_code=400)
 
@@ -181,12 +184,7 @@ def update_ldap_config(
         use_ssl=form.use_ssl,
         verify_ssl_cert=form.verify_ssl_cert,
         base_dn=form.base_dn,
-        bind_dn=form.bind_dn,
-        bind_password=form.bind_password if form.bind_password else config.ldap_config.bind_password,
-        user_search_base=form.user_search_base,
-        user_search_filter=form.user_search_filter,
         user_dn_pattern=form.user_dn_pattern,
-        username_attribute=form.username_attribute,
         display_name_attribute=form.display_name_attribute,
         email_attribute=form.email_attribute,
         admin_group_dn=form.admin_group_dn,
@@ -195,7 +193,6 @@ def update_ldap_config(
         connect_timeout=form.connect_timeout,
         receive_timeout=form.receive_timeout,
     )
-    config.ldap_configured = bool(config.ldap_config.server_url and config.ldap_config.base_dn)
     config.ldap_tested = False
     ctx.auth_config_repo.save(config)
     audit(
@@ -204,7 +201,9 @@ def update_ldap_config(
         target="ldap_config",
         server_url=config.ldap_config.server_url,
         base_dn=config.ldap_config.base_dn,
-        bind_dn=config.ldap_config.bind_dn,
+        user_dn_pattern=config.ldap_config.user_dn_pattern,
+        admin_group_dn=config.ldap_config.admin_group_dn,
+        user_group_dn=config.ldap_config.user_group_dn,
     )
     return render(
         request,
@@ -227,7 +226,9 @@ def test_ldap_connection(
     if not config.ldap_config.server_url:
         return _test_result(request, False, "LDAP server URL is not configured")
     try:
-        ldap_service = LDAPService(config.ldap_config)
+        ldap_service = LDAPService(
+            config.ldap_config,
+            active_directory=config.auth_method is AuthMethod.ACTIVE_DIRECTORY)
         success, message = ldap_service.test_connection()
         if success:
             config.ldap_tested = True
@@ -273,20 +274,31 @@ def test_ldap_auth(
         return _test_result(request, False, f"Too many test attempts. Retry after {retry}s.")
 
     config = ctx.auth_config_repo.get()
-    if not config.ldap_config.server_url:
-        return _test_result(request, False, "LDAP server URL is not configured")
-    try:
-        ldap_service = LDAPService(config.ldap_config)
-        user = ldap_service.authenticate(form.test_username, form.test_password)
+    if config.auth_method not in (AuthMethod.LDAP, AuthMethod.ACTIVE_DIRECTORY):
+        return _test_result(request, False, "Choose Active Directory or LDAP above first.")
+    missing = config.missing_settings()
+    if missing:
         return _test_result(
-            request, True,
-            f"Authentication successful! User: {user.display_name}, Role: {user.role.value}",
-        )
-    except LDAPError as e:
-        return _test_result(request, False, str(e))
+            request, False,
+            f"Directory sign-in is not fully set up. Missing: {', '.join(missing)}.")
+    try:
+        result = LDAPService(
+            config.ldap_config,
+            active_directory=config.auth_method is AuthMethod.ACTIVE_DIRECTORY,
+        ).sign_in(form.test_username, form.test_password)
+    except SignInRefused as e:
+        return _test_result(request, False, e.message)
     except Exception:
         logger.exception("LDAP authentication test failed")
         return _test_result(request, False, "Authentication test failed")
+    user = result.user
+    return _test_result(
+        request, True,
+        f"Signed in as {user.display_name} ({user.email or 'no email'}). "
+        f"Role: {user.role.value}. "
+        f"Admins group: {'yes' if result.in_admins else 'no'}. "
+        f"Users group: {'yes' if result.in_users else 'no'}.",
+    )
 
 
 # ---------------------------------------------------------------------

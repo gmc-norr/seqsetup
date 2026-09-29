@@ -22,7 +22,6 @@ services:
       # is too short, so an empty value here is rejected at startup.
       - SEQSETUP_SESSION_SECRET=${SEQSETUP_SESSION_SECRET:?must set in .env}
       - SEQSETUP_HTTPS_ONLY=${SEQSETUP_HTTPS_ONLY:-0}
-      - SEQSETUP_LDAP_BIND_PASSWORD=${SEQSETUP_LDAP_BIND_PASSWORD:-}
       - SEQSETUP_LIMS_API_KEY=${SEQSETUP_LIMS_API_KEY:-}
     env_file:
       - .env

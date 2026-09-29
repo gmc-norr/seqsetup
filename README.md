@@ -74,20 +74,13 @@ The application starts at `http://localhost:5001`.
 
 ### 5. Log in
 
-No default passwords are committed.
+No account exists yet, and no default passwords are committed. Make the first admin with:
 
-Create a bootstrap user in `config/users.yaml` with a bcrypt hash:
-
-```yaml
-users:
-  admin:
-    display_name: "Administrator"
-    email: "admin@example.com"
-    password_hash: "$2b$12$..."  # bcrypt hash
-    role: admin
+```bash
+pixi run create-admin
 ```
 
-Use `AuthService.hash_password(...)` (or `bcrypt`) to generate the hash.
+It asks for a username, display name, email (optional) and the password twice, with the same password rules as **Admin > Users**. With Docker: `docker compose exec app pixi run create-admin`.
 
 ## Running Tests
 
@@ -124,7 +117,6 @@ Environment variables take precedence over configuration files.
 All configuration files are in the `config/` directory:
 
 - **`mongodb.yaml`** -- MongoDB connection settings (URI and database name).
-- **`users.yaml`** -- File-based fallback users (bcrypt-hashed passwords). Empty by default; add only bootstrap users needed for your environment.
 - **`instruments.yaml`** -- Supported sequencing instruments, flowcell types, reagent kits, SBS chemistry definitions, and default cycle configurations.
 - **`profiles/`** -- Application and test profile definitions (can be synced from GitHub).
 - **`indexes/`** -- Bundled index kit definitions in CSV and YAML formats.
@@ -133,27 +125,9 @@ All configuration files are in the `config/` directory:
 
 A session secret key is stored in `.sesskey` at the project root. It is auto-generated on first startup if it does not exist. Keep this file out of version control. For production, set `SEQSETUP_SESSION_SECRET` instead.
 
-### File-Based Fallback Users
+### Local Accounts
 
-The authentication system checks credentials in this order:
-
-1. **LDAP/AD** (if configured and enabled)
-2. **Local users in MongoDB** (managed through the admin interface)
-3. **`config/users.yaml`** (file-based fallback)
-
-To disable file-based fallback users, use one or more of the following approaches:
-
-**Remove the YAML users.** Replace the contents of `config/users.yaml` with an empty user list:
-
-```yaml
-users: {}
-```
-
-This disables all file-based logins while keeping the file in place. MongoDB local users and LDAP authentication continue to work.
-
-**Configure LDAP without local fallback.** Set up LDAP/AD authentication through the admin interface and set `allow_local_fallback` to `false`. This prevents the local authentication path from being reached entirely, meaning neither MongoDB local users nor `users.yaml` will be consulted.
-
-**Restrict the config mount in Docker.** By default, `docker-compose.yml` bind-mounts the entire `config/` directory. You can mount only the files you need and omit `users.yaml`, which causes file-based authentication to fail with no matching users.
+Local accounts live only in MongoDB. The first admin is made with `pixi run create-admin`; the others on **Admin > Users**. `config/users.yaml` is no longer read. If LDAP/AD sign-in ever locks everyone out, `pixi run use-local-sign-in` switches sign-in back to local accounts.
 
 ## User Authentication and Authorization
 
@@ -161,7 +135,7 @@ This disables all file-based logins while keeping the file in place. MongoDB loc
 
 Authentication is configured through the admin interface. Supported methods:
 
-1. **Local** -- Users stored in MongoDB or `config/users.yaml`
+1. **Local** -- Users stored in MongoDB (Admin > Users; the first admin via `pixi run create-admin`)
 2. **LDAP** -- LDAP directory server
 3. **Active Directory** -- Microsoft AD with LDAP protocol
 
@@ -255,7 +229,7 @@ API documentation is available at `/api/docs` (Swagger UI) and `/api/openapi.jso
 
 ```
 seqsetup/
-├── config/          # instruments.yaml, mongodb.yaml, users.yaml, bundled index kits, profiles
+├── config/          # instruments.yaml, mongodb.yaml, bundled index kits, profiles
 ├── src/seqsetup/
 │   ├── app.py       # FastAPI app, middleware, route registration
 │   ├── startup.py   # repositories, services, AppContext

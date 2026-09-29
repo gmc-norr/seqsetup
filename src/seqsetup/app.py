@@ -52,6 +52,7 @@ from .startup import (
     init_repos,
     init_scheduler,
     resolve_session_secret,
+    warn_removed_sign_in_settings,
 )
 
 # Static files directory
@@ -134,6 +135,7 @@ set_audit_sink(get_audit_event_repo())  # Keep every audit event; before the sch
 auth_service = init_auth_service()
 init_scheduler()
 setup_log_capture(["seqsetup"])
+warn_removed_sign_in_settings()  # after log capture, so Admin → Logs shows it too
 
 # Create shared AppContext for all routes
 _ctx = get_app_context()

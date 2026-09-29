@@ -23,7 +23,7 @@ from ..models.web_session import WebSession
 
 logger = logging.getLogger(__name__)
 
-_SOURCES = ("local", "yaml", "ldap")
+_SOURCES = ("local", "ldap")
 
 
 @dataclass(frozen=True)

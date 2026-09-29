@@ -175,20 +175,29 @@ Before deploying to production:
 
 2. **Configure LDAP/AD authentication**
 
-   Set up LDAP or Active Directory authentication through the admin
-   interface. See :doc:`/admin-guide/authentication`.
+   Set up LDAP or Active Directory sign-in through the admin interface, with
+   both the Users group and the Admins group. See
+   :doc:`/admin-guide/authentication`.
 
-3. **Disable default credentials**
+3. **Test directory sign-in once**
 
-   Remove or empty the ``config/users.yaml`` file, or configure LDAP
-   without local fallback. See :doc:`configuration`.
+   On **Admin > Authentication**, use **Run Sign-in Test** with a member of
+   the Admins group, a member of the Users group, and someone in neither.
+   The first two must sign in with the right role; the third must be
+   refused.
 
-4. **Enable LDAP SSL certificate verification**
+4. **No old sign-in settings on the server**
+
+   There must be no ``config/users.yaml`` and no
+   ``SEQSETUP_LDAP_BIND_PASSWORD``. Neither is used any more; the app logs a
+   warning at start when it finds one.
+
+5. **Enable LDAP SSL certificate verification**
 
    In the LDAP settings, enable "Verify SSL Certificate" to prevent
    man-in-the-middle attacks.
 
-5. **Use a reverse proxy**
+6. **Use a reverse proxy**
 
    Place SeqSetup behind a reverse proxy (nginx, Traefik, etc.) that
    handles:
@@ -197,7 +206,7 @@ Before deploying to production:
    - Rate limiting
    - Access logging
 
-6. **Back up MongoDB regularly**
+7. **Back up MongoDB regularly**
 
    Set up automated backups of the MongoDB data volume or use MongoDB
    Atlas with automated backups.
@@ -249,7 +258,7 @@ LDAP over cleartext
 ~~~~~~~~~~~~~~~~~~~~~
 
 The app refuses to bind to an LDAP server over a cleartext connection
-(an ``ldap://`` URL / port 389 with no TLS), because the bind password would
+(an ``ldap://`` URL / port 389 with no TLS), because every user's password would
 cross the network in the clear. Use ``ldaps://`` (or a host configured for
 TLS). Only on a trusted, isolated network may you opt back in:
 
@@ -257,8 +266,9 @@ TLS). Only on a trusted, isolated network may you opt back in:
 
    SEQSETUP_LDAP_ALLOW_CLEARTEXT=1   # NOT for production
 
-If this is unset and the configured LDAP URL is cleartext, login fails with an
-error message that names this variable, so the cause is discoverable.
+If this is unset and the configured URL is cleartext, directory sign-in is
+refused (local fallback applies if it is on), and **Run Connection Test** on
+**Admin > Authentication** shows a message that names this variable.
 
 LIMS over plain HTTP or on a private network
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

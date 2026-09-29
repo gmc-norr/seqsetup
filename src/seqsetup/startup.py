@@ -1,5 +1,6 @@
 """Application startup: configuration, repository initialization, and service factories."""
 
+import logging
 import os
 import secrets
 from pathlib import Path
@@ -25,9 +26,13 @@ from .services.database import init_db
 from .services.github_sync import GitHubSyncService
 from .services.scheduler import ProfileSyncScheduler
 
+logger = logging.getLogger(__name__)
+
+
 # Configuration paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-CONFIG_PATH = PROJECT_ROOT / "config" / "users.yaml"
+# No longer read (spec 2026-09-28 group 2b); only warned about at start.
+USERS_FILE = PROJECT_ROOT / "config" / "users.yaml"
 SESSKEY_PATH = PROJECT_ROOT / ".sesskey"
 
 
@@ -227,8 +232,29 @@ def get_app_context() -> AppContext:
 def init_auth_service() -> AuthService:
     """Initialize and return the auth service."""
     global _auth_service
-    _auth_service = AuthService(CONFIG_PATH, get_auth_config, get_local_user_repo)
+    _auth_service = AuthService(get_auth_config, get_local_user_repo)
     return _auth_service
+
+
+_BIND_PASSWORD_UNUSED = (
+    "SEQSETUP_LDAP_BIND_PASSWORD is set but no longer used: SeqSetup signs in to the "
+    "directory as each user, not with a service account. Remove it.")
+_USERS_FILE_UNUSED = (
+    "config/users.yaml is no longer read: sign-in with file accounts was removed. "
+    "Make the first admin with 'pixi run create-admin'.")
+
+
+def warn_removed_sign_in_settings(environ=os.environ, users_file=USERS_FILE) -> list[str]:
+    """Log a warning for each removed sign-in setting that is still present,
+    so the removal is never silent (spec 2026-09-28 group 2b). Returns them."""
+    warnings = []
+    if environ.get("SEQSETUP_LDAP_BIND_PASSWORD"):
+        warnings.append(_BIND_PASSWORD_UNUSED)
+    if users_file.exists():
+        warnings.append(_USERS_FILE_UNUSED)
+    for text in warnings:
+        logger.warning(text)
+    return warnings
 
 
 def get_github_sync_service() -> GitHubSyncService:

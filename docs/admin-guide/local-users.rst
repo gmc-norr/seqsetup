@@ -5,18 +5,22 @@ Administrators create and manage local user accounts from **Admin > Users**.
 A local user signs in with a username and password that SeqSetup stores in
 its own database.
 
+The very first admin is made on the server with ``pixi run create-admin``;
+see :doc:`/getting-started/installation`.
+
 Creating a user
 ---------------
 
 Fill in the **Create New User** form:
 
 1. **Username** -- letters, digits, ``.``, ``_``, ``@`` and ``-`` only, up to
-   128 characters. It cannot be changed later; create a new account instead.
+   64 characters. It cannot be changed later; create a new account instead.
 2. **Display Name** -- shown throughout the app in place of the username.
 3. **Email** -- optional.
 4. **Role** -- **Standard** or **Admin**.
-5. **Password** -- at least 8 characters. SeqSetup refuses a password that is
-   too short, made of a single repeated character, all digits, or one of a
+5. **Password** -- at least 8 characters and at most 72 bytes (most characters
+   are 1 byte; letters like å, ä and ö are 2). SeqSetup refuses a password that is
+   too short, too long, made of a single repeated character, all digits, or one of a
    short list of very common weak or default passwords.
 
 Select **Create User** to save the account.
@@ -80,6 +84,6 @@ not see **Admin** in the sidebar, and is refused if they visit
 How a login is actually checked
 ---------------------------------
 
-A local user account is one of several sources SeqSetup can authenticate a
-login against. See :doc:`authentication` for the exact order LDAP/Active
-Directory, local accounts, and the ``config/users.yaml`` file are tried in.
+A local user account is one of the two sources SeqSetup can check a login
+against. See :doc:`authentication` for when LDAP/Active Directory and the
+local accounts are tried.
