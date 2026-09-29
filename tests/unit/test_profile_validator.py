@@ -191,6 +191,7 @@ class TestValidateApplicationProfile:
         "ApplicationProfileVersion": "1.0.0",
         "ApplicationName": "CustomApp",
         "ApplicationType": "Custom",
+        "DataFields": ["Sample_ID"],
     }
 
     def test_valid_dragen_profile_passes(self):
@@ -352,6 +353,7 @@ class TestApplicationNameCharacters:
         "ApplicationProfileVersion": "1.0.0",
         "ApplicationName": "BCLConvert",
         "ApplicationType": "Custom",
+        "DataFields": ["Sample_ID"],
     }
 
     @pytest.mark.parametrize("name", [
@@ -714,3 +716,107 @@ class TestEmptyRequiredFields:
             f"ApplicationProfiles[0]: '{key}' must not be empty"
             in _test_profile_errors({**TEST, "ApplicationProfiles": [ref]})
         )
+
+
+class TestMismatchValues:
+    """BCL Convert allows at most 2 mismatches. A Settings entry takes 0, 1 or
+    2; a Data default may also be blank or na: Illumina's DRAGEN sample sheet
+    guide says a per-sample setting that does not apply "must be blank or na"
+    (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
+
+    @staticmethod
+    def _settings_error(key, column, value):
+        return (
+            f"Field 'Settings' value for '{key}' fills {column} and must be 0, 1 or 2 "
+            f"(BCL Convert allows at most 2 mismatches): {value!r}"
+        )
+
+    @staticmethod
+    def _data_error(key, column, value):
+        return (
+            f"Field 'Data' value for '{key}' fills {column} and must be 0, 1, 2, blank or na "
+            f"(BCL Convert allows at most 2 mismatches): {value!r}"
+        )
+
+    @pytest.mark.parametrize("column", ["BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2"])
+    @pytest.mark.parametrize("value", [
+        pytest.param(3, id="3"),
+        pytest.param(-1, id="minus-1"),
+        pytest.param("3", id="text-3"),
+        pytest.param(True, id="true"),
+        pytest.param("na", id="na"),
+        pytest.param("", id="blank"),
+    ])
+    def test_settings_value_outside_0_to_2_is_refused(self, column, value):
+        assert _errors(_with("Settings", **{column: value})) == [
+            self._settings_error(column, column, value)
+        ]
+
+    @pytest.mark.parametrize("column", ["BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2"])
+    @pytest.mark.parametrize("value", [
+        pytest.param(3, id="3"),
+        pytest.param("3", id="text-3"),
+        pytest.param(True, id="true"),
+        pytest.param("NA", id="upper-NA"),
+        pytest.param(" 1", id="space-1"),
+    ])
+    def test_data_default_outside_the_allowed_values_is_refused(self, column, value):
+        assert _errors(_with("Data", **{column: value})) == [
+            self._data_error(column, column, value)
+        ]
+
+    def test_a_translated_data_column_is_checked(self):
+        data = {**_with("Data", Mm1=3), "Translate": {"Mm1": "BarcodeMismatchesIndex1"}}
+        assert _errors(data) == [self._data_error("Mm1", "BarcodeMismatchesIndex1", 3)]
+
+    @pytest.mark.parametrize("value", [0, 1, 2, "0", "1", "2"])
+    def test_settings_0_1_2_pass(self, value):
+        assert _errors(_with("Settings", BarcodeMismatchesIndex1=value)) == []
+
+    @pytest.mark.parametrize("value", [0, 2, "1", "", "na"])
+    def test_data_0_1_2_blank_and_na_pass(self, value):
+        assert _errors(_with("Data", BarcodeMismatchesIndex2=value)) == []
+
+
+class TestSampleIdColumn:
+    """Every data row names its sample in the Sample_ID column. The columns
+    are found the way the sheet writer finds them: DataFields when it has
+    entries, else the Data keys, each renamed by Translate (spec 2026-09-29
+    Sample Sheet follow-ups, §1)."""
+
+    MESSAGE = (
+        "The data section has no Sample_ID column. Add Sample_ID to DataFields "
+        "(or to Data when DataFields is missing or empty)."
+    )
+    BARE = {key: value for key, value in APP.items() if key != "Data"}
+
+    @pytest.mark.parametrize("sections", [
+        pytest.param({}, id="no-data-no-datafields"),
+        pytest.param({"Data": {"Extra": "x"}}, id="data-without-sample-id"),
+        pytest.param({"Data": {"Sample_ID": ""}, "DataFields": ["Extra"]}, id="datafields-without-sample-id"),
+        pytest.param({"Data": {"Sample_ID": ""}, "Translate": {"Sample_ID": "Name"}}, id="renamed-by-translate"),
+    ])
+    def test_no_sample_id_column_is_refused(self, sections):
+        assert _errors({**self.BARE, **sections}) == [self.MESSAGE]
+
+    @pytest.mark.parametrize("sections", [
+        pytest.param({"Data": {"Sample_ID": ""}}, id="data-keys"),
+        pytest.param({"Data": {"Sample_ID": ""}, "DataFields": None}, id="datafields-empty"),
+        pytest.param({"Data": {"Sample_ID": ""}, "DataFields": []}, id="datafields-empty-list"),
+        pytest.param({"DataFields": ["Sample_ID"]}, id="datafields"),
+        pytest.param({"DataFields": ["SampleID"], "Translate": {"SampleID": "Sample_ID"}}, id="reached-by-translate"),
+    ])
+    def test_sample_id_column_passes(self, sections):
+        assert _errors({**self.BARE, **sections}) == []
+
+    def test_dragen_empty_sections_are_still_refused(self):
+        # Decision 7 of the spec: only a non-DRAGEN profile reads an empty
+        # section as "none".
+        data = {
+            **TestValidateApplicationProfile.VALID_DRAGEN_PROFILE,
+            "Settings": None, "Data": None, "DataFields": None,
+        }
+        errors = _errors(data)
+        assert "Field 'Settings' must be a mapping" in errors
+        assert "Field 'Data' must be a mapping" in errors
+        assert "Field 'DataFields' must be a list" in errors

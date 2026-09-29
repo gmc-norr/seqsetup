@@ -55,3 +55,23 @@ def describe(chars: list[str]) -> str:
         code = f"U+{ord(c):04X}"
         parts.append(f"{code} ({_NAMES[c]})" if c in _NAMES else code)
     return ", ".join(parts)
+
+
+# The two columns BCL Convert reads the number of index mismatches from, as
+# a Settings entry and per sample.
+MISMATCH_COLUMNS = ("BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2")
+
+
+def is_allowed_mismatch(value, per_sample: bool) -> bool:
+    """True for a mismatch value BCL Convert accepts: 0, 1 or 2, as a whole
+    number or as text. A per-sample value (a profile's Data default) may also
+    be blank or ``na``: Illumina's DRAGEN sample sheet guide says a setting
+    that does not apply to a sample "must be blank or na". ``true`` and
+    ``false`` are refused: Python counts true as 1."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value in (0, 1, 2)
+    if isinstance(value, str):
+        return value in ("0", "1", "2") or (per_sample and value in ("", "na"))
+    return False

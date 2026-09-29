@@ -3,7 +3,14 @@
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from .sheet_text import PLAIN_NAME_RE, describe, hidden_characters, starts_a_section
+from .sheet_text import (
+    MISMATCH_COLUMNS,
+    PLAIN_NAME_RE,
+    describe,
+    hidden_characters,
+    is_allowed_mismatch,
+    starts_a_section,
+)
 
 
 class ProfileValidationError(Exception):
@@ -291,8 +298,55 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
         elif yaml_data["DataFields"] is None:
             errors.append("Field 'DataFields' must be a list")
 
+    errors += _mismatch_problems(settings, data, translate)
+    errors += _sample_id_column_problems(data, data_fields, translate)
+
     if errors:
         raise ProfileValidationError(errors, source_file)
+
+
+def _mismatch_problems(settings, data, translate) -> list[str]:
+    """BCL Convert allows at most 2 mismatches. A Settings entry takes 0, 1 or
+    2; a Data default, which fills a sample's cell, may also be blank or na.
+    A Data entry is checked under the column it becomes: its own name, or
+    the name Translate gives it (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
+    problems = []
+    if isinstance(settings, dict):
+        for key, value in settings.items():
+            if key in MISMATCH_COLUMNS and not is_allowed_mismatch(value, per_sample=False):
+                problems.append(
+                    f"Field 'Settings' value for {str(key)!r} fills {key} and must be 0, 1 or 2 "
+                    f"(BCL Convert allows at most 2 mismatches): {value!r}"
+                )
+    if isinstance(data, dict):
+        names = translate if isinstance(translate, dict) else {}
+        for key, value in data.items():
+            column = names.get(key, key)
+            if column in MISMATCH_COLUMNS and not is_allowed_mismatch(value, per_sample=True):
+                problems.append(
+                    f"Field 'Data' value for {str(key)!r} fills {column} and must be 0, 1, 2, "
+                    f"blank or na (BCL Convert allows at most 2 mismatches): {value!r}"
+                )
+    return problems
+
+
+def _sample_id_column_problems(data, data_fields, translate) -> list[str]:
+    """Every data row names its sample in the Sample_ID column. The columns
+    are found the way the sheet writer finds them: the DataFields list when
+    it has entries, else the Data keys, each renamed by Translate. A section
+    of the wrong shape is already reported, so it is not checked here."""
+    shapes = ((data, dict), (data_fields, list), (translate, dict))
+    if any(value is not None and not isinstance(value, kind) for value, kind in shapes):
+        return []
+    names = translate or {}
+    fields = data_fields or list((data or {}).keys())
+    columns = [names.get(f, f) if isinstance(f, str) else f for f in fields]
+    if "Sample_ID" in columns:
+        return []
+    return [
+        "The data section has no Sample_ID column. Add Sample_ID to DataFields "
+        "(or to Data when DataFields is missing or empty)."
+    ]
 
 
 def _validate_version_constraint(value: str, field_path: str, errors: list[str]) -> None:
