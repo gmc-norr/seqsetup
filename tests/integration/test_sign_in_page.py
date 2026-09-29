@@ -12,6 +12,8 @@ from tests.fake_directory import ADMINS, PASSWORD, FakeDirectory, ad_account, us
 ORIGIN = {"Origin": "http://testserver"}
 PW = "Cl1nical-Admin!"          # admin_user_seeded's password
 LONG = "a" * 64
+REASONS = ("bad_name", "directory_refused", "not_found", "not_in_group", "server_error",
+           "local_refused")
 
 
 def _login(client, name, password):
@@ -40,6 +42,23 @@ class TestOneMessage:
     def test_unknown_name_shows_the_same_message(self, client):
         r = _login(client, "nobody", PW)
         assert r.status_code == 200 and SIGN_IN_FAILED in r.text
+
+    @pytest.mark.parametrize("name, password", [
+        ("admin-test", "Wrong-Passw0rd!"), ("nobody", PW), ("a" * 65, PW)])
+    def test_the_page_never_names_the_reason(self, client, admin_user_seeded, name, password):
+        # The reason goes to the audit trail only (a mutation that appended
+        # it to the message passed the two tests above).
+        text = _login(client, name, password).text
+        assert SIGN_IN_FAILED in text
+        assert [reason for reason in REASONS if reason in text] == []
+
+    def test_a_directory_refusal_never_names_the_reason(self, client, fresh_app, directory):
+        _app, ctx, _db = fresh_app
+        use_directory(ctx, fallback=False)
+        ad_account(directory, groups=())
+        text = _login(client, "anna", PASSWORD).text
+        assert SIGN_IN_FAILED in text
+        assert [reason for reason in REASONS if reason in text] == []
 
 
 class TestAudit:
