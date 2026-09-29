@@ -25,6 +25,17 @@ _VALID_OVERRIDE_CYCLES_RE = re.compile(r'^[YIUN0-9;,]*$')
 _VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*\Z')
 
 
+def checked_mismatches(name: str, value: Any) -> int:
+    """A barcode mismatch value: a whole number, clamped to 0-2 (the values
+    BCL Convert accepts). True, 1.5 or "1" is refused, not guessed: the
+    Sample Sheet writers would write it as it is. Every page and route
+    passes a whole number; only a value written into the database directly
+    gets here (spec 2026-09-29 Sample Sheet follow-ups, §2)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be a whole number, not {value!r}")
+    return max(0, min(2, value))
+
+
 @dataclass
 class Sample:
     """A sequencing sample with assigned indexes."""
@@ -102,7 +113,7 @@ class Sample:
 
         Invariants enforced (matches the previous ``__post_init__`` set):
           - ``barcode_mismatches_index1`` / ``barcode_mismatches_index2``
-            clamped to [0, 2] — the values BCL Convert accepts.
+            whole numbers, clamped to [0, 2] — the values BCL Convert accepts.
           - ``index1_cycles`` / ``index2_cycles`` clamped to >= 1.
           - ``lanes`` filtered to positive non-bool ints.
           - ``override_cycles`` uppercased + rejected if outside the
@@ -114,7 +125,7 @@ class Sample:
         """
         if value is not None:
             if name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
-                value = max(0, min(2, value))
+                value = checked_mismatches(name, value)
             elif name in ("index1_cycles", "index2_cycles"):
                 value = max(1, value)
             elif name == "override_cycles":

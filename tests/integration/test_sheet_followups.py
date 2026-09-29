@@ -3,6 +3,8 @@
 
 import logging
 
+import pytest
+
 from seqsetup.data import instruments as instruments_module
 from seqsetup.models.instrument_definition import InstrumentDefinition, OnboardApplication
 from seqsetup.services.validation import clear_validation_cache
@@ -232,3 +234,25 @@ class TestStoredProfileMismatchStopsMarkReady:
         finally:
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()
+
+
+class TestStoredMismatchOfTheWrongKind:
+    """A run stored with true as a sample's mismatch value (written straight
+    into the database) cannot be loaded, so it cannot be marked ready
+    (spec §2; plan decision 8)."""
+
+    def test_a_run_stored_with_true_cannot_be_marked_ready(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run_id = _seed_draft(ctx, "mm-true")
+        ctx.run_repo.collection.update_one(
+            {"_id": run_id}, {"$set": {"samples.0.barcode_mismatches_index1": True}}
+        )
+
+        with pytest.raises(ValueError, match="barcode_mismatches_index1 must be a whole number, not True"):
+            logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        doc = ctx.run_repo.collection.find_one({"_id": run_id})
+        assert doc["status"] == "draft"
+        assert not doc.get("generated_samplesheet_v2")
+        assert doc["samples"][0]["barcode_mismatches_index1"] is True

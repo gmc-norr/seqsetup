@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Optional
 
 from .analysis import Analysis
-from .sample import Sample
+from .sample import Sample, checked_mismatches
 from .sequencing_run import InstrumentPlatform, RunCycles
 
 
@@ -53,7 +53,7 @@ class RunTemplate:
         elif name == "reagent_cycles":
             value = max(1, value)
         elif name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
-            value = max(0, min(2, value))
+            value = checked_mismatches(name, value)
         elif name in ("created_by", "updated_by", "flowcell_type") and isinstance(value, str):
             value = value[:256]
         object.__setattr__(self, name, value)
