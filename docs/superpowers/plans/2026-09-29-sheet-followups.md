@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- Spec: `docs/superpowers/specs/2026-09-29-sheet-followups-design.md` (commit `2e6b665`). The spec wins over this plan where they disagree; record each case.
+- Spec: `docs/superpowers/specs/2026-09-29-sheet-followups-design.md` (commit `2e6b665`; its value rule was completed in the commit that folds Astra's plan review into this plan). The spec wins over this plan where they disagree; record each case.
 - Worktree `.worktrees/sheet-followups` (under the main checkout), branch `fix/sheet-followups`. It holds `main` at `97dc047` plus the spec and this plan. **Base for every diff and review: `97dc047`.** Run everything from the worktree root.
 - `PY=../../.pixi/envs/default/bin/python` (the main checkout's Pixi env).
   - Tests: `PYTHONPATH=src $PY -m pytest <paths> -q -p no:cacheprovider`.
@@ -32,6 +32,7 @@
   - sync, a decimal value: `Field '<Settings|Data>' value for '<key>' is a number with a decimal point, which YAML may have changed (4.10 is read as 4.1). Put the value in quotes, for example "4.10".`
   - sync, a mapping or list value: `Field '<Settings|Data>' value for '<key>' is a <mapping|list>; a value must be text, a whole number or true/false.`
   - sync, an empty value: `Field '<Settings|Data>' value for '<key>' is empty. Write '' if it should be empty.`
+  - sync, any other value that is not text, a whole number or true/false (a date, a date and time, bytes, a set): `Field '<Settings|Data>' value for '<key>' is not text, a whole number or true/false: YAML read it as <type name> (<repr>). Put the value in quotes.`
   - sync, a decimal version: `Field '<name>' is a number with a decimal point, which YAML may have changed (1.10 is read as 1.1). Put the version in quotes, for example "1.10".` (`<name>`: `ApplicationProfileVersion`, `Version`, or `ApplicationProfiles[<i>].ApplicationProfileVersion`)
   - sync, an empty required field: the existing `Field '<name>' must not be empty` and `ApplicationProfiles[<i>]: '<name>' must not be empty`.
   - sync, mismatch: `Field 'Settings' value for '<key>' fills <column> and must be 0, 1 or 2 (BCL Convert allows at most 2 mismatches): <repr>` / `Field 'Data' value for '<key>' fills <column> and must be 0, 1, 2, blank or na (BCL Convert allows at most 2 mismatches): <repr>`
@@ -76,15 +77,31 @@ Before this plan was committed, every step of Tasks 1-8 was applied, as printed,
 scratch copy of `2e6b665` by a script (each Find had to match exactly once), and the tests
 were run there:
 - every step fitted the code it names;
-- each red step failed exactly as stated (Task 1: 12 failed, 5 passed; Task 2: 32 failed,
-  11 passed; Task 3: 27 failed, 17 passed; Task 4: 4 failed, 1 passed, with the
-  `None.items()` error; Task 5: 22 failed, 3 passed; Task 6: 31 failed, 16 passed; Task 7:
-  the import error), and each green step passed with the numbers stated;
-- after Task 8 the server suite gave **2559 passed**, 0 failed (unit 1713 → 1903,
-  integration 649 → 656), and the docs built with `-W` (exit 0);
-- all 25 break tests turned red. Two rows of the table were corrected from what the dry
-  run showed (3: the stored-profile sync tests go red too; 20: the `text-1` cases go red
-  too), and the break-test steps now say `PYTHONDONTWRITEBYTECODE=1` (see Task 9).
+- each red step failed exactly as stated, and each green step passed with the numbers
+  stated;
+- after Task 8 the server suite passed with 0 failed, and the docs built with `-W`
+  (exit 0);
+- every break test turned red. Two rows of the table were corrected from what that dry
+  run showed, and the break-test steps now say `PYTHONDONTWRITEBYTECODE=1` (see Task 9).
+
+Astra then reviewed the plan (at `ac4f308`) and found three gaps, all folded in:
+- P1: a date, a date and time, bytes (`!!binary`) or a set passed the sync and the writer
+  and was written in Python's own form (`!!binary NC4xMA==` as `b'4.10'`). The sync check
+  and the writer now refuse every value that is not text, a whole number or true/false
+  (spec decision 4), with a new sync message for these kinds.
+- P2: the quoted-`"4.10"` sync test stopped at the database. It now marks a run ready and
+  checks the Sample Sheet says `SoftwareVersion,4.10` (break test 27).
+- P3: the loading tests used only `True` and `1.5`. They now use every bad value (`False`
+  and `"1"` too) through every loader (break test 28).
+
+The whole dry run was then repeated on a fresh copy with the plan as it is now:
+- the red and green numbers are exactly those in each task (Task 1: 12 failed, 5 passed;
+  Task 2: 40 failed, 11 passed; Task 3: 27 failed, 17 passed; Task 4: 4 failed, 1 passed,
+  with the `None.items()` error; Task 5: 30 failed, 3 passed; Task 6: 37 failed, 16
+  passed; Task 7: the import error);
+- the server suite gave **2581 passed**, 0 failed (unit 1713 → 1925, integration
+  649 → 656), and the docs built with `-W` (exit 0);
+- all 28 break tests (and 8b) turned red, each in exactly the tests the table names.
 
 The browser suite was not run in the dry run: no template, route or script changes.
 
@@ -113,7 +130,7 @@ The browser suite was not run in the dry run: no template, route or script chang
 
 ```bash
 git branch --show-current            # fix/sheet-followups
-git log --oneline -4                 # the plan commit, 2e6b665, 9412424 (or the spec commits), b0387f2 (merge of main)
+git log --oneline -5                 # the plan-review commit, ac4f308 (the plan), 2e6b665, 9412424 (the spec), b0387f2 (merge of main)
 PYTHONPATH=src ../../.pixi/envs/default/bin/python -c "import seqsetup; print(seqsetup.__file__)"
 # must print a path under .worktrees/sheet-followups/src/
 ../../.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify
@@ -471,9 +488,10 @@ def _with(field: str, **entries) -> dict:
 class TestProfileValueKinds:
     """A Settings or Data value is written into the Sample Sheet with str().
     YAML has already changed a decimal number (4.10 is read as 4.1), an empty
-    value is None, and a mapping or a list would be written as Python text,
-    so these are refused. Text, whole numbers and true/false pass, as today
-    (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
+    value is None, and a mapping, a list, a date, bytes or a set would be
+    written in Python's own form, so these are refused. Only text, whole
+    numbers and true/false pass, as today (spec 2026-09-29 Sample Sheet
+    follow-ups, §1)."""
 
     @pytest.mark.parametrize("field", ["Settings", "Data"])
     @pytest.mark.parametrize("value", [
@@ -509,6 +527,22 @@ class TestProfileValueKinds:
     def test_empty_value_is_refused(self, field):
         assert _errors(_with(field, Extra=None)) == [
             f"Field '{field}' value for 'Extra' is empty. Write '' if it should be empty."
+        ]
+
+    @pytest.mark.parametrize("field", ["Settings", "Data"])
+    @pytest.mark.parametrize("text,kind", [
+        pytest.param("2024-01-01", "date", id="date"),
+        pytest.param("2024-01-01T10:00:00Z", "datetime", id="timestamp"),
+        pytest.param("!!binary NC4xMA==", "bytes", id="binary"),
+        pytest.param("!!set {a: null}", "set", id="set"),
+    ])
+    def test_any_other_kind_is_refused(self, field, text, kind):
+        # Astra plan review P1: these passed, and !!binary NC4xMA== was
+        # written as b'4.10'.
+        value = yaml.safe_load(f"v: {text}")["v"]
+        assert _errors(_with(field, Extra=value)) == [
+            f"Field '{field}' value for 'Extra' is not text, a whole number or true/false: "
+            f"YAML read it as {kind} ({value!r}). Put the value in quotes."
         ]
 
     @pytest.mark.parametrize("value", [
@@ -602,8 +636,12 @@ Replace with:
 ```python
 import logging
 
+from seqsetup.data import instruments as instruments_module
+from seqsetup.models.instrument_definition import InstrumentDefinition, OnboardApplication
+from seqsetup.services.validation import clear_validation_cache
+
 from .conftest import disable_repos
-from .test_sheet_safety import _seed_draft
+from .test_sheet_safety import _assert_validation_passes, _seed_draft
 ```
 
 and append to the same file:
@@ -700,14 +738,42 @@ class TestSyncRefusesRiskyValues:
             for m in handler.messages
         ), handler.messages
 
-    def test_quoted_4_10_is_stored_as_typed(self, fresh_app, monkeypatch):
+    def test_quoted_4_10_is_stored_and_written_as_typed(
+        self, fresh_app, logged_in_client, monkeypatch
+    ):
         _app, ctx, _db = fresh_app
+        try:
+            ok, message, _count = _sync(ctx, monkeypatch, {
+                "GuardProfile.yaml": _app_profile_yaml("GuardProfile", '"4.10"'),
+            })
+            assert ok, message
+            (profile,) = ctx.app_profile_repo.list_all()
+            assert profile.settings["SoftwareVersion"] == "4.10"
 
-        ok, message, _count = _sync(ctx, monkeypatch, {"P.yaml": _app_profile_yaml("P", '"4.10"')})
+            # Astra plan review P2: follow it into the Sample Sheet. The
+            # instrument must offer BCLConvert 4.10, or Mark Ready refuses the
+            # version.
+            ctx.instrument_definition_repo.save(InstrumentDefinition(
+                name="NovaSeq X Series",
+                samplesheet_name="NovaSeqXSeries",
+                version="1.0.0",
+                chemistry_type="2-color",
+                onboard_applications=[OnboardApplication(name="BCLConvert", software_version="4.10")],
+            ))
+            instruments_module.clear_synced_instruments_cache()
+            clear_validation_cache()
+            run_id = _seed_draft(ctx, "quoted-4-10", test_id="WGS")
+            _assert_validation_passes(ctx, run_id)
 
-        assert ok, message
-        (profile,) = ctx.app_profile_repo.list_all()
-        assert profile.settings["SoftwareVersion"] == "4.10"
+            resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+            assert resp.status_code == 200, resp.text[:400]
+            lines = ctx.run_repo.get_by_id(run_id).generated_samplesheet_v2.split("\n")
+            assert "SoftwareVersion,4.10" in lines
+            assert "SoftwareVersion,4.1" not in lines
+        finally:
+            instruments_module.clear_synced_instruments_cache()
+            clear_validation_cache()
 
 
 class TestSyncIntoStoredProfiles:
@@ -765,10 +831,10 @@ PYTHONPATH=src $PY -m pytest "tests/unit/test_profile_validator.py::TestProfileV
   tests/integration/test_sheet_followups.py::TestSyncIntoStoredProfiles -q -p no:cacheprovider
 ```
 
-Expected: **32 failed, 11 passed**:
-- unit 29 failed: every decimal, mapping/list, empty-value, decimal-version and empty-required-field test, and the 1.10/1.1 collision test;
+Expected: **40 failed, 11 passed**:
+- unit 37 failed: every decimal, mapping/list, empty-value, other-kind (date, timestamp, bytes, set), decimal-version and empty-required-field test, and the 1.10/1.1 collision test;
 - integration 3 failed: the unquoted `4.10` is stored today, so nothing is refused or stops;
-- passing (guards): the 6 text/number/true-false values, the 3 quoted/whole versions, the changed `test_numbers_and_booleans_are_accepted`, and the quoted `"4.10"` sync.
+- passing (guards): the 6 text/number/true-false values, the 3 quoted/whole versions, the changed `test_numbers_and_booleans_are_accepted`, and the quoted `"4.10"` sync, which Mark Ready writes as `SoftwareVersion,4.10`.
 
 - [ ] **Step 3: Implement**
 
@@ -880,9 +946,9 @@ def _value_kind_problem(field: str, key, value) -> str | None:
     """Why a Settings or Data value cannot be written as it is, or None. The
     sheet writer writes a value with str(): YAML has already changed a
     decimal number (4.10 is read as 4.1), an empty value is None, and a
-    mapping or a list would be written as Python text. Text, whole numbers
-    and true/false are written as they are (spec 2026-09-29 Sample Sheet
-    follow-ups, §1)."""
+    mapping, a list, a date, bytes or a set would be written in Python's own
+    form. Only text, whole numbers and true/false are written as they are
+    (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
     where = f"Field '{field}' value for {str(key)!r}"
     if isinstance(value, float):
         return (
@@ -894,6 +960,13 @@ def _value_kind_problem(field: str, key, value) -> str | None:
         return f"{where} is a {kind}; a value must be text, a whole number or true/false."
     if value is None:
         return f"{where} is empty. Write '' if it should be empty."
+    if not isinstance(value, (str, int)):
+        # true/false is a bool, which is an int. YAML reads 2024-01-01 as a
+        # date, and !!binary or !!set as bytes or a set.
+        return (
+            f"{where} is not text, a whole number or true/false: YAML read it as "
+            f"{type(value).__name__} ({value!r}). Put the value in quotes."
+        )
     return None
 
 
@@ -967,7 +1040,7 @@ Replace with:
 
 - [ ] **Step 4: Run them and the files around them**
 
-Run the Step 2 command: **43 passed**. Then:
+Run the Step 2 command: **51 passed**. Then:
 
 ```bash
 PYTHONPATH=src $PY -m pytest tests/unit/test_profile_validator.py tests/unit/test_sync_name_rules.py \
@@ -982,7 +1055,7 @@ Expected: no failures.
 ```bash
 git add src/seqsetup/services/profile_validator.py tests/unit/test_profile_validator.py \
   tests/integration/test_sheet_followups.py
-git commit -m "fix(profiles): refuse decimal, empty, mapping and list values and decimal versions at sync (Sample Sheet follow-ups §1)
+git commit -m "fix(profiles): refuse values that are not text, a whole number or true/false, and decimal versions, at sync (Sample Sheet follow-ups §1)
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
@@ -1550,6 +1623,12 @@ class TestProfileSafetyNet:
         pytest.param(None, id="empty"),
         pytest.param({"SoftwareVersion": "4.10"}, id="mapping"),
         pytest.param(["a"], id="list"),
+        # Astra plan review P1: a date, bytes or a set was written in
+        # Python's own form (b'4.10').
+        pytest.param(yaml.safe_load("2024-01-01"), id="date"),
+        pytest.param(yaml.safe_load("2024-01-01T10:00:00Z"), id="timestamp"),
+        pytest.param(b"4.10", id="bytes"),
+        pytest.param({"a"}, id="set"),
     ]
     KIND_ERROR = "A profile value must be text, a whole number or true/false"
 
@@ -1644,20 +1723,13 @@ class TestProfileSafetyNet:
 In `tests/integration/test_sheet_followups.py`, find:
 
 ```python
-import logging
-
 from .conftest import disable_repos
-from .test_sheet_safety import _seed_draft
+from .test_sheet_safety import _assert_validation_passes, _seed_draft
 ```
 
 Replace with:
 
 ```python
-import logging
-
-from seqsetup.data import instruments as instruments_module
-from seqsetup.services.validation import clear_validation_cache
-
 from .conftest import disable_repos
 from .test_sheet_safety import _assert_validation_passes, _seed_draft, _seed_synced_profile
 ```
@@ -1698,7 +1770,7 @@ PYTHONPATH=src $PY -m pytest tests/unit/test_samplesheet_v2_exporter.py::TestPro
   tests/integration/test_sheet_followups.py::TestStoredProfileMismatchStopsMarkReady -q -p no:cacheprovider
 ```
 
-Expected: **22 failed, 3 passed**. The 3 that pass are guards: `na` written, the sample's own value, whole numbers and true/false. (The list value fails today too, but with the `'['` message instead of the new one.)
+Expected: **30 failed, 3 passed**. The 3 that pass are guards: `na` written, the sample's own value, whole numbers and true/false. (The list value fails today too, but with the `'['` message instead of the new one. The date, timestamp, bytes and set values are written today.)
 
 - [ ] **Step 3: Implement**
 
@@ -1748,12 +1820,13 @@ Replace with:
         a default value). Quoting a line break still leaves a new line for a
         line-oriented reader, so every hidden character — tab and line breaks
         included — is refused before ``_escape_csv``. So is a value starting
-        with '[': first on its line, it would start a new section. So is a
-        decimal number, an empty value, a mapping or a list: str() would write
-        what YAML changed (4.10 as 4.1), the word None, or Python text. The
+        with '[': first on its line, it would start a new section. So is any
+        value but text, a whole number or true/false (a bool is an int):
+        str() would write what YAML changed (4.10 as 4.1), the word None, or
+        a mapping, a list, a date, bytes or a set in Python's own form. The
         sync refuses them; this is the backstop for a profile already in the
         database (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
-        if value is None or isinstance(value, (float, dict, list)):
+        if not isinstance(value, (str, int)):
             raise ValueError(
                 f"A profile value must be text, a whole number or true/false, not {value!r}"
             )
@@ -1864,7 +1937,7 @@ Replace with:
 
 - [ ] **Step 4: Run them and the files around them**
 
-Run the Step 2 command: **25 passed**. Then:
+Run the Step 2 command: **33 passed**. Then:
 
 ```bash
 PYTHONPATH=src $PY -m pytest tests/unit/test_samplesheet_v2_exporter.py tests/unit/test_check_broken_samplesheets.py \
@@ -1932,7 +2005,8 @@ class TestMismatchIsAWholeNumber:
         with pytest.raises(ValueError, match="barcode_mismatches_index2 must be a whole number, not "):
             owner.barcode_mismatches_index2 = value
 
-    @pytest.mark.parametrize("value", [True, 1.5])
+    # Astra plan review P3: every bad value, through every loader.
+    @pytest.mark.parametrize("value", BAD_MISMATCHES)
     @pytest.mark.parametrize("load", [
         pytest.param(
             lambda v: Sample.from_dict({"id": "s", "sample_id": "S1", "barcode_mismatches_index1": v}),
@@ -2010,7 +2084,7 @@ PYTHONPATH=src $PY -m pytest tests/unit/test_model_validation.py::TestMismatchIs
   tests/integration/test_sheet_followups.py::TestStoredMismatchOfTheWrongKind -q -p no:cacheprovider
 ```
 
-Expected: **31 failed, 16 passed**: every refusal fails (`"1"` fails with a `TypeError` from `min()`, the others are kept as given); the 15 clamping cases and the sample's `None` pass.
+Expected: **37 failed, 16 passed**: every refusal fails (`"1"` fails with a `TypeError` from `min()`, the others are kept as given); the 15 clamping cases and the sample's `None` pass.
 
 - [ ] **Step 3: Implement**
 
@@ -2123,7 +2197,7 @@ Replace with:
 
 - [ ] **Step 4: Run them and the files around them**
 
-Run the Step 2 command: **47 passed**. Then run the server suite (the models are used everywhere). Expected: no failures.
+Run the Step 2 command: **53 passed**. Then run the server suite (the models are used everywhere). Expected: no failures.
 
 - [ ] **Step 5: Commit**
 
@@ -2545,6 +2619,10 @@ Replace with:
   - an empty value (a key with nothing after it). Write ``''`` for an empty
     cell
   - a mapping or a list, which would be written as Python text
+  - a date such as ``2024-01-01`` (or a date and time), which YAML reads as
+    a date, and any other value YAML does not read as text, a number or
+    ``true``/``false`` (``!!binary``, ``!!set``). Put a date in quotes:
+    ``"2024-01-01"``
 
 - ``BarcodeMismatchesIndex1`` and ``BarcodeMismatchesIndex2`` (BCL Convert
   allows at most 2 mismatches): as a ``Settings`` entry, 0, 1 or 2. As a
@@ -2655,9 +2733,9 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 ### Task 9: Verify the whole branch
 
-- [ ] **Step 1: The server suite.** Expected **2559 passed**, 0 failed, 0 errors.
-  - The change is 2559 − 2362 = 197:
-    - unit 190 (Task 1: 16; Task 2: 38; Task 3: 44; Task 4: 5; Task 5: 24; Task 6: 46; Task 7: 17);
+- [ ] **Step 1: The server suite.** Expected **2581 passed**, 0 failed, 0 errors.
+  - The change is 2581 − 2362 = 219:
+    - unit 212 (Task 1: 16; Task 2: 46; Task 3: 44; Task 4: 5; Task 5: 32; Task 6: 52; Task 7: 17);
     - integration 7 (Task 1: 1; Task 2: 4; Task 5: 1; Task 6: 1).
   - If the total differs, name the term. Never adjust a number to make the sum close.
 - [ ] **Step 2: Browser suite.** Expected **102 passed, 54 skipped**.
@@ -2679,7 +2757,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 |---|----------|-----------|
 | 1 | `hidden_characters`: `in ("Cc", "Cf")` → `== "Cc"` | `test_format_character_is_hidden` (5), the three `TestInvisibleCharactersInText` tests, both writers' `TestInvisibleCharacters`, the integration zero-width test |
 | 2 | `_hidden_character_message`: delete ` If you cannot see {pronoun}, delete the text and type it again.` | `test_zero_width_space_in_sample_name_is_an_error`, `test_several_characters_are_called_them`, the integration zero-width test |
-| 3 | `_value_kind_problem`: delete the `float` branch | `test_decimal_number_is_refused` (8), `test_unquoted_4_10_is_skipped_and_logged`, both `TestSyncIntoStoredProfiles` tests |
+| 3 | `_value_kind_problem`: delete the `float` branch | `test_decimal_number_is_refused` (8), `test_unquoted_4_10_is_skipped_and_logged` (a decimal is still refused, by the other-kind branch, with the wrong message) |
 | 4 | `_value_kind_problem`: delete the `(dict, list)` branch | `test_mapping_or_list_is_refused` (4), `test_a_mapping_holding_a_decimal_is_refused_as_a_mapping` |
 | 5 | `_value_kind_problem`: delete the `value is None` branch | `test_empty_value_is_refused` (2) |
 | 6 | `_is_empty`: `return not str(value).strip()` | the ten `TestEmptyRequiredFields` tests |
@@ -2692,16 +2770,19 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 | 13 | `_sample_id_column_problems`: `columns = list(fields)` | `test_no_sample_id_column_is_refused[renamed-by-translate]`, `test_sample_id_column_passes[reached-by-translate]` |
 | 14 | `ApplicationProfile.from_dict`: `settings=data.get("settings", {})` | `test_from_dict_reads_empty_sections_as_none`, `test_stored_profile_with_empty_sections_exports` |
 | 15 | `ApplicationProfile.from_yaml`: `data=yaml_data.get("Data", {})` | `test_from_yaml_reads_an_empty_data_as_none` |
-| 16 | `_escape_config_cell`: delete the new kind check | both `test_*_of_the_wrong_kind_is_refused` (8) |
+| 16 | `_escape_config_cell`: delete the new kind check | both `test_*_of_the_wrong_kind_is_refused` (16) |
 | 17 | writer Settings loop: delete the `_require_profile_mismatch` call | `test_setting_mismatch_outside_0_to_2_is_refused` (5), `test_a_setting_of_3_stops_mark_ready` |
 | 18 | `_profile_mismatch_cell`: `return cls._escape_config_cell(value)` only | `test_data_mismatch_default_outside_the_allowed_values_is_refused` (4), `test_a_translated_mismatch_default_is_checked` |
 | 19 | writer: delete the `Sample_ID` column check | `test_data_section_without_sample_id_is_refused` (3) |
-| 20 | `checked_mismatches`: delete the whole-number check | all 30 `TestMismatchIsAWholeNumber` refusals (the `text-1` ones with a `TypeError`), `test_a_run_stored_with_true_cannot_be_marked_ready` |
+| 20 | `checked_mismatches`: delete the whole-number check | all 36 `TestMismatchIsAWholeNumber` refusals (the `text-1` ones with a `TypeError`), `test_a_run_stored_with_true_cannot_be_marked_ready` |
 | 21 | `SequencingRun.__setattr__`: `value = max(0, min(2, value))` | the `run` refusals |
 | 22 | `RunTemplate.__setattr__`: `value = max(0, min(2, value))` | the `template` refusals |
 | 23 | `load_checked_instrument_file`: delete the `try`/`except Exception` around the check (call it directly) | `test_a_value_the_check_cannot_read` (2) |
 | 24 | `load_checked_instrument_file`: delete `problems += [...]` for `result.errors` | `test_a_bad_i5_orientation`, `test_a_bad_flowcell`, `test_every_problem_is_listed`, `test_the_app_reads_the_file_through_the_check` |
 | 25 | `_load_config`: read the file with plain `yaml.safe_load` again | `test_the_app_reads_the_file_through_the_check`, `test_a_broken_file_stops_the_start` |
+| 26 | `_value_kind_problem`: delete the `not isinstance(value, (str, int))` branch | `test_any_other_kind_is_refused` (8) |
+| 27 | `_escape_config_cell`: after `text = str(value)`, add `text = str(float(text)) if "." in text else text` inside `try`/`except ValueError: pass` (Astra plan review P2: text that looks like a decimal is changed) | `test_quoted_4_10_is_stored_and_written_as_typed` |
+| 28 | `Sample.from_dict`: read a text `barcode_mismatches_index1` with `int()` (Astra plan review P3) | `test_loading_refuses_it[sample-text-1]` |
 
 - [ ] **Step 5: Independent review.**
   - One read-only reviewer runs over `97dc047..HEAD` with the spec, this plan, the worktree path and the commands above.

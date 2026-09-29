@@ -22,7 +22,9 @@ on 2026-09-29:
    versions can collide. A required field left empty passes the "must not be empty" check,
    because `str(None)` is `"None"`. A value that is itself a mapping or a list
    (`Options: {SoftwareVersion: 4.10}`) passes sync and is written as Python text:
-   `"{'SoftwareVersion': 4.1}"`.
+   `"{'SoftwareVersion': 4.1}"`. So does a value YAML reads as a date (`2024-01-01`), a
+   date and time, bytes (`!!binary`) or a set (`!!set`): `!!binary NC4xMA==` is written
+   as `b'4.10'` (found in Astra's plan review).
 3. **Two profile shapes break Mark Ready or the sheet.** An empty `Settings:` in a
    non-DRAGEN profile passes sync as `None`, and every Mark Ready that uses it then fails
    with a 500 (`None.items()`). An empty `Data:` fails the same way when there is no
@@ -50,7 +52,7 @@ on 2026-09-29:
    database directly gets there.
 
 The shipped profiles and the shipped instruments file pass every new check (probed
-2026-09-29: no decimal numbers, no empty values, no mapping or list values; every data
+2026-09-29: every `Settings` and `Data` value is text, a whole number or true/false; every data
 section has `Sample_ID`; all 11 local instruments pass `validate_instrument_yaml`). The
 shipped DRAGEN profiles use `na` as a `Data` default for several file settings (not for
 mismatch columns); that stays allowed.
@@ -96,6 +98,10 @@ Added after the spec review, inside those decisions:
   `Field '<Settings|Data>' value for '<key>' is a <mapping|list>; a value must be text, a whole number or true/false.`
 - **Application profile, a `Settings` or `Data` value is empty** (YAML `None`):
   `Field '<Settings|Data>' value for '<key>' is empty. Write '' if it should be empty.`
+- **Application profile, a `Settings` or `Data` value of any other kind that is not text,
+  a whole number or `true`/`false`** (decision 4; YAML reads `2024-01-01` as a date, a
+  timestamp as a date and time, `!!binary` as bytes and `!!set` as a set):
+  `Field '<Settings|Data>' value for '<key>' is not text, a whole number or true/false: YAML read it as <type name> (<repr>). Put the value in quotes.`
 - **A version is a decimal number:** `ApplicationProfileVersion` of an application
   profile; `Version` of a test profile; each `ApplicationProfiles[i].ApplicationProfileVersion`
   of a test profile:
@@ -148,8 +154,9 @@ For a profile already in the database, `SampleSheetV2Exporter` checks the same t
 again and raises `ValueError` rather than write the value. Mark Ready then stops with its
 existing "Failed to generate exports" (500), and nothing is saved:
 
-- a `Settings` or `Data` value that is a decimal number, empty (`None`), a mapping or a
-  list, in `_escape_config_cell`:
+- a `Settings` or `Data` value that is not text, a whole number or `true`/`false` (a
+  decimal number, empty (`None`), a mapping, a list, a date, bytes, a set), in
+  `_escape_config_cell`:
   `A profile value must be text, a whole number or true/false, not <repr>`;
 - a mismatch value taken from the profile:
   - a `Settings` entry that is not 0, 1 or 2:
@@ -233,7 +240,8 @@ looks exactly like a real 1.1. See **Rollout**.
 ## Docs
 
 - `docs/admin-guide/profiles.rst`, **Validation**: the new sync rules (decimal numbers and
-  empty values must be quoted; mapping and list values are refused; required fields may
+  empty values must be quoted; mapping and list values are refused; a date must be
+  quoted, and any other value that is not text, a number or true/false is refused; required fields may
   not be empty; a mismatch value is 0, 1 or 2 in `Settings`, and 0, 1, 2, blank or `na` in
   `Data`; a `Sample_ID` column in every data section; empty sections mean "none", except
   in a DRAGEN profile), the test-profile version rule, and what happens to a refused file
@@ -253,7 +261,7 @@ looks exactly like a real 1.1. See **Rollout**.
 
 Unit:
 - `profile_validator`: each new refusal with its exact message: decimal value, mapping
-  value, list value, empty value, each version field, empty required field, each mismatch
+  value, list value, empty value, a date, a date and time, bytes and a set, each version field, empty required field, each mismatch
   case (including a `Translate`d column, `true`, and `na` in `Settings`), and no
   `Sample_ID` column (including one reached only through `Translate`). Guards that pass:
   whole numbers, `true`/`false` elsewhere, quoted `"4.10"`, `''`, `0`/`1`/`2`, `na` in a
@@ -265,7 +273,7 @@ Unit:
 - `ApplicationProfile.from_yaml` / `from_dict`: empty sections become `{}` / `[]`
   (`from_yaml` for a non-DRAGEN profile; `from_dict` for a DRAGEN one too).
 - `SampleSheetV2Exporter`: each safety-net refusal, from a profile built directly (not
-  through the validator), including a mapping value; a `Data` mismatch default of `na` is
+  through the validator), including a mapping value, a date, bytes and a set; a `Data` mismatch default of `na` is
   written as `na`; a profile with an empty `Settings` writes an empty section and no
   longer fails. Every test of a `Data` mismatch default sets the sample's own values to
   `None`: a new sample's own value is 1, which would hide the default.
@@ -290,7 +298,8 @@ Integration:
 - Mark Ready on a run with a zero-width space in a sample's description is refused, with
   the message, and nothing is saved.
 - Config sync of an application profile with `SoftwareVersion: 4.10` skips it and logs
-  the reason; the same profile with `"4.10"` is synced and written as `4.10`. The GitHub
+  the reason; the same profile with `"4.10"` is synced and, when a run using it is marked
+  ready, written into the Sample Sheet as `SoftwareVersion,4.10`. The GitHub
   fetches are replaced in the test, as `tests/integration/test_scheduled_sync_instrument_cache.py`
   does; only the file listing and the file text are faked, so the real parse and check run.
 - Config sync into a database that already holds profiles: (a) one of two application
