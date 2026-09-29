@@ -537,11 +537,12 @@ class ValidationService:
     @staticmethod
     def _hidden_character_message(subject: str, fields: list[str], chars: list[str]) -> str:
         many = len(chars) > 1
+        pronoun = "them" if many else "it"
         return (
             f"{subject} has {'hidden characters' if many else 'a hidden character'} "
             f"in its {' and '.join(fields)}: {describe(chars)}. Hidden characters "
-            f"can break the Sample Sheet. Remove {'them' if many else 'it'} before "
-            f"marking the run ready."
+            f"can break the Sample Sheet. Remove {pronoun} before marking the run "
+            f"ready. If you cannot see {pronoun}, delete the text and type it again."
         )
 
     @classmethod

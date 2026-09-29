@@ -394,3 +394,14 @@ class TestSheetTextGuardV1:
         assert SampleSheetV1Exporter._escape_csv("a,b") == '"a,b"'
         assert SampleSheetV1Exporter._escape_csv("a\rb") == '"a\rb"'
         assert SampleSheetV1Exporter._escape_csv("\tx") == "'\tx"
+
+
+class TestInvisibleCharacters:
+    """The v1 writer refuses a zero-width space like any hidden character
+    (spec 2026-09-29 Sample Sheet follow-ups, §3)."""
+
+    def test_zero_width_space_in_sample_name_is_refused(self, sample_run):
+        sample_run.samples[0].sample_name = "Sample​One"
+
+        with pytest.raises(ValueError, match="U\\+200B"):
+            SampleSheetV1Exporter.export(sample_run)

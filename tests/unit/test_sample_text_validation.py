@@ -260,3 +260,42 @@ class TestRunTextHiddenCharacters:
         run.run_description = "Åsa's run, 2 × 150"
 
         assert _errors(run, "hidden_character_in_text") == []
+
+
+class TestInvisibleCharactersInText:
+    """A zero-width space or another invisible format character is a hidden
+    character too, and the message says how to remove what cannot be seen
+    (spec 2026-09-29 Sample Sheet follow-ups, §3)."""
+
+    def test_zero_width_space_in_sample_name_is_an_error(self):
+        run = _run_with(Sample(sample_id="S1", sample_name="A​B"))
+
+        errors = _errors(run, "hidden_character_in_text")
+
+        assert [e.message for e in errors] == [
+            "Sample 'S1' has a hidden character in its sample name: U+200B. Hidden "
+            "characters can break the Sample Sheet. Remove it before marking the run "
+            "ready. If you cannot see it, delete the text and type it again."
+        ]
+
+    def test_several_characters_are_called_them(self):
+        run = _run_with(Sample(sample_id="S1", project="P​﻿"))
+
+        errors = _errors(run, "hidden_character_in_text")
+
+        assert len(errors) == 1
+        assert errors[0].message.endswith(
+            "Remove them before marking the run ready. If you cannot see them, "
+            "delete the text and type it again."
+        )
+
+    def test_direction_override_in_run_name_is_an_error(self):
+        run = _run_with(Sample(sample_id="S1"))
+        run.run_name = "Run‮1"
+
+        errors = _errors(run, "hidden_character_in_text")
+
+        assert len(errors) == 1
+        assert errors[0].message.startswith(
+            "The run has a hidden character in its name: U+202E."
+        )

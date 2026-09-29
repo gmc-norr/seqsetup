@@ -21,11 +21,13 @@ _NAMES = {"\t": "tab"}
 
 def hidden_characters(text: str | None) -> list[str]:
     """The distinct hidden characters in ``text``, in order of first
-    appearance: control characters (Unicode category Cc) and the Unicode
-    line and paragraph separators."""
+    appearance: control characters (Unicode category Cc), format characters
+    (Cf: the zero-width space, byte-order mark, soft hyphen, and the
+    direction marks and overrides, which can change the order a name is
+    shown in) and the Unicode line and paragraph separators."""
     return [
         c for c in dict.fromkeys(text or "")
-        if unicodedata.category(c) == "Cc" or c in _SEPARATORS
+        if unicodedata.category(c) in ("Cc", "Cf") or c in _SEPARATORS
     ]
 
 

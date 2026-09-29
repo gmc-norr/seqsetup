@@ -1,5 +1,6 @@
 """Tests for SampleSheet v2 exporter."""
 
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -1259,3 +1260,21 @@ def test_shipped_application_profiles_export(path):
 
 def test_shipped_application_profiles_are_found_for_export():
     assert len(_SHIPPED_PROFILES) >= 6
+
+
+class TestInvisibleCharacters:
+    """The v2 writer refuses a zero-width space like any hidden character. It
+    writes no sample name: the run name reaches [Header], and each sample ID
+    reaches [Cloud_Data] (spec 2026-09-29 Sample Sheet follow-ups, §3)."""
+
+    def test_zero_width_space_in_run_name_is_refused(self, sample_run):
+        sample_run.run_name = "Run​1"
+
+        with pytest.raises(ValueError, match="U\\+200B"):
+            SampleSheetV2Exporter.export(sample_run)
+
+    def test_zero_width_space_in_cloud_data_is_refused(self, sample_run):
+        sample_run.samples[0].sample_id = "S​1"
+
+        with pytest.raises(ValueError, match="U\\+200B"):
+            SampleSheetV2Exporter._write_cloud_sections(StringIO(), sample_run)

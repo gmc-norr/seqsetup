@@ -102,3 +102,29 @@ class TestStartsASection:
     @pytest.mark.parametrize("value", ["", "gzip", "a[b]", "x]", "'[x"])
     def test_other_text_does_not(self, value):
         assert not starts_a_section(value)
+
+
+class TestInvisibleFormatCharacters:
+    """Unicode format characters (category Cf) cannot be seen, and the
+    direction marks and overrides can change the order a name is shown in,
+    so they count as hidden (spec 2026-09-29 Sample Sheet follow-ups, §3)."""
+
+    @pytest.mark.parametrize("char", [
+        pytest.param("​", id="ZERO-WIDTH-SPACE"),
+        pytest.param("﻿", id="BYTE-ORDER-MARK"),
+        pytest.param("­", id="SOFT-HYPHEN"),
+        pytest.param("‎", id="LEFT-TO-RIGHT-MARK"),
+        pytest.param("‮", id="RIGHT-TO-LEFT-OVERRIDE"),
+    ])
+    def test_format_character_is_hidden(self, char):
+        assert hidden_characters(f"a{char}b") == [char]
+
+    @pytest.mark.parametrize("text", [
+        pytest.param("Plain text 1-2_3", id="plain"),
+        pytest.param("no break", id="NO-BREAK-SPACE"),
+        pytest.param("Åsa Öberg", id="latin"),
+        pytest.param("Ωμέγα", id="greek"),
+        pytest.param("试验", id="cjk"),
+    ])
+    def test_visible_text_is_not(self, text):
+        assert hidden_characters(text) == []
