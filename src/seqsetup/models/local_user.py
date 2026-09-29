@@ -16,6 +16,8 @@ _BCRYPT_ROUNDS = 12
 
 # Minimum acceptable password length.
 _MIN_PASSWORD_LENGTH = 8
+# bcrypt reads at most 72 bytes of a password, and bcrypt 5 refuses more.
+_MAX_PASSWORD_BYTES = 72
 
 # The longest username anywhere: Admin → Users, create-admin and sign-in
 # (spec 2026-09-28 group 2b, review P3). Sign-in refuses a longer name; it
@@ -56,6 +58,11 @@ def assert_password_strong(plaintext: str) -> None:
     if not isinstance(plaintext, str) or len(plaintext) < _MIN_PASSWORD_LENGTH:
         raise WeakPasswordError(
             f"Password must be at least {_MIN_PASSWORD_LENGTH} characters."
+        )
+    if len(plaintext.encode("utf-8")) > _MAX_PASSWORD_BYTES:
+        raise WeakPasswordError(
+            f"Password must be at most {_MAX_PASSWORD_BYTES} bytes. Most characters are "
+            "1 byte; letters like å, ä and ö are 2."
         )
     lower = plaintext.lower()
     if lower in _WEAK_PASSWORDS:

@@ -193,3 +193,24 @@ class TestLocalUserSerialization:
     def test_from_dict_uses_id_fallback(self):
         user = LocalUser.from_dict({"_id": "fallback_user"})
         assert user.username == "fallback_user"
+
+
+class TestPasswordByteLimit:
+    """bcrypt reads at most 72 bytes of a password; bcrypt 5 refuses more
+    with a plain ValueError that the Users page did not catch. The rule
+    counts bytes, not characters (spec 2026-09-28 group 2b, plan review 1, P4)."""
+
+    @pytest.mark.parametrize("password", ["x1" * 36, "å1" * 24], ids=["ascii", "multibyte"])
+    def test_72_bytes_is_accepted(self, password):
+        user = LocalUser(username="test", display_name="Test")
+        user.set_password(password)
+        assert user.verify_password(password) is True
+
+    @pytest.mark.parametrize("password", ["x1" * 36 + "y", "å1" * 24 + "1"],
+                             ids=["ascii", "multibyte-49-characters"])
+    def test_73_bytes_is_refused_with_the_rule(self, password):
+        from seqsetup.models.local_user import WeakPasswordError
+        user = LocalUser(username="test", display_name="Test")
+        with pytest.raises(WeakPasswordError, match="at most 72 bytes"):
+            user.set_password(password)
+        assert user.password_hash == ""

@@ -25,6 +25,19 @@ class LocalUserRepository(BaseRepository[LocalUser]):
         """Check if a user with the given username exists."""
         return self.collection.count_documents({"_id": username}) > 0
 
+    def create(self, user: LocalUser) -> bool:
+        """Insert a new user. False, with nothing written, if the name is taken:
+        never replaces an existing account."""
+        from pymongo.errors import DuplicateKeyError
+
+        doc = user.to_dict()
+        doc["_id"] = user.username
+        try:
+            self.collection.insert_one(doc)
+        except DuplicateKeyError:
+            return False
+        return True
+
     def count_admins(self) -> int:
         """Count the number of admin users."""
         return self.collection.count_documents({"role": UserRole.ADMIN.value})
