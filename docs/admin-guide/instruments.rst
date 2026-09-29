@@ -7,6 +7,14 @@ SeqSetup ships a built-in list of Illumina instruments and their flowcells in
 file) to change. This shipped list cannot be edited or individually disabled
 from the UI.
 
+SeqSetup checks this file at every start, the same way a config sync checks
+synced instruments. If an instrument in it has a mistake -- say
+``i5_read_orientation: forwards`` -- or the file cannot be read, SeqSetup
+does not start, and the error names the file, each instrument and each
+problem: *"instruments.yaml has errors, so SeqSetup will not start: MiSeq:
+i5_read_orientation: Must be one of: forward, reverse-complement (got:
+'forwards')"*. Fix the file and start again.
+
 **Admin > Instruments** lets an admin manage a *different*, additional set:
 instrument definitions synced in from GitHub (see :doc:`profiles`). Until at
 least one instrument has been synced, the page shows a note pointing at that

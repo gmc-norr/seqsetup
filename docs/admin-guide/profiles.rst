@@ -250,6 +250,9 @@ Example External Profiles
    ApplicationName: CustomVariantPipeline
    ApplicationType: External
 
+   DataFields:
+     - Sample_ID
+
 **External profile with configuration:**
 
 .. code-block:: yaml
@@ -289,17 +292,24 @@ Validation
 Test Profile Validation
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-- All required fields must be present and non-empty
+- All required fields must be present and non-empty; a field with nothing
+  after it (``Version:``) is empty
 - ``Version`` must be a valid PEP 440 version
 - ``ApplicationProfiles`` must be a non-empty list
 - Each application profile reference must have a name and a version
   constraint, and the constraint must itself be valid PEP 440
+- A version written as a number with a decimal point -- ``Version: 1.10``,
+  or ``ApplicationProfileVersion: 1.10`` in a reference -- is refused: YAML
+  reads it as the number 1.1. Put it in quotes: ``"1.10"``
 
 Application Profile Validation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- All four required fields must be present and non-empty
-- ``ApplicationProfileVersion`` must be a valid PEP 440 version
+- All four required fields must be present and non-empty; a field with
+  nothing after it is empty
+- ``ApplicationProfileVersion`` must be a valid PEP 440 version, in quotes
+  when it has a decimal point (``"1.10"``; unquoted, YAML reads it as 1.1,
+  and two versions could become one)
 - ``ApplicationName`` may only contain letters, digits, ``_`` and ``-`` --
   it becomes a section name in the Sample Sheet (``[<name>_Settings]``),
   written exactly as given
@@ -319,10 +329,36 @@ Application Profile Validation
 - No ``Settings`` or ``Data`` value may start with ``[``, even after
   spaces -- written first on a line, it would start a new section. A value
   written as a YAML list is written as ``['a', 'b']``, so it is refused too
+- Every ``Settings`` and ``Data`` value must be text, a whole number or
+  ``true``/``false``. These are refused, because the Sample Sheet would not
+  get what the file says:
+
+  - a number with a decimal point, such as ``SoftwareVersion: 4.10`` --
+    YAML reads it as 4.1. Put it in quotes: ``"4.10"``
+  - an empty value (a key with nothing after it). Write ``''`` for an empty
+    cell
+  - a mapping or a list, which would be written as Python text
+  - a date such as ``2024-01-01`` (or a date and time), which YAML reads as
+    a date, and any other value YAML does not read as text, a number or
+    ``true``/``false`` (``!!binary``, ``!!set``). Put a date in quotes:
+    ``"2024-01-01"``
+
+- ``BarcodeMismatchesIndex1`` and ``BarcodeMismatchesIndex2`` (BCL Convert
+  allows at most 2 mismatches): as a ``Settings`` entry, 0, 1 or 2. As a
+  ``Data`` default for a sample's column -- also a column that
+  ``Translate`` renames to one of them -- 0, 1, 2, blank (``''``) or ``na``,
+  which Illumina uses for a setting that does not apply to a sample.
+  ``true`` and ``false`` are refused
+- The data section must have a ``Sample_ID`` column, or no row would name
+  its sample: ``Sample_ID`` must be in ``DataFields`` (or, when
+  ``DataFields`` is missing or empty, be a key of ``Data``), as it is or
+  renamed to it by ``Translate``
 - ``Settings``, ``Data`` and ``Translate`` must be mappings and
-  ``DataFields`` a list, when given
+  ``DataFields`` a list, when given. A section left empty (``Settings:``
+  with nothing under it) means "none"
 - If ``ApplicationType`` is ``Dragen``: ``Settings`` and ``Data`` must be
-  present and be dicts, and ``DataFields`` must be present and be a list
+  present and be dicts, and ``DataFields`` must be present and be a list.
+  For a DRAGEN profile an empty section is refused
 
 .. note::
    These checks run when a profile file is pulled in by :ref:`Config Sync
@@ -330,6 +366,13 @@ Application Profile Validation
    count towards the "N profiles synced" total on the Config Sync page --
    but no per-file error is shown there either. The reason is only visible
    on :doc:`Admin > Logs <logs>`, as a warning naming the file.
+
+   The sync then replaces the stored profiles with the ones that passed, so
+   a run that needs a refused profile is stopped at **Mark Ready** with
+   *"Application profile '<name>' version '<version>' not found"*. If
+   **every** application profile (or every test profile) is refused, the
+   sync stops instead and changes nothing: the profiles stored before stay
+   in use.
 
 Runtime Validation
 ~~~~~~~~~~~~~~~~~~~
