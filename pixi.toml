@@ -11,6 +11,7 @@ test = "PYTHONPATH=src pytest tests/unit tests/integration"
 docs = "sphinx-build -W --keep-going -b html docs docs/_build/html"
 mock-api = "uvicorn tools.mock_igene_api:app --port 8100"
 create-admin = "PYTHONPATH=src python -m seqsetup.create_admin"
+use-local-sign-in = "PYTHONPATH=src python -m seqsetup.use_local_sign_in"
 playwright-install = "playwright install chromium"
 smoke-browser = { cmd = "PYTHONPATH=src pytest tests/browser -v", depends-on = ["css"] }
 docs-screenshots = { cmd = "SEQSETUP_DOCS_SCREENSHOTS=1 PYTHONPATH=src pytest tests/browser/test_docs_screenshots.py -q", depends-on = ["css"] }
