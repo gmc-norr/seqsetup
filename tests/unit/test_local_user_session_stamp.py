@@ -3,8 +3,8 @@ password changes, so logins made before the change stop working."""
 
 from unittest.mock import patch
 
-import bcrypt
 
+from seqsetup.models.auth_config import AuthMethod
 from seqsetup.models.local_user import LocalUser
 from seqsetup.models.user import User, UserRole
 from seqsetup.services.auth import AuthService
@@ -61,15 +61,9 @@ class TestLoginSource:
         user = u.to_user()
         assert (user.source, user.session_stamp) == ("local", u.session_stamp)
 
-    def test_yaml_user_is_yaml(self, tmp_path):
-        h = bcrypt.hashpw(b"Yaml-Passw0rd!", bcrypt.gensalt(rounds=4)).decode()
-        cfg = tmp_path / "users.yaml"
-        cfg.write_text(f"users:\n  bob:\n    password_hash: '{h}'\n    role: standard\n")
-        user = AuthService(cfg).authenticate("bob", "Yaml-Passw0rd!")
-        assert (user.source, user.session_stamp) == ("yaml", "")
-
-    def test_ldap_user_is_ldap(self, tmp_path):
+    def test_ldap_user_is_ldap(self):
         class _Cfg:
+            auth_method = AuthMethod.LDAP
             is_ldap_enabled = True
             allow_local_fallback = False
             ldap_config = object()
@@ -77,6 +71,5 @@ class TestLoginSource:
         plain = User(username="carol", display_name="Carol", role=UserRole.STANDARD)
         with patch("seqsetup.services.ldap.LDAPService") as svc:
             svc.return_value.authenticate.return_value = plain
-            user = AuthService(tmp_path / "none.yaml",
-                               get_auth_config=lambda: _Cfg()).authenticate("carol", "x")
+            user = AuthService(get_auth_config=lambda: _Cfg()).authenticate("carol", "x")
         assert user.source == "ldap"

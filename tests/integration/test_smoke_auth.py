@@ -28,8 +28,7 @@ class TestLogin:
         # Login page re-renders (200) rather than redirecting.
         assert response.status_code == 200
         # Some hint of failure is in the body.
-        body_lower = response.text.lower()
-        assert "invalid" in body_lower or "error" in body_lower or "incorrect" in body_lower
+        assert "Sign-in failed. Check your name and password" in response.text
 
     def test_unknown_user_returns_login_page_with_error(self, client):
         response = client.post(
@@ -39,8 +38,7 @@ class TestLogin:
             follow_redirects=False,
         )
         assert response.status_code == 200
-        body_lower = response.text.lower()
-        assert "invalid" in body_lower or "error" in body_lower or "incorrect" in body_lower
+        assert "Sign-in failed. Check your name and password" in response.text
 
 
 class TestLogout:

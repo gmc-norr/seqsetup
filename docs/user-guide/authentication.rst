@@ -18,18 +18,18 @@ Signing in
 
    The login form, outlined.
 
-A wrong username or password redisplays this same page with an error
-message; the fields are not pre-filled. Repeated failed attempts from the
+A wrong username or password redisplays this same page with the message
+*"Sign-in failed. Check your name and password, or ask an admin whether you
+have access to SeqSetup."*; the fields are not pre-filled. Repeated failed attempts from the
 same address, or against the same username, are rate-limited and rejected
 with "Too many login attempts. Try again later." until the limit resets.
 
 Authentication is checked in this order:
 
-1. **LDAP/AD**, if a directory server is configured.
+1. **LDAP/AD**, if directory sign-in is set up.
 2. **Local users**, managed through the admin interface and stored in
-   MongoDB.
-3. **Configuration file** (``config/users.yaml``), a fallback most often
-   used in development.
+   MongoDB -- when LDAP/AD is not in use, or it refused and local fallback
+   is on.
 
 .. note::
    Every sign-in gets a new ticket and clears anything the browser held
@@ -95,8 +95,7 @@ finish on the server"*. Your browser is signed out anyway, but a copy of the
 login may keep working until it times out, so tell your administrator.
 
 .. note::
-   Accounts from LDAP/Active Directory or from ``config/users.yaml`` are
-   managed outside SeqSetup. If such an account is disabled or removed
+   Accounts from LDAP/Active Directory are managed outside SeqSetup. If such an account is disabled or removed
    there, SeqSetup does not see it: a login it already has keeps working
    until it ends by one of the time limits above.
 

@@ -42,10 +42,6 @@ All configuration files are in the ``config/`` directory:
 ``mongodb.yaml``
    MongoDB connection settings (URI and database name).
 
-``users.yaml``
-   Local user credentials (bcrypt-hashed passwords). Used during development;
-   production deployments should use LDAP/AD.
-
 ``instruments.yaml``
    Supported sequencing instruments, flowcell types, reagent kits, SBS chemistry
    definitions, and default cycle configurations. See :doc:`/admin-guide/instruments`
@@ -70,35 +66,16 @@ startup if it does not exist.
 Keep the session secret out of version control. If the secret changes, all
 existing sessions are invalidated.
 
-Disabling File-Based Fallback Users
-------------------------------------
+Local Accounts and the First Admin
+----------------------------------
 
-``config/users.yaml`` ships empty (``users: {}``); no credentials are committed
-to the repository. Any bootstrap or fallback users you add to it for local
-development or initial setup should not remain available in production. The
-authentication system checks credentials in this order:
+Local accounts live only in the database. SeqSetup does not read
+``config/users.yaml`` any more; if the file is still there, the app logs a
+warning at start. Make the first admin on the server with
+``pixi run create-admin`` (see :doc:`installation`), then make the other
+accounts on :doc:`/admin-guide/local-users`.
 
-1. **LDAP/AD** (if configured and enabled)
-2. **Local users in MongoDB** (managed through the admin interface)
-3. **``config/users.yaml``** (file-based fallback)
-
-To disable the file-based fallback users, use one or more of the following approaches:
-
-**Remove the YAML users.** Replace the contents of ``config/users.yaml`` with an
-empty user list:
-
-.. code-block:: yaml
-
-   users: {}
-
-This disables all file-based logins while keeping the file in place. MongoDB local
-users and LDAP authentication continue to work.
-
-**Configure LDAP without local fallback.** Set up LDAP/AD authentication through the
-admin interface and set ``allow_local_fallback`` to ``false``. This prevents the local
-authentication path from being reached entirely.
-
-**Restrict the config mount in Docker.** By default, ``docker-compose.yml``
-bind-mounts the entire ``config/`` directory. You can mount only the files you need
-and omit ``users.yaml``, which causes file-based authentication to fail with no
-matching users.
+Once LDAP/AD sign-in works, you can stop local accounts being used by
+turning **Allow local user fallback** off on
+:doc:`/admin-guide/authentication`. If the directory ever fails,
+``pixi run use-local-sign-in`` switches sign-in back to local accounts.

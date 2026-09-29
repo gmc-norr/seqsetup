@@ -76,24 +76,26 @@ SampleSheet v2 format (test IDs, detailed metadata, kit information).
 AuthService
 -----------
 
-Handles user authentication with a priority chain:
+Checks a sign-in:
 
-1. LDAP/AD authentication (if configured)
-2. Local MongoDB users
-3. File-based users (``config/users.yaml``)
+1. LDAP/AD, if directory sign-in is set up (see LDAPService)
+2. Local MongoDB users -- when no directory is used, or the directory
+   refused and local fallback is on
 
-Supports bcrypt password verification and optional LDAP fallback to local
-authentication.
+Names longer than 64 characters are refused first. Every refusal carries a
+reason for the audit trail; the sign-in page shows one message for all.
 
 LDAPService
 -----------
 
-Manages LDAP/AD integration:
+Directory sign-in without a service account:
 
-- Connection management with TLS support
-- User search and DN resolution
-- Group-based role assignment (admin group membership)
-- LDAP injection prevention (RFC 4515 escaping)
+- Binds as the person signing in (a user principal name on Active Directory,
+  a DN on LDAP), over TLS unless cleartext is explicitly allowed
+- Reads that person's own entry over the same connection
+- Asks the server about Users and Admins group membership (on Active
+  Directory with the in-chain rule, so nested groups count)
+- LDAP injection prevention (RFC 4515 filter escaping, RFC 4514 DN escaping)
 
 ValidationService
 -----------------
