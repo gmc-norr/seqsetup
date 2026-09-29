@@ -21,11 +21,13 @@ _NAMES = {"\t": "tab"}
 
 def hidden_characters(text: str | None) -> list[str]:
     """The distinct hidden characters in ``text``, in order of first
-    appearance: control characters (Unicode category Cc) and the Unicode
-    line and paragraph separators."""
+    appearance: control characters (Unicode category Cc), format characters
+    (Cf: the zero-width space, byte-order mark, soft hyphen, and the
+    direction marks and overrides, which can change the order a name is
+    shown in) and the Unicode line and paragraph separators."""
     return [
         c for c in dict.fromkeys(text or "")
-        if unicodedata.category(c) == "Cc" or c in _SEPARATORS
+        if unicodedata.category(c) in ("Cc", "Cf") or c in _SEPARATORS
     ]
 
 
@@ -53,3 +55,23 @@ def describe(chars: list[str]) -> str:
         code = f"U+{ord(c):04X}"
         parts.append(f"{code} ({_NAMES[c]})" if c in _NAMES else code)
     return ", ".join(parts)
+
+
+# The two columns BCL Convert reads the number of index mismatches from, as
+# a Settings entry and per sample.
+MISMATCH_COLUMNS = ("BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2")
+
+
+def is_allowed_mismatch(value, per_sample: bool) -> bool:
+    """True for a mismatch value BCL Convert accepts: 0, 1 or 2, as a whole
+    number or as text. A per-sample value (a profile's Data default) may also
+    be blank or ``na``: Illumina's DRAGEN sample sheet guide says a setting
+    that does not apply to a sample "must be blank or na". ``true`` and
+    ``false`` are refused: Python counts true as 1."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value in (0, 1, 2)
+    if isinstance(value, str):
+        return value in ("0", "1", "2") or (per_sample and value in ("", "na"))
+    return False

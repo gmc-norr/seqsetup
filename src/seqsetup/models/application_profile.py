@@ -6,6 +6,13 @@ from typing import Any, Optional
 import uuid
 
 
+def _or_empty(value, empty):
+    """An empty YAML section (``Settings:`` with nothing under it) is None; it
+    means "none" (spec 2026-09-29 Sample Sheet follow-ups, §1). Mark Ready
+    used to fail on ``None.items()``."""
+    return empty if value is None else value
+
+
 @dataclass
 class ApplicationProfile:
     """DRAGEN application profile defining settings for samplesheet export.
@@ -69,10 +76,10 @@ class ApplicationProfile:
             version=str(data.get("version", "")),
             application_type=data.get("application_type", ""),
             application_name=data.get("application_name", ""),
-            settings=data.get("settings", {}),
-            data=data.get("data", {}),
-            data_fields=data.get("data_fields", []),
-            translate=data.get("translate", {}),
+            settings=_or_empty(data.get("settings"), {}),
+            data=_or_empty(data.get("data"), {}),
+            data_fields=_or_empty(data.get("data_fields"), []),
+            translate=_or_empty(data.get("translate"), {}),
             source_file=data.get("source_file", ""),
             synced_at=synced_at,
         )
@@ -83,7 +90,7 @@ class ApplicationProfile:
 
         Expected YAML structure:
             ApplicationProfileName: DragenGermlineIdtWgs
-            ApplicationProfileVersion: 1.0
+            ApplicationProfileVersion: 1.0.0
             ApplicationType: Dragen
             ApplicationName: DragenGermline
             Settings:
@@ -111,10 +118,10 @@ class ApplicationProfile:
             version=str(yaml_data.get("ApplicationProfileVersion", "")),
             application_type=yaml_data.get("ApplicationType", ""),
             application_name=yaml_data.get("ApplicationName", ""),
-            settings=yaml_data.get("Settings", {}),
-            data=yaml_data.get("Data", {}),
-            data_fields=yaml_data.get("DataFields", []),
-            translate=yaml_data.get("Translate", {}),
+            settings=_or_empty(yaml_data.get("Settings"), {}),
+            data=_or_empty(yaml_data.get("Data"), {}),
+            data_fields=_or_empty(yaml_data.get("DataFields"), []),
+            translate=_or_empty(yaml_data.get("Translate"), {}),
             source_file=source_file,
             synced_at=datetime.now(),
         )

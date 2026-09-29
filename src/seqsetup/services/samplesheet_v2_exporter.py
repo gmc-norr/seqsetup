@@ -13,8 +13,10 @@ from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .samplesheet_v1_exporter import _PLAIN_IDENTIFIER_RE, _reverse_complement
 from .sheet_text import (
+    MISMATCH_COLUMNS,
     PLAIN_NAME_RE,
     PLAIN_VERSION_RE,
+    is_allowed_mismatch,
     refuse_hidden_characters,
     starts_a_section,
 )
@@ -444,7 +446,16 @@ class SampleSheetV2Exporter:
         a default value). Quoting a line break still leaves a new line for a
         line-oriented reader, so every hidden character — tab and line breaks
         included — is refused before ``_escape_csv``. So is a value starting
-        with '[': first on its line, it would start a new section."""
+        with '[': first on its line, it would start a new section. So is any
+        value but text, a whole number or true/false (a bool is an int):
+        str() would write what YAML changed (4.10 as 4.1), the word None, or
+        a mapping, a list, a date, bytes or a set in Python's own form. The
+        sync refuses them; this is the backstop for a profile already in the
+        database (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
+        if not isinstance(value, (str, int)):
+            raise ValueError(
+                f"A profile value must be text, a whole number or true/false, not {value!r}"
+            )
         text = str(value)
         refuse_hidden_characters(text)
         if starts_a_section(text):
@@ -452,6 +463,25 @@ class SampleSheetV2Exporter:
                 f"A profile value starting with '[' cannot be written to the Sample Sheet: {text!r}"
             )
         return cls._escape_csv(text)
+
+    @classmethod
+    def _require_profile_mismatch(cls, value, column: str, section: str) -> None:
+        """A mismatch value from a profile's Settings (0, 1 or 2) or Data
+        default (also blank or na). The sync refuses others; this is the
+        backstop for a profile already in the database (spec 2026-09-29
+        Sample Sheet follow-ups, §1)."""
+        per_sample = section == "Data"
+        if not is_allowed_mismatch(value, per_sample=per_sample):
+            allowed = "0, 1, 2, blank or na" if per_sample else "0, 1 or 2"
+            raise ValueError(f"{column} in the profile's {section} must be {allowed}: {value!r}")
+
+    @classmethod
+    def _profile_mismatch_cell(cls, value, column: str) -> str:
+        """The cell for a sample with no mismatch value of its own: the
+        profile's Data default, checked like any profile value first."""
+        cell = cls._escape_config_cell(value)
+        cls._require_profile_mismatch(value, column, "Data")
+        return cell
 
     @classmethod
     def _require_plain(cls, value: str, pattern, what: str) -> str:
@@ -552,7 +582,10 @@ class SampleSheetV2Exporter:
 
         for key, value in profile.settings.items():
             name = cls._require_plain(key, PLAIN_NAME_RE, "Setting name")
-            output.write(f"{name},{cls._escape_config_cell(value)}\n")
+            cell = cls._escape_config_cell(value)
+            if name in MISMATCH_COLUMNS:
+                cls._require_profile_mismatch(value, name, "Settings")
+            output.write(f"{name},{cell}\n")
         output.write("\n")
 
         # Write Data section
@@ -568,6 +601,8 @@ class SampleSheetV2Exporter:
         # becomes. A YAML "Translate:" key with no entries loads as None.
         translate = profile.translate or {}
         columns = [(field, translate.get(field, field)) for field in data_fields]
+        if not any(col == "Sample_ID" for _, col in columns):
+            raise ValueError(f"The {app_name}_Data section has no Sample_ID column")
 
         # Write header row — admin-defined column names must be plain names.
         output.write(
@@ -608,13 +643,13 @@ class SampleSheetV2Exporter:
                     val = sample.barcode_mismatches_index1
                     row.append(
                         str(val) if val is not None
-                        else cls._escape_config_cell(profile.data.get(field, ""))
+                        else cls._profile_mismatch_cell(profile.data.get(field, ""), col)
                     )
                 elif col == "BarcodeMismatchesIndex2":
                     val = sample.barcode_mismatches_index2
                     row.append(
                         str(val) if val is not None
-                        else cls._escape_config_cell(profile.data.get(field, ""))
+                        else cls._profile_mismatch_cell(profile.data.get(field, ""), col)
                     )
                 elif col == "OverrideCycles":
                     # Use sample's override cycles, or calculate from index lengths.

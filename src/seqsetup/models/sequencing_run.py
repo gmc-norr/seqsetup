@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Optional
 import uuid
 
-from .sample import Sample
+from .sample import Sample, checked_mismatches
 from .analysis import Analysis
 
 
@@ -217,7 +217,7 @@ class SequencingRun:
         if name == "reagent_cycles":
             value = max(1, value)
         elif name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
-            value = max(0, min(2, value))
+            value = checked_mismatches(name, value)
         elif name == "run_name" and isinstance(value, str):
             # CR/LF in run_name would land verbatim in the Sample Sheet
             # [Header] section and split the line into two — strip them

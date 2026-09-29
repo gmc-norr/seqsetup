@@ -131,11 +131,58 @@ def _find_config_path() -> Path:
     )
 
 
+class InstrumentConfigError(ValueError):
+    """The local instruments file has errors, so SeqSetup does not start
+    (spec 2026-09-29 Sample Sheet follow-ups, §4)."""
+
+
+def load_checked_instrument_file(path: Path) -> dict:
+    """Read the local instruments file and check every instrument the way a
+    config sync checks synced ones (``validate_instrument_yaml``, with the
+    map key as the name). A typo in ``i5_read_orientation`` would otherwise
+    fall back to "forward" without a word. Raise InstrumentConfigError
+    naming the file and listing every problem. Warnings are ignored: every
+    local entry lacks the ``version`` a synced file carries."""
+    from ..services.instrument_validator import validate_instrument_yaml
+
+    problems: list[str] = []
+    data = None
+    try:
+        with open(path) as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        problems.append(f"cannot be read as YAML: {e}")
+    else:
+        if not isinstance(data, dict):
+            problems.append("must be a mapping at the top level")
+    if isinstance(data, dict):
+        instruments = data.get("instruments", {})
+        if not isinstance(instruments, dict):
+            problems.append("'instruments' must be a mapping")
+            instruments = {}
+        for name, entry in instruments.items():
+            if not isinstance(entry, dict):
+                problems.append(f"{name}: must be a mapping")
+                continue
+            try:
+                result = validate_instrument_yaml({**entry, "name": name}, path.name)
+            except Exception as e:
+                # The check itself fails on some values of the wrong type
+                # (i5_read_orientation: [] raises TypeError). Report it; the
+                # start still stops.
+                problems.append(f"{name}: could not be checked: {e}")
+                continue
+            problems += [f"{name}: {error}" for error in result.errors]
+    if problems:
+        raise InstrumentConfigError(
+            f"{path.name} has errors, so SeqSetup will not start: " + "; ".join(problems)
+        )
+    return data
+
+
 def _load_config() -> dict:
-    """Load instrument configuration from YAML file."""
-    config_path = _find_config_path()
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    """Load instrument configuration from YAML file, checked."""
+    return load_checked_instrument_file(_find_config_path())
 
 
 # Load configuration at module import time
@@ -155,16 +202,24 @@ def _initialize_config():
     _index_cycle_options = _config.get("index_cycle_options", [8, 10, 12, 17, 24])
 
 
+def _initialize_at_start() -> None:
+    """At import. A missing file loads no local instruments, as before; a
+    file with errors raises InstrumentConfigError, so SeqSetup does not start
+    (spec 2026-09-29 Sample Sheet follow-ups, §4)."""
+    global _instruments, _default_cycles, _index_cycle_options
+    try:
+        _initialize_config()
+    except FileNotFoundError as e:
+        # Allow module to load even if config is missing (for testing)
+        import warnings
+        warnings.warn(f"Instrument config not found: {e}")
+        _instruments = {}
+        _default_cycles = {}
+        _index_cycle_options = [8, 10, 12, 17, 24]
+
+
 # Initialize on module load
-try:
-    _initialize_config()
-except FileNotFoundError as e:
-    # Allow module to load even if config is missing (for testing)
-    import warnings
-    warnings.warn(f"Instrument config not found: {e}")
-    _instruments = {}
-    _default_cycles = {}
-    _index_cycle_options = [8, 10, 12, 17, 24]
+_initialize_at_start()
 
 
 def reload_config():

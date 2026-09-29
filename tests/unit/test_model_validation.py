@@ -845,3 +845,64 @@ class TestMismatchLimitIsBclConvertRange:
         template.barcode_mismatches_index1 = 3
         template.barcode_mismatches_index2 = 3
         assert (template.barcode_mismatches_index1, template.barcode_mismatches_index2) == (2, 2)
+
+
+BAD_MISMATCHES = [
+    pytest.param(True, id="true"),
+    pytest.param(False, id="false"),
+    pytest.param(1.5, id="1.5"),
+    pytest.param("1", id="text-1"),
+]
+MISMATCH_OWNERS = [
+    pytest.param(Sample, id="sample"),
+    pytest.param(SequencingRun, id="run"),
+    pytest.param(RunTemplate, id="template"),
+]
+
+
+class TestMismatchIsAWholeNumber:
+    """A mismatch value must be a whole number: the Sample Sheet writers write
+    True or 1.5 as they are. Every page and route passes a whole number, so
+    only a value written into the database directly gets here (spec
+    2026-09-29 Sample Sheet follow-ups, §2)."""
+
+    @pytest.mark.parametrize("value", BAD_MISMATCHES)
+    @pytest.mark.parametrize("model", MISMATCH_OWNERS)
+    def test_construction_refuses_it(self, model, value):
+        with pytest.raises(ValueError, match="barcode_mismatches_index1 must be a whole number, not "):
+            model(barcode_mismatches_index1=value)
+
+    @pytest.mark.parametrize("value", BAD_MISMATCHES)
+    @pytest.mark.parametrize("model", MISMATCH_OWNERS)
+    def test_assignment_refuses_it(self, model, value):
+        owner = model()
+        with pytest.raises(ValueError, match="barcode_mismatches_index2 must be a whole number, not "):
+            owner.barcode_mismatches_index2 = value
+
+    # Astra plan review P3: every bad value, through every loader.
+    @pytest.mark.parametrize("value", BAD_MISMATCHES)
+    @pytest.mark.parametrize("load", [
+        pytest.param(
+            lambda v: Sample.from_dict({"id": "s", "sample_id": "S1", "barcode_mismatches_index1": v}),
+            id="sample",
+        ),
+        pytest.param(
+            lambda v: SequencingRun.from_dict({"id": "r", "barcode_mismatches_index1": v}),
+            id="run",
+        ),
+        pytest.param(
+            lambda v: RunTemplate.from_dict({"id": "t", "barcode_mismatches_index1": v}),
+            id="template",
+        ),
+    ])
+    def test_loading_refuses_it(self, load, value):
+        with pytest.raises(ValueError, match="barcode_mismatches_index1 must be a whole number"):
+            load(value)
+
+    @pytest.mark.parametrize("value,kept", [(0, 0), (1, 1), (2, 2), (5, 2), (-1, 0)])
+    @pytest.mark.parametrize("model", MISMATCH_OWNERS)
+    def test_whole_numbers_are_clamped_as_before(self, model, value, kept):
+        assert model(barcode_mismatches_index1=value).barcode_mismatches_index1 == kept
+
+    def test_a_samples_none_is_kept(self):
+        assert Sample(barcode_mismatches_index1=None).barcode_mismatches_index1 is None
