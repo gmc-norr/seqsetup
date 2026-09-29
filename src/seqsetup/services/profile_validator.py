@@ -37,7 +37,7 @@ def validate_test_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
     for field in ("TestType", "TestName", "Description", "Version"):
         if field not in yaml_data:
             errors.append(f"Missing required field '{field}'")
-        elif not str(yaml_data[field]).strip():
+        elif _is_empty(yaml_data[field]):
             errors.append(f"Field '{field}' must not be empty")
 
     # Validate Version is PEP 440 compliant
@@ -47,6 +47,8 @@ def validate_test_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
             Version(str(version_val))
         except InvalidVersion:
             errors.append(f"Field 'Version' is not a valid PEP 440 version: '{version_val}'")
+    if isinstance(version_val, float):
+        errors.append(_decimal_version("Version"))
 
     # ApplicationProfiles section
     app_profiles = yaml_data.get("ApplicationProfiles")
@@ -64,12 +66,12 @@ def validate_test_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
 
             if "ApplicationProfileName" not in entry:
                 errors.append(f"ApplicationProfiles[{i}]: missing 'ApplicationProfileName'")
-            elif not str(entry["ApplicationProfileName"]).strip():
+            elif _is_empty(entry["ApplicationProfileName"]):
                 errors.append(f"ApplicationProfiles[{i}]: 'ApplicationProfileName' must not be empty")
 
             if "ApplicationProfileVersion" not in entry:
                 errors.append(f"ApplicationProfiles[{i}]: missing 'ApplicationProfileVersion'")
-            elif not str(entry["ApplicationProfileVersion"]).strip():
+            elif _is_empty(entry["ApplicationProfileVersion"]):
                 errors.append(f"ApplicationProfiles[{i}]: 'ApplicationProfileVersion' must not be empty")
             else:
                 _validate_version_constraint(
@@ -77,6 +79,10 @@ def validate_test_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
                     f"ApplicationProfiles[{i}].ApplicationProfileVersion",
                     errors,
                 )
+                if isinstance(entry["ApplicationProfileVersion"], float):
+                    errors.append(
+                        _decimal_version(f"ApplicationProfiles[{i}].ApplicationProfileVersion")
+                    )
 
     if errors:
         raise ProfileValidationError(errors, source_file)
@@ -99,6 +105,47 @@ def _hidden_in(value) -> list[str]:
     else:
         parts = hidden_characters(str(value))
     return list(dict.fromkeys(parts))
+
+
+def _is_empty(value) -> bool:
+    """A required field left empty. YAML reads an empty field as None, which
+    str() would turn into the text "None"."""
+    return value is None or not str(value).strip()
+
+
+def _decimal_version(field_path: str) -> str:
+    return (
+        f"Field '{field_path}' is a number with a decimal point, which YAML may have "
+        'changed (1.10 is read as 1.1). Put the version in quotes, for example "1.10".'
+    )
+
+
+def _value_kind_problem(field: str, key, value) -> str | None:
+    """Why a Settings or Data value cannot be written as it is, or None. The
+    sheet writer writes a value with str(): YAML has already changed a
+    decimal number (4.10 is read as 4.1), an empty value is None, and a
+    mapping, a list, a date, bytes or a set would be written in Python's own
+    form. Only text, whole numbers and true/false are written as they are
+    (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
+    where = f"Field '{field}' value for {str(key)!r}"
+    if isinstance(value, float):
+        return (
+            f"{where} is a number with a decimal point, which YAML may have changed "
+            '(4.10 is read as 4.1). Put the value in quotes, for example "4.10".'
+        )
+    if isinstance(value, (dict, list)):
+        kind = "mapping" if isinstance(value, dict) else "list"
+        return f"{where} is a {kind}; a value must be text, a whole number or true/false."
+    if value is None:
+        return f"{where} is empty. Write '' if it should be empty."
+    if not isinstance(value, (str, int)):
+        # true/false is a bool, which is an int. YAML reads 2024-01-01 as a
+        # date, and !!binary or !!set as bytes or a set.
+        return (
+            f"{where} is not text, a whole number or true/false: YAML read it as "
+            f"{type(value).__name__} ({value!r}). Put the value in quotes."
+        )
+    return None
 
 
 def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
@@ -124,7 +171,7 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
     for field in ("ApplicationProfileName", "ApplicationProfileVersion", "ApplicationName", "ApplicationType"):
         if field not in yaml_data:
             errors.append(f"Missing required field '{field}'")
-        elif not str(yaml_data[field]).strip():
+        elif _is_empty(yaml_data[field]):
             errors.append(f"Field '{field}' must not be empty")
 
     # ApplicationName becomes a Sample Sheet section name ([<name>_Settings]),
@@ -206,6 +253,13 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
                 f"Field '{field}' value for {str(key)!r} cannot start with '[': {str(value)!r}"
             )
 
+    # The writer writes each value with str(): refuse what YAML has already
+    # changed, and what would be written as Python text.
+    for field, key, value in values:
+        problem = _value_kind_problem(field, key, value)
+        if problem:
+            errors.append(problem)
+
     # Validate ApplicationProfileVersion is PEP 440 compliant
     version_val = yaml_data.get("ApplicationProfileVersion")
     if version_val is not None and str(version_val).strip():
@@ -215,6 +269,8 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
             errors.append(
                 f"Field 'ApplicationProfileVersion' is not a valid PEP 440 version: '{version_val}'"
             )
+    if isinstance(version_val, float):
+        errors.append(_decimal_version("ApplicationProfileVersion"))
 
     # Dragen-specific required sections
     app_type = yaml_data.get("ApplicationType", "")
