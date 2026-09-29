@@ -1278,3 +1278,49 @@ class TestInvisibleCharacters:
 
         with pytest.raises(ValueError, match="U\\+200B"):
             SampleSheetV2Exporter._write_cloud_sections(StringIO(), sample_run)
+
+
+def _export_stored_profile(profile) -> str:
+    """Export one indexed sample (test WGS) through ``profile``."""
+    run = SequencingRun(
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8),
+        samples=[Sample(
+            sample_id="S1",
+            test_id="WGS",
+            index_pair=IndexPair(
+                id="p1", name="p1",
+                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+            ),
+        )],
+    )
+    tp = TestProfile(
+        test_type="WGS", test_name="WGS", version="1.0.0",
+        application_profiles=[ApplicationProfileReference(
+            profile_name=profile.name, profile_version=profile.version,
+        )],
+    )
+    return SampleSheetV2Exporter.export(
+        run,
+        _StubTestProfileRepo({"WGS": tp}),
+        _StubAppProfileRepo({(profile.name, profile.version): profile}),
+    )
+
+
+class TestEmptyProfileSections:
+    """A profile stored with an empty Settings: (None) stopped Mark Ready with
+    None.items(); it now writes an empty section (spec 2026-09-29 Sample
+    Sheet follow-ups, §1)."""
+
+    def test_stored_profile_with_empty_sections_exports(self):
+        profile = ApplicationProfile.from_dict({
+            "_id": "p1", "name": "P", "version": "1.0.0", "application_type": "Dragen",
+            "application_name": "DragenGermline", "settings": None, "data": None,
+            "data_fields": ["Sample_ID"], "translate": None,
+        })
+
+        output = _export_stored_profile(profile)
+
+        assert "[DragenGermline_Settings]\n\n[DragenGermline_Data]\nSample_ID\nS1\n" in output

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from seqsetup.models.application_profile import ApplicationProfile
 from seqsetup.services.profile_validator import (
     ProfileValidationError,
     validate_application_profile_yaml,
@@ -820,3 +821,40 @@ class TestSampleIdColumn:
         assert "Field 'Settings' must be a mapping" in errors
         assert "Field 'Data' must be a mapping" in errors
         assert "Field 'DataFields' must be a list" in errors
+
+
+STORED = {
+    "_id": "p1", "name": "P", "version": "1.0.0", "application_type": "Dragen",
+    "application_name": "DragenGermline", "settings": {"A": "b"},
+    "data": {"Sample_ID": ""}, "data_fields": ["Sample_ID"], "translate": {"X": "Y"},
+}
+
+
+class TestEmptySections:
+    """An empty Settings:, Data: or Translate: means none ({}), and an empty
+    DataFields: means none ([]): for a non-DRAGEN profile read from YAML, and
+    for any profile read from the database. Mark Ready used to fail on
+    None.items() (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
+
+    def test_from_yaml_reads_empty_sections_as_none(self):
+        data = {**APP, "Settings": None, "DataFields": None, "Translate": None}
+        profile = ApplicationProfile.from_yaml(data)
+        assert (profile.settings, profile.data_fields, profile.translate) == ({}, [], {})
+
+    def test_from_yaml_reads_an_empty_data_as_none(self):
+        data = {**APP, "Data": None, "DataFields": ["Sample_ID"]}
+        assert ApplicationProfile.from_yaml(data).data == {}
+
+    def test_from_dict_reads_empty_sections_as_none(self):
+        profile = ApplicationProfile.from_dict({
+            **STORED, "settings": None, "data": None, "data_fields": None, "translate": None,
+        })
+        assert (profile.settings, profile.data, profile.data_fields, profile.translate) == (
+            {}, {}, [], {}
+        )
+
+    def test_from_dict_keeps_what_is_there(self):
+        profile = ApplicationProfile.from_dict(STORED)
+        assert (profile.settings, profile.data, profile.data_fields, profile.translate) == (
+            {"A": "b"}, {"Sample_ID": ""}, ["Sample_ID"], {"X": "Y"}
+        )
