@@ -22,6 +22,7 @@ from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
 from ..services.index_fill import build_fill_plan
 from ..services.paste_preview import build_paste_preview, repeated_sample_ids
+from ..services.sample_api import name_list
 from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
 from ..templating import render, templates
 from .dependencies import get_ctx, get_editable_run, saving_run
@@ -299,12 +300,6 @@ async def _read_paste_input(
     return _PasteInput(text=text, lanes=lanes, default_test=default_test, file_name=file_name), ""
 
 
-def _name_list(ids: list[str], limit: int = 10) -> str:
-    """'A, B, C' — the first ``limit`` names, then 'and N more'."""
-    shown = ", ".join(ids[:limit])
-    return f"{shown} and {len(ids) - limit} more" if len(ids) > limit else shown
-
-
 def _lane_words(lanes: list[int]) -> str:
     return f"lane {lanes[0]}" if len(lanes) == 1 else "lanes " + ", ".join(str(n) for n in lanes)
 
@@ -441,7 +436,7 @@ async def add_bulk_samples(
             messages=[{
                 "text": (
                     "Bulk import rejected: these sample IDs appear more than once "
-                    f"in the paste: {_name_list(repeated)}. Nothing was added."
+                    f"in the paste: {name_list(repeated)}. Nothing was added."
                 ),
                 "kind": "error",
             }],
@@ -527,7 +522,7 @@ async def add_bulk_samples(
         messages.append({
             "text": (
                 f"Skipped {len(skipped_duplicates)} already in the run: "
-                f"{_name_list(skipped_duplicates)}."
+                f"{name_list(skipped_duplicates)}."
             ),
             "kind": "warning",
         })

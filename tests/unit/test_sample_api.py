@@ -333,3 +333,48 @@ class TestValidateUrl:
         from seqsetup.services.sample_api import _validate_url, SampleApiError
         with pytest.raises(SampleApiError, match="no hostname"):
             _validate_url("https:///path")
+
+
+class TestParseApiSamplesRepeatedIds:
+    """A worklist that lists one sample ID twice is refused as a whole, like
+    a paste: SeqSetup cannot tell which row is right (review DI-01; spec
+    2026-10-03 group A1, §3)."""
+
+    def test_a_repeated_id_is_refused(self):
+        data = [{"sample_id": "P1"}, {"sample_id": "P2"}, {"sample_id": "P1"}]
+        with pytest.raises(ValueError) as exc:
+            parse_api_samples(data)
+        assert str(exc.value) == (
+            "these sample IDs appear more than once in the worklist: P1. Nothing was added."
+        )
+
+    def test_ids_are_compared_after_clean_up(self):
+        data = [{"sample_id": " P1"}, {"sample_id": "P1 "}]
+        with pytest.raises(ValueError, match=r"more than once in the worklist: P1\. Nothing"):
+            parse_api_samples(data)
+
+    def test_repeated_ids_are_named_in_first_seen_order(self):
+        data = [{"sample_id": s} for s in ["B", "A", "C", "A", "B"]]
+        with pytest.raises(ValueError, match=r"in the worklist: B, A\. Nothing"):
+            parse_api_samples(data)
+
+    def test_more_than_ten_repeated_ids_are_counted(self):
+        ids = [f"P{k:02d}" for k in range(12)]
+        with pytest.raises(ValueError) as exc:
+            parse_api_samples([{"sample_id": s} for s in ids + ids])
+        assert str(exc.value) == (
+            "these sample IDs appear more than once in the worklist: "
+            "P00, P01, P02, P03, P04, P05, P06, P07, P08, P09 and 2 more. Nothing was added."
+        )
+
+    def test_a_worklist_without_repeats_is_unchanged(self):
+        data = [{"sample_id": "P1", "test_id": "WGS"}, {"sample_id": "P2", "test_id": "WES"}]
+        assert parse_api_samples(data) == [
+            {"sample_id": "P1", "test_id": "WGS"},
+            {"sample_id": "P2", "test_id": "WES"},
+        ]
+
+    def test_a_missing_sample_id_is_still_reported_first(self):
+        data = [{"sample_id": "P1"}, {"sample_id": ""}, {"sample_id": "P1"}]
+        with pytest.raises(ValueError, match=r"LIMS row\(s\) 2: sample_id is missing"):
+            parse_api_samples(data)

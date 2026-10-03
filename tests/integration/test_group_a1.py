@@ -7,7 +7,9 @@ import pytest
 
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.sample import Sample
+from seqsetup.models.sample_api_config import SampleApiConfig
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
+from seqsetup.services import sample_api as sample_api_module
 from seqsetup.services.index_fill import build_fill_plan
 
 from .conftest import disable_repos, mark_ready
@@ -377,3 +379,76 @@ class TestMultiIndexDropFillsOnlyTheRowsShown:
         assert resp.status_code == 400
         assert resp.text == OUT_OF_DATE
         assert _stored(ctx).to_dict() == before
+
+
+# --- spec §3: a worklist that repeats a sample ID is refused ----------------
+
+REPEATED = (
+    "Worklist import rejected: these sample IDs appear more than once in the "
+    "worklist: P1. Nothing was added."
+)
+
+
+def _lims(ctx, monkeypatch, rows):
+    """Turn the LIMS on and make the worklist fetch return ``rows`` with no
+    network; the real parse and import run."""
+    ctx.sample_api_config_repo.save(
+        SampleApiConfig(base_url="https://lims.example.org/api", enabled=True)
+    )
+    monkeypatch.setattr(
+        sample_api_module, "fetch_worklist_samples",
+        lambda config, worklist_id: (True, f"Fetched {len(rows)} samples", rows),
+    )
+
+
+def _import(client):
+    return client.post(
+        f"/runs/{RUN}/samples/fetch-worklist", params={"worklist_id": "WS1"}, headers=ORIGIN,
+    )
+
+
+class TestWorklistWithARepeatedSampleId:
+    """A LIMS worklist that lists one sample ID twice is refused as a whole,
+    like a paste; nothing is added (review DI-01; spec 2026-10-03 group A1,
+    §3). Today the second row is dropped and reported as already in the
+    run."""
+
+    def test_a_repeated_id_refuses_the_whole_import(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx, [])
+        _lims(ctx, monkeypatch, [
+            {"sample_id": "P1", "test_id": "WGS"},
+            {"sample_id": "P2", "test_id": "WGS"},
+            {"sample_id": "P1", "test_id": "WES"},
+        ])
+        before = _stored(ctx).to_dict()
+
+        resp = _import(logged_in_client)
+
+        assert resp.status_code == 200
+        assert REPEATED in resp.text
+        assert _stored(ctx).to_dict() == before
+
+    def test_without_repeats_it_imports_as_today(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx, [])
+        _lims(ctx, monkeypatch, [
+            {"sample_id": "P1", "test_id": "WGS"}, {"sample_id": "P2", "test_id": "WES"},
+        ])
+
+        resp = _import(logged_in_client)
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert "Added 2 samples from worklist." in resp.text
+        assert [(s.sample_id, s.test_id) for s in _stored(ctx).samples] == [("P1", "WGS"), ("P2", "WES")]
+
+    def test_an_id_already_in_the_run_is_still_skipped(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx, ["P1"])
+        _lims(ctx, monkeypatch, [{"sample_id": "P1"}, {"sample_id": "P2"}])
+
+        resp = _import(logged_in_client)
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert "Skipped 1 duplicate(s) already in run." in resp.text
+        assert [s.sample_id for s in _stored(ctx).samples] == ["P1", "P2"]
