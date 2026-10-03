@@ -238,3 +238,142 @@ class TestReplacingOneIndexKeepsTheOthersSettings:
         for sample in _stored(ctx).samples:
             assert _settings(sample) == settings
             assert sample.override_cycles == override_cycles
+
+
+# --- spec §1: a multi-index drop fills only the rows the page showed --------
+
+DROP_REFUSED = "The sample list changed since this page was loaded. Reload the page and drag again."
+OUT_OF_DATE = "This page is out of date. Reload the page and drag again."
+DROP_PAIRS = [("AAAAAAAA", "ACACACAC"), ("CCCCCCCC", "AGAGAGAG"),
+              ("GGGGGGGG", "CTCTCTCT"), ("TTTTTTTT", "GTGTGTGT")]
+
+
+def _drop(client, kit, start, count, targets):
+    """A multi-index drop of the kit's first ``count`` pairs on ``start``.
+    ``targets`` is what the page sends as target_sample_ids: a list (sent
+    as JSON), a raw string, or None (not sent)."""
+    data = {
+        "start_sample_id": start,
+        "indexes_json": json.dumps([
+            {"id": f"{kit.name}_P{k}", "type": "pair", "kit_id": kit.kit_id} for k in range(count)
+        ]),
+    }
+    if targets is not None:
+        data["target_sample_ids"] = targets if isinstance(targets, str) else json.dumps(targets)
+    return client.post(f"/runs/{RUN}/samples/assign-indexes-bulk", data=data, headers=ORIGIN)
+
+
+def _given(ctx):
+    """(Sample ID, the name of its i7 or None), in run order."""
+    return [(s.sample_id, s.index1_name) for s in _stored(ctx).samples]
+
+
+def _add_behind_the_page(ctx, sid, sample_id):
+    """Another tab adds a sample; it goes at the end of the run."""
+    run = _stored(ctx)
+    run.add_sample(Sample(id=sid, sample_id=sample_id, lanes=[1]))
+    ctx.run_repo.save(run)
+
+
+class TestMultiIndexDropFillsOnlyTheRowsShown:
+    """A multi-index drop names the rows the page showed; the server refuses
+    it when the run would now fill other rows, and assigns nothing (review
+    DI-02; spec 2026-10-03 group A1, §1)."""
+
+    def test_a_row_deleted_since_the_page_loaded_is_refused(self, logged_in_client, fresh_app):
+        """The page shows PAT1-PAT4 and three indexes are dropped on PAT1.
+        Another tab deleted PAT2: today PAT3 and PAT4 would get P1 and P2."""
+        _app, ctx, _db = fresh_app
+        kit = _pair_kit(ctx, "K", DROP_PAIRS)
+        _run(ctx, ["PAT1", "PAT2", "PAT3", "PAT4"])
+        assert logged_in_client.delete(f"/runs/{RUN}/samples/s2", headers=ORIGIN).status_code == 200
+        before = _stored(ctx).to_dict()
+
+        resp = _drop(logged_in_client, kit, "s1", 3, ["s1", "s2", "s3"])
+
+        assert resp.status_code == 409
+        assert resp.text == DROP_REFUSED
+        assert _stored(ctx).to_dict() == before
+
+    def test_a_row_added_inside_the_drop_is_refused(self, logged_in_client, fresh_app):
+        """The page shows PAT1-PAT3 and three indexes are dropped on PAT2:
+        it fills PAT2 and PAT3 and leaves one unused. PAT4 was added since,
+        a patient the page never showed; today it would get the third."""
+        _app, ctx, _db = fresh_app
+        kit = _pair_kit(ctx, "K", DROP_PAIRS)
+        _run(ctx, ["PAT1", "PAT2", "PAT3"])
+        _add_behind_the_page(ctx, "s4", "PAT4")
+        before = _stored(ctx).to_dict()
+
+        resp = _drop(logged_in_client, kit, "s2", 3, ["s2", "s3"])
+
+        assert resp.status_code == 409
+        assert resp.text == DROP_REFUSED
+        assert _stored(ctx).to_dict() == before
+
+    def test_a_row_added_after_the_drop_still_assigns(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        kit = _pair_kit(ctx, "K", DROP_PAIRS)
+        _run(ctx, ["PAT1", "PAT2", "PAT3", "PAT4"])
+        _add_behind_the_page(ctx, "s5", "PAT5")
+
+        resp = _drop(logged_in_client, kit, "s1", 2, ["s1", "s2"])
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert _given(ctx) == [
+            ("PAT1", "P0"), ("PAT2", "P1"), ("PAT3", None), ("PAT4", None), ("PAT5", None),
+        ]
+
+    def test_an_unchanged_page_assigns_as_today(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        kit = _pair_kit(ctx, "K", DROP_PAIRS)
+        _run(ctx, ["PAT1", "PAT2", "PAT3", "PAT4"])
+
+        resp = _drop(logged_in_client, kit, "s2", 3, ["s2", "s3", "s4"])
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert _given(ctx) == [("PAT1", None), ("PAT2", "P0"), ("PAT3", "P1"), ("PAT4", "P2")]
+
+    def test_a_confirmed_drop_past_the_last_row_still_assigns(self, logged_in_client, fresh_app):
+        """The page shows PAT1-PAT3 and three indexes are dropped on PAT2;
+        the lab confirmed that the third will not be used, so the page sends
+        two rows for three indexes. Nothing changed: assigned as today
+        (plan review F-2)."""
+        _app, ctx, _db = fresh_app
+        kit = _pair_kit(ctx, "K", DROP_PAIRS)
+        _run(ctx, ["PAT1", "PAT2", "PAT3"])
+
+        resp = _drop(logged_in_client, kit, "s2", 3, ["s2", "s3"])
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert _given(ctx) == [("PAT1", None), ("PAT2", "P0"), ("PAT3", "P1")]
+
+    def test_rows_in_another_order_are_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        kit = _pair_kit(ctx, "K", DROP_PAIRS)
+        _run(ctx, ["PAT1", "PAT2", "PAT3"])
+        before = _stored(ctx).to_dict()
+
+        resp = _drop(logged_in_client, kit, "s1", 2, ["s2", "s1"])
+
+        assert resp.status_code == 409
+        assert resp.text == DROP_REFUSED
+        assert _stored(ctx).to_dict() == before
+
+    @pytest.mark.parametrize("targets", [
+        pytest.param(None, id="missing"),
+        pytest.param("not json", id="not-json"),
+        pytest.param('{"s1": 1}', id="object"),
+        pytest.param("[1, 2]", id="numbers"),
+    ])
+    def test_without_the_rows_is_400(self, logged_in_client, fresh_app, targets):
+        _app, ctx, _db = fresh_app
+        kit = _pair_kit(ctx, "K", DROP_PAIRS)
+        _run(ctx, ["PAT1", "PAT2"])
+        before = _stored(ctx).to_dict()
+
+        resp = _drop(logged_in_client, kit, "s1", 2, targets)
+
+        assert resp.status_code == 400
+        assert resp.text == OUT_OF_DATE
+        assert _stored(ctx).to_dict() == before

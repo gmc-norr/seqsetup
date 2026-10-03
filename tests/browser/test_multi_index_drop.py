@@ -112,3 +112,61 @@ def test_filling_empty_rows_does_not_ask(logged_in_page, base_url, empty_rows_ru
         page.evaluate(_MULTI_DROP, [2, f"#sample-row-{empty_rows_run_id}-s1"])
     assert resp.value.status == 200
     assert dialogs == []
+
+
+@pytest.mark.browser
+def test_a_drop_on_a_middle_row_fills_from_that_row(logged_in_page, base_url, empty_rows_run_id, app_ctx):
+    """The page sends the rows it shows from the drop row on (spec
+    2026-10-03 group A1, §1). The other drops here start on the first
+    row, so they cannot tell "from the drop row" from "from the top"."""
+    page = logged_in_page
+    _open(page, base_url, empty_rows_run_id)
+
+    with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
+        page.evaluate(_MULTI_DROP, [2, f"#sample-row-{empty_rows_run_id}-s2"])
+
+    assert resp.value.status == 200
+    samples = app_ctx.run_repo.get_by_id(empty_rows_run_id).samples
+    assert [s.has_index for s in samples] == [False, True, True]
+
+
+@pytest.mark.browser
+def test_a_drop_after_the_run_changed_is_refused_and_says_why(logged_in_page, base_url, empty_rows_run_id, app_ctx):
+    """Another tab removed EMPTY-02 after this page loaded. Two indexes
+    dropped on EMPTY-01 would now fill EMPTY-01 and EMPTY-03, not the rows
+    shown: nothing is assigned and the page says why (spec 2026-10-03
+    group A1, §1)."""
+    page = logged_in_page
+    _open(page, base_url, empty_rows_run_id)
+    run = app_ctx.run_repo.get_by_id(empty_rows_run_id)
+    run.remove_sample(f"{empty_rows_run_id}-s2")
+    app_ctx.run_repo.save(run)
+
+    with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
+        page.evaluate(_MULTI_DROP, [2, f"#sample-row-{empty_rows_run_id}-s1"])
+
+    assert resp.value.status == 409
+    expect(page.locator("#error-banner")).to_contain_text(
+        "The sample list changed since this page was loaded. Reload the page and drag again."
+    )
+    expect(page.locator(f"#sample-row-{empty_rows_run_id}-s2")).to_be_visible()
+    samples = app_ctx.run_repo.get_by_id(empty_rows_run_id).samples
+    assert [s.has_index for s in samples] == [False, False]
+
+
+@pytest.mark.browser
+def test_indexes_past_the_last_sample_go_ahead_once_confirmed(logged_in_page, base_url, mutable_run_id, app_ctx):
+    """MUT-04 is the last row. Two indexes dropped on it, and the lab
+    accepts that one will not be used: the page sends the one row it has,
+    and the server fills it (plan review F-2)."""
+    page = logged_in_page
+    _open(page, base_url, mutable_run_id)
+    dialogs = []
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
+
+    with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
+        page.evaluate(_MULTI_DROP, [2, f"#sample-row-{mutable_run_id}-s4"])
+
+    assert resp.value.status == 200
+    assert len(dialogs) == 1 and "not be used" in dialogs[0]
+    assert app_ctx.run_repo.get_by_id(mutable_run_id).get_sample(f"{mutable_run_id}-s4").has_index

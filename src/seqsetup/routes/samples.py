@@ -832,6 +832,20 @@ async def assign_indexes_bulk(
         else:
             return Response(f"Invalid index type: {idx_type}", status_code=400)
 
+    # The page names the rows it showed for this drop. Fill them only if
+    # they are still the rows the run would fill: a row removed or added in
+    # another tab would move the indexes onto other patients (review DI-02;
+    # spec 2026-10-03 group A1, §1).
+    target_ids = _parse_sample_ids(form.get("target_sample_ids", ""))
+    if target_ids is None:
+        return Response("This page is out of date. Reload the page and drag again.", status_code=400)
+    would_fill = [s.id for s in run.samples[start_idx:start_idx + len(resolved_assignments)]]
+    if would_fill != target_ids:
+        return Response(
+            "The sample list changed since this page was loaded. Reload the page and drag again.",
+            status_code=409,
+        )
+
     with saving_run(run, ctx, request):
         for offset, (idx_type, resolved_index, kit) in enumerate(resolved_assignments):
             sample_idx = start_idx + offset

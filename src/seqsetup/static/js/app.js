@@ -202,7 +202,8 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
         // Multi-index assignment - assign to consecutive samples starting from drop target.
         // The server replaces any index already on those rows and skips
         // indexes past the last row, so say so before doing either.
-        const warning = multiDropWarning(sampleId, indexes);
+        const targets = multiDropTargets(sampleId, indexes.length);
+        const warning = multiDropWarning(targets, indexes);
         if (warning && !window.confirm(warning)) {
             clearIndexSelection();
             return;
@@ -213,6 +214,10 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
             swap: 'outerHTML',
             values: {
                 start_sample_id: sampleId,
+                // The rows this page shows for the drop. The server refuses
+                // the drop if the run would now fill other rows.
+                target_sample_ids: JSON.stringify(
+                    (targets || []).map(r => r.id.slice('sample-row-'.length))),
                 index_type: dropZoneType || '',
                 indexes_json: JSON.stringify(indexes),
                 context: context,
@@ -225,15 +230,20 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     clearIndexSelection();
 }
 
-// Why a multi-index drop needs a confirm, or '' if it needs none. The
-// indexes go to the drop target and the rows below it in table order (the
-// server's run order): name the rows that already carry an index of the
-// dropped kind, and count indexes that run past the last row.
-function multiDropWarning(sampleId, indexes) {
+// The rows a multi-index drop fills: the drop target and the rows below it,
+// one per index, in table order (the server's run order). null when the
+// drop target is not a row of #sample-table.
+function multiDropTargets(sampleId, count) {
     const rows = Array.from(document.querySelectorAll('#sample-table .sample-row'));
     const start = rows.findIndex(r => r.id === `sample-row-${sampleId}`);
-    if (start < 0) return '';
-    const targets = rows.slice(start, start + indexes.length);
+    return start < 0 ? null : rows.slice(start, start + count);
+}
+
+// Why a multi-index drop onto `targets` (from multiDropTargets) needs a
+// confirm, or '' if it needs none: name the rows that already carry an
+// index of the dropped kind, and count indexes that run past the last row.
+function multiDropWarning(targets, indexes) {
+    if (!targets) return '';
     const type = indexes[0].type;
     const slot = (type === 'i7' || type === 'i5') ? `.assigned-index.${type}` : '.assigned-index';
     const replaced = targets
