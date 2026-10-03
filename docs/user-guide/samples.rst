@@ -96,8 +96,12 @@ immediately, with Override Cycles calculated automatically.
 .. warning::
    A worklist import follows the exact same rule as a paste: any LIMS row
    with no sample ID rejects the whole import (*"LIMS row(s) <positions>:
-   sample_id is missing or empty."*), not just that one row. As with a
-   paste, a sample ID already in the run is skipped rather than blocking.
+   sample_id is missing or empty."*), not just that one row. A worklist
+   that lists the same sample ID more than once is refused as a whole
+   too, like a paste (*"Worklist import rejected: these sample IDs appear
+   more than once in the worklist: <IDs>. Nothing was added."*). As with
+   a paste, a sample ID already in the run is skipped rather than
+   blocking.
 
 Without a sample API configured, this button does not appear at all --
 there is nothing to import from, so the paste form is the only way to add
