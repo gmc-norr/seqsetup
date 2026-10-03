@@ -181,16 +181,20 @@ def _update_override_cycles(sample, run) -> None:
         )
 
 
-def _apply_kit_defaults(sample: Sample, kit: IndexKit) -> None:
-    """Copy kit-level override defaults to a sample."""
-    if kit.default_index1_cycles is not None:
+def _apply_kit_defaults(sample: Sample, kit: IndexKit, slot: str) -> None:
+    """Give the sample the kit's own settings for what was just assigned
+    (``slot``: "pair", "i7" or "i5"): None where the kit has none, never
+    the last kit's value. Then a setting whose index is gone is emptied
+    (review DI-09; spec 2026-10-03 group A1, §2)."""
+    if slot not in ("pair", "i7", "i5"):
+        raise ValueError(f"unknown index slot {slot!r}")
+    if slot in ("pair", "i7"):
         sample.index1_cycles = kit.default_index1_cycles
-    if kit.default_index2_cycles is not None:
+    if slot in ("pair", "i5"):
         sample.index2_cycles = kit.default_index2_cycles
-    if kit.default_read1_override:
-        sample.read1_override_pattern = kit.default_read1_override
-    if kit.default_read2_override:
-        sample.read2_override_pattern = kit.default_read2_override
+    sample.read1_override_pattern = kit.default_read1_override or None
+    sample.read2_override_pattern = kit.default_read2_override or None
+    sample.drop_kit_settings_without_index()
 
 
 def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
@@ -843,7 +847,7 @@ async def assign_indexes_bulk(
             elif idx_type == "i5":
                 run.assign_index2_to_sample(sample.id, resolved_index)
             sample.index_kit_name = kit.name
-            _apply_kit_defaults(sample, kit)
+            _apply_kit_defaults(sample, kit, idx_type)
             _update_override_cycles(sample, run)
 
     audit(
@@ -913,7 +917,7 @@ async def apply_index_fill(
                 run.assign_index1_to_sample(row.sample_id, row.entry.index)
             sample = run.get_sample(row.sample_id)
             sample.index_kit_name = plan.kit.name
-            _apply_kit_defaults(sample, plan.kit)
+            _apply_kit_defaults(sample, plan.kit, plan.mode)
             _update_override_cycles(sample, run)
 
     audit(
@@ -990,7 +994,7 @@ async def assign_index_to_selected(
                 run.assign_index2_to_sample(sample.id, index)
 
             sample.index_kit_name = kit.name
-            _apply_kit_defaults(sample, kit)
+            _apply_kit_defaults(sample, kit, "pair" if index_pair else index_type)
             _update_override_cycles(sample, run)
 
     audit(
@@ -1376,7 +1380,7 @@ async def assign_index(
         with saving_run(run, ctx, request):
             run.assign_index_pair_to_sample(sample.id, index_pair)
             sample.index_kit_name = kit.name
-            _apply_kit_defaults(sample, kit)
+            _apply_kit_defaults(sample, kit, "pair")
             _update_override_cycles(sample, run)
     elif index_id and index_type:
         index, kit, error = _find_index(ctx, index_type, index_id, kit_id)
@@ -1394,7 +1398,7 @@ async def assign_index(
             else:
                 run.assign_index2_to_sample(sample.id, index)
             sample.index_kit_name = kit.name
-            _apply_kit_defaults(sample, kit)
+            _apply_kit_defaults(sample, kit, index_type)
             _update_override_cycles(sample, run)
     else:
         return Response("Missing index_pair_id or index_id/index_type", status_code=400)
