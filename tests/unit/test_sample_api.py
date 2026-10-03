@@ -1,6 +1,10 @@
 """Tests for sample_api service."""
 
+import io
+import ipaddress
 import json
+import ssl
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -378,3 +382,119 @@ class TestParseApiSamplesRepeatedIds:
         data = [{"sample_id": "P1"}, {"sample_id": ""}, {"sample_id": "P1"}]
         with pytest.raises(ValueError, match=r"LIMS row\(s\) 2: sample_id is missing"):
             parse_api_samples(data)
+
+
+_MAX = sample_api_module._MAX_RESPONSE_SIZE
+_PUBLIC_IP = ipaddress.ip_address("93.184.216.34")
+
+
+class _CountingReader(io.BytesIO):
+    """The file the client reads the response from. Counts the body bytes
+    it hands out; the status line and headers are read with readline,
+    which is not counted."""
+
+    def __init__(self, data: bytes):
+        super().__init__(data)
+        self.handed_out = 0
+
+    def read(self, size=-1):
+        chunk = super().read(size)
+        self.handed_out += len(chunk)
+        return chunk
+
+    def read1(self, size=-1):
+        chunk = super().read1(size)
+        self.handed_out += len(chunk)
+        return chunk
+
+    def readinto(self, buffer):
+        n = super().readinto(buffer)
+        self.handed_out += n
+        return n
+
+
+class _FakeSocket:
+    """Stands in for the TCP connection: keeps what the client sends and
+    plays back a 200 response with ``body``."""
+
+    def __init__(self, body: bytes):
+        head = (
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+            f"Content-Length: {len(body)}\r\n\r\n"
+        ).encode()
+        self.reader = _CountingReader(head + body)
+        self.sent = b""
+
+    def sendall(self, data):
+        self.sent += data
+
+    def makefile(self, mode, *args, **kwargs):
+        return self.reader
+
+    def close(self):
+        pass
+
+
+@pytest.fixture
+def lims_wire(monkeypatch):
+    """Runs _api_get's real body and the real _PinnedHTTPSConnection.connect()
+    with no network: the URL check returns a public address, the TCP
+    connection is a _FakeSocket, and SSLContext.wrap_socket is a spy that
+    records the context and host name, then hands the fake socket back."""
+    wire = SimpleNamespace(body=b"[]", sockets=[], connects=[], wraps=[])
+
+    def create_connection(address, *args, **kwargs):
+        wire.connects.append(address)
+        sock = _FakeSocket(wire.body)
+        wire.sockets.append(sock)
+        return sock
+
+    def wrap_socket(context, sock, *args, server_hostname=None, **kwargs):
+        wire.wraps.append((context, server_hostname))
+        return sock
+
+    monkeypatch.setenv("SEQSETUP_LIMS_MIN_INTERVAL_MS", "0")
+    monkeypatch.setattr(sample_api_module, "_validate_url", lambda url: [_PUBLIC_IP])
+    monkeypatch.setattr(sample_api_module.socket, "create_connection", create_connection)
+    monkeypatch.setattr(ssl.SSLContext, "wrap_socket", wrap_socket)
+    return wire
+
+
+def _get():
+    return sample_api_module._api_get("https://lims.example.org/api/worksheets", api_key="k")
+
+
+class TestLimsClientChecksTheCertificate:
+    """CLAUDE.md: the LIMS client verifies the server's certificate. The
+    check happens in _PinnedHTTPSConnection.connect(), which this runs
+    (review H-4; spec 2026-10-03 group A1, §4)."""
+
+    def test_https_wraps_the_connection_in_a_verifying_context(self, lims_wire):
+        assert _get() == []
+        assert lims_wire.connects == [("93.184.216.34", 443)]
+        [(context, host)] = lims_wire.wraps
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.check_hostname is True
+        assert host == "lims.example.org"
+
+
+class TestLimsClientCapsTheResponse:
+    """CLAUDE.md: LIMS responses are capped at 10 MB, and the body is read
+    with that bound, so a huge reply cannot fill the memory (review H-4;
+    spec 2026-10-03 group A1, §4)."""
+
+    def test_exactly_10_mb_is_read(self, lims_wire):
+        lims_wire.body = b"[" + b" " * (_MAX - 2) + b"]"
+        assert _get() == []
+
+    def test_one_byte_over_10_mb_is_refused(self, lims_wire):
+        lims_wire.body = b"[" + b" " * (_MAX - 1) + b"]"
+        with pytest.raises(SampleApiError, match="exceeds maximum size limit"):
+            _get()
+
+    def test_the_body_is_read_with_a_bound(self, lims_wire):
+        lims_wire.body = b"[" + b" " * (2 * _MAX - 2) + b"]"
+        with pytest.raises(SampleApiError, match="exceeds maximum size limit"):
+            _get()
+        [sock] = lims_wire.sockets
+        assert sock.reader.handed_out <= _MAX + 1
