@@ -139,8 +139,8 @@ class InstrumentConfigError(ValueError):
 def load_checked_instrument_file(path: Path) -> dict:
     """Read the local instruments file and check every instrument the way a
     config sync checks synced ones (``validate_instrument_yaml``, with the
-    map key as the name). A typo in ``i5_read_orientation`` would otherwise
-    fall back to "forward" without a word. Raise InstrumentConfigError
+    map key as the name). A wrong i5 fact would otherwise decide the i5
+    direction in every Sample Sheet. Raise InstrumentConfigError
     naming the file and listing every problem. Warnings are ignored: every
     local entry lacks the ``version`` a synced file carries."""
     from ..services.instrument_validator import validate_instrument_yaml
@@ -168,7 +168,7 @@ def load_checked_instrument_file(path: Path) -> dict:
                 result = validate_instrument_yaml({**entry, "name": name}, path.name)
             except Exception as e:
                 # The check itself fails on some values of the wrong type
-                # (i5_read_orientation: [] raises TypeError). Report it; the
+                # (channel1_bases: 42 raises TypeError). Report it; the
                 # start still stops.
                 problems.append(f"{name}: could not be checked: {e}")
                 continue
@@ -257,6 +257,18 @@ def get_instrument_config(name: str) -> Optional[dict]:
     return _instruments.get(name)
 
 
+def _i5_facts(inst) -> dict:
+    """A synced instrument's two i5 facts, in the shape a local entry gives
+    them (spec 2026-10-04 group A2, §2)."""
+    return {
+        "i5_workflows": [
+            {"name": w.name, "i5_read_orientation": w.i5_read_orientation}
+            for w in inst.i5_workflows
+        ],
+        "runinfo_marks_i5_reversed": inst.runinfo_marks_i5_reversed,
+    }
+
+
 def _synced_instrument_to_config(inst) -> dict:
     """Convert InstrumentDefinition to the dict format used internally."""
     return {
@@ -264,8 +276,7 @@ def _synced_instrument_to_config(inst) -> dict:
         "chemistry_type": inst.chemistry_type,
         "sbs_chemistry": inst.sbs_chemistry,
         "has_dragen_onboard": inst.has_dragen_onboard,
-        "i5_read_orientation": inst.i5_read_orientation,
-        "samplesheet_v2_i5_orientation": inst.samplesheet_v2_i5_orientation,
+        **_i5_facts(inst),
         "color_balance_enabled": inst.color_balance_enabled,
         "dye_channels": inst.dye_channels,
         "base_colors": inst.base_colors,
@@ -408,7 +419,8 @@ def get_i5_read_orientation_by_name(name: str) -> str:
     """
     config = get_instrument_config(name)
     if config:
-        return config.get("i5_read_orientation", "forward")
+        # The standard workflow's (spec 2026-10-04 group A2, §1).
+        return config["i5_workflows"][0]["i5_read_orientation"]
     return "forward"
 
 
@@ -593,8 +605,6 @@ def _format_custom_instrument(custom: dict) -> dict:
         "has_dragen_onboard": custom.get("has_dragen_onboard", False),
         "is_custom": True,  # Flag to identify custom instruments
         "samplesheet_name": custom.get("samplesheet_name", custom.get("name", "")),
-        "i5_read_orientation": custom.get("i5_read_orientation", "forward"),
-        "samplesheet_v2_i5_orientation": custom.get("samplesheet_v2_i5_orientation", "forward"),
     }
 
 
@@ -649,8 +659,7 @@ def get_all_instruments() -> list[dict]:
                 "is_synced": True,
                 "enabled": inst.enabled,
                 "samplesheet_name": inst.samplesheet_name,
-                "i5_read_orientation": inst.i5_read_orientation,
-                "samplesheet_v2_i5_orientation": inst.samplesheet_v2_i5_orientation,
+                **_i5_facts(inst),
             })
         return result
 
@@ -771,16 +780,19 @@ def get_samplesheet_v2_i5_orientation(platform: InstrumentPlatform) -> str:
 def get_samplesheet_v2_i5_orientation_by_name(name: str) -> str:
     """Get i5 orientation expected by BCL Convert for SampleSheet v2 by instrument name.
 
-    Falls back to i5_read_orientation if samplesheet_v2_i5_orientation is not set.
+    Reversed when the standard workflow reads the i5 reversed and RunInfo.xml
+    does not mark it.
 
     Returns:
         "forward" or "reverse-complement"
     """
     config = get_instrument_config(name)
     if config:
-        # Use explicit v2 orientation if set, otherwise fall back to physical orientation
-        return config.get("samplesheet_v2_i5_orientation",
-                          config.get("i5_read_orientation", "forward"))
+        # The standard workflow's (spec 2026-10-04 group A2, §2).
+        read = config["i5_workflows"][0]["i5_read_orientation"]
+        if read == "reverse-complement" and not config["runinfo_marks_i5_reversed"]:
+            return "reverse-complement"
+        return "forward"
     return "forward"
 
 

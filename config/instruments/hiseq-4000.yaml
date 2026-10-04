@@ -1,8 +1,9 @@
 # HiSeq 4000 - Four-color SBS
 #
 # High-throughput sequencer with four-color SBS chemistry.
-# Patterned flow cell with i5 read in reverse-complement orientation.
-# BCL Convert expects reverse-complement i5.
+# i5: reads the i5 as its reverse complement on a paired-end flow
+# cell; RunInfo.xml does not mark it.
+# See Instruments in the admin guide.
 
 version: "1.0.0"
 
@@ -11,8 +12,10 @@ samplesheet_name: HiSeq4000
 chemistry_type: 4-color
 has_dragen_onboard: false
 sbs_chemistry: "Four-color SBS"
-i5_read_orientation: reverse-complement
-samplesheet_v2_i5_orientation: reverse-complement
+i5_workflows:
+  - name: Standard
+    i5_read_orientation: reverse-complement
+runinfo_marks_i5_reversed: false
 color_balance_enabled: false
 
 onboard_applications:

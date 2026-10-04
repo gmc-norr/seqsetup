@@ -22,6 +22,11 @@ from seqsetup.services.instrument_validator import validate_instrument_yaml
 from seqsetup.services.validation import ValidationService
 
 NEXTSEQ = "NextSeq 1000/2000"
+# NextSeq 1000/2000's i5 facts (spec 2026-10-04 group A2, §1).
+I5_FACTS = {
+    "i5_workflows": [{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
+    "runinfo_marks_i5_reversed": True,
+}
 
 
 def _instrument_yaml(**extra) -> dict:
@@ -31,6 +36,7 @@ def _instrument_yaml(**extra) -> dict:
         "version": "1.0.0",
         "chemistry_type": "4-color",
         "flowcells": {"P3": {"lanes": 1, "reagent_kits": [50, 300]}},
+        **I5_FACTS,
     }
     data.update(extra)
     return data
@@ -42,6 +48,7 @@ def _definition(limits: dict) -> InstrumentDefinition:
         samplesheet_name="NextSeq1k2k",
         flowcells=[FlowcellDefinition(name="P3", reagent_kits=[50, 300])],
         reagent_kit_max_cycles=limits,
+        **I5_FACTS,
     )
 
 
@@ -118,7 +125,7 @@ class TestInstrumentDefinitionField:
     """The model checks the limits on every assignment and survives MongoDB."""
 
     def test_defaults_to_no_limits(self):
-        assert InstrumentDefinition(name=NEXTSEQ).reagent_kit_max_cycles == {}
+        assert InstrumentDefinition(name=NEXTSEQ, **I5_FACTS).reagent_kit_max_cycles == {}
 
     def test_round_trips_with_string_keys_in_storage(self):
         stored = _definition({300: 338}).to_dict()
@@ -132,7 +139,7 @@ class TestInstrumentDefinitionField:
 
     @pytest.mark.parametrize("limits", [{300: 299}, {300: "x"}, {"abc": 338}, {300: True}])
     def test_bad_limits_raise(self, limits):
-        inst = InstrumentDefinition(name=NEXTSEQ)
+        inst = InstrumentDefinition(name=NEXTSEQ, **I5_FACTS)
         with pytest.raises(ValueError):
             inst.reagent_kit_max_cycles = limits
 

@@ -190,8 +190,8 @@ def test_new_run_cycle_limit_exceeded(demo_page, base_url, demo, app_ctx):
         name="NovaSeq X Series",
         samplesheet_name="NovaSeqXSeries",
         chemistry_type="2-color",
-        i5_read_orientation="reverse-complement",
-        samplesheet_v2_i5_orientation="forward",
+        i5_workflows=[{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
+        runinfo_marks_i5_reversed=True,
         has_dragen_onboard=True,
         flowcells=[
             FlowcellDefinition(
@@ -1301,15 +1301,17 @@ def test_admin_instruments(demo_page, base_url, demo, app_ctx):
     definitions = [
         InstrumentDefinition(
             name="Docs Demo NovaSeq", samplesheet_name="DocsDemoNovaSeq",
-            chemistry_type="2-color", i5_read_orientation="reverse-complement",
-            samplesheet_v2_i5_orientation="forward", has_dragen_onboard=True,
+            chemistry_type="2-color", has_dragen_onboard=True,
+            i5_workflows=[{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
+            runinfo_marks_i5_reversed=True,
             flowcells=[FlowcellDefinition(name="10B", lanes=8, reads=10_000_000_000)],
             enabled=True,
         ),
         InstrumentDefinition(
             name="Docs Demo MiniSeq", samplesheet_name="DocsDemoMiniSeq",
-            chemistry_type="4-color", i5_read_orientation="forward",
-            samplesheet_v2_i5_orientation="forward", has_dragen_onboard=False,
+            chemistry_type="4-color", has_dragen_onboard=False,
+            i5_workflows=[{"name": "Standard", "i5_read_orientation": "forward"}],
+            runinfo_marks_i5_reversed=False,
             flowcells=[FlowcellDefinition(name="Standard", lanes=1, reads=25_000_000)],
             enabled=False,
         ),

@@ -1,7 +1,10 @@
 # MiSeq i100 Series - Two-color XLEAP chemistry (Blue+Green)
 #
 # Benchtop sequencer with XLEAP SBS chemistry and onboard DRAGEN.
-# i5 read in forward orientation. BCL Convert expects forward i5.
+# i5: index-first runs (the instrument's default) read the i5 forward;
+# read-first runs read it as its reverse complement, and RunInfo.xml
+# marks it.
+# See Instruments in the admin guide.
 
 version: "1.0.0"
 
@@ -10,8 +13,12 @@ samplesheet_name: MiSeqi100Series
 chemistry_type: 2-color
 has_dragen_onboard: true
 sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
-i5_read_orientation: forward
-samplesheet_v2_i5_orientation: forward
+i5_workflows:
+  - name: Index-first
+    i5_read_orientation: forward
+  - name: Read-first
+    i5_read_orientation: reverse-complement
+runinfo_marks_i5_reversed: true
 
 color_balance_enabled: true
 dye_channels: ["Blue", "Green"]

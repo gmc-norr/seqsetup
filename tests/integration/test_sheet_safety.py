@@ -123,6 +123,8 @@ def _seed_synced_profile(ctx, app_name: str, settings: dict | None = None) -> No
         version="1.0.0",
         chemistry_type="2-color",
         onboard_applications=[OnboardApplication(name=app_name, software_version="4.3.6")],
+        i5_workflows=[{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
+        runinfo_marks_i5_reversed=True,
     ))
     instruments_module.clear_synced_instruments_cache()
     clear_validation_cache()

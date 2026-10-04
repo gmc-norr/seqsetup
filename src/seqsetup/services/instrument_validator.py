@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from ..models.instrument_definition import i5_fact_problems
 from .sheet_text import PLAIN_NAME_RE, PLAIN_VERSION_RE
 
 
@@ -42,7 +43,6 @@ class ValidationResult:
 
 # Valid values for enum-like fields
 VALID_CHEMISTRY_TYPES = {"2-color", "4-color"}
-VALID_ORIENTATIONS = {"forward", "reverse-complement"}
 VALID_BASES = {"A", "C", "G", "T"}
 VALID_DYE_CHANNELS = {"Blue", "Green", "Red", "Yellow"}
 
@@ -81,22 +81,10 @@ def validate_instrument_yaml(yaml_data: dict, source_file: str = "") -> Validati
             chemistry_type,
         )
 
-    # i5 orientation fields
-    i5_read = yaml_data.get("i5_read_orientation", "forward")
-    if i5_read not in VALID_ORIENTATIONS:
-        result.add_error(
-            "i5_read_orientation",
-            f"Must be one of: {', '.join(sorted(VALID_ORIENTATIONS))}",
-            i5_read,
-        )
-
-    v2_i5 = yaml_data.get("samplesheet_v2_i5_orientation", "forward")
-    if v2_i5 not in VALID_ORIENTATIONS:
-        result.add_error(
-            "samplesheet_v2_i5_orientation",
-            f"Must be one of: {', '.join(sorted(VALID_ORIENTATIONS))}",
-            v2_i5,
-        )
+    # The two i5 facts and the old keys they replaced, checked as the model
+    # checks them (spec 2026-10-04 group A2, §1).
+    for field_name, message, value in i5_fact_problems(yaml_data):
+        result.add_error(field_name, message, value)
 
     # Boolean fields
     _validate_boolean(result, yaml_data, "has_dragen_onboard")

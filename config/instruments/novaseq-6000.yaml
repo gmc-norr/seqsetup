@@ -1,8 +1,9 @@
 # NovaSeq 6000 - Two-color SBS (Red+Green)
 #
 # High-throughput sequencer with classic two-color SBS chemistry.
-# Patterned flow cell with i5 read in reverse-complement orientation.
-# BCL Convert expects reverse-complement i5.
+# i5: v1.5 reagents read the i5 as its reverse complement, v1.0
+# reagents forward; RunInfo.xml does not mark it.
+# See Instruments in the admin guide.
 
 version: "1.0.0"
 
@@ -12,8 +13,12 @@ samplesheet_versions: [1, 2]
 chemistry_type: 2-color
 has_dragen_onboard: false
 sbs_chemistry: "Two-color SBS (Red+Green)"
-i5_read_orientation: reverse-complement
-samplesheet_v2_i5_orientation: reverse-complement
+i5_workflows:
+  - name: v1.5 reagents
+    i5_read_orientation: reverse-complement
+  - name: v1.0 reagents
+    i5_read_orientation: forward
+runinfo_marks_i5_reversed: false
 
 color_balance_enabled: true
 dye_channels: ["Red", "Green"]

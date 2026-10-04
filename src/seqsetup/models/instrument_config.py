@@ -21,8 +21,7 @@ class InstrumentConfig:
 
     # List of custom instruments defined via admin UI
     # Each: {"name": str, "samplesheet_name": str, "chemistry_type": str,
-    #        "has_dragen_onboard": bool, "i5_read_orientation": str,
-    #        "color_balance_enabled": bool, ...}
+    #        "has_dragen_onboard": bool, "color_balance_enabled": bool, ...}
     custom_instruments: list[dict] = field(default_factory=list)
 
     def is_instrument_enabled(self, instrument_name: str) -> bool:

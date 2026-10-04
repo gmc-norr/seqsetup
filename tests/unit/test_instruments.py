@@ -56,6 +56,16 @@ class TestGetI5ReadOrientation:
     def test_miseq_i100_forward(self):
         assert get_i5_read_orientation(InstrumentPlatform.MISEQ_I100) == "forward"
 
+    @pytest.mark.parametrize("platform", [
+        InstrumentPlatform.NEXTSEQ_500_550,
+        InstrumentPlatform.NEXTSEQ_1000_2000,
+        InstrumentPlatform.MINISEQ,
+    ])
+    def test_corrected_to_reverse_complement(self, platform):
+        # Review S-4: these read the i5 as its reverse complement (MiniSeq
+        # with its standard kits), not forward.
+        assert get_i5_read_orientation(platform) == "reverse-complement"
+
 
 class TestGetChemistryType:
     """Tests for get_chemistry_type()."""
@@ -170,8 +180,8 @@ class TestSyncedInstrumentsUnknownPlatform:
             chemistry_type="2-color",
             color_balance_enabled=True,
             samplesheet_name=name,
-            i5_read_orientation="forward",
-            samplesheet_v2_i5_orientation="forward",
+            i5_workflows=[{"name": "Standard", "i5_read_orientation": "forward"}],
+            runinfo_marks_i5_reversed=False,
         )
 
     def test_unknown_synced_name_skipped(self):
@@ -235,6 +245,8 @@ class TestInstrumentEnabledSwitch:
         return InstrumentDefinition(
             name=name, samplesheet_name=name, enabled=enabled,
             flowcells=[FlowcellDefinition(name="FC1", lanes=1)],
+            i5_workflows=[{"name": "Standard", "i5_read_orientation": "forward"}],
+            runinfo_marks_i5_reversed=False,
         )
 
     def test_synced_instrument_switched_off_is_disabled(self):

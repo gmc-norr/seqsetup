@@ -19,6 +19,8 @@ def _instrument(**extra) -> dict:
         "version": "1.0.0",
         "chemistry_type": "4-color",
         "flowcells": {"10B": {"lanes": 8, "reagent_kits": [300]}},
+        "i5_workflows": [{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
+        "runinfo_marks_i5_reversed": True,
     }
     data.update(extra)
     return data

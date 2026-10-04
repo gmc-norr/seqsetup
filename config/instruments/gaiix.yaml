@@ -2,7 +2,8 @@
 #
 # Legacy sequencer with four-color SBS chemistry.
 # Highly tolerant of low-diversity libraries.
-# i5 read in forward orientation. BCL Convert expects forward i5.
+# i5: read forward (as before; no Illumina source found).
+# See Instruments in the admin guide.
 
 version: "1.0.0"
 
@@ -11,8 +12,10 @@ samplesheet_name: GAIIx
 chemistry_type: 4-color
 has_dragen_onboard: false
 sbs_chemistry: "Four-color SBS"
-i5_read_orientation: forward
-samplesheet_v2_i5_orientation: forward
+i5_workflows:
+  - name: Standard
+    i5_read_orientation: forward
+runinfo_marks_i5_reversed: false
 color_balance_enabled: false
 
 onboard_applications:
