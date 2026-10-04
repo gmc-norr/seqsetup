@@ -76,8 +76,8 @@ Status Meaning
          "status": "ready",
          "instrument_platform": "NovaSeq X Series",
          "flowcell_type": "10B",
-         "created_at": "2025-06-15T10:30:00",
-         "updated_at": "2025-06-15T14:22:00",
+         "created_at": "2025-06-15T10:30:00Z",
+         "updated_at": "2025-06-15T14:22:00Z",
          "created_by": "jdoe",
          "sample_count": 96
        }
@@ -160,10 +160,10 @@ Each entry in ``items`` is a minimal summary:
      - Flowcell identifier (e.g., ``10B``).
    * - ``created_at``
      - string
-     - ISO 8601 timestamp.
+     - ISO 8601 timestamp in UTC, ending in ``Z``.
    * - ``updated_at``
      - string
-     - ISO 8601 timestamp.
+     - ISO 8601 timestamp in UTC, ending in ``Z``.
    * - ``created_by``
      - string
      - Username of the run creator.
@@ -244,7 +244,9 @@ Get Validation Report (JSON)
 
 ``GET /api/runs/{run_id}/validation-report``
 
-Get the pre-generated validation report in JSON format.
+Get the pre-generated validation report in JSON format. Its ``timestamp``
+is when the report was made, in the server's time zone with its offset
+from UTC (for example ``2026-03-10T10:17:04.512345+01:00``).
 
 :``run_id``: Run UUID.
 

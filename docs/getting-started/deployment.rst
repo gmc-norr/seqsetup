@@ -111,6 +111,25 @@ Configure the application using environment variables:
    * - ``INSTRUMENTS_CONFIG``
      - Path to instruments YAML config
      - ``config/instruments.yaml``
+   * - ``TZ``
+     - The time zone SeqSetup shows times in, an IANA name such as
+       ``Europe/Stockholm`` (see :ref:`time-zone`)
+     - The server's own zone
+
+.. _time-zone:
+
+Time Zone
+~~~~~~~~~
+
+SeqSetup stores every time in UTC and shows it in one time zone, with the
+zone's name after the time (for example ``2026-03-10 10:17 CET``): on every
+page, including the audit trail and its date search, in the v1 Sample
+Sheet's ``Date`` and in the validation reports. Set ``TZ`` to your lab's
+zone, for example ``TZ=Europe/Stockholm`` in ``.env``; without it, SeqSetup
+uses the server's own zone, which in a container is usually UTC. If ``TZ``
+names no known zone, SeqSetup stops at start and says so, rather than
+showing times in UTC without anyone noticing. The API gives times in UTC,
+ending in ``Z``.
 
 Production Deployment
 ---------------------
@@ -314,6 +333,10 @@ To update to a new version:
 
 The MongoDB data volume persists across container restarts, so your data
 is preserved during updates.
+
+Versions before the one that added ``TZ`` stored times in the server's own
+zone. If that zone was not UTC, times stored before the update are shown
+shifted by the zone's offset from UTC; times stored after it are right.
 
 Troubleshooting
 ---------------

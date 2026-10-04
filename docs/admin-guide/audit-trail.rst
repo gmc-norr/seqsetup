@@ -28,8 +28,9 @@ Finding events
   username.
 - **On what** -- the exact value shown in the **On what** column, for
   example a run ID or a username.
-- **From** / **To** -- dates, both days included. Times on this page are
-  UTC.
+- **From** / **To** -- dates, both days included, as days in the server's
+  time zone. Each time on this page is followed by the zone's name (see
+  :ref:`time-zone`).
 
 Select **Search** to apply the boxes, or **Clear** to empty them. Results
 are newest first, 100 at a time; **Older** shows the next 100.
