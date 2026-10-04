@@ -12,6 +12,9 @@
                       (an instrument change can invalidate the old kit;
                       needs reagent_kits, reagent_cycles; see
                       _reagent_kit_select.html)
+     i5_select_oob: bool — also send the i5 workflow select out of band
+                      (needs i5_workflows, i5_workflow; see
+                      _i5_workflow_select.html)
 #}
 <select name="flowcell_type" id="flowcell-select"
         hx-post="/runs/{{ run_id }}/flowcell"
@@ -23,3 +26,4 @@
 </select>
 {% if cycle_total_oob %}{% with oob=True %}{% include "wizard/_cycle_total.html" %}{% endwith %}{% endif %}
 {% if kit_select_oob %}{% with current=reagent_cycles, cycle_total_oob=False %}{% include "wizard/_reagent_kit_select.html" %}{% endwith %}{% endif %}
+{% if i5_select_oob %}{% with oob=True %}{% include "wizard/_i5_workflow_select.html" %}{% endwith %}{% endif %}

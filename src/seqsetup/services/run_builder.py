@@ -16,6 +16,8 @@ enforcing every clinical-safety invariant in the spec:
 from ..data.instruments import (
     get_flowcells_for_instrument,
     get_reagent_kits_for_flowcell,
+    i5_workflow_names,
+    standard_i5_workflow,
 )
 from ..models.analysis import Analysis
 from ..models.sample import Sample
@@ -70,6 +72,14 @@ def assert_references_available(config_source, instrument_config) -> None:
             f"Reagent kit '{config_source.reagent_cycles}' cycles is no longer "
             f"offered for '{platform.value}' / '{config_source.flowcell_type}'; "
             "this template/run cannot be instantiated."
+        )
+    # A renamed or removed workflow is refused, never swapped for another
+    # (spec 2026-10-04 group A2, §3); "" is the standard one.
+    workflow = config_source.i5_workflow
+    if workflow and workflow not in (i5_workflow_names(platform.value) or []):
+        raise RunInstantiationError(
+            f"{workflow} is no longer an i5 workflow of {platform.value}; "
+            "this template cannot be used."
         )
 
 
@@ -148,6 +158,11 @@ def build_draft_run(
         instrument_platform=config_source.instrument_platform,
         flowcell_type=config_source.flowcell_type,
         reagent_cycles=config_source.reagent_cycles,
+        # A source made before the run had a workflow gets the standard name.
+        i5_workflow=(
+            config_source.i5_workflow
+            or standard_i5_workflow(config_source.instrument_platform.value)
+        ),
         run_cycles=run_cycles,
         barcode_mismatches_index1=config_source.barcode_mismatches_index1,
         barcode_mismatches_index2=config_source.barcode_mismatches_index2,

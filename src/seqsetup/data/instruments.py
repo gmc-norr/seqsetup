@@ -410,6 +410,21 @@ def is_instrument_enabled_by_name(name: str) -> bool:
     return inst is None or inst.enabled
 
 
+def i5_workflow_names(name: str) -> Optional[list[str]]:
+    """The instrument's i5 workflow names, the standard one first; None when
+    the instrument has no settings (spec 2026-10-04 group A2, §3)."""
+    config = get_instrument_config(name)
+    if config is None:
+        return None
+    return [workflow["name"] for workflow in config["i5_workflows"]]
+
+
+def standard_i5_workflow(name: str) -> str:
+    """The instrument's standard (first) i5 workflow; "" when it has no settings."""
+    names = i5_workflow_names(name)
+    return names[0] if names else ""
+
+
 def get_i5_read_orientation_by_name(name: str) -> str:
     """Get i5 (Index 2) read orientation for an instrument by name.
 

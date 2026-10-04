@@ -89,6 +89,7 @@ def _config_from_run(run, name: str, description: str, scaffold_samples) -> RunT
         instrument_platform=run.instrument_platform,
         flowcell_type=run.flowcell_type,
         reagent_cycles=run.reagent_cycles,
+        i5_workflow=run.i5_workflow,
         run_cycles=RunCycles.from_dict(run.run_cycles.to_dict()) if run.run_cycles else None,
         barcode_mismatches_index1=run.barcode_mismatches_index1,
         barcode_mismatches_index2=run.barcode_mismatches_index2,

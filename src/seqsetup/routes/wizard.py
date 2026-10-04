@@ -14,7 +14,9 @@ from ..data.instruments import (
     get_index_cycle_options,
     get_reagent_kit_max_cycles,
     get_reagent_kits_for_flowcell,
+    i5_workflow_names,
     is_instrument_enabled_by_name,
+    standard_i5_workflow,
 )
 from ..models.sequencing_run import RunCycles, RunStatus
 from ..startup import get_instrument_config_repo
@@ -35,7 +37,9 @@ def wizard_new(
     """POST /runs/new — create the run row and redirect to step 1."""
     user = request.scope.get("auth")
     actor = user.username if user else ""
-    run = ctx.run_repo.create_run(actor)
+    run = ctx.run_repo.create_run(
+        actor, i5_workflow=standard_i5_workflow(ctx.run_repo.NEW_RUN_INSTRUMENT.value)
+    )
     record_run_created_safe(ctx, run, actor, source="blank")
     # new=1: this page just made the run, so its Cancel deletes it.
     return RedirectResponse(f"/runs/new/step/1?new=1&run_id={run.id}", status_code=303)
@@ -90,6 +94,7 @@ def wizard_step1(
         "cycles": cycles,
         "index_cycle_options": index_cycle_options,
         "kit_max_cycles": get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles),
+        "i5_workflows": i5_workflow_names(run.instrument_platform.value),
         "is_new": new == "1",
         "templates": templates,
     })

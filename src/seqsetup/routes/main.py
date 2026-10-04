@@ -10,7 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..context import AppContext
-from ..data.instruments import get_flowcells_for_instrument, get_lanes_for_flowcell
+from ..data.instruments import (
+    get_flowcells_for_instrument,
+    get_lanes_for_flowcell,
+    i5_workflow_names,
+)
 from ..models.sequencing_run import RunCycles, RunStatus
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
@@ -186,4 +190,5 @@ def edit_run(
         "has_v1": has_v1,
         "flowcell_desc": flowcell_desc,
         "cycles": cycles,
+        "i5_workflows": i5_workflow_names(run.instrument_platform.value),
     })

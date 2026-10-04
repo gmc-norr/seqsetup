@@ -6,6 +6,7 @@
      instruments:          list[dict{"name": str, "platform": Enum, "unavailable"?: str}]
      current_flowcells:    dict — passed through to _flowcell_select.html
      current_reagent_kits: list[int] — passed through to _reagent_kit_select.html
+     i5_workflows:         list[str] | None — passed through to _i5_workflow_select.html
 #}
 <fieldset class="instrument-config">
     <legend>Instrument</legend>
@@ -33,4 +34,7 @@
         {% include "wizard/_reagent_kit_select.html" %}
         {% endwith %}
     </div>
+    {% with run_id=run.id, i5_workflow=run.i5_workflow, oob=False %}
+    {% include "wizard/_i5_workflow_select.html" %}
+    {% endwith %}
 </fieldset>

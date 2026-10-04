@@ -27,6 +27,7 @@ from ..data.instruments import (
     get_lanes_for_flowcell,
     get_reagent_kit_max_cycles,
     get_reagent_kits_for_flowcell,
+    i5_workflow_names,
     is_instrument_enabled_by_name,
 )
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
@@ -218,8 +219,11 @@ async def update_instrument(
         ))
 
     flowcells = get_flowcells_for_instrument(matched)
+    workflows = i5_workflow_names(matched.value)
     with saving_run(run, ctx, request):
         run.instrument_platform = matched
+        # The new instrument's standard i5 workflow (spec 2026-10-04 group A2, §3).
+        run.i5_workflow = workflows[0] if workflows else ""
         if flowcells:
             run.flowcell_type = list(flowcells.keys())[0]
         else:
@@ -235,7 +239,39 @@ async def update_instrument(
         "kit_select_oob": True,
         "reagent_kits": reagent_kits,
         "reagent_cycles": run.reagent_cycles,
+        "i5_select_oob": True,
+        "i5_workflows": workflows,
+        "i5_workflow": run.i5_workflow,
         **_cycle_total_oob(run),
+    })
+
+
+@router.post("/runs/{run_id}/i5-workflow", response_class=HTMLResponse)
+async def update_i5_workflow(
+    request: Request,
+    run: SequencingRun = Depends(get_editable_run),
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """POST /runs/{run_id}/i5-workflow — pick the run's i5 workflow (spec
+    2026-10-04 group A2, §3). Only a name the instrument lists is saved, as
+    sent; anything else is refused and nothing is written."""
+    form = await request.form()
+    value = form.get("i5_workflow")
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail="No i5 workflow was sent. Nothing was saved.")
+    instrument = run.instrument_platform.value
+    workflows = i5_workflow_names(instrument) or []
+    if value not in workflows:
+        raise HTTPException(status_code=400, detail=(
+            f"{value[:64]!r} is not an i5 workflow of {instrument} "
+            f"(it has: {', '.join(workflows) or 'none'}). Nothing was saved."
+        ))
+    with saving_run(run, ctx, request):
+        run.i5_workflow = value
+    return render(request, "wizard/_i5_workflow_select.html", {
+        "run_id": run.id,
+        "i5_workflows": workflows,
+        "i5_workflow": run.i5_workflow,
     })
 
 

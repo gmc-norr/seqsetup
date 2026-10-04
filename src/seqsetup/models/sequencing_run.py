@@ -34,6 +34,14 @@ def _resolve_max_samples_per_run() -> int:
 MAX_SAMPLES_PER_RUN = _resolve_max_samples_per_run()
 
 
+def checked_i5_workflow(value) -> str:
+    """A run's or template's i5 workflow name: text, cut to 256 characters,
+    line breaks made spaces, as ``run_name`` (spec 2026-10-04 group A2, §3)."""
+    if not isinstance(value, str):
+        raise ValueError(f"i5_workflow must be text, got {value!r}")
+    return value.replace("\r", " ").replace("\n", " ")[:256]
+
+
 class RunStatus(Enum):
     """Status of a sequencing run."""
 
@@ -155,6 +163,9 @@ class SequencingRun:
     instrument_platform: InstrumentPlatform = InstrumentPlatform.NOVASEQ_X
     flowcell_type: str = ""
     reagent_cycles: int = 300
+    # The run's i5 workflow, one of its instrument's i5_workflows names; ""
+    # means the standard one (spec 2026-10-04 group A2, §3).
+    i5_workflow: str = ""
 
     # Cycle configuration
     run_cycles: Optional[RunCycles] = None
@@ -227,6 +238,8 @@ class SequencingRun:
             value = value.replace("\r", " ").replace("\n", " ")[:256]
         elif name == "run_description" and isinstance(value, str):
             value = value.replace("\r", " ").replace("\n", " ")[:4096]
+        elif name == "i5_workflow":
+            value = checked_i5_workflow(value)
         elif name in ("created_by", "updated_by", "flowcell_type", "reagent_cycles_kit") and isinstance(value, str):
             value = value[:256]
         elif name == "status" and value in (RunStatus.READY, RunStatus.ARCHIVED):
@@ -344,6 +357,7 @@ class SequencingRun:
             "instrument_platform": self.instrument_platform.value,
             "flowcell_type": self.flowcell_type,
             "reagent_cycles": self.reagent_cycles,
+            "i5_workflow": self.i5_workflow,
             "run_cycles": self.run_cycles.to_dict() if self.run_cycles else None,
             "barcode_mismatches_index1": self.barcode_mismatches_index1,
             "barcode_mismatches_index2": self.barcode_mismatches_index2,
@@ -429,6 +443,7 @@ class SequencingRun:
             instrument_platform=platform,
             flowcell_type=data.get("flowcell_type", ""),
             reagent_cycles=data.get("reagent_cycles", 300),
+            i5_workflow=data.get("i5_workflow") or "",
             run_cycles=run_cycles,
             barcode_mismatches_index1=data.get("barcode_mismatches_index1", 1),
             barcode_mismatches_index2=data.get("barcode_mismatches_index2", 1),
