@@ -18,6 +18,10 @@ Three handlers:
   - ``ConflictError``: optimistic-lock conflict from
     ``SequencingRun.save``. Always 409 with a plain-text-in-HTML body.
 
+  - ``SyncedInstrumentsUnusable`` and ``InstrumentRecordError``: the synced
+    instrument records cannot be used (spec 2026-10-04 group A2, §5). 503,
+    shown like an ``HTTPException``, with what to do.
+
 **Security: every user/exception-controlled string is HTML-escaped
 before interpolation.** Field names come from Pydantic and are
 developer-controlled, but ``HTTPException.detail`` and ``ConflictError``
@@ -32,6 +36,8 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import HTMLResponse
 
+from .data.instruments import SyncedInstrumentsUnusable, records_unusable_message
+from .models.instrument_definition import InstrumentRecordError
 from .repositories.base import ConflictError
 
 
@@ -117,8 +123,31 @@ async def conflict_handler(request: Request, exc: ConflictError):
     )
 
 
+async def instruments_unusable_handler(request: Request, exc: Exception):
+    """The synced instrument records cannot be used → 503, as an HTML
+    fragment for HTMX or a page otherwise. Every reader stops this way, with
+    nothing to remember: the lookups raise SyncedInstrumentsUnusable, and a
+    direct read of a stored record raises InstrumentRecordError, which gets
+    the same message and remedy."""
+    if isinstance(exc, InstrumentRecordError):
+        message = records_unusable_message(exc)
+    else:
+        message = str(exc)
+    body = _error_fragment(message)
+    headers = {"Cache-Control": "no-store"}
+    if _is_htmx(request):
+        headers["HX-Retarget"] = "#error-banner"
+        headers["HX-Reswap"] = "innerHTML"
+        return HTMLResponse(content=body, status_code=503, headers=headers)
+
+    page = f"<!DOCTYPE html><html><body>{body}</body></html>"
+    return HTMLResponse(content=page, status_code=503, headers=headers)
+
+
 def install(app):
-    """Register all three handlers on the FastAPI app."""
+    """Register the handlers on the FastAPI app."""
     app.add_exception_handler(RequestValidationError, request_validation_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(ConflictError, conflict_handler)
+    app.add_exception_handler(SyncedInstrumentsUnusable, instruments_unusable_handler)
+    app.add_exception_handler(InstrumentRecordError, instruments_unusable_handler)

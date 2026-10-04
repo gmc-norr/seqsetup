@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import re
+from contextlib import contextmanager
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
@@ -29,7 +30,11 @@ from ..data.instruments import (
     get_reagent_kits_for_flowcell,
     i5_workflow_names,
     is_instrument_enabled_by_name,
+    no_settings_reason,
+    reading_synced_records,
+    SyncedInstrumentsUnusable,
 )
+from ..models.instrument_definition import InstrumentRecordError
 from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from ..repositories.base import ConflictError
 from ..services.audit_log import audit
@@ -218,8 +223,16 @@ async def update_instrument(
             f"you can pick."
         ))
 
-    flowcells = get_flowcells_for_instrument(matched)
     workflows = i5_workflow_names(matched.value)
+    if workflows is None:
+        # Not among the synced instruments (spec 2026-10-04 group A2, §5).
+        raise HTTPException(status_code=400, detail=(
+            f"{no_settings_reason(matched.value)}. The run still uses "
+            f"{run.instrument_platform.value}. Reload the page to see the instruments "
+            f"you can pick."
+        ))
+
+    flowcells = get_flowcells_for_instrument(matched)
     with saving_run(run, ctx, request):
         run.instrument_platform = matched
         # The new instrument's standard i5 workflow (spec 2026-10-04 group A2, §3).
@@ -441,6 +454,25 @@ async def update_bclconvert(
 
 # --- update_status: cross-status transitions (uses get_archivable_run) ---
 
+@contextmanager
+def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_status: RunStatus):
+    """Mark Ready stops when the synced instrument records cannot be used:
+    audit the refusal, then let the error reach its handler (spec 2026-10-04
+    group A2, §5). Nothing has been saved at these points."""
+    try:
+        yield
+    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+        audit(
+            "run.status.denied",
+            actor=get_username(request),
+            target=run.id,
+            outcome="denied",
+            reason="synced_instruments_unusable",
+            attempted_status=new_status.value,
+        )
+        raise
+
+
 @router.post("/runs/{run_id}/status/{status}", response_class=HTMLResponse)
 async def update_status(
     request: Request,
@@ -469,12 +501,13 @@ async def update_status(
 
     color_balance_lanes: list[int] = []
     if new_status == RunStatus.READY:
-        validation_result = ValidationService.validate_run(
-            run,
-            test_profile_repo=ctx.test_profile_repo,
-            app_profile_repo=ctx.app_profile_repo,
-            instrument_config=ctx.instrument_config,
-        )
+        with _denied_if_instruments_unusable(request, run, new_status):
+            validation_result = ValidationService.validate_run(
+                run,
+                test_profile_repo=ctx.test_profile_repo,
+                app_profile_repo=ctx.app_profile_repo,
+                instrument_config=ctx.instrument_config,
+            )
         if validation_result.error_count > 0:
             audit(
                 "run.status.denied",
@@ -540,9 +573,12 @@ async def update_status(
     new_val_pdf = None
     if new_status == RunStatus.READY:
         try:
-            new_ss_v2, new_ss_v1, new_json, new_val_json, new_val_pdf = (
-                _pregenerate_exports(run, ctx)
-            )
+            with _denied_if_instruments_unusable(request, run, new_status):
+                new_ss_v2, new_ss_v1, new_json, new_val_json, new_val_pdf = (
+                    _pregenerate_exports(run, ctx)
+                )
+        except (InstrumentRecordError, SyncedInstrumentsUnusable):
+            raise
         except Exception:
             logger.error(f"Failed to generate exports for run {run.id}", exc_info=True)
             return Response("Failed to generate exports", status_code=500)
@@ -584,10 +620,11 @@ async def update_status(
         # The instrument may have been switched off while the exports were
         # being generated. Read the switch from the database, not the
         # in-process cache (spec 2026-09-28 group 1c, F27, review P2).
-        definition = (
-            ctx.instrument_definition_repo.get_by_name(run.instrument_platform.value)
-            if ctx.instrument_definition_repo is not None else None
-        )
+        with _denied_if_instruments_unusable(request, run, new_status), reading_synced_records():
+            definition = (
+                ctx.instrument_definition_repo.get_by_name(run.instrument_platform.value)
+                if ctx.instrument_definition_repo is not None else None
+            )
         if definition is not None and not definition.enabled:
             audit(
                 "run.status.denied",

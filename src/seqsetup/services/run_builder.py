@@ -17,6 +17,7 @@ from ..data.instruments import (
     get_flowcells_for_instrument,
     get_reagent_kits_for_flowcell,
     i5_workflow_names,
+    no_settings_reason,
     standard_i5_workflow,
 )
 from ..models.analysis import Analysis
@@ -50,6 +51,12 @@ def assert_references_available(config_source, instrument_config) -> None:
     carry authoritative embedded index sequences; kit name is metadata only.
     """
     platform = config_source.instrument_platform
+    # An instrument with no settings is refused first, by name (spec
+    # 2026-10-04 group A2, §5).
+    if i5_workflow_names(platform.value) is None:
+        raise RunInstantiationError(
+            f"{no_settings_reason(platform.value)}; this template/run cannot be instantiated."
+        )
     flowcells = get_flowcells_for_instrument(platform, instrument_config)
     if not flowcells:
         raise RunInstantiationError(

@@ -383,3 +383,349 @@ class TestProfilesCannotChangeTheRule:
         assert resp.text == "Failed to generate exports"
         assert ctx.run_repo.get_by_id(run_id).status == RunStatus.DRAFT
 
+
+
+REMEDY = (
+    "Update the instrument files and run a config sync with Also sync instruments on "
+    "(Admin > Config Sync)."
+)
+OLD_FORMAT_MESSAGE = (
+    "The synced instrument settings cannot be used: NovaSeq X Series: i5_read_orientation: "
+    "Replaced by i5_workflows and runinfo_marks_i5_reversed; see Instruments in the admin "
+    "guide; samplesheet_v2_i5_orientation: Replaced by i5_workflows and "
+    "runinfo_marks_i5_reversed; see Instruments in the admin guide; i5_workflows: Required: "
+    "the instrument's i5 workflows (name and i5_read_orientation each), the standard one "
+    f"first; runinfo_marks_i5_reversed: Required: true or false. {REMEDY}"
+)
+DATABASE_MESSAGE = (
+    "The synced instrument settings could not be read from the database. "
+    "Try again, or ask an administrator to check the database."
+)
+
+
+def _store_old_format_record(ctx) -> None:
+    """A NovaSeq X record as an older SeqSetup stored it: the two old keys,
+    neither new fact."""
+    from seqsetup.data import instruments as instruments_module
+    from .test_group_1c import _sync
+    _sync(ctx, names=(NOVASEQ_X.value,))
+    doc = ctx.instrument_definition_repo.collection.find_one({"name": NOVASEQ_X.value})
+    ctx.instrument_definition_repo.collection.update_one({"_id": doc["_id"]}, {
+        "$unset": {"i5_workflows": "", "runinfo_marks_i5_reversed": ""},
+        "$set": {"i5_read_orientation": "reverse-complement",
+                 "samplesheet_v2_i5_orientation": "forward"},
+    })
+    instruments_module.clear_synced_instruments_cache()
+
+
+def _store_damaged_record(ctx) -> None:
+    """A NovaSeq X record whose flowcells are not mappings."""
+    from seqsetup.data import instruments as instruments_module
+    from .test_group_1c import _sync
+    _sync(ctx, names=(NOVASEQ_X.value,))
+    ctx.instrument_definition_repo.collection.update_one(
+        {"name": NOVASEQ_X.value}, {"$set": {"flowcells": ["10B"]}})
+    instruments_module.clear_synced_instruments_cache()
+
+
+def _denials(ctx) -> list:
+    return ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied")
+
+
+class TestAnInstrumentLeftOutOfTheSync:
+    """While synced records exist, an instrument not among them has no
+    settings, is called "not among the synced instruments" (never
+    "disabled"), and its runs cannot be marked Ready; their pages open."""
+
+    def _setup(self, fresh_app):
+        from .test_group_1c import _clean_run, _sync
+        _app, ctx, _db = fresh_app
+        _sync(ctx, names=(NOVASEQ_X.value,))
+        run = _clean_run(ctx, "a2-left-out", platform=I100, flowcell="5M")
+        return ctx, run
+
+    def test_mark_ready_is_refused(self, logged_in_client, fresh_app):
+        from .conftest import disable_repos
+        ctx, run = self._setup(fresh_app)
+        disable_repos(ctx, "test_profile", "app_profile")
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        text = html.unescape(resp.text)
+        assert ("MiSeq i100 Series is not among the synced instruments. "
+                "Pick another instrument in Run Setup.") in text
+        assert "disabled" not in text
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+    def test_its_pages_open(self, logged_in_client, fresh_app):
+        from .test_group_1c import _platform_options
+        ctx, run = self._setup(fresh_app)
+        assert logged_in_client.get(f"/runs/{run.id}").status_code == 200
+        setup = logged_in_client.get(f"/runs/new/step/1?run_id={run.id}")
+        assert setup.status_code == 200
+        assert (I100.value, True, f"{I100.value} (not available)") in _platform_options(setup.text)
+        assert _workflow_select(setup.text) == EMPTY_CONTAINER
+
+    def test_the_instrument_route_refuses_it(self, logged_in_client, fresh_app):
+        from .test_group_1c import _clean_run
+        ctx, _run = self._setup(fresh_app)
+        run = _clean_run(ctx, "a2-left-out-change")
+        before = ctx.run_repo.get_by_id(run.id).updated_at
+
+        resp = logged_in_client.post(f"/runs/{run.id}/instrument",
+                                     data={"instrument_platform": I100.value}, headers=ORIGIN)
+
+        assert resp.status_code == 400
+        assert ("MiSeq i100 Series is not among the synced instruments. The run still uses "
+                "NovaSeq X Series.") in html.unescape(resp.text)
+        assert ctx.run_repo.get_by_id(run.id).updated_at == before
+
+    def test_a_template_on_it_is_refused(self, logged_in_client, fresh_app):
+        ctx, _run = self._setup(fresh_app)
+        template = RunTemplate(name="Left out", instrument_platform=I100, flowcell_type="5M",
+                               reagent_cycles=100, i5_workflow="Index-first")
+        ctx.run_template_repo.save(template)
+
+        resp = logged_in_client.post(f"/runs/new/from-template/{template.id}", headers=ORIGIN,
+                                     follow_redirects=False)
+
+        assert resp.status_code == 400
+        assert resp.text == ("MiSeq i100 Series is not among the synced instruments; "
+                             "this template/run cannot be instantiated.")
+
+    def test_new_run_works_when_novaseq_x_is_left_out(self, logged_in_client, fresh_app):
+        from .test_group_1c import _platform_options, _sync
+        _app, ctx, _db = fresh_app
+        _sync(ctx, names=(I100.value,))
+
+        resp = logged_in_client.post("/runs/new", headers=ORIGIN, follow_redirects=False)
+
+        run_id = resp.headers["location"].split("run_id=", 1)[1]
+        assert ctx.run_repo.get_by_id(run_id).i5_workflow == ""
+        setup = logged_in_client.get(f"/runs/new/step/1?run_id={run_id}").text
+        assert (NOVASEQ_X.value, True, f"{NOVASEQ_X.value} (not available)") in _platform_options(setup)
+
+
+class TestRecordsThatCannotBeUsed:
+    """An old-format record, a damaged record or a database error: run pages
+    show the message, Mark Ready is refused with nothing saved, and the
+    local file is never used."""
+
+    @pytest.mark.parametrize("store,message", [
+        pytest.param(_store_old_format_record, OLD_FORMAT_MESSAGE, id="old-format"),
+        pytest.param(_store_damaged_record, None, id="damaged"),
+    ])
+    def test_the_run_page_shows_the_message(self, logged_in_client, fresh_app, store, message):
+        from .test_group_1c import _clean_run
+        _app, ctx, _db = fresh_app
+        run = _clean_run(ctx, "a2-unusable-page")
+        store(ctx)
+
+        resp = logged_in_client.get(f"/runs/{run.id}")
+
+        assert resp.status_code == 503
+        text = html.unescape(resp.text)
+        assert text.startswith("<!DOCTYPE html>")
+        if message:
+            assert message in text
+        else:
+            assert "The synced instrument settings cannot be used: NovaSeq X Series: " in text
+            assert text.rstrip().endswith(f"{REMEDY}</div></body></html>")
+
+    def test_an_htmx_request_gets_the_banner(self, logged_in_client, fresh_app):
+        from .test_group_1c import _clean_run
+        _app, ctx, _db = fresh_app
+        run = _clean_run(ctx, "a2-unusable-htmx")
+        _store_old_format_record(ctx)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/instrument",
+                                     data={"instrument_platform": I100.value},
+                                     headers={**ORIGIN, "HX-Request": "true"})
+
+        assert resp.status_code == 503
+        assert resp.headers["HX-Retarget"] == "#error-banner"
+        assert html.unescape(resp.text) == f'<div class="error-message">{OLD_FORMAT_MESSAGE}</div>'
+
+    def test_mark_ready_is_refused_and_audited(self, logged_in_client, fresh_app):
+        from .test_group_1c import _clean_run
+        _app, ctx, _db = fresh_app
+        run = _clean_run(ctx, "a2-unusable-ready")
+        _store_old_format_record(ctx)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.status_code == 503
+        assert OLD_FORMAT_MESSAGE in html.unescape(resp.text)
+        stored = ctx.run_repo.get_by_id(run.id)
+        assert stored.status == RunStatus.DRAFT and stored.generated_samplesheet_v2 is None
+        (event,) = _denials(ctx)
+        assert event.details["reason"] == "synced_instruments_unusable"
+
+    def test_a_database_error_shows_the_fixed_sentence(self, logged_in_client, fresh_app,
+                                                         monkeypatch):
+        from pymongo.errors import ServerSelectionTimeoutError
+        from seqsetup.data import instruments as instruments_module
+        from .test_group_1c import _clean_run, _sync
+        _app, ctx, _db = fresh_app
+        run = _clean_run(ctx, "a2-unusable-db")
+        _sync(ctx, names=(NOVASEQ_X.value,))
+
+        def unreachable():
+            raise ServerSelectionTimeoutError("db-host-7:27017: timed out")
+
+        monkeypatch.setattr(instruments_module._instrument_definition_repo, "list_all", unreachable)
+        instruments_module.clear_synced_instruments_cache()
+
+        resp = logged_in_client.get(f"/runs/{run.id}")
+
+        assert resp.status_code == 503
+        assert DATABASE_MESSAGE in resp.text
+        assert "db-host-7" not in resp.text
+
+    @pytest.mark.parametrize("path", [
+        "export/samplesheet-v2", "export/samplesheet-v1", "export/validation-report",
+        "export/validation-pdf",
+    ])
+    def test_the_live_exports_show_it(self, logged_in_client, fresh_app, path):
+        from .test_group_1c import _clean_run
+        _app, ctx, _db = fresh_app
+        # A Ready run from before exports were pre-generated: the export routes
+        # make them live.
+        platform = NOVASEQ_X if "v1" not in path else InstrumentPlatform.NOVASEQ_6000
+        run = _clean_run(ctx, "a2-unusable-export", platform=platform,
+                         flowcell="10B" if platform == NOVASEQ_X else "S4",
+                         status=RunStatus.READY)
+        _store_old_format_record(ctx)
+
+        resp = logged_in_client.get(f"/runs/{run.id}/{path}")
+
+        assert resp.status_code == 503
+        assert OLD_FORMAT_MESSAGE in html.unescape(resp.text)
+
+    def test_a_failure_while_exports_are_made_is_not_failed_to_generate(
+            self, logged_in_client, fresh_app, monkeypatch):
+        from seqsetup.data.instruments import SyncedInstrumentsUnusable
+        from seqsetup.routes import runs as runs_module
+        from .conftest import disable_repos
+        from .test_group_1c import _clean_run
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run = _clean_run(ctx, "a2-unusable-export-step")
+
+        def unusable(run_, ctx_):
+            raise SyncedInstrumentsUnusable(DATABASE_MESSAGE)
+
+        monkeypatch.setattr(runs_module, "_pregenerate_exports", unusable)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.status_code == 503
+        assert DATABASE_MESSAGE in resp.text
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+        (event,) = _denials(ctx)
+        assert event.details["reason"] == "synced_instruments_unusable"
+
+    def test_the_switch_re_read_is_covered(self, logged_in_client, fresh_app, monkeypatch):
+        from seqsetup.models.instrument_definition import InstrumentRecordError
+        from .conftest import disable_repos
+        from .test_group_1c import _clean_run, _sync
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        _sync(ctx, names=(NOVASEQ_X.value,))
+        run = _clean_run(ctx, "a2-unusable-reread")
+
+        def damaged(name):
+            raise InstrumentRecordError(f"{name}: flowcells: damaged")
+
+        monkeypatch.setattr(ctx.instrument_definition_repo, "get_by_name", damaged)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.status_code == 503
+        assert (f"The synced instrument settings cannot be used: NovaSeq X Series: flowcells: "
+                f"damaged. {REMEDY}") in html.unescape(resp.text)
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+        (event,) = _denials(ctx)
+        assert event.details["reason"] == "synced_instruments_unusable"
+
+    def test_a_database_error_at_the_switch_re_read_is_the_fixed_sentence(
+            self, logged_in_client, fresh_app, monkeypatch):
+        from pymongo.errors import ServerSelectionTimeoutError
+        from .conftest import disable_repos
+        from .test_group_1c import _clean_run, _sync
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        _sync(ctx, names=(NOVASEQ_X.value,))
+        run = _clean_run(ctx, "a2-unusable-reread-db")
+
+        def unreachable(name):
+            raise ServerSelectionTimeoutError("db-host-7:27017: timed out")
+
+        monkeypatch.setattr(ctx.instrument_definition_repo, "get_by_name", unreachable)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.status_code == 503
+        assert DATABASE_MESSAGE in resp.text
+        assert "db-host-7" not in resp.text
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+        (event,) = _denials(ctx)
+        assert event.details["reason"] == "synced_instruments_unusable"
+
+    @pytest.mark.parametrize("method,path,data", [
+        pytest.param("get", "/admin/instruments", None, id="page"),
+        pytest.param("post", "/admin/instruments/synced/toggle",
+                     {"instrument_id": "x", "enabled": "false"}, id="toggle"),
+        pytest.param("post", "/admin/instruments/synced/enable-all", {}, id="enable-all"),
+    ])
+    def test_a_database_error_on_the_admin_instruments_page_is_the_fixed_sentence(
+            self, logged_in_client, fresh_app, monkeypatch, method, path, data):
+        from pymongo.errors import ServerSelectionTimeoutError
+        _app, ctx, _db = fresh_app
+
+        def unreachable():
+            raise ServerSelectionTimeoutError("db-host-7:27017: timed out")
+
+        monkeypatch.setattr(ctx.instrument_definition_repo, "list_all", unreachable)
+
+        if method == "get":
+            resp = logged_in_client.get(path)
+        else:
+            resp = logged_in_client.post(path, data=data, headers=ORIGIN)
+
+        assert resp.status_code == 503
+        assert DATABASE_MESSAGE in resp.text
+        assert "db-host-7" not in resp.text
+
+    def test_the_admin_toggle_saves_then_shows_the_message(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _store_old_format_record(ctx)
+        doc = ctx.instrument_definition_repo.collection.find_one({"name": NOVASEQ_X.value})
+
+        resp = logged_in_client.post("/admin/instruments/synced/toggle",
+                                     data={"instrument_id": doc["_id"], "enabled": "false"},
+                                     headers=ORIGIN)
+
+        assert resp.status_code == 503
+        assert OLD_FORMAT_MESSAGE in html.unescape(resp.text)
+        assert ctx.instrument_definition_repo.collection.find_one(
+            {"_id": doc["_id"]})["enabled"] is False
+
+    def test_the_config_sync_page_still_opens(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _store_old_format_record(ctx)
+        assert logged_in_client.get("/admin/config-sync").status_code == 200
+
+    def test_a_ready_run_keeps_its_exports_and_the_api(self, logged_in_client, fresh_app):
+        from .test_group_1c import _clean_run
+        _app, ctx, _db = fresh_app
+        run = _clean_run(ctx, "a2-unusable-pregenerated", status=RunStatus.READY)
+        run.generated_samplesheet_v2 = "[Header]\nmade before\n"
+        ctx.run_repo.save(run)
+        _store_old_format_record(ctx)
+
+        resp = logged_in_client.get(f"/runs/{run.id}/export/samplesheet-v2")
+
+        assert resp.status_code == 200
+        assert resp.text == "[Header]\nmade before\n"

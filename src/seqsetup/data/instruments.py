@@ -1,8 +1,14 @@
 """Instrument and flowcell specifications.
 
 Configuration can come from two sources:
-1. GitHub-synced instruments (preferred when available)
-2. Local config/instruments.yaml file (fallback)
+1. GitHub-synced instruments. While any synced records exist, only they
+   count: an instrument not among them has no settings.
+2. Local config/instruments.yaml file, used only when there are no synced
+   records at all.
+
+When the synced records cannot be used, every lookup raises
+SyncedInstrumentsUnusable; the local file is never used instead (spec
+2026-10-04 group A2, §5).
 
 To sync instruments from GitHub, configure the repository in Admin > Profiles.
 """
@@ -10,12 +16,14 @@ To sync instruments from GitHub, configure the repository in Admin > Profiles.
 import logging
 import os
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 import yaml
+from pymongo.errors import PyMongoError
 
 if TYPE_CHECKING:
     from ..repositories.instrument_definition_repo import InstrumentDefinitionRepository
@@ -31,6 +39,27 @@ class ChemistryType(Enum):
     FOUR_COLOR = "4-color"  # 4-channel SBS - each base has distinct color
 
 
+class SyncedInstrumentsUnusable(RuntimeError):
+    """The synced instrument records cannot be used, so SeqSetup stops and
+    says so (spec 2026-10-04 group A2, §5). A RuntimeError, so no
+    ``except ValueError`` around an instrument read can turn it into a 400."""
+
+
+SYNC_REMEDY = (
+    "Update the instrument files and run a config sync with Also sync instruments on "
+    "(Admin > Config Sync)."
+)
+DATABASE_PROBLEM = (
+    "The synced instrument settings could not be read from the database. "
+    "Try again, or ask an administrator to check the database."
+)
+
+
+def records_unusable_message(error: Exception) -> str:
+    """The message for a stored instrument record that cannot be used."""
+    return f"The synced instrument settings cannot be used: {error}. {SYNC_REMEDY}"
+
+
 # Module-level reference to instrument definition repository (set at app startup)
 _instrument_definition_repo: Optional["InstrumentDefinitionRepository"] = None
 _synced_instruments_cache: Optional[dict] = None  # Cache synced instruments
@@ -40,6 +69,8 @@ _synced_instruments_cache: Optional[dict] = None  # Cache synced instruments
 # expose ``None`` to a concurrent reader, or two readers can both rebuild
 # in parallel.
 _synced_instruments_lock = threading.Lock()
+# The failure last logged, so it is logged once per change of state.
+_last_logged_failure: Optional[str] = None
 
 
 def set_instrument_definition_repo(repo: "InstrumentDefinitionRepository") -> None:
@@ -66,7 +97,11 @@ def clear_synced_instruments_cache() -> None:
 def _get_synced_instruments() -> dict:
     """Get synced instruments from database, with caching.
 
-    Returns dict keyed by instrument name, or empty dict if no synced instruments.
+    Returns dict keyed by instrument name, or empty dict if no synced
+    instruments. Raises SyncedInstrumentsUnusable when a stored record cannot
+    be used or the database cannot be read; nothing is cached then, so the
+    first lookup after a good sync works (spec 2026-10-04 group A2, §5).
+    Other errors are programming errors and are not caught.
     """
     global _synced_instruments_cache
 
@@ -79,21 +114,50 @@ def _get_synced_instruments() -> dict:
 
         try:
             instruments = _instrument_definition_repo.list_all()
-            if instruments:
-                _synced_instruments_cache = {
-                    inst.name: inst for inst in instruments
-                }
-                return _synced_instruments_cache
-        except Exception:
-            # Fall back to YAML if the DB-synced instruments can't be loaded,
-            # but log it: a persistent failure means the app runs on YAML
-            # defaults while the operator believes DB-synced config is active.
-            logger.warning(
-                "Could not load DB-synced instruments; falling back to YAML defaults",
-                exc_info=True,
-            )
+        except InstrumentRecordError as e:
+            message = records_unusable_message(e)
+            _log_failure_once(message, message)
+            raise SyncedInstrumentsUnusable(message) from e
+        except PyMongoError as e:
+            # The driver's text (host names) goes to the log only.
+            _log_failure_once(DATABASE_PROBLEM, f"{DATABASE_PROBLEM} ({type(e).__name__}: {e})")
+            raise SyncedInstrumentsUnusable(DATABASE_PROBLEM) from e
+        _log_failure_once(None, "")
+        if instruments:
+            _synced_instruments_cache = {
+                inst.name: inst for inst in instruments
+            }
+            return _synced_instruments_cache
 
         return {}
+
+
+def _log_failure_once(failure: Optional[str], text: str) -> None:
+    """Log ``text`` when the failure state changes to ``failure``; None means
+    the records are usable again. Called under _synced_instruments_lock."""
+    global _last_logged_failure
+    if failure is not None and failure != _last_logged_failure:
+        logger.error(text)
+    _last_logged_failure = failure
+
+
+@contextmanager
+def reading_synced_records():
+    """For a read of the synced records straight from the database (Mark
+    Ready's switch re-read, the admin Instruments page): a database error
+    becomes SyncedInstrumentsUnusable with the fixed sentence, as in
+    _get_synced_instruments; the driver's text goes to the log only (spec
+    2026-10-04 group A2, §5)."""
+    global _last_logged_failure
+    try:
+        yield
+    except PyMongoError as e:
+        # Logged every time: a direct read follows a user's action, and a
+        # lookup served from the cache cannot tell the database came back.
+        with _synced_instruments_lock:
+            logger.error(f"{DATABASE_PROBLEM} ({type(e).__name__}: {e})")
+            _last_logged_failure = DATABASE_PROBLEM
+        raise SyncedInstrumentsUnusable(DATABASE_PROBLEM) from e
 
 
 def has_synced_instruments() -> bool:
@@ -246,14 +310,15 @@ def get_instrument_names() -> list[str]:
 def get_instrument_config(name: str) -> Optional[dict]:
     """Get configuration for a specific instrument by name.
 
-    Checks synced instruments first, falls back to YAML.
+    While synced records exist, only they count: an instrument not among
+    them has no settings (None), and the local file is not read for it
+    (spec 2026-10-04 group A2, §5). With no synced records, the local file.
     """
-    # Check synced instruments first
     synced = _get_synced_instruments()
-    if synced and name in synced:
-        inst = synced[name]
+    if synced:
+        inst = synced.get(name)
         # Convert to dict format expected by rest of module
-        return _synced_instrument_to_config(inst)
+        return _synced_instrument_to_config(inst) if inst is not None else None
 
     return _instruments.get(name)
 
@@ -771,7 +836,7 @@ def get_all_instruments() -> list[dict]:
 # provide backwards compatibility by mapping enum values to config names.
 
 # Import here to avoid circular imports
-from ..models.instrument_definition import checked_kit_cycle_limits
+from ..models.instrument_definition import InstrumentRecordError, checked_kit_cycle_limits
 from ..models.sequencing_run import InstrumentPlatform
 
 
