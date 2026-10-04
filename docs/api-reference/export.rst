@@ -147,6 +147,11 @@ Status Meaning
      "analyses": []
    }
 
+``global_override_cycles`` is the Override Cycles every sample has -- its
+own stored value (typed by hand or not), otherwise the calculated one -- or
+``null`` when the samples' values differ. Each sample's own
+``override_cycles`` is always given.
+
 The JSON export includes information not representable in the SampleSheet
 v2 format, such as sample names, projects, descriptions, and free-form
 metadata. It does **not** include a sample's Test ID, its index kit name,
