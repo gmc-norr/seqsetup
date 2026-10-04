@@ -8,6 +8,8 @@ import uuid
 
 import bcrypt
 
+from ..utils.clock import utcnow
+
 
 # Pinned bcrypt work factor. See LocalUser._BCRYPT_ROUNDS — kept in sync.
 _BCRYPT_ROUNDS = 12
@@ -27,7 +29,7 @@ class ApiToken:
     token_hash: str = ""
     token_prefix: str = ""  # First 8 chars of plaintext for fast lookup
     created_by: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=utcnow)
     expires_at: Optional[datetime] = None  # None = never expires (legacy)
     last_used_at: Optional[datetime] = None  # Set on each successful verify
 
@@ -35,7 +37,7 @@ class ApiToken:
         """True if expires_at is set and has passed."""
         if self.expires_at is None:
             return False
-        return (now or datetime.now()) >= self.expires_at
+        return (now or utcnow()) >= self.expires_at
 
     def verify(self, plaintext_token: str) -> bool:
         """Check whether a plaintext token matches this token's hash.
@@ -74,7 +76,7 @@ class ApiToken:
                     return None
             return v
 
-        created_at = _parse_dt(data.get("created_at")) or datetime.now()
+        created_at = _parse_dt(data.get("created_at")) or utcnow()
         return cls(
             id=data.get("_id") or data.get("id") or str(uuid.uuid4()),
             name=data.get("name", ""),

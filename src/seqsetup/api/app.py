@@ -18,6 +18,7 @@ from ..models.sequencing_run import RunStatus
 from ..services.audit_log import audit
 from .deps import api_actor, make_bearer_auth
 from .schemas import ErrorResponse, RunListResponse, RunSummary
+from ..utils.clock import as_utc
 
 
 # Paging defaults / bounds for /api/runs. Caps protect the API against
@@ -108,8 +109,8 @@ def _run_summary(run) -> RunSummary:
         status=run.status.value,
         instrument_platform=run.instrument_platform.value,
         flowcell_type=run.flowcell_type,
-        created_at=run.created_at,
-        updated_at=run.updated_at,
+        created_at=as_utc(run.created_at),
+        updated_at=as_utc(run.updated_at),
         created_by=run.created_by,
         sample_count=len(run.samples) if run.samples else 0,
     )

@@ -13,6 +13,7 @@ from typing import Optional
 from .analysis import Analysis
 from .sample import Sample, checked_mismatches
 from .sequencing_run import InstrumentPlatform, RunCycles
+from ..utils.clock import utcnow
 
 
 @dataclass
@@ -25,8 +26,8 @@ class RunTemplate:
 
     created_by: str = ""
     updated_by: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
 
     run_description: str = ""
     instrument_platform: InstrumentPlatform = InstrumentPlatform.NOVASEQ_X
@@ -59,7 +60,7 @@ class RunTemplate:
         object.__setattr__(self, name, value)
 
     def touch(self, updated_by: str = "") -> None:
-        self.updated_at = datetime.now()
+        self.updated_at = utcnow()
         if updated_by:
             self.updated_by = updated_by
 
@@ -95,12 +96,12 @@ class RunTemplate:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
         elif created_at is None:
-            created_at = datetime.now()
+            created_at = utcnow()
         updated_at = data.get("updated_at")
         if isinstance(updated_at, str):
             updated_at = datetime.fromisoformat(updated_at)
         elif updated_at is None:
-            updated_at = datetime.now()
+            updated_at = utcnow()
 
         raw_platform = data.get("instrument_platform", "NovaSeq X Series")
         try:

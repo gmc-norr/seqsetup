@@ -54,9 +54,14 @@ from .startup import (
     resolve_session_secret,
     warn_removed_sign_in_settings,
 )
+from .utils.clock import check_display_zone
 
 # Static files directory
 _STATIC_DIR = Path(__file__).parent / "static"
+
+# A TZ that names no known time zone stops the start: times would otherwise
+# be shown in UTC without anyone noticing (utils/clock.py).
+check_display_zone()
 
 # Resolve session secret
 _SESSION_SECRET = resolve_session_secret()

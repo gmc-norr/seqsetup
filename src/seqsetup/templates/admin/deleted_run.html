@@ -12,8 +12,8 @@
         <dt class="font-medium">Description</dt><dd>{{ run.run_description or "—" }}</dd>
         <dt class="font-medium">Status when deleted</dt><dd>{{ copy.status | capitalize }}</dd>
         <dt class="font-medium">Instrument</dt><dd>{{ run.instrument_platform.value }}{% if run.flowcell_type %}, {{ run.flowcell_type }}{% endif %}</dd>
-        <dt class="font-medium">Created</dt><dd>{{ run.created_by or "unknown" }}, {{ run.created_at.strftime("%Y-%m-%d %H:%M") }}</dd>
-        <dt class="font-medium">Last changed</dt><dd>{{ run.updated_by or "unknown" }}, {{ run.updated_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+        <dt class="font-medium">Created</dt><dd>{{ run.created_by or "unknown" }}, {{ run.created_at | localtime }}</dd>
+        <dt class="font-medium">Last changed</dt><dd>{{ run.updated_by or "unknown" }}, {{ run.updated_at | localtime }}</dd>
         <dt class="font-medium">Deleted</dt><dd>{{ shown_deleted_by }}, {{ deleted_when }}</dd>
     </dl>
 

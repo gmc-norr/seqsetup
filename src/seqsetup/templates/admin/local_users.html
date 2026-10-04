@@ -113,7 +113,7 @@
                             </select>
                         </td>
                         <td class="border px-2 py-1">
-                            <span x-show="!editing">{{ user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else "—" }}</span>
+                            <span x-show="!editing">{{ user.created_at | localtime if user.created_at else "—" }}</span>
                             <input x-show="editing" x-cloak
                                    type="password" name="password"
                                    placeholder="Leave blank to keep"

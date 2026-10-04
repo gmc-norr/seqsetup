@@ -163,7 +163,9 @@ Export Validation Report (JSON)
 
 ``GET /runs/{run_id}/export/validation-report``
 
-Download the validation report in JSON format.
+Download the validation report in JSON format. Its ``timestamp`` is when
+the report was made, in the server's time zone with its offset from UTC
+(for example ``2026-03-10T10:17:04.512345+01:00``).
 
 :``run_id``: Run UUID
 

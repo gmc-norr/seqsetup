@@ -8,6 +8,7 @@ from typing import Optional
 import bcrypt
 
 from .user import User, UserRole
+from ..utils.clock import utcnow
 
 
 # Pinned bcrypt work factor. Raise deliberately after a clinical-impact review;
@@ -89,8 +90,8 @@ class LocalUser:
     role: UserRole = UserRole.STANDARD
     password_hash: str = ""
     email: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
     # Changes whenever the role or password changes (see __setattr__ and
     # set_password); a login made with an older stamp is refused.
     session_stamp: str = field(default_factory=_new_session_stamp)
@@ -115,7 +116,7 @@ class LocalUser:
             plaintext.encode("utf-8"), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
         ).decode("utf-8")
         self.session_stamp = _new_session_stamp()
-        self.updated_at = datetime.now()
+        self.updated_at = utcnow()
 
     def verify_password(self, plaintext: str) -> bool:
         """Verify a plaintext password against the stored hash."""
@@ -162,7 +163,7 @@ class LocalUser:
             role=UserRole(data.get("role", "standard")),
             password_hash=data.get("password_hash", ""),
             email=data.get("email", ""),
-            created_at=data.get("created_at", datetime.now()),
-            updated_at=data.get("updated_at", datetime.now()),
+            created_at=data.get("created_at", utcnow()),
+            updated_at=data.get("updated_at", utcnow()),
             session_stamp=data.get("session_stamp", ""),
         )

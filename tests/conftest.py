@@ -1,6 +1,13 @@
 """Pytest fixtures for seqsetup tests."""
 
+import os
+
 import pytest
+
+# Pages show times in the TZ zone (seqsetup.utils.clock). Pin it so a test's
+# expected text does not depend on the machine; a test that needs another
+# zone sets TZ itself (monkeypatch.setenv).
+os.environ["TZ"] = "UTC"
 
 from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
 from seqsetup.models.index import Index, IndexKit, IndexPair, IndexType

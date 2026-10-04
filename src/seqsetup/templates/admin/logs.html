@@ -98,7 +98,7 @@
                     {% set lvl = entry.level %}
                     {% set lvl_color = {'ERROR': 'red', 'WARNING': 'amber', 'INFO': 'blue', 'DEBUG': 'slate'}.get(lvl, 'slate') %}
                     <tr>
-                        <td class="border px-2 py-1 whitespace-nowrap font-mono text-xs">{{ entry.timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                        <td class="border px-2 py-1 whitespace-nowrap font-mono text-xs">{{ entry.timestamp | localtime(seconds=True) }}</td>
                         <td class="border px-2 py-1"><span class="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-{{ lvl_color }}-100 text-{{ lvl_color }}-800">{{ lvl }}</span></td>
                         <td class="border px-2 py-1 whitespace-nowrap text-xs">{{ entry.logger_name }}</td>
                         <td class="border px-2 py-1"><pre class="whitespace-pre-wrap text-xs">{{ entry.message }}</pre></td>

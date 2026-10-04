@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Any, Optional
 import uuid
 
+from ..utils.clock import utcnow
+
 
 def _or_empty(value, empty):
     """An empty YAML section (``Settings:`` with nothing under it) is None; it
@@ -42,7 +44,7 @@ class ApplicationProfile:
 
     # Sync metadata
     source_file: str = ""  # Original filename from GitHub
-    synced_at: datetime = field(default_factory=datetime.now)
+    synced_at: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for MongoDB storage."""
@@ -68,7 +70,7 @@ class ApplicationProfile:
         if isinstance(synced_at, str):
             synced_at = datetime.fromisoformat(synced_at)
         elif synced_at is None:
-            synced_at = datetime.now()
+            synced_at = utcnow()
 
         return cls(
             id=data.get("_id") or data.get("id") or str(uuid.uuid4()),
@@ -123,5 +125,5 @@ class ApplicationProfile:
             data_fields=_or_empty(yaml_data.get("DataFields"), []),
             translate=_or_empty(yaml_data.get("Translate"), {}),
             source_file=source_file,
-            synced_at=datetime.now(),
+            synced_at=utcnow(),
         )
