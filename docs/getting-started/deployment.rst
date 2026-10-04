@@ -122,14 +122,23 @@ Time Zone
 ~~~~~~~~~
 
 SeqSetup stores every time in UTC and shows it in one time zone, with the
-zone's name after the time (for example ``2026-03-10 10:17 CET``): on every
-page, including the audit trail and its date search, in the v1 Sample
+zone's name after the time (for example ``2026-03-10 10:17 CET``): on the
+pages, including the audit trail and its date search, in the v1 Sample
 Sheet's ``Date`` and in the validation reports. Set ``TZ`` to your lab's
 zone, for example ``TZ=Europe/Stockholm`` in ``.env``; without it, SeqSetup
-uses the server's own zone, which in a container is usually UTC. If ``TZ``
-names no known zone, SeqSetup stops at start and says so, rather than
-showing times in UTC without anyone noticing. The API gives times in UTC,
-ending in ``Z``.
+uses the server's own zone, which in a container is usually UTC.
+
+``TZ`` must be an IANA zone name (``Europe/Stockholm``, ``UTC``). Other forms
+the operating system accepts, such as ``:/etc/localtime``, a file path or a
+rule like ``CET-1CEST,M3.5.0,M10.5.0/3``, are refused: if ``TZ`` names no
+known zone, SeqSetup stops at start and says so, rather than showing times
+in UTC without anyone noticing.
+
+Two kinds of time are not shown in the zone: the details of an audit event
+keep the UTC time they were recorded with (marked ``+00:00``), and the dates
+of LIMS worklists are shown as the LIMS gives them. In the API, run times
+are UTC ending in ``Z``, and the validation report's ``timestamp`` carries
+its offset from UTC.
 
 Production Deployment
 ---------------------
@@ -335,8 +344,15 @@ The MongoDB data volume persists across container restarts, so your data
 is preserved during updates.
 
 Versions before the one that added ``TZ`` stored times in the server's own
-zone. If that zone was not UTC, times stored before the update are shown
-shifted by the zone's offset from UTC; times stored after it are right.
+zone, and SeqSetup has no tool to convert them. If that zone was not UTC,
+times stored before the update are read as UTC, so they are off by the
+zone's offset: they are shown shifted, the API gives them shifted (a run's
+``updated_at`` can then go backwards when it is changed after the update,
+which matters to a LIMS that asks for runs changed since its last check),
+lists that sort by time can put old and new entries in the wrong order, and
+API tokens made before the update end that much earlier or later. On such a
+server, start from an empty database, or accept these shifts for the old
+data. A server that ran on UTC is not affected.
 
 Troubleshooting
 ---------------

@@ -1,10 +1,12 @@
 """One clock: times are stored in UTC and shown in the server's time zone (the
 TZ setting, an IANA name such as Europe/Stockholm), with the zone's name."""
 
+import time
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from seqsetup.utils import clock
 from seqsetup.utils.clock import (
     as_utc,
     check_display_zone,
@@ -94,6 +96,29 @@ class TestLocalDays:
     def test_the_day_after(self, stockholm):
         assert local_day_start_utc(date(2026, 3, 30)) == datetime(2026, 3, 29, 22, 0)
 
+
+
+@pytest.fixture
+def server_zone_far_east(monkeypatch):
+    """No TZ display zone, and the server's own zone (the C library's) 14
+    hours ahead of UTC (a POSIX TZ, no zone files needed)."""
+    monkeypatch.setenv("TZ", "LOC-14")
+    time.tzset()
+    monkeypatch.setattr(clock, "display_zone", lambda: None)
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.mark.usefixtures("server_zone_far_east")
+class TestWithoutTz:
+    """Without TZ, times are shown in the server's own zone."""
+
+    def test_a_time_is_shown_in_the_servers_zone(self):
+        assert local_time(WINTER) == "2026-01-16 02:00 LOC"
+
+    def test_a_day_starts_at_the_servers_midnight(self):
+        assert local_day_start_utc(date(2026, 1, 15)) == datetime(2026, 1, 14, 10, 0)
 
 class TestTheSettingIsChecked:
     """check_display_zone: a TZ that names no known zone stops the start."""
