@@ -209,6 +209,21 @@ In `data/instruments.py`, all from the run (its instrument and workflow):
   index first, then the masked cycles (for example I8N2). SeqSetup writes it the way the
   instrument needs." A segment with no `I` (such as `N10` for a sample without an i5) is
   not affected. The per-sample and bulk inputs say the same next to the field.
+- **An i5 used shorter than it is stored, inside a longer Index 2 read, is refused where
+  the i5 is read reversed.** That is a sample whose Index 2 part (typed, or computed from
+  the sample's or the kit's i5 cycles) has fewer index (`I`) cycles than its i5 has bases
+  and also masked or UMI cycles, in a run whose workflow reads the i5 reversed. The sheet
+  writes the whole i5, and Illumina does not document which of its bases BCL Convert
+  compares when the sheet's index is longer than its `I` cycles. Read reversed, the
+  index-first rule uses the end of the i5 the collision check does not (the check keeps
+  the first stored bases), and this change moves the mask to that end. So validation
+  reports it as an error (category `i5_shortened_on_reversed_read`), and Mark Ready
+  stops: "<n> sample(s) use fewer i5 cycles than their i5 has, inside a longer Index 2
+  read: <ids>. <instrument> (<workflow>) reads the i5 reversed, so which i5 bases BCL
+  Convert compares is not settled. Use all of the i5's cycles, or make the Index 2 read as
+  long as the cycles used." A workflow that reads the i5 forward is not affected (the
+  sheet, the reading order and the check all start at the first stored base), and neither
+  is an i5 used shorter than it is stored with no masked cycles (see Not in this change).
 - **BCL Convert application profiles cannot change the rule.** A profile's `Settings` may
   not contain `OverrideCycles`, `OverrideReads`, `RunInfoIndex2ReverseComplement` or
   `Index2ColumnReverseComplement`: the sync refuses such a profile file (as it refuses
@@ -344,7 +359,8 @@ that Illumina's own run setup wrote for such a run.
     from the model. `_get_synced_instruments` turns it into a new
     `SyncedInstrumentsUnusable` error, with the message: "The synced instrument settings
     cannot be used: <record>: <problem>. Update the instrument files and run a config sync
-    (Admin > Config Sync)."
+    with Also sync instruments on (Admin > Config Sync)." A sync with that box off stores
+    no instrument records, so the remedy names it.
   - A database error raises `SyncedInstrumentsUnusable` with a fixed message: "The synced
     instrument settings could not be read from the database. Try again, or ask an
     administrator to check the database." The driver's own text (host names) goes only to
@@ -353,13 +369,15 @@ that Illumina's own run setup wrote for such a run.
   - `SyncedInstrumentsUnusable` is a `RuntimeError`, not a `ValueError`, so no
     `except ValueError` around an instrument read can turn it into a 400.
   - Nothing is cached while it fails, so the first lookup after a good sync works. The
-    failure is logged once per change of state, not on every lookup.
+    failure is logged once per change of state, not on every lookup. A direct read of a
+    stored record that works also ends a database-error state, so the next database error
+    is logged with its driver text even while lookups are served from the cache.
 - **Every reader stops the same way**, with nothing to remember: one exception handler,
   registered for `InstrumentRecordError` and `SyncedInstrumentsUnusable`, shows the
   message like the existing `HTTPException` handler (an HTMX request gets the error
   fragment, a page gets the error page, status 503). For both types the page ends with the
-  same remedy sentence ("Update the instrument files and run a config sync (Admin > Config
-  Sync)", or the database sentence above). So any direct read of a stored record is
+  same remedy sentence ("Update the instrument files and run a config sync with Also sync
+  instruments on (Admin > Config Sync)", or the database sentence above). So any direct read of a stored record is
   covered too: the Mark Ready re-read of the on/off switch, the admin Instruments page,
   `list_enabled`. The admin on/off toggle saves its change (it writes only the switch) and
   then shows the message instead of the list.
@@ -410,6 +428,7 @@ that Illumina's own run setup wrote for such a run.
     - synced files must all be updated and synced, and until then run pages show the
       message and Mark Ready is refused;
     - an instrument the lab does not sync is not available while it syncs others;
+    - the sync that repairs the records needs **Also sync instruments** on;
   - the old error message quoted at lines 12-15 is replaced, and line 105 ("A synced
     instrument file that breaks this is skipped") is rewritten to the section 5 rule;
   - that the kit files store each i5 forward-strand, which the rule assumes.
@@ -422,7 +441,9 @@ that Illumina's own run setup wrote for such a run.
   one, when to change it).
 - `docs/user-guide/override-cycles.rst`: a typed `OverrideCycles` is in reading order;
   SeqSetup writes the Index 2 part the way the reader needs; an Index 2 part that masks
-  cycles before the index (Illumina's NovaSeq X entry form, such as `N2I8`) is refused.
+  cycles before the index (Illumina's NovaSeq X entry form, such as `N2I8`) is refused;
+  an i5 used shorter than it is stored inside a longer Index 2 read is refused where the i5
+  is read reversed (section 2).
 - `docs/architecture/instruments.rst`, `docs/architecture/services.rst` and
   `docs/architecture/samplesheet-format.rst`: the read-direction table (three rows were
   wrong), the rules, and the example sheet's mask with its instrument named.
@@ -454,6 +475,11 @@ that Illumina's own run setup wrote for such a run.
 - **Typed masks**: a typed Index 2 part `N2I8` is refused with the message (at the input
   and at Mark Ready) on every instrument; a typed `I8N2` is written `N2I8` on NovaSeq X and
   `I8N2` on NextSeq 500/550; `N10` is still accepted.
+- **A shortened i5 on a reversed read**: a 10-base i5 used as 8 (sample cycles, kit
+  cycles, or a typed `I8N2`) on a 10-cycle Index 2 read stops Mark Ready with the message
+  on NovaSeq X, NextSeq 500/550 and MiSeq i100 read-first; the same run passes on MiSeq
+  and MiSeq i100 index-first; a 10-base i5 on an 8-cycle Index 2 read, an 8-base i5 on a
+  10-cycle read and a 10-base i5 used whole all pass.
 - **Profiles**: a BCL Convert profile whose `Settings` carry any of the four refused keys
   is refused at sync and, when already stored, by the writer; `OverrideCycles` as a data
   column still works.
@@ -495,6 +521,8 @@ that Illumina's own run setup wrote for such a run.
   - an unreadable record and an old-format record each make run pages show the message,
     refuse Mark Ready with nothing saved and the audit event, and never use the local file;
   - a database error shows the fixed sentence and no driver text;
+  - after a direct read that works, the next database error is logged again;
+  - the remedy names **Also sync instruments**;
   - the message also appears through the export paths;
   - a sync where one file is refused (by the validator, by a failed download, by a
     subfolder that cannot be listed, or as a duplicate name) stores no instrument records,
@@ -547,6 +575,12 @@ SeqSetup cannot be used until all the lab's instrument files are updated and syn
   two conventions clash).
 - v1 sheets (bcl2fastq) for instruments other than MiSeq and NovaSeq 6000.
 - The JSON export (review S-10).
+- An i5 used shorter than it is stored with no masked cycles (a 10-base i5 on an 8-cycle
+  Index 2 read) on a workflow that reads the i5 reversed: the instrument reads the last
+  stored bases, the collision check compares the first ones. This change leaves it as it
+  is. Later list.
+- Going back from synced instruments to the local file: no route deletes the stored
+  instrument records. Later list.
 - Custom instruments: no route creates them; `_format_custom_instrument` loses the two old
   keys and gains nothing. `InstrumentDefinition.to_instruments_format` has no callers and is
   removed.
