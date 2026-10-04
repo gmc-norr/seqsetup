@@ -132,17 +132,19 @@ export of the same run.
    on the exported Sample Sheet.
 
 .. note::
-   Whether Index 2's override-cycles segment is written forward
-   (``I8N2``) or with its N-mask leading (``N2I8``) depends on how the
-   *sample sheet* expects the i5 sequence to be written for that
-   instrument, not which way the instrument physically reads it. NovaSeq
-   6000, HiSeq 4000, HiSeq X, NextSeq 500/550 and MiniSeq all expect a
-   reverse-complemented i5 in the sample sheet and get the flipped form;
-   NovaSeq X, MiSeq i100, NextSeq 1000/2000, MiSeq, HiSeq 2000/2500 and
-   GAIIx expect it forward and keep ``I8N2``. NovaSeq X in particular
-   physically *reads* i5 as its reverse complement, but that is not what
-   ends up in its sample sheet -- the two are tracked separately, and it
-   is the sample-sheet orientation that decides what gets written here.
+   How the i5 and the Index 2 part of Override Cycles are written depends
+   on the run's instrument and i5 workflow (see
+   :doc:`/admin-guide/instruments`). SeqSetup stores the Index 2 part in
+   reading order, the index first (``I8N2``). Where the instrument reads
+   the i5 reversed and its ``RunInfo.xml`` marks that read -- NovaSeq X,
+   NextSeq 1000/2000, MiSeq i100 read-first -- BCL Convert reverses the
+   Index 2 part back, so it is written ``N2I8``, and the i5 column stays
+   forward. Where the instrument reads the i5 reversed and does not mark
+   it -- NextSeq 500/550, MiniSeq with standard kits, NovaSeq 6000 with
+   v1.5 reagents, HiSeq 4000, HiSeq X -- the i5 column is written as its
+   reverse complement, the Index 2 part stays ``I8N2``, and the header has
+   no ``IndexOrientation,Forward`` line. Everywhere else nothing is
+   reversed.
 
 JSON metadata
 ----------------

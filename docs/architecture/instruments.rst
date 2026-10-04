@@ -19,7 +19,7 @@ The latest chemistry generation using blue and green dye channels.
    :widths: 25 20 15 40
 
    * - Instrument
-     - i5 Orientation
+     - i5 read (standard workflow)
      - Flowcells
      - Reagent Kits (cycles)
    * - **NovaSeq X Series**
@@ -27,11 +27,11 @@ The latest chemistry generation using blue and green dye channels.
      - 1.5B (2 lanes), 10B (8 lanes), 25B (8 lanes)
      - 100, 200, 300
    * - **MiSeq i100 Series**
-     - Forward
+     - Forward (index-first)
      - 5M, 25M, 50M, 100M (1 lane each)
      - 100, 300, 600, 1000 (varies by flowcell)
    * - **NextSeq 1000/2000**
-     - Forward
+     - Reverse-complement
      - P1, P2 (1 lane each), P3 (1 lane)
      - 50, 100, 200, 300, 600 (varies by flowcell)
 
@@ -49,19 +49,19 @@ Previous two-color chemistry generation using red and green dye channels.
    :widths: 25 20 15 40
 
    * - Instrument
-     - i5 Orientation
+     - i5 read (standard workflow)
      - Flowcells
      - Reagent Kits (cycles)
    * - **NovaSeq 6000**
-     - Reverse-complement
+     - Reverse-complement (v1.5 reagents)
      - SP (2 lanes), S1 (2 lanes), S2 (2 lanes), S4 (4 lanes)
      - 100, 200, 300, 500 (varies by flowcell)
    * - **NextSeq 500/550**
-     - Forward
+     - Reverse-complement
      - High Output (4 lanes), Mid Output (4 lanes)
      - 75, 150, 300
    * - **MiniSeq**
-     - Forward
+     - Reverse-complement (standard kits)
      - High Output (1 lane), Mid Output (1 lane)
      - 75, 150, 300
 
@@ -79,7 +79,7 @@ Classic four-color chemistry using blue, green, yellow, and red dye channels.
    :widths: 25 20 15 40
 
    * - Instrument
-     - i5 Orientation
+     - i5 read (standard workflow)
      - Flowcells
      - Reagent Kits (cycles)
    * - **MiSeq**
@@ -106,21 +106,33 @@ Classic four-color chemistry using blue, green, yellow, and red dye channels.
 i5 Index Read Orientation
 -------------------------
 
-The i5 (Index 2) *physical* read orientation varies by instrument:
+Each instrument lists its i5 workflows -- how it reads the i5 in each way
+it runs, the standard one first -- and whether its ``RunInfo.xml`` marks a
+reversed i5 read (``runinfo_marks_i5_reversed``). A run picks a workflow
+(``SequencingRun.i5_workflow``; empty means the standard one).
+``data/instruments.py`` turns the two facts into an ``I5Direction``
+(``run_i5_direction``):
 
-**Forward** (i5 read as written, physically):
-   MiSeq, MiSeq i100 Series, HiSeq 2000/2500, NextSeq 500/550,
-   NextSeq 1000/2000, MiniSeq, GAIIx
+- ``read_orientation`` -- how the instrument reads the i5: the dark-start
+  and colour-balance checks and the v1 Sample Sheet use it;
+- ``index2_column_reversed`` -- read reversed and not marked: the v2
+  Index2 column is the i5's reverse complement, and the header has no
+  ``IndexOrientation,Forward`` line;
+- ``index2_mask_reversed`` -- read reversed and marked: the Index 2 part
+  of OverrideCycles, stored in reading order (``I8N2``), is written
+  reversed (``N2I8``), because BCL Convert reverses it back.
 
-**Reverse-complement** (i5 read as reverse complement, physically):
-   NovaSeq X Series, NovaSeq 6000, HiSeq 4000, HiSeq X
+An instrument with no settings, or a workflow it does not list, gives no
+direction (``NoI5Direction``): validation reports it and the writers
+refuse the run. See :doc:`/admin-guide/instruments` for the shipped
+values and their sources.
 
-This physical orientation is distinct from the orientation SeqSetup writes
-into the exported SampleSheet, which is chosen per instrument so BCL Convert
-demultiplexes correctly and does not always match the physical read
-direction above. For example, NovaSeq X Series physically reads i5 as
-reverse-complement, but SeqSetup writes it forward in the exported
-SampleSheet v2 i5 column.
+Read reversed in the standard workflow: NovaSeq X Series, NextSeq
+1000/2000, NextSeq 500/550, MiniSeq (standard kits), NovaSeq 6000 (v1.5
+reagents), HiSeq 4000, HiSeq X. Read forward: MiSeq i100 Series
+(index-first), MiSeq, HiSeq 2000/2500, GAIIx. ``RunInfo.xml`` marks the
+reversed read on NovaSeq X Series, NextSeq 1000/2000 and MiSeq i100
+Series.
 
 SampleSheet v2 Export Support
 -----------------------------

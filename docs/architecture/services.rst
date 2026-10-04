@@ -35,7 +35,8 @@ Handles all override cycle computation.
 
 ``reverse_override_segment(segment)``
    Reverses the token order within an override cycles segment. Used for
-   reverse-complement i5 instruments (e.g., ``I8N2`` becomes ``N2I8``).
+   the Index 2 part when the run's instrument reads the i5 reversed and
+   its ``RunInfo.xml`` marks it (e.g., ``I8N2`` becomes ``N2I8``).
 
 SampleSheetV2Exporter
 ---------------------
@@ -62,11 +63,18 @@ Generates Illumina SampleSheet v2 CSV output.
 
 **Instrument adjustments:**
 
-For instruments whose SampleSheet v2 i5 orientation is reverse-complement
-(NovaSeq 6000, HiSeq 4000, HiSeq X, NextSeq 500/550, MiniSeq), the Index 2
-override cycles segment is automatically reversed at export time. NovaSeq X
-Series writes i5 forward in the SampleSheet v2, so its Index 2 segment is
-not reversed even though it physically reads i5 as reverse-complement.
+The run's ``I5Direction`` (see :doc:`instruments`) decides the i5 and the
+Index 2 part of OverrideCycles. Where the run's workflow reads the i5
+reversed and ``RunInfo.xml`` marks it (NovaSeq X Series, NextSeq
+1000/2000, MiSeq i100 read-first), the Index 2 part is written reversed
+(``N2I8``) and the i5 forward. Where it reads the i5 reversed without the
+mark (NextSeq 500/550, MiniSeq standard kits, NovaSeq 6000 v1.5, HiSeq
+4000, HiSeq X), the i5 is written as its reverse complement, the Index 2
+part as stored (``I8N2``), and the header without
+``IndexOrientation,Forward``. A ``BCLConvert`` profile whose ``Settings``
+set ``OverrideCycles``, ``OverrideReads``,
+``RunInfoIndex2ReverseComplement`` or ``Index2ColumnReverseComplement`` is
+refused.
 
 JSONExporter
 ------------

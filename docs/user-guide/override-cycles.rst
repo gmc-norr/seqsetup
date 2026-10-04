@@ -130,22 +130,35 @@ default read override, which an admin must correct. The **Check** panel
 and Mark Ready check again, because the run's cycles can change after a
 value was saved.
 
-Forward orientation
------------------------
+Reading order
+-----------------
 
-Type and read Override Cycles the same way regardless of instrument:
-index lengths and directions exactly as you see them. What ends up in
-the *exported* Sample Sheet for the Index 2 segment can differ from what
-you typed, though, because BCL Convert expects the i5 index written in
-whatever orientation that specific instrument's Sample Sheet format
-calls for -- which is not always the direction the instrument physically
-reads it in. On a NovaSeq X, the instrument this guide's screenshots
-use, that expected orientation happens to match the forward orientation
-you typed, so the Index 2 segment is exported unchanged. Five of the
-other ten shipped instruments do have their Index 2 segment reversed for
-export, and five stay forward like NovaSeq X -- see :doc:`export` for
-which is which, or check the exported Sample Sheet itself rather than
-assuming.
+Type Override Cycles in reading order, the same way on every instrument:
+each index part as the index read is read, the index first and then any
+masked cycles -- ``I8N2`` for an 8-base index on a 10-cycle read.
+SeqSetup writes the Index 2 part the way the instrument's reader needs:
+on NovaSeq X (the instrument this guide's screenshots use), NextSeq
+1000/2000 and MiSeq i100 read-first runs it is written reversed
+(``N2I8``), because BCL Convert reverses it back there; elsewhere it is
+written as you typed it. See :doc:`export` and
+:doc:`/admin-guide/instruments`, or check the exported Sample Sheet.
+
+An Index 2 part that masks cycles before the index -- such as ``N2I8``,
+the form Illumina's NovaSeq X entry page uses -- is refused, at the input
+and at **Mark Ready**: *"Index 2 in OverrideCycles is written in reading
+order in SeqSetup: the index first, then the masked cycles (for example
+I8N2). SeqSetup writes it the way the instrument needs."* A part with no
+index, such as ``N10`` for a sample without an i5, is fine. The Override
+Cycles fields say the same when you point at them.
+
+An i5 used shorter than it is -- a 10-base i5 set to 8 cycles for the
+sample or by its kit, or typed as ``I8N2`` -- inside a longer Index 2 read
+is refused at **Mark Ready** on runs that read the i5 reversed, such as
+NovaSeq X and NextSeq 500/550 (the table in :doc:`/admin-guide/instruments`
+lists them). The Sample Sheet writes the whole i5, and Illumina does not
+say which of its bases BCL Convert then compares. Use all of the i5's
+cycles, or make the Index 2 read as long as the cycles you use. On runs
+that read the i5 forward this is fine.
 
 Global vs. per-sample in the exported sheet
 -----------------------------------------------
