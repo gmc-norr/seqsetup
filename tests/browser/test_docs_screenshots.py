@@ -24,7 +24,7 @@ from seqsetup.models.run_history import RunHistoryEntry
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services import database
 
-from .docs_shots import shoot
+from .docs_shots import replace_text, shoot
 from .docs_world import (DEMO_ADMIN, DEMO_KIT_NAME, _pair, _run, _sample, clear, reset_caches,
                          restore, seed_demo, snapshot)
 
@@ -45,12 +45,16 @@ def demo(app_ctx):
     saved = snapshot(db)
     clear(db)
     reset_caches()
-    try:
-        ids = seed_demo(app_ctx)
-        yield ids
-    finally:
-        restore(db, saved)
-        reset_caches()
+    # Pages show times in the TZ zone (utils/clock.py): one fixed zone, so the
+    # pictures do not depend on the machine they are taken on.
+    with pytest.MonkeyPatch.context() as zone:
+        zone.setenv("TZ", "Europe/Stockholm")
+        try:
+            ids = seed_demo(app_ctx)
+            yield ids
+        finally:
+            restore(db, saved)
+            reset_caches()
 
 
 @pytest.fixture
@@ -66,6 +70,12 @@ def demo_page(page, base_url, demo):
 
 def snap(page, name: str, target, region=None, pad: int = 16) -> Path:
     return shoot(page, SHOTS / f"{name}.png", target, region=region, pad=pad)
+
+
+def test_chromium_draws_whole_tiles(browser_type_launch_args):
+    # conftest.browser_type_launch_args: without it a rounded edge can come
+    # out one shade different from run to run (docs_shots.docs_launch_args).
+    assert "--disable-partial-raster" in browser_type_launch_args["args"]
 
 
 def test_login_form(page, base_url, demo):
@@ -917,6 +927,13 @@ def test_history_change_history(demo_page, base_url, demo):
     # would otherwise satisfy a weaker wait and photograph the wrong state.
     page.wait_for_selector(".run-history-panel .border-t")
     fieldset = page.locator("fieldset:has(.run-history-panel)")
+    # The times of day differ per run; fixed example times keep the picture
+    # the same (newest first, one per entry).
+    replace_text(panel, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Z]{3,4}", [
+        "2026-03-10 10:17 CET", "2026-03-10 10:16 CET", "2026-03-10 10:15 CET",
+        "2026-03-10 10:15 CET", "2026-03-10 10:14 CET", "2026-03-10 10:14 CET",
+        "2026-03-10 10:14 CET", "2026-03-10 10:14 CET", "2026-03-10 10:13 CET",
+        "2026-03-10 10:12 CET", "2026-03-10 10:12 CET"])
     snap(page, "history/change-history", panel, region=fieldset)
 
 
@@ -942,6 +959,9 @@ def test_admin_users_list(demo_page, base_url, demo):
     row = page.locator('tr[id="user-row-taylor.audit"]')
     row.wait_for()
     table = page.locator("table:has(tr[id='user-row-taylor.audit'])")
+    # The new user's Created time differs per run; a fixed example keeps the
+    # picture the same.
+    replace_text(row, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Z]{3,4}", ["2026-03-10 10:20 CET"])
     snap(page, "admin/users-list", row.get_by_role("button", name="Edit"), region=table)
 
 
@@ -1003,6 +1023,10 @@ def test_admin_api_token_created(demo_page, base_url, demo):
     page.get_by_role("button", name="Create Token").click()
     reveal = page.locator("div.bg-amber-50", has_text="Token Created")
     reveal.wait_for()
+    # The token is random; a fixed made-up one of the same length keeps the
+    # picture the same.
+    replace_text(reveal.locator(".font-mono"), r"\S+",
+                 ["q7Rk2VbN9xLw4sTz8MfH3cJd6pYa1GeU5nKo0WiQ-tE"])
     snap(page, "admin/api-token-created", reveal)
 
 
@@ -1072,6 +1096,9 @@ def test_admin_logs(demo_page, base_url, demo):
         "document.querySelectorAll('#logs-page tbody tr').length === 1"
     )
     row = page.locator("#logs-page tbody tr").filter(has_text=probe_path)
+    # The log time differs per run; a fixed example keeps the picture the
+    # same. Refresh, below, reloads the table, so the check there is unaffected.
+    replace_text(row, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]{3,4}", ["2026-03-10 10:21:08 CET"])
     with _logs_table_unclipped(page):
         snap(page, "admin/logs", row, region=page.locator("#logs-page .table-scroll"))
 
@@ -1126,6 +1153,15 @@ def test_admin_audit_trail(demo_page, base_url, demo):
         "td => td.textContent.trim().startsWith('run.status')); })()"
     )
     table = page.locator("#audit-page .table-scroll")
+    # The times of day (the change history's, to the second) and the random
+    # ID of the run made in the wizard differ per run; fixed examples keep
+    # the picture the same (newest first, one per event).
+    replace_text(table, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]{3,4}", [
+        "2026-03-10 10:17:04 CET", "2026-03-10 10:16:41 CET", "2026-03-10 10:16:38 CET",
+        "2026-03-10 10:15:52 CET", "2026-03-10 10:15:20 CET", "2026-03-10 10:15:17 CET",
+        "2026-03-10 10:11:30 CET"])
+    replace_text(table, r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                 ["3f2b8c1e-5a47-4d0e-9b6a-7c1d2e8f4a60"] * 6)
     snap(page, "admin/audit-trail", table, region=page.locator("#audit-page"))
 
 

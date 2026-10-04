@@ -21,6 +21,7 @@ from ...models.audit_event import FIELD_CAPS
 from ...templating import render
 from ..dependencies import get_ctx, is_htmx_request, require_admin_dep
 from ..utils import sanitize_string
+from ...utils.clock import local_day_start_utc, local_time
 
 
 router = APIRouter(
@@ -33,10 +34,12 @@ _CURSOR_MAX = 64
 
 
 def _day_start(text: str, plus_days: int = 0) -> str:
-    """'YYYY-MM-DD' -> canonical timestamp of that UTC day's start, moved by
-    ``plus_days``. Raises ValueError on any other shape, OverflowError past
-    the last representable day."""
-    return (datetime.strptime(text, "%Y-%m-%d") + timedelta(days=plus_days)).isoformat()
+    """'YYYY-MM-DD' -> canonical timestamp of the moment that day starts in
+    the display zone (stored times are UTC), moved by ``plus_days``. Raises
+    ValueError on any other shape, OverflowError past the last representable
+    day."""
+    day = datetime.strptime(text, "%Y-%m-%d").date() + timedelta(days=plus_days)
+    return local_day_start_utc(day).isoformat()
 
 
 @router.get("/admin/audit", response_class=HTMLResponse)
@@ -103,7 +106,7 @@ def admin_audit(
 
     rows = [
         {
-            "time": e.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "time": local_time(e.timestamp, seconds=True),
             "actor": e.actor,
             "event": e.event,
             "target": e.target,

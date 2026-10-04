@@ -29,6 +29,8 @@ from typing import Optional
 from jinja2_fragments.fastapi import Jinja2Blocks
 from starlette.requests import Request
 
+from .utils.clock import local_time
+
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,9 @@ def _history_value(v):
 
 
 templates.env.filters["histval"] = _history_value
+# Every stored time is UTC; pages show it in the display zone with its
+# name: {{ value | localtime }} or {{ value | localtime(seconds=True) }}.
+templates.env.filters["localtime"] = local_time
 
 
 def render(

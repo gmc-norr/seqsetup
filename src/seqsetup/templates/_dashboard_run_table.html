@@ -40,7 +40,7 @@
         <span>{{ run.samples|length }}</span>
         <span class="truncate">{{ run.created_by or "—" }}</span>
         <span class="truncate">{{ run.updated_by or "—" }}</span>
-        <span>{{ run.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
+        <span>{{ run.updated_at | localtime }}</span>
         <div class="flex gap-2 justify-end">
             {# Shared .btn classes so every control is one size. Open (Edit on
                a draft) is the main action; Archive is routine, not loud. #}

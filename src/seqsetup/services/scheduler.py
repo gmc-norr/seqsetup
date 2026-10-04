@@ -3,11 +3,11 @@
 import logging
 import threading
 import time
-from datetime import datetime
 
 from .audit_log import audit, redact_url
 from .github_sync import GitHubSyncService
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
+from ..utils.clock import utcnow
 
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ class ProfileSyncScheduler:
         if config.last_sync_at is None:
             return True
 
-        elapsed = datetime.now() - config.last_sync_at
+        elapsed = utcnow() - config.last_sync_at
         interval_seconds = config.sync_interval_minutes * 60
 
         return elapsed.total_seconds() >= interval_seconds

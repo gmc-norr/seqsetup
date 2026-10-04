@@ -356,7 +356,8 @@ class CycleCalculator:
     @classmethod
     def infer_global_override_cycles(cls, run: SequencingRun) -> Optional[str]:
         """
-        Infer a global OverrideCycles value if all samples have same index lengths.
+        Infer a global OverrideCycles value if all samples have same index
+        lengths and the same OverrideCycles.
 
         This is used for the [BCLConvert_Settings] section when all samples
         can share the same override cycles.
@@ -365,7 +366,8 @@ class CycleCalculator:
             run: Sequencing run configuration
 
         Returns:
-            Global OverrideCycles string, or None if samples have different index lengths
+            Global OverrideCycles string, or None if samples have different
+            index lengths or a sample's own OverrideCycles differs
         """
         if not run.samples or not run.run_cycles:
             # No samples or no run cycles configured
@@ -391,8 +393,16 @@ class CycleCalculator:
 
         if (len(index1_lengths) <= 1 and len(index2_lengths) <= 1
                 and len(read1_patterns) <= 1 and len(read2_patterns) <= 1):
-            # All same - use first sample's override cycles
-            return cls.calculate_override_cycles(run.samples[0], run.run_cycles)
+            # All same - the value each sample gets in its own row: its stored
+            # OverrideCycles (one typed by hand, too), else the calculated one.
+            # A sample whose value differs means there is no shared value.
+            values = {
+                (sample.override_cycles
+                 or cls.calculate_override_cycles(sample, run.run_cycles)).replace(",", ";")
+                for sample in run.samples
+            }
+            if len(values) == 1:
+                return values.pop()
 
         # Mixed lengths - no global override, per-sample required
         return None

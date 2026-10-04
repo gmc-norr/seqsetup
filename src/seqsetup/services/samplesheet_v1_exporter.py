@@ -1,13 +1,13 @@
 """Generate Illumina SampleSheet v1 (IEM) format."""
 
 import re
-from datetime import datetime
 from io import StringIO
 from typing import TextIO
 
 from ..data.instruments import get_i5_read_orientation
 from ..models.sequencing_run import InstrumentPlatform, SequencingRun
 from .sheet_text import refuse_hidden_characters
+from ..utils.clock import local_date
 
 
 # Reverse complement lookup table
@@ -64,7 +64,7 @@ class SampleSheetV1Exporter:
         if run.run_name:
             output.write(f"Experiment Name,{cls._escape_identifier(run.run_name)}\n")
 
-        output.write(f"Date,{run.created_at.strftime('%Y-%m-%d')}\n")
+        output.write(f"Date,{local_date(run.created_at)}\n")
         output.write("Workflow,GenerateFASTQ\n")
         output.write("Application,FASTQ Only\n")
 

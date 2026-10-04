@@ -147,6 +147,11 @@ Status Meaning
      "analyses": []
    }
 
+``global_override_cycles`` is the Override Cycles every sample has -- its
+own stored value (typed by hand or not), otherwise the calculated one -- or
+``null`` when the samples' values differ. Each sample's own
+``override_cycles`` is always given.
+
 The JSON export includes information not representable in the SampleSheet
 v2 format, such as sample names, projects, descriptions, and free-form
 metadata. It does **not** include a sample's Test ID, its index kit name,
@@ -158,7 +163,9 @@ Export Validation Report (JSON)
 
 ``GET /runs/{run_id}/export/validation-report``
 
-Download the validation report in JSON format.
+Download the validation report in JSON format. Its ``timestamp`` is when
+the report was made, in the server's time zone with its offset from UTC
+(for example ``2026-03-10T10:17:04.512345+01:00``).
 
 :``run_id``: Run UUID
 

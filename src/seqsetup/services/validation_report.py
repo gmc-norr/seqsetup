@@ -1,7 +1,6 @@
 """Validation report exporters (JSON and PDF)."""
 
 import json
-from datetime import datetime
 from io import BytesIO
 from typing import Any, Optional
 
@@ -27,6 +26,7 @@ from reportlab.platypus import (
 from ..models.sequencing_run import SequencingRun
 from .index_collision_validator import MAX_HEATMAP_SAMPLES
 from .validation_summary import error_messages
+from ..utils.clock import local_time, to_local, utcnow
 from ..models.validation import (
     ColorBalanceStatus,
     IndexColorBalance,
@@ -53,7 +53,7 @@ class ValidationReportJSON:
             "run_name": run.run_name,
             "instrument": run.instrument_platform.value,
             "flowcell": run.flowcell_type,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": to_local(utcnow()).isoformat(),
             "summary": {
                 "error_count": result.error_count,
                 "warning_count": result.warning_count,
@@ -194,7 +194,7 @@ class ValidationReportPDF:
             ["Run ID", run.id],
             ["Instrument", run.instrument_platform.value],
             ["Flowcell", run.flowcell_type or "—"],
-            ["Report Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+            ["Report Generated", local_time(utcnow(), seconds=True)],
         ]
         info_table = Table(run_info, colWidths=[5 * cm, 12 * cm])
         info_table.setStyle(TableStyle([

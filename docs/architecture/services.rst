@@ -20,7 +20,8 @@ Handles all override cycle computation.
    ``Y151;I8N2;I8N2;Y151``.
 
 ``infer_global_override_cycles(run)``
-   Checks if all samples in a run have the same override cycles. Returns the
+   Checks if all samples in a run have the same override cycles (a sample's
+   stored value, typed by hand or not, else the calculated one). Returns the
    common string if uniform, or ``None`` if per-sample overrides are needed.
 
 ``populate_index_override_patterns(sample, run_cycles)``

@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
+from ..utils.clock import utcnow
+
 
 @dataclass
 class ApplicationProfileReference:
@@ -61,7 +63,7 @@ class TestProfile:
 
     # Sync metadata
     source_file: str = ""  # Original filename from GitHub
-    synced_at: datetime = field(default_factory=datetime.now)
+    synced_at: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for MongoDB storage."""
@@ -84,7 +86,7 @@ class TestProfile:
         if isinstance(synced_at, str):
             synced_at = datetime.fromisoformat(synced_at)
         elif synced_at is None:
-            synced_at = datetime.now()
+            synced_at = utcnow()
 
         app_profiles = [
             ApplicationProfileReference.from_dict(ap)
@@ -137,5 +139,5 @@ class TestProfile:
             version=str(yaml_data.get("Version", "")),
             application_profiles=app_profiles,
             source_file=source_file,
-            synced_at=datetime.now(),
+            synced_at=utcnow(),
         )

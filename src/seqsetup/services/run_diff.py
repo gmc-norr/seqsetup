@@ -61,19 +61,22 @@ def _sample_changes(before: dict, after: dict) -> list:
     before_by_id = {s["id"]: s for s in before.get("samples", [])}
     after_by_id = {s["id"]: s for s in after.get("samples", [])}
     changes = []
-    for sid in sorted(set(before_by_id) - set(after_by_id)):
-        s = before_by_id[sid]
-        changes.append({"sample_id": s.get("sample_id"), "kind": "removed",
-                        "fields": _snapshot_fields(s, present_key="before")})
-    for sid in sorted(set(after_by_id) - set(before_by_id)):
-        s = after_by_id[sid]
-        changes.append({"sample_id": s.get("sample_id"), "kind": "added",
-                        "fields": _snapshot_fields(s, present_key="after")})
-    for sid in sorted(set(before_by_id) & set(after_by_id)):
-        diff = _sample_field_changes(before_by_id[sid], after_by_id[sid])
-        if diff:
-            changes.append({"sample_id": after_by_id[sid].get("sample_id"),
-                            "kind": "modified", "fields": diff})
+    # In the run's sample order (the table's), not by id: ids are random, so
+    # an order by id would differ from one run to the next.
+    for sid, s in before_by_id.items():
+        if sid not in after_by_id:
+            changes.append({"sample_id": s.get("sample_id"), "kind": "removed",
+                            "fields": _snapshot_fields(s, present_key="before")})
+    for sid, s in after_by_id.items():
+        if sid not in before_by_id:
+            changes.append({"sample_id": s.get("sample_id"), "kind": "added",
+                            "fields": _snapshot_fields(s, present_key="after")})
+    for sid, s in after_by_id.items():
+        if sid in before_by_id:
+            diff = _sample_field_changes(before_by_id[sid], s)
+            if diff:
+                changes.append({"sample_id": s.get("sample_id"),
+                                "kind": "modified", "fields": diff})
     return changes
 
 

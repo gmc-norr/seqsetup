@@ -11,7 +11,7 @@ is now DELETE /admin/api-tokens/{token_id} (REST cleanup).
 Admin-only via router-level require_admin_dep.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -26,6 +26,7 @@ from ..services.audit_log import audit
 from ..templating import render
 from .dependencies import get_ctx, require_admin_dep
 from .utils import get_username
+from ..utils.clock import as_utc, utcnow
 
 
 _DEFAULT_EXPIRY_DAYS = 90
@@ -64,7 +65,7 @@ def admin_api_tokens(
             "tokens": ctx.api_token_repo.list_all(),
             "new_token": "",
             "message": "",
-            "now": datetime.now(),
+            "now": utcnow(),
         },
     )
 
@@ -81,7 +82,7 @@ def create_api_token(
     response — never stored, never logged, never returned again.
     """
     expires_at = (
-        datetime.now() + timedelta(days=form.expiry_days)
+        utcnow() + timedelta(days=form.expiry_days)
         if form.expiry_days > 0 else None
     )
 
@@ -102,7 +103,7 @@ def create_api_token(
         actor=get_username(request),
         target=token.id,
         token_name=form.name,
-        expires_at=expires_at.isoformat() if expires_at else "never",
+        expires_at=as_utc(expires_at).isoformat() if expires_at else "never",
     )
 
     return render(
@@ -112,7 +113,7 @@ def create_api_token(
             "tokens": ctx.api_token_repo.list_all(),
             "new_token": plaintext,
             "message": "",
-            "now": datetime.now(),
+            "now": utcnow(),
         },
         block_name="api_tokens_page",
     )
@@ -148,7 +149,7 @@ def revoke_api_token(
             "tokens": repo.list_all(),
             "new_token": "",
             "message": f"Token '{token_name}' revoked",
-            "now": datetime.now(),
+            "now": utcnow(),
         },
         block_name="api_tokens_page",
     )

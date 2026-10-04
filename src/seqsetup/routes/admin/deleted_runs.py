@@ -10,6 +10,7 @@ the live runs collection. Nothing here changes a copy or a run.
 Admin-only via router-level require_admin_dep.
 """
 
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -22,6 +23,7 @@ from ...services.deleted_runs import NOT_CONFIRMED, visible_copy, visible_rows
 from ...templating import render
 from ..dependencies import get_ctx, require_admin_dep
 from ..utils import sanitize_string
+from ...utils.clock import local_time
 
 
 router = APIRouter(
@@ -35,8 +37,9 @@ _NOT_FOUND = "No deleted run with that id."
 
 
 def _minute(iso: Optional[str]) -> str:
-    """'2026-09-28T14:05:31.123' -> '2026-09-28 14:05'."""
-    return iso[:16].replace("T", " ") if iso else ""
+    """'2026-09-28T12:05:31.123' (stored, UTC) -> '2026-09-28 14:05 CEST' in
+    the display zone."""
+    return local_time(datetime.fromisoformat(iso)) if iso else ""
 
 
 def _find(ctx: AppContext, copy_id: str) -> Optional[tuple[DeletedRun, dict]]:

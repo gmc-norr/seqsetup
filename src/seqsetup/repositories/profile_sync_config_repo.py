@@ -1,9 +1,8 @@
 """Repository for profile sync configuration."""
 
-from datetime import datetime
-
 from ..models.profile_sync_config import ProfileSyncConfig
 from .base import SingletonConfigRepository
+from ..utils.clock import utcnow
 
 
 class ProfileSyncConfigRepository(SingletonConfigRepository[ProfileSyncConfig]):
@@ -25,7 +24,7 @@ class ProfileSyncConfigRepository(SingletonConfigRepository[ProfileSyncConfig]):
     ) -> None:
         """Update sync status after a sync operation."""
         config = self.get()
-        config.last_sync_at = datetime.now()
+        config.last_sync_at = utcnow()
         config.last_sync_status = status
         config.last_sync_message = message
         config.last_sync_count = count
