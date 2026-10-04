@@ -22,6 +22,7 @@ from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
 from ..services.index_fill import build_fill_plan
 from ..services.paste_preview import build_paste_preview, repeated_sample_ids
+from ..services.sample_api import name_list
 from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
 from ..templating import render, templates
 from .dependencies import get_ctx, get_editable_run, saving_run
@@ -181,16 +182,20 @@ def _update_override_cycles(sample, run) -> None:
         )
 
 
-def _apply_kit_defaults(sample: Sample, kit: IndexKit) -> None:
-    """Copy kit-level override defaults to a sample."""
-    if kit.default_index1_cycles is not None:
+def _apply_kit_defaults(sample: Sample, kit: IndexKit, slot: str) -> None:
+    """Give the sample the kit's own settings for what was just assigned
+    (``slot``: "pair", "i7" or "i5"): None where the kit has none, never
+    the last kit's value. Then a setting whose index is gone is emptied
+    (review DI-09; spec 2026-10-03 group A1, §2)."""
+    if slot not in ("pair", "i7", "i5"):
+        raise ValueError(f"unknown index slot {slot!r}")
+    if slot in ("pair", "i7"):
         sample.index1_cycles = kit.default_index1_cycles
-    if kit.default_index2_cycles is not None:
+    if slot in ("pair", "i5"):
         sample.index2_cycles = kit.default_index2_cycles
-    if kit.default_read1_override:
-        sample.read1_override_pattern = kit.default_read1_override
-    if kit.default_read2_override:
-        sample.read2_override_pattern = kit.default_read2_override
+    sample.read1_override_pattern = kit.default_read1_override or None
+    sample.read2_override_pattern = kit.default_read2_override or None
+    sample.drop_kit_settings_without_index()
 
 
 def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
@@ -293,12 +298,6 @@ async def _read_paste_input(
         return None, f'No test called "{default_test}".'
 
     return _PasteInput(text=text, lanes=lanes, default_test=default_test, file_name=file_name), ""
-
-
-def _name_list(ids: list[str], limit: int = 10) -> str:
-    """'A, B, C' — the first ``limit`` names, then 'and N more'."""
-    shown = ", ".join(ids[:limit])
-    return f"{shown} and {len(ids) - limit} more" if len(ids) > limit else shown
 
 
 def _lane_words(lanes: list[int]) -> str:
@@ -437,7 +436,7 @@ async def add_bulk_samples(
             messages=[{
                 "text": (
                     "Bulk import rejected: these sample IDs appear more than once "
-                    f"in the paste: {_name_list(repeated)}. Nothing was added."
+                    f"in the paste: {name_list(repeated)}. Nothing was added."
                 ),
                 "kind": "error",
             }],
@@ -523,7 +522,7 @@ async def add_bulk_samples(
         messages.append({
             "text": (
                 f"Skipped {len(skipped_duplicates)} already in the run: "
-                f"{_name_list(skipped_duplicates)}."
+                f"{name_list(skipped_duplicates)}."
             ),
             "kind": "warning",
         })
@@ -828,6 +827,20 @@ async def assign_indexes_bulk(
         else:
             return Response(f"Invalid index type: {idx_type}", status_code=400)
 
+    # The page names the rows it showed for this drop. Fill them only if
+    # they are still the rows the run would fill: a row removed or added in
+    # another tab would move the indexes onto other patients (review DI-02;
+    # spec 2026-10-03 group A1, §1).
+    target_ids = _parse_sample_ids(form.get("target_sample_ids", ""))
+    if target_ids is None:
+        return Response("This page is out of date. Reload the page and drag again.", status_code=400)
+    would_fill = [s.id for s in run.samples[start_idx:start_idx + len(resolved_assignments)]]
+    if would_fill != target_ids:
+        return Response(
+            "The sample list changed since this page was loaded. Reload the page and drag again.",
+            status_code=409,
+        )
+
     with saving_run(run, ctx, request):
         for offset, (idx_type, resolved_index, kit) in enumerate(resolved_assignments):
             sample_idx = start_idx + offset
@@ -843,7 +856,7 @@ async def assign_indexes_bulk(
             elif idx_type == "i5":
                 run.assign_index2_to_sample(sample.id, resolved_index)
             sample.index_kit_name = kit.name
-            _apply_kit_defaults(sample, kit)
+            _apply_kit_defaults(sample, kit, idx_type)
             _update_override_cycles(sample, run)
 
     audit(
@@ -913,7 +926,7 @@ async def apply_index_fill(
                 run.assign_index1_to_sample(row.sample_id, row.entry.index)
             sample = run.get_sample(row.sample_id)
             sample.index_kit_name = plan.kit.name
-            _apply_kit_defaults(sample, plan.kit)
+            _apply_kit_defaults(sample, plan.kit, plan.mode)
             _update_override_cycles(sample, run)
 
     audit(
@@ -990,7 +1003,7 @@ async def assign_index_to_selected(
                 run.assign_index2_to_sample(sample.id, index)
 
             sample.index_kit_name = kit.name
-            _apply_kit_defaults(sample, kit)
+            _apply_kit_defaults(sample, kit, "pair" if index_pair else index_type)
             _update_override_cycles(sample, run)
 
     audit(
@@ -1376,7 +1389,7 @@ async def assign_index(
         with saving_run(run, ctx, request):
             run.assign_index_pair_to_sample(sample.id, index_pair)
             sample.index_kit_name = kit.name
-            _apply_kit_defaults(sample, kit)
+            _apply_kit_defaults(sample, kit, "pair")
             _update_override_cycles(sample, run)
     elif index_id and index_type:
         index, kit, error = _find_index(ctx, index_type, index_id, kit_id)
@@ -1394,7 +1407,7 @@ async def assign_index(
             else:
                 run.assign_index2_to_sample(sample.id, index)
             sample.index_kit_name = kit.name
-            _apply_kit_defaults(sample, kit)
+            _apply_kit_defaults(sample, kit, index_type)
             _update_override_cycles(sample, run)
     else:
         return Response("Missing index_pair_id or index_id/index_type", status_code=400)

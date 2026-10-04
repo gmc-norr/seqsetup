@@ -89,6 +89,12 @@ confirm before going ahead only when one of those two things would
 actually happen. A drop that neither replaces an existing index nor
 leaves any index unused goes ahead immediately, with no confirmation.
 
+SeqSetup fills exactly the rows this page shows. If samples were removed
+or added in another tab (or by someone else) since the page was loaded,
+and the drop would now fill other rows, nothing is assigned and the page
+says *"The sample list changed since this page was loaded. Reload the
+page and drag again."* Reload the page and drag again.
+
 .. note::
    Ticking sample checkboxes (below) has no effect on a multi-index drag
    -- it always fills consecutive rows starting at the row you drop on,
@@ -182,12 +188,19 @@ than silently applying a stale plan.
 Kit defaults
 ---------------
 
-When an index is assigned -- by any of the methods above -- and its kit
-declares defaults, they are copied onto the sample automatically:
+When an index is assigned -- by any of the methods above -- the sample
+takes the settings of the kit it came from:
 
 - **Index cycles** -- the number of cycles the kit expects for its i7 and/or i5
 - **Read override patterns** -- pre-defined patterns the kit specifies for its
   data reads (for example ``N2Y*``)
+
+These replace what the sample had from an earlier kit. A kit that declares
+none leaves them empty, so the index's own length and the full reads are
+used: an index from a plain kit never keeps another kit's UMI pattern or
+shortened index. An index that the assignment removes takes its index
+cycles with it -- an i7 from a single-index kit replaces a dual-index
+pair, and the pair's i5 cycles go with the pair.
 
 SeqSetup computes the index override pattern (for example ``I8N2``) from the
 index cycles above and the run's cycle configuration, then recalculates

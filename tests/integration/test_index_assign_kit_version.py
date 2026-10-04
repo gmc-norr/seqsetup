@@ -252,9 +252,12 @@ class TestAssignSeveralInOrder:
     """POST /runs/{id}/samples/assign-indexes-bulk (multi-index drop)."""
 
     def _post(self, client, entries):
+        # target_sample_ids: the rows the page shows for the drop, one per
+        # entry from s1 on (spec 2026-10-03 group A1, §1).
         return client.post(
             f"/runs/{RUN_ID}/samples/assign-indexes-bulk",
-            data={"start_sample_id": "s1", "indexes_json": json.dumps(entries)},
+            data={"start_sample_id": "s1", "indexes_json": json.dumps(entries),
+                  "target_sample_ids": json.dumps(["s1", "s2"][:len(entries)])},
             headers=ORIGIN,
         )
 
@@ -281,6 +284,7 @@ class TestAssignSeveralInOrder:
         resp = self._post(logged_in_client, [{"id": "VerKit_UDP0", "type": "pair"}])
 
         assert resp.status_code == 409
+        assert "more than one version" in resp.text
         assert _stored(ctx) == before
 
     def test_non_string_kit_id_is_400_and_saves_nothing(self, logged_in_client, fresh_app):
@@ -292,6 +296,7 @@ class TestAssignSeveralInOrder:
         resp = self._post(logged_in_client, [{"id": "VerKit_UDP0", "type": "pair", "kit_id": 5}])
 
         assert resp.status_code == 400
+        assert resp.text == "Invalid indexes_json entry: 'kit_id' must be a string"
         assert _stored(ctx) == before
 
 

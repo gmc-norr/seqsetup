@@ -272,6 +272,7 @@ class Sample:
         # Clear individual indexes when assigning a pair
         self.index1 = None
         self.index2 = None
+        self.drop_kit_settings_without_index()
 
     def assign_index1(self, index: Index) -> None:
         """Assign an i7 index to this sample (combinatorial/single mode)."""
@@ -286,6 +287,7 @@ class Sample:
         self.index1 = index
         # Clear index pair when using individual indexes
         self.index_pair = None
+        self.drop_kit_settings_without_index()
 
     def assign_index2(self, index: Index) -> None:
         """Assign an i5 index to this sample (combinatorial mode)."""
@@ -297,6 +299,7 @@ class Sample:
         self.index2 = index
         # Clear index pair when using individual indexes
         self.index_pair = None
+        self.drop_kit_settings_without_index()
 
     def clear_index(self) -> None:
         """Remove all assigned indexes from this sample."""
@@ -307,6 +310,7 @@ class Sample:
         self.override_cycles = None
         self.index1_override_pattern = None
         self.index2_override_pattern = None
+        self.drop_kit_settings_without_index()
 
     def clear_index1(self) -> None:
         """Remove the assigned i7 index from this sample."""
@@ -315,6 +319,7 @@ class Sample:
         if not self.index2:
             self.index_kit_name = None
             self.override_cycles = None
+        self.drop_kit_settings_without_index()
 
     def clear_index2(self) -> None:
         """Remove the assigned i5 index from this sample."""
@@ -322,6 +327,26 @@ class Sample:
         self.index2_override_pattern = None
         if not self.index1:
             self.index_kit_name = None
+        self.drop_kit_settings_without_index()
+
+    def drop_kit_settings_without_index(self) -> None:
+        """Empty each kit setting whose index is gone: ``index1_cycles``
+        with no i7, ``index2_cycles`` with no i5, and both read patterns
+        with no index at all. An i7 or i5 counts whether it sits in the
+        pair or on its own; a pair may have no i5. Called after every
+        assign and clear, so an old kit's settings cannot outlive their
+        index (review DI-09; spec 2026-10-03 group A1, §2, rule 2)."""
+        has_i7 = self.index_pair is not None or self.index1 is not None
+        has_i5 = (
+            self.index_pair is not None and self.index_pair.index2 is not None
+        ) or self.index2 is not None
+        if not has_i7:
+            self.index1_cycles = None
+        if not has_i5:
+            self.index2_cycles = None
+        if not has_i7 and not has_i5:
+            self.read1_override_pattern = None
+            self.read2_override_pattern = None
 
     @property
     def lanes_display(self) -> str:

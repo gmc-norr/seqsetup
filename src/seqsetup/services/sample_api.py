@@ -10,6 +10,7 @@ import socket
 import ssl
 import threading
 import time
+from collections import Counter
 from urllib.parse import urlparse
 from typing import Optional, Tuple
 
@@ -584,6 +585,12 @@ def fetch_worklist_samples(config: SampleApiConfig, worklist_id: str) -> Tuple[b
         return False, msg, []
 
 
+def name_list(ids: list[str], limit: int = 10) -> str:
+    """'A, B, C' — the first ``limit`` names, then 'and N more'."""
+    shown = ", ".join(ids[:limit])
+    return f"{shown} and {len(ids) - limit} more" if len(ids) > limit else shown
+
+
 def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None) -> list[dict]:
     """
     Parse API response into a normalized list of sample dicts.
@@ -682,6 +689,18 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         raise ValueError(
             f"LIMS row(s) {rows_str}: sample_id is missing or empty. "
             f"Fix the upstream record(s) before retrying."
+        )
+
+    # One sample ID twice: SeqSetup cannot tell which row is right, so the
+    # whole worklist is refused, like a paste (review DI-01; spec
+    # 2026-10-03 group A1, §3).
+    ids = [s["sample_id"] for s in results]
+    counts = Counter(ids)
+    repeated = [sid for sid in dict.fromkeys(ids) if counts[sid] > 1]
+    if repeated:
+        raise ValueError(
+            "these sample IDs appear more than once in the worklist: "
+            f"{name_list(repeated)}. Nothing was added."
         )
 
     return results

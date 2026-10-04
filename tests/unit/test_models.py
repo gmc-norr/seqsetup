@@ -832,3 +832,81 @@ class TestIndexKitSerialization:
         """Test _id field uses kit_id for MongoDB."""
         d = sample_index_kit.to_dict()
         assert d["_id"] == sample_index_kit.kit_id
+
+
+class TestKitSettingsFollowTheirIndex:
+    """No index, no setting: a sample's index cycles and read patterns go
+    when the index they belong to goes (review DI-09; spec 2026-10-03
+    group A1, §2, rule 2). Every sample starts with an old kit's four
+    settings."""
+
+    I7 = Index(name="i7", sequence="ACGTACGTAC", index_type=IndexType.I7)
+    I5 = Index(name="i5", sequence="TTGGCCAATT", index_type=IndexType.I5)
+    NEW_I7 = Index(name="n7", sequence="CATGCATGCA", index_type=IndexType.I7)
+    NEW_I5 = Index(name="n5", sequence="GACTGACTGA", index_type=IndexType.I5)
+
+    def _old(self, **indexes) -> Sample:
+        return Sample(
+            sample_id="S1", index1_cycles=8, index2_cycles=8,
+            read1_override_pattern="U8Y*", read2_override_pattern="U8Y*", **indexes,
+        )
+
+    def _pair(self, with_i5=True) -> IndexPair:
+        return IndexPair(id="p", name="p", index1=self.I7, index2=self.I5 if with_i5 else None)
+
+    @staticmethod
+    def _settings(sample):
+        return (sample.index1_cycles, sample.index2_cycles,
+                sample.read1_override_pattern, sample.read2_override_pattern)
+
+    def test_an_i7_over_a_pair_empties_the_i5_cycles(self):
+        sample = self._old(index_pair=self._pair())
+        sample.assign_index1(self.NEW_I7)
+        assert self._settings(sample) == (8, None, "U8Y*", "U8Y*")
+
+    def test_an_i5_over_a_pair_empties_the_i7_cycles(self):
+        sample = self._old(index_pair=self._pair())
+        sample.assign_index2(self.NEW_I5)
+        assert self._settings(sample) == (None, 8, "U8Y*", "U8Y*")
+
+    def test_an_i7_next_to_a_separate_i5_keeps_its_cycles(self):
+        sample = self._old(index1=self.I7, index2=self.I5)
+        sample.assign_index1(self.NEW_I7)
+        assert self._settings(sample) == (8, 8, "U8Y*", "U8Y*")
+
+    def test_a_pair_without_an_i5_has_no_i5_cycles(self):
+        sample = self._old(index1=self.I7, index2=self.I5)
+        sample.assign_index(self._pair(with_i5=False))
+        assert self._settings(sample) == (8, None, "U8Y*", "U8Y*")
+
+    def test_clear_index_empties_all_four(self):
+        sample = self._old(index_pair=self._pair())
+        sample.clear_index()
+        assert self._settings(sample) == (None, None, None, None)
+
+    def test_clear_index1_with_only_an_i7_empties_all_four(self):
+        sample = self._old(index1=self.I7)
+        sample.clear_index1()
+        assert self._settings(sample) == (None, None, None, None)
+
+    def test_clear_index2_with_only_an_i5_empties_all_four(self):
+        sample = self._old(index2=self.I5)
+        sample.clear_index2()
+        assert self._settings(sample) == (None, None, None, None)
+
+    def test_clear_index1_keeps_what_belongs_to_the_i5(self):
+        sample = self._old(index1=self.I7, index2=self.I5)
+        sample.clear_index1()
+        assert self._settings(sample) == (None, 8, "U8Y*", "U8Y*")
+
+    def test_clear_index2_keeps_what_belongs_to_the_i7(self):
+        sample = self._old(index1=self.I7, index2=self.I5)
+        sample.clear_index2()
+        assert self._settings(sample) == (8, None, "U8Y*", "U8Y*")
+
+    @pytest.mark.parametrize("clear", ["clear_index1", "clear_index2"])
+    def test_clearing_one_side_of_a_pair_changes_none_of_the_four(self, clear):
+        sample = self._old(index_pair=self._pair())
+        getattr(sample, clear)()
+        assert sample.index_pair is not None
+        assert self._settings(sample) == (8, 8, "U8Y*", "U8Y*")

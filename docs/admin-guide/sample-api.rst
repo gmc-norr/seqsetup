@@ -196,7 +196,10 @@ unrelated server error later.
    silently dropped: the **entire import is rejected**, naming the offending
    row number(s), so the missing identifier can be fixed upstream before
    retrying. An invalid index sequence rejects the **entire import** the
-   same way, naming the sample and the bad sequence. A row whose
+   same way, naming the sample and the bad sequence, and so does a
+   ``sample_id`` that appears in more than one row (after surrounding
+   spaces are removed), naming the repeated IDs (the first ten, then how
+   many more). A row whose
    ``sample_id`` already exists in the run is skipped instead, and SeqSetup
    says so in a banner ("Skipped N duplicate(s) already in run.") -- never
    silently.
