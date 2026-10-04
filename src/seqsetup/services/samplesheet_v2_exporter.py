@@ -17,6 +17,7 @@ from .sheet_text import (
     PLAIN_NAME_RE,
     PLAIN_VERSION_RE,
     is_allowed_mismatch,
+    is_i5_rule_setting,
     refuse_hidden_characters,
     starts_a_section,
 )
@@ -579,6 +580,13 @@ class SampleSheetV2Exporter:
 
         for key, value in profile.settings.items():
             name = cls._require_plain(key, PLAIN_NAME_RE, "Setting name")
+            if app_name == "BCLConvert" and is_i5_rule_setting(name):
+                # The sync refuses it; this is the backstop for a profile
+                # already in the database (spec 2026-10-04 group A2, §2).
+                raise ValueError(
+                    f"The BCLConvert profile's Settings may not set {name}: SeqSetup "
+                    f"writes the i5 and OverrideCycles itself"
+                )
             cell = cls._escape_config_cell(value)
             if name in MISMATCH_COLUMNS:
                 cls._require_profile_mismatch(value, name, "Settings")

@@ -242,3 +242,144 @@ class TestCopiesKeepTheWorkflow:
             "this template cannot be used."
         )
         assert len(ctx.run_repo.list_all()) == before
+
+
+INDEX2_ORDER_RULE = (
+    "Index 2 in OverrideCycles is written in reading order in SeqSetup: the index first, "
+    "then the masked cycles (for example I8N2). SeqSetup writes it the way the instrument "
+    "needs."
+)
+INDEX2_ORDER_HINT = "Index 2 in reading order: the index first, then masked cycles (for example I8N2)"
+
+
+def _indexed_draft(ctx, run_id: str, platform=NOVASEQ_X, override: str = "",
+                   i5: str = "TATAGCCT", index2_cycles=None) -> SequencingRun:
+    from seqsetup.models.index import Index, IndexPair, IndexType
+    from seqsetup.models.sample import Sample
+    flowcell = {NOVASEQ_X: "10B", InstrumentPlatform.NEXTSEQ_500_550: "High"}[platform]
+    run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=platform,
+                        flowcell_type=flowcell, run_cycles=RunCycles(151, 151, 10, 10))
+    run.add_sample(Sample(sample_id="S1", lanes=[1], override_cycles=override or None,
+                          index2_cycles=index2_cycles,
+                          index_pair=IndexPair(
+                              id="p1", name="p1",
+                              index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                              index2=Index(name="i5", sequence=i5, index_type=IndexType.I5),
+                          )))
+    ctx.run_repo.save(run)
+    return ctx.run_repo.get_by_id(run_id)
+
+
+PLATFORMS = [pytest.param(NOVASEQ_X, id="novaseq-x"),
+             pytest.param(InstrumentPlatform.NEXTSEQ_500_550, id="nextseq-500")]
+
+
+class TestATypedIndex2MaskedFirstIsRefused:
+    """N or U before the first I in the Index 2 part is refused at the input
+    and at Mark Ready, on every instrument (spec §2)."""
+
+    @pytest.mark.parametrize("platform", PLATFORMS)
+    def test_the_sample_input_refuses_it(self, logged_in_client, fresh_app, platform):
+        _app, ctx, _db = fresh_app
+        run = _indexed_draft(ctx, "a2-typed-row", platform)
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
+            data={"override_cycles": "Y151;I8N2;N2I8;Y151"}, headers=ORIGIN,
+        )
+        assert resp.status_code == 400
+        assert f"{INDEX2_ORDER_RULE} Nothing was saved." in html.unescape(resp.text)
+        assert ctx.run_repo.get_by_id(run.id).samples[0].override_cycles is None
+
+    @pytest.mark.parametrize("platform", PLATFORMS)
+    def test_the_bulk_input_refuses_it(self, logged_in_client, fresh_app, platform):
+        _app, ctx, _db = fresh_app
+        run = _indexed_draft(ctx, "a2-typed-bulk", platform)
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/set-override-cycles",
+            data={"sample_ids": f'["{run.samples[0].id}"]', "override_cycles": "Y151;I8N2;U2I8;Y151"},
+            headers=ORIGIN,
+        )
+        assert resp.status_code == 400
+        assert f"{INDEX2_ORDER_RULE} Nothing was saved." in html.unescape(resp.text)
+        assert ctx.run_repo.get_by_id(run.id).samples[0].override_cycles is None
+
+    @pytest.mark.parametrize("value", ["Y151;I8N2;I8N2;Y151", "Y151;I8N2;N10;Y151"])
+    def test_the_index_first_is_saved(self, logged_in_client, fresh_app, value):
+        _app, ctx, _db = fresh_app
+        run = _indexed_draft(ctx, "a2-typed-ok")
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
+            data={"override_cycles": value}, headers=ORIGIN,
+        )
+        assert resp.status_code == 200
+        assert ctx.run_repo.get_by_id(run.id).samples[0].override_cycles == value
+
+    @pytest.mark.parametrize("platform", PLATFORMS)
+    def test_mark_ready_refuses_a_stored_one(self, logged_in_client, fresh_app, platform):
+        from .conftest import disable_repos
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run = _indexed_draft(ctx, "a2-typed-ready", platform, override="Y151;I8N2;N2I8;Y151")
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert INDEX2_ORDER_RULE in html.unescape(resp.text)
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+    def test_the_inputs_say_so(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = _indexed_draft(ctx, "a2-typed-hint")
+        page = html.unescape(logged_in_client.get(f"/runs/{run.id}").text)
+        assert page.count(f'title="{INDEX2_ORDER_HINT}"') == 2
+
+
+class TestAShortenedI5OnAReversedReadIsRefused:
+    """An i5 used shorter than it is stored, inside a longer Index 2 read,
+    stops Mark Ready where the i5 is read reversed (spec §2)."""
+
+    @pytest.mark.parametrize("platform", PLATFORMS)
+    def test_mark_ready_refuses_it(self, logged_in_client, fresh_app, platform):
+        from .conftest import disable_repos
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run = _indexed_draft(ctx, "a2-short-i5", platform, i5="ACGGTTCAAG", index2_cycles=8)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert (
+            "1 sample(s) use fewer i5 cycles than their i5 has, inside a longer Index 2 read: S1."
+        ) in html.unescape(resp.text)
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+
+class TestProfilesCannotChangeTheRule:
+    """A BCL Convert profile with one of the four settings is refused at sync,
+    and a stored one stops Mark Ready (spec §2)."""
+
+    def test_the_sync_refuses_it(self, fresh_app, monkeypatch):
+        from .test_sheet_followups import _app_profile_yaml, _sync
+        _app, ctx, _db = fresh_app
+        bad = _app_profile_yaml("Bad", '"4.3.6"').replace(
+            "Settings:\n", "Settings:\n  OverrideReads: Y151;I10;I10;Y151\n")
+        ok, message, _count = _sync(ctx, monkeypatch, {
+            "Good.yaml": _app_profile_yaml("Good", '"4.3.6"'),
+            "Bad.yaml": bad,
+        })
+        assert ok, message
+        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["Good"]
+
+    def test_a_stored_one_stops_mark_ready(self, logged_in_client, fresh_app):
+        from .test_sheet_safety import _seed_draft, _seed_synced_profile
+        _app, ctx, _db = fresh_app
+        _seed_synced_profile(ctx, "BCLConvert",
+                             {"SoftwareVersion": "4.3.6", "RunInfoIndex2ReverseComplement": "1"})
+        run_id = _seed_draft(ctx, "a2-profile-key", test_id="GUARD_T")
+
+        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
+
+        assert resp.status_code == 500
+        assert resp.text == "Failed to generate exports"
+        assert ctx.run_repo.get_by_id(run_id).status == RunStatus.DRAFT
+
