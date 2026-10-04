@@ -61,7 +61,7 @@ def _scheduled_sync(ctx, monkeypatch, orientation: str) -> None:
         service, "_fetch_profiles_recursive", lambda *a, **k: []
     )
     monkeypatch.setattr(
-        service, "_fetch_instruments", lambda *a, **k: [_instrument(orientation)]
+        service, "_fetch_instruments", lambda *a, **k: ([_instrument(orientation)], [])
     )
     ProfileSyncScheduler(service, ctx.profile_sync_config_repo)._check_and_sync()
     assert ctx.profile_sync_config_repo.get().last_sync_status == "success"
@@ -146,7 +146,7 @@ class TestScheduledSyncRefreshesInstruments:
         # A fetch that returns no instruments is refused by the
         # destructive-replace guard; nothing in the database changes.
         service = ctx.get_github_sync_service()
-        monkeypatch.setattr(service, "_fetch_instruments", lambda *a, **k: [])
+        monkeypatch.setattr(service, "_fetch_instruments", lambda *a, **k: ([], []))
         config = ctx.profile_sync_config_repo.get()
         config.last_sync_at = None
         ctx.profile_sync_config_repo.save(config)

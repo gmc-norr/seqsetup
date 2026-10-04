@@ -729,3 +729,194 @@ class TestRecordsThatCannotBeUsed:
 
         assert resp.status_code == 200
         assert resp.text == "[Header]\nmade before\n"
+
+
+KIT_YAML = """\
+name: "A2 Kit"
+version: "1.0.0"
+index_mode: unique_dual
+index_pairs:
+  - name: "A01"
+    index1:
+      name: "i7-01"
+      sequence: "ATTACTCG"
+    index2:
+      name: "i5-01"
+      sequence: "TATAGCCT"
+"""
+
+
+def _instrument_text(name: str, **changes) -> str:
+    """The shipped local entry for ``name``, as a one-instrument sync file."""
+    import yaml
+    from seqsetup.data import instruments as instruments_module
+    return yaml.safe_dump({**instruments_module._instruments[name], "name": name, **changes})
+
+
+def _sync_with_instruments(ctx, monkeypatch, instrument_files: dict, fail_download=(),
+                           fail_listing=()):
+    """One real config sync, with only the GitHub fetches replaced: the
+    profile folders hold one good profile and its test profile, the index-kit
+    folder one kit, and the instrument folder ``instrument_files`` (name ->
+    text, or a mapping for a subfolder)."""
+    from .test_sheet_followups import TEST_PROFILE_YAML, _app_profile_yaml
+    from seqsetup.services.github_sync import GitHubSyncError
+    config = ctx.profile_sync_config_repo.get()
+    config.github_repo_url = "https://github.com/example/config"
+    config.sync_instruments_enabled = True
+    config.sync_index_kits_enabled = True
+    ctx.profile_sync_config_repo.save(config)
+    folders = {
+        config.application_profiles_path.strip("/"): {
+            "GuardProfile.yaml": _app_profile_yaml("GuardProfile", '"4.3.6"')},
+        config.test_profiles_path.strip("/"): {"Wgs.yaml": TEST_PROFILE_YAML},
+        config.index_kits_path.strip("/"): {"a2kit.yaml": KIT_YAML},
+        config.instruments_path.strip("/"): instrument_files,
+    }
+    texts = {}
+
+    def listing(owner, repo, branch, path):
+        path = path.strip("/")
+        if path in fail_listing:
+            raise GitHubSyncError("GitHub API error: 500 Server Error")
+        entries = []
+        for name, value in folders[path].items():
+            item_path = f"{path}/{name}"
+            if isinstance(value, dict):
+                folders[item_path] = value
+                entries.append({"type": "dir", "name": name, "path": item_path})
+            else:
+                url = f"https://raw.githubusercontent.com/example/config/main/{item_path}"
+                texts[url] = value
+                entries.append({"type": "file", "name": name, "path": item_path,
+                                "download_url": url})
+        return entries
+
+    def content(url):
+        if url.rsplit("/", 1)[1] in fail_download:
+            raise GitHubSyncError("Failed to fetch file: 404 Not Found")
+        return texts[url]
+
+    service = ctx.get_github_sync_service()
+    monkeypatch.setattr(service, "_fetch_directory_contents", listing)
+    monkeypatch.setattr(service, "_fetch_file_content", content)
+    # mongomock's bulk_write does not take pymongo's ReplaceOne; save the kits
+    # one by one (what bulk_save stores is not under test here).
+    monkeypatch.setattr(ctx.index_kit_repo, "bulk_save",
+                        lambda kits: [ctx.index_kit_repo.save(kit) for kit in kits])
+    return service.sync()
+
+
+def _stored_switches(ctx) -> dict:
+    return {doc["name"]: doc["enabled"]
+            for doc in ctx.instrument_definition_repo.collection.find({})}
+
+
+GOOD_FILES = {
+    "novaseq-x.yaml": _instrument_text(NOVASEQ_X.value),
+    "i100.yaml": _instrument_text(I100.value),
+}
+
+
+class TestASyncThatRefusesAnInstrumentFile:
+    """Any refused instrument file means no instrument records are stored;
+    the stored ones and their switches stay; the sync says it failed and
+    which file; profiles and index kits are still synced (spec §5)."""
+
+    def _before(self, ctx):
+        """Stored records with NovaSeq X switched off, as a sync left them."""
+        from .test_group_1c import _sync
+        _sync(ctx, names=(NOVASEQ_X.value, I100.value), disabled=(NOVASEQ_X.value,))
+        return {doc["_id"] for doc in ctx.instrument_definition_repo.collection.find({})}
+
+    def _assert_nothing_stored(self, ctx, before_ids, ok, message, problem):
+        assert ok is False
+        assert {doc["_id"] for doc in ctx.instrument_definition_repo.collection.find({})} == before_ids
+        assert _stored_switches(ctx) == {NOVASEQ_X.value: False, I100.value: True}
+        assert problem in message
+        assert ("Instrument files were refused, so no instrument settings were stored "
+                "and the stored ones are kept") in message
+        assert "Synced 1 application profiles, 1 test profiles, 1 index kits." in message
+        status = ctx.profile_sync_config_repo.get()
+        assert (status.last_sync_status, status.last_sync_message) == ("error", message)
+        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["GuardProfile"]
+        assert [k.name for k in ctx.index_kit_repo.list_all() if k.source == "github"] == ["A2 Kit"]
+
+    def test_a_file_the_check_refuses(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        before = self._before(ctx)
+        ok, message, _ = _sync_with_instruments(ctx, monkeypatch, {
+            **GOOD_FILES, "i100.yaml": _instrument_text(I100.value, runinfo_marks_i5_reversed="yes"),
+        })
+        self._assert_nothing_stored(
+            ctx, before, ok, message,
+            "instruments/i100.yaml: MiSeq i100 Series: runinfo_marks_i5_reversed: "
+            "Must be true or false (got: 'yes')")
+
+    def test_a_file_that_cannot_be_downloaded(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        before = self._before(ctx)
+        ok, message, _ = _sync_with_instruments(ctx, monkeypatch, GOOD_FILES,
+                                                fail_download=("i100.yaml",))
+        self._assert_nothing_stored(ctx, before, ok, message,
+                                    "instruments/i100.yaml: Failed to fetch file: 404 Not Found")
+
+    def test_a_subfolder_that_cannot_be_listed(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        before = self._before(ctx)
+        ok, message, _ = _sync_with_instruments(
+            ctx, monkeypatch, {**GOOD_FILES, "old": {}}, fail_listing=("instruments/old",))
+        self._assert_nothing_stored(
+            ctx, before, ok, message,
+            "instruments/old/: could not be listed: GitHub API error: 500 Server Error")
+
+    def test_two_files_with_the_same_name(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        before = self._before(ctx)
+        ok, message, _ = _sync_with_instruments(ctx, monkeypatch, {
+            **GOOD_FILES, "copy.yaml": _instrument_text(I100.value, samplesheet_name="Copy"),
+        })
+        self._assert_nothing_stored(ctx, before, ok, message,
+                                    "i100.yaml and copy.yaml both give name 'MiSeq i100 Series'")
+
+    def test_every_file_refused_still_syncs_profiles_and_kits(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        before = self._before(ctx)
+        ok, message, _ = _sync_with_instruments(ctx, monkeypatch, {
+            "i100.yaml": _instrument_text(I100.value, i5_workflows=[]),
+        })
+        self._assert_nothing_stored(
+            ctx, before, ok, message,
+            "instruments/i100.yaml: MiSeq i100 Series: i5_workflows: Must be a non-empty list "
+            "of workflows, the standard one first")
+        assert "Refusing to replace" not in message
+
+
+class TestASyncThatRepairsOldRecords:
+    """With every file good, the records are replaced, an instrument that was
+    switched off stays off, and the next lookup works (spec §5)."""
+
+    def test_old_format_records_are_replaced(self, logged_in_client, fresh_app, monkeypatch):
+        from .test_group_1c import _clean_run
+        _app, ctx, _db = fresh_app
+        _store_old_format_record(ctx)
+        ctx.instrument_definition_repo.collection.update_one(
+            {"name": NOVASEQ_X.value}, {"$set": {"enabled": False}})
+        run = _clean_run(ctx, "a2-repair", platform=I100, flowcell="5M")
+        assert logged_in_client.get(f"/runs/{run.id}").status_code == 503
+
+        ok, message, _ = _sync_with_instruments(ctx, monkeypatch, GOOD_FILES)
+
+        assert ok, message
+        assert ctx.profile_sync_config_repo.get().last_sync_status == "success"
+        assert _stored_switches(ctx) == {NOVASEQ_X.value: False, I100.value: True}
+        assert logged_in_client.get(f"/runs/{run.id}").status_code == 200
+
+    def test_a_good_sync_still_refuses_to_store_nothing(self, fresh_app, monkeypatch):
+        # The empty-fetch guard still stands when no file was refused.
+        from .test_group_1c import _sync
+        _app, ctx, _db = fresh_app
+        _sync(ctx, names=(NOVASEQ_X.value,))
+        ok, message, _ = _sync_with_instruments(ctx, monkeypatch, {})
+        assert ok is False
+        assert "Refusing to replace 1 existing instrument definitions with 0 fetched items" in message
