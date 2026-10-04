@@ -50,7 +50,9 @@ def shoot(page: Page, path: Path, target: Locator, region: Locator | None = None
             "height": min(page_h, box["y"] + box["height"] + pad) - y,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(path), clip=clip, full_page=True)
+        # A control just clicked or typed in may still be fading to its new
+        # colour; finish every fade first, or the picture differs per run.
+        page.screenshot(path=str(path), clip=clip, full_page=True, animations="disabled")
     finally:
         target.evaluate(
             "(el, old) => { el.style.outline = old[0]; el.style.outlineOffset = old[1]; }",
@@ -58,3 +60,30 @@ def shoot(page: Page, path: Path, target: Locator, region: Locator | None = None
         )
     Image.open(path).save(path, optimize=True)
     return path
+
+
+_REPLACE_TEXT_JS = """(root, [pattern, values]) => {
+    const re = new RegExp(pattern, "g");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+    const found = nodes.reduce((k, n) => k + (n.nodeValue.match(re) || []).length, 0);
+    if (found !== values.length) return found;
+    let i = 0;
+    for (const n of nodes) n.nodeValue = n.nodeValue.replace(re, () => values[i++]);
+    return found;
+}"""
+
+
+def replace_text(region: Locator, pattern: str, values: list[str]) -> None:
+    """Replace, in page order, each text in ``region`` that matches the
+    regular expression ``pattern`` with the next of ``values``. Times of day
+    and random values (IDs, tokens) differ on every run; fixed example values
+    keep a picture the same.
+
+    Fails with AssertionError, changing nothing, when ``pattern`` does not
+    match exactly ``len(values)`` times, so a page that changes breaks the
+    docs run instead of leaving a moving value in a picture.
+    """
+    found = region.evaluate(_REPLACE_TEXT_JS, [pattern, values])
+    assert found == len(values), f"{pattern!r} matched {found} times, not {len(values)}"
