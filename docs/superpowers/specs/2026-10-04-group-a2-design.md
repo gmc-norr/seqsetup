@@ -369,9 +369,11 @@ that Illumina's own run setup wrote for such a run.
   - `SyncedInstrumentsUnusable` is a `RuntimeError`, not a `ValueError`, so no
     `except ValueError` around an instrument read can turn it into a 400.
   - Nothing is cached while it fails, so the first lookup after a good sync works. The
-    failure is logged once per change of state, not on every lookup. A direct read of a
-    stored record that works also ends a database-error state, so the next database error
-    is logged with its driver text even while lookups are served from the cache.
+    failure is logged once per change of state, not on every lookup. A database error at
+    a direct read of a stored record (Mark Ready's re-read of the switch, the admin
+    Instruments page) is logged every time, with its driver text: such a read follows a
+    user's action, and a lookup served from the cache cannot tell that the database came
+    back in between.
 - **Every reader stops the same way**, with nothing to remember: one exception handler,
   registered for `InstrumentRecordError` and `SyncedInstrumentsUnusable`, shows the
   message like the existing `HTTPException` handler (an HTMX request gets the error
@@ -521,7 +523,7 @@ that Illumina's own run setup wrote for such a run.
   - an unreadable record and an old-format record each make run pages show the message,
     refuse Mark Ready with nothing saved and the audit event, and never use the local file;
   - a database error shows the fixed sentence and no driver text;
-  - after a direct read that works, the next database error is logged again;
+  - each database error at a direct read is logged, two in a row included;
   - the remedy names **Also sync instruments**;
   - the message also appears through the export paths;
   - a sync where one file is refused (by the validator, by a failed download, by a
