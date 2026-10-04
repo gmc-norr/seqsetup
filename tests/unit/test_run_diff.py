@@ -162,3 +162,41 @@ class TestIsEmpty:
     def test_empty_false_with_a_change(self):
         fc, sc = diff_run(_run_dict(), _run_dict(run_name="X"))
         assert is_empty(fc, sc) is False
+
+
+class TestSampleOrder:
+    """Each kind of change lists its samples in the run's sample order (the
+    sample table's), not by their internal IDs: those are random, so the
+    order would differ from one run to the next."""
+
+    _UUIDS = ["u3", "u1", "u2"]
+
+    def _samples(self, **over):
+        return [_sample(sid_uuid=u, sample_id=f"S{n}", **over)
+                for n, u in enumerate(self._UUIDS, start=1)]
+
+    def test_added_samples_in_table_order(self):
+        _, sc = diff_run(_run_dict(samples=[]), _run_dict(samples=self._samples()))
+        assert [(c["kind"], c["sample_id"]) for c in sc] == [
+            ("added", "S1"), ("added", "S2"), ("added", "S3")]
+
+    def test_removed_samples_in_the_old_table_order(self):
+        _, sc = diff_run(_run_dict(samples=self._samples()), _run_dict(samples=[]))
+        assert [(c["kind"], c["sample_id"]) for c in sc] == [
+            ("removed", "S1"), ("removed", "S2"), ("removed", "S3")]
+
+    def test_modified_samples_in_table_order(self):
+        before = _run_dict(samples=self._samples(project="A"))
+        after = _run_dict(samples=self._samples(project="B"))
+        _, sc = diff_run(before, after)
+        assert [(c["kind"], c["sample_id"]) for c in sc] == [
+            ("modified", "S1"), ("modified", "S2"), ("modified", "S3")]
+
+    def test_removed_then_added_then_modified(self):
+        before = _run_dict(samples=[_sample(sid_uuid="u9", sample_id="OLD"),
+                                    _sample(sid_uuid="u5", sample_id="KEPT", project="A")])
+        after = _run_dict(samples=[_sample(sid_uuid="u5", sample_id="KEPT", project="B"),
+                                   _sample(sid_uuid="u0", sample_id="NEW")])
+        _, sc = diff_run(before, after)
+        assert [(c["kind"], c["sample_id"]) for c in sc] == [
+            ("removed", "OLD"), ("added", "NEW"), ("modified", "KEPT")]
