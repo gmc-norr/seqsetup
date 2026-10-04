@@ -24,7 +24,9 @@ changed something adds an entry listing:
   everything else.
 - Every sample that was added, removed, or had a field change -- sample
   ID, name, project, test, lanes, index assignment, override cycles, and
-  barcode mismatch overrides are all tracked the same way.
+  barcode mismatch overrides are all tracked the same way. Removed samples
+  come first, then added ones, then changed ones, each in the order of the
+  sample table.
 
 A save that does not actually change anything adds no entry.
 
