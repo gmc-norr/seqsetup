@@ -63,14 +63,13 @@ class TestSampleSheetV2Exporter:
     def test_export_override_cycles_global(self, sample_run):
         """Test global OverrideCycles when all indexes same length.
 
-        Per Illumina BCL Convert: the OverrideCycles Index2 segment matches
-        the orientation of the i5 sequence as it appears in the sample
-        sheet (not the physical-read orientation). NovaSeq X sample sheets
-        carry i5 in FORWARD orientation, so the Index2 token stays forward
-        (``I8N2``), not reversed.
+        NovaSeq X reads the i5 reversed and its RunInfo.xml marks it, so BCL
+        Convert reverses the Index 2 part before use: it is written reversed,
+        N2I8 for an 8-base i5 on a 10-cycle read, as Illumina's NovaSeq X
+        Settings page shows (spec 2026-10-04 group A2, §2).
         """
         output = SampleSheetV2Exporter.export(sample_run)
-        assert "OverrideCycles,Y151;I8N2;I8N2;Y151" in output
+        assert "OverrideCycles,Y151;I8N2;N2I8;Y151" in output
 
     def test_export_override_cycles_global_forward_instrument(self):
         """Test global OverrideCycles for a forward-orientation instrument."""
@@ -94,14 +93,15 @@ class TestSampleSheetV2Exporter:
 
         output = SampleSheetV2Exporter.export(run)
 
-        # MiSeq i100 sample sheet carries i5 in forward orientation; Index2 forward too.
+        # MiSeq i100's standard workflow (index-first) reads the i5 forward:
+        # nothing is reversed.
         assert "OverrideCycles,Y150;I8N2;I8N2;Y150" in output
 
     def test_export_override_cycles_global_rc_instrument(self):
-        """For instruments whose sample sheet specifies i5 in reverse-complement
-        orientation (e.g. NextSeq 500/550, NovaSeq 6000), the OverrideCycles
-        Index2 token must also be reversed — N at the beginning per Illumina
-        BCL Convert guidance.
+        """NextSeq 500/550 reads the i5 reversed and its RunInfo.xml does not
+        mark it: the Index2 column is written reversed, and BCL Convert reads
+        the mask in sequencing order, so the Index 2 part stays I8N2 (spec
+        2026-10-04 group A2, §2).
         """
         run = SequencingRun(
             run_name="NextSeq Run",
@@ -120,76 +120,75 @@ class TestSampleSheetV2Exporter:
             ],
         )
         output = SampleSheetV2Exporter.export(run)
-        # NextSeq 500/550 sample sheet carries i5 in RC → Index2 token reversed.
-        assert "OverrideCycles,Y151;I8N2;N2I8;Y151" in output
+        assert "OverrideCycles,Y151;I8N2;I8N2;Y151" in output
+        assert "S1,ATTACTCG,AGGCTATA" in output
 
-    def test_adjust_override_cycles_comma_separator_on_rc_instrument(self):
-        """A legacy comma-separated OverrideCycles must still get its Index2
-        token RC-adjusted on an RC instrument. Previously split(';') saw one
-        part, skipped the adjustment, and left Index2 desynced from the RC'd i5."""
-        run = SequencingRun(
-            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
-            flowcell_type="High",
-            run_cycles=RunCycles(151, 151, 10, 10),
-        )
-        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
-            "Y151,I8N2,I8N2,Y151", run
-        )
-        assert result == "Y151;I8N2;N2I8;Y151"
+    # Where the Index 2 part is found (spec 2026-10-04 group A2, Tests): on
+    # an instrument whose RunInfo.xml marks a reversed i5 read the Index 2
+    # part is reversed; on NextSeq 500/550 (not marked) nothing is.
+    MARKED = [
+        pytest.param(InstrumentPlatform.NOVASEQ_X, "", id="novaseq-x"),
+        pytest.param(InstrumentPlatform.MISEQ_I100, "Read-first", id="i100-read-first"),
+    ]
 
-    def test_adjust_override_cycles_single_end_rc_instrument_flips_index2(self):
-        """A single-end run has three segments (no Read2). The Index2 mask
-        must still be flipped on an RC instrument, or it desyncs from the
-        reverse-complemented i5."""
-        run = SequencingRun(
-            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
-            flowcell_type="High",
-            run_cycles=RunCycles(151, 0, 10, 10),
-        )
-        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
-            "Y151;I10;I8N2", run
-        )
-        assert result == "Y151;I10;N2I8"
+    @staticmethod
+    def _adjust(value: str, cycles: RunCycles, platform=InstrumentPlatform.NEXTSEQ_500_550,
+                workflow: str = "") -> str:
+        run = SequencingRun(instrument_platform=platform, i5_workflow=workflow,
+                            run_cycles=cycles)
+        return SampleSheetV2Exporter._adjust_override_cycles_for_instrument(value, run)
 
-    def test_adjust_override_cycles_legacy_four_segments_still_flips(self):
-        """An older stored '...;Y0' value on a single-end run keeps the Index2
-        flip it always had (validation now blocks it from Ready, but legacy
+    @pytest.mark.parametrize("platform,workflow", MARKED)
+    def test_adjust_override_cycles_comma_separator_on_marked_instrument(self, platform, workflow):
+        """A legacy comma-separated OverrideCycles still gets its Index 2 part
+        reversed. Previously split(';') saw one part and skipped it."""
+        assert self._adjust("Y151,I8N2,I8N2,Y151", RunCycles(151, 151, 10, 10),
+                            platform, workflow) == "Y151;I8N2;N2I8;Y151"
+
+    def test_adjust_override_cycles_comma_separator_on_nextseq_500(self):
+        assert self._adjust("Y151,I8N2,I8N2,Y151", RunCycles(151, 151, 10, 10)) == (
+            "Y151;I8N2;I8N2;Y151")
+
+    @pytest.mark.parametrize("platform,workflow", MARKED)
+    def test_adjust_override_cycles_single_end_marked_instrument_flips_index2(
+            self, platform, workflow):
+        """A single-end run has three segments (no Read2); its Index 2 part
+        is still found and reversed."""
+        assert self._adjust("Y151;I10;I8N2", RunCycles(151, 0, 10, 10),
+                            platform, workflow) == "Y151;I10;N2I8"
+
+    def test_adjust_override_cycles_single_end_nextseq_500_unchanged(self):
+        assert self._adjust("Y151;I10;I8N2", RunCycles(151, 0, 10, 10)) == "Y151;I10;I8N2"
+
+    @pytest.mark.parametrize("platform,workflow", MARKED)
+    def test_adjust_override_cycles_legacy_four_segments_still_flips(self, platform, workflow):
+        """An older stored '...;Y0' value on a single-end run keeps the Index 2
+        position it always had (validation blocks it from Ready, but legacy
         live exports must not get worse)."""
-        run = SequencingRun(
-            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
-            flowcell_type="High",
-            run_cycles=RunCycles(151, 0, 10, 10),
-        )
-        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
-            "Y151;I10;I8N2;Y0", run
-        )
-        assert result == "Y151;I10;N2I8;Y0"
+        assert self._adjust("Y151;I10;I8N2;Y0", RunCycles(151, 0, 10, 10),
+                            platform, workflow) == "Y151;I10;N2I8;Y0"
 
-    def test_adjust_override_cycles_single_index_rc_instrument_unchanged(self):
-        """No Index2 read (index2_cycles=0): nothing to flip."""
-        run = SequencingRun(
-            instrument_platform=InstrumentPlatform.NEXTSEQ_500_550,
-            flowcell_type="High",
-            run_cycles=RunCycles(151, 151, 10, 0),
-        )
-        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
-            "Y151;I8N2;Y151", run
-        )
-        assert result == "Y151;I8N2;Y151"
+    def test_adjust_override_cycles_legacy_four_segments_nextseq_500_unchanged(self):
+        assert self._adjust("Y151;I10;I8N2;Y0", RunCycles(151, 0, 10, 10)) == (
+            "Y151;I10;I8N2;Y0")
+
+    @pytest.mark.parametrize("platform,workflow", MARKED)
+    def test_adjust_override_cycles_single_index_marked_instrument_unchanged(
+            self, platform, workflow):
+        """No Index2 read (index2_cycles=0): nothing to reverse."""
+        assert self._adjust("Y151;I8N2;Y151", RunCycles(151, 151, 10, 0),
+                            platform, workflow) == "Y151;I8N2;Y151"
+
+    def test_adjust_override_cycles_single_index_nextseq_500_unchanged(self):
+        assert self._adjust("Y151;I8N2;Y151", RunCycles(151, 151, 10, 0)) == "Y151;I8N2;Y151"
 
     def test_comma_override_normalized_to_semicolon_on_forward_instrument(self):
         """BCL Convert v2 uses ';' as the OverrideCycles separator; a legacy
-        comma-form override must be normalized to ';' on FORWARD instruments too,
-        not emitted with literal commas the sequencer can't parse."""
-        run = SequencingRun(
-            instrument_platform=InstrumentPlatform.NOVASEQ_X,  # forward orientation
-            flowcell_type="10B",
-            run_cycles=RunCycles(151, 151, 10, 10),
-        )
-        result = SampleSheetV2Exporter._adjust_override_cycles_for_instrument(
-            "Y151,I8N2,I8N2,Y151", run
-        )
-        assert result == "Y151;I8N2;I8N2;Y151"  # commas->';', no RC flip (forward)
+        comma-form override must be normalized to ';' where nothing is
+        reversed too, not emitted with literal commas the sequencer can't
+        parse. MiSeq i100 index-first reads the i5 forward."""
+        assert self._adjust("Y151,I8N2,I8N2,Y151", RunCycles(151, 151, 10, 10),
+                            InstrumentPlatform.MISEQ_I100) == "Y151;I8N2;I8N2;Y151"
 
     def test_single_index_sample_gets_computed_override_not_blank(self):
         """In a run that forces per-sample OverrideCycles, a single-index sample
@@ -197,7 +196,7 @@ class TestSampleSheetV2Exporter:
         OverrideCycles, not a blank cell — the fallback now keys on has_index."""
         run = SequencingRun(
             run_name="Mixed",
-            instrument_platform=InstrumentPlatform.NOVASEQ_X,  # forward, no RC noise
+            instrument_platform=InstrumentPlatform.NOVASEQ_X,  # N10 reads the same reversed
             flowcell_type="10B",
             run_cycles=RunCycles(151, 151, 10, 10),
             samples=[
@@ -549,6 +548,8 @@ class TestSampleSheetV2Exporter:
         # Check BCLConvert_Data section only (not Cloud_Data where forward i5 appears in LibraryName)
         bclconvert_data = output.split("[BCLConvert_Data]")[1].split("[Cloud_")[0]
         assert "TATAGCCT" not in bclconvert_data
+        # The i5s are not forward, so the header does not say so.
+        assert "IndexOrientation,Forward" not in output
 
     def test_export_nextseq_500_i5_reverse_complement(self):
         """NextSeq 500/550: BCL Convert expects i5 reverse-complemented."""
@@ -569,6 +570,8 @@ class TestSampleSheetV2Exporter:
         output = SampleSheetV2Exporter.export(run)
         # TATAGCCT reverse-complemented is AGGCTATA
         assert "S1,ATTACTCG,AGGCTATA," in output
+        # The i5s are not forward, so the header does not say so.
+        assert "IndexOrientation,Forward" not in output
 
     def test_export_miseq_classic_i5_forward(self):
         """MiSeq (classic): BCL Convert expects i5 in forward orientation."""
@@ -609,6 +612,8 @@ class TestSampleSheetV2Exporter:
         output = SampleSheetV2Exporter.export(run)
         # TATAGCCT reverse-complemented is AGGCTATA
         assert "S1,ATTACTCG,AGGCTATA," in output
+        # The i5s are not forward, so the header does not say so.
+        assert "IndexOrientation,Forward" not in output
 
 
 class _StubTestProfileRepo:

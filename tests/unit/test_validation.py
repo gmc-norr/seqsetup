@@ -1195,7 +1195,7 @@ class TestColorBalance:
             ],
         )
 
-        color_balance = ValidationService.calculate_color_balance(run)
+        color_balance = ValidationService.calculate_color_balance(run, i5_orientation="forward")
         assert 1 in color_balance
         assert 2 in color_balance
 
@@ -1212,7 +1212,7 @@ class TestColorBalance:
             ],
         )
 
-        color_balance = ValidationService.calculate_color_balance(run)
+        color_balance = ValidationService.calculate_color_balance(run, i5_orientation="forward")
         lane_balance = color_balance[1]
         i7_balance = lane_balance.i7_balance
 
@@ -1296,7 +1296,7 @@ class TestColorBalance:
             ],
         )
 
-        color_balance = ValidationService.calculate_color_balance(run)
+        color_balance = ValidationService.calculate_color_balance(run, i5_orientation="forward")
         # Should have balance for all 8 lanes
         assert len(color_balance) == 8
 
@@ -1312,7 +1312,7 @@ class TestColorBalance:
             ],
         )
 
-        color_balance = ValidationService.calculate_color_balance(run)
+        color_balance = ValidationService.calculate_color_balance(run, i5_orientation="forward")
         assert color_balance[1].sample_count == 3
 
     def test_color_balance_has_issues(self):
@@ -1326,7 +1326,7 @@ class TestColorBalance:
             ],
         )
 
-        color_balance = ValidationService.calculate_color_balance(run)
+        color_balance = ValidationService.calculate_color_balance(run, i5_orientation="forward")
         assert color_balance[1].has_issues is True
 
     def test_color_balance_no_issues_balanced(self):
@@ -1342,7 +1342,7 @@ class TestColorBalance:
             ],
         )
 
-        color_balance = ValidationService.calculate_color_balance(run)
+        color_balance = ValidationService.calculate_color_balance(run, i5_orientation="forward")
         assert color_balance[1].has_issues is False
 
     def test_reverse_complement_helper(self):
@@ -1526,7 +1526,7 @@ class TestValidationServiceEdgeCases:
             samples=[],
         )
 
-        balance = ValidationService.calculate_color_balance(run)
+        balance = ValidationService.calculate_color_balance(run, i5_orientation="forward")
         assert balance == {}
 
     def test_color_balance_single_sample(self):
@@ -1541,7 +1541,7 @@ class TestValidationServiceEdgeCases:
             samples=[sample],
         )
 
-        balance = ValidationService.calculate_color_balance(run)
+        balance = ValidationService.calculate_color_balance(run, i5_orientation="forward")
         # Should have calculation for this run
         assert len(balance) > 0
 
@@ -1553,7 +1553,7 @@ class TestValidationServiceEdgeCases:
             samples=[],
         )
 
-        dark_cycles = ValidationService.validate_dark_cycles(run)
+        dark_cycles = ValidationService.validate_dark_cycles(run, i5_orientation="forward")
         assert dark_cycles == []
 
     def test_index_collision_lane_isolation(self):

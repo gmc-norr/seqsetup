@@ -5,10 +5,8 @@ import pytest
 from seqsetup.data.instruments import (
     ChemistryType,
     get_chemistry_type,
-    get_i5_read_orientation,
     get_instrument_config,
     get_instrument_names,
-    get_samplesheet_v2_i5_orientation,
     get_samplesheet_versions,
     is_color_balance_enabled,
 )
@@ -39,32 +37,6 @@ class TestGetSamplesheetVersions:
     def test_nextseq_only_v2(self):
         versions = get_samplesheet_versions(InstrumentPlatform.NEXTSEQ_1000_2000)
         assert versions == [2]
-
-
-class TestGetI5ReadOrientation:
-    """Tests for get_i5_read_orientation()."""
-
-    def test_novaseq_x_reverse_complement(self):
-        assert get_i5_read_orientation(InstrumentPlatform.NOVASEQ_X) == "reverse-complement"
-
-    def test_novaseq_6000_reverse_complement(self):
-        assert get_i5_read_orientation(InstrumentPlatform.NOVASEQ_6000) == "reverse-complement"
-
-    def test_miseq_forward(self):
-        assert get_i5_read_orientation(InstrumentPlatform.MISEQ) == "forward"
-
-    def test_miseq_i100_forward(self):
-        assert get_i5_read_orientation(InstrumentPlatform.MISEQ_I100) == "forward"
-
-    @pytest.mark.parametrize("platform", [
-        InstrumentPlatform.NEXTSEQ_500_550,
-        InstrumentPlatform.NEXTSEQ_1000_2000,
-        InstrumentPlatform.MINISEQ,
-    ])
-    def test_corrected_to_reverse_complement(self, platform):
-        # Review S-4: these read the i5 as its reverse complement (MiniSeq
-        # with its standard kits), not forward.
-        assert get_i5_read_orientation(platform) == "reverse-complement"
 
 
 class TestGetChemistryType:
@@ -105,43 +77,6 @@ class TestGetInstrumentNames:
         names = get_instrument_names()
         assert "NovaSeq X Series" in names
         assert "MiSeq" in names
-
-
-class TestGetSamplesheetV2I5Orientation:
-    """Tests for get_samplesheet_v2_i5_orientation().
-
-    BCL Convert expects i5 in a specific orientation that may differ
-    from the physical i5 read orientation.
-    """
-
-    def test_novaseq_x_forward(self):
-        """NovaSeq X reads RC physically but BCL Convert expects forward."""
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.NOVASEQ_X) == "forward"
-
-    def test_novaseq_6000_reverse_complement(self):
-        """NovaSeq 6000 reads RC and BCL Convert expects RC."""
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.NOVASEQ_6000) == "reverse-complement"
-
-    def test_miseq_forward(self):
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.MISEQ) == "forward"
-
-    def test_miseq_i100_forward(self):
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.MISEQ_I100) == "forward"
-
-    def test_nextseq_500_550_reverse_complement(self):
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.NEXTSEQ_500_550) == "reverse-complement"
-
-    def test_nextseq_1000_2000_forward(self):
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.NEXTSEQ_1000_2000) == "forward"
-
-    def test_miniseq_reverse_complement(self):
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.MINISEQ) == "reverse-complement"
-
-    def test_hiseq_4000_reverse_complement(self):
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.HISEQ_4000) == "reverse-complement"
-
-    def test_hiseq_x_reverse_complement(self):
-        assert get_samplesheet_v2_i5_orientation(InstrumentPlatform.HISEQ_X) == "reverse-complement"
 
 
 class TestIsColorBalanceEnabled:

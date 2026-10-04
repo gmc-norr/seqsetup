@@ -29,7 +29,8 @@ class ColorAnalysisValidator:
         cls,
         run: SequencingRun,
         channel_config: Optional[dict] = None,
-        i5_orientation: str = "forward",
+        *,
+        i5_orientation: str,
     ) -> list[DarkCycleError]:
         """
         Check for indexes that start with two consecutive dark bases.
@@ -101,7 +102,8 @@ class ColorAnalysisValidator:
         cls,
         run: SequencingRun,
         channel_config: Optional[dict] = None,
-        i5_orientation: str = "forward",
+        *,
+        i5_orientation: str,
     ) -> list[SampleDarkCycleInfo]:
         """
         Build per-sample dark cycle information for visualization.
@@ -167,7 +169,8 @@ class ColorAnalysisValidator:
         cls,
         run: SequencingRun,
         channel_config: Optional[dict] = None,
-        i5_orientation: str = "forward",
+        *,
+        i5_orientation: str,
         instrument_config=None,
     ) -> dict[int, LaneColorBalance]:
         """
@@ -215,7 +218,7 @@ class ColorAnalysisValidator:
             samples = lane_samples[lane]
             if samples:
                 result[lane] = cls._calculate_lane_color_balance(
-                    lane, samples, channel_config, i5_orientation
+                    lane, samples, channel_config, i5_orientation=i5_orientation
                 )
 
         return result
@@ -226,7 +229,8 @@ class ColorAnalysisValidator:
         lane: int,
         samples: list[Sample],
         channel_config: Optional[dict] = None,
-        i5_orientation: str = "forward",
+        *,
+        i5_orientation: str,
     ) -> LaneColorBalance:
         """
         Calculate color balance for a single lane.

@@ -15,13 +15,14 @@ from collections import OrderedDict, defaultdict
 from threading import Lock
 
 from ..data.instruments import (
+    NoI5Direction,
     get_channel_config,
     get_chemistry_type,
-    get_i5_read_orientation,
     get_lanes_for_flowcell,
     get_reagent_kit_max_cycles,
     is_color_balance_enabled,
     is_instrument_enabled_by_name,
+    run_i5_direction,
 )
 from ..models.sequencing_run import RunStatus, SequencingRun
 from ..models.validation import (
@@ -179,19 +180,26 @@ class ValidationService:
         # Get channel configuration for this instrument
         channel_config = get_channel_config(run.instrument_platform)
 
-        # Get i5 read orientation for this instrument
-        i5_orientation = get_i5_read_orientation(run.instrument_platform)
+        # How the run's workflow reads the i5 (spec 2026-10-04 group A2, §2).
+        # Without a direction the checks that need one do not run;
+        # validate_configuration reports why.
+        try:
+            direction = run_i5_direction(run)
+            no_direction = ""
+        except NoI5Direction as e:
+            direction, no_direction = None, str(e)
 
         # Color balance and dark cycle analysis (delegated)
-        if color_balance_enabled and run.samples:
+        if color_balance_enabled and run.samples and direction is not None:
             color_balance = ColorAnalysisValidator.calculate_color_balance(
-                run, channel_config, i5_orientation, instrument_config,
+                run, channel_config, i5_orientation=direction.read_orientation,
+                instrument_config=instrument_config,
             )
             dark_cycle_errors = ColorAnalysisValidator.validate_dark_cycles(
-                run, channel_config, i5_orientation,
+                run, channel_config, i5_orientation=direction.read_orientation,
             )
             dark_cycle_samples = ColorAnalysisValidator.build_dark_cycle_info(
-                run, channel_config, i5_orientation,
+                run, channel_config, i5_orientation=direction.read_orientation,
             )
         else:
             color_balance = {}
@@ -229,6 +237,9 @@ class ValidationService:
             chemistry_type=chemistry.value if chemistry else "",
             color_balance_enabled=color_balance_enabled,
             channel_config=channel_config,
+            i5_workflow=direction.workflow if direction else "",
+            i5_read_orientation=direction.read_orientation if direction else "",
+            no_i5_direction=no_direction,
         )
 
     @classmethod
@@ -311,6 +322,7 @@ class ValidationService:
         # A run setting, so checked before the sample checks below.
         errors.extend(cls._validate_cycles_fit_kit(run))
         errors.extend(cls._validate_instrument_enabled(run))
+        errors.extend(cls._validate_i5_direction(run))
 
         # Prerequisite: at least one sample
         if not run.samples:
@@ -397,6 +409,24 @@ class ValidationService:
                 f"in Run Setup before marking the run ready."
             ),
         )]
+
+    @classmethod
+    def _validate_i5_direction(cls, run: SequencingRun) -> list[ConfigurationError]:
+        """The run needs an i5 direction: its instrument has settings and
+        lists the run's workflow (spec 2026-10-04 group A2, §3). Reported on
+        every status; on a Draft the message says what to do."""
+        try:
+            run_i5_direction(run)
+        except NoI5Direction as e:
+            message = str(e)
+            if run.status == RunStatus.DRAFT:
+                message += f" {e.draft_remedy}"
+            return [ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="no_i5_direction",
+                message=message,
+            )]
+        return []
 
     @classmethod
     def _validate_override_cycles_match_run(

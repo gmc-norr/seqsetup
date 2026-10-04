@@ -6,7 +6,7 @@ from typing import TextIO, Optional, TYPE_CHECKING
 from ..data.instruments import (
     get_bclconvert_software_version,
     get_samplesheet_platform_name,
-    get_samplesheet_v2_i5_orientation,
+    run_i5_direction,
 )
 from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
@@ -94,8 +94,11 @@ class SampleSheetV2Exporter:
         )
         output.write(f"InstrumentPlatform,{platform_name}\n")
 
-        # Index orientation - NovaSeq X expects forward i5 in sample sheet
-        output.write("IndexOrientation,Forward\n")
+        # Illumina's Run Planning and BaseSpace read this line as "the i5s
+        # are forward", so it is left out when the Index2 column is written
+        # reversed (spec 2026-10-04 group A2, §2).
+        if not run_i5_direction(run).index2_column_reversed:
+            output.write("IndexOrientation,Forward\n")
 
         # Include run UUID for linking with extended metadata
         output.write(f"Custom_UUID,{run.id}\n")
@@ -326,20 +329,15 @@ class SampleSheetV2Exporter:
     def _adjust_override_cycles_for_instrument(
         cls, override_cycles: str, run: SequencingRun
     ) -> str:
-        """Adjust override cycles for the sample-sheet i5 orientation.
+        """Write the Index 2 part of OverrideCycles the way the reader needs.
 
-        Override cycles are always stored in forward orientation. The Index2
-        segment must match the orientation of the i5 sequence as it appears
-        IN THE SAMPLE SHEET (not the physical-read orientation): per the
-        Illumina BCL Convert guidance, when the sample sheet specifies the
-        i5 sequence in reverse-complement orientation the N mask is at the
-        beginning of the Index2 token (e.g. ``N2I8``); when the sample
-        sheet expects forward i5 (NovaSeq X / X Plus, NextSeq 1000/2000,
-        MiSeq), the Index2 token stays forward (``I8N2``).
-
-        Previously this keyed off ``get_i5_read_orientation`` (physical),
-        which produced ``N2I8`` for NovaSeq X — diverging from the forward
-        i5 sequence and corrupting demultiplexing for asymmetric tokens.
+        A stored value is in reading order: the index first, then the masked
+        or extra cycles (``I8N2``). When the run's workflow reads the i5
+        reversed and its RunInfo.xml marks that read, BCL Convert reverses
+        the Index 2 part before use, so it is written reversed (``N2I8``,
+        as Illumina's NovaSeq X Settings page shows). Otherwise BCL Convert
+        reads it in sequencing order and it is written as stored (spec
+        2026-10-04 group A2, §2). The other parts never change.
 
         Args:
             override_cycles: Full override cycles string (e.g., "Y151;I8N2;I8N2;Y151")
@@ -356,8 +354,7 @@ class SampleSheetV2Exporter:
         # still reverse-complements the i5 sequence -> Index2 desync on RC).
         normalized = override_cycles.replace(",", ";")
 
-        orientation = get_samplesheet_v2_i5_orientation(run.instrument_platform)
-        if orientation != "reverse-complement":
+        if not run_i5_direction(run).index2_mask_reversed:
             return normalized
 
         parts = normalized.split(";")
@@ -392,7 +389,7 @@ class SampleSheetV2Exporter:
         i5 = sample.index2_sequence or ""
         if not i5 or run is None:
             return i5
-        if get_samplesheet_v2_i5_orientation(run.instrument_platform) == "reverse-complement":
+        if run_i5_direction(run).index2_column_reversed:
             return _reverse_complement(i5)
         return i5
 

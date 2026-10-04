@@ -10,6 +10,7 @@ To sync instruments from GitHub, configure the repository in Admin > Profiles.
 import logging
 import os
 import threading
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -425,18 +426,80 @@ def standard_i5_workflow(name: str) -> str:
     return names[0] if names else ""
 
 
-def get_i5_read_orientation_by_name(name: str) -> str:
-    """Get i5 (Index 2) read orientation for an instrument by name.
+class NoI5Direction(ValueError):
+    """A run has no i5 direction: its instrument has no settings, or does not
+    list the run's workflow (spec 2026-10-04 group A2, §2). Never replaced by
+    a guess. ``draft_remedy`` says what to do on a Draft."""
 
-    Returns:
-        "forward" - i5 is read as written in the sample sheet
-        "reverse-complement" - i5 is read as the reverse complement
-    """
-    config = get_instrument_config(name)
-    if config:
-        # The standard workflow's (spec 2026-10-04 group A2, §1).
-        return config["i5_workflows"][0]["i5_read_orientation"]
-    return "forward"
+    def __init__(self, message: str, draft_remedy: str):
+        super().__init__(message)
+        self.draft_remedy = draft_remedy
+
+
+@dataclass(frozen=True)
+class I5Direction:
+    """How a run's instrument reads the i5, and so what the sheets write
+    (spec 2026-10-04 group A2, §2)."""
+
+    workflow: str
+    read_orientation: str  # "forward" or "reverse-complement"
+    runinfo_marks_reversed: bool
+
+    @property
+    def reads_reversed(self) -> bool:
+        return self.read_orientation == "reverse-complement"
+
+    @property
+    def index2_column_reversed(self) -> bool:
+        """The v2 Index2 column is written reversed when the i5 is read
+        reversed and RunInfo.xml does not mark it; otherwise forward."""
+        return self.reads_reversed and not self.runinfo_marks_reversed
+
+    @property
+    def index2_mask_reversed(self) -> bool:
+        """The Index 2 part of OverrideCycles, stored in reading order (the
+        index first), is written reversed (I8N2 becomes N2I8) when the i5 is
+        read reversed and RunInfo.xml marks it: BCL Convert reverses it back."""
+        return self.reads_reversed and self.runinfo_marks_reversed
+
+
+def no_settings_reason(name: str) -> str:
+    """Why an instrument has no settings: while synced records exist, only
+    those count (spec 2026-10-04 group A2, §5)."""
+    if has_synced_instruments():
+        return f"{name} is not among the synced instruments"
+    return f"{name} is not in the local instruments file"
+
+
+def i5_direction(instrument: str, workflow: str) -> I5Direction:
+    """The i5 direction of a run on ``instrument`` in ``workflow`` (exact
+    name; "" means the standard one). Raises NoI5Direction."""
+    config = get_instrument_config(instrument)
+    if config is None:
+        raise NoI5Direction(
+            f"{no_settings_reason(instrument)}.", "Pick another instrument in Run Setup."
+        )
+    workflows = config["i5_workflows"]
+    if workflow:
+        chosen = next((w for w in workflows if w["name"] == workflow), None)
+        if chosen is None:
+            names = ", ".join(w["name"] for w in workflows)
+            raise NoI5Direction(
+                f"{workflow} is not an i5 workflow of {instrument} (it has: {names}).",
+                "Pick one in Run Setup.",
+            )
+    else:
+        chosen = workflows[0]
+    return I5Direction(
+        workflow=chosen["name"],
+        read_orientation=chosen["i5_read_orientation"],
+        runinfo_marks_reversed=config["runinfo_marks_i5_reversed"],
+    )
+
+
+def run_i5_direction(run) -> I5Direction:
+    """The i5 direction of ``run``: its instrument and its workflow."""
+    return i5_direction(run.instrument_platform.value, run.i5_workflow)
 
 
 def get_channel_config_by_name(name: str) -> Optional[dict]:
@@ -772,43 +835,6 @@ def is_color_balance_enabled(platform: InstrumentPlatform) -> bool:
 def get_channel_config(platform: InstrumentPlatform) -> Optional[dict]:
     """Get dye channel configuration for an instrument platform (legacy)."""
     return get_channel_config_by_name(_platform_to_name(platform))
-
-
-def get_i5_read_orientation(platform: InstrumentPlatform) -> str:
-    """Get i5 (Index 2) read orientation for an instrument platform (legacy)."""
-    return get_i5_read_orientation_by_name(_platform_to_name(platform))
-
-
-def get_samplesheet_v2_i5_orientation(platform: InstrumentPlatform) -> str:
-    """Get i5 orientation expected by BCL Convert for SampleSheet v2.
-
-    This differs from the physical i5 read orientation for some instruments.
-    For example, NovaSeq X physically reads i5 in reverse-complement, but
-    BCL Convert expects forward i5 in the sample sheet.
-
-    Returns:
-        "forward" or "reverse-complement"
-    """
-    return get_samplesheet_v2_i5_orientation_by_name(_platform_to_name(platform))
-
-
-def get_samplesheet_v2_i5_orientation_by_name(name: str) -> str:
-    """Get i5 orientation expected by BCL Convert for SampleSheet v2 by instrument name.
-
-    Reversed when the standard workflow reads the i5 reversed and RunInfo.xml
-    does not mark it.
-
-    Returns:
-        "forward" or "reverse-complement"
-    """
-    config = get_instrument_config(name)
-    if config:
-        # The standard workflow's (spec 2026-10-04 group A2, §2).
-        read = config["i5_workflows"][0]["i5_read_orientation"]
-        if read == "reverse-complement" and not config["runinfo_marks_i5_reversed"]:
-            return "reverse-complement"
-        return "forward"
-    return "forward"
 
 
 def get_samplesheet_versions(platform: InstrumentPlatform) -> list[int]:
