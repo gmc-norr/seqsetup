@@ -68,6 +68,12 @@ def snap(page, name: str, target, region=None, pad: int = 16) -> Path:
     return shoot(page, SHOTS / f"{name}.png", target, region=region, pad=pad)
 
 
+def test_chromium_draws_whole_tiles(browser_type_launch_args):
+    # conftest.browser_type_launch_args: without it a rounded edge can come
+    # out one shade different from run to run (docs_shots.docs_launch_args).
+    assert "--disable-partial-raster" in browser_type_launch_args["args"]
+
+
 def test_login_form(page, base_url, demo):
     page.set_viewport_size({"width": 1280, "height": 800})
     page.goto(f"{base_url}/login")
