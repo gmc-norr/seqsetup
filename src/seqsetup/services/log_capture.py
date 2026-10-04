@@ -4,7 +4,7 @@ import logging
 import re
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Optional
 
@@ -108,7 +108,7 @@ class LogCaptureHandler(logging.Handler):
         """Capture a log record (with sensitive-value scrub applied)."""
         try:
             entry = LogEntry(
-                timestamp=datetime.fromtimestamp(record.created),
+                timestamp=datetime.fromtimestamp(record.created, timezone.utc).replace(tzinfo=None),
                 level=record.levelname,
                 logger_name=record.name,
                 message=scrub_log_message(self.format(record)),

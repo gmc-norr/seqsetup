@@ -1,7 +1,6 @@
 """Repository for API token management."""
 
 import logging
-from datetime import datetime
 from typing import Optional
 
 import bcrypt
@@ -9,6 +8,7 @@ from pymongo.database import Database
 
 from ..models.api_token import ApiToken
 from .base import BaseRepository
+from ..utils.clock import utcnow
 
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class ApiTokenRepository(BaseRepository[ApiToken]):
     def _touch_last_used(self, token: ApiToken) -> None:
         """Best-effort last_used_at update — failures are logged but not raised."""
         try:
-            now = datetime.now()
+            now = utcnow()
             self.collection.update_one(
                 {"_id": token.id},
                 {"$set": {"last_used_at": now.isoformat()}},

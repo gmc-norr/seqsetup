@@ -77,17 +77,17 @@
                     <tr>
                         <td class="border px-2 py-1">{{ token.name }}</td>
                         <td class="border px-2 py-1">{{ token.created_by }}</td>
-                        <td class="border px-2 py-1">{{ token.created_at.strftime("%Y-%m-%d %H:%M") if token.created_at else "—" }}</td>
-                        <td class="border px-2 py-1">{{ token.last_used_at.strftime("%Y-%m-%d %H:%M") if token.last_used_at else "—" }}</td>
+                        <td class="border px-2 py-1">{{ token.created_at | localtime if token.created_at else "—" }}</td>
+                        <td class="border px-2 py-1">{{ token.last_used_at | localtime if token.last_used_at else "—" }}</td>
                         <td class="border px-2 py-1">
                             {% if token.expires_at %}
                                 {% set days_left = (token.expires_at - now_dt).days %}
                                 {% if token.is_expired(now_dt) %}
-                                    <span class="text-red-700 font-semibold">{{ token.expires_at.strftime("%Y-%m-%d %H:%M") }} (EXPIRED)</span>
+                                    <span class="text-red-700 font-semibold">{{ token.expires_at | localtime }} (EXPIRED)</span>
                                 {% elif days_left <= 7 %}
-                                    <span class="text-amber-700 font-semibold">{{ token.expires_at.strftime("%Y-%m-%d %H:%M") }} (expires soon)</span>
+                                    <span class="text-amber-700 font-semibold">{{ token.expires_at | localtime }} (expires soon)</span>
                                 {% else %}
-                                    {{ token.expires_at.strftime("%Y-%m-%d %H:%M") }}
+                                    {{ token.expires_at | localtime }}
                                 {% endif %}
                             {% else %}
                                 <span class="text-amber-700">never</span>

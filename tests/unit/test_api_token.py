@@ -115,15 +115,17 @@ class TestApiTokenExpiry:
         assert token.is_expired() is False
 
     def test_is_expired_false_when_in_future(self):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from seqsetup.models.api_token import ApiToken
-        token = ApiToken(expires_at=datetime.now() + timedelta(hours=1))
+        from seqsetup.utils.clock import utcnow
+        token = ApiToken(expires_at=utcnow() + timedelta(hours=1))
         assert token.is_expired() is False
 
     def test_is_expired_true_when_past(self):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from seqsetup.models.api_token import ApiToken
-        token = ApiToken(expires_at=datetime.now() - timedelta(hours=1))
+        from seqsetup.utils.clock import utcnow
+        token = ApiToken(expires_at=utcnow() - timedelta(hours=1))
         assert token.is_expired() is True
 
     def test_round_trip_preserves_expires_at_and_last_used_at(self):

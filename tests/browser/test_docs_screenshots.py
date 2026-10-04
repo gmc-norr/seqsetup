@@ -45,12 +45,16 @@ def demo(app_ctx):
     saved = snapshot(db)
     clear(db)
     reset_caches()
-    try:
-        ids = seed_demo(app_ctx)
-        yield ids
-    finally:
-        restore(db, saved)
-        reset_caches()
+    # Pages show times in the TZ zone (utils/clock.py): one fixed zone, so the
+    # pictures do not depend on the machine they are taken on.
+    with pytest.MonkeyPatch.context() as zone:
+        zone.setenv("TZ", "Europe/Stockholm")
+        try:
+            ids = seed_demo(app_ctx)
+            yield ids
+        finally:
+            restore(db, saved)
+            reset_caches()
 
 
 @pytest.fixture
@@ -925,10 +929,11 @@ def test_history_change_history(demo_page, base_url, demo):
     fieldset = page.locator("fieldset:has(.run-history-panel)")
     # The times of day differ per run; fixed example times keep the picture
     # the same (newest first, one per entry).
-    replace_text(panel, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", [
-        "2026-03-10 10:17", "2026-03-10 10:16", "2026-03-10 10:15", "2026-03-10 10:15",
-        "2026-03-10 10:14", "2026-03-10 10:14", "2026-03-10 10:14", "2026-03-10 10:14",
-        "2026-03-10 10:13", "2026-03-10 10:12", "2026-03-10 10:12"])
+    replace_text(panel, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Z]{3,4}", [
+        "2026-03-10 10:17 CET", "2026-03-10 10:16 CET", "2026-03-10 10:15 CET",
+        "2026-03-10 10:15 CET", "2026-03-10 10:14 CET", "2026-03-10 10:14 CET",
+        "2026-03-10 10:14 CET", "2026-03-10 10:14 CET", "2026-03-10 10:13 CET",
+        "2026-03-10 10:12 CET", "2026-03-10 10:12 CET"])
     snap(page, "history/change-history", panel, region=fieldset)
 
 
@@ -956,7 +961,7 @@ def test_admin_users_list(demo_page, base_url, demo):
     table = page.locator("table:has(tr[id='user-row-taylor.audit'])")
     # The new user's Created time differs per run; a fixed example keeps the
     # picture the same.
-    replace_text(row, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", ["2026-03-10 10:20"])
+    replace_text(row, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Z]{3,4}", ["2026-03-10 10:20 CET"])
     snap(page, "admin/users-list", row.get_by_role("button", name="Edit"), region=table)
 
 
@@ -1093,7 +1098,7 @@ def test_admin_logs(demo_page, base_url, demo):
     row = page.locator("#logs-page tbody tr").filter(has_text=probe_path)
     # The log time differs per run; a fixed example keeps the picture the
     # same. Refresh, below, reloads the table, so the check there is unaffected.
-    replace_text(row, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", ["2026-03-10 10:21:08"])
+    replace_text(row, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]{3,4}", ["2026-03-10 10:21:08 CET"])
     with _logs_table_unclipped(page):
         snap(page, "admin/logs", row, region=page.locator("#logs-page .table-scroll"))
 
@@ -1148,13 +1153,13 @@ def test_admin_audit_trail(demo_page, base_url, demo):
         "td => td.textContent.trim().startsWith('run.status')); })()"
     )
     table = page.locator("#audit-page .table-scroll")
-    # The times of day (UTC, an hour before the change history's local times)
-    # and the random ID of the run made in the wizard differ per run; fixed
-    # examples keep the picture the same (newest first, one per event).
-    replace_text(table, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", [
-        "2026-03-10 09:17:04", "2026-03-10 09:16:41", "2026-03-10 09:16:38",
-        "2026-03-10 09:15:52", "2026-03-10 09:15:20", "2026-03-10 09:15:17",
-        "2026-03-10 09:11:30"])
+    # The times of day (the change history's, to the second) and the random
+    # ID of the run made in the wizard differ per run; fixed examples keep
+    # the picture the same (newest first, one per event).
+    replace_text(table, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]{3,4}", [
+        "2026-03-10 10:17:04 CET", "2026-03-10 10:16:41 CET", "2026-03-10 10:16:38 CET",
+        "2026-03-10 10:15:52 CET", "2026-03-10 10:15:20 CET", "2026-03-10 10:15:17 CET",
+        "2026-03-10 10:11:30 CET"])
     replace_text(table, r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
                  ["3f2b8c1e-5a47-4d0e-9b6a-7c1d2e8f4a60"] * 6)
     snap(page, "admin/audit-trail", table, region=page.locator("#audit-page"))

@@ -16,7 +16,6 @@ Admin-only via router-level require_admin_dep. Preserves:
 """
 
 import logging
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -33,6 +32,7 @@ from ..services.audit_log import audit
 from ..templating import render
 from .dependencies import get_ctx, require_admin_dep
 from .utils import get_username
+from ..utils.clock import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ def edit_user(
         except WeakPasswordError as e:
             return _render_page(request, ctx, error=str(e))
 
-    user.updated_at = datetime.now()
+    user.updated_at = utcnow()
     repo.save(user)
 
     # A role or password change also changed the user's session stamp

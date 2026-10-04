@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
+from ..utils.clock import utcnow
+
 
 @dataclass
 class Test:
@@ -13,8 +15,8 @@ class Test:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = ""
     description: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
 
     # Optional configuration
     default_analysis_type: Optional[str] = None  # e.g., "dragen_germline"
@@ -22,7 +24,7 @@ class Test:
 
     def touch(self) -> None:
         """Update the updated_at timestamp."""
-        self.updated_at = datetime.now()
+        self.updated_at = utcnow()
 
     def to_dict(self) -> dict:
         """Convert to dictionary for MongoDB storage."""
@@ -44,13 +46,13 @@ class Test:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
         elif created_at is None:
-            created_at = datetime.now()
+            created_at = utcnow()
 
         updated_at = data.get("updated_at")
         if isinstance(updated_at, str):
             updated_at = datetime.fromisoformat(updated_at)
         elif updated_at is None:
-            updated_at = datetime.now()
+            updated_at = utcnow()
 
         return cls(
             id=data.get("_id") or data["id"],

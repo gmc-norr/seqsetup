@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
+from ..utils.clock import utcnow
+
 
 def checked_kit_cycle_limits(limits) -> dict[int, int]:
     """Check ``reagent_kit_max_cycles``: kit label -> most cycles allowed,
@@ -288,7 +290,7 @@ class InstrumentDefinition:
             onboard_applications=onboard_apps,
             reagent_kit_max_cycles=yaml_data.get("reagent_kit_max_cycles") or {},
             source_file=source_file,
-            synced_at=datetime.now(),
+            synced_at=utcnow(),
         )
 
     def to_instruments_format(self) -> dict:

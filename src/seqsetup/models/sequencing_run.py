@@ -10,6 +10,7 @@ import uuid
 
 from .sample import Sample, checked_mismatches
 from .analysis import Analysis
+from ..utils.clock import utcnow
 
 
 def _resolve_max_samples_per_run() -> int:
@@ -146,8 +147,8 @@ class SequencingRun:
     status: RunStatus = RunStatus.DRAFT
     created_by: str = ""
     updated_by: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
     wizard_step: int = 1
 
     # Instrument configuration
@@ -297,7 +298,7 @@ class SequencingRun:
         Args:
             updated_by: Username of the user making the change.
         """
-        self.updated_at = datetime.now()
+        self.updated_at = utcnow()
         if updated_by:
             self.updated_by = updated_by
 
@@ -375,13 +376,13 @@ class SequencingRun:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
         elif created_at is None:
-            created_at = datetime.now()
+            created_at = utcnow()
 
         updated_at = data.get("updated_at")
         if isinstance(updated_at, str):
             updated_at = datetime.fromisoformat(updated_at)
         elif updated_at is None:
-            updated_at = datetime.now()
+            updated_at = utcnow()
 
         # Defensive enum parsing: an unknown status or instrument_platform
         # (e.g. from a renamed enum value in a future release, or a

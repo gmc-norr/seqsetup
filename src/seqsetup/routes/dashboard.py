@@ -7,7 +7,6 @@ the HTMX swap targets (tab/archive/delete) re-render just the
 """
 
 import logging
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
@@ -21,6 +20,7 @@ from ..services.audit_log import audit
 from ..templating import render
 from .dependencies import get_archivable_run, get_ctx, saving_run
 from .utils import check_status_transition, get_username, sanitize_string
+from ..utils.clock import utcnow
 
 
 logger = logging.getLogger(__name__)
@@ -192,7 +192,7 @@ def delete_run(
     if not deleted:
         if copy is not None:
             try:
-                ctx.deleted_run_repo.mark_abandoned(copy.copy_id, datetime.now(), "run_changed")
+                ctx.deleted_run_repo.mark_abandoned(copy.copy_id, utcnow(), "run_changed")
             except Exception:
                 # Left pending; the page does not list a pending copy while
                 # its run still exists.
@@ -203,7 +203,7 @@ def delete_run(
 
     if copy is not None:
         try:
-            confirmed = ctx.deleted_run_repo.mark_completed(copy.copy_id, datetime.now())
+            confirmed = ctx.deleted_run_repo.mark_completed(copy.copy_id, utcnow())
         except Exception:
             logger.error("Could not mark copy %s completed", copy.copy_id, exc_info=True)
             confirmed = False
@@ -234,7 +234,7 @@ def _start_copy(ctx: AppContext, run: SequencingRun, actor: str) -> DeletedRun:
     deleted without its copy (spec 2026-09-28 group 2a, F16)."""
     reason = "no_copy_store"
     if ctx.deleted_run_repo is not None:
-        copy = DeletedRun.of(run, actor, datetime.now())
+        copy = DeletedRun.of(run, actor, utcnow())
         try:
             ctx.deleted_run_repo.start(copy)
             return copy

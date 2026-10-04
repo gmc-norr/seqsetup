@@ -5,7 +5,7 @@
   {% for e in entries %}
   <div class="border-t py-2">
     <div class="flex justify-between text-xs text-slate-500">
-      <span>{{ e.timestamp.strftime("%Y-%m-%d %H:%M") }}</span>
+      <span>{{ e.timestamp | localtime }}</span>
       <span>{{ e.actor or "unknown" }}</span>
     </div>
     {% if e.kind == "created" %}

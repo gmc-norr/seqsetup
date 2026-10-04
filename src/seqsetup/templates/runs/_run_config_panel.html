@@ -8,8 +8,8 @@
      flowcell_desc: str — pre-resolved flowcell description
      cycles:        RunCycles
 #}
-{% set created_at_str = run.created_at.strftime("%Y-%m-%d %H:%M") if run.created_at else "—" %}
-{% set updated_at_str = run.updated_at.strftime("%Y-%m-%d %H:%M") if run.updated_at else "—" %}
+{% set created_at_str = run.created_at | localtime if run.created_at else "—" %}
+{% set updated_at_str = run.updated_at | localtime if run.updated_at else "—" %}
 <fieldset id="run-config-panel" class="config-panel run-setup-summary">
     <legend>Setup</legend>
     {% if run.status.value == 'draft' %}
