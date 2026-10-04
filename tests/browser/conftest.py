@@ -30,6 +30,8 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunSta
 from seqsetup.models.test_profile import TestProfile
 from seqsetup.models.user import UserRole
 
+from .docs_shots import docs_launch_args
+
 # Module-level AppContext reference, set once by app_server and used by
 # function-scoped fixtures that need direct repo access (e.g. mutable_run_id).
 _app_ctx = None
@@ -46,6 +48,16 @@ SCREENSHOT_KIT_NAME = "Screenshot-TestKit"
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "browser: Playwright test against the served app")
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args):
+    """A docs run (SEQSETUP_DOCS_SCREENSHOTS=1) draws whole tiles, so every
+    docs picture comes out the same; other runs keep pytest-playwright's
+    default browser."""
+    return docs_launch_args(
+        browser_type_launch_args, docs=os.environ.get("SEQSETUP_DOCS_SCREENSHOTS") == "1"
+    )
 
 
 def _free_port() -> int:

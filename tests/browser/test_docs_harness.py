@@ -4,7 +4,7 @@ text talks about, saves a padded crop around it, and cleans up."""
 import pytest
 from PIL import Image
 
-from .docs_shots import replace_text, shoot
+from .docs_shots import docs_launch_args, replace_text, shoot
 
 _BOX = ('<div id="box" style="margin:100px;width:200px;height:50px">'
         '<button id="go">Go</button></div>')
@@ -80,3 +80,19 @@ def test_replace_text_fails_and_changes_nothing_when_the_count_differs(page):
 
     assert page.locator("#times p").all_text_contents() == [
         "made 2026-10-04 13:56", "seen 2026-10-04 13:57"]
+
+
+def test_docs_runs_draw_whole_tiles():
+    """Chromium's partial raster redraws only the changed part of a tile, and
+    a rounded box's edge then comes out one shade different on some runs."""
+    assert docs_launch_args({"headless": True}, docs=True) == {
+        "headless": True, "args": ["--disable-partial-raster"]}
+
+
+def test_docs_runs_keep_other_browser_args():
+    assert docs_launch_args({"args": ["--lang=en"]}, docs=True) == {
+        "args": ["--lang=en", "--disable-partial-raster"]}
+
+
+def test_other_runs_keep_the_default_browser():
+    assert docs_launch_args({"headless": True}, docs=False) == {"headless": True}

@@ -87,3 +87,13 @@ def replace_text(region: Locator, pattern: str, values: list[str]) -> None:
     """
     found = region.evaluate(_REPLACE_TEXT_JS, [pattern, values])
     assert found == len(values), f"{pattern!r} matched {found} times, not {len(values)}"
+
+
+def docs_launch_args(launch_args: dict, *, docs: bool) -> dict:
+    """The Chromium launch arguments for a run: for a docs run, the same plus
+    --disable-partial-raster. Partial raster redraws only the changed part of
+    a tile, and the edge of a rounded box then comes out one shade different
+    on some runs; whole tiles draw it the same every time."""
+    if not docs:
+        return launch_args
+    return {**launch_args, "args": [*launch_args.get("args", []), "--disable-partial-raster"]}
