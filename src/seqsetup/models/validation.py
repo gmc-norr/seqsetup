@@ -288,6 +288,11 @@ class ValidationResult:
     chemistry_type: Optional[str] = None  # "2-color" or "4-color"
     color_balance_enabled: bool = True  # Whether color balance analysis is shown for this instrument
     channel_config: Optional[dict] = None  # Dye channel configuration from instruments.yaml
+    # The i5 workflow and read direction the checks used, or why there was
+    # none (spec 2026-10-04 group A2, §3).
+    i5_workflow: str = ""
+    i5_read_orientation: str = ""
+    no_i5_direction: str = ""
 
     @property
     def has_errors(self) -> bool:

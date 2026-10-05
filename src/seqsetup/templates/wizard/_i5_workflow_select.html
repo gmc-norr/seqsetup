@@ -1,0 +1,33 @@
+{#
+   i5 workflow <select> (spec 2026-10-04 group A2, §3). Shown when the
+   instrument lists more than one workflow, or does not list the run's; then
+   that value is shown "(not available)". Otherwise the container is empty
+   and takes no space (empty:hidden, as #error-banner). The container is
+   always sent, so an instrument change can fill or empty it out of band.
+
+   Inputs:
+     run_id:       str
+     i5_workflows: list[str] | None — the instrument's workflow names,
+                   standard first; None when it has no settings
+     i5_workflow:  str — the run's workflow ("" means the standard one)
+     oob:          bool — swap the container in out of band
+#}
+{%- set names = i5_workflows or [] -%}
+{%- set current = i5_workflow or (names[0] if names else "") -%}
+{%- set unlisted = names and current not in names -%}
+<div id="i5-workflow-config" class="form-group empty:hidden"{% if oob %} hx-swap-oob="true"{% endif %}>
+{%- if names|length > 1 or unlisted %}
+    <label for="i5_workflow">i5 workflow</label>
+    <select name="i5_workflow" id="i5_workflow"
+            hx-post="/runs/{{ run_id }}/i5-workflow"
+            hx-target="#i5-workflow-config"
+            hx-swap="outerHTML">
+        {%- for name in names %}
+        <option value="{{ name }}"{% if name == current %} selected{% endif %}>{{ name }}{% if loop.first %} (standard){% endif %}</option>
+        {%- endfor %}
+        {%- if unlisted %}
+        <option value="{{ current }}" selected>{{ current }} (not available)</option>
+        {%- endif %}
+    </select>
+{% endif -%}
+</div>

@@ -349,6 +349,14 @@ Application Profile Validation
   ``Translate`` renames to one of them -- 0, 1, 2, blank (``''``) or ``na``,
   which Illumina uses for a setting that does not apply to a sample.
   ``true`` and ``false`` are refused
+- In the profile whose ``ApplicationName`` is ``BCLConvert``, ``Settings``
+  may not set ``OverrideCycles``, ``OverrideReads``,
+  ``RunInfoIndex2ReverseComplement`` or ``Index2ColumnReverseComplement``
+  (in any mix of capitals). They change how BCL Convert reads the i5 or
+  the OverrideCycles that SeqSetup writes for the run's instrument (see
+  :doc:`instruments`). ``OverrideCycles`` as a data column is fine. A
+  profile already stored with one of them stops **Mark Ready** with
+  *"Failed to generate exports"*
 - The data section must have a ``Sample_ID`` column, or no row would name
   its sample: ``Sample_ID`` must be in ``DataFields`` (or, when
   ``DataFields`` is missing or empty, be a key of ``Data``), as it is or
@@ -417,12 +425,19 @@ A sync (manual or scheduled) always does all of the following:
   Instruments are also replaced wholesale, but an instrument's **Enabled**
   state (see :doc:`instruments`) is carried forward across the replace by
   matching on its samplesheet name -- disabling one is not undone by the
-  next sync. Index kits keep any kit uploaded directly through the UI;
-  only previously *synced* kits are replaced.
+  next sync. If any instrument file or folder is refused -- it cannot be
+  downloaded or read, a subfolder cannot be listed, it breaks a rule, or
+  two files give the same instrument -- **no** instrument settings are
+  stored and the stored ones, with their switches, stay; the sync reports
+  that it failed and names each refused file, and still syncs the
+  profiles and index kits (see :doc:`instruments`). Index kits keep any
+  kit uploaded directly through the UI; only previously *synced* kits are
+  replaced.
 - As a safety net, a sync that would replace an existing, non-empty
   collection with **zero** fetched items is refused rather than applied --
   a misconfigured path or a network blip cannot wipe out reference data
-  that was already there.
+  that was already there. (When an instrument file was refused, no
+  instruments are stored anyway.)
 
 .. warning::
    Syncing instruments changes what a **new** run can be set up on -- see

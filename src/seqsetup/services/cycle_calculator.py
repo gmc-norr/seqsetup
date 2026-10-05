@@ -13,6 +13,15 @@ from ..models.sequencing_run import RunCycles, SequencingRun
 _SEGMENT_RE = re.compile(r"(?:[YIUN]\d+)+")
 _WILDCARD_SEGMENT_RE = re.compile(r"(?:[YIUN](?:\d+|\*))+")
 
+# A stored OverrideCycles is in reading order. In its Index 2 part the index
+# comes first; N or U before the first I is Illumina's NovaSeq X entry form,
+# which SeqSetup would write the wrong way round (spec 2026-10-04 group A2, §2).
+INDEX2_ORDER_RULE = (
+    "Index 2 in OverrideCycles is written in reading order in SeqSetup: the index "
+    "first, then the masked cycles (for example I8N2). SeqSetup writes it the way "
+    "the instrument needs."
+)
+
 
 class CycleCalculator:
     """Calculate run cycles and override cycles."""
@@ -220,15 +229,24 @@ class CycleCalculator:
         dangling one); ``"mismatch"`` if a '*' is left in it — internal
         shorthand, never valid in a sheet — or its segments do not match the
         run's reads: one per read of more than 0 cycles, each summing to that
-        read's cycles. Mark Ready and the save routes use this one rule."""
+        read's cycles; ``"index2_order"`` if its Index 2 part masks cycles
+        before the index (INDEX2_ORDER_RULE). Mark Ready and the save routes
+        use this one rule."""
         if "*" in override_cycles:
             return "mismatch"
         segments = re.split(r"[;,]", override_cycles)
         if not all(cls.is_valid_override_segment(seg.upper()) for seg in segments):
             return "invalid"
         sums = [sum(int(n) for n in re.findall(r"\d+", seg)) for seg in segments if seg]
-        expected = [cycles for _, _, cycles in cls.read_structure(run_cycles)]
-        return "mismatch" if sums != expected else None
+        reads = cls.read_structure(run_cycles)
+        if sums != [cycles for _, _, cycles in reads]:
+            return "mismatch"
+        names = [name for name, _, _ in reads]
+        if "Index2" in names:
+            letters = re.findall(r"[YIUN]", segments[names.index("Index2")].upper())
+            if "I" in letters and any(letter in "NU" for letter in letters[:letters.index("I")]):
+                return "index2_order"
+        return None
 
     @classmethod
     def _build_index_segment(cls, index_len: int, run_cycles: int) -> str:

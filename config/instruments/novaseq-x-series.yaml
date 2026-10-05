@@ -1,8 +1,8 @@
 # NovaSeq X Series - Two-color XLEAP chemistry (Blue+Green)
 #
 # High-throughput sequencer with XLEAP SBS chemistry and onboard DRAGEN.
-# Patterned flow cell with i5 read in reverse-complement orientation.
-# BCL Convert expects forward i5 in sample sheet.
+# i5: reads the i5 as its reverse complement; RunInfo.xml marks it.
+# See Instruments in the admin guide.
 
 version: "1.0.0"
 
@@ -11,8 +11,10 @@ samplesheet_name: NovaSeqXSeries
 chemistry_type: 2-color
 has_dragen_onboard: true
 sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
-i5_read_orientation: reverse-complement
-samplesheet_v2_i5_orientation: forward
+i5_workflows:
+  - name: Standard
+    i5_read_orientation: reverse-complement
+runinfo_marks_i5_reversed: true
 
 color_balance_enabled: true
 dye_channels: ["Blue", "Green"]

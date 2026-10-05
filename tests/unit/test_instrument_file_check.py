@@ -53,9 +53,10 @@ class TestBrokenInstrument:
     """Each problem names the instrument and, where the check can tell, the field."""
 
     def test_a_bad_i5_orientation(self, tmp_path):
-        path = _file(tmp_path, _shipped(MiSeq=_entry("MiSeq", i5_read_orientation="forwards")))
+        workflows = [{"name": "Standard", "i5_read_orientation": "forwards"}]
+        path = _file(tmp_path, _shipped(MiSeq=_entry("MiSeq", i5_workflows=workflows)))
         assert _problems(path) == (
-            STOPS + "MiSeq: i5_read_orientation: Must be one of: forward, "
+            STOPS + "MiSeq: i5_workflows: i5_read_orientation must be forward or "
             "reverse-complement (got: 'forwards')"
         )
 
@@ -73,7 +74,6 @@ class TestBrokenInstrument:
         )
 
     @pytest.mark.parametrize("field,value", [
-        pytest.param("i5_read_orientation", [], id="orientation-list"),
         pytest.param("channel1_bases", 42, id="bases-number"),
     ])
     def test_a_value_the_check_cannot_read(self, tmp_path, field, value):
@@ -84,12 +84,12 @@ class TestBrokenInstrument:
 
     def test_every_problem_is_listed(self, tmp_path):
         path = _file(tmp_path, _shipped(
-            MiSeq=_entry("MiSeq", i5_read_orientation="x"),
-            MiniSeq=_entry("MiniSeq", samplesheet_v2_i5_orientation="y"),
+            MiSeq=_entry("MiSeq", i5_workflows=[]),
+            MiniSeq=_entry("MiniSeq", runinfo_marks_i5_reversed="y"),
         ))
         message = _problems(path)
-        assert "MiSeq: i5_read_orientation: " in message
-        assert "MiniSeq: samplesheet_v2_i5_orientation: " in message
+        assert "MiSeq: i5_workflows: " in message
+        assert "MiniSeq: runinfo_marks_i5_reversed: " in message
 
 
 class TestBrokenFile:
@@ -139,7 +139,7 @@ class TestStartAndReload:
         raise FileNotFoundError("no instruments.yaml")
 
     def test_the_app_reads_the_file_through_the_check(self, tmp_path, monkeypatch):
-        path = _file(tmp_path, _shipped(MiSeq=_entry("MiSeq", i5_read_orientation="x")))
+        path = _file(tmp_path, _shipped(MiSeq=_entry("MiSeq", runinfo_marks_i5_reversed="x")))
         monkeypatch.setattr(instruments_module, "_find_config_path", lambda: path)
         with pytest.raises(InstrumentConfigError):
             instruments_module._load_config()

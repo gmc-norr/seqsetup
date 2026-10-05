@@ -149,6 +149,8 @@ class TestSyncRefusesRiskyValues:
                 version="1.0.0",
                 chemistry_type="2-color",
                 onboard_applications=[OnboardApplication(name="BCLConvert", software_version="4.10")],
+                i5_workflows=[{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
+                runinfo_marks_i5_reversed=True,
             ))
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()

@@ -4,7 +4,7 @@ import re
 from io import StringIO
 from typing import TextIO
 
-from ..data.instruments import get_i5_read_orientation
+from ..data.instruments import run_i5_direction
 from ..models.sequencing_run import InstrumentPlatform, SequencingRun
 from .sheet_text import refuse_hidden_characters
 from ..utils.clock import local_date
@@ -107,9 +107,9 @@ class SampleSheetV1Exporter:
         # Determine if we need Lane column (multi-lane flowcells like NovaSeq 6000)
         has_lanes = any(len(s.lanes) > 0 for s in run.samples)
 
-        # Determine if i5 needs reverse-complement
-        orientation = get_i5_read_orientation(run.instrument_platform)
-        rc_i5 = orientation == "reverse-complement"
+        # bcl2fastq compares the i5 as the run's workflow reads it
+        # (spec 2026-10-04 group A2, §2).
+        rc_i5 = run_i5_direction(run).reads_reversed
 
         # Header row
         columns = []

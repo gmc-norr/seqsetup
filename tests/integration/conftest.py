@@ -92,6 +92,7 @@ def fresh_app(isolated_mongo, monkeypatch, tmp_path):
     from seqsetup.data import instruments as instruments_module
     instruments_module._synced_instruments_cache = None
     instruments_module._instrument_definition_repo = None
+    instruments_module._last_logged_failure = None
 
     # The log_capture handler accumulates duplicate registrations on each
     # reload because setup_log_capture(..) calls logger.addHandler without

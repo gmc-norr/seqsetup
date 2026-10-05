@@ -22,6 +22,15 @@ class InstrumentDefinitionRepository(BaseRepository[InstrumentDefinition]):
             return InstrumentDefinition.from_dict(doc)
         return None
 
+    def enabled_switches(self) -> list[tuple[str, bool]]:
+        """Each stored record's samplesheet_name and enabled switch, read
+        without loading the records: a record that cannot be loaded must not
+        stop the sync that replaces it (spec 2026-10-04 group A2, §5)."""
+        return [
+            (doc.get("samplesheet_name", ""), doc.get("enabled", True))
+            for doc in self.collection.find({}, {"samplesheet_name": 1, "enabled": 1})
+        ]
+
     def delete_all(self) -> int:
         """Delete all instrument definitions. Used for full resync."""
         result = self.collection.delete_many({})

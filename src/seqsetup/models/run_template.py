@@ -12,7 +12,7 @@ from typing import Optional
 
 from .analysis import Analysis
 from .sample import Sample, checked_mismatches
-from .sequencing_run import InstrumentPlatform, RunCycles
+from .sequencing_run import InstrumentPlatform, RunCycles, checked_i5_workflow
 from ..utils.clock import utcnow
 
 
@@ -33,6 +33,8 @@ class RunTemplate:
     instrument_platform: InstrumentPlatform = InstrumentPlatform.NOVASEQ_X
     flowcell_type: str = ""
     reagent_cycles: int = 300
+    # As SequencingRun.i5_workflow (spec 2026-10-04 group A2, §3).
+    i5_workflow: str = ""
     run_cycles: Optional[RunCycles] = None
     barcode_mismatches_index1: int = 1
     barcode_mismatches_index2: int = 1
@@ -53,6 +55,8 @@ class RunTemplate:
             value = value.replace("\r", " ").replace("\n", " ")[:4096]
         elif name == "reagent_cycles":
             value = max(1, value)
+        elif name == "i5_workflow":
+            value = checked_i5_workflow(value)
         elif name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
             value = checked_mismatches(name, value)
         elif name in ("created_by", "updated_by", "flowcell_type") and isinstance(value, str):
@@ -78,6 +82,7 @@ class RunTemplate:
             "instrument_platform": self.instrument_platform.value,
             "flowcell_type": self.flowcell_type,
             "reagent_cycles": self.reagent_cycles,
+            "i5_workflow": self.i5_workflow,
             "run_cycles": self.run_cycles.to_dict() if self.run_cycles else None,
             "barcode_mismatches_index1": self.barcode_mismatches_index1,
             "barcode_mismatches_index2": self.barcode_mismatches_index2,
@@ -126,6 +131,7 @@ class RunTemplate:
             instrument_platform=platform,
             flowcell_type=data.get("flowcell_type", ""),
             reagent_cycles=data.get("reagent_cycles", 300),
+            i5_workflow=data.get("i5_workflow") or "",
             run_cycles=run_cycles,
             barcode_mismatches_index1=data.get("barcode_mismatches_index1", 1),
             barcode_mismatches_index2=data.get("barcode_mismatches_index2", 1),

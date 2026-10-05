@@ -1,8 +1,14 @@
 """Instrument and flowcell specifications.
 
 Configuration can come from two sources:
-1. GitHub-synced instruments (preferred when available)
-2. Local config/instruments.yaml file (fallback)
+1. GitHub-synced instruments. While any synced records exist, only they
+   count: an instrument not among them has no settings.
+2. Local config/instruments.yaml file, used only when there are no synced
+   records at all.
+
+When the synced records cannot be used, every lookup raises
+SyncedInstrumentsUnusable; the local file is never used instead (spec
+2026-10-04 group A2, §5).
 
 To sync instruments from GitHub, configure the repository in Admin > Profiles.
 """
@@ -10,11 +16,14 @@ To sync instruments from GitHub, configure the repository in Admin > Profiles.
 import logging
 import os
 import threading
+from contextlib import contextmanager
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 import yaml
+from pymongo.errors import PyMongoError
 
 if TYPE_CHECKING:
     from ..repositories.instrument_definition_repo import InstrumentDefinitionRepository
@@ -30,6 +39,27 @@ class ChemistryType(Enum):
     FOUR_COLOR = "4-color"  # 4-channel SBS - each base has distinct color
 
 
+class SyncedInstrumentsUnusable(RuntimeError):
+    """The synced instrument records cannot be used, so SeqSetup stops and
+    says so (spec 2026-10-04 group A2, §5). A RuntimeError, so no
+    ``except ValueError`` around an instrument read can turn it into a 400."""
+
+
+SYNC_REMEDY = (
+    "Update the instrument files and run a config sync with Also sync instruments on "
+    "(Admin > Config Sync)."
+)
+DATABASE_PROBLEM = (
+    "The synced instrument settings could not be read from the database. "
+    "Try again, or ask an administrator to check the database."
+)
+
+
+def records_unusable_message(error: Exception) -> str:
+    """The message for a stored instrument record that cannot be used."""
+    return f"The synced instrument settings cannot be used: {error}. {SYNC_REMEDY}"
+
+
 # Module-level reference to instrument definition repository (set at app startup)
 _instrument_definition_repo: Optional["InstrumentDefinitionRepository"] = None
 _synced_instruments_cache: Optional[dict] = None  # Cache synced instruments
@@ -39,6 +69,8 @@ _synced_instruments_cache: Optional[dict] = None  # Cache synced instruments
 # expose ``None`` to a concurrent reader, or two readers can both rebuild
 # in parallel.
 _synced_instruments_lock = threading.Lock()
+# The failure last logged, so it is logged once per change of state.
+_last_logged_failure: Optional[str] = None
 
 
 def set_instrument_definition_repo(repo: "InstrumentDefinitionRepository") -> None:
@@ -65,7 +97,11 @@ def clear_synced_instruments_cache() -> None:
 def _get_synced_instruments() -> dict:
     """Get synced instruments from database, with caching.
 
-    Returns dict keyed by instrument name, or empty dict if no synced instruments.
+    Returns dict keyed by instrument name, or empty dict if no synced
+    instruments. Raises SyncedInstrumentsUnusable when a stored record cannot
+    be used or the database cannot be read; nothing is cached then, so the
+    first lookup after a good sync works (spec 2026-10-04 group A2, §5).
+    Other errors are programming errors and are not caught.
     """
     global _synced_instruments_cache
 
@@ -78,21 +114,50 @@ def _get_synced_instruments() -> dict:
 
         try:
             instruments = _instrument_definition_repo.list_all()
-            if instruments:
-                _synced_instruments_cache = {
-                    inst.name: inst for inst in instruments
-                }
-                return _synced_instruments_cache
-        except Exception:
-            # Fall back to YAML if the DB-synced instruments can't be loaded,
-            # but log it: a persistent failure means the app runs on YAML
-            # defaults while the operator believes DB-synced config is active.
-            logger.warning(
-                "Could not load DB-synced instruments; falling back to YAML defaults",
-                exc_info=True,
-            )
+        except InstrumentRecordError as e:
+            message = records_unusable_message(e)
+            _log_failure_once(message, message)
+            raise SyncedInstrumentsUnusable(message) from e
+        except PyMongoError as e:
+            # The driver's text (host names) goes to the log only.
+            _log_failure_once(DATABASE_PROBLEM, f"{DATABASE_PROBLEM} ({type(e).__name__}: {e})")
+            raise SyncedInstrumentsUnusable(DATABASE_PROBLEM) from e
+        _log_failure_once(None, "")
+        if instruments:
+            _synced_instruments_cache = {
+                inst.name: inst for inst in instruments
+            }
+            return _synced_instruments_cache
 
         return {}
+
+
+def _log_failure_once(failure: Optional[str], text: str) -> None:
+    """Log ``text`` when the failure state changes to ``failure``; None means
+    the records are usable again. Called under _synced_instruments_lock."""
+    global _last_logged_failure
+    if failure is not None and failure != _last_logged_failure:
+        logger.error(text)
+    _last_logged_failure = failure
+
+
+@contextmanager
+def reading_synced_records():
+    """For a read of the synced records straight from the database (Mark
+    Ready's switch re-read, the admin Instruments page): a database error
+    becomes SyncedInstrumentsUnusable with the fixed sentence, as in
+    _get_synced_instruments; the driver's text goes to the log only (spec
+    2026-10-04 group A2, §5)."""
+    global _last_logged_failure
+    try:
+        yield
+    except PyMongoError as e:
+        # Logged every time: a direct read follows a user's action, and a
+        # lookup served from the cache cannot tell the database came back.
+        with _synced_instruments_lock:
+            logger.error(f"{DATABASE_PROBLEM} ({type(e).__name__}: {e})")
+            _last_logged_failure = DATABASE_PROBLEM
+        raise SyncedInstrumentsUnusable(DATABASE_PROBLEM) from e
 
 
 def has_synced_instruments() -> bool:
@@ -139,8 +204,8 @@ class InstrumentConfigError(ValueError):
 def load_checked_instrument_file(path: Path) -> dict:
     """Read the local instruments file and check every instrument the way a
     config sync checks synced ones (``validate_instrument_yaml``, with the
-    map key as the name). A typo in ``i5_read_orientation`` would otherwise
-    fall back to "forward" without a word. Raise InstrumentConfigError
+    map key as the name). A wrong i5 fact would otherwise decide the i5
+    direction in every Sample Sheet. Raise InstrumentConfigError
     naming the file and listing every problem. Warnings are ignored: every
     local entry lacks the ``version`` a synced file carries."""
     from ..services.instrument_validator import validate_instrument_yaml
@@ -168,7 +233,7 @@ def load_checked_instrument_file(path: Path) -> dict:
                 result = validate_instrument_yaml({**entry, "name": name}, path.name)
             except Exception as e:
                 # The check itself fails on some values of the wrong type
-                # (i5_read_orientation: [] raises TypeError). Report it; the
+                # (channel1_bases: 42 raises TypeError). Report it; the
                 # start still stops.
                 problems.append(f"{name}: could not be checked: {e}")
                 continue
@@ -245,16 +310,29 @@ def get_instrument_names() -> list[str]:
 def get_instrument_config(name: str) -> Optional[dict]:
     """Get configuration for a specific instrument by name.
 
-    Checks synced instruments first, falls back to YAML.
+    While synced records exist, only they count: an instrument not among
+    them has no settings (None), and the local file is not read for it
+    (spec 2026-10-04 group A2, §5). With no synced records, the local file.
     """
-    # Check synced instruments first
     synced = _get_synced_instruments()
-    if synced and name in synced:
-        inst = synced[name]
+    if synced:
+        inst = synced.get(name)
         # Convert to dict format expected by rest of module
-        return _synced_instrument_to_config(inst)
+        return _synced_instrument_to_config(inst) if inst is not None else None
 
     return _instruments.get(name)
+
+
+def _i5_facts(inst) -> dict:
+    """A synced instrument's two i5 facts, in the shape a local entry gives
+    them (spec 2026-10-04 group A2, §2)."""
+    return {
+        "i5_workflows": [
+            {"name": w.name, "i5_read_orientation": w.i5_read_orientation}
+            for w in inst.i5_workflows
+        ],
+        "runinfo_marks_i5_reversed": inst.runinfo_marks_i5_reversed,
+    }
 
 
 def _synced_instrument_to_config(inst) -> dict:
@@ -264,8 +342,7 @@ def _synced_instrument_to_config(inst) -> dict:
         "chemistry_type": inst.chemistry_type,
         "sbs_chemistry": inst.sbs_chemistry,
         "has_dragen_onboard": inst.has_dragen_onboard,
-        "i5_read_orientation": inst.i5_read_orientation,
-        "samplesheet_v2_i5_orientation": inst.samplesheet_v2_i5_orientation,
+        **_i5_facts(inst),
         "color_balance_enabled": inst.color_balance_enabled,
         "dye_channels": inst.dye_channels,
         "base_colors": inst.base_colors,
@@ -399,17 +476,95 @@ def is_instrument_enabled_by_name(name: str) -> bool:
     return inst is None or inst.enabled
 
 
-def get_i5_read_orientation_by_name(name: str) -> str:
-    """Get i5 (Index 2) read orientation for an instrument by name.
-
-    Returns:
-        "forward" - i5 is read as written in the sample sheet
-        "reverse-complement" - i5 is read as the reverse complement
-    """
+def i5_workflow_names(name: str) -> Optional[list[str]]:
+    """The instrument's i5 workflow names, the standard one first; None when
+    the instrument has no settings (spec 2026-10-04 group A2, §3)."""
     config = get_instrument_config(name)
-    if config:
-        return config.get("i5_read_orientation", "forward")
-    return "forward"
+    if config is None:
+        return None
+    return [workflow["name"] for workflow in config["i5_workflows"]]
+
+
+def standard_i5_workflow(name: str) -> str:
+    """The instrument's standard (first) i5 workflow; "" when it has no settings."""
+    names = i5_workflow_names(name)
+    return names[0] if names else ""
+
+
+class NoI5Direction(ValueError):
+    """A run has no i5 direction: its instrument has no settings, or does not
+    list the run's workflow (spec 2026-10-04 group A2, §2). Never replaced by
+    a guess. ``draft_remedy`` says what to do on a Draft."""
+
+    def __init__(self, message: str, draft_remedy: str):
+        super().__init__(message)
+        self.draft_remedy = draft_remedy
+
+
+@dataclass(frozen=True)
+class I5Direction:
+    """How a run's instrument reads the i5, and so what the sheets write
+    (spec 2026-10-04 group A2, §2)."""
+
+    workflow: str
+    read_orientation: str  # "forward" or "reverse-complement"
+    runinfo_marks_reversed: bool
+
+    @property
+    def reads_reversed(self) -> bool:
+        return self.read_orientation == "reverse-complement"
+
+    @property
+    def index2_column_reversed(self) -> bool:
+        """The v2 Index2 column is written reversed when the i5 is read
+        reversed and RunInfo.xml does not mark it; otherwise forward."""
+        return self.reads_reversed and not self.runinfo_marks_reversed
+
+    @property
+    def index2_mask_reversed(self) -> bool:
+        """The Index 2 part of OverrideCycles, stored in reading order (the
+        index first), is written reversed (I8N2 becomes N2I8) when the i5 is
+        read reversed and RunInfo.xml marks it: BCL Convert reverses it back."""
+        return self.reads_reversed and self.runinfo_marks_reversed
+
+
+def no_settings_reason(name: str) -> str:
+    """Why an instrument has no settings: while synced records exist, only
+    those count (spec 2026-10-04 group A2, §5)."""
+    if has_synced_instruments():
+        return f"{name} is not among the synced instruments"
+    return f"{name} is not in the local instruments file"
+
+
+def i5_direction(instrument: str, workflow: str) -> I5Direction:
+    """The i5 direction of a run on ``instrument`` in ``workflow`` (exact
+    name; "" means the standard one). Raises NoI5Direction."""
+    config = get_instrument_config(instrument)
+    if config is None:
+        raise NoI5Direction(
+            f"{no_settings_reason(instrument)}.", "Pick another instrument in Run Setup."
+        )
+    workflows = config["i5_workflows"]
+    if workflow:
+        chosen = next((w for w in workflows if w["name"] == workflow), None)
+        if chosen is None:
+            names = ", ".join(w["name"] for w in workflows)
+            raise NoI5Direction(
+                f"{workflow} is not an i5 workflow of {instrument} (it has: {names}).",
+                "Pick one in Run Setup.",
+            )
+    else:
+        chosen = workflows[0]
+    return I5Direction(
+        workflow=chosen["name"],
+        read_orientation=chosen["i5_read_orientation"],
+        runinfo_marks_reversed=config["runinfo_marks_i5_reversed"],
+    )
+
+
+def run_i5_direction(run) -> I5Direction:
+    """The i5 direction of ``run``: its instrument and its workflow."""
+    return i5_direction(run.instrument_platform.value, run.i5_workflow)
 
 
 def get_channel_config_by_name(name: str) -> Optional[dict]:
@@ -593,8 +748,6 @@ def _format_custom_instrument(custom: dict) -> dict:
         "has_dragen_onboard": custom.get("has_dragen_onboard", False),
         "is_custom": True,  # Flag to identify custom instruments
         "samplesheet_name": custom.get("samplesheet_name", custom.get("name", "")),
-        "i5_read_orientation": custom.get("i5_read_orientation", "forward"),
-        "samplesheet_v2_i5_orientation": custom.get("samplesheet_v2_i5_orientation", "forward"),
     }
 
 
@@ -649,8 +802,7 @@ def get_all_instruments() -> list[dict]:
                 "is_synced": True,
                 "enabled": inst.enabled,
                 "samplesheet_name": inst.samplesheet_name,
-                "i5_read_orientation": inst.i5_read_orientation,
-                "samplesheet_v2_i5_orientation": inst.samplesheet_v2_i5_orientation,
+                **_i5_facts(inst),
             })
         return result
 
@@ -684,7 +836,7 @@ def get_all_instruments() -> list[dict]:
 # provide backwards compatibility by mapping enum values to config names.
 
 # Import here to avoid circular imports
-from ..models.instrument_definition import checked_kit_cycle_limits
+from ..models.instrument_definition import InstrumentRecordError, checked_kit_cycle_limits
 from ..models.sequencing_run import InstrumentPlatform
 
 
@@ -748,40 +900,6 @@ def is_color_balance_enabled(platform: InstrumentPlatform) -> bool:
 def get_channel_config(platform: InstrumentPlatform) -> Optional[dict]:
     """Get dye channel configuration for an instrument platform (legacy)."""
     return get_channel_config_by_name(_platform_to_name(platform))
-
-
-def get_i5_read_orientation(platform: InstrumentPlatform) -> str:
-    """Get i5 (Index 2) read orientation for an instrument platform (legacy)."""
-    return get_i5_read_orientation_by_name(_platform_to_name(platform))
-
-
-def get_samplesheet_v2_i5_orientation(platform: InstrumentPlatform) -> str:
-    """Get i5 orientation expected by BCL Convert for SampleSheet v2.
-
-    This differs from the physical i5 read orientation for some instruments.
-    For example, NovaSeq X physically reads i5 in reverse-complement, but
-    BCL Convert expects forward i5 in the sample sheet.
-
-    Returns:
-        "forward" or "reverse-complement"
-    """
-    return get_samplesheet_v2_i5_orientation_by_name(_platform_to_name(platform))
-
-
-def get_samplesheet_v2_i5_orientation_by_name(name: str) -> str:
-    """Get i5 orientation expected by BCL Convert for SampleSheet v2 by instrument name.
-
-    Falls back to i5_read_orientation if samplesheet_v2_i5_orientation is not set.
-
-    Returns:
-        "forward" or "reverse-complement"
-    """
-    config = get_instrument_config(name)
-    if config:
-        # Use explicit v2 orientation if set, otherwise fall back to physical orientation
-        return config.get("samplesheet_v2_i5_orientation",
-                          config.get("i5_read_orientation", "forward"))
-    return "forward"
 
 
 def get_samplesheet_versions(platform: InstrumentPlatform) -> list[int]:

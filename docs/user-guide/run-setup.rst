@@ -53,11 +53,23 @@ Instrument, flowcell and reagent kit
   not one of them, it still shows, selected and marked: **(disabled)**
   means an administrator switched it off -- pick another, because
   **Mark Ready** refuses the run until you do; **(not available)** means
-  the last instrument sync left it out (see :doc:`/admin-guide/instruments`).
+  the last instrument sync left it out (see :doc:`/admin-guide/instruments`),
+  and **Mark Ready** refuses the run too until you pick another.
 - **Flowcell** -- the flowcell type for that instrument. Changing it
   refreshes the Reagent Kit choices.
 - **Reagent Kit (cycles)** -- the reagent kit. Changing it resets Read 1,
   Read 2, Index 1 and Index 2 below to that kit's default cycle counts.
+- **i5 workflow** -- shown only for an instrument that reads the i5 in more
+  than one way. As shipped: MiSeq i100 Series (**Index-first**, the
+  instrument's default, or **Read-first**), MiniSeq (**Standard kits** or
+  **Rapid kits**) and NovaSeq 6000 (**v1.5 reagents** or **v1.0
+  reagents**). The standard one is marked **(standard)**; a new run, and a
+  change of instrument, gets it. Pick the one the instrument will actually
+  run: it decides how the i5 is written in the Sample Sheet and how the
+  dark-start and colour-balance checks read it. The run's Setup panel
+  shows the choice. A workflow the instrument no longer lists shows as
+  **(not available)**, and **Mark Ready** refuses the run until you pick
+  another.
 
 Run cycle configuration
 -------------------------

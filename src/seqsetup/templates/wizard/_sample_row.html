@@ -114,6 +114,8 @@
                 <input type="text" name="override_cycles"
                        value="{{ sample.override_cycles or '' }}"
                        placeholder="Auto"
+                       aria-label="Override Cycles"
+                       title="Index 2 in reading order: the index first, then masked cycles (for example I8N2)"
                        class="override-cycles-input"
                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
                        hx-target="#sample-row-{{ sample.id }}"

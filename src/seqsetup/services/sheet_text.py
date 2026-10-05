@@ -61,6 +61,18 @@ def describe(chars: list[str]) -> str:
 # a Settings entry and per sample.
 MISMATCH_COLUMNS = ("BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2")
 
+# BCL Convert settings that change how it reads the i5 or the OverrideCycles
+# SeqSetup writes. A BCLConvert profile's Settings may not set them (spec
+# 2026-10-04 group A2, §2). Compared ignoring case.
+I5_RULE_SETTINGS = (
+    "OverrideCycles", "OverrideReads",
+    "RunInfoIndex2ReverseComplement", "Index2ColumnReverseComplement",
+)
+
+
+def is_i5_rule_setting(name) -> bool:
+    return str(name).lower() in {setting.lower() for setting in I5_RULE_SETTINGS}
+
 
 def is_allowed_mismatch(value, per_sample: bool) -> bool:
     """True for a mismatch value BCL Convert accepts: 0, 1 or 2, as a whole

@@ -27,14 +27,22 @@ I5_RC = "AGGCTATA"  # reverse complement of TATAGCCT
 
 
 def _instrument(orientation: str) -> InstrumentDefinition:
+    """NovaSeq X, which reads the i5 reversed. ``orientation`` is the i5
+    the sheet gets: forward when RunInfo.xml marks the reversed read,
+    reversed when it does not (spec 2026-10-04 group A2, §2)."""
     return InstrumentDefinition(
         name=INSTRUMENT,
         samplesheet_name="NovaSeqXSeries",
         version="1.0.0",
         chemistry_type="2-color",
-        i5_read_orientation=orientation,
-        samplesheet_v2_i5_orientation=orientation,
+        i5_workflows=[{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
+        runinfo_marks_i5_reversed=orientation == "forward",
     )
+
+
+def _marks() -> bool:
+    """The synced instrument's runinfo_marks_i5_reversed, as the app reads it."""
+    return instruments_module.get_instrument_config(INSTRUMENT)["runinfo_marks_i5_reversed"]
 
 
 def _scheduled_sync(ctx, monkeypatch, orientation: str) -> None:
@@ -53,7 +61,7 @@ def _scheduled_sync(ctx, monkeypatch, orientation: str) -> None:
         service, "_fetch_profiles_recursive", lambda *a, **k: []
     )
     monkeypatch.setattr(
-        service, "_fetch_instruments", lambda *a, **k: [_instrument(orientation)]
+        service, "_fetch_instruments", lambda *a, **k: ([_instrument(orientation)], [])
     )
     ProfileSyncScheduler(service, ctx.profile_sync_config_repo)._check_and_sync()
     assert ctx.profile_sync_config_repo.get().last_sync_status == "success"
@@ -99,17 +107,11 @@ class TestScheduledSyncRefreshesInstruments:
 
         _scheduled_sync(ctx, monkeypatch, "forward")
         # Read once so the old value sits in the in-memory cache.
-        assert (
-            instruments_module.get_samplesheet_v2_i5_orientation_by_name(INSTRUMENT)
-            == "forward"
-        )
+        assert _marks() is True
 
         _scheduled_sync(ctx, monkeypatch, "reverse-complement")
 
-        assert (
-            instruments_module.get_samplesheet_v2_i5_orientation_by_name(INSTRUMENT)
-            == "reverse-complement"
-        )
+        assert _marks() is False
 
     def test_run_made_ready_after_scheduled_sync_exports_new_orientation(
         self, fresh_app, logged_in_client, monkeypatch
@@ -139,22 +141,16 @@ class TestScheduledSyncRefreshesInstruments:
     ):
         _app, ctx, _db = fresh_app
         _scheduled_sync(ctx, monkeypatch, "forward")
-        assert (
-            instruments_module.get_samplesheet_v2_i5_orientation_by_name(INSTRUMENT)
-            == "forward"
-        )
+        assert _marks() is True
 
         # A fetch that returns no instruments is refused by the
         # destructive-replace guard; nothing in the database changes.
         service = ctx.get_github_sync_service()
-        monkeypatch.setattr(service, "_fetch_instruments", lambda *a, **k: [])
+        monkeypatch.setattr(service, "_fetch_instruments", lambda *a, **k: ([], []))
         config = ctx.profile_sync_config_repo.get()
         config.last_sync_at = None
         ctx.profile_sync_config_repo.save(config)
         ProfileSyncScheduler(service, ctx.profile_sync_config_repo)._check_and_sync()
 
         assert ctx.profile_sync_config_repo.get().last_sync_status == "error"
-        assert (
-            instruments_module.get_samplesheet_v2_i5_orientation_by_name(INSTRUMENT)
-            == "forward"
-        )
+        assert _marks() is True

@@ -21,7 +21,7 @@
         {% endwith %}
     </div>
 
-    {% with run=run, flowcell_desc=flowcell_desc, cycles=cycles %}
+    {% with run=run, flowcell_desc=flowcell_desc, cycles=cycles, i5_workflows=i5_workflows %}
     {% include "runs/_run_config_panel.html" %}
     {% endwith %}
 

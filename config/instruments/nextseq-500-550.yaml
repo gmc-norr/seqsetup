@@ -1,7 +1,9 @@
 # NextSeq 500/550 - Two-color SBS (Red+Green)
 #
 # Mid-throughput sequencer with classic two-color SBS chemistry.
-# i5 read in forward orientation. BCL Convert expects reverse-complement i5.
+# i5: reads the i5 as its reverse complement; RunInfo.xml does not
+# mark it.
+# See Instruments in the admin guide.
 
 version: "1.0.0"
 
@@ -10,8 +12,10 @@ samplesheet_name: NextSeq500
 chemistry_type: 2-color
 has_dragen_onboard: false
 sbs_chemistry: "Two-color SBS (Red+Green)"
-i5_read_orientation: forward
-samplesheet_v2_i5_orientation: reverse-complement
+i5_workflows:
+  - name: Standard
+    i5_read_orientation: reverse-complement
+runinfo_marks_i5_reversed: false
 
 color_balance_enabled: true
 dye_channels: ["Red", "Green"]

@@ -14,6 +14,8 @@ class RunRepository(BaseRepository[SequencingRun]):
 
     COLLECTION = "runs"
     MODEL_CLASS = SequencingRun
+    # The instrument a new run starts on.
+    NEW_RUN_INSTRUMENT = InstrumentPlatform.NOVASEQ_X
 
     def list_by_status(self, status: str) -> list[SequencingRun]:
         """Get all runs with a given status."""
@@ -83,15 +85,21 @@ class RunRepository(BaseRepository[SequencingRun]):
         )
         return result.deleted_count == 1
 
-    def create_run(self, created_by: str = "") -> SequencingRun:
-        """Create a new run with default settings and save to database."""
+    def create_run(self, created_by: str = "", i5_workflow: str = "") -> SequencingRun:
+        """Create a new run with default settings and save to database.
+
+        ``i5_workflow`` is NEW_RUN_INSTRUMENT's standard i5 workflow, or ""
+        when it has no settings; the caller looks it up, so the run is saved
+        once, with it (spec 2026-10-04 group A2, §3).
+        """
         defaults = get_default_cycles(300)
         run = SequencingRun(
             created_by=created_by,
             updated_by=created_by,
-            instrument_platform=InstrumentPlatform.NOVASEQ_X,
+            instrument_platform=self.NEW_RUN_INSTRUMENT,
             flowcell_type="10B",
             reagent_cycles=300,
+            i5_workflow=i5_workflow,
             run_cycles=RunCycles(
                 read1_cycles=defaults["read1"],
                 read2_cycles=defaults["read2"],

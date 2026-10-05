@@ -61,14 +61,17 @@ give four DRAGEN application names (``DragenGermline``, ``DragenSomatic``,
    FastqCompressionFormat,gzip
    NoLaneSplitting,false
    CreateFastqForIndexReads,0
-   OverrideCycles,Y151;I8N2;N2I8;Y151
 
    [BCLConvert_Data]
    Lane,Sample_ID,Index,Index2,OverrideCycles
    1,Sample_001,ATTACTCG,TATAGCCT,Y151;I8N2;N2I8;Y151
    1,Sample_002,TCCGGAGA,ATAGAGGC,Y151;I10;I10;Y151
 
-This is the shape the shipped ``BCLConvert`` profile happens to produce --
+This is a NovaSeq X Series run: its ``RunInfo.xml`` marks the reversed
+i5 read, so the i5 is written forward and the Index 2 part of
+OverrideCycles for Sample_001's 8-base i5 on a 10-cycle read is written
+``N2I8`` (see :doc:`instruments`). It is the shape the shipped
+``BCLConvert`` profile happens to produce --
 a different profile defines its own settings and columns and can, for
 example, leave ``Lane`` or ``OverrideCycles`` out entirely. When a
 profile's columns do include ``Lane``, a sample assigned to more than one

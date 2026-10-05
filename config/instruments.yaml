@@ -27,28 +27,29 @@
 #     Channel 2 (Green): C + T
 #     Dark base: G. Improved optics; reduced dark-base miscalls.
 #
-# i5 (Index 2) Read Orientation (physical):
+# i5 (Index 2): two facts per instrument (see Instruments in the admin guide)
 #
-#   Forward (as written):
-#     Instruments: MiSeq (classic), HiSeq 2000/2500 (Rapid Run), NextSeq 500/550,
-#                  MiniSeq, NextSeq 1000/2000, MiSeq i100/i100 Plus
-#     i5 is read in the same orientation as the oligo sequence in the sample sheet.
+#   i5_workflows: how the instrument reads the i5 in each way it runs, the
+#     standard one first (a new run, or a run moved to this instrument, gets
+#     it). forward: the i5 is read as the index kit lists it.
+#     reverse-complement: it is read as its reverse complement.
+#   runinfo_marks_i5_reversed: in a run whose i5 read is reversed, does the
+#     instrument's RunInfo.xml mark it IsReverseComplement="Y"? Set false if
+#     the control software does not write the tag, or if the BCL Convert that
+#     reads the sheet does not act on it.
 #
-#   Reverse-complement:
-#     Instruments: HiSeq 4000, HiSeq X, NovaSeq 6000, NovaSeq X/X Plus
-#     Patterned flow cell geometry causes i5 to be read as the reverse complement.
+#   From these SeqSetup writes the Index2 column reversed when the run's
+#   workflow reads the i5 reversed and RunInfo.xml does not mark it, and
+#   forward otherwise. It writes the Index 2 part of OverrideCycles reversed
+#   (I8N2 becomes N2I8) when the workflow reads the i5 reversed and
+#   RunInfo.xml marks it.
 #
-# SampleSheet v2 i5 Orientation (for BCL Convert):
-#
-#   The orientation BCL Convert expects for i5 in the sample sheet does NOT
-#   always match the physical read orientation. Per the Illumina i5 Index
-#   Orientation Table ("Standalone BCL Convert" column):
-#
-#   Forward:
-#     MiSeq, NextSeq 1000/2000, NovaSeq X/X Plus, MiSeq i100, GAIIx, HiSeq 2000/2500
-#
-#   Reverse-complement:
-#     MiniSeq, iSeq 100, NextSeq 500/550, NovaSeq 6000, HiSeq 4000, HiSeq X
+#   Sources (Illumina):
+#   https://knowledge.illumina.com/library-preparation/general/library-preparation-general-reference_material-list/000002099
+#   https://knowledge.illumina.com/instrumentation/miseq-i100-series/instrumentation-miseq-i100-series-reference_material-list/000009499
+#   https://help.dragen.illumina.com/dragen-v4.5/product-guides/dragen-v4.5/bcl-conversion
+#   https://help.connected.illumina.com/run-set-up/overview/index-orientation-guide/i5-index-orientation-table
+#   HiSeq: Indexed Sequencing Overview Guide (document 15057455), paired-end flow cells.
 #
 # Color balance is relevant for 2-color chemistry instruments where
 # poor balance can affect base calling quality.
@@ -75,8 +76,10 @@ instruments:
     chemistry_type: 2-color
     has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
-    i5_read_orientation: reverse-complement  # i5 read as reverse complement
-    samplesheet_v2_i5_orientation: forward  # BCL Convert expects forward
+    i5_workflows:
+      - name: Standard
+        i5_read_orientation: reverse-complement
+    runinfo_marks_i5_reversed: true
     color_balance_enabled: true
     dye_channels: ["Blue", "Green"]
     base_colors:
@@ -124,8 +127,12 @@ instruments:
     chemistry_type: 2-color
     has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
-    i5_read_orientation: forward  # i5 read as written in sample sheet
-    samplesheet_v2_i5_orientation: forward  # BCL Convert expects forward
+    i5_workflows:
+      - name: Index-first
+        i5_read_orientation: forward
+      - name: Read-first
+        i5_read_orientation: reverse-complement
+    runinfo_marks_i5_reversed: true
     color_balance_enabled: true
     dye_channels: ["Blue", "Green"]
     base_colors:
@@ -170,8 +177,10 @@ instruments:
     chemistry_type: 2-color
     has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
-    i5_read_orientation: forward
-    samplesheet_v2_i5_orientation: forward  # BCL Convert expects forward
+    i5_workflows:
+      - name: Standard
+        i5_read_orientation: reverse-complement
+    runinfo_marks_i5_reversed: true
     color_balance_enabled: true
     dye_channels: ["Blue", "Green"]
     base_colors:
@@ -218,8 +227,10 @@ instruments:
     samplesheet_name: NextSeq500
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
-    i5_read_orientation: forward
-    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
+    i5_workflows:
+      - name: Standard
+        i5_read_orientation: reverse-complement
+    runinfo_marks_i5_reversed: false
     color_balance_enabled: true
     dye_channels: ["Red", "Green"]
     base_colors:
@@ -253,8 +264,12 @@ instruments:
     samplesheet_name: MiniSeq
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
-    i5_read_orientation: forward
-    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
+    i5_workflows:
+      - name: Standard kits
+        i5_read_orientation: reverse-complement
+      - name: Rapid kits
+        i5_read_orientation: forward
+    runinfo_marks_i5_reversed: false
     color_balance_enabled: true
     dye_channels: ["Red", "Green"]
     base_colors:
@@ -289,8 +304,12 @@ instruments:
     samplesheet_versions: [1, 2]
     chemistry_type: 2-color
     sbs_chemistry: "Two-color SBS (Red+Green)"
-    i5_read_orientation: reverse-complement
-    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
+    i5_workflows:
+      - name: v1.5 reagents
+        i5_read_orientation: reverse-complement
+      - name: v1.0 reagents
+        i5_read_orientation: forward
+    runinfo_marks_i5_reversed: false
     color_balance_enabled: true
     dye_channels: ["Red", "Green"]
     base_colors:
@@ -338,8 +357,10 @@ instruments:
     samplesheet_name: GAIIx
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
-    i5_read_orientation: forward
-    samplesheet_v2_i5_orientation: forward
+    i5_workflows:
+      - name: Standard
+        i5_read_orientation: forward
+    runinfo_marks_i5_reversed: false
     color_balance_enabled: false
     onboard_applications:
       BCLConvert:
@@ -356,8 +377,10 @@ instruments:
     samplesheet_name: HiSeq2500
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
-    i5_read_orientation: forward
-    samplesheet_v2_i5_orientation: forward
+    i5_workflows:
+      - name: Standard
+        i5_read_orientation: forward
+    runinfo_marks_i5_reversed: false
     color_balance_enabled: false
     onboard_applications:
       BCLConvert:
@@ -379,8 +402,10 @@ instruments:
     samplesheet_name: HiSeq4000
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
-    i5_read_orientation: reverse-complement
-    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
+    i5_workflows:
+      - name: Standard
+        i5_read_orientation: reverse-complement
+    runinfo_marks_i5_reversed: false
     color_balance_enabled: false
     onboard_applications:
       BCLConvert:
@@ -397,8 +422,10 @@ instruments:
     samplesheet_name: HiSeqX
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
-    i5_read_orientation: reverse-complement
-    samplesheet_v2_i5_orientation: reverse-complement  # BCL Convert expects RC
+    i5_workflows:
+      - name: Standard
+        i5_read_orientation: reverse-complement
+    runinfo_marks_i5_reversed: false
     color_balance_enabled: false
     onboard_applications:
       BCLConvert:
@@ -416,8 +443,10 @@ instruments:
     samplesheet_versions: [1, 2]
     chemistry_type: 4-color
     sbs_chemistry: "Four-color SBS"
-    i5_read_orientation: forward
-    samplesheet_v2_i5_orientation: forward
+    i5_workflows:
+      - name: Standard
+        i5_read_orientation: forward
+    runinfo_marks_i5_reversed: false
     color_balance_enabled: false
     onboard_applications:
       BCLConvert:

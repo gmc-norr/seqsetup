@@ -9,6 +9,7 @@ from .sheet_text import (
     describe,
     hidden_characters,
     is_allowed_mismatch,
+    is_i5_rule_setting,
     starts_a_section,
 )
 
@@ -300,6 +301,17 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
 
     errors += _mismatch_problems(settings, data, translate)
     errors += _sample_id_column_problems(data, data_fields, translate)
+
+    # SeqSetup writes the i5 and its OverrideCycles for the run's instrument;
+    # these settings would change how BCL Convert reads them (spec 2026-10-04
+    # group A2, §2). OverrideCycles as a data column stays allowed.
+    if app_name == "BCLConvert" and isinstance(settings, dict):
+        for key in settings:
+            if is_i5_rule_setting(key):
+                errors.append(
+                    f"Field 'Settings' may not set {str(key)!r} in the BCLConvert profile: "
+                    f"SeqSetup writes the i5 and OverrideCycles itself"
+                )
 
     if errors:
         raise ProfileValidationError(errors, source_file)

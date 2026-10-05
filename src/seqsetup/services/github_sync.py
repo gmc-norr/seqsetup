@@ -14,7 +14,7 @@ from ..utils.yaml_safety import safe_load_strict
 from ..data.instruments import clear_synced_instruments_cache
 from ..models.application_profile import ApplicationProfile
 from ..models.index import IndexKit
-from ..models.instrument_definition import InstrumentDefinition
+from ..models.instrument_definition import InstrumentDefinition, InstrumentRecordError
 from ..models.test_profile import TestProfile
 from ..repositories.application_profile_repo import ApplicationProfileRepository
 from ..repositories.index_kit_repo import IndexKitRepository
@@ -28,6 +28,11 @@ from .validation import clear_validation_cache
 
 
 logger = logging.getLogger(__name__)
+
+
+class InstrumentFileRefused(ValueError):
+    """An instrument file that does not give valid instruments; the message
+    says why (spec 2026-10-04 group A2, §5)."""
 
 
 class GitHubSyncError(Exception):
@@ -207,16 +212,20 @@ class GitHubSyncService:
             )
             logger.info(f"Fetched {len(test_profiles)} test profiles")
 
-            # Fetch instruments if enabled and repo available
+            # Fetch instruments if enabled and repo available. Any refused
+            # instrument file means no instrument records are stored (spec
+            # 2026-10-04 group A2, §5).
             instruments = []
+            refused_instruments: list[str] = []
             if config.sync_instruments_enabled and self.instrument_definition_repo:
-                instruments = self._fetch_instruments(
+                instruments, refused_instruments = self._fetch_instruments(
                     owner,
                     repo,
                     config.github_branch,
                     config.instruments_path,
                     strict=True,
                 )
+                refused_instruments += self._duplicate_instruments(instruments)
                 logger.info(f"Fetched {len(instruments)} instrument definitions")
 
             # Fetch index kits if enabled and repo available
@@ -242,7 +251,12 @@ class GitHubSyncService:
                 existing_test_profiles, len(test_profiles), "test profiles"
             )
 
-            if config.sync_instruments_enabled and self.instrument_definition_repo:
+            store_instruments = (
+                config.sync_instruments_enabled
+                and self.instrument_definition_repo is not None
+                and not refused_instruments
+            )
+            if store_instruments:
                 existing_instruments = (
                     self.instrument_definition_repo.collection.count_documents({})
                 )
@@ -265,18 +279,21 @@ class GitHubSyncService:
             self.test_profile_repo.delete_all()
             self.test_profile_repo.bulk_save(test_profiles)
 
-            if config.sync_instruments_enabled and self.instrument_definition_repo:
+            if store_instruments:
                 # Preserve the operator-set ``enabled`` flag across the
                 # delete+replace. Without this, an admin who disables (say)
                 # the HiSeq instrument loses that setting on every scheduled
                 # sync because ``bulk_save`` writes fresh records that default
                 # to ``enabled=True`` and with regenerated UUIDs. Match by
                 # ``samplesheet_name`` (stable across syncs, unique per
-                # instrument) rather than ``id`` (regenerated).
+                # instrument) rather than ``id`` (regenerated). Only the two
+                # fields are read, so a stored record that cannot be loaded
+                # does not stop the sync that replaces it.
                 disabled_keys = {
-                    inst.samplesheet_name
-                    for inst in self.instrument_definition_repo.list_all()
-                    if not inst.enabled and inst.samplesheet_name
+                    samplesheet_name
+                    for samplesheet_name, enabled
+                    in self.instrument_definition_repo.enabled_switches()
+                    if not enabled and samplesheet_name
                 }
                 self.instrument_definition_repo.delete_all()
                 for inst in instruments:
@@ -305,8 +322,26 @@ class GitHubSyncService:
             clear_validation_cache()
 
             count = len(app_profiles) + len(test_profiles)
-            instruments_count = len(instruments)
+            instruments_count = len(instruments) if store_instruments else 0
             index_kits_count = len(index_kits)
+
+            if refused_instruments:
+                synced = [
+                    f"{len(app_profiles)} application profiles",
+                    f"{len(test_profiles)} test profiles",
+                ]
+                if config.sync_index_kits_enabled and self.index_kit_repo:
+                    synced.append(f"{index_kits_count} index kits")
+                message = (
+                    "Instrument files were refused, so no instrument settings were stored "
+                    "and the stored ones are kept: " + "; ".join(refused_instruments)
+                    + f". Synced {', '.join(synced)}."
+                )
+                self.config_repo.update_sync_status(
+                    "error", message, count, 0, index_kits_count
+                )
+                logger.error(f"Sync refused instrument files: {message}")
+                return False, message, count + index_kits_count
 
             # Update sync status
             parts = [
@@ -503,7 +538,7 @@ class GitHubSyncService:
         branch: str,
         path: str,
         strict: bool = False,
-    ) -> list[InstrumentDefinition]:
+    ) -> Tuple[list[InstrumentDefinition], list[str]]:
         """Fetch instrument definitions from GitHub.
 
         Supports two formats:
@@ -518,17 +553,21 @@ class GitHubSyncService:
             path: Directory path within repo
 
         Returns:
-            List of InstrumentDefinition objects
+            (instruments, refused): the InstrumentDefinition objects, and for
+            each instrument file or folder that did not give valid
+            instruments, for any reason, "<path>: <problem>" (spec
+            2026-10-04 group A2, §5). A top-level folder that cannot be
+            listed raises when ``strict``.
         """
         instruments = []
+        refused = []
 
         try:
             contents = self._fetch_directory_contents(owner, repo, branch, path)
         except GitHubSyncError as e:
             if strict:
                 raise
-            logger.warning(f"Could not fetch instruments from {path}: {e}")
-            return instruments
+            return instruments, [f"{path.strip('/')}/: could not be listed: {e}"]
 
         for item in contents:
             item_type = item.get("type")
@@ -537,30 +576,52 @@ class GitHubSyncService:
 
             if item_type == "dir":
                 # Recurse into subdirectory
-                sub_instruments = self._fetch_instruments(owner, repo, branch, item_path)
-                # Subdirectories are best-effort; top-level fetch is strict.
+                sub_instruments, sub_refused = self._fetch_instruments(
+                    owner, repo, branch, item_path
+                )
                 instruments.extend(sub_instruments)
+                refused.extend(sub_refused)
 
             elif item_type == "file" and item_name.endswith((".yaml", ".yml")):
                 download_url = item.get("download_url")
-                if download_url:
+                try:
+                    if not download_url:
+                        raise InstrumentFileRefused("has no download link")
+                    content = self._fetch_file_content(download_url)
                     try:
-                        content = self._fetch_file_content(download_url)
                         yaml_data = safe_load_strict(content)
-                        if yaml_data:
-                            parsed = self._parse_instruments_yaml(yaml_data, item_name)
-                            instruments.extend(parsed)
-                            logger.debug(f"Parsed {len(parsed)} instruments from {item_path}")
                     except yaml.YAMLError as e:
-                        logger.warning(f"Failed to parse instrument YAML {item_path}: {e}")
-                    except Exception as e:
-                        logger.warning(f"Failed to process instruments {item_path}: {e}")
+                        raise InstrumentFileRefused(f"cannot be read as YAML: {e}") from e
+                    parsed = self._parse_instruments_yaml(yaml_data, item_name)
+                except Exception as e:
+                    refused.append(f"{item_path}: {e}")
+                    logger.error(f"Refused instrument file {item_path}: {e}")
+                else:
+                    instruments.extend(parsed)
+                    logger.debug(f"Parsed {len(parsed)} instruments from {item_path}")
 
-        return instruments
+        return instruments, refused
+
+    @staticmethod
+    def _duplicate_instruments(instruments: list[InstrumentDefinition]) -> list[str]:
+        """Two instrument files may not give the same name or samplesheet
+        name (spec 2026-10-04 group A2, §1)."""
+        problems = []
+        for field_name in ("name", "samplesheet_name"):
+            seen: dict[str, str] = {}
+            for inst in instruments:
+                value = getattr(inst, field_name)
+                if value in seen:
+                    problems.append(
+                        f"{seen[value]} and {inst.source_file} both give {field_name} {value!r}"
+                    )
+                else:
+                    seen[value] = inst.source_file
+        return problems
 
     def _parse_instruments_yaml(
         self,
-        yaml_data: dict,
+        yaml_data,
         filename: str,
     ) -> list[InstrumentDefinition]:
         """Parse YAML data into InstrumentDefinition objects.
@@ -569,31 +630,43 @@ class GitHubSyncService:
         1. Multi-instrument file: {'instruments': {'Name1': {...}, 'Name2': {...}}}
         2. Single-instrument file: {'name': 'Name1', 'samplesheet_name': ...}
 
-        Validates each instrument and logs any errors or warnings.
-        Invalid instruments (with errors) are skipped.
+        Raises InstrumentFileRefused, listing every problem, when any
+        instrument in the file is not valid or the file describes none: the
+        file is refused as a whole (spec 2026-10-04 group A2, §5).
         """
-        instruments = []
+        if isinstance(yaml_data, dict) and isinstance(yaml_data.get("instruments"), dict):
+            # A multi-instrument file (like instruments.yaml)
+            entries = [
+                {**config, "name": name} if isinstance(config, dict) else config
+                for name, config in yaml_data["instruments"].items()
+            ]
+        elif isinstance(yaml_data, dict) and (
+            "samplesheet_name" in yaml_data or "chemistry_type" in yaml_data or "name" in yaml_data
+        ):
+            entries = [yaml_data]
+        else:
+            entries = []
+        if not entries:
+            raise InstrumentFileRefused("does not describe an instrument")
 
-        # Check if this is a multi-instrument file (like instruments.yaml)
-        if "instruments" in yaml_data and isinstance(yaml_data["instruments"], dict):
-            for name, config in yaml_data["instruments"].items():
-                config["name"] = name  # Add name from key
-                validation = self._validate_and_parse_instrument(config, filename)
-                if validation:
-                    instruments.append(validation)
-        # Check if this is a single-instrument file
-        elif "samplesheet_name" in yaml_data or "chemistry_type" in yaml_data or "name" in yaml_data:
-            validation = self._validate_and_parse_instrument(yaml_data, filename)
-            if validation:
-                instruments.append(validation)
-
+        instruments, problems = [], []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                problems.append("an instrument entry must be a mapping")
+                continue
+            try:
+                instruments.append(self._validate_and_parse_instrument(entry, filename))
+            except InstrumentFileRefused as e:
+                problems.append(str(e))
+        if problems:
+            raise InstrumentFileRefused("; ".join(problems))
         return instruments
 
     def _validate_and_parse_instrument(
         self,
         yaml_data: dict,
         filename: str,
-    ) -> Optional[InstrumentDefinition]:
+    ) -> InstrumentDefinition:
         """Validate and parse a single instrument definition.
 
         Args:
@@ -601,7 +674,11 @@ class GitHubSyncService:
             filename: Source filename for error reporting
 
         Returns:
-            InstrumentDefinition if valid, None if validation failed with errors
+            The InstrumentDefinition.
+
+        Raises:
+            InstrumentFileRefused: naming the instrument and every problem the
+                validator or the model found.
         """
         # Validate the instrument data
         result = validate_instrument_yaml(yaml_data, filename)
@@ -611,15 +688,16 @@ class GitHubSyncService:
         for warning in result.warnings:
             logger.warning(f"Instrument '{instrument_name}' ({filename}): {warning}")
 
-        # Log errors and skip invalid instruments
         if not result.is_valid:
-            for error in result.errors:
-                logger.error(f"Instrument '{instrument_name}' ({filename}): {error}")
-            logger.error(f"Skipping invalid instrument '{instrument_name}' from {filename}")
-            return None
+            raise InstrumentFileRefused(
+                f"{instrument_name}: " + "; ".join(str(error) for error in result.errors)
+            )
 
         # Parse the valid instrument
-        instrument = InstrumentDefinition.from_yaml(yaml_data, filename)
+        try:
+            instrument = InstrumentDefinition.from_yaml(yaml_data, filename)
+        except InstrumentRecordError as e:
+            raise InstrumentFileRefused(str(e)) from e
 
         # If name not in file, derive from filename
         if not instrument.name:

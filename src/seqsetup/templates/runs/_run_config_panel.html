@@ -7,9 +7,13 @@
      run:           SequencingRun
      flowcell_desc: str — pre-resolved flowcell description
      cycles:        RunCycles
+     i5_workflows:  list[str] | None — the instrument's i5 workflow names,
+                    standard first; None when it has no settings
 #}
 {% set created_at_str = run.created_at | localtime if run.created_at else "—" %}
 {% set updated_at_str = run.updated_at | localtime if run.updated_at else "—" %}
+{% set workflow_names = i5_workflows or [] %}
+{% set workflow = run.i5_workflow or (workflow_names[0] if workflow_names else "") %}
 <fieldset id="run-config-panel" class="config-panel run-setup-summary">
     <legend>Setup</legend>
     {% if run.status.value == 'draft' %}
@@ -19,6 +23,9 @@
         <div><dt>Platform</dt><dd>{{ run.instrument_platform.value }}</dd></div>
         <div><dt>Flowcell</dt><dd>{{ run.flowcell_type }} - {{ flowcell_desc }}</dd></div>
         <div><dt>Reagent kit</dt><dd>{{ run.reagent_cycles }} cycles</dd></div>
+        {% if workflow_names|length > 1 or (workflow_names and workflow not in workflow_names) %}
+        <div><dt>i5 workflow</dt><dd>{{ workflow }}{% if workflow not in workflow_names %} (not available){% endif %}</dd></div>
+        {% endif %}
         <div><dt>Cycles</dt><dd>Read 1: {{ cycles.read1_cycles }} · Index 1: {{ cycles.index1_cycles }} · Index 2: {{ cycles.index2_cycles }} · Read 2: {{ cycles.read2_cycles }}</dd></div>
         {% if run.run_description %}
         <div class="run-setup-wide"><dt>Description</dt><dd>{{ run.run_description }}</dd></div>

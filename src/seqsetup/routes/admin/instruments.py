@@ -20,7 +20,7 @@ from pydantic.functional_validators import BeforeValidator
 from starlette.responses import HTMLResponse, Response
 
 from ...context import AppContext
-from ...data.instruments import clear_synced_instruments_cache
+from ...data.instruments import clear_synced_instruments_cache, reading_synced_records
 from ...forms.validators import strip_and_truncate
 from ...services.audit_log import audit
 from ...services.validation import clear_validation_cache
@@ -55,7 +55,7 @@ def admin_instruments(
 ) -> Response:
     """GET /admin/instruments — full page."""
     synced = (
-        ctx.instrument_definition_repo.list_all()
+        _read_all(ctx.instrument_definition_repo)
         if ctx.instrument_definition_repo else []
     )
     return render(
@@ -87,7 +87,7 @@ def toggle_synced_instrument(
         target=form.instrument_id,
         enabled=form.enabled,
     )
-    synced = ctx.instrument_definition_repo.list_all()
+    synced = _read_all(ctx.instrument_definition_repo)
     return render(
         request,
         "admin/instruments.html",
@@ -118,7 +118,7 @@ def _bulk_set(request: Request, ctx: AppContext, *, enabled: bool, message: str)
     if ctx.instrument_definition_repo is None:
         return Response("Instrument repo not configured", status_code=404)
     repo = ctx.instrument_definition_repo
-    for inst in repo.list_all():
+    for inst in _read_all(repo):
         repo.set_enabled(inst.id, enabled)
     clear_synced_instruments_cache()  # see toggle_synced_instrument
     # See toggle_synced_instrument — invalidate stale validation results.
@@ -132,9 +132,15 @@ def _bulk_set(request: Request, ctx: AppContext, *, enabled: bool, message: str)
     return render(
         request,
         "admin/instruments.html",
-        _page_ctx(repo.list_all(), message=message),
+        _page_ctx(_read_all(repo), message=message),
         block_name="synced_instruments_section",
     )
+
+
+def _read_all(repo) -> list:
+    """The synced records; a database error is the fixed 503 sentence."""
+    with reading_synced_records():
+        return repo.list_all()
 
 
 def _page_ctx(synced: list, message: str = "") -> dict:

@@ -37,6 +37,14 @@ from ..models.validation import (
 )
 
 
+def _i5_value(value: str, result: ValidationResult) -> str:
+    """The i5 workflow or read direction validation used, or "none (<why>)"
+    (spec 2026-10-04 group A2, §3)."""
+    if value:
+        return value
+    return f"none ({result.no_i5_direction})" if result.no_i5_direction else "none"
+
+
 class ValidationReportJSON:
     """Export validation results to structured JSON."""
 
@@ -53,6 +61,8 @@ class ValidationReportJSON:
             "run_name": run.run_name,
             "instrument": run.instrument_platform.value,
             "flowcell": run.flowcell_type,
+            "i5_workflow": _i5_value(result.i5_workflow, result),
+            "i5_read_orientation": _i5_value(result.i5_read_orientation, result),
             "timestamp": to_local(utcnow()).isoformat(),
             "summary": {
                 "error_count": result.error_count,
@@ -189,14 +199,7 @@ class ValidationReportPDF:
         elements.append(Spacer(1, 4 * mm))
 
         # Run info table
-        run_info = [
-            ["Run Name", run.run_name or "—"],
-            ["Run ID", run.id],
-            ["Instrument", run.instrument_platform.value],
-            ["Flowcell", run.flowcell_type or "—"],
-            ["Report Generated", local_time(utcnow(), seconds=True)],
-        ]
-        info_table = Table(run_info, colWidths=[5 * cm, 12 * cm])
+        info_table = Table(cls._run_info(run, result), colWidths=[5 * cm, 12 * cm])
         info_table.setStyle(TableStyle([
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
@@ -302,6 +305,19 @@ class ValidationReportPDF:
 
         doc.build(elements)
         return buf.getvalue()
+
+    @classmethod
+    def _run_info(cls, run: SequencingRun, result: ValidationResult) -> list[list[str]]:
+        """The run lines at the top of the report."""
+        return [
+            ["Run Name", run.run_name or "—"],
+            ["Run ID", run.id],
+            ["Instrument", run.instrument_platform.value],
+            ["Flowcell", run.flowcell_type or "—"],
+            ["i5 workflow", _i5_value(result.i5_workflow, result)],
+            ["i5 read direction", _i5_value(result.i5_read_orientation, result)],
+            ["Report Generated", local_time(utcnow(), seconds=True)],
+        ]
 
     @classmethod
     def _collect_error_messages(cls, result: ValidationResult) -> list[str]:

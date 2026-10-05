@@ -15,13 +15,14 @@ from collections import OrderedDict, defaultdict
 from threading import Lock
 
 from ..data.instruments import (
+    NoI5Direction,
     get_channel_config,
     get_chemistry_type,
-    get_i5_read_orientation,
     get_lanes_for_flowcell,
     get_reagent_kit_max_cycles,
     is_color_balance_enabled,
     is_instrument_enabled_by_name,
+    run_i5_direction,
 )
 from ..models.sequencing_run import RunStatus, SequencingRun
 from ..models.validation import (
@@ -31,7 +32,7 @@ from ..models.validation import (
 )
 from .application_profile_validator import ApplicationProfileValidator
 from .color_analysis_validator import ColorAnalysisValidator
-from .cycle_calculator import CycleCalculator
+from .cycle_calculator import INDEX2_ORDER_RULE, CycleCalculator
 from .index_collision_validator import IndexCollisionValidator
 from .sheet_text import describe, hidden_characters
 from .validation_utils import effective_index_sequence, hamming_distance
@@ -179,19 +180,26 @@ class ValidationService:
         # Get channel configuration for this instrument
         channel_config = get_channel_config(run.instrument_platform)
 
-        # Get i5 read orientation for this instrument
-        i5_orientation = get_i5_read_orientation(run.instrument_platform)
+        # How the run's workflow reads the i5 (spec 2026-10-04 group A2, §2).
+        # Without a direction the checks that need one do not run;
+        # validate_configuration reports why.
+        try:
+            direction = run_i5_direction(run)
+            no_direction = ""
+        except NoI5Direction as e:
+            direction, no_direction = None, str(e)
 
         # Color balance and dark cycle analysis (delegated)
-        if color_balance_enabled and run.samples:
+        if color_balance_enabled and run.samples and direction is not None:
             color_balance = ColorAnalysisValidator.calculate_color_balance(
-                run, channel_config, i5_orientation, instrument_config,
+                run, channel_config, i5_orientation=direction.read_orientation,
+                instrument_config=instrument_config,
             )
             dark_cycle_errors = ColorAnalysisValidator.validate_dark_cycles(
-                run, channel_config, i5_orientation,
+                run, channel_config, i5_orientation=direction.read_orientation,
             )
             dark_cycle_samples = ColorAnalysisValidator.build_dark_cycle_info(
-                run, channel_config, i5_orientation,
+                run, channel_config, i5_orientation=direction.read_orientation,
             )
         else:
             color_balance = {}
@@ -229,6 +237,9 @@ class ValidationService:
             chemistry_type=chemistry.value if chemistry else "",
             color_balance_enabled=color_balance_enabled,
             channel_config=channel_config,
+            i5_workflow=direction.workflow if direction else "",
+            i5_read_orientation=direction.read_orientation if direction else "",
+            no_i5_direction=no_direction,
         )
 
     @classmethod
@@ -311,6 +322,7 @@ class ValidationService:
         # A run setting, so checked before the sample checks below.
         errors.extend(cls._validate_cycles_fit_kit(run))
         errors.extend(cls._validate_instrument_enabled(run))
+        errors.extend(cls._validate_i5_direction(run))
 
         # Prerequisite: at least one sample
         if not run.samples:
@@ -350,6 +362,7 @@ class ValidationService:
         errors.extend(cls._validate_mixed_indexing(run, all_lanes))
         errors.extend(cls._validate_run_cycles_vs_index_length(run))
         errors.extend(cls._validate_override_cycles_match_run(run))
+        errors.extend(cls._validate_shortened_i5(run))
         errors.extend(cls._validate_duplicate_index_pairs(run, all_lanes))
         errors.extend(cls._validate_mismatch_threshold(run, all_lanes))
 
@@ -399,6 +412,24 @@ class ValidationService:
         )]
 
     @classmethod
+    def _validate_i5_direction(cls, run: SequencingRun) -> list[ConfigurationError]:
+        """The run needs an i5 direction: its instrument has settings and
+        lists the run's workflow (spec 2026-10-04 group A2, §3). Reported on
+        every status; on a Draft the message says what to do."""
+        try:
+            run_i5_direction(run)
+        except NoI5Direction as e:
+            message = str(e)
+            if run.status == RunStatus.DRAFT:
+                message += f" {e.draft_remedy}"
+            return [ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="no_i5_direction",
+                message=message,
+            )]
+        return []
+
+    @classmethod
     def _validate_override_cycles_match_run(
         cls, run: SequencingRun
     ) -> list[ConfigurationError]:
@@ -417,6 +448,9 @@ class ValidationService:
         # Malformed OverrideCycles, or a read override pattern that is malformed
         # (applying it silently drops what it cannot parse: 'U8YY*' -> 'U8Y143').
         invalid: list[str] = []
+        # An Index 2 part that masks cycles before the index (spec 2026-10-04
+        # group A2, §2).
+        index2_order: list[str] = []
         for sample in run.samples:
             # Only a pattern that shapes the sheet counts: an indexed sample
             # (unindexed ones get no OverrideCycles) and a read the run performs.
@@ -443,6 +477,8 @@ class ValidationService:
                 invalid.append(sample.sample_id or sample.id)
             elif problem == "mismatch":
                 bad.append(sample.sample_id or sample.id)
+            elif problem == "index2_order":
+                index2_order.append(sample.sample_id or sample.id)
 
         errors: list[ConfigurationError] = []
         if invalid:
@@ -462,6 +498,19 @@ class ValidationService:
                 ),
                 sample_names=invalid,
             ))
+        if index2_order:
+            preview = ", ".join(index2_order[:5])
+            more = f", and {len(index2_order) - 5} more" if len(index2_order) > 5 else ""
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="override_cycles_index2_order",
+                message=(
+                    f"{len(index2_order)} sample(s) have an OverrideCycles whose Index 2 "
+                    f"part masks cycles before the index: {preview}{more}. "
+                    f"{INDEX2_ORDER_RULE}"
+                ),
+                sample_names=index2_order,
+            ))
         if not bad:
             return errors
         preview = ", ".join(bad[:5])
@@ -479,6 +528,52 @@ class ValidationService:
                 f"clear the sample's OverrideCycles field."
             ),
             sample_names=bad,
+        )]
+
+    @classmethod
+    def _validate_shortened_i5(cls, run: SequencingRun) -> list[ConfigurationError]:
+        """An i5 used shorter than it is stored, inside a longer Index 2 read,
+        where the run's workflow reads the i5 reversed. The sheet writes the
+        whole i5, and which of its bases BCL Convert then compares is not
+        settled, so it is refused (spec 2026-10-04 group A2, §2)."""
+        rc = run.run_cycles
+        if not rc or not rc.index2_cycles:
+            return []
+        try:
+            direction = run_i5_direction(run)
+        except NoI5Direction:
+            return []  # _validate_i5_direction reports it
+        if not direction.reads_reversed:
+            return []
+        index2 = [name for name, _, _ in CycleCalculator.read_structure(rc)].index("Index2")
+        shortened: list[str] = []
+        for sample in run.samples:
+            i5 = sample.index2_sequence
+            if not i5:
+                continue
+            oc = sample.override_cycles or CycleCalculator.calculate_override_cycles(
+                run_cycles=rc, sample=sample)
+            if not oc or CycleCalculator.override_cycles_problem(oc, rc):
+                continue  # _validate_override_cycles_match_run reports it
+            part = re.split(r"[;,]", oc)[index2].upper()
+            index_cycles = sum(int(n) for n in re.findall(r"I(\d+)", part))
+            if index_cycles < len(i5) and index_cycles < rc.index2_cycles:
+                shortened.append(sample.sample_id or sample.id)
+        if not shortened:
+            return []
+        preview = ", ".join(shortened[:5])
+        more = f", and {len(shortened) - 5} more" if len(shortened) > 5 else ""
+        return [ConfigurationError(
+            severity=ValidationSeverity.ERROR,
+            category="i5_shortened_on_reversed_read",
+            message=(
+                f"{len(shortened)} sample(s) use fewer i5 cycles than their i5 has, inside a "
+                f"longer Index 2 read: {preview}{more}. {run.instrument_platform.value} "
+                f"({direction.workflow}) reads the i5 reversed, so which i5 bases BCL Convert "
+                f"compares is not settled. Use all of the i5's cycles, or make the Index 2 "
+                f"read as long as the cycles used."
+            ),
+            sample_names=shortened,
         )]
 
     @classmethod

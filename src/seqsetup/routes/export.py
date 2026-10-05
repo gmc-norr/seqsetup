@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, Request
 from starlette.responses import Response
 
 from ..context import AppContext
+from ..data.instruments import SyncedInstrumentsUnusable
+from ..models.instrument_definition import InstrumentRecordError
 from ..models.sequencing_run import SequencingRun
 from ..services.audit_log import audit
 from ..services.json_exporter import JSONExporter
@@ -78,6 +80,10 @@ def export_samplesheet_v2(
             media_type="text/csv",
             headers=_attachment_headers(filename),
         )
+    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+        # Shown with what to do, not as a failed export (spec 2026-10-04
+        # group A2, §5).
+        raise
     except Exception:
         logger.exception("Failed to generate SampleSheet v2")
         return Response(
@@ -110,6 +116,10 @@ def export_samplesheet_v1(
             media_type="text/csv",
             headers=_attachment_headers(filename),
         )
+    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+        # Shown with what to do, not as a failed export (spec 2026-10-04
+        # group A2, §5).
+        raise
     except Exception:
         logger.exception("Failed to generate SampleSheet v1")
         return Response(
@@ -168,6 +178,10 @@ def export_validation_json(
             media_type="application/json",
             headers=_attachment_headers(filename),
         )
+    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+        # Shown with what to do, not as a failed export (spec 2026-10-04
+        # group A2, §5).
+        raise
     except Exception:
         logger.exception("Failed to generate validation report")
         return Response(
@@ -203,6 +217,10 @@ def export_validation_pdf(
             media_type="application/pdf",
             headers=_attachment_headers(filename),
         )
+    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+        # Shown with what to do, not as a failed export (spec 2026-10-04
+        # group A2, §5).
+        raise
     except Exception:
         logger.exception("Failed to generate validation PDF")
         return Response(

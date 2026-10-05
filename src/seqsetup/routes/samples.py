@@ -19,7 +19,7 @@ from ..models.sample import Sample
 from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import RunCycles, SequencingRun
 from ..services.audit_log import audit
-from ..services.cycle_calculator import CycleCalculator
+from ..services.cycle_calculator import INDEX2_ORDER_RULE, CycleCalculator
 from ..services.index_fill import build_fill_plan
 from ..services.paste_preview import build_paste_preview, repeated_sample_ids
 from ..services.sample_api import name_list
@@ -128,10 +128,15 @@ def _render_sample_row(
 
 
 def _override_cycles_refusal(
-    value: str, run_cycles: RunCycles, calculated_for: Optional[str] = None, more: int = 0
+    value: str, run_cycles: RunCycles, calculated_for: Optional[str] = None, more: int = 0,
+    problem: Optional[str] = None,
 ) -> str:
     """The 400 message for an Override Cycles value that does not fit the
-    run (spec 2026-09-27 run checks 1b, F11). Escaped by the error banner."""
+    run (spec 2026-09-27 run checks 1b, F11), or whose Index 2 part masks
+    cycles before the index (spec 2026-10-04 group A2, §2). Escaped by the
+    error banner."""
+    if problem == "index2_order":
+        return f"{INDEX2_ORDER_RULE} Nothing was saved."
     cycles = (
         f"Read1 {run_cycles.read1_cycles} / Index1 {run_cycles.index1_cycles} / "
         f"Index2 {run_cycles.index2_cycles} / Read2 {run_cycles.read2_cycles}"
@@ -1168,11 +1173,13 @@ async def set_override_cycles_bulk(
                     failing.append((sample.sample_id or sample.id, value))
             else:
                 finals[sample.id] = None
-        if override_cycles and run.run_cycles and finals and CycleCalculator.override_cycles_problem(
-            override_cycles, run.run_cycles
-        ):
+        problem = (
+            CycleCalculator.override_cycles_problem(override_cycles, run.run_cycles)
+            if override_cycles and run.run_cycles and finals else None
+        )
+        if problem:
             raise HTTPException(status_code=400, detail=_override_cycles_refusal(
-                override_cycles, run.run_cycles))
+                override_cycles, run.run_cycles, problem=problem))
         if failing:
             name, value = failing[0]
             raise HTTPException(status_code=400, detail=_override_cycles_refusal(
@@ -1520,12 +1527,15 @@ async def update_sample_settings(
             elif run.run_cycles and sample.has_index:
                 final_override = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
                 calculated = True
-            if final_override and run.run_cycles and CycleCalculator.override_cycles_problem(
-                final_override, run.run_cycles
-            ):
+            problem = (
+                CycleCalculator.override_cycles_problem(final_override, run.run_cycles)
+                if final_override and run.run_cycles else None
+            )
+            if problem:
                 raise HTTPException(status_code=400, detail=_override_cycles_refusal(
                     final_override, run.run_cycles,
                     calculated_for=(sample.sample_id or sample.id) if calculated else None,
+                    problem=problem,
                 ))
         with saving_run(run, ctx, request):
             if has_override:
