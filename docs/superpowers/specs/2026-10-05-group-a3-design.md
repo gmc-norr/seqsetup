@@ -140,6 +140,13 @@ From the second review of this spec (2026-10-06; each case re-run on `9be63ce`):
     "has its own number" cannot tell a set number from the default; the checks use the
     sheet's number either way.
 
+From the third review of this spec (2026-10-06; cases 15 and 16 re-run on `9be63ce`):
+
+14. **A shortened index stays in the v1 sheet**, on Illumina's stated reader contract (§3):
+    bcl2fastq uses the shortened sequence; BCL Convert, given a v1 sheet, refuses it.
+15. **`SoftwareVersion` is spelled exactly** in every profile's Settings (§1 problem 7).
+16. **`index_exceeds_cycles` uses a typed OverrideCycles that fits the run** (§4).
+
 ## 1. The sheet plan: one resolver for the writer and the checks
 
 A new module, `services/sheet_plan.py`, works out the application sections of a run's v2
@@ -187,13 +194,16 @@ whichever way BCL Convert reads names.
    profile's Settings or from the run's settings the writer adds (`NoLaneSplitting`,
    `CreateFastqForIndexReads`, `AdapterBehavior`) — and a column of `[BCLConvert_Data]`
    (ignoring case).
-7. In a BCLConvert profile, a column or Settings name that equals, ignoring case, a name
-   SeqSetup fills or reads itself but is spelled otherwise. The columns: `Sample_ID`, `Lane`,
-   `Index`, `Index2`, `OverrideCycles`, `BarcodeMismatchesIndex1`,
-   `BarcodeMismatchesIndex2`. The Settings: `BarcodeMismatchesIndex1`,
-   `BarcodeMismatchesIndex2`, `NoLaneSplitting`, `CreateFastqForIndexReads`,
-   `AdapterBehavior`. (Today the writer leaves an `index` column's cells empty and does not
-   see a `barcodeMismatchesIndex1` setting.)
+7. A column or Settings name that equals, ignoring case, a name SeqSetup fills or reads
+   itself but is spelled otherwise. In any profile's Settings: `SoftwareVersion` (the
+   instrument check reads it, `services/application_profile_validator.py:144`). In a
+   BCLConvert profile, the columns `Sample_ID`, `Lane`, `Index`, `Index2`, `OverrideCycles`,
+   `BarcodeMismatchesIndex1`, `BarcodeMismatchesIndex2`, and the Settings
+   `BarcodeMismatchesIndex1`, `BarcodeMismatchesIndex2`, `NoLaneSplitting`,
+   `CreateFastqForIndexReads`, `AdapterBehavior`. (Today the writer leaves an `index`
+   column's cells empty and does not see a `barcodeMismatchesIndex1` setting, and a
+   `softwareversion: "999.0"` setting passes the sync and the checks with 0 errors where
+   `SoftwareVersion: "999.0"` gives `version_not_available` — re-run on `9be63ce`.)
 8. A sample whose BCLConvert profile has no column for a value the sample needs, or whose
    cell would be empty:
    - `Index` when the sample has an i7; `Index2` when it has an i5;
@@ -300,6 +310,18 @@ a run's v1 sheet cannot be made; the reasons are:
 - a sample with no lanes picked while other samples have lanes: its v1 Lane cell would be
   empty.
 
+An index shorter than its read, with the rest masked after it (`I8N2`, the value computed
+from the index's length), stays in the v1 sheet, written at its own length as today. The
+readers' contract is Illumina's comparison of bcl2fastq and BCL Convert
+(<https://knowledge.illumina.com/software/general/software-general-reference_material-list/000003710>):
+bcl2fastq, which reads v1 sheets only ("V1 format only."), uses a subset of index cycles
+when the sheet holds a shortened sequence ("Use subset of index cycles for demultiplexing by
+providing shortened sequence in index or index2 column within a lane."); BCL Convert, which
+reads both formats, needs that "and providing desired length in OverrideCycles setting". A
+v1 sheet has no OverrideCycles, so BCL Convert given a v1 sheet with a shortened index
+refuses it rather than demultiplexing wrongly. The docs say so: the v1 sheet is for
+bcl2fastq and the MiSeq; give BCL Convert the v2 sheet.
+
 When there is a reason:
 
 - **The validation page** shows a WARNING, `no_v1_sheet`, on instruments that have a v1
@@ -357,6 +379,15 @@ index cycles. For a sample without a typed value this is the number they use tod
 typed `I10` over kit index cycles 6 it is 10, so the false `duplicate_index_pair` above goes
 away. With the first rule, every sample reads its index from the first cycle of the read, so
 indexes of the same length read the same cycles in a lane.
+
+**`index_exceeds_cycles` respects a typed OverrideCycles.** It compares the run's index read
+with the kit's index cycles (`services/validation.py:905`, `:922`), even when the sample has
+a typed OverrideCycles that fits the run: an 8-base i7 and i5 with kit index cycles 12 on
+10-cycle reads, typed `Y151;I8N2;I8N2;Y151`, is refused today as "index length (12bp)
+exceeds run index1 cycles (10)" for both indexes (re-run on `9be63ce`), although the written
+value reads exactly 8 bases and fits the run. When the sample has a typed OverrideCycles that
+`override_cycles_problem` accepts, the check uses that value's `I` cycles for each index;
+otherwise the kit's index cycles, else the index's length, as today.
 
 Reported once: the length rule skips a sample that `_validate_override_cycles_match_run`
 reports (its OverrideCycles does not fit the run, or breaks the first rule) and a sample
@@ -473,7 +504,9 @@ categories labels in the style of A2's `override_cycles_index2_order` label.
   refused at sync and at Mark Ready; a profile without mismatch columns gives every sample
   the same number (the warning).
 - `docs/user-guide/export.rst`: one section per application; when there is no v1 sheet and
-  where the reason shows; the mismatch numbers the check uses.
+  where the reason shows; the v1 sheet is for bcl2fastq and the MiSeq, and BCL Convert gets
+  the v2 sheet (a shortened index needs OverrideCycles, which only v2 has); the mismatch
+  numbers the check uses.
 - `docs/user-guide/samples.rst`: what Clear on the mismatch numbers resets to; the warning
   when the profile cannot carry a sample's number; lanes must be picked when the sheet has a
   Lane column.
@@ -494,8 +527,9 @@ categories labels in the style of A2's `override_cycles_index2_order` label.
   problem 3); one profile listed twice in a test refused; merged rows each filled from their
   own profile; the shipped germline and somatic enrichment profiles share one
   `[DragenEnrichment_Data]`; problem 2 not reported beside `profile_not_found`.
-- **Case**: `index`/`index2` columns, a `barcodemismatchesindex1` column and a
-  `barcodeMismatchesIndex1` setting refused at sync and at Mark Ready (`name_spelled_otherwise`);
+- **Case**: `index`/`index2` columns, a `barcodemismatchesindex1` column, a
+  `barcodeMismatchesIndex1` setting, and `softwareversion` in a BCLConvert and in a DRAGEN
+  profile's Settings refused at sync and at Mark Ready (`name_spelled_otherwise`);
   `Index` beside `index` refused as a repeated column; a Settings key and a column that differ
   only in case refused as a setting in two places.
 - **Lanes**: with a Lane column, a sample with no lanes picked refused (`lanes_not_picked`);
@@ -521,7 +555,11 @@ categories labels in the style of A2's `override_cycles_index2_order` label.
   warning, the export panel, the 409 download (no sheet made on the spot) and the API 404
   detail; the stored reason survives a later profile change, is cleared on READY→DRAFT and
   is not in the change history; a run made before exports were stored gets the on-the-spot
-  sheet only when the check finds no reason.
+  sheet only when the check finds no reason; an 8-base index on a 10-cycle read (`I8N2`)
+  still gets a v1 sheet, with the index at 8 bases and no OverrideCycles.
+- **Kit cycles and a typed value**: an 8-base i7 and i5 with kit index cycles 12 on 10-cycle
+  reads, typed `I8N2` for both, passes; without the typed value it is still
+  `index_exceeds_cycles` for both.
 - **Index parts**: `N2I4` in Index 1 and `I4N2I4` in either part refused at the input and at
   Mark Ready; `I8`, `I8N2`, `I8U9`, `N10` accepted. The review's `I4N2`/`N2I4` lane can no
   longer reach Ready.
