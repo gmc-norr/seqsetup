@@ -191,7 +191,9 @@ Kit defaults
 When an index is assigned -- by any of the methods above -- the sample
 takes the settings of the kit it came from:
 
-- **Index cycles** -- the number of cycles the kit expects for its i7 and/or i5
+- **Index cycles** -- the number of cycles the kit expects for its i7 and/or i5.
+  They must equal the index's length: **Mark Ready** refuses an index read
+  for fewer or more cycles than it has bases (see :doc:`override-cycles`)
 - **Read override patterns** -- pre-defined patterns the kit specifies for its
   data reads (for example ``N2Y*``)
 

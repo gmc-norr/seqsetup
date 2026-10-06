@@ -65,7 +65,8 @@ download for each of:
 
 - **Download Sample Sheet v2** -- the CSV consumed by BCLConvert / DRAGEN.
 - **Download Sample Sheet v1** -- the legacy IEM format, only for
-  instruments that still use it (MiSeq and NovaSeq 6000).
+  instruments that still use it (MiSeq and NovaSeq 6000), and only when it
+  can carry the run's settings (see `Sample Sheet v1`_ below).
 - **Download JSON** -- the complete run and sample metadata.
 - **Download Validation Report (JSON)** and **Download Validation Report
   (PDF)** -- the same validation result the Check panel and the validation
@@ -96,19 +97,23 @@ The exported file follows the Illumina Sample Sheet v2 CSV format:
 ``[Reads]``
    Cycle counts for Read 1, Read 2, Index 1, and Index 2.
 
-One ``[AppName_Settings]`` / ``[AppName_Data]`` pair per application profile
-   For every sample with a **Test ID**, SeqSetup resolves the matching test
-   profile and, for each application profile it references, writes one
-   ``Settings``/``Data`` section pair named after that profile's
-   application name -- for example ``[BCLConvert_Settings]`` /
-   ``[BCLConvert_Data]``, or ``[DragenGermline_Settings]`` /
-   ``[DragenGermline_Data]``. Which sections appear, and which columns each
-   ``Data`` row has, is defined entirely by the application profiles the
-   run's samples resolve to (see :doc:`/admin-guide/profiles`) -- there is
-   no fixed section list and no fixed column set. A ``BCLConvert`` profile's
-   ``Data`` section commonly carries index sequences, lane assignment,
-   override cycles, and barcode mismatch overrides; it has no project
-   column unless a profile explicitly adds one.
+One ``[AppName_Settings]`` / ``[AppName_Data]`` pair per application
+   For every sample's **Test ID**, SeqSetup resolves the matching test
+   profile and the application profiles it references, and writes one
+   ``Settings``/``Data`` section pair for each application, named after it
+   -- for example ``[BCLConvert_Settings]`` / ``[BCLConvert_Data]``, or
+   ``[DragenGermline_Settings]`` / ``[DragenGermline_Data]``. Every sample
+   is in ``[BCLConvert_Data]``, once (once per lane with a ``Lane``
+   column). Two tests that use different profiles for one application
+   share its section, each row with its own profile's values, when the
+   profiles' ``Settings`` and columns match; otherwise **Mark Ready**
+   refuses. Which sections appear, and which columns each ``Data`` row has,
+   is defined by the application profiles the run's samples resolve to
+   (see :doc:`/admin-guide/profiles`) -- there is no fixed section list and
+   no fixed column set. A ``BCLConvert`` profile's ``Data`` section commonly
+   carries index sequences, lane assignment, override cycles, and barcode
+   mismatch overrides; it has no project column unless a profile explicitly
+   adds one.
 
 ``[Cloud_Settings]`` and ``[Cloud_Data]``
    Written on every export, unconditionally, for compatibility with
@@ -119,17 +124,19 @@ One ``[AppName_Settings]`` / ``[AppName_Data]`` pair per application profile
 A UUID is embedded in the sample sheet to link it to the JSON metadata
 export of the same run.
 
-.. warning::
-   If none of a run's samples have a **Test ID** that resolves to a test
-   profile referencing at least one application profile, SeqSetup writes
-   none of the application sections described above -- the exported Sample
-   Sheet v2 contains only ``[Header]``, ``[Reads]``, ``[Cloud_Settings]``,
-   and ``[Cloud_Data]``. There are no index sequences, no OverrideCycles,
-   no Lane column, and no demultiplexing data of any kind, and **Mark
-   Ready does not catch this**: an unresolved application profile is not
-   one of the checks the Check panel runs. Confirm every sample's Test ID
-   resolves to the test and application profiles you expect before relying
-   on the exported Sample Sheet.
+**Mark Ready** refuses a run whose sheet would leave a sample out of
+``[BCLConvert_Data]``, write one twice, or not carry a value the checks
+used: a sample without a Test ID, a test or profile that is not stored, a
+test without a ``BCLConvert`` profile, or a ``BCLConvert`` profile without
+a column a sample needs (see :doc:`/admin-guide/profiles`). The sheet
+writer checks the same again before it writes, so a profile changed or
+removed in between -- by a sync, for example -- stops **Mark Ready**
+instead of reaching the sheet.
+
+The collision check uses the barcode mismatch numbers the sheet gives BCL
+Convert: each sample's number in the ``BarcodeMismatchesIndex1`` /
+``BarcodeMismatchesIndex2`` columns, else the profile's ``Settings``
+number, else 1, BCL Convert's default.
 
 .. note::
    How the i5 and the Index 2 part of Override Cycles are written depends
@@ -145,6 +152,27 @@ export of the same run.
    reverse complement, the Index 2 part stays ``I8N2``, and the header has
    no ``IndexOrientation,Forward`` line. Everywhere else nothing is
    reversed.
+
+Sample Sheet v1
+------------------
+
+A v1 sheet has one pair of barcode mismatch numbers for the whole run, no
+OverrideCycles, and a ``Lane`` column only when some sample has lanes. When
+it cannot carry the settings the checks used, no v1 sheet is made: when a
+sample was checked with mismatch numbers other than the run's, has an
+OverrideCycles other than the one its index lengths give (a typed value,
+UMI reads, a kit's index cycles), or has no lanes picked while other
+samples do. **Mark Ready** still works and makes the v2 sheet. The
+validation page warns before Mark Ready (*"No v1 sheet will be made for
+this run: ..."*); after it, the run page's Export panel, the v1 download and
+the API say *"No v1 sheet for this run: ..."* with the samples and reasons,
+as they were when the run went Ready.
+
+An index shorter than its read (``I8N2``) stays in the v1 sheet at its own
+length. bcl2fastq, which reads v1 sheets, uses such a shortened sequence;
+BCL Convert needs OverrideCycles for it, which only the v2 sheet has, so
+give BCL Convert the v2 sheet (Illumina's comparison of bcl2fastq and BCL
+Convert). The v1 sheet is for bcl2fastq and the MiSeq.
 
 JSON metadata
 ----------------
