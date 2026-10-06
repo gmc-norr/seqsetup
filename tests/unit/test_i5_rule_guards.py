@@ -42,10 +42,9 @@ class TestTheIndex2Order:
 
     @pytest.mark.parametrize("value", [
         "Y151;I8N2;I8N2;Y151", "Y151;I10;I10;Y151", "Y151;I8N2;N10;Y151",
-        "Y151;I8U2;I8N2;Y151", "Y151;N2I8;I8N2;Y151",
+        "Y151;I8U2;I8N2;Y151",
     ])
     def test_the_index_first_or_no_index_is_fine(self, value):
-        # Only Index 2 is checked; the Index 1 part (N2I8 above) is not.
         assert CycleCalculator.override_cycles_problem(value, RC) is None
 
     def test_a_single_end_run(self):
@@ -55,7 +54,7 @@ class TestTheIndex2Order:
 
     def test_a_run_without_index_2(self):
         rc = RunCycles(151, 151, 10, 0)
-        assert CycleCalculator.override_cycles_problem("Y151;N2I8;Y151", rc) is None
+        assert CycleCalculator.override_cycles_problem("Y151;I8N2;Y151", rc) is None
 
     def test_a_mismatch_is_reported_first(self):
         assert CycleCalculator.override_cycles_problem("Y151;I8N2;N2I8", RC) == "mismatch"

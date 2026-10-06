@@ -22,6 +22,20 @@ INDEX2_ORDER_RULE = (
     "the instrument needs."
 )
 
+# The checks compare a stored index from the first cycle of its read, as one
+# run of cycles, so each index part starts with the index and holds one I
+# segment (spec 2026-10-05 group A3, §4).
+INDEX1_ORDER_RULE = (
+    "Index 1 in OverrideCycles starts with the index in SeqSetup: the index first, "
+    "then any masked or UMI cycles (for example I8N2 or I8U9). SeqSetup's checks "
+    "compare the index from the first cycle of its read."
+)
+INDEX_SPLIT_RULE = (
+    "An index part of OverrideCycles holds one run of index cycles in SeqSetup (for "
+    "example I8N2, not I4N2I4). SeqSetup's checks compare the index as one run of "
+    "cycles."
+)
+
 
 class CycleCalculator:
     """Calculate run cycles and override cycles."""
@@ -229,8 +243,10 @@ class CycleCalculator:
         dangling one); ``"mismatch"`` if a '*' is left in it — internal
         shorthand, never valid in a sheet — or its segments do not match the
         run's reads: one per read of more than 0 cycles, each summing to that
-        read's cycles; ``"index2_order"`` if its Index 2 part masks cycles
-        before the index (INDEX2_ORDER_RULE). Mark Ready and the save routes
+        read's cycles; ``"index1_order"`` / ``"index2_order"`` if an index
+        part has cycles before the index, N, U or Y (INDEX1_ORDER_RULE,
+        INDEX2_ORDER_RULE); ``"index_split"`` if an index part holds more
+        than one I segment (INDEX_SPLIT_RULE). Mark Ready and the save routes
         use this one rule."""
         if "*" in override_cycles:
             return "mismatch"
@@ -242,10 +258,14 @@ class CycleCalculator:
         if sums != [cycles for _, _, cycles in reads]:
             return "mismatch"
         names = [name for name, _, _ in reads]
-        if "Index2" in names:
-            letters = re.findall(r"[YIUN]", segments[names.index("Index2")].upper())
-            if "I" in letters and any(letter in "NU" for letter in letters[:letters.index("I")]):
-                return "index2_order"
+        for read, order in (("Index1", "index1_order"), ("Index2", "index2_order")):
+            if read not in names:
+                continue
+            letters = re.findall(r"[YIUN]", segments[names.index(read)].upper())
+            if "I" in letters and letters.index("I") > 0:
+                return order
+            if letters.count("I") > 1:
+                return "index_split"
         return None
 
     @classmethod

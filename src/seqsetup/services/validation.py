@@ -32,7 +32,12 @@ from ..models.validation import (
 )
 from .application_profile_validator import ApplicationProfileValidator
 from .color_analysis_validator import ColorAnalysisValidator
-from .cycle_calculator import INDEX2_ORDER_RULE, CycleCalculator
+from .cycle_calculator import (
+    INDEX1_ORDER_RULE,
+    INDEX2_ORDER_RULE,
+    INDEX_SPLIT_RULE,
+    CycleCalculator,
+)
 from .index_collision_validator import IndexCollisionValidator
 from .sheet_text import describe, hidden_characters
 from .validation_utils import effective_index_sequence, hamming_distance
@@ -448,9 +453,12 @@ class ValidationService:
         # Malformed OverrideCycles, or a read override pattern that is malformed
         # (applying it silently drops what it cannot parse: 'U8YY*' -> 'U8Y143').
         invalid: list[str] = []
-        # An Index 2 part that masks cycles before the index (spec 2026-10-04
-        # group A2, §2).
+        # An Index 2 part with cycles before the index (spec 2026-10-04 group
+        # A2, §2; a Y too since spec 2026-10-05 group A3, §4); the same in the
+        # Index 1 part, and an index part of two runs of index cycles (A3, §4).
         index2_order: list[str] = []
+        index1_order: list[str] = []
+        index_split: list[str] = []
         for sample in run.samples:
             # Only a pattern that shapes the sheet counts: an indexed sample
             # (unindexed ones get no OverrideCycles) and a read the run performs.
@@ -479,6 +487,10 @@ class ValidationService:
                 bad.append(sample.sample_id or sample.id)
             elif problem == "index2_order":
                 index2_order.append(sample.sample_id or sample.id)
+            elif problem == "index1_order":
+                index1_order.append(sample.sample_id or sample.id)
+            elif problem == "index_split":
+                index_split.append(sample.sample_id or sample.id)
 
         errors: list[ConfigurationError] = []
         if invalid:
@@ -506,10 +518,36 @@ class ValidationService:
                 category="override_cycles_index2_order",
                 message=(
                     f"{len(index2_order)} sample(s) have an OverrideCycles whose Index 2 "
-                    f"part masks cycles before the index: {preview}{more}. "
+                    f"part has cycles before the index: {preview}{more}. "
                     f"{INDEX2_ORDER_RULE}"
                 ),
                 sample_names=index2_order,
+            ))
+        if index1_order:
+            preview = ", ".join(index1_order[:5])
+            more = f", and {len(index1_order) - 5} more" if len(index1_order) > 5 else ""
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="override_cycles_index1_order",
+                message=(
+                    f"{len(index1_order)} sample(s) have an OverrideCycles whose Index 1 "
+                    f"part has cycles before the index: {preview}{more}. "
+                    f"{INDEX1_ORDER_RULE}"
+                ),
+                sample_names=index1_order,
+            ))
+        if index_split:
+            preview = ", ".join(index_split[:5])
+            more = f", and {len(index_split) - 5} more" if len(index_split) > 5 else ""
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="override_cycles_index_split",
+                message=(
+                    f"{len(index_split)} sample(s) have an OverrideCycles with an index "
+                    f"part of more than one run of index cycles: {preview}{more}. "
+                    f"{INDEX_SPLIT_RULE}"
+                ),
+                sample_names=index_split,
             ))
         if not bad:
             return errors
