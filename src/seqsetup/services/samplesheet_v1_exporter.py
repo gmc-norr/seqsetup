@@ -2,10 +2,11 @@
 
 import re
 from io import StringIO
-from typing import TextIO
+from typing import Optional, TextIO
 
 from ..data.instruments import run_i5_direction
 from ..models.sequencing_run import InstrumentPlatform, SequencingRun
+from .cycle_calculator import CycleCalculator
 from .sheet_text import refuse_hidden_characters
 from ..utils.clock import local_date
 
@@ -32,6 +33,76 @@ class SampleSheetV1Exporter:
     def supports(cls, platform: InstrumentPlatform) -> bool:
         """Check if instrument supports v1 export."""
         return platform in cls.SUPPORTED_PLATFORMS
+
+    @classmethod
+    def withheld(
+        cls, run: SequencingRun, mismatches: Optional[dict] = None,
+    ) -> tuple[str, list[str]]:
+        """Why this run's v1 sheet cannot be made, and the samples it names;
+        ("", []) when it can (spec 2026-10-05 group A3, §3). A v1 sheet has
+        one pair of mismatch numbers for the whole run, no OverrideCycles,
+        and a Lane column only when some sample has lanes. ``mismatches`` is
+        the sheet plan's (sample id, index number) -> the number the checks
+        used; without it a sample's number is its own, else the run's.
+
+        An index shorter than its read, masked after it (I8N2), is no
+        reason: bcl2fastq, which reads v1 sheets, uses the shortened
+        sequence (Illumina's bcl2fastq to BCL Convert comparison)."""
+        numbers, override, lanes = [], [], []
+        any_lanes = any(sample.lanes for sample in run.samples)
+        for sample in run.samples:
+            name = sample.sample_id or sample.id
+            for index_num, sequence, own, run_number in (
+                (1, sample.index1_sequence, sample.barcode_mismatches_index1,
+                 run.barcode_mismatches_index1),
+                (2, sample.index2_sequence, sample.barcode_mismatches_index2,
+                 run.barcode_mismatches_index2),
+            ):
+                checked = (mismatches or {}).get(
+                    (sample.id, index_num), own if own is not None else run_number)
+                if sequence and checked != run_number and name not in numbers:
+                    numbers.append(name)
+            oc = sample.override_cycles
+            if not oc and sample.has_index and run.run_cycles:
+                oc = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
+            if oc and run.run_cycles and cls._parts(oc) != cls._plain_override_cycles(sample, run):
+                override.append(name)
+            if any_lanes and not sample.lanes:
+                lanes.append(name)
+
+        reasons = []
+        if numbers:
+            reasons.append(
+                f"{cls._ids(numbers)} were checked with mismatch numbers other than the run's "
+                f"(i7 {run.barcode_mismatches_index1}, i5 {run.barcode_mismatches_index2}), "
+                f"which a v1 sheet writes")
+        if override:
+            reasons.append(f"{cls._ids(override)} have OverrideCycles a v1 sheet cannot hold")
+        if lanes:
+            reasons.append(f"{cls._ids(lanes)} have no lanes picked while other samples do")
+        names = list(dict.fromkeys(numbers + override + lanes))
+        return "; ".join(reasons), names
+
+    @staticmethod
+    def _ids(names: list[str]) -> str:
+        return ", ".join(names[:5]) + (f", and {len(names) - 5} more" if len(names) > 5 else "")
+
+    @staticmethod
+    def _parts(override_cycles: str) -> list[str]:
+        return re.split(r"[;,]", override_cycles.upper())
+
+    @staticmethod
+    def _plain_override_cycles(sample, run: SequencingRun) -> list[str]:
+        """The OverrideCycles that follows from the index lengths alone — no
+        kit index cycles, no read patterns: what a v1 reader does itself."""
+        parts = []
+        for name, letter, cycles in CycleCalculator.read_structure(run.run_cycles):
+            if letter == "Y":
+                parts.append(f"Y{cycles}")
+            else:
+                sequence = sample.index1_sequence if name == "Index1" else sample.index2_sequence
+                parts.append(CycleCalculator._build_index_segment(len(sequence or ""), cycles))
+        return parts
 
     @classmethod
     def export(cls, run: SequencingRun) -> str:

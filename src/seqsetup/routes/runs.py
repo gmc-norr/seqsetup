@@ -68,6 +68,7 @@ _FINGERPRINT_IGNORED_KEYS = (
     "generated_json",
     "generated_validation_json",
     "generated_validation_pdf",
+    "samplesheet_v1_withheld",
 )
 
 
@@ -687,7 +688,10 @@ async def update_status(
         if new_status == RunStatus.READY:
             run.generated_samplesheet_v2 = new_ss_v2
             run.generated_json = new_json
-            if new_ss_v1 is not None:
+            # No v1 sheet when the checks that let the run through say it
+            # cannot carry their settings (spec 2026-10-05 group A3, §3).
+            run.samplesheet_v1_withheld = validation_result.v1_sheet_withheld
+            if new_ss_v1 is not None and not validation_result.v1_sheet_withheld:
                 run.generated_samplesheet_v1 = new_ss_v1
             run.generated_validation_json = new_val_json
             run.generated_validation_pdf = new_val_pdf
@@ -700,6 +704,7 @@ async def update_status(
             # remain accessible via the API surface.
             run.generated_samplesheet_v2 = None
             run.generated_samplesheet_v1 = None
+            run.samplesheet_v1_withheld = ""
             run.generated_json = None
             run.generated_validation_json = None
             run.generated_validation_pdf = None

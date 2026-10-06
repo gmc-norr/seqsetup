@@ -41,6 +41,7 @@ from .cycle_calculator import (
     CycleCalculator,
 )
 from .index_collision_validator import IndexCollisionValidator
+from .samplesheet_v1_exporter import SampleSheetV1Exporter
 from .sheet_plan import plan_sheet
 from .sheet_text import describe, hidden_characters
 from .validation_utils import (
@@ -262,6 +263,23 @@ class ValidationService:
                 for w in plan.warnings
             )
 
+        # No v1 sheet when it cannot carry what the checks used (spec
+        # 2026-10-05 group A3, §3). A warning: the v2 sheet is made as usual.
+        v1_withheld = ""
+        if SampleSheetV1Exporter.supports(run.instrument_platform) and run.samples:
+            v1_withheld, v1_names = SampleSheetV1Exporter.withheld(run, mismatches)
+            if v1_withheld:
+                configuration_errors.append(ConfigurationError(
+                    severity=ValidationSeverity.WARNING,
+                    category="no_v1_sheet",
+                    message=(
+                        f"No v1 sheet will be made for this run: {v1_withheld}. A v1 sheet "
+                        f"has one pair of mismatch numbers for the whole run and no "
+                        f"OverrideCycles. The v2 sheet is made as usual."
+                    ),
+                    sample_names=v1_names,
+                ))
+
         # Get chemistry type for display purposes
         chemistry = get_chemistry_type(run.instrument_platform)
 
@@ -281,6 +299,7 @@ class ValidationService:
             i5_read_orientation=direction.read_orientation if direction else "",
             no_i5_direction=no_direction,
             sheet_plan_fingerprint=plan.fingerprint if plan else "",
+            v1_sheet_withheld=v1_withheld,
         )
 
     @classmethod

@@ -359,3 +359,206 @@ class TestTheSyncRefusesNamesTheSheetWouldNotCarry:
         assert ok, message
         assert [p.name for p in ctx.app_profile_repo.list_all()] == ["Good"]
         assert any("Bad.yaml" in m and logged in m for m in handler.messages), handler.messages
+
+
+
+V1_REASON = (
+    "S1 were checked with mismatch numbers other than the run's (i7 1, i5 1), which a v1 "
+    "sheet writes"
+)
+
+
+def _miseq_draft(ctx, run_id: str, mismatch_index1=1, status=RunStatus.DRAFT, **fields):
+    from seqsetup.models.index import Index, IndexPair, IndexType
+    from seqsetup.models.sample import Sample
+    from .conftest import disable_repos
+    disable_repos(ctx, "test_profile", "app_profile")
+    run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.MISEQ,
+                        flowcell_type="v3", run_cycles=RunCycles(151, 151, 8, 8), status=status,
+                        **fields)
+    run.add_sample(Sample(sample_id="S1", lanes=[1], barcode_mismatches_index1=mismatch_index1,
+                          index_pair=IndexPair(
+                              id="p1", name="p1",
+                              index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                              index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                          )))
+    ctx.run_repo.save(run)
+    return ctx.run_repo.get_by_id(run_id)
+
+
+def _api_get(client, ctx, path: str):
+    from seqsetup.models.api_token import ApiToken
+    plaintext = ApiToken.generate_token()
+    token_hash, token_prefix = ApiToken.hash_token(plaintext)
+    ctx.api_token_repo.save(ApiToken(name="a3", token_hash=token_hash, token_prefix=token_prefix))
+    return client.get(path, headers={"Authorization": f"Bearer {plaintext}"})
+
+
+class TestNoV1SheetWhenItCannotCarryTheSettings:
+    """Mark Ready works and makes the v2 sheet; no v1 sheet is stored, and the
+    reason is, where the v1 sheet would be (spec §3)."""
+
+    def _ready(self, client, ctx, run_id, **fields):
+        from .conftest import mark_ready
+        run = _miseq_draft(ctx, run_id, **fields)
+        mark_ready(client, run.id, ORIGIN)
+        return ctx.run_repo.get_by_id(run.id)
+
+    def test_mark_ready_stores_the_reason_and_no_v1_sheet(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = self._ready(logged_in_client, ctx, "a3-v1", mismatch_index1=0)
+        assert run.status == RunStatus.READY
+        assert run.generated_samplesheet_v2
+        assert run.generated_samplesheet_v1 is None
+        assert run.samplesheet_v1_withheld == V1_REASON
+
+    def test_a_plain_run_still_gets_its_v1_sheet(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = self._ready(logged_in_client, ctx, "a3-v1-plain")
+        assert run.generated_samplesheet_v1 and run.samplesheet_v1_withheld == ""
+
+    def test_the_export_panel_says_why(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = self._ready(logged_in_client, ctx, "a3-v1-panel", mismatch_index1=0)
+        page = html.unescape(logged_in_client.get(f"/runs/{run.id}").text)
+        assert f"No v1 sheet for this run: {V1_REASON}." in page
+        assert f"/runs/{run.id}/export/samplesheet-v1" not in page
+
+    def test_the_download_answers_409(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = self._ready(logged_in_client, ctx, "a3-v1-download", mismatch_index1=0)
+        resp = logged_in_client.get(f"/runs/{run.id}/export/samplesheet-v1")
+        assert resp.status_code == 409
+        assert resp.text == f"No v1 sheet for this run: {V1_REASON}."
+
+    def test_the_api_says_why(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = self._ready(logged_in_client, ctx, "a3-v1-api", mismatch_index1=0)
+        resp = _api_get(logged_in_client, ctx, f"/api/runs/{run.id}/samplesheet-v1")
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == f"No v1 sheet for this run: {V1_REASON}."
+
+    def test_back_to_draft_clears_it(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = self._ready(logged_in_client, ctx, "a3-v1-draft", mismatch_index1=0)
+        logged_in_client.post(f"/runs/{run.id}/status/draft", headers=ORIGIN)
+        run = ctx.run_repo.get_by_id(run.id)
+        assert run.status == RunStatus.DRAFT and run.samplesheet_v1_withheld == ""
+
+    def test_the_stored_reason_is_shown_whatever_is_true_now(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = _miseq_draft(ctx, "a3-v1-stored", status=RunStatus.READY,
+                           generated_samplesheet_v2="[Header]\n", samplesheet_v1_withheld="X")
+        resp = logged_in_client.get(f"/runs/{run.id}/export/samplesheet-v1")
+        assert resp.status_code == 409 and resp.text == "No v1 sheet for this run: X."
+
+    def test_a_run_from_before_stored_exports_gets_a_sheet_only_without_a_reason(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        plain = _miseq_draft(ctx, "a3-v1-old", status=RunStatus.READY)
+        resp = logged_in_client.get(f"/runs/{plain.id}/export/samplesheet-v1")
+        assert resp.status_code == 200 and "[Data]" in resp.text
+        own = _miseq_draft(ctx, "a3-v1-old-own", mismatch_index1=0, status=RunStatus.READY)
+        resp = logged_in_client.get(f"/runs/{own.id}/export/samplesheet-v1")
+        assert resp.status_code == 409 and resp.text == f"No v1 sheet for this run: {V1_REASON}."
+
+    def test_it_is_left_out_of_the_fingerprint_and_the_change_history(self):
+        from seqsetup.routes.runs import _FINGERPRINT_IGNORED_KEYS
+        from seqsetup.services.run_diff import RUN_DIFF_IGNORED_KEYS
+        assert "samplesheet_v1_withheld" in _FINGERPRINT_IGNORED_KEYS
+        assert "samplesheet_v1_withheld" in RUN_DIFF_IGNORED_KEYS
+
+
+@pytest.fixture
+def miseq_profiles(fresh_app):
+    """A synced MiSeq that offers BCLConvert 4.3.6, the BCLConvert profile with
+    a Data default of 0 for BarcodeMismatchesIndex1, and a test A3M that lists
+    it: the checks use 0 for a cleared sample, the run's number is 1."""
+    from seqsetup.data import instruments as instruments_module
+    from seqsetup.models.instrument_definition import InstrumentDefinition, OnboardApplication
+    from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
+    from seqsetup.services.validation import clear_validation_cache
+    _app, ctx, _db = fresh_app
+    ctx.app_profile_repo.save(_bcl_profile(mismatch_default=0))
+    ctx.test_profile_repo.save(TestProfile(
+        test_type="A3M", test_name="A3M", description="d", version="1.0.0",
+        application_profiles=[ApplicationProfileReference(profile_name="A3BCL",
+                                                          profile_version="1.0.0")]))
+    ctx.instrument_definition_repo.save(InstrumentDefinition(
+        name="MiSeq", samplesheet_name="MiSeq", version="1.0.0", chemistry_type="4-color",
+        onboard_applications=[OnboardApplication(name="BCLConvert", software_version="4.3.6")],
+        i5_workflows=[{"name": "Standard", "i5_read_orientation": "forward"}],
+        runinfo_marks_i5_reversed=False,
+    ))
+    instruments_module.clear_synced_instruments_cache()
+    clear_validation_cache()
+    yield ctx
+    instruments_module.clear_synced_instruments_cache()
+    clear_validation_cache()
+
+
+def _miseq_profile_draft(ctx, run_id: str, index_cycles=8, i7="ATTACTCG", i5="TATAGCCT",
+                         mismatch_index1=None):
+    from seqsetup.models.index import Index, IndexPair, IndexType
+    from seqsetup.models.sample import Sample
+    run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.MISEQ,
+                        flowcell_type="v3",
+                        run_cycles=RunCycles(151, 151, index_cycles, index_cycles))
+    run.add_sample(Sample(sample_id="S1", test_id="A3M", lanes=[1],
+                          barcode_mismatches_index1=mismatch_index1,
+                          barcode_mismatches_index2=None,
+                          index_pair=IndexPair(
+                              id="p1", name="p1",
+                              index1=Index(name="i7", sequence=i7, index_type=IndexType.I7),
+                              index2=Index(name="i5", sequence=i5, index_type=IndexType.I5),
+                          )))
+    ctx.run_repo.save(run)
+    return ctx.run_repo.get_by_id(run_id)
+
+
+class TestTheV1DecisionOnTheProfilePath:
+    """Mark Ready decides the v1 sheet from the numbers its checks used, which
+    on the profile path come from the BCLConvert profile (spec §3; the plan
+    review's finding)."""
+
+    def test_a_profile_default_other_than_the_runs_gives_no_v1_sheet(
+            self, logged_in_client, miseq_profiles):
+        from .conftest import mark_ready
+        run = _miseq_profile_draft(miseq_profiles, "a3-v1-profile")
+        mark_ready(logged_in_client, run.id, ORIGIN)
+        run = miseq_profiles.run_repo.get_by_id(run.id)
+        assert run.status == RunStatus.READY
+        assert run.generated_samplesheet_v2
+        assert run.generated_samplesheet_v1 is None
+        assert run.samplesheet_v1_withheld == V1_REASON
+
+    def test_a_sync_during_the_writing_stores_no_v1_sheet(self, logged_in_client, miseq_profiles,
+                                                         monkeypatch):
+        from .conftest import mark_ready
+        run = _miseq_profile_draft(miseq_profiles, "a3-v1-race")
+        stored = miseq_profiles.app_profile_repo.list_all()[0]
+        _during_the_writing(monkeypatch, lambda: miseq_profiles.app_profile_repo.save(
+            _bcl_profile(mismatch_default=1, profile_id=stored.id)))
+        resp = mark_ready(logged_in_client, run.id, ORIGIN)
+        assert resp.status_code == 409
+        run = miseq_profiles.run_repo.get_by_id(run.id)
+        assert run.status == RunStatus.DRAFT
+        assert run.generated_samplesheet_v1 is None and run.samplesheet_v1_withheld == ""
+
+    def test_an_index_shorter_than_its_read_keeps_its_v1_sheet(self, logged_in_client,
+                                                              miseq_profiles):
+        # I8N2 with the run's numbers: Mark Ready stores a v1 sheet with the
+        # index at 8 bases and no OverrideCycles.
+        from .conftest import mark_ready
+        run = _miseq_profile_draft(miseq_profiles, "a3-v1-short", index_cycles=10,
+                                   mismatch_index1=1)
+        run.samples[0].barcode_mismatches_index2 = 1
+        miseq_profiles.run_repo.save(run)
+        mark_ready(logged_in_client, run.id, ORIGIN)
+        run = miseq_profiles.run_repo.get_by_id(run.id)
+        assert run.status == RunStatus.READY and run.samplesheet_v1_withheld == ""
+        lines = run.generated_samplesheet_v1.splitlines()
+        header = lines[lines.index("[Data]") + 1].split(",")
+        row = dict(zip(header, lines[lines.index("[Data]") + 2].split(",")))
+        assert (row["index"], row["index2"]) == ("ATTACTCG", "TATAGCCT")
+        assert not any("OverrideCycles" in line for line in lines)

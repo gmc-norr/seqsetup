@@ -25,7 +25,7 @@
             <a class="btn btn-primary btn-small export-btn{% if not ss_enabled %} disabled{% endif %}"
                {% if not ss_enabled %}aria-disabled="true"{% endif %}
                {% if ss_enabled %}href="/runs/{{ run.id }}/export/samplesheet-v2"{% endif %}>Download Sample Sheet v2</a>
-            {% if has_v1 %}
+            {% if has_v1 and not run.samplesheet_v1_withheld %}
             <a class="btn btn-primary btn-small export-btn{% if not v1_enabled %} disabled{% endif %}"
                {% if not v1_enabled %}aria-disabled="true"{% endif %}
                {% if v1_enabled %}href="/runs/{{ run.id }}/export/samplesheet-v1"{% endif %}>Download Sample Sheet v1</a>
@@ -40,6 +40,10 @@
                {% if not val_pdf_enabled %}aria-disabled="true"{% endif %}
                {% if val_pdf_enabled %}href="/runs/{{ run.id }}/export/validation-pdf"{% endif %}>Download Validation Report (PDF)</a>
         </div>
+        {% if has_v1 and run.samplesheet_v1_withheld %}
+        {# Why Mark Ready made no v1 sheet (spec 2026-10-05 group A3, §3). #}
+        <p class="export-waiting">No v1 sheet for this run: {{ run.samplesheet_v1_withheld }}.</p>
+        {% endif %}
     </div>
     {% endif %}
 </fieldset>

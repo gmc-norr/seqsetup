@@ -202,6 +202,10 @@ class SequencingRun:
     generated_json: Optional[str] = None
     generated_validation_json: Optional[str] = None
     generated_validation_pdf: Optional[bytes] = None  # PDF bytes, base64-encoded in MongoDB
+    # Why Mark Ready made no v1 sheet, when one could not carry the settings
+    # the checks used; "" otherwise (spec 2026-10-05 group A3, §3). Stored
+    # and cleared with the generated exports.
+    samplesheet_v1_withheld: str = ""
 
     # True once the run has been Ready (or Archived). Kept by __setattr__ and
     # never cleared: it decides who may delete an emptied draft and whether a
@@ -368,6 +372,7 @@ class SequencingRun:
             "analyses": [a.to_dict() for a in self.analyses],
             "generated_samplesheet_v2": self.generated_samplesheet_v2,
             "generated_samplesheet_v1": self.generated_samplesheet_v1,
+            "samplesheet_v1_withheld": self.samplesheet_v1_withheld,
             "generated_json": self.generated_json,
             "generated_validation_json": self.generated_validation_json,
             "generated_validation_pdf": (
@@ -454,6 +459,7 @@ class SequencingRun:
             analyses=[Analysis.from_dict(a) for a in data.get("analyses", [])],
             generated_samplesheet_v2=data.get("generated_samplesheet_v2") or data.get("generated_samplesheet"),
             generated_samplesheet_v1=data.get("generated_samplesheet_v1"),
+            samplesheet_v1_withheld=data.get("samplesheet_v1_withheld") or "",
             generated_json=data.get("generated_json"),
             generated_validation_json=data.get("generated_validation_json"),
             generated_validation_pdf=(
