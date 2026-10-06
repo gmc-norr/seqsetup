@@ -326,3 +326,36 @@ class TestTheWriterWritesFromThePlanTheChecksPassed:
         assert "Failed to generate exports" in resp.text
         assert profiles.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
         assert "sheet_plan_problem" in _denial_reasons(profiles)
+
+
+
+class TestTheSyncRefusesNamesTheSheetWouldNotCarry:
+    """A profile file with a repeated column, a BCLConvert setting also
+    written as a column, or another spelling of a name SeqSetup fills is
+    skipped and logged; the others sync (spec §1)."""
+
+    @pytest.mark.parametrize("change,logged", [
+        pytest.param(("  - Index2\n", "  - Index2\n  - index\n"),
+                     "The data section writes the column 'Index' more than once", id="repeated"),
+        pytest.param(("Settings:\n", "Settings:\n  Index: x\n"),
+                     "'Index' is both in Settings and a data column", id="two-places"),
+        pytest.param(("  SoftwareVersion:", "  softwareversion:"),
+                     "'softwareversion' must be spelled SoftwareVersion", id="spelling"),
+    ])
+    def test_the_file_is_skipped_and_logged(self, fresh_app, monkeypatch, change, logged):
+        from .test_sheet_followups import _SYNC_LOGGER, _Messages, _app_profile_yaml, _sync
+        _app, ctx, _db = fresh_app
+        bad = _app_profile_yaml("Bad", '"4.3.6"').replace(*change)
+        assert bad != _app_profile_yaml("Bad", '"4.3.6"')
+        handler = _Messages()
+        _SYNC_LOGGER.addHandler(handler)
+        try:
+            ok, message, _count = _sync(ctx, monkeypatch, {
+                "Good.yaml": _app_profile_yaml("Good", '"4.3.6"'), "Bad.yaml": bad,
+            })
+        finally:
+            _SYNC_LOGGER.removeHandler(handler)
+
+        assert ok, message
+        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["Good"]
+        assert any("Bad.yaml" in m and logged in m for m in handler.messages), handler.messages

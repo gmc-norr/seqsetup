@@ -25,14 +25,15 @@ BCL_DATA = {"BarcodeMismatchesIndex1": 1, "BarcodeMismatchesIndex2": 1}
 
 def _app(name, application="BCLConvert", version="1.0.0", settings=None, data=None,
          fields=None, translate=None) -> ApplicationProfile:
-    return ApplicationProfile.from_yaml({
-        "ApplicationProfileName": name, "ApplicationProfileVersion": version,
-        "ApplicationName": application, "ApplicationType": "Dragen",
-        "Settings": {"SoftwareVersion": "4.3.6"} if settings is None else settings,
-        "Data": dict(BCL_DATA) if data is None else data,
-        "DataFields": list(BCL_FIELDS) if fields is None else fields,
-        "Translate": translate or {},
-    }, f"{name}.yaml")
+    """A profile as the database stores it: built directly, past the sync's
+    check, which refuses several of these shapes."""
+    return ApplicationProfile(
+        name=name, version=version, application_name=application, application_type="Dragen",
+        settings={"SoftwareVersion": "4.3.6"} if settings is None else settings,
+        data=dict(BCL_DATA) if data is None else data,
+        data_fields=list(BCL_FIELDS) if fields is None else fields,
+        translate=translate or {}, source_file=f"{name}.yaml",
+    )
 
 
 def _dragen(name, application="DragenGermline", **kw) -> ApplicationProfile:

@@ -3,6 +3,11 @@
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from .sheet_plan import (
+    SPELLED_COLUMNS_BCLCONVERT,
+    SPELLED_SETTINGS_ANY,
+    SPELLED_SETTINGS_BCLCONVERT,
+)
 from .sheet_text import (
     MISMATCH_COLUMNS,
     PLAIN_NAME_RE,
@@ -301,6 +306,7 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
 
     errors += _mismatch_problems(settings, data, translate)
     errors += _sample_id_column_problems(data, data_fields, translate)
+    errors += _name_problems(app_name, settings, data, data_fields, translate)
 
     # SeqSetup writes the i5 and its OverrideCycles for the run's instrument;
     # these settings would change how BCL Convert reads them (spec 2026-10-04
@@ -378,3 +384,51 @@ def _validate_version_constraint(value: str, field_path: str, errors: list[str])
         pass
 
     errors.append(f"'{field_path}' is not a valid PEP 440 version or specifier: '{value}'")
+
+
+def _name_problems(app_name, settings, data, data_fields, translate) -> list[str]:
+    """Names compared ignoring case (spec 2026-10-05 group A3, §1): a column
+    written twice, in a BCLConvert profile a name both in Settings and among
+    the columns, and another spelling of a name SeqSetup fills or reads
+    itself. The columns are found the way the sheet writer finds them. A
+    section of the wrong shape is already reported, so it is not checked
+    here."""
+    shapes = ((settings, dict), (data, dict), (data_fields, list), (translate, dict))
+    if any(value is not None and not isinstance(value, kind) for value, kind in shapes):
+        return []
+    names = translate or {}
+    fields = data_fields or list((data or {}).keys())
+    columns = [(str(f), str(names.get(f, f))) for f in fields if isinstance(f, str)]
+    problems = []
+
+    by_lower: dict[str, list[tuple[str, str]]] = {}
+    for field, column in columns:
+        by_lower.setdefault(column.lower(), []).append((field, column))
+    for group in by_lower.values():
+        if len(group) > 1:
+            problems.append(
+                f"The data section writes the column '{group[0][1]}' more than once: from "
+                f"{', '.join(field for field, _ in group)}. Each column may appear once "
+                f"(check DataFields and Translate)."
+            )
+
+    keys = [str(key) for key in (settings or {})]
+    spelled = [(key, SPELLED_SETTINGS_ANY) for key in keys]
+    if app_name == "BCLConvert":
+        column_lower = {column.lower() for _, column in columns}
+        for key in keys:
+            if key.lower() in column_lower:
+                problems.append(
+                    f"'{key}' is both in Settings and a data column. BCL Convert allows a "
+                    f"setting in one place only."
+                )
+        spelled += [(key, SPELLED_SETTINGS_BCLCONVERT) for key in keys]
+        spelled += [(column, SPELLED_COLUMNS_BCLCONVERT) for _, column in columns]
+    for written, canonical_names in spelled:
+        for canonical in canonical_names:
+            if written.lower() == canonical.lower() and written != canonical:
+                problems.append(
+                    f"'{written}' must be spelled {canonical}: SeqSetup fills and reads "
+                    f"{canonical} itself, in that spelling only."
+                )
+    return problems

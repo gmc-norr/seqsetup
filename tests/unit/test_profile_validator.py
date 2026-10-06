@@ -651,7 +651,9 @@ class TestProfileValueKinds:
     def test_text_whole_numbers_and_true_false_pass(self, value):
         data = {
             **APP,
-            "Settings": {**APP["Settings"], "Extra": value},
+            # Not the same name: a BCLConvert setting may not also be a
+            # column (spec 2026-10-05 group A3, §1).
+            "Settings": {**APP["Settings"], "ExtraSetting": value},
             "Data": {**APP["Data"], "Extra": value},
         }
         assert _errors(data) == []
