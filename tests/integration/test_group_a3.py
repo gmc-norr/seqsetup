@@ -562,3 +562,127 @@ class TestTheV1DecisionOnTheProfilePath:
         row = dict(zip(header, lines[lines.index("[Data]") + 2].split(",")))
         assert (row["index"], row["index2"]) == ("ATTACTCG", "TATAGCCT")
         assert not any("OverrideCycles" in line for line in lines)
+
+
+
+class TestTheCacheClears:
+    """The validation cache is cleared after a config sync and after an index
+    kit is saved or deleted (CLAUDE.md, Validation cache coherence; spec §5).
+    Switched off, no test noticed (2026-10-03 project review, H-3)."""
+
+    def test_after_a_sync_the_checks_see_the_new_profiles(self, fresh_app, monkeypatch):
+        from seqsetup.services.validation import ValidationService, clear_validation_cache
+        from .test_sheet_followups import _app_profile_yaml, _sync
+        _app, ctx, _db = fresh_app
+        clear_validation_cache()
+        ok, message, _count = _sync(ctx, monkeypatch, {
+            "GuardProfile.yaml": _app_profile_yaml("GuardProfile", '"4.3.6"')})
+        assert ok, message
+        run = _indexed_draft(ctx, "a3-cache", test_id="WGS")
+
+        def profile_errors():
+            result = ValidationService.validate_run(
+                run, test_profile_repo=ctx.test_profile_repo,
+                app_profile_repo=ctx.app_profile_repo, instrument_config=ctx.instrument_config)
+            return [e.error_type for e in result.application_errors]
+
+        assert profile_errors() == []     # cached now
+        ok, message, _count = _sync(ctx, monkeypatch, {
+            "Other.yaml": _app_profile_yaml("Other", '"4.3.6"')})   # GuardProfile is gone
+        assert ok, message
+        assert profile_errors() == ["profile_not_found"]
+
+    def _version(self):
+        from seqsetup.services.validation import _current_validation_input_version
+        return _current_validation_input_version()
+
+    def test_saving_an_index_kit_clears_it(self, logged_in_client, fresh_app):
+        before = self._version()
+        resp = logged_in_client.post(
+            "/indexes/upload",
+            data={"index_mode": "unique_dual", "kit_name": "A3Kit", "kit_version": "1.0"},
+            files={"index_file": ("a3.yaml", (
+                b"index_pairs:\n  - id: A3-P1\n    name: P1\n    index1:\n      name: i7-A01\n"
+                b"      sequence: ATTACTCG\n    index2:\n      name: i5-A01\n"
+                b"      sequence: TATAGCCT\n"), "text/yaml")},
+            headers=ORIGIN,
+        )
+        assert resp.status_code == 200 and resp.headers.get("HX-Redirect") == "/indexes"
+        assert self._version() > before
+
+    def test_deleting_an_index_kit_clears_it(self, logged_in_client, fresh_app):
+        from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
+        _app, ctx, _db = fresh_app
+        ctx.index_kit_repo.save(IndexKit(
+            name="A3Gone", version="1.0", index_mode=IndexMode.UNIQUE_DUAL, created_by="admin-test",
+            index_pairs=[IndexPair(id="g1", name="G1",
+                                   index1=Index(name="i7", sequence="ATTACTCG",
+                                                index_type=IndexType.I7),
+                                   index2=Index(name="i5", sequence="TATAGCCT",
+                                                index_type=IndexType.I5))]))
+        before = self._version()
+        resp = logged_in_client.delete("/indexes/kits/A3Gone/1.0", headers=ORIGIN)
+        assert resp.status_code == 200, resp.text[:300]
+        assert ctx.index_kit_repo.get_by_name_and_version("A3Gone", "1.0") is None
+        assert self._version() > before
+
+
+def _two_sample_draft(ctx, run_id, first, second):
+    """A NovaSeq X draft with two samples in lane 1; each is (i7, i5 or None)."""
+    from seqsetup.models.index import Index, IndexPair, IndexType
+    from seqsetup.models.sample import Sample
+    from .conftest import disable_repos
+    disable_repos(ctx, "test_profile", "app_profile")
+    run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=NOVASEQ_X,
+                        flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
+    for n, (i7, i5) in enumerate((first, second), start=1):
+        sample = Sample(sample_id=f"S{n}", lanes=[1])
+        if i5 is None:
+            sample.assign_index1(Index(name=f"i7-{n}", sequence=i7, index_type=IndexType.I7))
+        else:
+            sample.index_pair = IndexPair(
+                id=f"p{n}", name=f"p{n}",
+                index1=Index(name=f"i7-{n}", sequence=i7, index_type=IndexType.I7),
+                index2=Index(name=f"i5-{n}", sequence=i5, index_type=IndexType.I5))
+        run.add_sample(sample)
+    ctx.run_repo.save(run)
+    return ctx.run_repo.get_by_id(run_id)
+
+
+class TestMarkReadyRefusesTheUntestedRules:
+    """Mark Ready refuses on each of the rules no test checked (spec §5)."""
+
+    @pytest.mark.parametrize("first,second,said", [
+        pytest.param(("ACGTACGT", "TTGGCCAATT"), ("TGCATGCAAC", "CCAATTGGTT"),
+                     "Lane 1: i7 index lengths are inconsistent", id="i7-length"),
+        pytest.param(("ACGTACGTAC", "TTGGCCAA"), ("TGCATGCAAC", "CCAATTGGTT"),
+                     "Lane 1: i5 index lengths are inconsistent", id="i5-length"),
+        pytest.param(("ACGTACGTAC", "TTGGCCAATT"), ("TGCATGCAAC", None),
+                     "Lane 1: mixed single-indexed (1 samples) and dual-indexed (1 samples)",
+                     id="mixed-indexing"),
+        pytest.param(("GGTACGTACG", "TTGGCCAATT"), ("TGCATGCAAC", "CCAATTGGTT"),
+                     "S1: i7 index (GGTACGTACG) starts with two dark bases (GG)",
+                     id="i7-dark-start"),
+    ])
+    def test_it_refuses(self, logged_in_client, fresh_app, first, second, said):
+        _app, ctx, _db = fresh_app
+        run = _two_sample_draft(ctx, "a3-rule", first, second)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert said in html.unescape(resp.text)
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+    def test_a_version_the_instrument_does_not_have(self, logged_in_client, profiles):
+        stored = profiles.app_profile_repo.list_all()[0]
+        bumped = _bcl_profile(profile_id=stored.id)
+        bumped.settings = {"SoftwareVersion": "9.9.9"}
+        profiles.app_profile_repo.save(bumped)
+        run = _indexed_draft(profiles, "a3-version", test_id="A3T")
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert "Application 'BCLConvert' version '9.9.9'" in html.unescape(resp.text)
+        assert profiles.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
