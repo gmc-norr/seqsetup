@@ -26,16 +26,19 @@ INDEX2_ORDER_RULE = (
 )
 
 
-def _indexed_draft(ctx, run_id: str, override: str = "") -> SequencingRun:
+def _indexed_draft(ctx, run_id: str, override: str = "", i7: str = "ATTACTCG",
+                   i5: str = "TATAGCCT", cycles: RunCycles = RunCycles(151, 151, 10, 10),
+                   index1_cycles=None) -> SequencingRun:
     from seqsetup.models.index import Index, IndexPair, IndexType
     from seqsetup.models.sample import Sample
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=NOVASEQ_X,
-                        flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
+                        flowcell_type="10B", run_cycles=cycles)
     run.add_sample(Sample(sample_id="S1", lanes=[1], override_cycles=override or None,
+                          index1_cycles=index1_cycles,
                           index_pair=IndexPair(
                               id="p1", name="p1",
-                              index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
-                              index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+                              index1=Index(name="i7", sequence=i7, index_type=IndexType.I7),
+                              index2=Index(name="i5", sequence=i5, index_type=IndexType.I5),
                           )))
     ctx.run_repo.save(run)
     return ctx.run_repo.get_by_id(run_id)
@@ -101,4 +104,26 @@ class TestATypedIndexPartIsRefused:
 
         assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert rule in html.unescape(resp.text)
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+
+class TestAnIndexMustBeAsLongAsTheCyclesRead:
+    """Mark Ready refuses an index whose length differs from the cycles its
+    OverrideCycles reads for it (spec §4)."""
+
+    def test_kit_cycles_shorter_than_the_index_on_an_equal_read(self, logged_in_client, fresh_app):
+        # A 10-base i7 with kit index cycles 8 on an 8-cycle read: 0 errors before.
+        from .conftest import disable_repos
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run = _indexed_draft(ctx, "a3-length", i7="ATTACTCGAT", cycles=RunCycles(151, 151, 8, 8),
+                             index1_cycles=8)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert (
+            "1 sample(s) have an index whose length differs from the index cycles their "
+            "OverrideCycles reads: S1 (i7: 10 bases, 8 read)."
+        ) in html.unescape(resp.text)
         assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT

@@ -140,7 +140,7 @@ class TestATypedValueIsWrittenForTheReader:
         assert out.getvalue().splitlines()[-2].endswith(f",{written}")
 
 
-SHORTENED = "i5_shortened_on_reversed_read"
+SHORTENED = "index_length_differs_from_override_cycles"
 
 
 def _shortened(instrument: str, workflow: str = "", i5: str = "ACGGTTCAAG", index2_cycles=8,
@@ -162,18 +162,19 @@ def _shortened_errors(run: SequencingRun) -> list:
 
 
 class TestAShortenedI5OnAReversedRead:
-    """An i5 used shorter than it is stored, inside a longer Index 2 read, is
-    refused where the i5 is read reversed: which of its bases BCL Convert
-    compares is not settled. A kit's i5 cycles reach the sample as its
-    index2_cycles, so the sample's setting covers both."""
+    """Group A2 refused an i5 used shorter than it is stored, inside a longer
+    Index 2 read, where the i5 is read reversed. Group A3's length rule
+    refuses every index whose length differs from the cycles read, on every
+    instrument (spec 2026-10-05 group A3, §4), so these cases now carry its
+    category."""
 
     def test_the_message(self):
         (error,) = _shortened_errors(_shortened("NovaSeq X Series"))
         assert error.message == (
-            "1 sample(s) use fewer i5 cycles than their i5 has, inside a longer Index 2 read: "
-            "S1. NovaSeq X Series (Standard) reads the i5 reversed, so which i5 bases BCL "
-            "Convert compares is not settled. Use all of the i5's cycles, or make the Index 2 "
-            "read as long as the cycles used."
+            "1 sample(s) have an index whose length differs from the index cycles their "
+            "OverrideCycles reads: S1 (i5: 10 bases, 8 read). BCL Convert needs each index to "
+            "have as many bases as the cycles read for it. Use an index of that length, or "
+            "change the OverrideCycles or the kit's index cycles."
         )
         assert error.sample_names == ["S1"]
         assert error.severity.value == "error"
@@ -191,12 +192,13 @@ class TestAShortenedI5OnAReversedRead:
     @pytest.mark.parametrize("instrument,workflow", [
         ("MiSeq", ""), ("MiSeq i100 Series", "Index-first"),
     ])
-    def test_it_passes_where_the_i5_is_read_forward(self, instrument, workflow):
-        assert _shortened_errors(_shortened(instrument, workflow)) == []
+    def test_it_is_refused_where_the_i5_is_read_forward_too(self, instrument, workflow):
+        assert len(_shortened_errors(_shortened(instrument, workflow))) == 1
 
-    def test_a_long_i5_on_a_short_read_passes(self):
-        # No masked cycles: not changed here (spec, Not in this change).
+    def test_a_long_i5_on_a_short_read_is_left_to_index_exceeds_cycles(self):
         run = _shortened("NovaSeq X Series", index2_cycles=None, cycles=RunCycles(151, 151, 8, 8))
+        categories = [e.category for e in ValidationService.validate_configuration(run)]
+        assert "index_exceeds_cycles" in categories
         assert _shortened_errors(run) == []
 
     def test_a_short_i5_on_a_long_read_passes(self):
@@ -206,8 +208,8 @@ class TestAShortenedI5OnAReversedRead:
         assert _shortened_errors(_shortened("NovaSeq X Series", index2_cycles=None)) == []
         assert _shortened_errors(_shortened("NovaSeq X Series", index2_cycles=10)) == []
 
-    def test_a_run_with_no_direction_reports_only_that(self):
+    def test_the_length_rule_needs_no_i5_direction(self):
         run = _shortened("MiSeq i100 Series", "Old name")
         categories = [e.category for e in ValidationService.validate_configuration(run)]
         assert "no_i5_direction" in categories
-        assert SHORTENED not in categories
+        assert SHORTENED in categories

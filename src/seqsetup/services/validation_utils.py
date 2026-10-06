@@ -1,11 +1,13 @@
 """Shared utilities for validation services."""
 
+import re
 from collections import defaultdict
+from functools import lru_cache
 from typing import Optional
 
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.sample import Sample
-from ..models.sequencing_run import SequencingRun
+from ..models.sequencing_run import RunCycles, SequencingRun
 
 
 def group_samples_by_lane(
@@ -40,16 +42,60 @@ def group_samples_by_lane(
     return lane_samples
 
 
+@lru_cache(maxsize=4096)
+def _index_cycles_in(override_cycles: str, cycles: tuple[int, int, int, int],
+                     index_num: int) -> Optional[int]:
+    """The I cycles of one index read's part of an OverrideCycles, or None
+    when the run has no such read or the value does not fit the run.
+    ``cycles`` is (Read1, Read2, Index1, Index2)."""
+    from .cycle_calculator import CycleCalculator
+
+    run_cycles = RunCycles(*cycles)
+    names = [name for name, _, _ in CycleCalculator.read_structure(run_cycles)]
+    read = "Index1" if index_num == 1 else "Index2"
+    if read not in names or CycleCalculator.override_cycles_problem(override_cycles, run_cycles):
+        return None
+    part = re.split(r"[;,]", override_cycles)[names.index(read)].upper()
+    return sum(int(n) for n in re.findall(r"I(\d+)", part))
+
+
+def index_cycles_read(sample: Sample, index_num: int, run=None) -> Optional[int]:
+    """The index cycles BCL Convert reads for this sample's i7 (index_num=1)
+    or i5 (2): the I cycles of that read's part of its OverrideCycles, typed,
+    else computed (spec 2026-10-05 group A3, §4). 0 when the sample has no
+    such index but the run has the read. None when it cannot be said: no run
+    cycles, no such index read, no OverrideCycles (an unindexed sample), or
+    one that does not fit the run (another check reports that)."""
+    from .cycle_calculator import CycleCalculator
+
+    rc = getattr(run, "run_cycles", None) if run is not None else None
+    if rc is None:
+        return None
+    override = sample.override_cycles
+    if not override:
+        if not sample.has_index:
+            return None
+        override = CycleCalculator.calculate_override_cycles(sample, rc)
+    return _index_cycles_in(
+        override, (rc.read1_cycles, rc.read2_cycles, rc.index1_cycles, rc.index2_cycles),
+        index_num,
+    )
+
+
 def effective_index_read_length(sample: Sample, index_num: int, run=None) -> int:
     """Number of index cycles actually READ for this sample's i7/i5.
 
     Demultiplexing matches an index only over the cycles it reads, not the
-    full stored sequence. That count is the sample's effective index length
-    (``index{n}_cycles`` if set, else the sequence length — see
+    full stored sequence. For a typed OverrideCycles that fits the run that
+    is its I cycles (``index_cycles_read``; spec 2026-10-05 group A3, §4).
+    Otherwise it is the sample's effective index length (``index{n}_cycles``
+    if set, else the sequence length — see
     ``CycleCalculator._get_effective_index_length``), further bounded by the
-    run's configured index read cycles when a run is supplied. Comparing
-    indexes over MORE bases than this misses collisions between samples whose
-    masked tails differ but whose read cycles are identical.
+    run's configured index read cycles when a run is supplied — the same
+    number as the I cycles of the computed OverrideCycles. Comparing indexes
+    over MORE bases than this misses collisions between samples whose masked
+    tails differ but whose read cycles are identical; a run whose indexes are
+    shorter than their cycles read does not pass Mark Ready.
 
     Args:
         sample: Sample whose index is being measured.
@@ -64,6 +110,10 @@ def effective_index_read_length(sample: Sample, index_num: int, run=None) -> int
     # services modules (cycle_calculator imports models only, so no cycle).
     from .cycle_calculator import CycleCalculator
 
+    if sample.override_cycles:
+        read = index_cycles_read(sample, index_num, run)
+        if read is not None:
+            return read
     eff = CycleCalculator._get_effective_index_length(sample, index_num)
     run_cycles = getattr(run, "run_cycles", None) if run is not None else None
     if run_cycles is not None:

@@ -336,7 +336,8 @@ class TestATypedIndex2MaskedFirstIsRefused:
 
 class TestAShortenedI5OnAReversedReadIsRefused:
     """An i5 used shorter than it is stored, inside a longer Index 2 read,
-    stops Mark Ready where the i5 is read reversed (spec §2)."""
+    stops Mark Ready where the i5 is read reversed (spec §2) — since group A3,
+    by the length rule, on every instrument (spec 2026-10-05 group A3, §4)."""
 
     @pytest.mark.parametrize("platform", PLATFORMS)
     def test_mark_ready_refuses_it(self, logged_in_client, fresh_app, platform):
@@ -349,7 +350,8 @@ class TestAShortenedI5OnAReversedReadIsRefused:
 
         assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert (
-            "1 sample(s) use fewer i5 cycles than their i5 has, inside a longer Index 2 read: S1."
+            "1 sample(s) have an index whose length differs from the index cycles their "
+            "OverrideCycles reads: S1 (i5: 10 bases, 8 read)."
         ) in html.unescape(resp.text)
         assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
 
