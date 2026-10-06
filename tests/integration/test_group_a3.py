@@ -127,3 +127,24 @@ class TestAnIndexMustBeAsLongAsTheCyclesRead:
             "OverrideCycles reads: S1 (i7: 10 bases, 8 read)."
         ) in html.unescape(resp.text)
         assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+
+
+class TestTheClearText:
+    """Clear on the mismatch numbers resets them to the default, which on the
+    profile path is the BCL Convert profile's (spec §2)."""
+
+    def test_an_empty_apply_says_what_clear_resets_to(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run = _indexed_draft(ctx, "a3-clear")
+        resp = logged_in_client.post(
+            f"/runs/{run.id}/samples/set-mismatches",
+            data={"sample_ids": f'["{run.samples[0].id}"]', "mismatch_index1": "",
+                  "mismatch_index2": ""},
+            headers=ORIGIN,
+        )
+        assert resp.status_code == 400
+        assert (
+            "Type a barcode mismatch value (0, 1 or 2) to apply, or use Clear to reset both to "
+            "the default (the BCL Convert profile's, else the run's). Nothing was saved."
+        ) in html.unescape(resp.text)

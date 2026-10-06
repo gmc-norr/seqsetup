@@ -1097,7 +1097,8 @@ async def set_mismatches_bulk(
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
 
-    # Clear puts both columns back to the run default. Apply writes only the
+    # Clear puts both columns back to the default (the BCL Convert profile's,
+    # else the run's; spec 2026-10-05 group A3, §2). Apply writes only the
     # boxes that were filled in: a box left blank leaves that column alone on
     # every ticked sample, so a deliberate override is never wiped by a box
     # the user did not touch (group 1c, the user's decision after the build
@@ -1113,7 +1114,8 @@ async def set_mismatches_bulk(
         if not (write_index1 or write_index2):
             raise HTTPException(status_code=400, detail=(
                 "Type a barcode mismatch value (0, 1 or 2) to apply, or use Clear to "
-                "reset both to the run default. Nothing was saved."
+                "reset both to the default (the BCL Convert profile's, else the run's). "
+                "Nothing was saved."
             ))
 
     with saving_run(run, ctx, request):

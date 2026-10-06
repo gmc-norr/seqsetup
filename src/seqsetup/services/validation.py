@@ -13,6 +13,7 @@ import logging
 import re
 from collections import OrderedDict, defaultdict
 from threading import Lock
+from typing import Optional
 
 from ..data.instruments import (
     NoI5Direction,
@@ -40,6 +41,7 @@ from .cycle_calculator import (
     CycleCalculator,
 )
 from .index_collision_validator import IndexCollisionValidator
+from .sheet_plan import plan_sheet
 from .sheet_text import describe, hidden_characters
 from .validation_utils import (
     effective_index_read_length,
@@ -177,8 +179,21 @@ class ValidationService:
         # Sample ID validation
         duplicate_errors = cls.validate_sample_ids(run)
 
+        # The sheet plan: what the v2 sheet's application sections hold, its
+        # problems and the mismatch numbers it gives BCL Convert (spec
+        # 2026-10-05 group A3, §1, §2). Only with the profiles.
+        plan = None
+        if test_profile_repo and app_profile_repo and run.samples:
+            plan = plan_sheet(
+                run, test_profile_repo, app_profile_repo,
+                get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type,
+                                       instrument_config),
+            )
+        mismatches = plan.mismatches if plan else None
+
         # Index collision validation (delegated)
-        collisions = IndexCollisionValidator.validate_index_collisions(run, instrument_config)
+        collisions = IndexCollisionValidator.validate_index_collisions(
+            run, instrument_config, mismatches)
 
         distance_matrices = (
             IndexCollisionValidator.calculate_index_distances(run, instrument_config)
@@ -225,13 +240,27 @@ class ValidationService:
             )
 
         # Configuration validation (inline - many private helpers)
-        configuration_errors = cls.validate_configuration(run, instrument_config)
+        configuration_errors = cls.validate_configuration(run, instrument_config, mismatches)
 
         # When profile repos are configured, every sample must have a test_id —
         # the SampleSheet v2 exporter's profile-driven path silently drops samples
         # without one, and emits no BCLConvert section at all if none are present.
         if test_profile_repo and app_profile_repo and run.samples:
             configuration_errors.extend(cls._validate_samples_have_test_id(run))
+
+        # The plan's problems (2-8) are errors; the writer's own (1) are
+        # reported above as missing_test_id and by the application checks.
+        if plan:
+            configuration_errors.extend(
+                ConfigurationError(severity=ValidationSeverity.ERROR, category=p.category,
+                                   message=p.message, sample_names=list(p.sample_names))
+                for p in plan.check_errors
+            )
+            configuration_errors.extend(
+                ConfigurationError(severity=ValidationSeverity.WARNING, category=w.category,
+                                   message=w.message, sample_names=list(w.sample_names))
+                for w in plan.warnings
+            )
 
         # Get chemistry type for display purposes
         chemistry = get_chemistry_type(run.instrument_platform)
@@ -251,6 +280,7 @@ class ValidationService:
             i5_workflow=direction.workflow if direction else "",
             i5_read_orientation=direction.read_orientation if direction else "",
             no_i5_direction=no_direction,
+            sheet_plan_fingerprint=plan.fingerprint if plan else "",
         )
 
     @classmethod
@@ -305,6 +335,7 @@ class ValidationService:
         cls,
         run: SequencingRun,
         instrument_config=None,
+        mismatches: Optional[dict] = None,
     ) -> list[ConfigurationError]:
         """
         Validate run configuration: lane assignments, index consistency,
@@ -313,6 +344,8 @@ class ValidationService:
         Args:
             run: Sequencing run to validate
             instrument_config: Optional InstrumentConfig for DB overrides
+            mismatches: Optional sheet-plan mismatch numbers, keyed by (sample
+                id, index number) (spec 2026-10-05 group A3, §2)
 
         Returns:
             List of ConfigurationError (errors and warnings)
@@ -377,7 +410,7 @@ class ValidationService:
         errors.extend(cls._validate_index_length_matches_cycles(
             run, {name for error in override_errors for name in error.sample_names}))
         errors.extend(cls._validate_duplicate_index_pairs(run, all_lanes))
-        errors.extend(cls._validate_mismatch_threshold(run, all_lanes))
+        errors.extend(cls._validate_mismatch_threshold(run, all_lanes, mismatches))
 
         return errors
 
@@ -1055,8 +1088,14 @@ class ValidationService:
         cls,
         run: SequencingRun,
         all_lanes: list[int],
+        mismatches: Optional[dict] = None,
     ) -> list[ConfigurationError]:
-        """Warn when the barcode mismatch threshold is close to the minimum distance in a lane."""
+        """Warn when the barcode mismatch threshold is close to the minimum distance in a lane.
+
+        A sample's number is the one the sheet gives BCL Convert when
+        ``mismatches`` (the sheet plan's) has it (spec 2026-10-05 group A3,
+        §2), else its own, else the run's.
+        """
         errors: list[ConfigurationError] = []
         lane_samples = cls._group_samples_by_lane(run, all_lanes)
 
@@ -1084,10 +1123,11 @@ class ValidationService:
                 # Get the effective mismatch for i7 in this lane
                 # Use the maximum per-sample mismatch (or global default)
                 max_mismatch_i7 = max(
-                    (
+                    (mismatches or {}).get(
+                        (s.id, 1),
                         s.barcode_mismatches_index1
                         if s.barcode_mismatches_index1 is not None
-                        else run.barcode_mismatches_index1
+                        else run.barcode_mismatches_index1,
                     )
                     for s in indexed
                 )
