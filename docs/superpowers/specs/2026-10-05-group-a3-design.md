@@ -263,8 +263,10 @@ default 1 → 2 changes the mismatch numbers the collision check used). So:
   validation report made with the sheet must carry the same fingerprint too.
 - A difference raises its own exception (`SheetPlanChanged`), caught by Mark Ready before
   its catch-all for export failures: a 409 conflict (`profiles_changed_during_export`, also
-  the audit reason). The run stays a Draft and nothing is stored. Marking it Ready again
-  checks and writes against the new profiles.
+  the audit reason). The run stays a Draft and nothing is stored. Mark Ready also clears
+  the validation cache before it answers, so marking it Ready again checks and writes
+  against the profiles stored then — even when a sync stored them but stopped before it
+  cleared the cache.
 
 A cached validation from before a sync carries the old fingerprint, so it cannot let a sheet
 written from the new profiles through either.
@@ -351,11 +353,14 @@ Otherwise the v1 sheet is unchanged.
 Three rules, which together let the checks compare stored indexes position by position.
 
 **An index part starts with the index and holds one run of index cycles.** In each index
-read's part of an OverrideCycles, nothing comes before the first `I`, and there is one `I`
-segment: `I8`, `I8N2` and `I8U9` are fine; `N2I8` and `I4N2I4` are refused. Group A2 already
-refuses N or U before the index in the Index 2 part (`index2_order`,
-`services/cycle_calculator.py:244-248`); this adds the same for the Index 1 part
-(`index1_order`) and a second `I` segment in either part (`index_split`). They are new
+read's part of an OverrideCycles, nothing comes before the first `I` — no `N`, `U` or `Y`
+cycle — and there is one `I` segment: `I8`, `I8N2` and `I8U9` are fine; `N2I8`, `Y2I8` and
+`I4N2I4` are refused. Group A2 already refuses N or U before the index in the Index 2 part
+(`index2_order`, `services/cycle_calculator.py:244-248`); this widens that to any cycle
+before the index (a `Y` too), adds the same for the Index 1 part (`index1_order`) and a
+second `I` segment in either part (`index_split`). A `Y` before the index lets two samples
+pass the checks whose indexes BCL Convert reads from different cycles (the plan review's
+case: `I4N2` beside `Y2I4` on a 6-cycle read). They are new
 results of `CycleCalculator.override_cycles_problem`, the one rule the save routes and Mark
 Ready use, so a typed value is refused where it is entered and at Mark Ready. A part with no
 index, such as `N10` for a sample without an i5, is fine.
@@ -477,9 +482,11 @@ Version` (for example `BCLConvertNextera 1.0.0`).
   of cycles." At the input, the refusal shows the rule text as A2's does
   (`_override_cycles_refusal` in `routes/samples.py`). At Mark Ready, categories
   `override_cycles_index1_order` and `override_cycles_index_split`: "<n> sample(s) have an
-  OverrideCycles whose Index 1 part masks cycles before the index: <ids>.
+  OverrideCycles whose Index 1 part has cycles before the index: <ids>.
   <INDEX1_ORDER_RULE>" and "<n> sample(s) have an OverrideCycles with an index part of more
-  than one run of index cycles: <ids>. <INDEX_SPLIT_RULE>"
+  than one run of index cycles: <ids>. <INDEX_SPLIT_RULE>" A2's `override_cycles_index2_order`
+  message says "has cycles before the index" too (it said "masks cycles"; a `Y` is not a
+  mask).
 - `profiles_changed_during_export` (a 409 at Mark Ready): "The profiles changed while the
   exports were being generated, so the Sample Sheet would not match what was checked. The
   run is still a Draft. Mark it Ready again."
@@ -507,12 +514,16 @@ categories labels in the style of A2's `override_cycles_index2_order` label.
   where the reason shows; the v1 sheet is for bcl2fastq and the MiSeq, and BCL Convert gets
   the v2 sheet (a shortened index needs OverrideCycles, which only v2 has); the mismatch
   numbers the check uses.
-- `docs/user-guide/samples.rst`: what Clear on the mismatch numbers resets to; the warning
+- `docs/user-guide/samples.rst`: what Clear on the mismatch numbers resets to (on the
+  profile path: the BCL Convert profile's Data default when it has the column, else its
+  Settings value, else 1, BCL Convert's default; the run's numbers only on the path without
+  profiles); the warning
   when the profile cannot carry a sample's number; lanes must be picked when the sheet has a
   Lane column.
 - `docs/user-guide/override-cycles.rst`: the index-length rule replaces the A2 paragraph on a
-  shortened i5; an index part starts with the index and holds one run of index cycles, in
-  both index parts; the checks count the bases read from the OverrideCycles.
+  shortened i5; an index part starts with the index (no `N`, `U` or `Y` before it) and holds
+  one run of index cycles, in both index parts; the checks count the bases read from the
+  OverrideCycles.
 - `docs/user-guide/index-assignment.rst`: kit index cycles must equal the index's length,
   or Mark Ready refuses.
 - `docs/user-guide/validation.rst`: the new checks and the v1 warning.
@@ -546,8 +557,11 @@ categories labels in the style of A2's `override_cycles_index2_order` label.
 - **Fingerprint**: a profile's Data default changed 1 → 2 (shape still valid) between Mark
   Ready's checks and the writing makes Mark Ready refuse with a 409
   `profiles_changed_during_export` (not a 500), audited, storing nothing and leaving a Draft;
-  the same change through a cached validation from before the sync is refused too; a sync
-  that only renews ids and `synced_at` is not a change; no change, no refusal.
+  the same change through a cached validation from before the sync is refused too, and the
+  next Mark Ready goes through (the 409 cleared the cache); a sync that only renews ids and
+  `synced_at` is not a change; no change, no refusal; each of a Settings value, the
+  DataFields, the Translate, a test profile's list of profiles and a newly stored version a
+  `~=` reference now resolves to changes the fingerprint.
 - **v1**: each reason found, including cleared samples whose profile Data default is 0, and a
   Settings-only profile with 2, against the run's 1; a sync between the v2 writer and the v1
   decision cannot make a v1 sheet the checks did not allow (the decision comes from the
@@ -556,13 +570,18 @@ categories labels in the style of A2's `override_cycles_index2_order` label.
   detail; the stored reason survives a later profile change, is cleared on READY→DRAFT and
   is not in the change history; a run made before exports were stored gets the on-the-spot
   sheet only when the check finds no reason; an 8-base index on a 10-cycle read (`I8N2`)
-  still gets a v1 sheet, with the index at 8 bases and no OverrideCycles.
+  still gets a v1 sheet, with the index at 8 bases and no OverrideCycles, and Mark Ready
+  stores it. On the profile path through Mark Ready (a MiSeq whose test has a BCLConvert
+  profile): cleared samples whose profile Data default is 0, against the run's 1, go Ready
+  with no v1 sheet and the stored reason; a sync between the checks and the writing that
+  changes that default 0 → 1 gives the 409, stores no v1 sheet and leaves a Draft.
 - **Kit cycles and a typed value**: an 8-base i7 and i5 with kit index cycles 12 on 10-cycle
   reads, typed `I8N2` for both, passes; without the typed value it is still
   `index_exceeds_cycles` for both.
-- **Index parts**: `N2I4` in Index 1 and `I4N2I4` in either part refused at the input and at
-  Mark Ready; `I8`, `I8N2`, `I8U9`, `N10` accepted. The review's `I4N2`/`N2I4` lane can no
-  longer reach Ready.
+- **Index parts**: `N2I4` and `Y2I4` in Index 1, `Y2I8` in Index 2 and `I4N2I4` in either
+  part refused at the input and at Mark Ready; `I8`, `I8N2`, `I8U9`, `N10`, `Y10` (a part
+  with no index) accepted. The review's `I4N2`/`N2I4` lane and the plan review's
+  `I4N2`/`Y2I4` lane can no longer reach Ready.
 - **Index length**: kit index cycles, typed fewer, typed more, typed none and index cycles for
   a missing index, refused on a forward and a reverse-reading instrument; a 10-base i7 and a
   10-base i5 with kit index cycles 8 on 8-cycle reads refused (today 0 errors); a 12-base i5
@@ -582,8 +601,9 @@ categories labels in the style of A2's `override_cycles_index2_order` label.
 SeqSetup has never been deployed, so no stored data needs moving. Runs already Ready keep
 their stored sheets. A Draft that mixes profiles that differ, uses a test without a
 BCLConvert profile, or has an index whose length differs from its cycles is refused at Mark
-Ready with what to change. A typed OverrideCycles whose Index 1 part masks cycles before the
-index, or whose index part holds two runs of index cycles, is refused where it is typed. A
+Ready with what to change. A typed OverrideCycles with any cycle before the index in an index
+part (in Index 2 a `Y` is newly refused; N and U already were), or an index part of two runs
+of index cycles, is refused where it is typed. A
 MiSeq or NovaSeq 6000 run checked with settings a v1 sheet cannot hold goes Ready without a
 v1 sheet. A sync during Mark Ready that changes a profile the run uses makes that Mark Ready
 refuse; the next one goes through.
