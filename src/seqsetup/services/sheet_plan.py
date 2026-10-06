@@ -34,6 +34,25 @@ SPELLED_SETTINGS_BCLCONVERT = (
 # nothing else is not a change.
 _RENEWED_BY_SYNC = ("_id", "id", "synced_at", "source_file")
 
+PROFILES_CHANGED = (
+    "The profiles changed while the exports were being generated, so the Sample Sheet "
+    "would not match what was checked. The run is still a Draft. Mark it Ready again."
+)
+
+
+class SheetPlanProblem(ValueError):
+    """The writer's stop on a plan problem (spec §1): the sheet would leave
+    a sample out, write one twice, or not carry what was checked."""
+
+
+class SheetPlanChanged(Exception):
+    """The plan the writer would write from is not the plan Mark Ready's
+    checks passed: a profile changed in between (spec §1, The plan's
+    fingerprint)."""
+
+    def __init__(self):
+        super().__init__(PROFILES_CHANGED)
+
 
 @dataclass(frozen=True)
 class SheetProblem:

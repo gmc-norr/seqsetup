@@ -615,7 +615,7 @@ class TestRecordsThatCannotBeUsed:
         disable_repos(ctx, "test_profile", "app_profile")
         run = _clean_run(ctx, "a2-unusable-export-step")
 
-        def unusable(run_, ctx_):
+        def unusable(run_, ctx_, **_kw):
             raise SyncedInstrumentsUnusable(DATABASE_MESSAGE)
 
         monkeypatch.setattr(runs_module, "_pregenerate_exports", unusable)

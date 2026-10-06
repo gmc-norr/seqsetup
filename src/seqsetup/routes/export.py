@@ -67,6 +67,7 @@ def export_samplesheet_v2(
                 run,
                 test_profile_repo=ctx.test_profile_repo,
                 app_profile_repo=ctx.app_profile_repo,
+                instrument_config=ctx.instrument_config,
             )
         filename = f"{sanitize_filename(run.run_name, 'SampleSheet_v2')}.csv"
         audit(

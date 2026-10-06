@@ -616,6 +616,16 @@ class TestSampleSheetV2Exporter:
         assert "IndexOrientation,Forward" not in output
 
 
+def _plain_bclconvert(lane: bool = False) -> ApplicationProfile:
+    """A BCLConvert profile a test lists beside another application's profile:
+    every test needs one (spec 2026-10-05 group A3, §1)."""
+    fields = ["Sample_ID", "Lane", "Index", "Index2"] if lane else ["Sample_ID", "Index", "Index2"]
+    return ApplicationProfile(
+        name="PlainBCLConvert", version="1.0.0", application_type="Dragen",
+        application_name="BCLConvert", settings={}, data={}, data_fields=fields,
+    )
+
+
 class _StubTestProfileRepo:
     """In-memory test profile repo keyed by test_type."""
 
@@ -753,7 +763,7 @@ class TestApplicationSectionsAcrossTestProfiles:
             application_type="BclConvert",
             application_name="BCLConvert",
             settings={"SoftwareVersion": "4.3.6"},
-            data_fields=["Sample_ID", "OverrideCycles"],
+            data_fields=["Sample_ID", "Index", "OverrideCycles"],
             data={},
         )
         run = SequencingRun(
@@ -769,7 +779,7 @@ class TestApplicationSectionsAcrossTestProfiles:
         output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
         # index1 8bp over 8 index1 cycles -> I8; absent index2 over 8 -> N8.
         # The single-index sample's OverrideCycles cell must be computed, not blank.
-        assert "S_SINGLE,Y151;I8;N8;Y151" in output
+        assert "S_SINGLE,ATTACTCG,Y151;I8;N8;Y151" in output
 
 
 SHIPPED_BCLCONVERT_PROFILE = (
@@ -820,22 +830,20 @@ class TestProfileDrivenBclConvertData:
             run_cycles=RunCycles(151, 151, 8, 8),
             samples=samples,
         )
+        profiles = [app_profile] if app_profile.application_name == "BCLConvert" else [
+            _plain_bclconvert(lane=True), app_profile]
         test_profile_repo = _StubTestProfileRepo({
             "WGS": TestProfile(
                 test_type="WGS",
                 test_name="WGS",
                 version="1.0.0",
                 application_profiles=[
-                    ApplicationProfileReference(
-                        profile_name=app_profile.name,
-                        profile_version=app_profile.version,
-                    ),
+                    ApplicationProfileReference(profile_name=p.name, profile_version=p.version)
+                    for p in profiles
                 ],
             ),
         })
-        app_profile_repo = _StubAppProfileRepo({
-            (app_profile.name, app_profile.version): app_profile,
-        })
+        app_profile_repo = _StubAppProfileRepo({(p.name, p.version): p for p in profiles})
         output = SampleSheetV2Exporter.export(run, test_profile_repo, app_profile_repo)
         return TestApplicationSectionsAcrossTestProfiles._extract_section(
             output, section
@@ -849,14 +857,16 @@ class TestProfileDrivenBclConvertData:
             "S1,2,ATTACTCG,TATAGCCT",
         ]
 
-    def test_sample_without_lanes_gets_single_row_with_blank_lane(self):
+    def test_sample_without_lanes_is_refused_with_a_lane_column(self):
+        # Its Lane cell would be empty (spec 2026-10-05 group A3, §1).
         profile = self._make_app_profile(["Sample_ID", "Lane", "Index", "Index2"])
-        lines = self._export(profile, [self._make_sample("S1", [])])
-        assert lines[1:] == ["S1,,ATTACTCG,TATAGCCT"]
+        with pytest.raises(ValueError, match="have no lanes picked"):
+            self._export(profile, [self._make_sample("S1", [])])
 
     def test_lanes_do_not_duplicate_rows_when_profile_has_no_lane_column(self):
+        # On every lane of the flow cell: no Lane column is needed.
         profile = self._make_app_profile(["Sample_ID", "Index", "Index2"])
-        lines = self._export(profile, [self._make_sample("S1", [1, 2])])
+        lines = self._export(profile, [self._make_sample("S1", list(range(1, 9)))])
         assert lines[1:] == ["S1,ATTACTCG,TATAGCCT"]
 
     def test_header_uses_translated_column_names(self):
@@ -970,7 +980,7 @@ class TestSampleIdentifiersWrittenExactly:
         profile = ApplicationProfile(
             name="BCLConvertNextera", version="1.0.0",
             application_type="Dragen", application_name="BCLConvert",
-            data_fields=["Sample_ID", "Index"], data={},
+            data_fields=["Sample_ID", "Index", "Index2"], data={},
         )
         test_profile_repo = _StubTestProfileRepo({"WGS": TestProfile(
             test_type="WGS", test_name="WGS", version="1.0.0",
@@ -1067,16 +1077,21 @@ class TestSheetTextGuards:
             application_name="BCLConvert]\n[Junk",
             settings={}, data_fields=["Sample_ID"], data={},
         )
+        bcl = _plain_bclconvert()
         tp = TestProfile(
             test_type="WGS", test_name="WGS", version="1.0.0",
-            application_profiles=[ApplicationProfileReference(profile_name="Bad", profile_version="1.0.0")],
+            application_profiles=[
+                ApplicationProfileReference(profile_name=bcl.name, profile_version=bcl.version),
+                ApplicationProfileReference(profile_name="Bad", profile_version="1.0.0"),
+            ],
         )
 
         with pytest.raises(ValueError, match="ApplicationName"):
             SampleSheetV2Exporter.export(
                 run,
                 _StubTestProfileRepo({"WGS": tp}),
-                _StubAppProfileRepo({("Bad", "1.0.0"): app_profile}),
+                _StubAppProfileRepo({("Bad", "1.0.0"): app_profile,
+                                     (bcl.name, bcl.version): bcl}),
             )
 
     @pytest.mark.parametrize("value", [4.3, 4.10, 7, True])
@@ -1094,21 +1109,22 @@ class TestSheetTextGuards:
 
 
 def _export_with_profile(settings, data, data_fields, translate, **sample_fields):
-    """Export one indexed sample through a profile-driven section."""
+    """Export one sample through a profile-driven BCLConvert section. The
+    sample has an i7 when the profile writes an Index column and an i5 when
+    it writes Index2, so the sheet plan's column rule holds (spec 2026-10-05
+    group A3, §1) and the writer's own checks are what a test reaches."""
+    columns = [(translate or {}).get(f, f) for f in (data_fields or list((data or {}).keys()))]
+    i7 = Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7)
+    i5 = Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5)
+    if "Index2" in columns:
+        sample_fields["index_pair"] = IndexPair(id="p1", name="p1", index1=i7, index2=i5)
+    elif "Index" in columns:
+        sample_fields["index1"] = i7
     run = SequencingRun(
         instrument_platform=InstrumentPlatform.NOVASEQ_X,
         flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8),
-        samples=[Sample(
-            sample_id="S1",
-            test_id="WGS",
-            index_pair=IndexPair(
-                id="p1", name="p1",
-                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
-                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
-            ),
-            **sample_fields,
-        )],
+        samples=[Sample(sample_id="S1", test_id="WGS", **sample_fields)],
     )
     app_profile = ApplicationProfile(
         name="P", version="1.0.0", application_type="Custom",
@@ -1246,17 +1262,18 @@ def test_shipped_application_profiles_export(path):
             ),
         )],
     )
+    profiles = [profile] if profile.application_name == "BCLConvert" else [
+        _plain_bclconvert(lane=True), profile]
     tp = TestProfile(
         test_type="WGS", test_name="WGS", version="1.0.0",
         application_profiles=[ApplicationProfileReference(
-            profile_name=profile.name, profile_version=profile.version,
-        )],
+            profile_name=p.name, profile_version=p.version) for p in profiles],
     )
 
     output = SampleSheetV2Exporter.export(
         run,
         _StubTestProfileRepo({"WGS": tp}),
-        _StubAppProfileRepo({(profile.name, profile.version): profile}),
+        _StubAppProfileRepo({(p.name, p.version): p for p in profiles}),
     )
 
     assert f"[{profile.application_name}_Settings]" in output.split("\n")
@@ -1301,16 +1318,17 @@ def _export_stored_profile(profile) -> str:
             ),
         )],
     )
+    profiles = [profile] if profile.application_name == "BCLConvert" else [
+        _plain_bclconvert(), profile]
     tp = TestProfile(
         test_type="WGS", test_name="WGS", version="1.0.0",
         application_profiles=[ApplicationProfileReference(
-            profile_name=profile.name, profile_version=profile.version,
-        )],
+            profile_name=p.name, profile_version=p.version) for p in profiles],
     )
     return SampleSheetV2Exporter.export(
         run,
         _StubTestProfileRepo({"WGS": tp}),
-        _StubAppProfileRepo({(profile.name, profile.version): profile}),
+        _StubAppProfileRepo({(p.name, p.version): p for p in profiles}),
     )
 
 
@@ -1355,7 +1373,7 @@ class TestProfileSafetyNet:
     @pytest.mark.parametrize("value", WRONG_KIND)
     def test_setting_value_of_the_wrong_kind_is_refused(self, value):
         with pytest.raises(ValueError, match=self.KIND_ERROR):
-            _export_with_profile({"Extra": value}, {"Extra": "x"}, self.FIELDS, {})
+            _export_with_profile({"ExtraSetting": value}, {"Extra": "x"}, self.FIELDS, {})
 
     @pytest.mark.parametrize("value", WRONG_KIND)
     def test_data_default_of_the_wrong_kind_is_refused(self, value):

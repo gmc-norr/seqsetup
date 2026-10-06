@@ -5,6 +5,7 @@ from typing import TextIO, Optional, TYPE_CHECKING
 
 from ..data.instruments import (
     get_bclconvert_software_version,
+    get_lanes_for_flowcell,
     get_samplesheet_platform_name,
     run_i5_direction,
 )
@@ -12,6 +13,13 @@ from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .samplesheet_v1_exporter import _PLAIN_IDENTIFIER_RE, _reverse_complement
+from .sheet_plan import (
+    PlannedSection,
+    SheetPlanChanged,
+    SheetPlanProblem,
+    data_columns,
+    plan_sheet,
+)
 from .sheet_text import (
     MISMATCH_COLUMNS,
     PLAIN_NAME_RE,
@@ -38,6 +46,8 @@ class SampleSheetV2Exporter:
         run: SequencingRun,
         test_profile_repo: Optional["TestProfileRepository"] = None,
         app_profile_repo: Optional["ApplicationProfileRepository"] = None,
+        instrument_config=None,
+        plan_fingerprint: Optional[str] = None,
     ) -> str:
         """
         Export sequencing run to SampleSheet v2 CSV format.
@@ -46,6 +56,11 @@ class SampleSheetV2Exporter:
             run: Sequencing run configuration
             test_profile_repo: Optional repo for looking up TestProfiles by test_id
             app_profile_repo: Optional repo for looking up ApplicationProfiles
+            instrument_config: Optional InstrumentConfig, for the flow cell's
+                lane count (the same one the checks use)
+            plan_fingerprint: At Mark Ready, the fingerprint of the sheet plan
+                the checks passed; a plan with another one raises
+                ``SheetPlanChanged`` (spec 2026-10-05 group A3, §1)
 
         Returns:
             SampleSheet v2 content as string
@@ -62,7 +77,8 @@ class SampleSheetV2Exporter:
         if test_profile_repo and app_profile_repo:
             # Use ApplicationProfiles for all sections including BCLConvert
             cls._write_application_sections_from_profiles(
-                output, run, test_profile_repo, app_profile_repo
+                output, run, test_profile_repo, app_profile_repo,
+                instrument_config, plan_fingerprint,
             )
         else:
             # Fallback to hardcoded defaults when no repos provided
@@ -499,56 +515,30 @@ class SampleSheetV2Exporter:
         run: SequencingRun,
         test_profile_repo: "TestProfileRepository",
         app_profile_repo: "ApplicationProfileRepository",
+        instrument_config=None,
+        plan_fingerprint: Optional[str] = None,
     ):
         """
-        Write application sections based on ApplicationProfile definitions.
+        Write the application sections from the sheet plan (spec 2026-10-05
+        group A3, §1): one [AppName_Settings] and [AppName_Data] per
+        application, each sample once, each row from its own profile.
 
-        Groups samples by test_id, resolves TestProfile -> ApplicationProfiles,
-        and generates [AppName_Settings] and [AppName_Data] sections for all
-        applications including BCLConvert and DRAGEN pipelines.
+        Before anything is written: a plan whose fingerprint is not
+        ``plan_fingerprint`` raises ``SheetPlanChanged``, and any plan problem
+        raises ``SheetPlanProblem`` with its text — a sample left out or
+        written twice, or a value the checks used that the sheet would not
+        carry, never reaches a sheet.
         """
-        # Group samples by test_id
-        samples_by_test: dict[str, list] = {}
-        for sample in run.samples:
-            if sample.test_id:
-                if sample.test_id not in samples_by_test:
-                    samples_by_test[sample.test_id] = []
-                samples_by_test[sample.test_id].append(sample)
-
-        if not samples_by_test:
-            return
-
-        # Accumulate samples per ApplicationProfile across all referencing test_ids,
-        # then emit each section once with the unioned sample list. Otherwise samples
-        # whose test_id resolves to an already-seen ApplicationProfile would be
-        # silently dropped from the section's data rows.
-        profile_to_entry: dict[tuple[str, str], dict] = {}
-        profile_order: list[tuple[str, str]] = []  # preserve first-seen order for determinism
-
-        for test_id, samples in samples_by_test.items():
-            test_profile = test_profile_repo.get_by_test_type(test_id)
-            if not test_profile:
-                continue
-
-            for app_ref in test_profile.application_profiles:
-                profile_key = (app_ref.profile_name, app_ref.profile_version)
-
-                if profile_key not in profile_to_entry:
-                    app_profile = app_profile_repo.get_by_name_version(
-                        app_ref.profile_name, app_ref.profile_version
-                    )
-                    if not app_profile:
-                        continue
-                    profile_to_entry[profile_key] = {"profile": app_profile, "samples": []}
-                    profile_order.append(profile_key)
-
-                profile_to_entry[profile_key]["samples"].extend(samples)
-
-        for key in profile_order:
-            entry = profile_to_entry[key]
-            cls._write_application_profile_section(
-                output, entry["profile"], entry["samples"], run
-            )
+        plan = plan_sheet(
+            run, test_profile_repo, app_profile_repo,
+            get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type, instrument_config),
+        )
+        if plan_fingerprint is not None and plan.fingerprint != plan_fingerprint:
+            raise SheetPlanChanged()
+        if plan.problems:
+            raise SheetPlanProblem(plan.problems[0].message)
+        for section in plan.sections:
+            cls._write_application_section(output, section, run)
 
     @classmethod
     def _write_application_profile_section(
@@ -558,7 +548,24 @@ class SampleSheetV2Exporter:
         samples: list,
         run: Optional[SequencingRun] = None,
     ):
-        """Write [AppName_Settings] and [AppName_Data] sections from profile."""
+        """Write [AppName_Settings] and [AppName_Data] sections from one profile."""
+        cls._write_application_section(
+            output,
+            PlannedSection(profile.application_name, [profile], [(s, profile) for s in samples]),
+            run,
+        )
+
+    @classmethod
+    def _write_application_section(
+        cls,
+        output: TextIO,
+        section: PlannedSection,
+        run: Optional[SequencingRun] = None,
+    ):
+        """Write one section of the plan. The Settings and the header come
+        from its first profile (every profile of a section has the same,
+        spec §1 problem 4); each row is filled from its own profile."""
+        profile = section.profiles[0]
         app_name = cls._require_plain(profile.application_name, PLAIN_NAME_RE, "ApplicationName")
 
         # Write Settings section
@@ -596,16 +603,12 @@ class SampleSheetV2Exporter:
         # Write Data section
         output.write(f"[{app_name}_Data]\n")
 
-        # Get data fields from profile, filtering out fields we handle specially
-        data_fields = profile.data_fields or list(profile.data.keys())
-
         # Translate maps a profile field name to its sample sheet column name
         # (e.g. IndexI7 -> Index); BCL Convert does not recognise the
         # untranslated names. The column name drives both the header and the
         # value written, so a translated field is filled like the column it
-        # becomes. A YAML "Translate:" key with no entries loads as None.
-        translate = profile.translate or {}
-        columns = [(field, translate.get(field, field)) for field in data_fields]
+        # becomes (sheet_plan.data_columns).
+        columns = data_columns(profile)
         if not any(col == "Sample_ID" for _, col in columns):
             raise ValueError(f"The {app_name}_Data section has no Sample_ID column")
 
@@ -626,14 +629,17 @@ class SampleSheetV2Exporter:
                 return sample.lanes
             return [sample.lanes[0] if sample.lanes else None]
 
-        rows_to_write = [(sample, lane) for sample in samples for lane in _row_lanes(sample)]
+        rows_to_write = [
+            (sample, own, lane) for sample, own in section.rows for lane in _row_lanes(sample)
+        ]
 
         # Write data rows. Every cell flows through ",".join()
         # so any comma or quote in admin/user-supplied content would shift
-        # downstream columns — escape every variable interpolation.
-        for sample, lane in rows_to_write:
+        # downstream columns — escape every variable interpolation. Each row
+        # takes its fields and defaults from its own profile.
+        for sample, own, lane in rows_to_write:
             row = []
-            for field, col in columns:
+            for field, col in data_columns(own):
                 if col == "Sample_ID":
                     row.append(cls._escape_identifier(sample.sample_id))
                 elif col == "Lane":
@@ -648,13 +654,13 @@ class SampleSheetV2Exporter:
                     val = sample.barcode_mismatches_index1
                     row.append(
                         str(val) if val is not None
-                        else cls._profile_mismatch_cell(profile.data.get(field, ""), col)
+                        else cls._profile_mismatch_cell(own.data.get(field, ""), col)
                     )
                 elif col == "BarcodeMismatchesIndex2":
                     val = sample.barcode_mismatches_index2
                     row.append(
                         str(val) if val is not None
-                        else cls._profile_mismatch_cell(profile.data.get(field, ""), col)
+                        else cls._profile_mismatch_cell(own.data.get(field, ""), col)
                     )
                 elif col == "OverrideCycles":
                     # Use sample's override cycles, or calculate from index lengths.
@@ -669,7 +675,7 @@ class SampleSheetV2Exporter:
                     row.append(cls._escape_csv(oc or ""))
                 else:
                     # Use default value from profile data
-                    row.append(cls._escape_config_cell(profile.data.get(field, "")))
+                    row.append(cls._escape_config_cell(own.data.get(field, "")))
             output.write(",".join(row) + "\n")
 
         output.write("\n")
