@@ -39,7 +39,9 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
    the newest 1.2.x, and `1.2.3` exactly 1.2.3.
 3. A sample with a test but no version: **Mark Ready refuses.**
 4. A test profile's `Version` must be **three whole numbers** at sync. Two files with the
-   **same test and the same version: both are refused.**
+   **same test and the same version: both are refused.** **Any refused test file means no test
+   profile is stored and the stored ones are kept**, as for instrument files (user, plan review
+   of 68fc2c0): otherwise a refused newest file would make `1` quietly pick an older version.
 5. The version text stays on the sample while the run is a Draft. **Mark Ready picks the
    exact version** at that moment, checks and writes with it, and **saves it on the Ready run**
    (user, question 1).
@@ -88,18 +90,36 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 
   The PEP 440 check and the decimal-number message stay; the PEP 440 check also catches the
   `ValueError` that a 4,301-digit number raises in it (measured), and both messages show at most
-  40 characters of the value. A refused file is skipped and logged,
-  as every refused profile file is today (the loop in `_fetch_profiles_recursive`,
-  `github_sync.py:504-530`).
+  40 characters of the value.
 - After all test files are read, the sync looks for one test and version in more than one
-  file. Every file of such a pair is refused: not stored, and logged as a warning:
+  file. Every file of such a pair is refused, and logged as a warning:
 
   ```
   Test profiles refused: WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. A test and version may be in one file only.
   ```
 
-  The other test files sync. The guard against replacing stored profiles with nothing
-  (`_guard_against_destructive_replace`) runs after this, unchanged.
+- **A refused test file stops every test profile change** (decision 4). A test file is refused
+  when it breaks a rule above, cannot be read as YAML, is empty, has no download link, or does
+  not give a test profile for any other reason; a sub-folder of the test profile folder that
+  cannot be listed is refused too. Today such a file is skipped with a warning and the rest are
+  stored (`_fetch_profiles_recursive`, `github_sync.py:504-530`); application profile files keep
+  that behavior. When a test file is refused, the sync stores no test profile, keeps every
+  stored one, still stores the application profiles, index kits and instruments as today, clears
+  the validation cache as today, and ends with status `error` and this message (the instrument
+  message, `github_sync.py:329-344`, is unchanged when only instrument files are refused, and
+  follows the test sentence when both are):
+
+  ```
+  Test profile files were refused, so no test profiles were stored and the stored ones are kept: profiles/test_profiles/Wgs_new.yaml: Profile validation failed for 'Wgs_new.yaml': Field 'Version' must be three whole numbers joined by dots, each at most 9 digits, like 1.0.0: '1.2'; WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. Synced 3 application profiles.
+  ```
+
+  (Measured on the prototype.) Each refused file is `<path>: <problem>`, in the order read; the
+  problems the sync names itself are `is empty`, `has no download link`, `cannot be read as
+  YAML: …` and, for a sub-folder, `<path>/: could not be listed: …`; a repeated test and version
+  is `WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml`.
+
+  The guard against replacing stored profiles with nothing (`_guard_against_destructive_replace`)
+  runs as today when the test profiles are stored.
 
 ### Finding a sample's test profile
 
@@ -118,7 +138,9 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 - Stored records whose `version` breaks the sync rule above (three whole numbers, each at most
   9 digits) are not used. The pattern is checked before any text is turned into a number, so an
   oversized stored version is skipped and never raises. Such records can only come from a sync
-  before this change; the next sync replaces every test profile.
+  before this change; the next sync that refuses no test file replaces every test profile.
+- Matching compares numbers, never text: `1` does not match 10.0.0 or 11.0.0, `1.2` does not
+  match 1.20.0, and 1.10.0 is newer than 1.9.0.
 - Reasons, each with the text the checks show (§3):
   - **No profile of that test** (`test_profile_not_found`, text unchanged):
     `No test profile found for test type 'WGS'`
@@ -161,12 +183,22 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   Version for rows without one: A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3.
   ```
 
-  Rows that have a version keep it. Each new sample gets `ps.test_version or
-  paste.default_version`, as the test does.
+  Rows that have a version keep it. Each new sample with a test (its own, or the one from "Test
+  for rows without one") gets `ps.test_version or paste.default_version`; a sample without a
+  test gets no version from the box (decision 6).
+- A row with a version of its own and no test (none in the row and none picked) refuses the
+  whole paste (decision 6; review of plan 68fc2c0):
+
+  ```
+  Row(s) 3, 5: a test version needs a test. Give the row a test, or pick one in Test for rows without one.
+  ```
+
 - The preview shows a Version column, marks a picked version "(picked)" as it marks a picked
   test, and adds the note `No test version. Check will ask for one.` to a row with a test and no
-  version (when test profiles exist, as for the test note). The preview's Add form sends the
-  box back like `default_test_id`.
+  version (when test profiles exist, as for the test note). A row with a version of its own and
+  no test is marked Look with the note `A test version needs a test.`; a notice above the table
+  gives the refusal text above, and the preview offers no Add, as for a repeated ID. The
+  preview's Add form sends the box back like `default_test_id`.
 - The format help (`templates/wizard/_sample_paste_format_help.html`) and the paste hint name
   the `test_version` column.
 
@@ -196,6 +228,20 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   test as a hidden field, and the version box (`WGS: set the version for the 3 samples without
   one:`). These boxes never change a sample's test. `routes/main.py` gains
   `_samples_without_version(run)`, grouped by test, beside `_samples_without_test`.
+- **A box from a page that is out of date is refused** (review of plan 68fc2c0). Each box posts
+  a hidden `only_if`: `no_test` for the first, `no_version` for the per-test boxes. Before
+  writing, `set_test_id_bulk` checks every listed sample still in the run: with `no_test` it must
+  have no test; with `no_version` its test must be the posted test and it must have no version.
+  Otherwise nothing is saved, and the answer is a 409 naming the samples (10 names at most, then
+  ` and N more`):
+
+  ```
+  These samples changed since this page was loaded: S2. Reload the page and try again.
+  ```
+
+  Measured on the prototype: without this, a per-test box loaded before another user set S2 to
+  `RNA 2` set S2 to `WGS 1`. Another `only_if` value is a 400. "Set test" in the bulk panel posts
+  no `only_if` and is unchanged: it is meant to change tests.
 
 ### The sample table (`templates/wizard/_sample_row.html:41, 167`)
 
@@ -210,7 +256,8 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
 ### Lab system (`services/sample_api.py`, `routes/admin/sample_api.py`)
 
 - `parse_api_samples` reads `test_version` (aliases `test_version`, `testversion`; a mapped
-  field name goes first, as for every field). It checks the **raw JSON value** before the
+  field name goes first, as for every field; a field that is `null` is passed over for the next
+  name, as for every field). It checks the **raw JSON value** before the
   generic `str(val).strip()[:_MAX_FIELD_LEN] if val else ""` every other field gets
   (`sample_api.py:646-653`). Measured on `e65c60d`, that line turns JSON `1.10` into `"1.1"`
   (the wrong version), `0` into `""` and `true` into `"True"`. So, by JSON type:
@@ -228,7 +275,10 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   Sample 'S1' has a test version that is not right ('v1'). A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3.
   Sample 'S1' has a test version that is a number with a decimal point (1.1), which JSON may have changed (1.10 is read as 1.1). Send it as text, for example "1.10".
   Sample 'S1' has a test version that is not text or a whole number (true).
+  Sample 'S1' has a test version but no test.
   ```
+
+  The last one is for a sample with a version and no test (decision 6; review of plan 68fc2c0).
 
 - `import_worklist_samples` (`routes/samples.py:664-784`) sets `test_version`.
 - The admin LIMS page gains a **Test version field** box (`field_test_version` →
@@ -260,6 +310,12 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   - `Sample S1 has no test version, so it would not be on the Sample Sheet.`
   - `Test 'WGS' 1 has no test profile.` (for every reason in §1)
 
+  The sheet plan's other texts that name a test name its version text too, so two versions of
+  one test can be told apart (review of plan 68fc2c0; today `BCLX 1.0.0 (test WGS) and BCLX
+  2.0.0 (test WGS)`): `Test 'WGS' 1 lists …, which is not stored.`, `Test 'WGS' 1 has no
+  BCLConvert profile, …`, `Test 'WGS' 1 lists 2 profiles for …`, and `… (test WGS 1) and … (test
+  WGS 2) have different …`.
+
 ### What Mark Ready saves
 
 - The sheet plan records, for each test and version text it resolved: the test, the text asked,
@@ -284,7 +340,9 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   shows `test_versions_used`, the versions its sheet was written with (the page checks live).
 - **Validation report** (pre-generated at Mark Ready): the JSON gains `"tests": [{"test",
   "asked", "version", "file"}]` (`services/validation_report.py:58-123`); the PDF's run lines
-  (`_run_info`, 309-320) gain a `Tests` line.
+  (`_run_info`, 309-320) gain a `Tests` line. Its value is set as a paragraph (escaped), so it
+  wraps inside its 12 cm column: a plain string does not wrap, and three tests with usual file
+  names measure 18.5 cm (review of plan 68fc2c0).
 - **The sample table** of a Ready or Archived run (§2).
 
 ## §4 Tests
@@ -297,24 +355,35 @@ Written first, each seen failing for its reason before the code.
   text), at construction and on assignment; a refused 4,301-digit value raises the rule's
   `ValueError` and its message shows 40 characters.
 - The sync rule: the nine measured values above (only `1.0.0` passes); a 10-digit and a
-  4,301-digit number refused; a pair of files with one test and version: both refused, logged,
-  the rest stored; the destructive-replace guard still stops a sync that would leave no test
-  profiles.
-- Matching: `1`, `1.2`, `1.2.3` against a set with gaps; 1.10.0 over 1.9.0; no match; stored
-  records with bad versions skipped, a stored 4,301-digit version included (no exception); the
+  4,301-digit number refused; a pair of files with one test and version: both refused and
+  logged; each kind of refused test file (a bad `Version`, a pair, YAML that cannot be read, an
+  empty file, a file with no download link, a sub-folder that cannot be listed, a refused file in
+  a sub-folder) stores no test profile, keeps the stored ones
+  (so `1` still gives the version it gave before), and ends with status `error` and the message;
+  application profiles still stored; the instrument message unchanged; the destructive-replace
+  guard still stops a sync that would leave no test profiles.
+- Matching: `1`, `1.2`, `1.2.3` against a set with gaps; 1.10.0 over 1.9.0; numbers, not text
+  (`1` against 1.0.0, 10.0.0, 11.0.0; `1.2` against 1.2.0, 1.20.0); no match; stored records
+  with bad versions skipped, a stored 4,301-digit version included (no exception); the
   stored-twice reason.
 - Each input: paste with a header column, the default box, a bad cell (whole paste refused,
   rows named), a 302-character cell `1000…0v` refused (it passes once cut to 256), no
-  `version`-only column; "Set test" (each of the five cases, and a 300-character box refused,
-  not shortened); both fix boxes (the per-test box never changes a test); add-sample; LIMS
-  (alias, mapped name, iGene dict with no version, and each JSON type: `"1.10"` kept, `2` →
-  `"2"`, `0` → `"0"`, `1.10` refused, `true` refused, `-1` refused, `null` no version, a list
-  refused, a 300-character text refused, not shortened).
+  `version`-only column, a row with a version and no test (refused; the preview blocks it), the
+  box's version not given to a row without a test; "Set test" (each of the five cases, and a
+  300-character box refused, not shortened); both fix boxes (the per-test box never changes a
+  test; each box from an out-of-date page refused with 409 and nothing saved); add-sample; LIMS
+  (alias, mapped name, a `null` mapped field passed over, iGene dict with no version, a version
+  with no test refused, and each JSON type: `"1.10"` kept, `2` → `"2"`, `0` → `"0"`, `1.10`
+  refused, `true` refused, `-1` refused, `null` no version, a list refused, a 300-character text
+  refused, not shortened).
 - Mark Ready: refused for a missing version, for no match, for stored twice; passes with each
   form of text; saves `test_versions_used`; READY→DRAFT clears it; a sync between the checks and
   the writing that brings a newer match → 409, nothing saved; two samples asking for `WGS 1`
-  and `WGS 2` in one run resolve to two profiles.
-- The validation page, the JSON report and the PDF show the tests.
+  and `WGS 2` in one run resolve to two profiles, each sample written with its own version's
+  sections, and the application check reports a problem of one version for that version's
+  samples only.
+- The validation page, the JSON report and the PDF show the tests; the PDF's Tests line wraps
+  inside its column.
 - The storage-order bug: two `WGS` files stored in both orders give the same, newest match.
 - Browser: the bulk panel's version box and Clear; the paste box; the fix boxes.
 - Break tests: switch off each rule in turn; the tests named for it must turn red.
@@ -323,7 +392,8 @@ Written first, each seen failing for its reason before the code.
 
 `docs/user-guide/samples.rst` (version column, boxes, fix boxes, the sample table),
 `docs/user-guide/validation.rst` (the two errors, the Tests line), `docs/admin-guide/profiles.rst`
-(`Version` three whole numbers; one file per test and version; how a sample's text picks one),
+(`Version` three whole numbers; one file per test and version; a refused test file keeps the
+stored test profiles; how a sample's text picks one),
 `docs/admin-guide/sample-api.rst` (the Test version field), `docs/architecture/data-models.rst`
 and `docs/architecture/services.rst` (the new field, `resolve_test`).
 
@@ -339,8 +409,9 @@ difference is a defect. The doc-picture world gives its samples a version.
 
 SeqSetup has never been deployed. Drafts made before this change have samples without a
 version; Mark Ready refuses them until a version is set, with the fix boxes on the run page.
-Stored test profiles keep working until the next sync, except any whose version breaks the
-sync rule (not used, §1). No migration.
+Stored test profiles keep working until the next sync that refuses no test file, except any
+whose version breaks the sync rule (not used, §1). A test file whose `Version` breaks the rule
+makes the sync end with `error`, naming the file, until it is fixed. No migration.
 
 ## Later list (from this design)
 
@@ -351,3 +422,5 @@ sync rule (not used, §1). No migration.
   (`sample_api.py:652`): a sample ID sent as the JSON number `1.10` becomes `"1.1"`, and `0`
   becomes empty (then refused as a missing sample ID). Found while checking the review of
   311d730; older than this design, not changed here.
+- The LIMS worklist preview (`templates/wizard/_worklist_preview.html`) shows no version
+  column (plan review of 68fc2c0).
