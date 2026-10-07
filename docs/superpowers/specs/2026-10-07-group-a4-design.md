@@ -59,24 +59,31 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
   Clone and templates copy it, since they copy samples through `to_dict` / `from_dict`
   (`services/run_builder.py:93-95`, `models/run_template.py:93, 142`).
 - `Sample.__setattr__` enforces it on every assignment: `""`, or 1 to 3 whole numbers joined by
-  dots, each `0` or without a leading zero (`^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){0,2}\Z`).
-  Surrounding spaces are stripped first. Anything else raises `ValueError`:
+  dots, each `0` or without a leading zero and **at most 9 digits**
+  (`^(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){0,2}\Z`), so a version is at most 29
+  characters. Surrounding spaces are stripped first. The value must be text (`str`); anything
+  else, and any text that breaks the rule, raises `ValueError`. Nothing is shortened to fit:
+  `test_version` is not one of the strings the model cuts at 256 (`models/sample.py:151-155`).
 
   ```
-  A test version is 1, 2 or 3 whole numbers joined by dots, like 1, 1.2 or 1.2.3: 'v1'
+  A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3: 'v1'
   ```
 
   The text before the colon is the constant `TEST_VERSION_RULE` in `models/sample.py`, shared by
-  every message below.
+  every message below. A message shows at most the first 40 characters of the value, then `…`.
+- Why the limit (review of 311d730): without one, a 4,301-digit number passes the pattern and
+  then raises when turned into a number (measured: `Exceeds the limit (4300 digits) for integer
+  string conversion`); and an input cut at 256 characters can pass where the whole input would
+  not (measured: a 302-character paste cell `1000…0v` passes once cut to 256).
 
 ### The test profile's version, at sync
 
 - `validate_test_profile_yaml` adds: `Version` must be three whole numbers joined by dots, each
-  `0` or without a leading zero (`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z`).
-  Otherwise:
+  `0` or without a leading zero and at most 9 digits
+  (`^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\Z`). Otherwise:
 
   ```
-  Field 'Version' must be three whole numbers joined by dots, like 1.0.0: '1.0'
+  Field 'Version' must be three whole numbers joined by dots, each at most 9 digits, like 1.0.0: '1.0'
   ```
 
   The PEP 440 check and the decimal-number message stay. A refused file is skipped and logged,
@@ -105,8 +112,10 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
   (repositories hold none).
 - Matching: `asked` split on dots gives 1 to 3 numbers; a stored version matches when its first
   numbers equal them. The newest match wins, compared as numbers (1.10.0 is newer than 1.9.0).
-- Stored records whose `version` is not three whole numbers are not used. They can only come
-  from a sync before this change; the next sync replaces every test profile.
+- Stored records whose `version` breaks the sync rule above (three whole numbers, each at most
+  9 digits) are not used. The pattern is checked before any text is turned into a number, so an
+  oversized stored version is skipped and never raises. Such records can only come from a sync
+  before this change; the next sync replaces every test profile.
 - Reasons, each with the text the checks show (§3):
   - **No profile of that test** (`test_profile_not_found`, text unchanged):
     `No test profile found for test type 'WGS'`
@@ -119,6 +128,10 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 
 ## §2 Where the version is typed
 
+Every place below checks a version **as received**, before anything is cut to a length:
+a version over 29 characters is refused, never shortened (review of 311d730). The boxes are read
+with `.strip()` only, not with `sanitize_string`, which cuts at 256 (`routes/utils.py:87-97`).
+
 ### Paste and file (`services/sample_parser.py`, `routes/samples.py`, `services/paste_preview.py`)
 
 - New header set `TEST_VERSION_HEADERS = {"test_version", "testversion", "test version",
@@ -128,10 +141,11 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 - Without a header row the columns stay `sample_id, test_id, index1, index2`
   (`_HEADERLESS_FIELDS`); a version needs a header.
 - `ParsedSample.test_version`. A cell that breaks the rule refuses the whole paste, naming the
-  rows, like a row without a sample ID:
+  rows, like a row without a sample ID. The version cell is checked as read, before the
+  256-character cut the parser puts on every cell (`sample_parser.py:269-272`):
 
   ```
-  Row(s) 3, 5: the test version is not right. A test version is 1, 2 or 3 whole numbers joined by dots, like 1, 1.2 or 1.2.3.
+  Row(s) 3, 5: the test version is not right. A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3.
   ```
 
 - New box **"Version for rows without one"** (`default_test_version`) beside "Test for rows
@@ -139,7 +153,7 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
   default test (`routes/samples.py:312-314`); a bad value is a 400:
 
   ```
-  Version for rows without one: A test version is 1, 2 or 3 whole numbers joined by dots, like 1, 1.2 or 1.2.3.
+  Version for rows without one: A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3.
   ```
 
   Rows that have a version keep it. Each new sample gets `ps.test_version or
@@ -191,11 +205,24 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 ### Lab system (`services/sample_api.py`, `routes/admin/sample_api.py`)
 
 - `parse_api_samples` reads `test_version` (aliases `test_version`, `testversion`; a mapped
-  field name goes first, as for every field). A value that breaks the rule refuses the whole
-  worklist, naming the sample, shown as `Worklist import rejected: ...`:
+  field name goes first, as for every field). It checks the **raw JSON value** before the
+  generic `str(val).strip()[:_MAX_FIELD_LEN] if val else ""` every other field gets
+  (`sample_api.py:646-653`). Measured on `e65c60d`, that line turns JSON `1.10` into `"1.1"`
+  (the wrong version), `0` into `""` and `true` into `"True"`. So, by JSON type:
+  - absent or `null`: no version;
+  - text: stripped, then the rule;
+  - a whole number (not `true`/`false`): its digits, so `2` → `"2"` and `0` → `"0"`, then the
+    rule (a negative number or one over 9 digits is refused);
+  - a number with a decimal point: refused, since JSON has already read `1.10` as `1.1`;
+  - `true`, `false`, a list or an object: refused.
+
+  A refused value refuses the whole worklist, naming the sample, shown as
+  `Worklist import rejected: ...`:
 
   ```
-  Sample 'S1' has a test version that is not right ('v1'). A test version is 1, 2 or 3 whole numbers joined by dots, like 1, 1.2 or 1.2.3.
+  Sample 'S1' has a test version that is not right ('v1'). A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3.
+  Sample 'S1' has a test version that is a number with a decimal point (1.1), which JSON may have changed (1.10 is read as 1.1). Send it as text, for example "1.10".
+  Sample 'S1' has a test version that is not text or a whole number (true).
   ```
 
 - `import_worklist_samples` (`routes/samples.py:664-784`) sets `test_version`.
@@ -257,18 +284,25 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 
 Written first, each seen failing for its reason before the code.
 
-- The sample's rule: every allowed form (`1`, `1.2`, `1.2.3`, `0`, `10.0.1`, spaces around) and
-  refused ones (`v1`, `1.x`, `1.2.3.4`, `01`, `1.`, `.1`, `1..2`, `-1`), at construction and on
-  assignment.
-- The sync rule: the nine measured values above (only `1.0.0` passes); a pair of files with one
-  test and version: both refused, logged, the rest stored; the destructive-replace guard still
-  stops a sync that would leave no test profiles.
+- The sample's rule: every allowed form (`1`, `1.2`, `1.2.3`, `0`, `10.0.1`, spaces around,
+  `999999999.999999999.999999999` = 29 characters) and refused ones (`v1`, `1.x`, `1.2.3.4`,
+  `01`, `1.`, `.1`, `1..2`, `-1`, a 10-digit number, a 4,301-digit number, a value that is not
+  text), at construction and on assignment; a refused 4,301-digit value raises the rule's
+  `ValueError` and its message shows 40 characters.
+- The sync rule: the nine measured values above (only `1.0.0` passes); a 10-digit and a
+  4,301-digit number refused; a pair of files with one test and version: both refused, logged,
+  the rest stored; the destructive-replace guard still stops a sync that would leave no test
+  profiles.
 - Matching: `1`, `1.2`, `1.2.3` against a set with gaps; 1.10.0 over 1.9.0; no match; stored
-  records with bad versions skipped; the stored-twice reason.
+  records with bad versions skipped, a stored 4,301-digit version included (no exception); the
+  stored-twice reason.
 - Each input: paste with a header column, the default box, a bad cell (whole paste refused,
-  rows named), no `version`-only column; "Set test" (each of the five cases); both fix boxes
-  (the per-test box never changes a test); add-sample; LIMS (alias, mapped name, bad value
-  refused, iGene dict with no version).
+  rows named), a 302-character cell `1000…0v` refused (it passes once cut to 256), no
+  `version`-only column; "Set test" (each of the five cases, and a 300-character box refused,
+  not shortened); both fix boxes (the per-test box never changes a test); add-sample; LIMS
+  (alias, mapped name, iGene dict with no version, and each JSON type: `"1.10"` kept, `2` →
+  `"2"`, `0` → `"0"`, `1.10` refused, `true` refused, `-1` refused, `null` no version, a list
+  refused, a 300-character text refused, not shortened).
 - Mark Ready: refused for a missing version, for no match, for stored twice; passes with each
   form of text; saves `test_versions_used`; READY→DRAFT clears it; a sync between the checks and
   the writing that brings a newer match → 409, nothing saved; two samples asking for `WGS 1`
@@ -288,7 +322,9 @@ and `docs/architecture/services.rst` (the new field, `resolve_test`).
 
 Doc pictures are made again. A picture may change only where it shows a part this design
 changes: the paste form and preview, the bulk panel, the run page's fix boxes, the sample
-table's Test cell (`WGS 1`), and the validation page's Tests line. The plan measures which
+table's Test cell (`WGS 1`), the validation page's Tests line, and the admin LIMS form's new
+Test version field box (`admin/lims-settings.png`, taken of the whole form by
+`tests/browser/test_docs_screenshots.py:1370-1374`). The plan measures which
 pictures differ from main and names each one with the part that changed it; any other
 difference is a defect. The doc-picture world gives its samples a version.
 
@@ -296,10 +332,14 @@ difference is a defect. The doc-picture world gives its samples a version.
 
 SeqSetup has never been deployed. Drafts made before this change have samples without a
 version; Mark Ready refuses them until a version is set, with the fix boxes on the run page.
-Stored test profiles keep working until the next sync, except any whose version is not three
-whole numbers (not used, §1). No migration.
+Stored test profiles keep working until the next sync, except any whose version breaks the
+sync rule (not used, §1). No migration.
 
 ## Later list (from this design)
 
 - The API's JSON export carries no test or version.
 - An empty Apply in "Set test" clears the test, as it does today (now both test and version).
+- Every other LIMS field goes through `str(val).strip()[:256] if val else ""`
+  (`sample_api.py:652`): a sample ID sent as the JSON number `1.10` becomes `"1.1"`, and `0`
+  becomes empty (then refused as a missing sample ID). Found while checking the review of
+  311d730; older than this design, not changed here.
