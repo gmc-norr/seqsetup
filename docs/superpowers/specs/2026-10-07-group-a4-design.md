@@ -86,7 +86,9 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
   Field 'Version' must be three whole numbers joined by dots, each at most 9 digits, like 1.0.0: '1.0'
   ```
 
-  The PEP 440 check and the decimal-number message stay. A refused file is skipped and logged,
+  The PEP 440 check and the decimal-number message stay; the PEP 440 check also catches the
+  `ValueError` that a 4,301-digit number raises in it (measured), and both messages show at most
+  40 characters of the value. A refused file is skipped and logged,
   as every refused profile file is today (the loop in `_fetch_profiles_recursive`,
   `github_sync.py:504-530`).
 - After all test files are read, the sync looks for one test and version in more than one
@@ -102,7 +104,8 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 ### Finding a sample's test profile
 
 - One function, `resolve_test(test_profile_repo, test, asked)` in a new module
-  `services/test_versions.py`. It returns a `TestResolution`: the profile, or the reason there
+  `services/versioned_tests.py` (not `test_*.py`: with no `testpaths` set, pytest would collect a
+  source file of that name). It returns a `ResolvedTest`: the profile, or the reason there
   is none. Both the sheet plan and the application check call it. `get_by_test_type` is
   removed: no other source code calls it. Three test fakes implement it
   (`tests/unit/test_samplesheet_v2_exporter.py:635`,
@@ -128,9 +131,10 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 
 ## §2 Where the version is typed
 
-Every place below checks a version **as received**, before anything is cut to a length:
-a version over 29 characters is refused, never shortened (review of 311d730). The boxes are read
-with `.strip()` only, not with `sanitize_string`, which cuts at 256 (`routes/utils.py:87-97`).
+No cut can make a version good (review of 311d730): every input refuses a version over 29
+characters, and anything cut at 256 characters is still over 29, so it is refused, never
+shortened into a valid one. The boxes are read with `.strip()` only, not with `sanitize_string`
+(`routes/utils.py:87-97`); a LIMS value is checked by its JSON type before it becomes text.
 
 ### Paste and file (`services/sample_parser.py`, `routes/samples.py`, `services/paste_preview.py`)
 
@@ -141,8 +145,9 @@ with `.strip()` only, not with `sanitize_string`, which cuts at 256 (`routes/uti
 - Without a header row the columns stay `sample_id, test_id, index1, index2`
   (`_HEADERLESS_FIELDS`); a version needs a header.
 - `ParsedSample.test_version`. A cell that breaks the rule refuses the whole paste, naming the
-  rows, like a row without a sample ID. The version cell is checked as read, before the
-  256-character cut the parser puts on every cell (`sample_parser.py:269-272`):
+  rows, like a row without a sample ID. A cell over 256 characters, cut like every cell
+  (`sample_parser.py:269-272`), is still refused (measured in the plan's break tests: checking
+  the cell before the cut changes no outcome):
 
   ```
   Row(s) 3, 5: the test version is not right. A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3.
@@ -263,9 +268,9 @@ with `.strip()` only, not with `sanitize_string`, which cuts at 256 (`routes/uti
 - New run field `SequencingRun.test_versions_used: list[dict]` (keys `test`, `asked`,
   `version`, `file`), in `to_dict` / `from_dict`. Mark Ready sets it from the validation result
   that let the run through, beside `samplesheet_v1_withheld` (`routes/runs.py:686-697`).
-  READY→DRAFT clears it (`routes/runs.py:698-710`). It joins `_FINGERPRINT_IGNORED_KEYS`
-  (`routes/runs.py:62-72`) and `RUN_DIFF_IGNORED_KEYS` (`services/run_diff.py:12-16`), as
-  `samplesheet_v1_withheld` did.
+  READY→DRAFT clears it (`routes/runs.py:698-710`). It joins `RUN_DIFF_IGNORED_KEYS`
+  (`services/run_diff.py:12-16`), as `samplesheet_v1_withheld` did. It does not join
+  `_FINGERPRINT_IGNORED_KEYS`: it is always empty on a Draft, where that comparison runs.
 - **The plan's fingerprint** (A3) keys each test entry by test and version text, and already
   holds the resolved profile's content, version included. If a sync brings a newer match between
   the checks and the writing, the fingerprints differ and Mark Ready answers 409
@@ -273,8 +278,10 @@ with `.strip()` only, not with `sanitize_string`, which cuts at 256 (`routes/uti
 
 ### Where it is shown
 
-- **Validation page** (`templates/validation/page.html`, under the approval bar): `Tests: WGS 1 →
-  1.2.3 (Wgs.yaml) · RNA 2 → 2.0.1 (Rna.yaml)`. For a Draft this is today's pick.
+- **Validation page** (`templates/validation/page.html`, under the approval bar): `Tests: WGS 1
+  uses 1.2.3 (Wgs.yaml) · RNA 2 uses 2.0.1 (Rna.yaml)` -- words, not an arrow, because the PDF's
+  built-in Helvetica cannot draw one. For a Draft this is today's pick; a Ready or Archived run
+  shows `test_versions_used`, the versions its sheet was written with (the page checks live).
 - **Validation report** (pre-generated at Mark Ready): the JSON gains `"tests": [{"test",
   "asked", "version", "file"}]` (`services/validation_report.py:58-123`); the PDF's run lines
   (`_run_info`, 309-320) gain a `Tests` line.
@@ -337,7 +344,8 @@ sync rule (not used, §1). No migration.
 
 ## Later list (from this design)
 
-- The API's JSON export carries no test or version.
+- The API's JSON export carries no test or version (and `docs/architecture/services.rst` says
+  the JSON export includes test IDs; it does not).
 - An empty Apply in "Set test" clears the test, as it does today (now both test and version).
 - Every other LIMS field goes through `str(val).strip()[:256] if val else ""`
   (`sample_api.py:652`): a sample ID sent as the JSON number `1.10` becomes `"1.1"`, and `0`
