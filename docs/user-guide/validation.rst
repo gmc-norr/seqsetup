@@ -73,9 +73,11 @@ is one of these:
 - **Duplicate Sample ID.** The same Sample ID used more than once in the
   run.
 - **Inconsistent index length in a lane.** Not every sample sharing a lane
-  has the same effective i7 (or i5) length.
+  reads the same number of i7 (or i5) cycles.
 - **Mixed single- and dual-indexed samples in a lane.**
 - **An index longer than the run's index cycles for that read.**
+- **An index whose length differs from the cycles its Override Cycles
+  reads** (see :doc:`override-cycles`).
 - **A line break in a sample's name, project or description.** *"Sample
   'ID' has a line break in its description. A line break would split the
   sample's row in the Sample Sheet. Remove it before marking the run
@@ -92,6 +94,8 @@ is one of these:
   default read-override pattern.
 - **Override Cycles that don't match the run's declared cycles** -- each
   segment must sum to its Read/Index cycle count.
+- **An index part of Override Cycles that does not start with the index,
+  or holds two runs of index cycles** (see :doc:`override-cycles`).
 - **A duplicate index pair in a lane** -- two samples sharing the exact
   same i7 (and i5) sequence. *"Demultiplexing cannot distinguish these
   samples."*
@@ -100,6 +104,19 @@ is one of these:
   available on the run's instrument, the required software version isn't
   available on it, or two samples in the run need different versions of
   the same application.
+- **A Sample Sheet that would not carry the run**: a test without a
+  BCL Convert profile, or with two profiles for one application; two
+  profiles for one application whose Settings or columns differ; a
+  profile column written twice, a setting in two places, or a name
+  SeqSetup uses spelled otherwise; a BCL Convert profile without a column a
+  sample needs, a sample with no lanes picked where the sheet has a Lane
+  column, or an empty mismatch cell. See :doc:`/admin-guide/profiles`.
+
+Two warnings point at the Sample Sheets without stopping **Mark Ready**:
+*"No v1 sheet will be made for this run: ..."* on MiSeq and NovaSeq 6000
+(see :doc:`export`), and a sample whose barcode mismatch number the sheet
+cannot carry, because the BCL Convert profile has no column for it -- the
+checks use the number the sheet gives.
 
 Every one of these blocks **Mark Ready** exactly the way an index
 collision does (see the warning above) -- read the Issues tab for which

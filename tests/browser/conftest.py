@@ -23,11 +23,12 @@ import mongomock
 import pytest
 import uvicorn
 
+from seqsetup.models.application_profile import ApplicationProfile
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.local_user import LocalUser
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
-from seqsetup.models.test_profile import TestProfile
+from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.models.user import UserRole
 
 from .docs_shots import docs_launch_args
@@ -206,6 +207,17 @@ def app_server(tmp_path_factory):
     ctx.index_kit_repo.save(screenshot_kit)
 
     # --- Seed one test profile so the run-editor test-id dropdown is non-empty. ---
+    # It lists one BCLConvert profile, as every test must (spec 2026-10-05
+    # group A3, §1).
+    ctx.app_profile_repo.save(ApplicationProfile(
+        id="screenshot-bclconvert", name="BCLConvertNextera", version="1.0.0",
+        application_type="Dragen", application_name="BCLConvert",
+        settings={"SoftwareVersion": "4.3.6"},
+        data={"BarcodeMismatchesIndex1": 1, "BarcodeMismatchesIndex2": 1},
+        data_fields=["Sample_ID", "Lane", "Index", "Index2", "OverrideCycles",
+                     "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2"],
+        synced_at=datetime(2026, 1, 10, 7, 0, 0),
+    ))
     screenshot_profile = TestProfile(
         id="screenshot-wgs-profile",
         test_type="WGS",
@@ -213,6 +225,8 @@ def app_server(tmp_path_factory):
         description="WGS test profile for screenshot tests",
         version="1.0.0",
         synced_at=datetime(2026, 1, 10, 7, 0, 0),
+        application_profiles=[ApplicationProfileReference(
+            profile_name="BCLConvertNextera", profile_version="~=1.0.0")],
     )
     ctx.test_profile_repo.save(screenshot_profile)
 

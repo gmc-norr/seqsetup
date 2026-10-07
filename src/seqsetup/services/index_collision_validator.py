@@ -40,12 +40,16 @@ class IndexCollisionValidator:
         sample2: Sample,
         run: SequencingRun,
         index_num: int,
+        mismatches: Optional[dict] = None,
     ) -> int:
         """Return the pair-effective mismatch budget for the given index.
 
-        Uses the larger of the two samples' per-sample values (falling back to
-        the run-level default when a sample's value is None) — a collision
-        possible for either sample is a collision for the pair.
+        Uses the larger of the two samples' numbers — a collision possible
+        for either sample is a collision for the pair. A sample's number is
+        the one the sheet gives BCL Convert when ``mismatches`` (the sheet
+        plan's, keyed by (sample id, index number)) has it (spec 2026-10-05
+        group A3, §2); else its per-sample value, falling back to the
+        run-level default when that is None.
         """
         if index_num == 1:
             m1 = sample1.barcode_mismatches_index1
@@ -57,6 +61,9 @@ class IndexCollisionValidator:
             default = run.barcode_mismatches_index2
         m1 = m1 if m1 is not None else default
         m2 = m2 if m2 is not None else default
+        if mismatches:
+            m1 = mismatches.get((sample1.id, index_num), m1)
+            m2 = mismatches.get((sample2.id, index_num), m2)
         return max(m1, m2)
 
     @classmethod
@@ -64,6 +71,7 @@ class IndexCollisionValidator:
         cls,
         run: SequencingRun,
         instrument_config=None,
+        mismatches: Optional[dict] = None,
     ) -> list[IndexCollision]:
         """
         Detect index collisions within each lane.
@@ -73,6 +81,8 @@ class IndexCollisionValidator:
         Args:
             run: Sequencing run to validate
             instrument_config: Optional InstrumentConfig for DB overrides
+            mismatches: Optional sheet-plan mismatch numbers (see
+                _effective_mismatches)
 
         Returns:
             List of IndexCollision objects describing each collision
@@ -103,7 +113,7 @@ class IndexCollisionValidator:
 
         # Check collisions in each lane
         for lane, samples in lane_samples.items():
-            lane_collisions = cls._check_lane_collisions(samples, lane, run)
+            lane_collisions = cls._check_lane_collisions(samples, lane, run, mismatches)
             collisions.extend(lane_collisions)
 
         return collisions
@@ -175,6 +185,7 @@ class IndexCollisionValidator:
         samples: list[Sample],
         lane: int,
         run: SequencingRun,
+        mismatches: Optional[dict] = None,
     ) -> list[IndexCollision]:
         """
         Check for index collisions among samples in a single lane.
@@ -198,7 +209,8 @@ class IndexCollisionValidator:
                 sample1 = samples[i]
                 sample2 = samples[j]
 
-                collision = cls._check_sample_pair_collision(sample1, sample2, lane, run)
+                collision = cls._check_sample_pair_collision(
+                    sample1, sample2, lane, run, mismatches)
                 if collision:
                     collisions.append(collision)
 
@@ -211,6 +223,7 @@ class IndexCollisionValidator:
         sample2: Sample,
         lane: int,
         run: SequencingRun = None,
+        mismatches: Optional[dict] = None,
     ) -> Optional[IndexCollision]:
         """
         Check if two samples have colliding indexes.
@@ -259,8 +272,8 @@ class IndexCollisionValidator:
             i5_distance = hamming_distance(i5_seq1, i5_seq2)
             combined_distance = i7_distance + i5_distance
             if run is not None:
-                m_i7 = cls._effective_mismatches(sample1, sample2, run, 1)
-                m_i5 = cls._effective_mismatches(sample1, sample2, run, 2)
+                m_i7 = cls._effective_mismatches(sample1, sample2, run, 1, mismatches)
+                m_i5 = cls._effective_mismatches(sample1, sample2, run, 2, mismatches)
                 threshold = 2 * (m_i7 + m_i5)
             else:
                 threshold = cls.COMBINED_MIN_DISTANCE - 1  # legacy fallback
@@ -280,7 +293,7 @@ class IndexCollisionValidator:
                 )
         else:
             if run is not None:
-                m_i7 = cls._effective_mismatches(sample1, sample2, run, 1)
+                m_i7 = cls._effective_mismatches(sample1, sample2, run, 1, mismatches)
                 threshold = 2 * m_i7
             else:
                 threshold = cls.I7_ONLY_MIN_DISTANCE - 1  # legacy fallback

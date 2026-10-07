@@ -97,7 +97,18 @@ def _seed_synced_profile(ctx, app_name: str, settings: dict | None = None) -> No
     """What a config sync stores, written straight to the database so the
     sync validator is bypassed. The synced instrument lists the same
     application, so the existing app_not_available check passes and Mark
-    Ready reaches the Sample Sheet writer."""
+    Ready reaches the Sample Sheet writer. Every test needs a BCLConvert
+    profile (spec 2026-10-05 group A3, §1), so for another application the
+    test also lists a plain one."""
+    extra, apps = [], [OnboardApplication(name=app_name, software_version="4.3.6")]
+    if app_name != "BCLConvert":
+        ctx.app_profile_repo.save(ApplicationProfile(
+            name="GuardBCLConvert", version="1.0", application_type="Dragen",
+            application_name="BCLConvert", settings={"SoftwareVersion": "4.3.6"}, data={},
+            data_fields=["Sample_ID", "Index", "Index2"], translate={},
+        ))
+        extra = [ApplicationProfileReference(profile_name="GuardBCLConvert", profile_version="1.0")]
+        apps.append(OnboardApplication(name="BCLConvert", software_version="4.3.6"))
     ctx.app_profile_repo.save(ApplicationProfile(
         name="GuardProfile",
         version="1.0",
@@ -115,14 +126,14 @@ def _seed_synced_profile(ctx, app_name: str, settings: dict | None = None) -> No
         version="1.0",
         application_profiles=[
             ApplicationProfileReference(profile_name="GuardProfile", profile_version="1.0")
-        ],
+        ] + extra,
     ))
     ctx.instrument_definition_repo.save(InstrumentDefinition(
         name="NovaSeq X Series",
         samplesheet_name="NovaSeqXSeries",
         version="1.0.0",
         chemistry_type="2-color",
-        onboard_applications=[OnboardApplication(name=app_name, software_version="4.3.6")],
+        onboard_applications=apps,
         i5_workflows=[{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
         runinfo_marks_i5_reversed=True,
     ))

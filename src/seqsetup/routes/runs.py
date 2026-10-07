@@ -16,6 +16,7 @@ import json
 import logging
 import re
 from contextlib import contextmanager
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
@@ -42,7 +43,8 @@ from ..services.cycle_calculator import CycleCalculator
 from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
-from ..services.validation import ValidationService
+from ..services.sheet_plan import SheetPlanChanged, SheetPlanProblem
+from ..services.validation import ValidationService, clear_validation_cache
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
 from ..services.validation_summary import error_messages
 from ..templating import render, templates
@@ -66,10 +68,13 @@ _FINGERPRINT_IGNORED_KEYS = (
     "generated_json",
     "generated_validation_json",
     "generated_validation_pdf",
+    "samplesheet_v1_withheld",
 )
 
 
-def _pregenerate_exports(run: SequencingRun, ctx: AppContext) -> tuple:
+def _pregenerate_exports(
+    run: SequencingRun, ctx: AppContext, plan_fingerprint: Optional[str] = None,
+) -> tuple:
     """Generate all run exports against the current state snapshot.
 
     Returns ``(samplesheet_v2, samplesheet_v1, json_export, validation_json,
@@ -78,11 +83,18 @@ def _pregenerate_exports(run: SequencingRun, ctx: AppContext) -> tuple:
     caller can refuse the status transition without persisting half-mutated
     state — the responsibility for converting that to a 500 lives at the
     handler boundary, not here.
+
+    ``plan_fingerprint`` is the fingerprint of the sheet plan Mark Ready's
+    checks passed: the v2 writer and the validation report made here must
+    come from a plan with the same one, or ``SheetPlanChanged`` is raised
+    (spec 2026-10-05 group A3, §1).
     """
     ss_v2 = SampleSheetV2Exporter.export(
         run,
         test_profile_repo=ctx.test_profile_repo,
         app_profile_repo=ctx.app_profile_repo,
+        instrument_config=ctx.instrument_config,
+        plan_fingerprint=plan_fingerprint,
     )
     json_export = JSONExporter.export(run)
 
@@ -96,6 +108,8 @@ def _pregenerate_exports(run: SequencingRun, ctx: AppContext) -> tuple:
         app_profile_repo=ctx.app_profile_repo,
         instrument_config=ctx.instrument_config,
     )
+    if plan_fingerprint is not None and result.sheet_plan_fingerprint != plan_fingerprint:
+        raise SheetPlanChanged()
     val_json = ValidationReportJSON.export(run, result)
     val_pdf = ValidationReportPDF.export(run, result)
     return ss_v2, ss_v1, json_export, val_json, val_pdf
@@ -575,10 +589,39 @@ async def update_status(
         try:
             with _denied_if_instruments_unusable(request, run, new_status):
                 new_ss_v2, new_ss_v1, new_json, new_val_json, new_val_pdf = (
-                    _pregenerate_exports(run, ctx)
+                    _pregenerate_exports(
+                        run, ctx,
+                        plan_fingerprint=validation_result.sheet_plan_fingerprint or None,
+                    )
                 )
         except (InstrumentRecordError, SyncedInstrumentsUnusable):
             raise
+        except SheetPlanChanged as e:
+            # A sync changed a profile between the checks and the writing
+            # (spec 2026-10-05 group A3, §1): nothing is stored. The cache is
+            # cleared so the next Mark Ready checks the profiles stored now,
+            # even when the sync stopped before it cleared the cache.
+            clear_validation_cache()
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="profiles_changed_during_export",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(str(e))
+        except SheetPlanProblem as e:
+            logger.error(f"Failed to generate exports for run {run.id}: {e}")
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="sheet_plan_problem",
+                attempted_status=new_status.value,
+            )
+            return Response("Failed to generate exports", status_code=500)
         except Exception:
             logger.error(f"Failed to generate exports for run {run.id}", exc_info=True)
             return Response("Failed to generate exports", status_code=500)
@@ -645,7 +688,10 @@ async def update_status(
         if new_status == RunStatus.READY:
             run.generated_samplesheet_v2 = new_ss_v2
             run.generated_json = new_json
-            if new_ss_v1 is not None:
+            # No v1 sheet when the checks that let the run through say it
+            # cannot carry their settings (spec 2026-10-05 group A3, §3).
+            run.samplesheet_v1_withheld = validation_result.v1_sheet_withheld
+            if new_ss_v1 is not None and not validation_result.v1_sheet_withheld:
                 run.generated_samplesheet_v1 = new_ss_v1
             run.generated_validation_json = new_val_json
             run.generated_validation_pdf = new_val_pdf
@@ -658,6 +704,7 @@ async def update_status(
             # remain accessible via the API surface.
             run.generated_samplesheet_v2 = None
             run.generated_samplesheet_v1 = None
+            run.samplesheet_v1_withheld = ""
             run.generated_json = None
             run.generated_validation_json = None
             run.generated_validation_pdf = None

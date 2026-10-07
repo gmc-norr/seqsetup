@@ -293,6 +293,14 @@ class ValidationResult:
     i5_workflow: str = ""
     i5_read_orientation: str = ""
     no_i5_direction: str = ""
+    # The fingerprint of the sheet plan the checks used, when the profiles
+    # were given (spec 2026-10-05 group A3, §1). The v2 writer at Mark Ready
+    # refuses to write from a plan with another one.
+    sheet_plan_fingerprint: str = ""
+    # Why no v1 sheet can be made for this run, from the numbers the checks
+    # used; "" when one can, or the instrument has none (spec 2026-10-05
+    # group A3, §3). Mark Ready stores it with the run.
+    v1_sheet_withheld: str = ""
 
     @property
     def has_errors(self) -> bool:

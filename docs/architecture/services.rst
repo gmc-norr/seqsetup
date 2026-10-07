@@ -45,9 +45,13 @@ Generates Illumina SampleSheet v2 CSV output.
 
 **Key methods:**
 
-``export(run, test_profile_repo=None, app_profile_repo=None)``
+``export(run, test_profile_repo=None, app_profile_repo=None, instrument_config=None, plan_fingerprint=None)``
    Main entry point. Writes all sections and returns the complete sample sheet as
-   a string.
+   a string. With both repositories it writes the application sections from
+   the sheet plan (below); given ``plan_fingerprint`` (Mark Ready passes the
+   one its checks used), a plan with another fingerprint raises
+   ``SheetPlanChanged``, and any plan problem raises ``SheetPlanProblem``,
+   before anything is written.
 
 **Sections written:**
 
@@ -75,6 +79,22 @@ part as stored (``I8N2``), and the header without
 set ``OverrideCycles``, ``OverrideReads``,
 ``RunInfoIndex2ReverseComplement`` or ``Index2ColumnReverseComplement`` is
 refused.
+
+Sheet plan
+----------
+
+``services/sheet_plan.py`` works out a run's v2 application sections from
+the run and the two profile repositories: ``plan_sheet(run,
+test_profile_repo, app_profile_repo, lanes)`` returns a ``SheetPlan`` with
+one ``PlannedSection`` per ``ApplicationName`` (its distinct resolved
+profiles and its rows, each sample with its own profile), the
+``problems`` that stop the writer (those with a category are Mark Ready
+errors), a warning for a mismatch number the sheet cannot carry, the
+mismatch number the sheet gives BCL Convert for each sample, and a
+``fingerprint`` of the profiles' content and the lane count. Mark Ready's
+checks (``ValidationService.validate_run``, which puts the fingerprint in
+its result) and the v2 writer both use it, so they cannot disagree about
+which samples go where.
 
 JSONExporter
 ------------

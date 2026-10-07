@@ -302,7 +302,14 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         run = ctx.run_repo.get_by_id(run_id)
         _check_run_access(run)
         if not run.generated_samplesheet_v1:
-            raise HTTPException(status_code=404, detail="SampleSheet v1 not available for this run")
+            # Why Mark Ready made none, when it stored why (spec 2026-10-05
+            # group A3, §3).
+            detail = (
+                f"No v1 sheet for this run: {run.samplesheet_v1_withheld}."
+                if run.samplesheet_v1_withheld
+                else "SampleSheet v1 not available for this run"
+            )
+            raise HTTPException(status_code=404, detail=detail)
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="samplesheet_v1")
         return Response(
             content=run.generated_samplesheet_v1,

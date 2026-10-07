@@ -362,11 +362,11 @@ class TestDisabledInstrumentBlocksMarkReady:
         from seqsetup.routes import runs as runs_module
         generate = runs_module._pregenerate_exports
 
-        def disable_during_generation(run, ctx_):
+        def disable_during_generation(run, ctx_, **kw):
             novaseq = ctx.instrument_definition_repo.get_by_name(NOVASEQ_X)
             # The database only: the in-process cache still says enabled.
             ctx.instrument_definition_repo.set_enabled(novaseq.id, False)
-            return generate(run, ctx_)
+            return generate(run, ctx_, **kw)
 
         monkeypatch.setattr(runs_module, "_pregenerate_exports", disable_during_generation)
 

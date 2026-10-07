@@ -143,22 +143,38 @@ on NovaSeq X (the instrument this guide's screenshots use), NextSeq
 written as you typed it. See :doc:`export` and
 :doc:`/admin-guide/instruments`, or check the exported Sample Sheet.
 
-An Index 2 part that masks cycles before the index -- such as ``N2I8``,
-the form Illumina's NovaSeq X entry page uses -- is refused, at the input
+An Index 2 part with cycles before the index -- such as ``N2I8``, the
+form Illumina's NovaSeq X entry page uses, or ``Y2I8`` -- is refused, at the input
 and at **Mark Ready**: *"Index 2 in OverrideCycles is written in reading
 order in SeqSetup: the index first, then the masked cycles (for example
 I8N2). SeqSetup writes it the way the instrument needs."* A part with no
 index, such as ``N10`` for a sample without an i5, is fine. The Override
 Cycles fields say the same when you point at them.
 
-An i5 used shorter than it is -- a 10-base i5 set to 8 cycles for the
-sample or by its kit, or typed as ``I8N2`` -- inside a longer Index 2 read
-is refused at **Mark Ready** on runs that read the i5 reversed, such as
-NovaSeq X and NextSeq 500/550 (the table in :doc:`/admin-guide/instruments`
-lists them). The Sample Sheet writes the whole i5, and Illumina does not
-say which of its bases BCL Convert then compares. Use all of the i5's
-cycles, or make the Index 2 read as long as the cycles you use. On runs
-that read the i5 forward this is fine.
+The Index 1 part follows the same rule: the index first, then any masked
+or UMI cycles (``I8N2``, ``I8U9``). An Index 1 part with cycles before
+the index (``N2I8``, ``Y2I8``) is refused at the input and at **Mark Ready**:
+*"Index 1 in OverrideCycles starts with the index in SeqSetup: the index
+first, then any masked or UMI cycles (for example I8N2 or I8U9).
+SeqSetup's checks compare the index from the first cycle of its read."*
+So is an index part with two runs of index cycles, in either index part
+(``I4N2I4``): *"An index part of OverrideCycles holds one run of index
+cycles in SeqSetup (for example I8N2, not I4N2I4). SeqSetup's checks
+compare the index as one run of cycles."*
+
+An index must have exactly as many bases as the index cycles its Override
+Cycles reads for it -- Illumina's rule for the Sample Sheet's index columns
+("Length of string must match number of first index cycles in RunInfo.xml
+or number specified in OverrideCycles"). **Mark Ready** refuses, naming the
+sample and both numbers, when they differ: a 10-base index read for 8
+cycles (``I8``, typed or from a kit's index cycles), a typed ``I6N4`` on a
+10-base i7, a typed ``I10`` on an 8-base i7, or index cycles for an index
+the sample does not have. On every instrument. Use an index of that length,
+or change the Override Cycles or the kit's index cycles.
+
+The collision, duplicate and index-length checks count the index bases
+read from the Override Cycles -- the typed value when there is one, else
+the calculated one -- from the first cycle of the read.
 
 Global vs. per-sample in the exported sheet
 -----------------------------------------------

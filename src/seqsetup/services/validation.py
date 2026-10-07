@@ -13,6 +13,7 @@ import logging
 import re
 from collections import OrderedDict, defaultdict
 from threading import Lock
+from typing import Optional
 
 from ..data.instruments import (
     NoI5Direction,
@@ -24,6 +25,7 @@ from ..data.instruments import (
     is_instrument_enabled_by_name,
     run_i5_direction,
 )
+from ..models.sample import Sample
 from ..models.sequencing_run import RunStatus, SequencingRun
 from ..models.validation import (
     ConfigurationError,
@@ -32,10 +34,22 @@ from ..models.validation import (
 )
 from .application_profile_validator import ApplicationProfileValidator
 from .color_analysis_validator import ColorAnalysisValidator
-from .cycle_calculator import INDEX2_ORDER_RULE, CycleCalculator
+from .cycle_calculator import (
+    INDEX1_ORDER_RULE,
+    INDEX2_ORDER_RULE,
+    INDEX_SPLIT_RULE,
+    CycleCalculator,
+)
 from .index_collision_validator import IndexCollisionValidator
+from .samplesheet_v1_exporter import SampleSheetV1Exporter
+from .sheet_plan import plan_sheet
 from .sheet_text import describe, hidden_characters
-from .validation_utils import effective_index_sequence, hamming_distance
+from .validation_utils import (
+    effective_index_read_length,
+    effective_index_sequence,
+    hamming_distance,
+    index_cycles_read,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -166,8 +180,21 @@ class ValidationService:
         # Sample ID validation
         duplicate_errors = cls.validate_sample_ids(run)
 
+        # The sheet plan: what the v2 sheet's application sections hold, its
+        # problems and the mismatch numbers it gives BCL Convert (spec
+        # 2026-10-05 group A3, §1, §2). Only with the profiles.
+        plan = None
+        if test_profile_repo and app_profile_repo and run.samples:
+            plan = plan_sheet(
+                run, test_profile_repo, app_profile_repo,
+                get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type,
+                                       instrument_config),
+            )
+        mismatches = plan.mismatches if plan else None
+
         # Index collision validation (delegated)
-        collisions = IndexCollisionValidator.validate_index_collisions(run, instrument_config)
+        collisions = IndexCollisionValidator.validate_index_collisions(
+            run, instrument_config, mismatches)
 
         distance_matrices = (
             IndexCollisionValidator.calculate_index_distances(run, instrument_config)
@@ -214,13 +241,44 @@ class ValidationService:
             )
 
         # Configuration validation (inline - many private helpers)
-        configuration_errors = cls.validate_configuration(run, instrument_config)
+        configuration_errors = cls.validate_configuration(run, instrument_config, mismatches)
 
         # When profile repos are configured, every sample must have a test_id —
         # the SampleSheet v2 exporter's profile-driven path silently drops samples
         # without one, and emits no BCLConvert section at all if none are present.
         if test_profile_repo and app_profile_repo and run.samples:
             configuration_errors.extend(cls._validate_samples_have_test_id(run))
+
+        # The plan's problems (2-8) are errors; the writer's own (1) are
+        # reported above as missing_test_id and by the application checks.
+        if plan:
+            configuration_errors.extend(
+                ConfigurationError(severity=ValidationSeverity.ERROR, category=p.category,
+                                   message=p.message, sample_names=list(p.sample_names))
+                for p in plan.check_errors
+            )
+            configuration_errors.extend(
+                ConfigurationError(severity=ValidationSeverity.WARNING, category=w.category,
+                                   message=w.message, sample_names=list(w.sample_names))
+                for w in plan.warnings
+            )
+
+        # No v1 sheet when it cannot carry what the checks used (spec
+        # 2026-10-05 group A3, §3). A warning: the v2 sheet is made as usual.
+        v1_withheld = ""
+        if SampleSheetV1Exporter.supports(run.instrument_platform) and run.samples:
+            v1_withheld, v1_names = SampleSheetV1Exporter.withheld(run, mismatches)
+            if v1_withheld:
+                configuration_errors.append(ConfigurationError(
+                    severity=ValidationSeverity.WARNING,
+                    category="no_v1_sheet",
+                    message=(
+                        f"No v1 sheet will be made for this run: {v1_withheld}. A v1 sheet "
+                        f"has one pair of mismatch numbers for the whole run and no "
+                        f"OverrideCycles. The v2 sheet is made as usual."
+                    ),
+                    sample_names=v1_names,
+                ))
 
         # Get chemistry type for display purposes
         chemistry = get_chemistry_type(run.instrument_platform)
@@ -240,6 +298,8 @@ class ValidationService:
             i5_workflow=direction.workflow if direction else "",
             i5_read_orientation=direction.read_orientation if direction else "",
             no_i5_direction=no_direction,
+            sheet_plan_fingerprint=plan.fingerprint if plan else "",
+            v1_sheet_withheld=v1_withheld,
         )
 
     @classmethod
@@ -294,6 +354,7 @@ class ValidationService:
         cls,
         run: SequencingRun,
         instrument_config=None,
+        mismatches: Optional[dict] = None,
     ) -> list[ConfigurationError]:
         """
         Validate run configuration: lane assignments, index consistency,
@@ -302,6 +363,8 @@ class ValidationService:
         Args:
             run: Sequencing run to validate
             instrument_config: Optional InstrumentConfig for DB overrides
+            mismatches: Optional sheet-plan mismatch numbers, keyed by (sample
+                id, index number) (spec 2026-10-05 group A3, §2)
 
         Returns:
             List of ConfigurationError (errors and warnings)
@@ -361,10 +424,12 @@ class ValidationService:
         errors.extend(cls._validate_index_length_consistency(run, all_lanes))
         errors.extend(cls._validate_mixed_indexing(run, all_lanes))
         errors.extend(cls._validate_run_cycles_vs_index_length(run))
-        errors.extend(cls._validate_override_cycles_match_run(run))
-        errors.extend(cls._validate_shortened_i5(run))
+        override_errors = cls._validate_override_cycles_match_run(run)
+        errors.extend(override_errors)
+        errors.extend(cls._validate_index_length_matches_cycles(
+            run, {name for error in override_errors for name in error.sample_names}))
         errors.extend(cls._validate_duplicate_index_pairs(run, all_lanes))
-        errors.extend(cls._validate_mismatch_threshold(run, all_lanes))
+        errors.extend(cls._validate_mismatch_threshold(run, all_lanes, mismatches))
 
         return errors
 
@@ -448,9 +513,12 @@ class ValidationService:
         # Malformed OverrideCycles, or a read override pattern that is malformed
         # (applying it silently drops what it cannot parse: 'U8YY*' -> 'U8Y143').
         invalid: list[str] = []
-        # An Index 2 part that masks cycles before the index (spec 2026-10-04
-        # group A2, §2).
+        # An Index 2 part with cycles before the index (spec 2026-10-04 group
+        # A2, §2; a Y too since spec 2026-10-05 group A3, §4); the same in the
+        # Index 1 part, and an index part of two runs of index cycles (A3, §4).
         index2_order: list[str] = []
+        index1_order: list[str] = []
+        index_split: list[str] = []
         for sample in run.samples:
             # Only a pattern that shapes the sheet counts: an indexed sample
             # (unindexed ones get no OverrideCycles) and a read the run performs.
@@ -479,6 +547,10 @@ class ValidationService:
                 bad.append(sample.sample_id or sample.id)
             elif problem == "index2_order":
                 index2_order.append(sample.sample_id or sample.id)
+            elif problem == "index1_order":
+                index1_order.append(sample.sample_id or sample.id)
+            elif problem == "index_split":
+                index_split.append(sample.sample_id or sample.id)
 
         errors: list[ConfigurationError] = []
         if invalid:
@@ -506,10 +578,36 @@ class ValidationService:
                 category="override_cycles_index2_order",
                 message=(
                     f"{len(index2_order)} sample(s) have an OverrideCycles whose Index 2 "
-                    f"part masks cycles before the index: {preview}{more}. "
+                    f"part has cycles before the index: {preview}{more}. "
                     f"{INDEX2_ORDER_RULE}"
                 ),
                 sample_names=index2_order,
+            ))
+        if index1_order:
+            preview = ", ".join(index1_order[:5])
+            more = f", and {len(index1_order) - 5} more" if len(index1_order) > 5 else ""
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="override_cycles_index1_order",
+                message=(
+                    f"{len(index1_order)} sample(s) have an OverrideCycles whose Index 1 "
+                    f"part has cycles before the index: {preview}{more}. "
+                    f"{INDEX1_ORDER_RULE}"
+                ),
+                sample_names=index1_order,
+            ))
+        if index_split:
+            preview = ", ".join(index_split[:5])
+            more = f", and {len(index_split) - 5} more" if len(index_split) > 5 else ""
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="override_cycles_index_split",
+                message=(
+                    f"{len(index_split)} sample(s) have an OverrideCycles with an index "
+                    f"part of more than one run of index cycles: {preview}{more}. "
+                    f"{INDEX_SPLIT_RULE}"
+                ),
+                sample_names=index_split,
             ))
         if not bad:
             return errors
@@ -528,52 +626,6 @@ class ValidationService:
                 f"clear the sample's OverrideCycles field."
             ),
             sample_names=bad,
-        )]
-
-    @classmethod
-    def _validate_shortened_i5(cls, run: SequencingRun) -> list[ConfigurationError]:
-        """An i5 used shorter than it is stored, inside a longer Index 2 read,
-        where the run's workflow reads the i5 reversed. The sheet writes the
-        whole i5, and which of its bases BCL Convert then compares is not
-        settled, so it is refused (spec 2026-10-04 group A2, §2)."""
-        rc = run.run_cycles
-        if not rc or not rc.index2_cycles:
-            return []
-        try:
-            direction = run_i5_direction(run)
-        except NoI5Direction:
-            return []  # _validate_i5_direction reports it
-        if not direction.reads_reversed:
-            return []
-        index2 = [name for name, _, _ in CycleCalculator.read_structure(rc)].index("Index2")
-        shortened: list[str] = []
-        for sample in run.samples:
-            i5 = sample.index2_sequence
-            if not i5:
-                continue
-            oc = sample.override_cycles or CycleCalculator.calculate_override_cycles(
-                run_cycles=rc, sample=sample)
-            if not oc or CycleCalculator.override_cycles_problem(oc, rc):
-                continue  # _validate_override_cycles_match_run reports it
-            part = re.split(r"[;,]", oc)[index2].upper()
-            index_cycles = sum(int(n) for n in re.findall(r"I(\d+)", part))
-            if index_cycles < len(i5) and index_cycles < rc.index2_cycles:
-                shortened.append(sample.sample_id or sample.id)
-        if not shortened:
-            return []
-        preview = ", ".join(shortened[:5])
-        more = f", and {len(shortened) - 5} more" if len(shortened) > 5 else ""
-        return [ConfigurationError(
-            severity=ValidationSeverity.ERROR,
-            category="i5_shortened_on_reversed_read",
-            message=(
-                f"{len(shortened)} sample(s) use fewer i5 cycles than their i5 has, inside a "
-                f"longer Index 2 read: {preview}{more}. {run.instrument_platform.value} "
-                f"({direction.workflow}) reads the i5 reversed, so which i5 bases BCL Convert "
-                f"compares is not settled. Use all of the i5's cycles, or make the Index 2 "
-                f"read as long as the cycles used."
-            ),
-            sample_names=shortened,
         )]
 
     @classmethod
@@ -767,13 +819,14 @@ class ValidationService:
         run: SequencingRun,
         all_lanes: list[int],
     ) -> list[ConfigurationError]:
-        """Check that all samples in a lane have consistent EFFECTIVE index lengths.
+        """Check that all samples in a lane read the same number of index cycles.
 
-        Uses the kit-effective cycle count (``CycleCalculator._get_effective_index_length``)
-        rather than the raw stored sequence length. A kit with
-        ``default_index1_cycles=8`` and a 10bp sequence demuxes as 8 cycles —
-        comparing the raw sequence length here would falsely report a mismatch
-        against an 8bp sample that shares the same effective length.
+        Counts the cycles read (``effective_index_read_length``: a typed
+        OverrideCycles' I cycles, else the kit's index cycles or the index's
+        length, capped by the run's index read; spec 2026-10-05 group A3, §4),
+        not the raw stored sequence length. An index whose length differs
+        from its cycles read is refused by
+        ``_validate_index_length_matches_cycles``.
         """
         errors: list[ConfigurationError] = []
         lane_samples = cls._group_samples_by_lane(run, all_lanes)
@@ -788,7 +841,7 @@ class ValidationService:
             for s in indexed:
                 if s.index1_sequence:
                     display = s.sample_id or s.sample_name or s.id
-                    eff = CycleCalculator._get_effective_index_length(s, 1)
+                    eff = effective_index_read_length(s, 1, run)
                     i7_lengths[eff].append(display)
 
             if len(i7_lengths) > 1:
@@ -813,7 +866,7 @@ class ValidationService:
             for s in indexed:
                 if s.index2_sequence:
                     display = s.sample_id or s.sample_name or s.id
-                    eff = CycleCalculator._get_effective_index_length(s, 2)
+                    eff = effective_index_read_length(s, 2, run)
                     i5_lengths[eff].append(display)
 
             if len(i5_lengths) > 1:
@@ -886,12 +939,12 @@ class ValidationService:
     ) -> list[ConfigurationError]:
         """Check that run index cycles are >= each sample's EFFECTIVE index length.
 
-        Uses the kit-effective cycle count (``CycleCalculator._get_effective_index_length``)
-        rather than the raw stored sequence length. The export pipeline builds
-        OverrideCycles segments from the effective length; comparing the raw
-        sequence length would refuse legitimate "10bp sequence, 8 effective
-        cycles" kit configurations even though the resulting Sample Sheet is
-        valid (e.g. ``I8N2`` against 8 run cycles).
+        Uses ``_index_cycles_for_exceeds_check``: a typed OverrideCycles that
+        fits the run decides (spec 2026-10-05 group A3, §4), else the kit's
+        index cycles, else the stored sequence length. An index whose length
+        differs from the cycles read for it is refused by
+        ``_validate_index_length_matches_cycles``: Illumina says the two must
+        match.
         """
         errors: list[ConfigurationError] = []
         if not run.run_cycles:
@@ -902,7 +955,7 @@ class ValidationService:
 
             # Check i7: run index1_cycles must be >= effective i7 length
             if sample.index1_sequence:
-                eff_i7 = CycleCalculator._get_effective_index_length(sample, 1)
+                eff_i7 = cls._index_cycles_for_exceeds_check(sample, 1, run)
                 if eff_i7 and run.run_cycles.index1_cycles < eff_i7:
                     errors.append(
                         ConfigurationError(
@@ -919,7 +972,7 @@ class ValidationService:
 
             # Check i5: run index2_cycles must be >= effective i5 length
             if sample.index2_sequence:
-                eff_i5 = CycleCalculator._get_effective_index_length(sample, 2)
+                eff_i5 = cls._index_cycles_for_exceeds_check(sample, 2, run)
                 if eff_i5 and run.run_cycles.index2_cycles < eff_i5:
                     errors.append(
                         ConfigurationError(
@@ -935,6 +988,73 @@ class ValidationService:
                     )
 
         return errors
+
+    @staticmethod
+    def _index_cycles_for_exceeds_check(
+        sample: Sample, index_num: int, run: SequencingRun,
+    ) -> int:
+        """The cycles ``_validate_run_cycles_vs_index_length`` compares with
+        the run's index read: a typed OverrideCycles' I cycles when it fits
+        the run (spec 2026-10-05 group A3, §4), else the kit's index cycles,
+        else the index's length."""
+        if sample.override_cycles:
+            read = index_cycles_read(sample, index_num, run)
+            if read is not None:
+                return read
+        return CycleCalculator._get_effective_index_length(sample, index_num)
+
+    @classmethod
+    def _validate_index_length_matches_cycles(
+        cls, run: SequencingRun, reported: set[str],
+    ) -> list[ConfigurationError]:
+        """An index has exactly as many bases as the index cycles its
+        OverrideCycles (typed, else computed) reads for it — 0 when the sample
+        has no such index (spec 2026-10-05 group A3, §4). Illumina, DRAGEN
+        v4.3 BCL conversion: "Length of string must match number of first
+        index cycles in RunInfo.xml or number specified in OverrideCycles."
+
+        Reported once: skips the samples named in ``reported`` (those
+        ``_validate_override_cycles_match_run`` reports) and each index
+        ``_validate_run_cycles_vs_index_length`` reports."""
+        rc = run.run_cycles
+        if not rc:
+            return []
+        names: list[str] = []
+        details: list[str] = []
+        for sample in run.samples:
+            name = sample.sample_id or sample.id
+            if name in reported:
+                continue
+            for index_num, label, sequence, read_cycles in (
+                (1, "i7", sample.index1_sequence, rc.index1_cycles),
+                (2, "i5", sample.index2_sequence, rc.index2_cycles),
+            ):
+                if sequence:
+                    exceeds = cls._index_cycles_for_exceeds_check(sample, index_num, run)
+                    if exceeds and read_cycles < exceeds:
+                        continue  # index_exceeds_cycles reports it
+                read = index_cycles_read(sample, index_num, run)
+                bases = len(sequence or "")
+                if read is None or read == bases:
+                    continue
+                details.append(f"{name} ({label}: {bases} bases, {read} read)")
+                if name not in names:
+                    names.append(name)
+        if not details:
+            return []
+        preview = ", ".join(details[:5])
+        more = f", and {len(details) - 5} more" if len(details) > 5 else ""
+        return [ConfigurationError(
+            severity=ValidationSeverity.ERROR,
+            category="index_length_differs_from_override_cycles",
+            message=(
+                f"{len(names)} sample(s) have an index whose length differs from the index "
+                f"cycles their OverrideCycles reads: {preview}{more}. BCL Convert needs each "
+                f"index to have as many bases as the cycles read for it. Use an index of that "
+                f"length, or change the OverrideCycles or the kit's index cycles."
+            ),
+            sample_names=names,
+        )]
 
     @classmethod
     def _validate_duplicate_index_pairs(
@@ -987,8 +1107,14 @@ class ValidationService:
         cls,
         run: SequencingRun,
         all_lanes: list[int],
+        mismatches: Optional[dict] = None,
     ) -> list[ConfigurationError]:
-        """Warn when the barcode mismatch threshold is close to the minimum distance in a lane."""
+        """Warn when the barcode mismatch threshold is close to the minimum distance in a lane.
+
+        A sample's number is the one the sheet gives BCL Convert when
+        ``mismatches`` (the sheet plan's) has it (spec 2026-10-05 group A3,
+        §2), else its own, else the run's.
+        """
         errors: list[ConfigurationError] = []
         lane_samples = cls._group_samples_by_lane(run, all_lanes)
 
@@ -1016,10 +1142,11 @@ class ValidationService:
                 # Get the effective mismatch for i7 in this lane
                 # Use the maximum per-sample mismatch (or global default)
                 max_mismatch_i7 = max(
-                    (
+                    (mismatches or {}).get(
+                        (s.id, 1),
                         s.barcode_mismatches_index1
                         if s.barcode_mismatches_index1 is not None
-                        else run.barcode_mismatches_index1
+                        else run.barcode_mismatches_index1,
                     )
                     for s in indexed
                 )

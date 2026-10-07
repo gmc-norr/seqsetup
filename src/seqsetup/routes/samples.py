@@ -19,7 +19,12 @@ from ..models.sample import Sample
 from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import RunCycles, SequencingRun
 from ..services.audit_log import audit
-from ..services.cycle_calculator import INDEX2_ORDER_RULE, CycleCalculator
+from ..services.cycle_calculator import (
+    INDEX1_ORDER_RULE,
+    INDEX2_ORDER_RULE,
+    INDEX_SPLIT_RULE,
+    CycleCalculator,
+)
 from ..services.index_fill import build_fill_plan
 from ..services.paste_preview import build_paste_preview, repeated_sample_ids
 from ..services.sample_api import name_list
@@ -132,11 +137,17 @@ def _override_cycles_refusal(
     problem: Optional[str] = None,
 ) -> str:
     """The 400 message for an Override Cycles value that does not fit the
-    run (spec 2026-09-27 run checks 1b, F11), or whose Index 2 part masks
-    cycles before the index (spec 2026-10-04 group A2, §2). Escaped by the
+    run (spec 2026-09-27 run checks 1b, F11), or whose index part has
+    cycles before the index (spec 2026-10-04 group A2, §2; spec 2026-10-05
+    group A3, §4) or holds two runs of index cycles (A3, §4). Escaped by the
     error banner."""
-    if problem == "index2_order":
-        return f"{INDEX2_ORDER_RULE} Nothing was saved."
+    rule = {
+        "index1_order": INDEX1_ORDER_RULE,
+        "index2_order": INDEX2_ORDER_RULE,
+        "index_split": INDEX_SPLIT_RULE,
+    }.get(problem or "")
+    if rule:
+        return f"{rule} Nothing was saved."
     cycles = (
         f"Read1 {run_cycles.read1_cycles} / Index1 {run_cycles.index1_cycles} / "
         f"Index2 {run_cycles.index2_cycles} / Read2 {run_cycles.read2_cycles}"
@@ -1086,7 +1097,8 @@ async def set_mismatches_bulk(
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
 
-    # Clear puts both columns back to the run default. Apply writes only the
+    # Clear puts both columns back to the default (the BCL Convert profile's,
+    # else the run's; spec 2026-10-05 group A3, §2). Apply writes only the
     # boxes that were filled in: a box left blank leaves that column alone on
     # every ticked sample, so a deliberate override is never wiped by a box
     # the user did not touch (group 1c, the user's decision after the build
@@ -1102,7 +1114,8 @@ async def set_mismatches_bulk(
         if not (write_index1 or write_index2):
             raise HTTPException(status_code=400, detail=(
                 "Type a barcode mismatch value (0, 1 or 2) to apply, or use Clear to "
-                "reset both to the run default. Nothing was saved."
+                "reset both to the default (the BCL Convert profile's, else the run's). "
+                "Nothing was saved."
             ))
 
     with saving_run(run, ctx, request):

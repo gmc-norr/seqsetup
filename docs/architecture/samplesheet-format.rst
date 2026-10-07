@@ -40,16 +40,19 @@ Specifies the number of cycles for each segment of the run.
 Application sections
 ^^^^^^^^^^^^^^^^^^^^^
 
-For every sample with a **Test ID**, SeqSetup resolves the test profile it
-points to and, for each application profile that test profile references,
-writes one ``[AppName_Settings]`` / ``[AppName_Data]`` pair named after
-that application profile's ``ApplicationName`` -- for example
-``[BCLConvert_Settings]`` / ``[BCLConvert_Data]``, or
-``[DragenGermline_Settings]`` / ``[DragenGermline_Data]``.
-``_write_application_profile_section`` (``samplesheet_v2_exporter.py``)
-takes the ``Data`` section's columns entirely from the application
-profile's own field/column definitions (``data_fields`` and
-``translate``) -- there is no fixed section list and no fixed column set.
+For every sample's **Test ID**, SeqSetup resolves the test profile it
+points to and the application profiles that test profile references, and
+writes one ``[AppName_Settings]`` / ``[AppName_Data]`` pair for each
+``ApplicationName`` -- for example ``[BCLConvert_Settings]`` /
+``[BCLConvert_Data]``, or ``[DragenGermline_Settings]`` /
+``[DragenGermline_Data]``. The sheet plan (``services/sheet_plan.py``, see
+:doc:`services`) decides the sections; profiles that share an application
+share its section when their ``Settings`` and columns match, each row
+filled from its own profile. ``_write_application_section``
+(``samplesheet_v2_exporter.py``) takes the ``Data`` section's columns
+entirely from the application profiles' own field/column definitions
+(``data_fields`` and ``translate``) -- there is no fixed section list and
+no fixed column set.
 The shipped profiles under ``config/profiles/application_profiles/``
 give four DRAGEN application names (``DragenGermline``, ``DragenSomatic``,
 ``DragenRna``, ``DragenEnrichment``) plus ``BCLConvert``.
@@ -92,8 +95,10 @@ pair and, for each configured DRAGEN onboard analysis, a matching
 ``_write_dragen_sections``) -- this path exists in the exporter but the
 running application never calls it.
 
-If none of a run's samples resolve to a test profile that references an
-application profile, no application section is written at all.
+A sample without a Test ID, a test or profile that cannot be found, or any
+other plan problem stops the writer (``SheetPlanProblem``) instead of
+leaving the sample out; Mark Ready reports the same problems as errors
+first.
 
 [Cloud_Settings] and [Cloud_Data]
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

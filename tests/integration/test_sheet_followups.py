@@ -62,6 +62,8 @@ def _app_profile_yaml(name: str, software_version: str) -> str:
         f"  SoftwareVersion: {software_version}\n"
         "DataFields:\n"
         "  - Sample_ID\n"
+        "  - Index\n"
+        "  - Index2\n"
     )
 
 

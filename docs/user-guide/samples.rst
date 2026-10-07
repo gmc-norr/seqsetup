@@ -144,7 +144,8 @@ saved.
    context for the edited row.
 
 A mismatch count is 0, 1 or 2 -- the values Illumina's BCL Convert
-accepts -- or blank for the run's default. Anything else, such as ``3`` or
+accepts -- or blank for the default: the BCL Convert profile's, else the
+run's. Anything else, such as ``3`` or
 a mistyped ``1e``, is refused with a message in the banner, and nothing is
 saved. The bulk **Mismatches** row below works the same way.
 
@@ -169,7 +170,14 @@ the table (the same panel used for :doc:`lane-assignment`). Its
 **Mismatches** row applies the i7 and i5 boxes to every ticked sample when
 you select **Apply**. A box left blank leaves that value as it is on every
 ticked sample, so you can change i7 without touching i5. **Clear** resets
-both to the run's default in one step. **Apply** with both boxes blank
+both to the default in one step. With profiles, that is the BCL Convert
+profile's ``Data`` default when the profile has the mismatch column, else
+its ``Settings`` value, else 1, BCL Convert's default; the run's numbers
+count only for a run without profiles. When the profile has no mismatch column, every
+sample gets the same number, and a sample's own number cannot reach the
+sheet: the validation page warns, and the checks use the sheet's number
+(see :doc:`/admin-guide/profiles`). Where the sheet has a ``Lane`` column,
+every sample needs its lanes picked. **Apply** with both boxes blank
 changes nothing and says so. Its **Test ID**
 row works the same way: pick a test and select **Apply** to give it to
 every ticked sample, or **Clear** to remove it. The panel's **Lanes** and

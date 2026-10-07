@@ -69,6 +69,14 @@ Version constraints support:
 - Compatible releases: ``~=1.0.0`` (matches 1.0.x)
 - Range specifiers: ``>=1.0,<2.0``
 
+Every test lists exactly one profile whose ``ApplicationName`` is
+``BCLConvert`` -- without one, its samples would not be demultiplexed -- and
+at most one profile for any other application, each once. A test that lists
+one application twice (two profiles, or the same profile twice, also as
+``1.0`` and ``~=1.0``) would write its samples twice. **Mark Ready** refuses
+both (the sync cannot: it does not know the referenced profiles'
+applications).
+
 Example Test Profile
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -102,6 +110,53 @@ informational text; it does not control what gets exported.
 
 Application and test profile data is never included in the JSON metadata
 export, regardless of ``ApplicationType``.
+
+One section per application
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A Sample Sheet has one ``[AppName_Settings]`` and one ``[AppName_Data]``
+section for each application, however many tests in the run use it. When
+two tests use two different profiles for the same application -- the
+shipped ``DragenEnrichmentGermline`` and ``DragenEnrichmentSomatic``, for
+example -- the profiles share the section if their ``Settings`` and their
+columns (after ``Translate``, in order) are the same; each sample's row
+then takes its own profile's ``Data`` values (``GermlineOrSomatic`` here).
+If they differ, **Mark Ready** refuses and names both profiles: put those
+tests in separate runs, or give the profiles the same ``Settings`` and
+columns.
+
+What the BCL Convert profile must carry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``BCLConvert`` profile must have a column for every value a sample
+needs, or **Mark Ready** refuses and names the samples and the column:
+
+- ``Index`` for a sample with an i7, ``Index2`` for a sample with an i5;
+- ``Lane`` for a sample on some lanes only. With a ``Lane`` column, every
+  sample needs its lanes picked: its Lane cell would otherwise be empty,
+  and Illumina says a Lane cell holds one lane number;
+- ``OverrideCycles`` for a sample whose OverrideCycles is not the run's
+  full reads (``Y151;I10;I10;Y151``) -- a shorter index, UMI reads, or a
+  typed value;
+- with a ``BarcodeMismatchesIndex1`` or ``BarcodeMismatchesIndex2`` column,
+  a value in the cell for each sample that has that index: a sample whose
+  number was cleared takes the profile's ``Data`` default, and an empty or
+  ``na`` default is refused for it.
+
+Without the mismatch columns every sample gets the profile's ``Settings``
+number, or 1, BCL Convert's default. Mark Ready's collision check uses the
+number the sheet gives BCL Convert, so it checks what will be
+demultiplexed. A sample whose own number differs from it gets a warning on
+the validation page (the sheet cannot carry it); add the column to use the
+samples' numbers.
+
+Names are compared ignoring case. SeqSetup fills and reads these names
+itself, in this spelling only: in every profile's ``Settings``,
+``SoftwareVersion``; in the ``BCLConvert`` profile, the columns
+``Sample_ID``, ``Lane``, ``Index``, ``Index2``, ``OverrideCycles``,
+``BarcodeMismatchesIndex1``, ``BarcodeMismatchesIndex2`` and the settings
+``BarcodeMismatchesIndex1``, ``BarcodeMismatchesIndex2``,
+``NoLaneSplitting``, ``CreateFastqForIndexReads``, ``AdapterBehavior``.
 
 Required Fields (All Profiles)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -361,6 +416,13 @@ Application Profile Validation
   its sample: ``Sample_ID`` must be in ``DataFields`` (or, when
   ``DataFields`` is missing or empty, be a key of ``Data``), as it is or
   renamed to it by ``Translate``
+- No column may be written twice, whatever its case -- a ``Translate``
+  typo such as ``IndexI5: Index`` would write ``Index`` twice and no i5
+- In the ``BCLConvert`` profile, no name may be both in ``Settings`` and a
+  data column, whatever its case: BCL Convert allows a setting in one
+  place only
+- The names SeqSetup fills or reads itself (above) must be spelled exactly:
+  ``index`` or ``softwareversion`` is refused
 - ``Settings``, ``Data`` and ``Translate`` must be mappings and
   ``DataFields`` a list, when given. A section left empty (``Settings:``
   with nothing under it) means "none"
@@ -393,6 +455,18 @@ SeqSetup checks:
 3. DRAGEN applications are available on the selected instrument
 4. Software versions match instrument capabilities
 5. No version conflicts across samples in the same run
+6. Every test lists one ``BCLConvert`` profile and one profile per
+   application; profiles that share a section match; the ``BCLConvert``
+   profile has the columns its samples need; no column is written twice, no
+   setting is in two places, and no name SeqSetup uses is spelled
+   otherwise (all above). A profile stored before these checks existed is
+   refused here too
+
+If a sync changes a profile while **Mark Ready** is writing the exports,
+**Mark Ready** refuses with *"The profiles changed while the exports were
+being generated, so the Sample Sheet would not match what was checked. The
+run is still a Draft. Mark it Ready again."* The next **Mark Ready** checks
+and writes against the new profiles.
 
 .. _config-sync:
 

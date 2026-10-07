@@ -67,6 +67,7 @@ def export_samplesheet_v2(
                 run,
                 test_profile_repo=ctx.test_profile_repo,
                 app_profile_repo=ctx.app_profile_repo,
+                instrument_config=ctx.instrument_config,
             )
         filename = f"{sanitize_filename(run.run_name, 'SampleSheet_v2')}.csv"
         audit(
@@ -96,6 +97,7 @@ def export_samplesheet_v2(
 def export_samplesheet_v1(
     request: Request,
     run: SequencingRun = Depends(get_exportable_run),
+    ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     if not SampleSheetV1Exporter.supports(run.instrument_platform):
         return Response(
@@ -103,6 +105,20 @@ def export_samplesheet_v1(
             status_code=400,
         )
     try:
+        # Mark Ready stored why it made no v1 sheet (spec 2026-10-05 group
+        # A3, §3); a run made before exports were stored gets one on the
+        # spot only when the check, against the profiles stored now, finds
+        # no reason.
+        withheld = run.samplesheet_v1_withheld
+        if not withheld and not run.generated_samplesheet_v1:
+            withheld = ValidationService.validate_run(
+                run,
+                test_profile_repo=ctx.test_profile_repo,
+                app_profile_repo=ctx.app_profile_repo,
+                instrument_config=ctx.instrument_config,
+            ).v1_sheet_withheld
+        if withheld:
+            return Response(content=f"No v1 sheet for this run: {withheld}.", status_code=409)
         content = run.generated_samplesheet_v1 or SampleSheetV1Exporter.export(run)
         filename = f"{sanitize_filename(run.run_name, 'SampleSheet')}.csv"
         audit(

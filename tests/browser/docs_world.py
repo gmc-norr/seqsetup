@@ -7,11 +7,12 @@ here is real: names, users and index sequences are invented.
 
 from datetime import datetime
 
+from seqsetup.models.application_profile import ApplicationProfile
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.local_user import LocalUser
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
-from seqsetup.models.test_profile import TestProfile
+from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.models.user import UserRole
 
 DEMO_ADMIN = {"username": "dana.demo", "password": "Demo-Docs-2026!", "display_name": "Dana Demo"}
@@ -97,9 +98,21 @@ def seed_demo(ctx) -> dict[str, str]:
         description="Made-up unique dual index set for the documentation",
         index_pairs=[_pair(n) for n in range(1, 25)], created_by=DEMO_ADMIN["username"],
     ))
+    # Every test lists one BCLConvert profile (spec 2026-10-05 group A3, §1).
+    ctx.app_profile_repo.save(ApplicationProfile(
+        id="demo-bclconvert", name="BCLConvertNextera", version="1.0.0",
+        application_type="Dragen", application_name="BCLConvert",
+        settings={"SoftwareVersion": "4.3.6", "FastqCompressionFormat": "gzip"},
+        data={"BarcodeMismatchesIndex1": 1, "BarcodeMismatchesIndex2": 1},
+        data_fields=["Sample_ID", "Lane", "Index", "Index2", "OverrideCycles",
+                     "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2"],
+        source_file="BCLConvertNextera.yaml", synced_at=_T,
+    ))
     ctx.test_profile_repo.save(TestProfile(
         id="demo-wgs", test_type="WGS", test_name="Whole Genome Sequencing",
         description="Demo test profile", version="1.0.0", synced_at=_T,
+        application_profiles=[ApplicationProfileReference(
+            profile_name="BCLConvertNextera", profile_version="~=1.0.0")],
     ))
 
     ids = {"draft": "demo-run-01", "problem": "demo-run-02", "fill": "demo-run-05",
