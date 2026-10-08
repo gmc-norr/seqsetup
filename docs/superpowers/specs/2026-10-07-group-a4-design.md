@@ -52,6 +52,18 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
    an admin mapping box.
 8. The Sample Sheet's text does not change. The API's JSON export carries no test today and is
    not changed (later list).
+9. **A test file is read whatever the case of its `.yaml` / `.yml` ending** (user, plan review
+   of 562b2e2): a `Wgs_1.3.YAML` was skipped without a word, so `1` kept the older version and
+   the sync said success. Other files in the folder are skipped, as today.
+10. **The config-sync page shows the last sync**: its time, status and message, red on an
+    error; a manual sync's result is red when the sync did not succeed (user, plan review of
+    562b2e2). Decision 4 keeps the stored test profiles; someone must see that it did.
+11. **A Ready or Archived run's validation page says its checks are live** (user, plan review
+    of 562b2e2): they use today's synced profiles, while its Tests line shows the versions its
+    sheet was written with. The checks themselves do not change.
+12. **A LIMS sample ID or test sent as a number with a decimal point, or as `true`/`false`, is
+    refused** (user, plan review of 562b2e2; it was on the later list): JSON reads `23.10` as
+    `23.1`, which would change a sample's identity without a word.
 
 ## §1 What is stored, and the rules
 
@@ -120,6 +132,30 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
 
   The guard against replacing stored profiles with nothing (`_guard_against_destructive_replace`)
   runs as today when the test profiles are stored.
+- **A test file is a file in the test profile folder whose name ends in `.yaml` or `.yml`, in
+  any case** (decision 9): `Wgs_1.3.YAML` and `Rna.Yml` are read and checked like `Wgs.yaml`.
+  Any other file there (a `README.md`) is skipped, as today. Today the ending must be lower case
+  (`github_sync.py:538`), so a `.YAML` file is skipped without a word. Application profile,
+  instrument and index kit folders are not changed.
+
+### Where the sync's result is shown
+
+- **The config-sync page** (`templates/admin/config_sync.html`, `routes/admin/config_sync.py`;
+  decision 10). Every sync, manual or scheduled, already stores `last_sync_at`,
+  `last_sync_status` and `last_sync_message` (`repositories/profile_sync_config_repo.py:17-33`);
+  no page shows them. The status panel gains a last-sync line: the time (`| localtime`), the
+  status in brackets and, below it, the message; `—` before the first sync:
+
+  ```
+  Last sync: 2026-10-08 10:12 CEST (error)
+  Test profile files were refused, so no test profiles were stored and the stored ones are kept: …
+  ```
+
+  With status `error` the line sits in the red box the admin pages use for errors
+  (`bg-red-100 border border-red-400 text-red-800`). A manual sync's result box, always green
+  today (`config_sync.html:15-17`), is red when the sync did not succeed, and so is `Sync
+  service not available`; `Configuration saved` stays green. This shows A2's instrument
+  refusals too, which end the same way.
 
 ### Finding a sample's test profile
 
@@ -186,6 +222,18 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   Rows that have a version keep it. Each new sample with a test (its own, or the one from "Test
   for rows without one") gets `ps.test_version or paste.default_version`; a sample without a
   test gets no version from the box (decision 6).
+- A row that takes the test picked in "Test for rows without one" and has no version, none in
+  the row and none in the box, refuses the whole paste (decision 6; plan review of 562b2e2: such
+  rows got the test and no version). A row with a version of its own may take the picked test.
+
+  ```
+  Row(s) 3, 5: the picked test needs a version. Fill in Version for rows without one, for example 1.
+  ```
+
+  The preview marks such a row Look with the note `The picked test needs a version.`, gives
+  this text above the table, and offers no Add, as for a version without a test. Rows with a
+  test of their own and no version are not refused here: Mark Ready asks for the version, and
+  the run page's fix boxes set it (§2, §3).
 - A row with a version of its own and no test (none in the row and none picked) refuses the
   whole paste (decision 6; review of plan 68fc2c0):
 
@@ -280,6 +328,21 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
 
   The last one is for a sample with a version and no test (decision 6; review of plan 68fc2c0).
 
+- **The sample ID and the test are checked by JSON type too** (decision 12). Measured on
+  `e65c60d`: `{"sample_id": 23.10}` imports as `23.1`, `true` as `True`, a test `1.10` as `1.1`
+  and a test `true` as `True`; `false` is refused as a missing sample ID; whole numbers keep
+  their digits (`12345`, `7`). Now a number with a decimal point, `true` or `false` refuses the
+  whole worklist (a missing sample ID names the row, so a bad one does too):
+
+  ```
+  LIMS row 3 has a sample ID that is a number with a decimal point (23.1), which JSON may have changed (1.10 is read as 1.1). Send it as text, for example "1.10".
+  LIMS row 3 has a sample ID that is not text or a whole number (true).
+  Sample 'S1' has a test that is a number with a decimal point (1.1), which JSON may have changed (1.10 is read as 1.1). Send it as text, for example "1.10".
+  Sample 'S1' has a test that is not text or a whole number (true).
+  ```
+
+  Text and whole numbers are read as today. The other fields are not changed (later list).
+
 - `import_worklist_samples` (`routes/samples.py:664-784`) sets `test_version`.
 - The admin LIMS page gains a **Test version field** box (`field_test_version` →
   `field_mappings["test_version"]`), beside the four mapping boxes
@@ -327,6 +390,10 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   READY→DRAFT clears it (`routes/runs.py:698-710`). It joins `RUN_DIFF_IGNORED_KEYS`
   (`services/run_diff.py:12-16`), as `samplesheet_v1_withheld` did. It does not join
   `_FINGERPRINT_IGNORED_KEYS`: it is always empty on a Draft, where that comparison runs.
+- The audit event `run.status.changed` of a Mark Ready gains `test_versions` (the same list), so
+  the versions a sheet was written with stay in the audit trail after READY→DRAFT clears the
+  run's copy (plan review of 562b2e2; today the event holds only the two statuses,
+  `routes/runs.py:716-723`).
 - **The plan's fingerprint** (A3) keys each test entry by test and version text, and already
   holds the resolved profile's content, version included. If a sync brings a newer match between
   the checks and the writing, the fingerprints differ and Mark Ready answers 409
@@ -338,6 +405,12 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   uses 1.2.3 (Wgs.yaml) · RNA 2 uses 2.0.1 (Rna.yaml)` -- words, not an arrow, because the PDF's
   built-in Helvetica cannot draw one. For a Draft this is today's pick; a Ready or Archived run
   shows `test_versions_used`, the versions its sheet was written with (the page checks live).
+  Under it, a Ready or Archived run with saved versions says so (decision 11; plan review of
+  562b2e2: after a newer match is synced, the page's errors are those of the newer version):
+
+  ```
+  The checks below use today's synced profiles. This run's Sample Sheet was written with the test versions above.
+  ```
 - **Validation report** (pre-generated at Mark Ready): the JSON gains `"tests": [{"test",
   "asked", "version", "file"}]` (`services/validation_report.py:58-123`); the PDF's run lines
   (`_run_info`, 309-320) gain a `Tests` line. Its value is set as a paragraph (escaped), so it
@@ -385,6 +458,21 @@ Written first, each seen failing for its reason before the code.
 - The validation page, the JSON report and the PDF show the tests; the PDF's Tests line wraps
   inside its column.
 - The storage-order bug: two `WGS` files stored in both orders give the same, newest match.
+- From the plan review of 562b2e2:
+  - the sync reads `Wgs_1.3.YAML` and `Rna.Yml`, and still skips a `README.md`;
+  - the config-sync page: `—` before the first sync; after a refused sync, the last-sync line
+    with `(error)` and the message, in the red box; after a good one, `(success)`, not red; a
+    manual sync's result red when it refused files, green when it succeeded;
+  - the paste: a row taking the picked test with no version refused, nothing added, and the
+    preview offers no Add; a row with its own version may take the picked test;
+  - the LIMS: a sample ID `23.10`, `true` and `false` refused; a test `1.10` and `true` refused;
+    a whole-number sample ID and test kept as today;
+  - the application check resolves the whole version text: with `1.0.0` naming a profile that
+    is not stored and `1.1.0` clean, `1.0` is reported and `1.1` is not, and the reverse;
+  - the Ready table with two version texts of one test (`1`, `2`): each sample shows its own
+    exact version;
+  - Mark Ready's audit event holds the test versions;
+  - the Ready page's note: shown on a Ready and an Archived run, not on a Draft.
 - Browser: the bulk panel's version box and Clear; the paste box; the fix boxes.
 - Break tests: switch off each rule in turn; the tests named for it must turn red.
 
@@ -397,13 +485,22 @@ stored test profiles; how a sample's text picks one),
 `docs/admin-guide/sample-api.rst` (the Test version field), `docs/architecture/data-models.rst`
 and `docs/architecture/services.rst` (the new field, `resolve_test`).
 
+From the plan review of 562b2e2: `profiles.rst` (a `.YAML` ending in any case; the config-sync
+page's last-sync line, red on an error); `validation.rst` (the Ready page's note);
+`audit-trail.rst` (a Mark Ready's `run.status.changed` holds `test_versions`);
+`sample-api.rst` (a sample ID or test sent as a decimal number or `true`/`false` is refused);
+`samples.rst` (a picked test needs a version; a spreadsheet can turn `1.10` into `1.1`, so
+format the `test_version` column as text and check the preview's Version column).
+
 Doc pictures are made again. A picture may change only where it shows a part this design
 changes: the paste form and preview, the bulk panel, the run page's fix boxes, the sample
 table's Test cell (`WGS 1`), the validation page's Tests line, and the admin LIMS form's new
 Test version field box (`admin/lims-settings.png`, taken of the whole form by
-`tests/browser/test_docs_screenshots.py:1370-1374`). The plan measures which
-pictures differ from main and names each one with the part that changed it; any other
-difference is a defect. The doc-picture world gives its samples a version.
+`tests/browser/test_docs_screenshots.py:1370-1374`), and the audit trail's Mark Ready events,
+which now hold `test_versions` (`admin/audit-trail.png`; measured on the prototype: the
+config-sync picture shows only the form, so the last-sync line does not change it). The plan
+measures which pictures differ from main and names each one with the part that changed it;
+any other difference is a defect. The doc-picture world gives its samples a version.
 
 ## §6 Rollout
 
@@ -418,9 +515,16 @@ makes the sync end with `error`, naming the file, until it is fixed. No migratio
 - The API's JSON export carries no test or version (and `docs/architecture/services.rst` says
   the JSON export includes test IDs; it does not).
 - An empty Apply in "Set test" clears the test, as it does today (now both test and version).
-- Every other LIMS field goes through `str(val).strip()[:256] if val else ""`
-  (`sample_api.py:652`): a sample ID sent as the JSON number `1.10` becomes `"1.1"`, and `0`
-  becomes empty (then refused as a missing sample ID). Found while checking the review of
-  311d730; older than this design, not changed here.
+- Every other LIMS field (not the sample ID, test or version) goes through
+  `str(val).strip()[:256] if val else ""` (`sample_api.py:652`): an index name sent as the JSON
+  number `1.10` becomes `"1.1"`. A sample ID `0` still becomes empty and is refused as missing.
+  Older than this design, not changed here.
 - The LIMS worklist preview (`templates/wizard/_worklist_preview.html`) shows no version
   column (plan review of 68fc2c0).
+- A refused sync keeps every stored test profile, also a version the lab removed on purpose in
+  the same push; the message does not name the kept versions that are no longer in the
+  repository (plan review of 562b2e2).
+- A test file is named by its file name, not its path: two `Wgs.yaml` in two sub-folders read
+  `WGS 1.2.0 is in Wgs.yaml and Wgs.yaml`; the refusal itself works (plan review of 562b2e2).
+- `TestType` is matched exactly: a file with `TestType: Wgs` is another test than `WGS` (read
+  in the code by the plan review of 562b2e2, not measured).
