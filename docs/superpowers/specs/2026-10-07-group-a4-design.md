@@ -60,7 +60,9 @@ Test profile files are read only by the sync (`services/github_sync.py:204-213`,
     562b2e2). Decision 4 keeps the stored test profiles; someone must see that it did.
 11. **A Ready or Archived run's validation page says its checks are live** (user, plan review
     of 562b2e2): they use today's synced profiles, while its Tests line shows the versions its
-    sheet was written with. The checks themselves do not change.
+    sheet was written with. The checks themselves do not change. **The run page's Check box
+    says so too** (user, plan review of 8b17009): it also checks live, beside a sample table
+    whose Test ID cells show the versions the sheet was written with.
 12. **A LIMS sample ID or test sent as a number with a decimal point, or as `true`/`false`, is
     refused** (user, plan review of 562b2e2; it was on the later list): JSON reads `23.10` as
     `23.1`, which would change a sample's identity without a word.
@@ -247,6 +249,13 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   no test is marked Look with the note `A test version needs a test.`; a notice above the table
   gives the refusal text above, and the preview offers no Add, as for a repeated ID. The
   preview's Add form sends the box back like `default_test_id`.
+- A row whose sample ID is already in the run is skipped, as today, so neither of the two rules
+  above looks at it, in the preview or in the add (plan review of 8b17009: such a row, never
+  added, blocked the paste).
+- When the preview offers no Add for one of these two rules, the hint beside the greyed Add
+  button reads `Fix the rows named above first.`, since those rows are Look (yellow), not red.
+  For red rows (a repeated ID, a paste over the run's cap) and a paste that cannot be read it
+  stays `Fix the red rows first.` (plan review of 8b17009).
 - The format help (`templates/wizard/_sample_paste_format_help.html`) and the paste hint name
   the `test_version` column.
 
@@ -342,6 +351,9 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   ```
 
   Text and whole numbers are read as today. The other fields are not changed (later list).
+  iGene's `{sample_id: test_id}` form (`sample_api.py:554-561`) passes the test on as sent, so
+  it is checked the same way (plan review of 8b17009: there `test_id if test_id else ""` turned
+  `false` and `0.0` into no test before the check); `null` and `""` stay no test, as today.
 
 - `import_worklist_samples` (`routes/samples.py:664-784`) sets `test_version`.
 - The admin LIMS page gains a **Test version field** box (`field_test_version` →
@@ -411,6 +423,13 @@ shortened into a valid one. The boxes are read with `.strip()` only, not with `s
   ```
   The checks below use today's synced profiles. This run's Sample Sheet was written with the test versions above.
   ```
+- **The run page's Check box** (`templates/runs/_validate_panel.html`) runs the same live checks
+  on every status (`routes/main.py` `_validate_for_panel`). On a Ready or Archived run with saved
+  versions it says so, under its badges (decision 11; plan review of 8b17009):
+
+  ```
+  These checks use today's synced profiles. This run's Sample Sheet was written with the test versions in the Test ID column.
+  ```
 - **Validation report** (pre-generated at Mark Ready): the JSON gains `"tests": [{"test",
   "asked", "version", "file"}]` (`services/validation_report.py:58-123`); the PDF's run lines
   (`_run_info`, 309-320) gain a `Tests` line. Its value is set as a paragraph (escaped), so it
@@ -473,6 +492,16 @@ Written first, each seen failing for its reason before the code.
     exact version;
   - Mark Ready's audit event holds the test versions;
   - the Ready page's note: shown on a Ready and an Archived run, not on a Draft.
+- From the plan review of 8b17009:
+  - the application profile folder still skips an `Other.YAML` (only the test profile folder
+    reads any case);
+  - iGene's `{sample_id: test_id}` form: a test `false`, `true`, `0.0` or `1.10` refused; `"WGS"`
+    kept; `null` and `""` no test;
+  - the paste: a row already in the run, with no version under a picked test or with a version
+    and no test, does not stop the add or the preview's Add;
+  - the hint `Fix the rows named above first.` for each of the two version rules, and `Fix the
+    red rows first.` still for a repeated ID;
+  - the run page's note: shown on a Ready and an Archived run, not on a Draft.
 - Browser: the bulk panel's version box and Clear; the paste box; the fix boxes.
 - Break tests: switch off each rule in turn; the tests named for it must turn red.
 
@@ -492,9 +521,12 @@ page's last-sync line, red on an error); `validation.rst` (the Ready page's note
 `samples.rst` (a picked test needs a version; a spreadsheet can turn `1.10` into `1.1`, so
 format the `test_version` column as text and check the preview's Version column).
 
+From the plan review of 8b17009: `validation.rst` (the run page's Check box says its checks are
+live on a Ready or Archived run).
+
 Doc pictures are made again. A picture may change only where it shows a part this design
-changes: the paste form and preview, the bulk panel, the run page's fix boxes, the sample
-table's Test cell (`WGS 1`), the validation page's Tests line, and the admin LIMS form's new
+changes: the paste form and preview, the bulk panel, the run page's fix boxes, the Check box's
+note on a Ready or Archived run, the sample table's Test cell (`WGS 1`), the validation page's Tests line, and the admin LIMS form's new
 Test version field box (`admin/lims-settings.png`, taken of the whole form by
 `tests/browser/test_docs_screenshots.py:1370-1374`), and the audit trail's Mark Ready events,
 which now hold `test_versions` (`admin/audit-trail.png`; measured on the prototype: the
@@ -528,3 +560,6 @@ makes the sync end with `error`, naming the file, until it is fixed. No migratio
   `WGS 1.2.0 is in Wgs.yaml and Wgs.yaml`; the refusal itself works (plan review of 562b2e2).
 - `TestType` is matched exactly: a file with `TestType: Wgs` is another test than `WGS` (read
   in the code by the plan review of 562b2e2, not measured).
+- After the config-sync settings are saved with another repository or branch, the status panel
+  shows the new repository beside the last sync, which read the old one (plan review of
+  8b17009). The stored profiles are those of that last sync.
