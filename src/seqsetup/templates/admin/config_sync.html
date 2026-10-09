@@ -13,15 +13,20 @@
     </div>
 
     {% if message %}
-        <div class="bg-green-100 border border-green-400 text-green-800 rounded px-3 py-2">{{ message }}</div>
+        <div id="sync-result" class="{{ 'bg-green-100 border border-green-400 text-green-800' if message_ok else 'bg-red-100 border border-red-400 text-red-800' }} rounded px-3 py-2">{{ message }}</div>
     {% endif %}
 
-    {# Status panel #}
+    {# Status panel. The last sync, manual or scheduled, red on an error
+       (spec 2026-10-07 group A4, §1, decision 10). #}
     <div class="bg-slate-100 border rounded p-4 space-y-1 text-sm">
         <div><strong>Repo:</strong> {{ config.github_repo_url or "—" }}</div>
         <div><strong>Branch:</strong> {{ config.github_branch or "—" }}</div>
         <div><strong>Sync enabled:</strong> {{ "Yes" if config.sync_enabled else "No" }}</div>
         <div><strong>Interval:</strong> every {{ config.sync_interval_minutes }} minutes</div>
+        <div id="last-sync"{% if config.last_sync_status == "error" %} class="bg-red-100 border border-red-400 text-red-800 rounded px-3 py-2"{% endif %}>
+            <div><strong>Last sync:</strong> {{ config.last_sync_at | localtime if config.last_sync_at else "—" }}{% if config.last_sync_status %} ({{ config.last_sync_status }}){% endif %}</div>
+            {% if config.last_sync_message %}<div>{{ config.last_sync_message }}</div>{% endif %}
+        </div>
     </div>
 
     {# Config form #}

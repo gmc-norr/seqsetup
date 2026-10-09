@@ -3,6 +3,7 @@
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from ..models.sample import shown_value
 from .sheet_plan import (
     SPELLED_COLUMNS_BCLCONVERT,
     SPELLED_SETTINGS_ANY,
@@ -17,6 +18,7 @@ from .sheet_text import (
     is_i5_rule_setting,
     starts_a_section,
 )
+from .versioned_tests import PROFILE_VERSION_RE, PROFILE_VERSION_RULE
 
 
 class ProfileValidationError(Exception):
@@ -58,8 +60,17 @@ def validate_test_profile_yaml(yaml_data: dict, source_file: str = "") -> None:
     if version_val is not None and str(version_val).strip():
         try:
             Version(str(version_val))
-        except InvalidVersion:
-            errors.append(f"Field 'Version' is not a valid PEP 440 version: '{version_val}'")
+        except (InvalidVersion, ValueError):
+            # ValueError: a number too long for Python to read (4,301 digits).
+            errors.append(
+                f"Field 'Version' is not a valid PEP 440 version: '{shown_value(str(version_val))}'"
+            )
+        # A sample's test version picks among these by number (spec
+        # 2026-10-07 group A4, §1).
+        if not PROFILE_VERSION_RE.match(str(version_val)):
+            errors.append(
+                f"Field 'Version' {PROFILE_VERSION_RULE}: {shown_value(str(version_val))!r}"
+            )
     if isinstance(version_val, float):
         errors.append(_decimal_version("Version"))
 

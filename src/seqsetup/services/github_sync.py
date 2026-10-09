@@ -201,7 +201,11 @@ class GitHubSyncService:
             )
             logger.info(f"Fetched {len(app_profiles)} application profiles")
 
-            # Fetch test profiles (recursive)
+            # Fetch test profiles (recursive). Any refused test file means no
+            # test profile is stored: a refused newest file would otherwise
+            # make a sample's "1" pick an older version (spec 2026-10-07
+            # group A4, §1).
+            refused_tests: list[str] = []
             test_profiles = self._fetch_profiles_recursive(
                 owner,
                 repo,
@@ -209,7 +213,9 @@ class GitHubSyncService:
                 config.test_profiles_path,
                 self._parse_test_profile,
                 strict=True,
+                refused=refused_tests,
             )
+            self._refuse_repeated_test_versions(test_profiles, refused_tests)
             logger.info(f"Fetched {len(test_profiles)} test profiles")
 
             # Fetch instruments if enabled and repo available. Any refused
@@ -247,9 +253,10 @@ class GitHubSyncService:
             self._guard_against_destructive_replace(
                 existing_app_profiles, len(app_profiles), "application profiles"
             )
-            self._guard_against_destructive_replace(
-                existing_test_profiles, len(test_profiles), "test profiles"
-            )
+            if not refused_tests:
+                self._guard_against_destructive_replace(
+                    existing_test_profiles, len(test_profiles), "test profiles"
+                )
 
             store_instruments = (
                 config.sync_instruments_enabled
@@ -276,8 +283,9 @@ class GitHubSyncService:
             self.app_profile_repo.delete_all()
             self.app_profile_repo.bulk_save(app_profiles)
 
-            self.test_profile_repo.delete_all()
-            self.test_profile_repo.bulk_save(test_profiles)
+            if not refused_tests:
+                self.test_profile_repo.delete_all()
+                self.test_profile_repo.bulk_save(test_profiles)
 
             if store_instruments:
                 # Preserve the operator-set ``enabled`` flag across the
@@ -321,27 +329,35 @@ class GitHubSyncService:
             # the next validate_run() re-computes against the new content.
             clear_validation_cache()
 
-            count = len(app_profiles) + len(test_profiles)
+            count = len(app_profiles) + (0 if refused_tests else len(test_profiles))
             instruments_count = len(instruments) if store_instruments else 0
             index_kits_count = len(index_kits)
 
-            if refused_instruments:
-                synced = [
-                    f"{len(app_profiles)} application profiles",
-                    f"{len(test_profiles)} test profiles",
-                ]
+            if refused_tests or refused_instruments:
+                synced = [f"{len(app_profiles)} application profiles"]
+                if not refused_tests:
+                    synced.append(f"{len(test_profiles)} test profiles")
+                if instruments_count > 0:
+                    synced.append(f"{instruments_count} instruments")
                 if config.sync_index_kits_enabled and self.index_kit_repo:
                     synced.append(f"{index_kits_count} index kits")
-                message = (
-                    "Instrument files were refused, so no instrument settings were stored "
-                    "and the stored ones are kept: " + "; ".join(refused_instruments)
-                    + f". Synced {', '.join(synced)}."
-                )
+                refusals = []
+                if refused_tests:
+                    refusals.append(
+                        "Test profile files were refused, so no test profiles were stored "
+                        "and the stored ones are kept: " + "; ".join(refused_tests) + "."
+                    )
+                if refused_instruments:
+                    refusals.append(
+                        "Instrument files were refused, so no instrument settings were stored "
+                        "and the stored ones are kept: " + "; ".join(refused_instruments) + "."
+                    )
+                message = " ".join(refusals) + f" Synced {', '.join(synced)}."
                 self.config_repo.update_sync_status(
-                    "error", message, count, 0, index_kits_count
+                    "error", message, count, instruments_count, index_kits_count
                 )
-                logger.error(f"Sync refused instrument files: {message}")
-                return False, message, count + index_kits_count
+                logger.error(f"Sync refused files: {message}")
+                return False, message, count + instruments_count + index_kits_count
 
             # Update sync status
             parts = [
@@ -478,6 +494,7 @@ class GitHubSyncService:
         path: str,
         parser,
         strict: bool = False,
+        refused: Optional[list[str]] = None,
     ) -> list:
         """Fetch YAML files from directory recursively and parse them.
 
@@ -487,6 +504,10 @@ class GitHubSyncService:
             branch: Branch name
             path: Directory path within repo
             parser: Function to parse YAML into model object
+            refused: when given, each file or sub-folder that gives no
+                profile, for any reason, is added as "<path>: <problem>",
+                and a .yaml or .yml ending is read in any case (test
+                profiles, spec 2026-10-07 group A4, §1)
 
         Returns:
             List of parsed profile objects
@@ -499,6 +520,8 @@ class GitHubSyncService:
             if strict:
                 raise
             logger.warning(f"Could not fetch {path}: {e}")
+            if refused is not None:
+                refused.append(f"{path.strip('/')}/: could not be listed: {e}")
             return profiles
 
         for item in contents:
@@ -509,11 +532,15 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_profiles = self._fetch_profiles_recursive(
-                    owner, repo, branch, item_path, parser, strict=False
+                    owner, repo, branch, item_path, parser, strict=False, refused=refused
                 )
                 profiles.extend(sub_profiles)
 
-            elif item_type == "file" and item_name.endswith((".yaml", ".yml")):
+            # In the test profile folder (``refused`` given) a .YAML or .Yml
+            # ending counts too (spec 2026-10-07 group A4, §1, decision 9).
+            elif item_type == "file" and (
+                item_name.lower() if refused is not None else item_name
+            ).endswith((".yaml", ".yml")):
                 # Parse YAML file
                 download_url = item.get("download_url")
                 if download_url:
@@ -524,10 +551,18 @@ class GitHubSyncService:
                             profile = parser(yaml_data, item_name)
                             profiles.append(profile)
                             logger.debug(f"Parsed profile from {item_path}")
+                        elif refused is not None:
+                            refused.append(f"{item_path}: is empty")
                     except yaml.YAMLError as e:
                         logger.warning(f"Failed to parse YAML {item_path}: {e}")
+                        if refused is not None:
+                            refused.append(f"{item_path}: cannot be read as YAML: {e}")
                     except Exception as e:
                         logger.warning(f"Failed to process {item_path}: {e}")
+                        if refused is not None:
+                            refused.append(f"{item_path}: {e}")
+                elif refused is not None:
+                    refused.append(f"{item_path}: has no download link")
 
         return profiles
 
@@ -720,6 +755,24 @@ class GitHubSyncService:
     ) -> TestProfile:
         """Parse YAML into TestProfile."""
         return TestProfile.from_yaml(yaml_data, filename)
+
+    @staticmethod
+    def _refuse_repeated_test_versions(test_profiles: list[TestProfile],
+                                       refused: list[str]) -> None:
+        """Each test and version that is in more than one file is logged and
+        added to ``refused``, since a sample could get any of those files
+        (spec 2026-10-07 group A4, §1)."""
+        files: dict[tuple[str, str], list[str]] = {}
+        for profile in test_profiles:
+            files.setdefault((profile.test_type, profile.version), []).append(profile.source_file)
+        for (test, version), names in files.items():
+            if len(names) > 1:
+                names = sorted(names)
+                where = f"{test} {version} is in {', '.join(names[:-1])} and {names[-1]}"
+                logger.warning(
+                    f"Test profiles refused: {where}. A test and version may be in one file only."
+                )
+                refused.append(where)
 
     def _fetch_index_kits(
         self,
