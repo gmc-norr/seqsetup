@@ -389,13 +389,17 @@ Test Profile Validation
 
 - All required fields must be present and non-empty; a field with nothing
   after it (``Version:``) is empty
-- ``Version`` must be a valid PEP 440 version
+- ``Version`` must be three whole numbers joined by dots, each at most 9
+  digits and without a leading zero (see `Test versions`_). A PEP 440
+  version that is not three whole numbers, such as ``1.0.0rc1``, is refused
 - ``ApplicationProfiles`` must be a non-empty list
 - Each application profile reference must have a name and a version
   constraint, and the constraint must itself be valid PEP 440
 - A version written as a number with a decimal point -- ``Version: 1.10``,
   or ``ApplicationProfileVersion: 1.10`` in a reference -- is refused: YAML
-  reads it as the number 1.1. Put it in quotes: ``"1.10"``
+  reads it as the number 1.1. Put it in quotes: ``"1.10"``. For a test
+  profile's ``Version`` the quotes alone are not enough -- ``"1.10"`` is
+  still refused, since it is not three whole numbers; write ``"1.10.0"``
 
 Application Profile Validation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
