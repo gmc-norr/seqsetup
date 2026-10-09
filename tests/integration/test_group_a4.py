@@ -1,5 +1,7 @@
 """Group A4: test versions (spec 2026-10-07 group A4), through the app."""
 
+import html
+
 import pytest
 
 from .test_sheet_followups import _SYNC_LOGGER, _Messages, _app_profile_yaml
@@ -382,3 +384,187 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         assert not ok
         assert "Refusing to replace" in message
         assert _stored(ctx) == STORED_BEFORE
+
+
+class TestAPasteCarriesVersions:
+    """Paste and file: the test_version column and the "Version for rows
+    without one" box (spec §2)."""
+
+    def _post(self, client, run_id, action, text, default_test="", default_version=None):
+        from .test_paste_preview import ORIGIN
+        data = {"paste_data": text, "lanes": ["1"], "default_test_id": default_test}
+        if default_version is not None:
+            data["default_test_version"] = default_version
+        return client.post(f"/runs/{run_id}/samples/{action}", data=data, headers=ORIGIN)
+
+    def _versions(self, ctx, run_id):
+        return {s.sample_id: (s.test_id, s.test_version)
+                for s in ctx.run_repo.get_by_id(run_id).samples}
+
+    def test_the_column_and_the_box(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, "bulk",
+                       "sample_id,test_id,test_version\nS1,WGS,1.2\nS2,WGS,\nS3,,\n",
+                       default_test="WGS", default_version="1")
+        assert r.status_code == 200
+        assert self._versions(ctx, run_id) == {
+            "S1": ("WGS", "1.2"), "S2": ("WGS", "1"), "S3": ("WGS", "1")}
+
+    def test_without_the_box_a_row_keeps_no_version(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        self._post(logged_in_client, run_id, "bulk", "S1,WGS\n")
+        assert self._versions(ctx, run_id) == {"S1": ("WGS", "")}
+
+    def test_a_row_with_a_version_and_no_test_is_refused(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, "bulk",
+                       "sample_id,test_id,test_version\nS1,WGS,1\nS2,,2\nS3,,1\n")
+        assert r.status_code == 200
+        assert ("Bulk import rejected: Row(s) 3, 4: a test version needs a test. Give the row "
+                "a test, or pick one in Test for rows without one.") in html.unescape(r.text)
+        assert self._versions(ctx, run_id) == {}
+
+    def test_a_picked_test_lets_a_row_keep_its_version(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        self._post(logged_in_client, run_id, "bulk", "sample_id,test_version\nS1,2\n",
+                   default_test="WGS")
+        assert self._versions(ctx, run_id) == {"S1": ("WGS", "2")}
+
+    def test_a_picked_test_without_a_version_is_refused(self, logged_in_client, fresh_app):
+        # A test and its version are set together (decision 6; plan review of 562b2e2).
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, "bulk",
+                       "sample_id,test_id,test_version\nS1,WGS,1\nS2,,\nS3,,2\nS4,,\n",
+                       default_test="WGS")
+        assert r.status_code == 200
+        assert ("Bulk import rejected: Row(s) 3, 5: the picked test needs a version. Fill in "
+                "Version for rows without one, for example 1.") in html.unescape(r.text)
+        assert self._versions(ctx, run_id) == {}
+
+    def test_the_preview_offers_no_add_for_a_picked_test_without_a_version(self, logged_in_client,
+                                                                            fresh_app):
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, "preview", "S1\n", default_test="WGS")
+        page = html.unescape(r.text)
+        assert "The picked test needs a version." in page
+        assert ("Row(s) 1: the picked test needs a version. Fill in Version for rows without one, "
+                "for example 1.") in page
+        assert '<button type="button" class="btn btn-primary" disabled>Add samples</button>' in page
+
+    @pytest.mark.parametrize("text,default_test", [
+        ("sample_id,test_version\nS1,\nS3,2\n", "WGS"),  # S1 takes the picked test, no version
+        ("sample_id,test_id,test_version\nS1,,5\nS3,WGS,2\n", ""),  # S1 has a version, no test
+    ])
+    def test_a_row_already_in_the_run_does_not_stop_the_add(self, logged_in_client, fresh_app,
+                                                             text, default_test):
+        # It is skipped, never added (plan review of 8b17009).
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        self._post(logged_in_client, run_id, "bulk", "S1,WGS\n", default_version="1")
+        preview = self._post(logged_in_client, run_id, "preview", text, default_test=default_test)
+        assert "Add 1 sample</button>" in preview.text
+        r = self._post(logged_in_client, run_id, "bulk", text, default_test=default_test)
+        assert r.status_code == 200
+        assert "Bulk import rejected" not in r.text
+        assert self._versions(ctx, run_id) == {"S1": ("WGS", "1"), "S3": ("WGS", "2")}
+
+    @pytest.mark.parametrize("text,default_test", [
+        ("S1\n", "WGS"),  # the picked test, no version
+        ("sample_id,test_version\nS1,2\n", ""),  # a version, no test
+    ])
+    def test_the_hint_names_the_rows_above(self, logged_in_client, fresh_app, text, default_test):
+        # Those rows are Look (yellow), not red (plan review of 8b17009).
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, "preview", text, default_test=default_test)
+        assert '<span class="paste-blocked-hint">Fix the rows named above first.</span>' in r.text
+        assert "Fix the red rows first." not in r.text
+
+    def test_the_box_gives_no_version_to_a_row_without_a_test(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        self._post(logged_in_client, run_id, "bulk", "S1,WGS\nS2\n", default_version="1")
+        assert self._versions(ctx, run_id) == {"S1": ("WGS", "1"), "S2": ("", "")}
+
+    def test_the_preview_offers_no_add_for_a_version_without_a_test(self, logged_in_client,
+                                                                     fresh_app):
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, "preview", "sample_id,test_version\nS1,2\n")
+        page = html.unescape(r.text)
+        assert "A test version needs a test." in page
+        assert ("Row(s) 2: a test version needs a test. Give the row a test, or pick one in "
+                "Test for rows without one.") in page
+        assert '<button type="button" class="btn btn-primary" disabled>Add samples</button>' in page
+
+    @pytest.mark.parametrize("action", ["bulk", "preview"])
+    @pytest.mark.parametrize("value", ["v1", "1" + "0" * 300])
+    def test_a_bad_box_is_a_400(self, logged_in_client, fresh_app, action, value):
+        from seqsetup.models.sample import TEST_VERSION_RULE
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, action, "S1,WGS\n", default_version=value)
+        assert r.status_code == 400
+        assert r.text == f"Version for rows without one: {TEST_VERSION_RULE}."
+        assert self._versions(ctx, run_id) == {}
+
+    def test_a_bad_cell_adds_nothing(self, logged_in_client, fresh_app):
+        from seqsetup.models.sample import TEST_VERSION_RULE
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, "bulk", "sample_id,test_version\nS1,1\nS2,v1\n")
+        assert r.status_code == 200
+        assert (f"Bulk import rejected: Row(s) 3: the test version is not right. "
+                f"{TEST_VERSION_RULE}.") in html.unescape(r.text)
+        assert self._versions(ctx, run_id) == {}
+
+    def test_the_preview_shows_it_and_sends_the_box_back(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run, _wgs
+        _app, ctx, _db = fresh_app
+        _wgs(ctx)
+        run_id = _run(ctx)
+        r = self._post(logged_in_client, run_id, "preview",
+                       "sample_id,test_id,test_version\nS1,WGS,1.2\nS2,WGS,\n",
+                       default_version="1")
+        assert r.status_code == 200
+        page = html.unescape(r.text)
+        assert "<th scope=\"col\">Version</th>" in page
+        assert "Version for blank rows: <b>1</b>" in page
+        assert '<input type="hidden" name="default_test_version" value="1">' in page
+        assert "<i>1</i> <span class=\"paste-picked\">(picked)</span>" in page
+
+    def test_the_form_has_the_box(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        page = logged_in_client.get(f"/runs/{run_id}").text
+        assert 'name="default_test_version"' in page
+        assert "Version for rows without one" in page

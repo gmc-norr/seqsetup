@@ -15,6 +15,13 @@ Sample003&#9;WGS</pre>
             <p class="format-note">A header row is auto-detected and used for column mapping. Without a header, columns default to: sample_id, test_id, index_i7, index_i5. Name columns require a header row.</p>
         </div>
         <div class="format-block">
+            <strong class="format-type-header">With Test Versions</strong>
+            <p class="format-desc">A test_version column: 1 means the newest 1.x.x, 1.2 the newest 1.2.x, 1.2.3 exactly that one. Needs a header row.</p>
+            <pre class="format-example">sample_id&#9;test_id&#9;test_version
+Sample001&#9;WGS&#9;1
+Sample002&#9;RNA&#9;2.1</pre>
+        </div>
+        <div class="format-block">
             <strong class="format-type-header">With Indexes</strong>
             <p class="format-desc">Include index_i7 and/or index_i5 sequences to auto-assign indexes on paste.</p>
             <pre class="format-example">sample_id&#9;test_id&#9;index_i7&#9;index_i5

@@ -33,12 +33,11 @@ def _wgs(ctx):
     ctx.test_profile_repo.save(TestProfile(test_type="WGS", test_name="Whole Genome"))
 
 
-def _post(client, run_id, action, text, *, lanes=("1",), default_test=""):
-    return client.post(
-        f"/runs/{run_id}/samples/{action}",
-        data={"paste_data": text, "lanes": list(lanes), "default_test_id": default_test},
-        headers=ORIGIN,
-    )
+def _post(client, run_id, action, text, *, lanes=("1",), default_test="", default_version=None):
+    data = {"paste_data": text, "lanes": list(lanes), "default_test_id": default_test}
+    if default_version is not None:
+        data["default_test_version"] = default_version
+    return client.post(f"/runs/{run_id}/samples/{action}", data=data, headers=ORIGIN)
 
 
 def _samples(ctx, run_id):
@@ -52,7 +51,9 @@ class TestBulkAdd:
         _app, ctx, _db = fresh_app
         _wgs(ctx)
         run_id = _run(ctx)
-        r = _post(logged_in_client, run_id, "bulk", "S1\nS2,RNA\n", lanes=("2", "3"), default_test="WGS")
+        # A picked test needs its version (spec 2026-10-07 group A4, §2, decision 6).
+        r = _post(logged_in_client, run_id, "bulk", "S1\nS2,RNA\n", lanes=("2", "3"), default_test="WGS",
+                  default_version="1")
         assert r.status_code == 200
         assert "Added 2 samples to lanes 2, 3." in r.text
         samples = _samples(ctx, run_id)
@@ -116,7 +117,8 @@ class TestPreviewRoute:
         _app, ctx, _db = fresh_app
         _wgs(ctx)
         run_id = _run(ctx)
-        r = _post(logged_in_client, run_id, "preview", "sample_id,test_id,comment\nS1,WGS,hi\nS2,WGX,\n")
+        r = _post(logged_in_client, run_id, "preview",
+                  "sample_id,test_id,test_version,comment\nS1,WGS,1,hi\nS2,WGX,1,\n")
         assert r.status_code == 200
         assert "Check what we read" in r.text
         assert 'data-state="ok"' in r.text and 'data-state="look"' in r.text

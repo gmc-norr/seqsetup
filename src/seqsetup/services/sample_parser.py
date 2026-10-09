@@ -5,6 +5,7 @@ import io
 import re
 from dataclasses import dataclass
 
+from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
 # DNA sequence validation pattern (compiled once at module level).
@@ -24,6 +25,7 @@ class ParsedSample:
     """Parsed sample data from pasted input."""
     sample_id: str
     test_id: str = ""
+    test_version: str = ""  # "1", "1.2" or "1.2.3"; checked as read
     index1_sequence: str = ""  # i7 index sequence
     index2_sequence: str = ""  # i5 index sequence
     index_pair_name: str = ""  # Name for the index pair (used as index_kit_name)
@@ -40,6 +42,11 @@ SAMPLE_HEADERS = {
 TEST_HEADERS = {
     "test_id", "testid", "test", "test id", "test-id",
     "test_type", "testtype", "test type", "assay", "application",
+}
+# Not "version" alone: a lab file may have another column of that name
+# (spec 2026-10-07 group A4, §2).
+TEST_VERSION_HEADERS = {
+    "test_version", "testversion", "test version", "test-version",
 }
 INDEX1_HEADERS = {
     "index", "index1", "i7", "index_i7", "i7_index", "index i7",
@@ -63,6 +70,7 @@ INDEX2_NAME_HEADERS = {
 FIELD_LABELS = {
     "sample_id": "Sample ID",
     "test_id": "Test",
+    "test_version": "Test version",
     "index1": "i7",
     "index2": "i5",
     "index_pair_name": "Index name",
@@ -128,6 +136,8 @@ def _detect_column_mapping(header_parts: list[str]) -> dict[str, int]:
             mapping["sample_id"] = i
         elif col_lower in TEST_HEADERS and "test_id" not in mapping:
             mapping["test_id"] = i
+        elif col_lower in TEST_VERSION_HEADERS and "test_version" not in mapping:
+            mapping["test_version"] = i
         elif col_lower in INDEX1_NAME_HEADERS and "index1_name" not in mapping:
             # Check name headers before sequence headers (index_name is more
             # specific than index which could match INDEX1_HEADERS)
@@ -164,7 +174,7 @@ def _is_header_row(parts: list[str]) -> bool:
 
     # Check if any column matches known headers
     all_headers = (
-        TEST_HEADERS | INDEX1_HEADERS | INDEX2_HEADERS
+        TEST_HEADERS | TEST_VERSION_HEADERS | INDEX1_HEADERS | INDEX2_HEADERS
         | INDEX_PAIR_NAME_HEADERS | INDEX1_NAME_HEADERS | INDEX2_NAME_HEADERS
     )
     for col in parts[1:]:
@@ -280,6 +290,7 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     # smell — a 96-sample worklist missing one row would silently produce a
     # 95-sample run with no indication anything was lost.
     rows_missing_sample_id: list[int] = []
+    rows_bad_version: list[int] = []
 
     for i, (source_line, parts) in enumerate(rows):
         # Check first non-empty line for header
@@ -335,6 +346,16 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             rows_missing_sample_id.append(source_line)
             continue
 
+        # A version is at most 29 characters, so a cell cut to _MAX_CELL_LEN
+        # is still refused: no cut makes a version good (spec 2026-10-07
+        # group A4, §2).
+        test_version = ""
+        if "test_version" in column_mapping and len(parts) > column_mapping["test_version"]:
+            test_version = parts[column_mapping["test_version"]]
+        if test_version and not TEST_VERSION_RE.match(test_version):
+            rows_bad_version.append(source_line)
+            continue
+
         # Validate DNA sequences (allow empty, but reject invalid chars)
         index1_upper = index1.upper() if index1 else ""
         index2_upper = index2.upper() if index2 else ""
@@ -365,6 +386,7 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
         samples.append(ParsedSample(
             sample_id=sample_id,
             test_id=test_id,
+            test_version=test_version,
             index1_sequence=index1_upper,
             index2_sequence=index2_upper,
             index_pair_name=index_pair_name,
@@ -379,6 +401,9 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             f"Row(s) {rows_str}: sample_id is required. "
             f"Either supply a sample_id or remove the row entirely."
         )
+    if rows_bad_version:
+        rows_str = ", ".join(str(n) for n in rows_bad_version)
+        raise ValueError(f"Row(s) {rows_str}: the test version is not right. {TEST_VERSION_RULE}.")
 
     used, unused = _describe_columns(rows, header_detected, column_mapping)
     return PasteReadResult(samples, header_detected, used, unused)

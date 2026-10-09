@@ -10,8 +10,12 @@ from seqsetup.services.sample_parser import read_pasted_samples
 HEADER = "sample_id\ttest_id\tindex_i7\tindex_i5\tindex_pair_name\n"
 
 
-def _preview(text, *, existing=(), tests=("WGS",), default="", room=100):
-    return build_paste_preview(read_pasted_samples(text), set(existing), set(tests), default, room)
+def _preview(text, *, existing=(), tests=("WGS",), default="", room=100, version="1"):
+    # Every row gets a version from the box, so each test here sees only the
+    # notes it is about; a test without a version gets its own note (spec
+    # 2026-10-07 group A4): tests/unit/test_paste_test_version.py.
+    return build_paste_preview(read_pasted_samples(text), set(existing), set(tests), default, room,
+                               default_version=version)
 
 
 class TestRowStates:
