@@ -36,6 +36,33 @@ def checked_mismatches(name: str, value: Any) -> int:
     return max(0, min(2, value))
 
 
+# A sample's test version: "1" asks for the newest synced 1.x.x, "1.2" for the
+# newest 1.2.x, "1.2.3" for exactly 1.2.3 (spec 2026-10-07 group A4, §1). At
+# most 9 digits a number, so the text is at most 29 characters and always
+# turns into numbers.
+TEST_VERSION_RULE = (
+    "A test version is 1, 2 or 3 whole numbers joined by dots, each at most "
+    "9 digits, like 1, 1.2 or 1.2.3"
+)
+TEST_VERSION_RE = re.compile(r"(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){0,2}\Z")
+
+
+def shown_value(text: str) -> str:
+    """A value for a message: at most its first 40 characters."""
+    return text if len(text) <= 40 else text[:40] + "…"
+
+
+def checked_test_version(value: Any) -> str:
+    """The stripped text of a test version; ValueError with the rule for
+    anything else. Never shortened: a cut could make a bad value good."""
+    if not isinstance(value, str):
+        raise ValueError(f"{TEST_VERSION_RULE}: {shown_value(repr(value))}")
+    text = value.strip()
+    if text and not TEST_VERSION_RE.match(text):
+        raise ValueError(f"{TEST_VERSION_RULE}: {shown_value(text)!r}")
+    return text
+
+
 @dataclass
 class Sample:
     """A sequencing sample with assigned indexes."""
@@ -45,6 +72,7 @@ class Sample:
     sample_name: str = ""
     project: str = ""
     test_id: str = ""  # Associated test identifier
+    test_version: str = ""  # Which version of the test: "1", "1.2" or "1.2.3"
     worksheet_id: str = ""  # Source worksheet ID (from LIMS import)
     lanes: list[int] = field(default_factory=list)  # Lane assignments (empty = all lanes)
 
@@ -122,8 +150,11 @@ class Sample:
             not a dict (defense-in-depth: free-form fields could otherwise
             balloon the document).
           - Free-form string identifiers capped at 256.
+          - ``test_version`` text that follows TEST_VERSION_RULE, never cut.
         """
-        if value is not None:
+        if name == "test_version":
+            value = checked_test_version(value)
+        elif value is not None:
             if name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
                 value = checked_mismatches(name, value)
             elif name in ("index1_cycles", "index2_cycles"):
@@ -363,6 +394,7 @@ class Sample:
             "sample_name": self.sample_name,
             "project": self.project,
             "test_id": self.test_id,
+            "test_version": self.test_version,
             "worksheet_id": self.worksheet_id,
             "lanes": list(self.lanes),
             "index_pair": self.index_pair.to_dict() if self.index_pair else None,
@@ -444,6 +476,7 @@ class Sample:
             sample_name=data.get("sample_name", ""),
             project=data.get("project", ""),
             test_id=data.get("test_id", ""),
+            test_version=data.get("test_version", ""),
             worksheet_id=data.get("worksheet_id", ""),
             lanes=lanes,
             index_pair=IndexPair.from_dict(data["index_pair"]) if data.get("index_pair") else None,
