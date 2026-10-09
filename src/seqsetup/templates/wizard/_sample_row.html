@@ -23,6 +23,8 @@
 {% set has_i5 = sample.index2_sequence is not none %}
 {% set ctx_param = ('?context=' ~ context) if context else '' %}
 {% set row_class = 'sample-row has-index' if has_index else 'sample-row' %}
+{# The Test cell: the test and its version (spec 2026-10-07 group A4, §2). #}
+{% set test_text = (sample.test_id ~ " " ~ sample.test_version) if sample.test_version else sample.test_id %}
 {% if show_checkboxes is none %}
     {% set effective_checkboxes = show_bulk_actions and editable %}
 {% else %}
@@ -38,7 +40,7 @@
 {%- endif %}
 {%- if show_drop_zones %}
     <td class="sample-id-cell" title="{{ sample.sample_id }}">{{ sample.sample_id }}</td>
-    <td title="{{ sample.test_id }}">{{ sample.test_id }}</td>
+    <td title="{{ test_text }}">{{ test_text }}</td>
     <td class="worksheet-cell" title="{{ sample.worksheet_id or '' }}">{{ sample.worksheet_id or '-' }}</td>
     <td class="kit-name-cell" title="{{ sample.index_kit_name or '' }}">
         {% if sample.index_kit_name %}
@@ -164,7 +166,7 @@
     {%- endif %}
 {%- else %}
     <td class="sample-id-cell" title="{{ sample.sample_id }}">{{ sample.sample_id }}</td>
-    <td title="{{ sample.test_id }}">{{ sample.test_id }}</td>
+    <td title="{{ test_text }}">{{ test_text }}</td>
     <td class="worksheet-cell" title="{{ sample.worksheet_id or '' }}">{{ sample.worksheet_id or '-' }}</td>
     {%- if editable %}
         <td class="actions">

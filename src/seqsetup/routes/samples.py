@@ -36,6 +36,7 @@ from ..services.paste_preview import (
 )
 from ..services.sample_api import name_list
 from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
+from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
 from .dependencies import get_ctx, get_editable_run, saving_run
 from .utils import (
@@ -82,7 +83,7 @@ def _render_sample_section(
     sample_api_cfg = ctx.sample_api_config
     sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
     index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
-    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []
 
     section_html = templates.env.get_template("runs/_sample_section.html").render(
         run=run, index_kits=index_kits, test_profiles=test_profiles,
@@ -276,6 +277,20 @@ def _test_types(ctx: AppContext) -> set[str]:
     return {tp.test_type for tp in repo.list_all()} if repo else set()
 
 
+def _test_version_with(test_id: str, raw) -> tuple[str, str]:
+    """(version, "") or ("", the 400 text): a test and its version are set
+    together, and a version is stripped, never cut (spec 2026-10-07 group A4,
+    §2). Both empty clears both."""
+    version = raw.strip() if isinstance(raw, str) else ""
+    if version and not TEST_VERSION_RE.match(version):
+        return "", f"{TEST_VERSION_RULE}."
+    if test_id and not version:
+        return "", "Give the test version too, for example 1."
+    if version and not test_id:
+        return "", "Pick a test for this version."
+    return version, ""
+
+
 async def _read_paste_input(
     request: Request, run: SequencingRun, ctx: AppContext,
 ) -> tuple[Optional[_PasteInput], str]:
@@ -414,12 +429,16 @@ async def add_sample(
     sample_name = sanitize_string(sample_name, 256)
     project = sanitize_string(project, 256)
     test_id = sanitize_string(test_id, 256)
+    test_version, problem = _test_version_with(test_id, form.get("test_version", ""))
+    if problem:
+        return Response(problem, status_code=400)
 
     sample = Sample(
         sample_id=sample_id,
         sample_name=sample_name,
         project=project,
         test_id=test_id,
+        test_version=test_version,
         lanes=[1],
     )
     with saving_run(run, ctx, request):
@@ -430,6 +449,7 @@ async def add_sample(
         target=run_id,
         sample_id=sample.id,
         test_id=sample.test_id,
+        test_version=sample.test_version,
     )
 
     return _render_sample_row(request, sample, run, show_drop_zones=False)
@@ -603,7 +623,7 @@ async def preview_paste(
     if paste is None:
         return Response(error, status_code=400)
 
-    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []
     cap = sequencing_run_module.MAX_SAMPLES_PER_RUN
     preview, read_error = None, ""
     try:
@@ -1275,12 +1295,37 @@ async def set_test_id_bulk(
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
 
+    # A fix box says what its samples lacked when the page was loaded; the
+    # bulk panel's "Set test" sends none (spec 2026-10-07 group A4, §2).
+    only_if = form.get("only_if", "")
+    if only_if not in ("", "no_test", "no_version"):
+        return Response("only_if must be no_test or no_version", status_code=400)
+
     test_id = sanitize_string(test_id_str, 256)
+    test_version, problem = _test_version_with(test_id, form.get("test_version", ""))
+    if problem:
+        return Response(problem, status_code=400)
+
+    # A box from a page that is out of date must not change a sample someone
+    # has changed since: it could give that sample another test.
+    changed = [
+        sample.sample_id for sample in run.samples if sample.id in sample_ids and (
+            (only_if == "no_test" and sample.test_id)
+            or (only_if == "no_version"
+                and (sample.test_id != test_id or sample.test_version)))
+    ]
+    if changed:
+        return Response(
+            f"These samples changed since this page was loaded: {name_list(changed)}. "
+            f"Reload the page and try again.",
+            status_code=409,
+        )
 
     with saving_run(run, ctx, request):
         for sample in run.samples:
             if sample.id in sample_ids:
                 sample.test_id = test_id
+                sample.test_version = test_version
 
     audit(
         "sample.bulk_test_id_set",
@@ -1288,6 +1333,7 @@ async def set_test_id_bulk(
         target=run_id,
         sample_count=len(sample_ids),
         test_id=test_id,
+        test_version=test_version,
     )
 
     return _render_sample_section(run, request, ctx)

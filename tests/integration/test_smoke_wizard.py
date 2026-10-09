@@ -101,7 +101,7 @@ class TestSampleAddition:
 
         response = logged_in_client.post(
             f"/runs/{run_id}/samples",
-            data={"sample_id": "S001", "test_id": "WGS"},
+            data={"sample_id": "S001", "test_id": "WGS", "test_version": "1"},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -393,7 +393,7 @@ class TestBulkHandlersReachRoutes:
         import json
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/set-test-id",
-            data={"sample_ids": json.dumps(ids), "test_id": "WGS"},
+            data={"sample_ids": json.dumps(ids), "test_id": "WGS", "test_version": "1"},
             headers=_origin(),
         )
         assert response.status_code == 200

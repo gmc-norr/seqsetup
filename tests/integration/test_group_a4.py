@@ -568,3 +568,263 @@ class TestAPasteCarriesVersions:
         page = logged_in_client.get(f"/runs/{run_id}").text
         assert 'name="default_test_version"' in page
         assert "Version for rows without one" in page
+
+
+def _sample(sid, test="", version=""):
+    from seqsetup.models.sample import Sample
+    return Sample(id=f"id-{sid}", sample_id=sid, test_id=test, test_version=version, lanes=[1])
+
+
+def _tests(ctx, *pairs):
+    # Imported here: a module-level TestProfile would be collected by pytest.
+    from seqsetup.models.test_profile import TestProfile
+    for test, version in pairs:
+        ctx.test_profile_repo.save(TestProfile(test_type=test, test_name=test, version=version,
+                                               source_file=f"{test}_{version}.yaml"))
+
+
+def _tests_of(ctx, run_id):
+    return {s.sample_id: (s.test_id, s.test_version)
+            for s in ctx.run_repo.get_by_id(run_id).samples}
+
+
+def _set_test(client, run_id, ids, test, version=None, only_if=None):
+    import json
+    from .test_paste_preview import ORIGIN
+    data = {"sample_ids": json.dumps([f"id-{i}" for i in ids]), "test_id": test}
+    if version is not None:
+        data["test_version"] = version
+    if only_if is not None:
+        data["only_if"] = only_if
+    return client.post(f"/runs/{run_id}/samples/set-test-id", data=data, headers=ORIGIN)
+
+
+class TestSetTestSetsBoth:
+    """POST .../samples/set-test-id sets a test and its version together
+    (spec §2, decision 6)."""
+
+    def _run(self, ctx):
+        from .test_paste_preview import _run
+        return _run(ctx, samples=[_sample("S1", "RNA", "2"), _sample("S2")])
+
+    def test_both(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        r = _set_test(logged_in_client, run_id, ["S1", "S2"], "WGS", " 1.2 ")
+        assert r.status_code == 200
+        assert _tests_of(ctx, run_id) == {"S1": ("WGS", "1.2"), "S2": ("WGS", "1.2")}
+        (event,) = ctx.audit_event_repo.search(limit=5, event_prefix="sample.bulk_test_id_set")
+        assert (event.details["test_id"], event.details["test_version"]) == ("WGS", "1.2")
+
+    def test_both_empty_clears_both(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        r = _set_test(logged_in_client, run_id, ["S1"], "", "")
+        assert r.status_code == 200
+        assert _tests_of(ctx, run_id)["S1"] == ("", "")
+
+    @pytest.mark.parametrize("test,version,message", [
+        ("WGS", "", "Give the test version too, for example 1."),
+        ("WGS", None, "Give the test version too, for example 1."),
+        ("", "1", "Pick a test for this version."),
+        ("WGS", "v1", "A test version is 1, 2 or 3 whole numbers joined by dots, each at most "
+                      "9 digits, like 1, 1.2 or 1.2.3."),
+        ("WGS", "1" + "0" * 300, "A test version is 1, 2 or 3 whole numbers joined by dots, "
+                                 "each at most 9 digits, like 1, 1.2 or 1.2.3."),
+    ])
+    def test_refused_and_nothing_changes(self, logged_in_client, fresh_app, test, version, message):
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        r = _set_test(logged_in_client, run_id, ["S1"], test, version)
+        assert (r.status_code, r.text) == (400, message)
+        assert _tests_of(ctx, run_id) == {"S1": ("RNA", "2"), "S2": ("", "")}
+
+
+class TestTheFixBoxes:
+    """The run page's fix boxes: one for samples with no test (test and
+    version), one per test for samples with a test but no version (spec §2)."""
+
+    def _page(self, client, ctx):
+        from .test_paste_preview import _run
+        _tests(ctx, ("WGS", "1.0.0"), ("RNA", "2.0.0"))
+        run_id = _run(ctx, samples=[_sample("S1"), _sample("S2", "WGS"), _sample("S3", "RNA"),
+                                    _sample("S4", "WGS"), _sample("S5", "WGS", "1")])
+        return run_id, html.unescape(client.get(f"/runs/{run_id}").text)
+
+    def test_the_box_for_samples_without_a_test_asks_for_both(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run_id, page = self._page(logged_in_client, ctx)
+        assert "Set test and version for the 1 sample without one:" in page
+        assert """<input type="hidden" name="sample_ids" value='["id-S1"]'>""" in page
+
+    def test_one_box_per_test_for_samples_without_a_version(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run_id, page = self._page(logged_in_client, ctx)
+        assert "WGS: set the version for the 2 samples without one:" in page
+        assert """<input type="hidden" name="sample_ids" value='["id-S2", "id-S4"]'>""" in page
+        assert "RNA: set the version for the 1 sample without one:" in page
+        assert """<input type="hidden" name="sample_ids" value='["id-S3"]'>""" in page
+        assert '<input type="hidden" name="test_id" value="WGS">' in page
+
+    def test_a_version_box_keeps_the_test(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id, _page = self._page(logged_in_client, ctx)
+        r = _set_test(logged_in_client, run_id, ["S2", "S4"], "WGS", "1", only_if="no_version")
+        assert r.status_code == 200
+        assert _tests_of(ctx, run_id) == {
+            "S1": ("", ""), "S2": ("WGS", "1"), "S3": ("RNA", ""), "S4": ("WGS", "1"),
+            "S5": ("WGS", "1")}
+
+    def test_each_box_says_what_it_fixes(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run_id, page = self._page(logged_in_client, ctx)
+        assert page.count('<input type="hidden" name="only_if" value="no_test">') == 1
+        assert page.count('<input type="hidden" name="only_if" value="no_version">') == 2
+
+
+class TestAFixBoxFromAnOldPage:
+    """A fix box loaded before someone else changed its samples saves
+    nothing: 409, naming the samples (spec §2, review of plan 68fc2c0)."""
+
+    STALE = "These samples changed since this page was loaded: {}. Reload the page and try again."
+
+    def _run(self, ctx):
+        from .test_paste_preview import _run
+        _tests(ctx, ("WGS", "1.0.0"), ("RNA", "2.0.0"))
+        return _run(ctx, samples=[_sample("S1"), _sample("S2", "WGS"), _sample("S4", "WGS")])
+
+    def test_a_version_box_after_the_test_was_changed(self, logged_in_client, fresh_app):
+        # Measured before this rule: S2 became WGS 1.
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        assert _set_test(logged_in_client, run_id, ["S2"], "RNA", "2").status_code == 200
+        r = _set_test(logged_in_client, run_id, ["S2", "S4"], "WGS", "1", only_if="no_version")
+        assert (r.status_code, r.text) == (409, self.STALE.format("S2"))
+        assert _tests_of(ctx, run_id) == {"S1": ("", ""), "S2": ("RNA", "2"), "S4": ("WGS", "")}
+
+    def test_a_version_box_after_the_test_was_cleared(self, logged_in_client, fresh_app):
+        # Without a version, only the test tells: the box would give S2 a test.
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        assert _set_test(logged_in_client, run_id, ["S2"], "", "").status_code == 200
+        r = _set_test(logged_in_client, run_id, ["S2", "S4"], "WGS", "1", only_if="no_version")
+        assert (r.status_code, r.text) == (409, self.STALE.format("S2"))
+        assert _tests_of(ctx, run_id) == {"S1": ("", ""), "S2": ("", ""), "S4": ("WGS", "")}
+
+    def test_a_version_box_after_a_version_was_set(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        assert _set_test(logged_in_client, run_id, ["S4"], "WGS", "2").status_code == 200
+        r = _set_test(logged_in_client, run_id, ["S2", "S4"], "WGS", "1", only_if="no_version")
+        assert (r.status_code, r.text) == (409, self.STALE.format("S4"))
+        assert _tests_of(ctx, run_id)["S2"] == ("WGS", "")
+
+    def test_the_test_box_after_a_test_was_set(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        assert _set_test(logged_in_client, run_id, ["S1"], "RNA", "2").status_code == 200
+        r = _set_test(logged_in_client, run_id, ["S1"], "WGS", "1", only_if="no_test")
+        assert (r.status_code, r.text) == (409, self.STALE.format("S1"))
+        assert _tests_of(ctx, run_id)["S1"] == ("RNA", "2")
+
+    def test_the_test_box_on_a_page_that_is_up_to_date(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        r = _set_test(logged_in_client, run_id, ["S1"], "WGS", "1", only_if="no_test")
+        assert r.status_code == 200
+        assert _tests_of(ctx, run_id)["S1"] == ("WGS", "1")
+
+    def test_a_sample_removed_since_is_not_a_change(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.samples = [s for s in run.samples if s.sample_id != "S4"]
+        ctx.run_repo.save(run)
+        r = _set_test(logged_in_client, run_id, ["S2", "S4"], "WGS", "1", only_if="no_version")
+        assert r.status_code == 200
+        assert _tests_of(ctx, run_id) == {"S1": ("", ""), "S2": ("WGS", "1")}
+
+    def test_another_only_if_is_a_400(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._run(ctx)
+        r = _set_test(logged_in_client, run_id, ["S2"], "WGS", "1", only_if="always")
+        assert (r.status_code, r.text) == (400, "only_if must be no_test or no_version")
+        assert _tests_of(ctx, run_id)["S2"] == ("WGS", "")
+
+    def test_no_box_on_a_ready_run(self, logged_in_client, fresh_app):
+        from seqsetup.models.sequencing_run import RunStatus
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        _tests(ctx, ("WGS", "1.0.0"))
+        run_id = _run(ctx, samples=[_sample("S2", "WGS")], status=RunStatus.READY)
+        page = logged_in_client.get(f"/runs/{run_id}").text
+        assert "set the version for the" not in page
+
+
+class TestEachTestOnce:
+    """Each test is offered once, with its synced versions (spec §2)."""
+
+    def test_the_lists_and_the_hint(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        _tests(ctx, ("WGS", "1.0.0"), ("WGS", "1.2.0"), ("RNA", "2.0.0"))
+        run_id = _run(ctx, samples=[_sample("S1")])
+        page = html.unescape(logged_in_client.get(f"/runs/{run_id}").text)
+        bulk = page.split('id="bulk-test-id-input"', 1)[1].split("</select>", 1)[0]
+        assert bulk.count('<option value="WGS">') == 1
+        paste = page.split('id="default_test_id"', 1)[1].split("</select>", 1)[0]
+        assert paste.count('<option value="WGS">') == 1
+        fix = page.split('id="fix-test-id"', 1)[1].split("</select>", 1)[0]
+        assert fix.count('<option value="WGS">') == 1
+        assert page.count("Synced: RNA 2.0.0 · WGS 1.0.0, 1.2.0") == 3
+
+
+class TestTheSampleTableShowsTheVersion:
+    def test_the_test_cell(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx, samples=[_sample("S1", "WGS", "1"), _sample("S2", "WGS")])
+        page = logged_in_client.get(f"/runs/{run_id}").text
+        assert '<td title="WGS 1">WGS 1</td>' in page
+        assert '<td title="WGS">WGS</td>' in page
+
+
+class TestAddingOneSample:
+    """POST /runs/{run_id}/samples takes a version, with the rules of Set test."""
+
+    def _add(self, client, run_id, **fields):
+        from .test_paste_preview import ORIGIN
+        return client.post(f"/runs/{run_id}/samples", data={"sample_id": "S9", **fields},
+                           headers=ORIGIN)
+
+    def test_both(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        r = self._add(logged_in_client, run_id, test_id="WGS", test_version="1")
+        assert r.status_code == 200
+        assert _tests_of(ctx, run_id) == {"S9": ("WGS", "1")}
+        (event,) = ctx.audit_event_repo.search(limit=5, event_prefix="sample.added")
+        assert event.details["test_version"] == "1"
+
+    def test_neither(self, logged_in_client, fresh_app):
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        assert self._add(logged_in_client, run_id).status_code == 200
+        assert _tests_of(ctx, run_id) == {"S9": ("", "")}
+
+    @pytest.mark.parametrize("fields,message", [
+        ({"test_id": "WGS"}, "Give the test version too, for example 1."),
+        ({"test_version": "1"}, "Pick a test for this version."),
+        ({"test_id": "WGS", "test_version": "1.x"},
+         "A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, "
+         "like 1, 1.2 or 1.2.3."),
+    ])
+    def test_refused(self, logged_in_client, fresh_app, fields, message):
+        from .test_paste_preview import _run
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        r = self._add(logged_in_client, run_id, **fields)
+        assert (r.status_code, r.text) == (400, message)
+        assert _tests_of(ctx, run_id) == {}

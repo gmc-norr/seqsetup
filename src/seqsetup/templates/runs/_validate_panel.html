@@ -13,9 +13,12 @@
                          samples is the only error, so Check has not been
                          reached yet and is shown in grey, not as an error
      fix_test_ids:       list[str] — a draft's samples with no test; with
-                         test_profiles, a picker sets the test for exactly
-                         these (POST .../samples/set-test-id)
-     test_profiles:      list[TestProfile]
+                         test_profiles, a picker sets the test and version
+                         for exactly these (POST .../samples/set-test-id)
+     fix_versions:       list[(test, list[str])] — a draft's samples with a
+                         test but no version, by test; a box per test sets
+                         the version for exactly these
+     test_profiles:      list[OfferedTest] — one per test
 
    Refresh: after any successful non-GET HTMX request on the page (a
    change to the run), the fieldset re-fetches this partial from
@@ -90,16 +93,41 @@
               hx-swap="outerHTML"
               hx-disabled-elt="find button">
             <input type="hidden" name="sample_ids" value='{{ fix_test_ids | tojson }}'>
-            <label for="fix-test-id">Set test for the {{ fix_test_ids | length }} sample{{ '' if fix_test_ids | length == 1 else 's' }} without one:</label>
+            <input type="hidden" name="only_if" value="no_test">
+            <label for="fix-test-id">Set test and version for the {{ fix_test_ids | length }} sample{{ '' if fix_test_ids | length == 1 else 's' }} without one:</label>
             <select name="test_id" id="fix-test-id" class="paste-select" required>
                 <option value="">Select a test…</option>
                 {% for tp in test_profiles %}
                 <option value="{{ tp.test_type }}">{{ tp.test_type }}{% if tp.test_name and tp.test_name != tp.test_type %} ({{ tp.test_name }}){% endif %}</option>
                 {% endfor %}
             </select>
+            <input type="text" name="test_version" class="paste-select" required
+                   placeholder="Version, e.g. 1" aria-label="Test version">
             <button type="submit" class="btn btn-secondary btn-small">Set test</button>
+            {% include "wizard/_test_versions_hint.html" %}
         </form>
         {% endif %}
+        {# One box per test for samples with a test but no version; it posts
+           the same test back, and only_if, so it never changes a sample's
+           test, even from a page that is out of date (spec 2026-10-07 group
+           A4, §2). #}
+        {% for test, ids in (fix_versions or []) if test_profiles %}
+        <form class="validate-fix"
+              hx-post="/runs/{{ run.id }}/samples/set-test-id"
+              hx-target="#sample-section"
+              hx-select="#sample-section"
+              hx-swap="outerHTML"
+              hx-disabled-elt="find button">
+            <input type="hidden" name="sample_ids" value='{{ ids | tojson }}'>
+            <input type="hidden" name="test_id" value="{{ test }}">
+            <input type="hidden" name="only_if" value="no_version">
+            <label for="fix-version-{{ loop.index }}">{{ test }}: set the version for the {{ ids | length }} sample{{ '' if ids | length == 1 else 's' }} without one:</label>
+            <input type="text" name="test_version" id="fix-version-{{ loop.index }}" class="paste-select" required
+                   placeholder="e.g. 1">
+            <button type="submit" class="btn btn-secondary btn-small">Set version</button>
+            {% include "wizard/_test_versions_hint.html" %}
+        </form>
+        {% endfor %}
         {% endif %}
         <div class="validate-footer">
             <a href="/runs/{{ run.id }}/validation" class="validate-details-link">Open the validation page</a>

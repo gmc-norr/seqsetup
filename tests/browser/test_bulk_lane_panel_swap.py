@@ -134,6 +134,7 @@ def test_bulk_test_id_change_leaves_one_sample_section(logged_in_page, base_url,
     _open_and_select_both(page, base_url, bulk_lane_panel_run_id)
 
     page.select_option("#bulk-test-id-input", value="WGS")
+    page.locator("#bulk-test-version-input").fill("1")
     with page.expect_response(lambda r: r.url.endswith("/samples/set-test-id")) as resp_info:
         page.locator('[data-action="bulk-apply-testid"]').click()
     assert resp_info.value.status == 200

@@ -18,6 +18,7 @@ from ..data.instruments import (
 from ..models.sequencing_run import RunCycles, RunStatus
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
+from ..services.versioned_tests import offered_tests
 from ..services.validation_summary import error_messages, errors_by_sample, waiting_for_samples
 from ..templating import render
 from .dependencies import get_ctx
@@ -45,6 +46,19 @@ def _samples_without_test(run) -> list[str]:
     if run.status != RunStatus.DRAFT:
         return []
     return [s.id for s in run.samples if not s.test_id]
+
+
+def _samples_without_version(run) -> list[tuple[str, list[str]]]:
+    """(test, internal ids) of a draft's samples that have a test but no
+    version, one entry per test in the order first seen, for Check's version
+    boxes (spec 2026-10-07 group A4, §2). Empty on a locked run."""
+    if run.status != RunStatus.DRAFT:
+        return []
+    by_test: dict[str, list[str]] = {}
+    for s in run.samples:
+        if s.test_id and not s.test_version:
+            by_test.setdefault(s.test_id, []).append(s.id)
+    return list(by_test.items())
 
 
 def _plural(n: int, word: str) -> str:
@@ -141,7 +155,8 @@ def validate_panel(
         "error_lines": error_messages(validation_result),
         "waiting": waiting_for_samples(run, validation_result),
         "fix_test_ids": _samples_without_test(run),
-        "test_profiles": ctx.test_profile_repo.list_all() if ctx.test_profile_repo else [],
+        "fix_versions": _samples_without_version(run),
+        "test_profiles": offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else [],
     })
 
 
@@ -156,7 +171,7 @@ def edit_run(
     if not run:
         return RedirectResponse("/", status_code=303)
 
-    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []
     index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
     is_editable = run.status == RunStatus.DRAFT
@@ -186,6 +201,7 @@ def edit_run(
         "error_lines": error_messages(validation_result),
         "waiting": waiting_for_samples(run, validation_result),
         "fix_test_ids": _samples_without_test(run),
+        "fix_versions": _samples_without_version(run),
         "steps": _run_steps(run, validation_result),
         "has_v1": has_v1,
         "flowcell_desc": flowcell_desc,

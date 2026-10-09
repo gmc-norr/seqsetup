@@ -47,6 +47,7 @@ from ..services.sheet_plan import SheetPlanChanged, SheetPlanProblem
 from ..services.validation import ValidationService, clear_validation_cache
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
 from ..services.validation_summary import error_messages
+from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
 from .dependencies import get_archivable_run, get_ctx, get_editable_run, saving_run
 from .utils import check_status_transition, get_username, sanitize_string, selected_kit_id
@@ -718,7 +719,7 @@ async def update_status(
         **({"color_balance_accepted_lanes": color_balance_lanes} if color_balance_lanes else {}),
     )
 
-    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []
     index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
     is_editable = run.status == RunStatus.DRAFT

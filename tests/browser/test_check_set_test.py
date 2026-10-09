@@ -12,8 +12,9 @@ def test_set_test_for_samples_without_one(logged_in_page, base_url, app_ctx, mut
     page.wait_for_load_state("networkidle")
 
     fix = page.locator("form.validate-fix")
-    expect(fix).to_contain_text("Set test for the 4 samples without one")
+    expect(fix).to_contain_text("Set test and version for the 4 samples without one")
     fix.locator("select").select_option("WGS")
+    fix.locator("input[name=test_version]").fill("1")
     with page.expect_response(lambda r: r.url.endswith("/samples/set-test-id") and r.status == 200):
         fix.locator("button").click()
 

@@ -98,8 +98,9 @@ def test_bulk_apply_testid_updates_samples(logged_in_page, base_url, mutable_run
         "parseInt(document.getElementById('selected-sample-count').textContent) > 0"
     )
 
-    # Select WGS from the test-id dropdown
+    # Select WGS from the test-id dropdown, with its version (set together)
     page.select_option("#bulk-test-id-input", value="WGS")
+    page.locator("#bulk-test-version-input").fill("1")
 
     # Click [data-action="bulk-apply-testid"] and capture the HTMX round-trip
     with page.expect_response(lambda r: "set-test-id" in r.url) as response_info:

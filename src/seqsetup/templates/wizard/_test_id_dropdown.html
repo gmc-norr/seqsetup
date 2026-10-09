@@ -1,7 +1,7 @@
 {#
    Test-id dropdown for bulk-action panel.
    Inputs:
-     test_profiles: list[TestProfile] | None
+     test_profiles: list[OfferedTest] | None — one per test
 #}
 {% if not test_profiles %}
 <select id="bulk-test-id-input" class="test-id-input bulk-test-id-input" aria-label="Test ID" disabled>

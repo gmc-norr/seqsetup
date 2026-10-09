@@ -786,6 +786,32 @@ body {
     padding: 0.3rem 0.5rem;
 }
 
+/* The test and its version, set together (spec 2026-10-07 group A4); the
+   synced versions go on their own line under them. */
+.bulk-test-inputs {
+    display: flex;
+    gap: 0.35rem;
+    min-width: 0;
+}
+.bulk-test-inputs .bulk-test-id-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.bulk-test-version-input {
+    flex: 0 0 6.5rem;
+    width: 6.5rem;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
+.bulk-test-version-input:focus-visible {
+    outline: none; box-shadow: var(--focus-ring); border-color: var(--primary);
+}
+.bulk-action-row .test-versions-hint {
+    grid-column: 2 / -1;
+}
+
 /* Drop zone */
 .drop-zone {
     padding: 0.3rem 0.5rem;
