@@ -202,7 +202,10 @@ class ValidationReportPDF:
         elements.append(Spacer(1, 4 * mm))
 
         # Run info table
-        info_table = Table(cls._run_info_cells(run, result), colWidths=[5 * cm, 12 * cm])
+        # splitInRow: a run with very many tests makes a Tests cell taller
+        # than a page, which is a LayoutError unless the row may break.
+        info_table = Table(cls._run_info_cells(run, result), colWidths=[5 * cm, 12 * cm],
+                           splitInRow=1)
         info_table.setStyle(TableStyle([
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),

@@ -174,3 +174,27 @@ class TestTheTestsLine:
         after = dict(before, test_versions_used=[
             {"test": "WGS", "asked": "1", "version": "1.0.0", "file": "WGS_1.0.0.yaml"}])
         assert is_empty(*diff_run(before, after))
+
+
+class TestTheTestsLineInThePDF:
+    """A run with very many tests must still make its report. The Tests line
+    is one table cell, and a cell taller than a page is a ReportLab
+    LayoutError, which Mark Ready would report as a bare 500."""
+
+    @staticmethod
+    def _result(count):
+        from seqsetup.models.validation import ValidationResult
+        result = ValidationResult(duplicate_sample_ids=[], index_collisions=[],
+                                  distance_matrices={})
+        result.test_versions = [
+            {"test": f"T{i:03d}", "asked": "1", "version": "1.0.0",
+             "file": f"T{i:03d}_1.0.0.yaml"}
+            for i in range(count)
+        ]
+        return result
+
+    def test_a_tests_line_taller_than_a_page_still_makes_a_report(self):
+        from seqsetup.models.sequencing_run import SequencingRun
+        from seqsetup.services.validation_report import ValidationReportPDF
+        run = SequencingRun(run_name="Many tests")
+        assert ValidationReportPDF.export(run, self._result(400)).startswith(b"%PDF")
