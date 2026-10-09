@@ -233,8 +233,12 @@ def test_new_run_continue_button(demo_page, base_url, demo):
 # Header row + a blank line + 3 new data rows: the blank line and the
 # header are not samples, so "lines read" (5, via str.splitlines()) and
 # "samples read" (3, via the parser) genuinely differ -- the discrepancy
-# the paste-preview picture is asked to show.
-_SAMPLES_PASTE_TEXT = "sample_id\ttest_id\nSAMPLE-B01\tWGS\n\nSAMPLE-B02\tWGS\nSAMPLE-B03\tWGS"
+# the paste-preview picture is asked to show. Each row carries its test
+# version, the usual way to paste (spec 2026-10-07 group A4).
+_SAMPLES_PASTE_TEXT = (
+    "sample_id\ttest_id\ttest_version\nSAMPLE-B01\tWGS\t1\n\n"
+    "SAMPLE-B02\tWGS\t1\nSAMPLE-B03\tWGS\t1"
+)
 
 
 def test_samples_add_button(demo_page, base_url, demo):

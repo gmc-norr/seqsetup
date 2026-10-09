@@ -58,7 +58,10 @@ The event name says what happened. The main groups are:
   ``template.`` changes. ``run.deleted`` says whether a copy was kept
   (``kept_copy``) and which one (``copy_id``); ``run.delete.failed`` gives
   the reason: ``copy_failed``, ``no_copy_store``, ``delete_error`` or
-  ``run_changed``. See :doc:`deleted-runs`.
+  ``run_changed``. See :doc:`deleted-runs`. A Mark Ready's
+  ``run.status.changed`` holds ``test_versions``: each test, the version
+  text asked, and the exact version and file the Sample Sheet was written
+  with -- kept here after back to Draft clears them from the run.
 - **Exports and the API** -- ``export.downloaded``, ``api.run.read``,
   ``api.runs.listed``.
 - **Configuration** -- ``config_sync.`` (manual and scheduled syncs),

@@ -37,16 +37,18 @@ Configuring the connection
    but refused" state.
 
 **Field Mappings**
-   Optional, and narrower than it looks: these four fields (**Worksheet ID
-   field**, **Investigator field**, **Updated timestamp field**, **Samples
-   field**) rename the fields SeqSetup reads from the *worklist listing and
-   worklist-detail* response envelope -- for example, if your API calls the
-   worklist ID ``AL`` instead of ``id``. The *sample-level* field names in
-   the **Field Mapping** table further below (``sample_id``, ``index_i7``,
-   etc.) are recognized from a fixed set of aliases and are not
-   admin-configurable, with one exception: **Worksheet ID field** doubles as
-   a sample-level alias too, since a sample row may carry its own
-   ``worksheet_id``.
+   Optional, and narrower than it looks: four of these fields (**Worksheet
+   ID field**, **Investigator field**, **Updated timestamp field**,
+   **Samples field**) rename the fields SeqSetup reads from the *worklist
+   listing and worklist-detail* response envelope -- for example, if your
+   API calls the worklist ID ``AL`` instead of ``id``. The *sample-level*
+   field names in the **Field Mapping** table further below (``sample_id``,
+   ``index_i7``, etc.) are recognized from a fixed set of aliases and are
+   not admin-configurable, with two exceptions: **Worksheet ID field**
+   doubles as a sample-level alias too, since a sample row may carry its own
+   ``worksheet_id``; and **Test version field** names the sample-level field
+   that holds each sample's test version, when your LIMS does not call it
+   ``test_version``.
 
 .. warning::
    If you enable the integration with an unreachable **Base URL**, SeqSetup
@@ -170,6 +172,11 @@ shows recognized field names for each attribute:
    * - Test ID
      - ``test_id``, ``testid``, ``test``, ``test_type``, ``assay``, ``application``
      - Associated test or assay type
+   * - Test version
+     - ``test_version``, ``testversion`` (or the **Test version field**); not
+       ``version`` alone
+     - Which version of the test: ``1``, ``1.2`` or ``1.2.3`` (see
+       :doc:`profiles`)
    * - Index 1 (i7) sequence
      - ``index_i7``, ``index1``, ``i7``, ``index_i7_sequence``, ``i7_sequence``
      - i7 index DNA sequence
@@ -190,6 +197,23 @@ Every value pulled from the API is trimmed and capped at 256 characters, and
 an index sequence is uppercased and checked against ``[ACGTN]`` before it is
 accepted -- naming the offending sample instead of failing with an
 unrelated server error later.
+
+A test version is checked by its JSON type, before anything turns it into
+text, and is never cut: text is checked as it is, a whole number keeps its
+digits (``2`` is ``2``, ``0`` is ``0``), and anything else is refused,
+naming the sample. A number with a decimal point is refused because JSON has
+already read ``1.10`` as ``1.1`` -- send it as text (``"1.10"``). A version
+needs a test: a sample with a version and no test is refused. A field that is
+``null`` gives way to the next name, as for every field. A worklist
+in the ``{"S001": "WES"}`` form carries no versions; set them on the run
+page after the import.
+
+A sample ID and a test are checked by their JSON type too: text and whole
+numbers are read as before, but a number with a decimal point, ``true`` or
+``false`` rejects the **entire import**, naming the row (for a sample ID) or
+the sample (for a test). JSON reads ``23.10`` as ``23.1``, which would
+quietly turn sample 23.10 into another sample -- send IDs as text
+(``"23.10"``).
 
 .. warning::
    A worklist row with content but no recognizable ``sample_id`` is never

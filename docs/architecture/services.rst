@@ -96,6 +96,27 @@ checks (``ValidationService.validate_run``, which puts the fingerprint in
 its result) and the v2 writer both use it, so they cannot disagree about
 which samples go where.
 
+Samples are grouped by test and version text, and each group's test
+profile comes from ``resolve_test`` (below); the plan records the exact
+version each group found (``test_versions``), which Mark Ready saves on the
+Ready run. A newer matching version synced between the checks and the
+writing changes the fingerprint, so Mark Ready refuses rather than write
+from another version than it checked.
+
+Test versions
+-------------
+
+``services/versioned_tests.py`` holds the rule for a test profile's
+``Version`` (three whole numbers) and ``resolve_test(test_profile_repo,
+test, asked)``: the newest stored version of the test whose numbers start
+with those the sample asks for (``1``, ``1.2`` or ``1.2.3``), compared as
+numbers. It returns the profile, or the reason there is none -- no profile
+of that test, no matching version, or the newest match stored twice -- with
+the text the checks show. The sheet plan and the application-profile checks
+both use it; the repository only lists every stored version of a test
+(``list_by_test_type``). ``offered_tests`` gives the pages' test lists: each
+test once, with its synced versions.
+
 JSONExporter
 ------------
 

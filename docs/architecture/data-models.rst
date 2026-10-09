@@ -22,6 +22,9 @@ The central model representing a sequencing run configuration.
 - ``barcode_mismatches_index1``, ``barcode_mismatches_index2`` -- Default mismatch
   tolerances (default: 1)
 - ``samples`` -- List of Sample objects
+- ``test_versions_used`` -- On a Ready or Archived run, the exact test
+  version the checks used for each test and version text (``test``,
+  ``asked``, ``version``, ``file``); cleared when the run goes back to Draft
 - ``analyses`` -- List of Analysis objects
 - ``created_by``, ``updated_by`` -- Audit trail usernames
 - ``created_at``, ``updated_at`` -- Timestamps
@@ -83,6 +86,9 @@ A sequencing sample with assigned indexes.
 - ``sample_name`` -- Optional display name
 - ``project`` -- Project assignment
 - ``test_id`` -- Associated test identifier
+- ``test_version`` -- Which version of the test: ``1`` (the newest 1.x.x),
+  ``1.2`` (the newest 1.2.x) or ``1.2.3``; empty, or 1 to 3 whole numbers of
+  at most 9 digits, checked on every assignment and never cut
 - ``lanes`` -- Lane assignments (empty list = all lanes)
 - ``index_pair`` -- Assigned IndexPair (for unique dual mode)
 - ``index1``, ``index2`` -- Individual indexes (for combinatorial/single mode)

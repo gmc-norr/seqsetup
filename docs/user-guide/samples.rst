@@ -21,7 +21,7 @@ open on an empty run and collapsed once the run already has samples.
    The Add Samples toggle, outlined.
 
 .. figure:: /_static/screenshots/samples/paste-form.png
-   :alt: The paste form: a textarea for pasted rows, a file picker, a Test picker for rows without one, lane checkboxes, and a Preview button.
+   :alt: The paste form: a textarea for pasted rows, a file picker, a Test picker and a Version box for rows without one, lane checkboxes, and a Preview button.
 
    The paste form, outlined.
 
@@ -32,12 +32,26 @@ one sample; several lines add a block. Columns can be tab- or
 comma-separated:
 
 - With a header row, columns are matched by name: ``sample_id``,
-  ``test_id``, ``index_i7``, ``index_i5``, ``index_pair_name``, ``i7_name``,
-  ``i5_name``. Any column you leave out is simply not used.
+  ``test_id``, ``test_version``, ``index_i7``, ``index_i5``,
+  ``index_pair_name``, ``i7_name``, ``i5_name``. Any column you leave out is
+  simply not used. A column named only ``version`` is not read.
+- A test version is ``1`` (the newest synced 1.x.x), ``1.2`` (the newest
+  1.2.x) or ``1.2.3`` (exactly that one); **Mark Ready** picks the version
+  and saves it (see :doc:`/admin-guide/profiles`). Any other text in the
+  ``test_version`` column rejects the **entire** paste, naming its rows.
+  A spreadsheet can turn ``1.10`` into ``1.1`` before you copy it: format
+  the ``test_version`` column as text, and check the preview's **Version**
+  column.
 - Without a header row, the first four columns are read in that fixed
   order: sample ID, test, i7 index, i5 index.
 - The **Test for rows without one** picker fills a test only on rows that
   did not already carry one; a row with its own test column keeps it.
+  **Version for rows without one** does the same for the version, on rows
+  that have a test. A test and its version go together: a row with a
+  version but no test (none in the row and none picked) rejects the
+  **entire** paste, naming its rows, and so does a row that takes the
+  picked test but has no version (none in the row and none in **Version for
+  rows without one**).
 - **Lanes** picks which lane(s) the new samples start in (lane 1 by
   default). The Lanes column in the table is a display only -- changing a
   sample's lanes afterward is a separate, select-and-apply action covered
@@ -57,9 +71,11 @@ count, or the uploaded file's name), then shows one chip per outcome:
 samples read, how many will be added, how many are already in the run
 (skipped), and how many repeat a sample ID within the paste itself. Each
 row below is marked **OK**, **Look** (added, but worth a glance -- e.g. no
-matching test, or an index name with no sequence), **Skipped** (already in
+matching test, a test with no version, or an index name with no sequence),
+**Skipped** (already in
 this run; the row already there is kept), or **Repeated** (blocks the
-whole paste). Nothing is written to the run until you select the **Add**
+whole paste). A row with a version but no test is marked **Look** with
+*"A test version needs a test."*, and blocks the whole paste too. Nothing is written to the run until you select the **Add**
 button below the table (it names how many it will add, e.g. **Add 3
 samples**); going back to **Edit paste** discards nothing you have not
 already added.
@@ -115,7 +131,9 @@ The sample table
 
    The sample table, outlined.
 
-Every sample in the run appears here: its Sample ID, Test ID, Worksheet
+Every sample in the run appears here: its Sample ID, Test ID (with its
+version, e.g. ``WGS 1``; on a Ready run also the exact version saved at
+Mark Ready, e.g. ``WGS 1 (1.2.3)``), Worksheet
 (from a worklist import, otherwise blank), assigned Index Kit and index
 names or sequences, Lanes, Override Cycles, and the two barcode-mismatch
 overrides (**MM i7** / **MM i5**). A sample with no index yet shows a drop
@@ -179,8 +197,11 @@ sheet: the validation page warns, and the checks use the sheet's number
 (see :doc:`/admin-guide/profiles`). Where the sheet has a ``Lane`` column,
 every sample needs its lanes picked. **Apply** with both boxes blank
 changes nothing and says so. Its **Test ID**
-row works the same way: pick a test and select **Apply** to give it to
-every ticked sample, or **Clear** to remove it. The panel's **Lanes** and
+row sets a test and its version together: pick a test, type its version
+(the synced versions are listed beside the box) and select **Apply** to
+give both to every ticked sample, or **Clear** to remove both. A test
+without a version, or a version without a test, is refused. The panel's
+**Lanes** and
 **Override Cycles** rows are covered in :doc:`lane-assignment` and
 :doc:`override-cycles`.
 

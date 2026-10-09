@@ -24,9 +24,29 @@ listed directly underneath; beyond ten, the panel says how many more there
 are and points to the full validation page. Errors it finds are the same
 fixes needed to pass **Mark Ready** -- see :doc:`export`.
 
+When samples have no test, or a test but no version, the panel offers a
+box to fix exactly those: **Set test and version for the N samples without
+one** (pick a test and type its version), and one box per test for samples
+that have a test but no version (for example *"WGS: set the version for the
+3 samples without one"*), which never changes a sample's test. Beside each
+version box, SeqSetup lists the synced versions of every test. A box on a
+page that is out of date -- someone changed those samples since it was
+loaded -- saves nothing and says so (*"These samples changed since this page
+was loaded: S2. Reload the page and try again."*).
+
 Select **Open the validation page** for the full picture: every error and
 warning in detail, an index distance heatmap per lane, and a color
-balance table per lane.
+balance table per lane. Under its title, a **Tests** line names the exact
+version each test and version text uses -- for example *"Tests: WGS 1 uses
+1.2.3 (Wgs.yaml)"*. On a Draft this is the version the checks pick now; on
+a Ready run it is the one saved at **Mark Ready**, which the Sample Sheet
+was written with. The validation report (JSON and PDF) carries the same.
+The page's checks always use today's synced profiles, so on a Ready or
+Archived run a line under **Tests** says so: after a newer matching
+version is synced, the errors shown can be that version's, not the
+sheet's. The Check panel on the run page checks the same way, and on a
+Ready or Archived run it says so too, under its badges; there the
+**Test ID** column shows the versions the sheet was written with.
 
 Errors and warnings
 --------------------
@@ -34,7 +54,8 @@ Errors and warnings
 The validation page's **Issues** tab lists every error first, then every
 warning. Two samples in the same lane with the same (or too similar) an
 index are reported here as a collision; a sample with no test assigned is
-reported as a missing-test error; and so on.
+reported as a missing-test error, and one with a test but no version as a
+missing-version error; and so on.
 
 .. figure:: /_static/screenshots/check/validation-issues.png
    :alt: The validation page's Issues tab, listing index collision and other errors in red.
@@ -99,6 +120,11 @@ is one of these:
 - **A duplicate index pair in a lane** -- two samples sharing the exact
   same i7 (and i5) sequence. *"Demultiplexing cannot distinguish these
   samples."*
+- **A sample with a test but no version, or a version no synced test file
+  matches.** *"2 sample(s) have a test but no test version: S1, S2. Set the
+  version on the run page, for example 1."*; *"No synced WGS version
+  matches 1. Synced WGS versions: 2.0.0."* (see
+  :doc:`/admin-guide/profiles`).
 - **An application profile problem**: the sample's test isn't found, the
   application profile it points to isn't found, the application isn't
   available on the run's instrument, the required software version isn't
