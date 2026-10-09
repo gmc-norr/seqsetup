@@ -79,7 +79,8 @@ def _run(run_id, name, status=RunStatus.DRAFT, samples=()) -> SequencingRun:
 def _sample(run_id, n, pair=None, lanes=(1,), test_id="WGS") -> Sample:
     return Sample(
         id=f"{run_id}-s{n:02d}", sample_id=f"SAMPLE-A{n:02d}", sample_name=f"Sample A{n:02d}",
-        project="DEMO-PROJECT", test_id=test_id, lanes=list(lanes),
+        project="DEMO-PROJECT", test_id=test_id, test_version="1" if test_id else "",
+        lanes=list(lanes),
         index_pair=pair, index_kit_name=DEMO_KIT_NAME if pair else None,
     )
 

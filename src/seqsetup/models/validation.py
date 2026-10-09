@@ -220,7 +220,8 @@ class ApplicationValidationError:
     test_id: str  # The sample's test_id
     application_name: str  # e.g. "DragenGermline"
     profile_name: str  # ApplicationProfileName
-    error_type: str  # "app_not_available", "version_not_available", "profile_not_found", "test_profile_not_found"
+    error_type: str  # "app_not_available", "version_not_available", "profile_not_found", "test_profile_not_found",
+    # "test_version_not_found", "test_version_stored_twice" (spec 2026-10-07 group A4)
     detail: str  # Human-readable message
 
 

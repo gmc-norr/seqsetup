@@ -61,8 +61,11 @@ def _repos(apps=(), tests=()):
     return test_repo, app_repo
 
 
-def _sample(sample_id, test="WGS", i7="ACGTACGTAC", i5="TTGGCCAATT", lanes=(1,)) -> Sample:
-    sample = Sample(sample_id=sample_id, test_id=test, lanes=list(lanes))
+def _sample(sample_id, test="WGS", i7="ACGTACGTAC", i5="TTGGCCAATT", lanes=(1,),
+            version="1") -> Sample:
+    # A test comes with its version (spec 2026-10-07 group A4).
+    sample = Sample(sample_id=sample_id, test_id=test, test_version=version if test else "",
+                    lanes=list(lanes))
     if i5 is None:
         sample.assign_index1(Index(name=f"{sample_id}7", sequence=i7, index_type=IndexType.I7))
     else:
@@ -171,13 +174,14 @@ class TestTheWritersOwnProblems:
     def test_a_test_without_a_test_profile(self):
         apps, _tests = _wgs()
         plan = _plan(_run(_sample("S1")), apps, [])
-        assert [p.message for p in plan.problems] == ["Test 'WGS' has no test profile."]
+        # The version the sample asked for is named too (spec 2026-10-07 group A4).
+        assert [p.message for p in plan.problems] == ["Test 'WGS' 1 has no test profile."]
 
     def test_a_profile_that_is_not_stored(self):
         apps, tests = _wgs()
         plan = _plan(_run(_sample("S1")), apps[1:], tests)
         assert [p.message for p in plan.problems] == [
-            "Test 'WGS' lists BCLX 1.0.0, which is not stored."]
+            "Test 'WGS' 1 lists BCLX 1.0.0, which is not stored."]
         assert plan.check_errors == []
 
 
@@ -188,7 +192,7 @@ class TestATestWithoutABCLConvertProfile:
         plan = _plan(_run(_sample("S1", "DRAGEN_ONLY")), apps, tests)
         (problem,) = _problems(plan, "test_without_bclconvert_profile")
         assert problem.message == (
-            "Test 'DRAGEN_ONLY' has no BCLConvert profile, so its 1 sample(s) would not be "
+            "Test 'DRAGEN_ONLY' 1 has no BCLConvert profile, so its 1 sample(s) would not be "
             "demultiplexed: S1. Add one BCLConvert profile to the test profile.")
         assert problem.sample_names == ("S1",)
 
@@ -204,7 +208,7 @@ class TestATestWithTwoProfilesForOneApplication:
         (problem,) = _problems(_plan(_run(_sample("S1")), apps, tests),
                                "test_with_two_profiles_for_one_application")
         assert problem.message == (
-            "Test 'WGS' lists 2 profiles for BCLConvert: BCLX 1.0.0, BCLY 1.0.0. A test may "
+            "Test 'WGS' 1 lists 2 profiles for BCLConvert: BCLX 1.0.0, BCLY 1.0.0. A test may "
             "list one profile per application, once.")
 
     def test_one_profile_listed_twice(self):
@@ -227,7 +231,7 @@ class TestProfilesThatDifferInOneSection:
         plan = _plan(_run(_sample("S1"), _sample("S2", "PANEL", i7="TGCATGCAAC")), apps, tests)
         (problem,) = _problems(plan, "profiles_differ_in_one_section")
         assert problem.message == (
-            f"BCLConvert: profiles BCLX 1.0.0 (test WGS) and BCLY 1.0.0 (test PANEL) have "
+            f"BCLConvert: profiles BCLX 1.0.0 (test WGS 1) and BCLY 1.0.0 (test PANEL 1) have "
             f"different {what}, and a Sample Sheet has one [BCLConvert_Settings] and one "
             f"[BCLConvert_Data] section. Put these tests in separate runs, or give the "
             f"profiles the same Settings and columns.")

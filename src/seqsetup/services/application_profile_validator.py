@@ -9,6 +9,7 @@ from typing import Optional
 from ..data.instruments import get_onboard_applications_by_name
 from ..models.sequencing_run import SequencingRun
 from ..models.validation import ApplicationValidationError
+from .versioned_tests import ResolvedTest, resolve_test
 
 
 class ApplicationProfileValidator:
@@ -26,8 +27,8 @@ class ApplicationProfileValidator:
         Validate that application profiles required by samples are available
         on the selected instrument.
 
-        For each sample with a test_id:
-        1. Look up the TestProfile by test_type
+        For each sample with a test_id and a test_version:
+        1. Find the TestProfile its test and version name (resolve_test)
         2. Resolve each ApplicationProfileReference to an ApplicationProfile
         3. Check that the application_name exists in the instrument's onboard apps
         4. Check that the software version matches
@@ -56,33 +57,35 @@ class ApplicationProfileValidator:
             )
 
         # Cache lookups to avoid repeated DB queries
-        test_profile_cache: dict[str, Optional[object]] = {}
+        test_profile_cache: dict[tuple[str, str], ResolvedTest] = {}
         app_profile_cache: dict[tuple[str, str], Optional[object]] = {}
 
-        # Collect unique test_ids to avoid duplicate errors for same test
-        seen_test_ids: set[str] = set()
+        # Collect unique tests and versions to avoid duplicate errors
+        seen_tests: set[tuple[str, str]] = set()
 
         # Track required versions per application across all samples
         # app_name -> {version: [profile_name, ...]}
         required_versions: dict[str, dict[str, list[str]]] = {}
 
         for sample in run.samples:
-            if not sample.test_id:
+            # A sample without a version is reported as missing_test_version
+            # (spec 2026-10-07 group A4, §3).
+            if not sample.test_id or not sample.test_version:
                 continue
 
             display_name = sample.sample_id or sample.sample_name or sample.id
 
-            # Look up TestProfile (cached)
-            if sample.test_id not in test_profile_cache:
-                test_profile_cache[sample.test_id] = test_profile_repo.get_by_test_type(
-                    sample.test_id
-                )
+            # Look up the TestProfile the test and version name (cached)
+            key = (sample.test_id, sample.test_version)
+            if key not in test_profile_cache:
+                test_profile_cache[key] = resolve_test(test_profile_repo, *key)
 
-            test_profile = test_profile_cache[sample.test_id]
+            resolved = test_profile_cache[key]
+            test_profile = resolved.profile
             if test_profile is None:
-                # Only report once per test_id
-                if sample.test_id not in seen_test_ids:
-                    seen_test_ids.add(sample.test_id)
+                # Only report once per test and version
+                if key not in seen_tests:
+                    seen_tests.add(key)
                     errors.append(
                         ApplicationValidationError(
                             sample_id=sample.id,
@@ -90,8 +93,8 @@ class ApplicationProfileValidator:
                             test_id=sample.test_id,
                             application_name="",
                             profile_name="",
-                            error_type="test_profile_not_found",
-                            detail=f"No test profile found for test type '{sample.test_id}'",
+                            error_type=resolved.error_type,
+                            detail=resolved.detail,
                         )
                     )
                 continue

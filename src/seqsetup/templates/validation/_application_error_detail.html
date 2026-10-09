@@ -8,9 +8,11 @@
     'version_conflict': 'Version conflict',
     'profile_not_found': 'Profile not found',
     'test_profile_not_found': 'Test profile not found',
+    'test_version_not_found': 'Test version not found',
+    'test_version_stored_twice': 'Test version stored twice',
 } %}
 {% set label = type_labels.get(error.error_type, 'Application error') %}
-{% set show_sample = error.error_type not in ('test_profile_not_found', 'version_conflict') and error.sample_name %}
+{% set show_sample = error.error_type not in ('test_profile_not_found', 'test_version_not_found', 'test_version_stored_twice', 'version_conflict') and error.sample_name %}
 <div class="application-error-detail">
     <span class="error-type">{{ label }}: </span>
     <span>{{ error.detail }}</span>

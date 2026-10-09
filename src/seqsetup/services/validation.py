@@ -248,6 +248,7 @@ class ValidationService:
         # without one, and emits no BCLConvert section at all if none are present.
         if test_profile_repo and app_profile_repo and run.samples:
             configuration_errors.extend(cls._validate_samples_have_test_id(run))
+            configuration_errors.extend(cls._validate_samples_have_test_version(run))
 
         # The plan's problems (2-8) are errors; the writer's own (1) are
         # reported above as missing_test_id and by the application checks.
@@ -1212,6 +1213,36 @@ class ValidationService:
     validate_dark_cycles = ColorAnalysisValidator.validate_dark_cycles
     build_dark_cycle_info = ColorAnalysisValidator.build_dark_cycle_info
     calculate_color_balance = ColorAnalysisValidator.calculate_color_balance
+    @classmethod
+    def _validate_samples_have_test_version(
+        cls,
+        run: SequencingRun,
+    ) -> list[ConfigurationError]:
+        """Require a version beside every sample's test when profile repos
+        are configured: the version picks the test profile (spec 2026-10-07
+        group A4, §3). Samples without a test are missing_test_id's."""
+        missing = [
+            sample.sample_id or sample.sample_name or sample.id
+            for sample in run.samples
+            if sample.test_id and not sample.test_version
+        ]
+        if not missing:
+            return []
+
+        preview = ", ".join(missing[:5])
+        more = f" and {len(missing) - 5} more" if len(missing) > 5 else ""
+        return [
+            ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="missing_test_version",
+                message=(
+                    f"{len(missing)} sample(s) have a test but no test version: {preview}{more}. "
+                    f"Set the version on the run page, for example 1."
+                ),
+                sample_names=missing,
+            )
+        ]
+
     validate_application_profiles = ApplicationProfileValidator.validate_application_profiles
 
     # Re-export constants

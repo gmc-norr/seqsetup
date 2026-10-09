@@ -756,13 +756,14 @@ def test_ready_mark_ready(demo_page, base_url, demo):
     with page.expect_navigation(url=f"{base_url}/runs/{run_id}"):
         page.get_by_role("button", name="Continue to Run").click()
 
-    # Add 4 samples with a real test_id -- WGS is the one test profile
-    # docs_world seeds, and prerequisite_run_name / prerequisite_no_samples
-    # / prerequisite_missing_indexes / missing_test_id are all real,
-    # error-severity checks (services/validation.py:280-314,836-862) that
-    # would otherwise block Mark Ready below.
-    page.fill("#paste_data", "sample_id\ttest_id\n" + "\n".join(
-        f"SAMPLE-C0{n}\tWGS" for n in range(1, 5)
+    # Add 4 samples with a real test_id and version -- WGS 1.0.0 is the one
+    # test profile docs_world seeds, and prerequisite_run_name /
+    # prerequisite_no_samples / prerequisite_missing_indexes /
+    # missing_test_id / missing_test_version are all real, error-severity
+    # checks (services/validation.py) that would otherwise block Mark Ready
+    # below.
+    page.fill("#paste_data", "sample_id\ttest_id\ttest_version\n" + "\n".join(
+        f"SAMPLE-C0{n}\tWGS\t1" for n in range(1, 5)
     ))
     page.get_by_role("button", name="Preview").click()
     page.wait_for_selector("#paste-area .paste-counts")

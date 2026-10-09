@@ -33,6 +33,7 @@ def _seed_draft(ctx, run_id: str, test_id: str = "", run_description: str = "Pla
     run.add_sample(Sample(
         sample_id="S1",
         test_id=test_id,
+        test_version="1" if test_id else "",
         index_pair=IndexPair(
             id="p1", name="p1",
             index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
@@ -123,7 +124,7 @@ def _seed_synced_profile(ctx, app_name: str, settings: dict | None = None) -> No
         test_type="GUARD_T",
         test_name="Guard",
         description="d",
-        version="1.0",
+        version="1.0.0",  # three whole numbers (spec 2026-10-07 group A4)
         application_profiles=[
             ApplicationProfileReference(profile_name="GuardProfile", profile_version="1.0")
         ] + extra,

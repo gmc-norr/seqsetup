@@ -25,7 +25,7 @@ def _seed(app_ctx, run_id, i7, i5, test_id="WGS", indexed=True):
                      index1=Index(name="i7", sequence=i7, index_type=IndexType.I7),
                      index2=Index(name="i5", sequence=i5, index_type=IndexType.I5)) if indexed else None
     run.add_sample(Sample(id=f"{run_id}-s1", sample_id="RM-01", test_id=test_id, index_pair=pair,
-                          lanes=[1]))
+                          test_version="1" if test_id else "", lanes=[1]))
     app_ctx.run_repo.save(run)
     return run_id
 

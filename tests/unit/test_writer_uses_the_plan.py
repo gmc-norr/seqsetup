@@ -81,7 +81,7 @@ def _shipped(name: str) -> ApplicationProfile:
 
 def _today_run() -> SequencingRun:
     def sample(sid, i7, i5):
-        return Sample(id=f"id-{sid}", sample_id=sid, test_id="WGS", lanes=[1, 2],
+        return Sample(id=f"id-{sid}", sample_id=sid, test_id="WGS", test_version="1", lanes=[1, 2],
                       index_pair=IndexPair(
                           id=f"p{sid}", name=f"p{sid}",
                           index1=Index(name=f"{sid}7", sequence=i7, index_type=IndexType.I7),
@@ -171,7 +171,7 @@ class TestTheWriterStops:
 
     def test_a_test_without_a_bclconvert_profile(self):
         apps, tests = [_dragen("GermX")], [_test("DRAGEN_ONLY", ("GermX", "1.0.0"))]
-        with pytest.raises(SheetPlanProblem, match="Test 'DRAGEN_ONLY' has no BCLConvert profile"):
+        with pytest.raises(SheetPlanProblem, match="Test 'DRAGEN_ONLY' 1 has no BCLConvert profile"):
             _export(_run(_sample("S1", "DRAGEN_ONLY")), apps, tests)
 
     def test_a_sample_without_a_test(self):
@@ -181,7 +181,7 @@ class TestTheWriterStops:
 
     def test_a_profile_that_is_not_stored(self):
         # The DI-07 timing: a sync deleted the profiles after the checks.
-        with pytest.raises(SheetPlanProblem, match="Test 'WGS' has no test profile."):
+        with pytest.raises(SheetPlanProblem, match="Test 'WGS' 1 has no test profile."):
             _export(_run(_sample("S1")), _wgs()[0], [])
 
     def test_a_problem_is_a_value_error(self):

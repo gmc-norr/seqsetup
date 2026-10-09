@@ -83,7 +83,7 @@ class TestFindProblems:
         )
         sample = Sample(
             sample_id="S1",
-            test_id="WGS",
+            test_id="WGS", test_version="1",
             lanes=[1, 2],
             index_pair=IndexPair(
                 id="p1",
@@ -100,12 +100,12 @@ class TestFindProblems:
         )
 
         class _TestRepo:
-            def get_by_test_type(self, test_type):
-                return TestProfile(
+            def list_by_test_type(self, test_type):
+                return [TestProfile(
                     test_type="WGS", test_name="WGS", version="1.0.0",
                     application_profiles=[ApplicationProfileReference(
                         profile_name="BCLConvertNextera", profile_version="1.0.0")],
-                )
+                )]
 
         class _AppRepo:
             def get_by_name_version(self, name, version):

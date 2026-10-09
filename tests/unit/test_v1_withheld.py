@@ -16,7 +16,7 @@ RC = RunCycles(151, 151, 10, 10)
 
 
 def _sample(sample_id="S1", i7="ACGTACGTAC", i5="TTGGCCAATT", lanes=(1,), **fields) -> Sample:
-    sample = Sample(sample_id=sample_id, test_id="WGS", lanes=list(lanes))
+    sample = Sample(sample_id=sample_id, test_id="WGS", test_version="1", lanes=list(lanes))
     if i5 is None:
         sample.assign_index1(Index(name=f"{sample_id}7", sequence=i7, index_type=IndexType.I7))
     else:

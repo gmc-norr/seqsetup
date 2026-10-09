@@ -5,6 +5,7 @@ import html
 import pytest
 
 from .test_sheet_followups import _SYNC_LOGGER, _Messages, _app_profile_yaml
+from .test_group_a3 import profiles  # noqa: F401 (a fixture: a test A3T, its BCLConvert profile, NovaSeq X)
 
 
 def _test_yaml(version: str, test: str = "WGS") -> str:
@@ -904,3 +905,130 @@ class TestTheAdminLimsPage:
         }, headers=ORIGIN)
         assert resp.status_code == 200
         assert ctx.sample_api_config_repo.get().field_mappings == {"test_version": "AssayVersion"}
+
+
+def _a3t(ctx, version, bcl_version="1.0.0", source_file=None):
+    """Another A3T test profile listing the A3BCL profile ``bcl_version``."""
+    from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
+    ctx.test_profile_repo.save(TestProfile(
+        test_type="A3T", test_name="A3T", description="d", version=version,
+        source_file=source_file or f"A3T_{version}.yaml",
+        application_profiles=[ApplicationProfileReference(profile_name="A3BCL",
+                                                          profile_version=bcl_version)]))
+
+
+def _bcl_2(ctx):
+    """A3BCL 2.0.0: A3BCL 1.0.0 with CreateFastqForIndexReads, so the sheet
+    shows which one was written."""
+    from .test_group_a3 import _bcl_profile
+    profile = _bcl_profile()
+    profile.version = "2.0.0"
+    profile.settings = {**profile.settings, "CreateFastqForIndexReads": 1}
+    ctx.app_profile_repo.save(profile)
+
+
+def _a3_draft(ctx, run_id, *versions):
+    """A NovaSeq X draft whose samples S1, S2, ... ask for A3T at these versions."""
+    from seqsetup.models.index import Index, IndexPair, IndexType
+    from seqsetup.models.sample import Sample
+    from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
+    run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.NOVASEQ_X,
+                        flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
+    pairs = [("ATTACTCGAT", "TATAGCCTAG"), ("TCCGGAGAGC", "ATAGAGGCCT")]
+    for n, version in enumerate(versions):
+        i7, i5 = pairs[n]
+        run.add_sample(Sample(sample_id=f"S{n + 1}", lanes=[1], test_id="A3T", test_version=version,
+                              index_pair=IndexPair(
+                                  id=f"p{n}", name=f"p{n}",
+                                  index1=Index(name="i7", sequence=i7, index_type=IndexType.I7),
+                                  index2=Index(name="i5", sequence=i5, index_type=IndexType.I5))))
+    ctx.run_repo.save(run)
+    return run_id
+
+
+def _mark_ready(client, ctx, run_id):
+    from seqsetup.models.sequencing_run import RunStatus
+    from .conftest import mark_ready
+    from .test_paste_preview import ORIGIN
+    resp = mark_ready(client, run_id, ORIGIN)
+    return resp, ctx.run_repo.get_by_id(run_id).status == RunStatus.READY
+
+
+class TestMarkReadyNeedsAVersionThatMatches:
+    """Mark Ready refuses a sample with a test but no version, a version no
+    synced file matches, and a newest match stored twice (spec §3)."""
+
+    def test_no_version(self, logged_in_client, profiles):
+        run_id = _a3_draft(profiles, "a4-none", "")
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert not ready
+        assert ("1 sample(s) have a test but no test version: S1. Set the version on the run "
+                "page, for example 1.") in html.unescape(resp.text)
+
+    def test_no_match(self, logged_in_client, profiles):
+        run_id = _a3_draft(profiles, "a4-nomatch", "2")
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert not ready
+        assert ("No synced A3T version matches 2. Synced A3T versions: 1.0.0."
+                in html.unescape(resp.text))
+
+    def test_stored_twice(self, logged_in_client, profiles):
+        # Only data from before group A4 can hold it: the sync refuses both.
+        profiles.test_profile_repo.delete_all()
+        _a3t(profiles, "1.0.0", source_file="A3T_b.yaml")
+        _a3t(profiles, "1.0.0", source_file="A3T_a.yaml")
+        run_id = _a3_draft(profiles, "a4-twice", "1")
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert not ready
+        assert ("A3T 1.0.0 is stored twice (A3T_a.yaml, A3T_b.yaml). Sync the profiles again."
+                in html.unescape(resp.text))
+
+    @pytest.mark.parametrize("asked", ["1", "1.0", "1.0.0"])
+    def test_each_form_passes(self, logged_in_client, profiles, asked):
+        run_id = _a3_draft(profiles, "a4-forms", asked)
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert ready, resp.text
+
+
+class TestTheSampleGetsTheVersionItAsks:
+    """The sheet is written from the version the sample asks for, whatever
+    the storage order (the review's S-12)."""
+
+    @pytest.mark.parametrize("first", ["1.0.0", "2.0.0"])
+    @pytest.mark.parametrize("asked,carried", [("1", False), ("2", True)])
+    def test_in_both_storage_orders(self, logged_in_client, profiles, first, asked, carried):
+        _bcl_2(profiles)
+        profiles.test_profile_repo.delete_all()
+        for version in ([first] + [v for v in ("1.0.0", "2.0.0") if v != first]):
+            _a3t(profiles, version, bcl_version=version)
+        run_id = _a3_draft(profiles, "a4-order", asked)
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert ready, resp.text
+        sheet = profiles.run_repo.get_by_id(run_id).generated_samplesheet_v2
+        assert ("CreateFastqForIndexReads,1" in sheet) == carried
+
+    def test_two_versions_in_one_run(self, logged_in_client, profiles):
+        # Both list A3BCL 1.0.0, so they share one section (A3's rule).
+        _a3t(profiles, "2.0.0")
+        run_id = _a3_draft(profiles, "a4-two", "1", "2")
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert ready, resp.text
+        sheet = profiles.run_repo.get_by_id(run_id).generated_samplesheet_v2
+        assert "S1," in sheet and "S2," in sheet
+
+
+class TestANewerMatchDuringTheWriting:
+    """A sync between the checks and the writing that brings a newer match
+    changes the plan's fingerprint: 409, nothing saved (spec §3)."""
+
+    def test_it_is_refused(self, logged_in_client, profiles, monkeypatch):
+        from seqsetup.models.sequencing_run import RunStatus
+        from .test_group_a3 import PROFILES_CHANGED, _denial_reasons, _during_the_writing
+        run_id = _a3_draft(profiles, "a4-newer", "1")
+        _during_the_writing(monkeypatch, lambda: _a3t(profiles, "1.1.0"))
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert resp.status_code == 409
+        assert PROFILES_CHANGED in html.unescape(resp.text)
+        run = profiles.run_repo.get_by_id(run_id)
+        assert (run.status, run.generated_samplesheet_v2) == (RunStatus.DRAFT, None)
+        assert "profiles_changed_during_export" in _denial_reasons(profiles)
