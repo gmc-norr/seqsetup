@@ -151,3 +151,26 @@ class TestTheChecks:
         assert [(e.error_type, e.detail) for e in result.application_errors] == [
             ("test_version_not_found",
              "No synced WGS version matches 3. Synced WGS versions: 1.0.0.")]
+
+
+class TestTheTestsLine:
+    def test_the_text(self):
+        from seqsetup.services.versioned_tests import versions_used_text
+        assert versions_used_text([
+            {"test": "WGS", "asked": "1", "version": "1.2.3", "file": "Wgs.yaml"},
+            {"test": "RNA", "asked": "2", "version": "2.0.1", "file": ""},
+        ]) == "WGS 1 uses 1.2.3 (Wgs.yaml) · RNA 2 uses 2.0.1"
+
+    def test_the_plan_records_what_it_found(self):
+        run = _run(_sample("S1", version="1"), _sample("S2", i7="TTTTGGGGCC", i5="GGCCTTAAGG",
+                                                       version="1"))
+        plan = _plan(run, [_bcl("1.0.0")], [_test("1.0.0"), _test("1.1.0")])
+        assert plan.test_versions == [
+            {"test": "WGS", "asked": "1", "version": "1.1.0", "file": "WGS_1.1.0.yaml"}]
+
+    def test_a_run_diff_does_not_list_them(self):
+        from seqsetup.services.run_diff import diff_run, is_empty
+        before = _run(_sample("S1")).to_dict()
+        after = dict(before, test_versions_used=[
+            {"test": "WGS", "asked": "1", "version": "1.0.0", "file": "WGS_1.0.0.yaml"}])
+        assert is_empty(*diff_run(before, after))

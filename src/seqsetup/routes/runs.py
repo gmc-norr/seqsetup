@@ -692,6 +692,8 @@ async def update_status(
             # No v1 sheet when the checks that let the run through say it
             # cannot carry their settings (spec 2026-10-05 group A3, §3).
             run.samplesheet_v1_withheld = validation_result.v1_sheet_withheld
+            # The exact test versions the checks used (spec 2026-10-07 group A4, §3).
+            run.test_versions_used = list(validation_result.test_versions)
             if new_ss_v1 is not None and not validation_result.v1_sheet_withheld:
                 run.generated_samplesheet_v1 = new_ss_v1
             run.generated_validation_json = new_val_json
@@ -706,6 +708,7 @@ async def update_status(
             run.generated_samplesheet_v2 = None
             run.generated_samplesheet_v1 = None
             run.samplesheet_v1_withheld = ""
+            run.test_versions_used = []
             run.generated_json = None
             run.generated_validation_json = None
             run.generated_validation_pdf = None
@@ -717,6 +720,9 @@ async def update_status(
         from_status=previous_status,
         to_status=new_status.value,
         **({"color_balance_accepted_lanes": color_balance_lanes} if color_balance_lanes else {}),
+        # The exact test versions, kept after READY→DRAFT clears the run's
+        # copy (spec 2026-10-07 group A4, §3).
+        **({"test_versions": run.test_versions_used} if new_status == RunStatus.READY else {}),
     )
 
     test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []

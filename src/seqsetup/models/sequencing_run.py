@@ -206,6 +206,10 @@ class SequencingRun:
     # the checks used; "" otherwise (spec 2026-10-05 group A3, §3). Stored
     # and cleared with the generated exports.
     samplesheet_v1_withheld: str = ""
+    # The exact test versions the checks that let the run through used, for
+    # each test and version text: {"test", "asked", "version", "file"}
+    # (spec 2026-10-07 group A4, §3). Stored and cleared with the exports.
+    test_versions_used: list[dict] = field(default_factory=list)
 
     # True once the run has been Ready (or Archived). Kept by __setattr__ and
     # never cleared: it decides who may delete an emptied draft and whether a
@@ -373,6 +377,7 @@ class SequencingRun:
             "generated_samplesheet_v2": self.generated_samplesheet_v2,
             "generated_samplesheet_v1": self.generated_samplesheet_v1,
             "samplesheet_v1_withheld": self.samplesheet_v1_withheld,
+            "test_versions_used": [dict(used) for used in self.test_versions_used],
             "generated_json": self.generated_json,
             "generated_validation_json": self.generated_validation_json,
             "generated_validation_pdf": (
@@ -460,6 +465,7 @@ class SequencingRun:
             generated_samplesheet_v2=data.get("generated_samplesheet_v2") or data.get("generated_samplesheet"),
             generated_samplesheet_v1=data.get("generated_samplesheet_v1"),
             samplesheet_v1_withheld=data.get("samplesheet_v1_withheld") or "",
+            test_versions_used=list(data.get("test_versions_used") or []),
             generated_json=data.get("generated_json"),
             generated_validation_json=data.get("generated_validation_json"),
             generated_validation_pdf=(

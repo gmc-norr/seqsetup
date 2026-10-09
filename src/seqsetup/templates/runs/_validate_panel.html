@@ -73,6 +73,12 @@
                 <span class="status-warning">Color balance: {{ color_balance_issues }} lane(s){% if color_balance_asks %} · Mark Ready will ask{% endif %}</span>
             {% endif %}
         </div>
+        {% if run.status.value != 'draft' and run.test_versions_used %}
+        {# These checks run live, against today's profiles, while the Test ID
+           cells show the versions the sheet was written with (spec 2026-10-07
+           group A4, §3, decision 11). #}
+        <p id="check-tests-live" class="text-sm text-slate-600">These checks use today's synced profiles. This run's Sample Sheet was written with the test versions in the Test ID column.</p>
+        {% endif %}
         {% if error_lines %}
         <ul class="validate-error-list">
             {%- for line in error_lines[:10] %}

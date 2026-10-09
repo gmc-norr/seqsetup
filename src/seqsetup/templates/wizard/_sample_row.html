@@ -23,8 +23,14 @@
 {% set has_i5 = sample.index2_sequence is not none %}
 {% set ctx_param = ('?context=' ~ context) if context else '' %}
 {% set row_class = 'sample-row has-index' if has_index else 'sample-row' %}
-{# The Test cell: the test and its version (spec 2026-10-07 group A4, §2). #}
+{# The Test cell: the test and its version; a Ready run adds the exact
+   version its checks used (spec 2026-10-07 group A4, §3). #}
 {% set test_text = (sample.test_id ~ " " ~ sample.test_version) if sample.test_version else sample.test_id %}
+{% set exact = ((run.test_versions_used if run is defined and run else [])
+                | selectattr("test", "equalto", sample.test_id)
+                | selectattr("asked", "equalto", sample.test_version)
+                | map(attribute="version") | first) | default("", true) %}
+{% if exact %}{% set test_text = test_text ~ " (" ~ exact ~ ")" %}{% endif %}
 {% if show_checkboxes is none %}
     {% set effective_checkboxes = show_bulk_actions and editable %}
 {% else %}

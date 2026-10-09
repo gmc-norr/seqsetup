@@ -19,6 +19,17 @@
     </div>
     {% endblock %}
 
+    {# The exact test versions: a Draft's checks pick them now; a Ready run
+       shows those its sheet was written with (spec 2026-10-07 group A4, §3). #}
+    {% set tests_used = result.test_versions if run.status.value == 'draft' else run.test_versions_used %}
+    {% if tests_used %}
+    <p id="validation-tests" class="text-sm text-slate-600">Tests: {{ tests_used | versions_used }}</p>
+    {% if run.status.value != 'draft' %}
+    {# The checks below run live, against today's profiles (spec 2026-10-07 group A4, §3, decision 11). #}
+    <p id="validation-tests-live" class="text-sm text-slate-600">The checks below use today's synced profiles. This run's Sample Sheet was written with the test versions above.</p>
+    {% endif %}
+    {% endif %}
+
     {# Alpine-driven tab switcher. All tab contents are pre-rendered;
        Alpine toggles visibility via x-show. #}
     {% block validation_tabs %}

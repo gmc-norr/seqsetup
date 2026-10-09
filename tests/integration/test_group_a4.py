@@ -1032,3 +1032,194 @@ class TestANewerMatchDuringTheWriting:
         run = profiles.run_repo.get_by_id(run_id)
         assert (run.status, run.generated_samplesheet_v2) == (RunStatus.DRAFT, None)
         assert "profiles_changed_during_export" in _denial_reasons(profiles)
+
+
+class TestMarkReadySavesTheVersionsItUsed:
+    """The Ready run keeps, for each test and version text, the exact
+    version and its file; back to Draft clears it (spec §3)."""
+
+    def _ready(self, client, ctx, *asked):
+        ctx.test_profile_repo.delete_all()
+        _a3t(ctx, "1.0.0")
+        _a3t(ctx, "1.2.0")
+        _a3t(ctx, "2.0.0")
+        run_id = _a3_draft(ctx, "a4-saved", *asked)
+        resp, ready = _mark_ready(client, ctx, run_id)
+        assert ready, resp.text
+        return run_id
+
+    def test_they_are_saved(self, logged_in_client, profiles):
+        run_id = self._ready(logged_in_client, profiles, "1", "2")
+        assert profiles.run_repo.get_by_id(run_id).test_versions_used == [
+            {"test": "A3T", "asked": "1", "version": "1.2.0", "file": "A3T_1.2.0.yaml"},
+            {"test": "A3T", "asked": "2", "version": "2.0.0", "file": "A3T_2.0.0.yaml"},
+        ]
+
+    def test_back_to_draft_clears_them(self, logged_in_client, profiles):
+        from .test_paste_preview import ORIGIN
+        run_id = self._ready(logged_in_client, profiles, "1")
+        resp = logged_in_client.post(f"/runs/{run_id}/status/draft", headers=ORIGIN)
+        assert resp.status_code == 200
+        assert profiles.run_repo.get_by_id(run_id).test_versions_used == []
+
+    def test_the_change_history_does_not_list_them(self, logged_in_client, profiles):
+        run_id = self._ready(logged_in_client, profiles, "1")
+        page = logged_in_client.get(f"/runs/{run_id}/history").text
+        assert "test_versions_used" not in page
+
+    def test_the_sample_table_shows_the_exact_version(self, logged_in_client, profiles):
+        run_id = self._ready(logged_in_client, profiles, "1")
+        page = logged_in_client.get(f"/runs/{run_id}").text
+        assert '<td title="A3T 1 (1.2.0)">A3T 1 (1.2.0)</td>' in page
+
+    def test_each_sample_shows_its_own_exact_version(self, logged_in_client, profiles):
+        # Two version texts of one test (plan review of 562b2e2).
+        run_id = self._ready(logged_in_client, profiles, "1", "2")
+        page = logged_in_client.get(f"/runs/{run_id}").text
+        assert '<td title="A3T 1 (1.2.0)">A3T 1 (1.2.0)</td>' in page
+        assert '<td title="A3T 2 (2.0.0)">A3T 2 (2.0.0)</td>' in page
+
+    def test_the_audit_event_holds_them(self, logged_in_client, profiles):
+        # They stay in the audit trail after back to Draft clears the run's
+        # copy (plan review of 562b2e2).
+        from .test_paste_preview import ORIGIN
+        run_id = self._ready(logged_in_client, profiles, "1")
+        logged_in_client.post(f"/runs/{run_id}/status/draft", headers=ORIGIN)
+        events = [e for e in profiles.audit_event_repo.search(limit=50, event_prefix="run.status.changed")
+                  if e.target == run_id]
+        assert sorted((e.details["to_status"], e.details.get("test_versions")) for e in events) == [
+            ("draft", None),
+            ("ready", [{"test": "A3T", "asked": "1", "version": "1.2.0", "file": "A3T_1.2.0.yaml"}]),
+        ]
+
+    def test_the_report_carries_them(self, logged_in_client, profiles):
+        import json
+        run_id = self._ready(logged_in_client, profiles, "1")
+        report = json.loads(profiles.run_repo.get_by_id(run_id).generated_validation_json)
+        assert report["tests"] == [
+            {"test": "A3T", "asked": "1", "version": "1.2.0", "file": "A3T_1.2.0.yaml"}]
+
+
+class TestTheValidationPageShowsTheTests:
+    def test_a_draft_shows_todays_pick(self, logged_in_client, profiles):
+        _a3t(profiles, "1.2.0")
+        run_id = _a3_draft(profiles, "a4-page", "1")
+        page = html.unescape(logged_in_client.get(f"/runs/{run_id}/validation").text)
+        assert "Tests: A3T 1 uses 1.2.0 (A3T_1.2.0.yaml)" in page
+
+    def test_a_ready_run_shows_the_versions_saved_at_mark_ready(self, logged_in_client, profiles):
+        _a3t(profiles, "1.2.0")
+        run_id = _a3_draft(profiles, "a4-page-ready", "1")
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert ready, resp.text
+        _a3t(profiles, "1.3.0")  # a sync after Mark Ready: today's pick would be 1.3.0
+        page = html.unescape(logged_in_client.get(f"/runs/{run_id}/validation").text)
+        assert "Tests: A3T 1 uses 1.2.0 (A3T_1.2.0.yaml)" in page
+        assert "1.3.0" not in page
+
+    LIVE = ("The checks below use today's synced profiles. This run's Sample Sheet was written "
+            "with the test versions above.")
+
+    @pytest.mark.parametrize("archived", [False, True])
+    def test_a_ready_or_archived_run_says_its_checks_are_live(self, logged_in_client, profiles,
+                                                              archived):
+        # Decision 11 (plan review of 562b2e2).
+        from .test_paste_preview import ORIGIN
+        run_id = _a3_draft(profiles, "a4-live", "1")
+        resp, ready = _mark_ready(logged_in_client, profiles, run_id)
+        assert ready, resp.text
+        if archived:
+            resp = logged_in_client.post(f"/runs/{run_id}/status/archived", headers=ORIGIN)
+            assert resp.status_code == 200
+        page = html.unescape(logged_in_client.get(f"/runs/{run_id}/validation").text)
+        assert f'<p id="validation-tests-live" class="text-sm text-slate-600">{self.LIVE}</p>' in page
+
+    def test_a_draft_does_not(self, logged_in_client, profiles):
+        run_id = _a3_draft(profiles, "a4-live-draft", "1")
+        page = html.unescape(logged_in_client.get(f"/runs/{run_id}/validation").text)
+        assert "Tests: A3T 1 uses" in page
+        assert self.LIVE not in page
+
+    def test_the_pdf_has_a_tests_line(self, profiles):
+        from seqsetup.services.validation import ValidationService
+        from seqsetup.services.validation_report import ValidationReportPDF
+        _a3t(profiles, "1.2.0")
+        run = profiles.run_repo.get_by_id(_a3_draft(profiles, "a4-pdf", "1", "1.0"))
+        result = ValidationService.validate_run(
+            run, test_profile_repo=profiles.test_profile_repo,
+            app_profile_repo=profiles.app_profile_repo,
+            instrument_config=profiles.instrument_config)
+        assert ["Tests", "A3T 1 uses 1.2.0 (A3T_1.2.0.yaml) · A3T 1.0 uses 1.0.0"] in (
+            ValidationReportPDF._run_info(run, result))
+
+    def test_the_pdf_tests_line_wraps_inside_its_column(self):
+        # Three tests with usual file names measure 18.5 cm; the column is 12 cm,
+        # and a plain string in a table cell does not wrap.
+        from reportlab.lib.units import cm
+        from reportlab.platypus import Paragraph
+        from seqsetup.models.sequencing_run import InstrumentPlatform, SequencingRun
+        from seqsetup.models.validation import ValidationResult
+        from seqsetup.services.validation_report import ValidationReportPDF
+        from seqsetup.services.versioned_tests import versions_used_text
+        tests = [{"test": t, "asked": "1", "version": "1.2.3", "file": f"TestProfile_{t}<b>.yaml"}
+                 for t in ("WGS", "WES", "RNA")]
+        result = ValidationResult(duplicate_sample_ids=[], index_collisions=[], distance_matrices={},
+                                  test_versions=tests)
+        run = SequencingRun(run_name="pdf", instrument_platform=InstrumentPlatform.NOVASEQ_X,
+                            flowcell_type="10B")
+        cells = {label: value for label, value in ValidationReportPDF._run_info_cells(run, result)}
+        line = cells["Tests"]
+        assert isinstance(line, Paragraph)
+        assert line.getPlainText() == versions_used_text(tests)  # escaped: <b> stays text
+        width = 12 * cm - 12  # the column, less the table's 6-point padding on each side
+        line.wrap(width, 100 * cm)
+        spare = [row[0] if isinstance(row, tuple) else row.extraSpace for row in line.blPara.lines]
+        assert len(spare) > 1 and min(spare) >= 0
+        assert ValidationReportPDF.export(run, result).startswith(b"%PDF")
+
+
+class TestTheRunPageSaysItsChecksAreLive:
+    """The run page's Check box checks live too, beside Test ID cells that
+    show the versions the sheet was written with (spec §3, decision 11; plan
+    review of 8b17009)."""
+
+    LIVE = ("These checks use today's synced profiles. This run's Sample Sheet was written "
+            "with the test versions in the Test ID column.")
+
+    def _ready(self, client, ctx, run_id, archived=False):
+        from .test_paste_preview import ORIGIN
+        _a3_draft(ctx, run_id, "1")
+        resp, ready = _mark_ready(client, ctx, run_id)
+        assert ready, resp.text
+        if archived:
+            resp = client.post(f"/runs/{run_id}/status/archived", headers=ORIGIN)
+            assert resp.status_code == 200
+        return run_id
+
+    @pytest.mark.parametrize("archived", [False, True])
+    def test_a_ready_or_archived_run_says_so(self, logged_in_client, profiles, archived):
+        run_id = self._ready(logged_in_client, profiles, "a4-run-live", archived)
+        for url in (f"/runs/{run_id}", f"/runs/{run_id}/validate-panel"):
+            page = html.unescape(logged_in_client.get(url).text)
+            assert f'<p id="check-tests-live" class="text-sm text-slate-600">{self.LIVE}</p>' in page
+
+    def test_a_ready_run_without_saved_versions_does_not(self, logged_in_client, profiles):
+        # A run made Ready before this change saved none.
+        run_id = self._ready(logged_in_client, profiles, "a4-run-live-old")
+        run = profiles.run_repo.get_by_id(run_id)
+        run.test_versions_used = []
+        profiles.run_repo.save(run)
+        page = html.unescape(logged_in_client.get(f"/runs/{run_id}").text)
+        assert "validate-panel-content" in page
+        assert self.LIVE not in page
+
+    def test_a_draft_does_not(self, logged_in_client, profiles):
+        # Not even one holding saved versions (back to Draft clears them).
+        run_id = _a3_draft(profiles, "a4-run-live-draft", "1")
+        run = profiles.run_repo.get_by_id(run_id)
+        run.test_versions_used = [{"test": "A3T", "asked": "1", "version": "1.0.0",
+                                   "file": "A3T_1.0.0.yaml"}]
+        profiles.run_repo.save(run)
+        page = html.unescape(logged_in_client.get(f"/runs/{run_id}").text)
+        assert "validate-panel-content" in page
+        assert self.LIVE not in page

@@ -86,3 +86,13 @@ def resolve_test(test_profile_repo, test: str, asked: str) -> ResolvedTest:
                             f"{test} {top[0].version} is stored {times} ({files}). "
                             f"Sync the profiles again.")
     return ResolvedTest(top[0])
+
+
+def versions_used_text(used: list[dict]) -> str:
+    """The Tests line of the validation page and report: "WGS 1 uses 1.2.3
+    (Wgs.yaml) · RNA 2 uses 2.0.1 (Rna.yaml)". Plain characters the PDF's
+    built-in font can draw (spec 2026-10-07 group A4, §3)."""
+    return " · ".join(
+        f"{u['test']} {u['asked']} uses {u['version']}" + (f" ({u['file']})" if u["file"] else "")
+        for u in used
+    )

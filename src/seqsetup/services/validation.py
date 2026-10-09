@@ -301,6 +301,7 @@ class ValidationService:
             no_i5_direction=no_direction,
             sheet_plan_fingerprint=plan.fingerprint if plan else "",
             v1_sheet_withheld=v1_withheld,
+            test_versions=list(plan.test_versions) if plan else [],
         )
 
     @classmethod

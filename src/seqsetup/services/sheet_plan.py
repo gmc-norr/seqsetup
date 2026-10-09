@@ -87,6 +87,9 @@ class SheetPlan:
     # Convert, for each sample in the BCLConvert section (spec §2).
     mismatches: dict[tuple[str, int], int] = field(default_factory=dict)
     fingerprint: str = ""
+    # Each test and version text, and the exact version it found (spec
+    # 2026-10-07 group A4, §3): {"test", "asked", "version", "file"}.
+    test_versions: list[dict] = field(default_factory=list)
 
     @property
     def check_errors(self) -> list[SheetProblem]:
@@ -228,6 +231,8 @@ def plan_sheet(
                 continue
             resolved.append((ref, profile))
         fingerprint_tests.append([test, asked, _content(test_profile), refs_content])
+        plan.test_versions.append({"test": test, "asked": asked, "version": test_profile.version,
+                                   "file": test_profile.source_file})
 
         by_application: dict[str, list[tuple]] = {}
         for ref, profile in resolved:
