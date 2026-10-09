@@ -56,6 +56,7 @@ class SampleApiForm(BaseModel):
     field_investigator: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
     field_updated_at: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
     field_samples: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
+    field_test_version: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
 
     def field_mappings(self) -> dict[str, str]:
         """Build the field_mappings dict, dropping empty values."""
@@ -64,6 +65,7 @@ class SampleApiForm(BaseModel):
             "investigator": self.field_investigator,
             "updated_at": self.field_updated_at,
             "samples": self.field_samples,
+            "test_version": self.field_test_version,
         }
         return {k: v for k, v in mapping.items() if v}
 

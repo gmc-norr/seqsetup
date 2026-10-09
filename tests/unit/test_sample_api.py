@@ -373,9 +373,11 @@ class TestParseApiSamplesRepeatedIds:
 
     def test_a_worklist_without_repeats_is_unchanged(self):
         data = [{"sample_id": "P1", "test_id": "WGS"}, {"sample_id": "P2", "test_id": "WES"}]
+        # Every sample now has a test version, empty when the LIMS sends none
+        # (spec 2026-10-07 group A4, §2).
         assert parse_api_samples(data) == [
-            {"sample_id": "P1", "test_id": "WGS"},
-            {"sample_id": "P2", "test_id": "WES"},
+            {"sample_id": "P1", "test_id": "WGS", "test_version": ""},
+            {"sample_id": "P2", "test_id": "WES", "test_version": ""},
         ]
 
     def test_a_missing_sample_id_is_still_reported_first(self):

@@ -828,3 +828,79 @@ class TestAddingOneSample:
         r = self._add(logged_in_client, run_id, **fields)
         assert (r.status_code, r.text) == (400, message)
         assert _tests_of(ctx, run_id) == {}
+
+
+class TestALimsWorklistCarriesVersions:
+    """The worklist import sets each sample's version; a bad one refuses the
+    whole worklist (spec §2)."""
+
+    def test_the_version_is_set(self, logged_in_client, fresh_app, monkeypatch):
+        from .test_group_a1 import _import, _lims, _run, _stored
+        _app, ctx, _db = fresh_app
+        _run(ctx, [])
+        _lims(ctx, monkeypatch, [
+            {"sample_id": "P1", "test_id": "WGS", "test_version": "1.2"},
+            {"sample_id": "P2", "test_id": "WGS", "test_version": 2},
+            {"sample_id": "P3", "test_id": "WGS"},
+        ])
+        resp = _import(logged_in_client)
+        assert resp.status_code == 200
+        assert {s.sample_id: s.test_version for s in _stored(ctx).samples} == {
+            "P1": "1.2", "P2": "2", "P3": ""}
+
+    def test_a_bad_version_adds_nothing(self, logged_in_client, fresh_app, monkeypatch):
+        from .test_group_a1 import _import, _lims, _run, _stored
+        _app, ctx, _db = fresh_app
+        _run(ctx, [])
+        _lims(ctx, monkeypatch, [
+            {"sample_id": "P1", "test_id": "WGS", "test_version": "1"},
+            {"sample_id": "P2", "test_id": "WGS", "test_version": 1.1},
+        ])
+        before = _stored(ctx).to_dict()
+        resp = _import(logged_in_client)
+        assert resp.status_code == 200
+        assert ("Worklist import rejected: Sample 'P2' has a test version that is a number "
+                "with a decimal point (1.1)") in html.unescape(resp.text)
+        assert _stored(ctx).to_dict() == before
+
+    def test_a_version_without_a_test_adds_nothing(self, logged_in_client, fresh_app,
+                                                   monkeypatch):
+        # Measured before this rule: P1 was stored with version 1 and no test.
+        from .test_group_a1 import _import, _lims, _run, _stored
+        _app, ctx, _db = fresh_app
+        _run(ctx, [])
+        _lims(ctx, monkeypatch, [{"sample_id": "P1", "test_version": "1"}])
+        before = _stored(ctx).to_dict()
+        resp = _import(logged_in_client)
+        assert resp.status_code == 200
+        assert ("Worklist import rejected: Sample 'P1' has a test version but no test."
+                in html.unescape(resp.text))
+        assert _stored(ctx).to_dict() == before
+
+    def test_a_decimal_sample_id_adds_nothing(self, logged_in_client, fresh_app, monkeypatch):
+        # Measured on e65c60d: 23.10 was stored as sample 23.1 (decision 12).
+        from .test_group_a1 import _import, _lims, _run, _stored
+        _app, ctx, _db = fresh_app
+        _run(ctx, [])
+        _lims(ctx, monkeypatch, [{"sample_id": "P1", "test_id": "WGS", "test_version": "1"},
+                                 {"sample_id": 23.10, "test_id": "WGS", "test_version": "1"}])
+        before = _stored(ctx).to_dict()
+        resp = _import(logged_in_client)
+        assert resp.status_code == 200
+        assert ("Worklist import rejected: LIMS row 2 has a sample ID that is a number with a "
+                "decimal point (23.1)") in html.unescape(resp.text)
+        assert _stored(ctx).to_dict() == before
+
+
+class TestTheAdminLimsPage:
+    def test_the_test_version_field_box(self, logged_in_client, fresh_app):
+        from .test_paste_preview import ORIGIN
+        _app, ctx, _db = fresh_app
+        page = logged_in_client.get("/admin/sample-api").text
+        assert 'name="field_test_version"' in page
+        assert "Test version field" in page
+        resp = logged_in_client.post("/admin/settings/sample-api", data={
+            "base_url": "https://lims.example.org/api", "field_test_version": "AssayVersion",
+        }, headers=ORIGIN)
+        assert resp.status_code == 200
+        assert ctx.sample_api_config_repo.get().field_mappings == {"test_version": "AssayVersion"}
