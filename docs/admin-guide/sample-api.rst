@@ -215,8 +215,8 @@ digits, ``0`` too), but a number with a decimal point, ``true``, ``false``, a
 list or an object rejects the **entire import**, naming the row (the sample,
 for a test). JSON reads ``23.10`` as ``23.1``, which would quietly turn sample
 23.10 into another sample -- send IDs as text (``"23.10"``). The worksheet
-fields you can map (investigator, updated, samples) are not read from a
-sample row and are not checked there.
+fields you can map (Investigator, Updated timestamp, Samples) are not
+checked on a sample row.
 
 A reply with one name twice in one object -- ``"S001"`` twice in the
 ``{"S001": "WES"}`` form, or ``SampleID`` twice in one sample -- is refused
