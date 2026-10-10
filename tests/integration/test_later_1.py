@@ -306,3 +306,44 @@ class TestMarkReadyRefusesAMismatchSettingWithoutTheIndex:
         page = html.unescape(logged_in_client.get(f"/runs/{run.id}/validation").text)
 
         assert "Mismatch setting without the index: " in page
+
+
+# --- spec §3: no lane splitting with a Lane column ---------------------------
+
+from .test_group_a3 import _indexed_draft  # noqa: E402
+
+
+class TestMarkReadyRefusesNoLaneSplittingWithALaneColumn:
+    """Group A3's BCLConvert profile has a Lane column."""
+
+    def test_from_the_runs_setting(self, logged_in_client, profiles):
+        run = _indexed_draft(profiles, "l1-nls", test_id="A3T")
+        run.no_lane_splitting = True
+        profiles.run_repo.save(run)
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert ("BCLConvert profile A3BCL 1.0.0 has a Lane column, and NoLaneSplitting is true "
+                "(the run's setting).") in html.unescape(resp.text)
+        assert profiles.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+    def test_from_the_profiles_settings(self, logged_in_client, profiles):
+        _replace_profile(profiles, settings={"SoftwareVersion": "4.3.6", "NoLaneSplitting": True})
+        run = _indexed_draft(profiles, "l1-nls-profile", test_id="A3T")
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert ("BCLConvert profile A3BCL 1.0.0 has a Lane column, and NoLaneSplitting is true "
+                "(in the profile's Settings).") in html.unescape(resp.text)
+        assert profiles.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+    def test_the_validation_page_names_it(self, logged_in_client, profiles):
+        run = _indexed_draft(profiles, "l1-nls-page", test_id="A3T")
+        run.no_lane_splitting = True
+        profiles.run_repo.save(run)
+
+        page = html.unescape(logged_in_client.get(f"/runs/{run.id}/validation").text)
+
+        assert "No lane splitting with a Lane column: " in page

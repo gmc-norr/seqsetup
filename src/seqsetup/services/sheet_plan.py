@@ -442,6 +442,30 @@ def plan_sheet(
             f"profile's Settings to its DataFields, or put these samples in another run.",
             tuple(names),
         ))
+    # DRAGEN 4.3 converts without lane splitting only when the sheet has no
+    # Lane column; the profile's NoLaneSplitting wins over the run's, as in
+    # the writer (spec 2026-10-10 later list slice 1, §3).
+    for section in plan.sections:
+        if section.application != BCLCONVERT:
+            continue
+        for profile in section.profiles:
+            if not any(column == "Lane" for _, column in data_columns(profile)):
+                continue
+            written = _settings_text(profile).get("NoLaneSplitting")
+            if written is not None:
+                on = written.strip().lower() not in ("false", "0")
+                where = "in the profile's Settings"
+            else:
+                on, where = bool(run.no_lane_splitting), "the run's setting"
+            if on:
+                plan.problems.append(SheetProblem(
+                    "no_lane_splitting_with_lane",
+                    f"BCLConvert profile {profile_label(profile)} has a Lane column, and "
+                    f"NoLaneSplitting is true ({where}). DRAGEN 4.3 converts a run without lane "
+                    f"splitting only when the Sample Sheet has no Lane column. Set "
+                    f"NoLaneSplitting to false, or use a BCLConvert profile without a Lane "
+                    f"column.",
+                ))
     for (label, column, own, number), names in not_carried.groups.items():
         plan.warnings.append(SheetProblem(
             "mismatch_number_not_in_sheet",
