@@ -385,7 +385,9 @@ class TestTheMismatchNumbers:
                        fields=BCL_FIELDS[:5], data={})
         s1, s2 = _sample("S1"), _sample("S2", i7="TGCATGCAAC", i5=None)
         plan = _plan(_run(s1, s2), [profile, _dragen("GermX")], _wgs()[1])
-        assert plan.problems == []
+        # S2 has no i5, so DRAGEN does not take BarcodeMismatchesIndex2 in
+        # Settings (spec 2026-10-10 later list slice 1, §3).
+        assert [p.category for p in plan.problems] == ["mismatch_setting_without_index"]
         assert plan.mismatches[(s1.id, 1)] == 0 and plan.mismatches[(s2.id, 2)] == 0
         assert [w.message for w in plan.warnings] == [
             "2 sample(s) have a mismatch number the Sample Sheet cannot carry, because "

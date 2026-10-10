@@ -84,6 +84,10 @@ For the ``BCLConvert``-named profile specifically, the exporter also
 injects the run's own ``NoLaneSplitting`` / ``CreateFastqForIndexReads`` /
 ``AdapterBehavior`` settings for any key the profile does not already
 pin, so the operator's per-run toggles still take effect.
+``NoLaneSplitting`` true next to a ``Lane`` column is a plan problem:
+DRAGEN 4.3 converts without lane splitting only when the sheet has no Lane
+column. A sample without an i7 or an i5 gets ``na`` in that
+``BarcodeMismatchesIndex`` column.
 
 ``export()`` only takes this profile-driven path when both a
 ``TestProfileRepository`` and an ``ApplicationProfileRepository`` are

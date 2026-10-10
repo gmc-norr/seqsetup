@@ -204,8 +204,8 @@ This rests on three things:
   kit's documentation lists it.
 - A BCL Convert application profile cannot change it: its ``Settings`` may
   not set ``OverrideCycles``, ``OverrideReads``,
-  ``RunInfoIndex2ReverseComplement`` or ``Index2ColumnReverseComplement``
-  (see :doc:`profiles`).
+  ``RunInfoIndex2ReverseComplement``, ``Index2ColumnReverseComplement`` or
+  ``IndexOrientation`` (see :doc:`profiles`).
 
 .. important::
    **Check it before first clinical use.** For each instrument and

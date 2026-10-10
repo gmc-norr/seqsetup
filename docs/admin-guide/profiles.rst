@@ -182,7 +182,9 @@ needs, or **Mark Ready** refuses and names the samples and the column:
 - with a ``BarcodeMismatchesIndex1`` or ``BarcodeMismatchesIndex2`` column,
   a value in the cell for each sample that has that index: a sample whose
   number was cleared takes the profile's ``Data`` default, and an empty or
-  ``na`` default is refused for it.
+  ``na`` default is refused for it. A sample without that index gets
+  ``na``, whatever its own number or the default: DRAGEN wants a setting
+  that does not apply to a sample blank or ``na``.
 
 Without the mismatch columns every sample gets the profile's ``Settings``
 number, or 1, BCL Convert's default. Mark Ready's collision check uses the
@@ -190,6 +192,18 @@ number the sheet gives BCL Convert, so it checks what will be
 demultiplexed. A sample whose own number differs from it gets a warning on
 the validation page (the sheet cannot carry it); add the column to use the
 samples' numbers.
+
+A ``Settings`` mismatch number needs that index in every sample: with a
+sample that has no i7 (``BarcodeMismatchesIndex1``) or no i5
+(``BarcodeMismatchesIndex2``), **Mark Ready** refuses and names the
+samples, because DRAGEN takes the setting only then. Use the column
+instead.
+
+With a ``Lane`` column, ``NoLaneSplitting`` may not be true -- in the
+profile's ``Settings``, or the run's own setting when the profile does not
+set it. DRAGEN 4.3 converts a run without lane splitting only when the
+sheet has no Lane column, so **Mark Ready** refuses it.
+``NoLaneSplitting,false`` next to a Lane column is fine.
 
 Names are compared ignoring case. SeqSetup fills and reads these names
 itself, in this spelling only: in every profile's ``Settings``,
@@ -451,8 +465,8 @@ Application Profile Validation
   ``true`` and ``false`` are refused
 - In the profile whose ``ApplicationName`` is ``BCLConvert``, ``Settings``
   may not set ``OverrideCycles``, ``OverrideReads``,
-  ``RunInfoIndex2ReverseComplement`` or ``Index2ColumnReverseComplement``
-  (in any mix of capitals). They change how BCL Convert reads the i5 or
+  ``RunInfoIndex2ReverseComplement``, ``Index2ColumnReverseComplement`` or
+  ``IndexOrientation`` (in any mix of capitals). They change how BCL Convert reads the i5 or
   the OverrideCycles that SeqSetup writes for the run's instrument (see
   :doc:`instruments`). ``OverrideCycles`` as a data column is fine. A
   profile already stored with one of them stops **Mark Ready** with

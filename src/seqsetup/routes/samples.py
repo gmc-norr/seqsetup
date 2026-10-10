@@ -222,6 +222,56 @@ def _apply_kit_defaults(sample: Sample, kit: IndexKit, slot: str) -> None:
     sample.drop_kit_settings_without_index()
 
 
+def _plain_pattern(pattern) -> Optional[str]:
+    """A read pattern as text, None for one that reads every cycle as is."""
+    text = (pattern or "").strip().upper()
+    return None if text in ("", "Y*") else text
+
+
+def _reads_as(read1, read2, run_cycles) -> tuple:
+    """Two read patterns as the run reads them: the segment the cycle
+    calculator writes for each read the run performs, so Y* and no pattern
+    are the same. Without run cycles, the patterns as text (spec 2026-10-10
+    later list slice 1, §2)."""
+    if run_cycles is None:
+        return (_plain_pattern(read1), _plain_pattern(read2))
+    return tuple(
+        CycleCalculator._build_read_segment(cycles, pattern) if cycles > 0 else None
+        for cycles, pattern in ((run_cycles.read1_cycles, read1),
+                                (run_cycles.read2_cycles, read2))
+    )
+
+
+def _kit_swap_refusal(planned, run_cycles) -> Optional[Response]:
+    """A 400 when an assignment would leave a sample with an index from a kit
+    that reads Read 1 and Read 2 otherwise than the new one; None if not.
+    ``planned`` is (sample, slot, kit) for each sample, before any change.
+    Only an index assigned on its own stays: a pair replaces both, and an i7
+    or i5 on its own clears a pair (spec 2026-10-10 later list slice 1, §2)."""
+    clashes: dict = {}
+    for sample, slot, kit in planned:
+        if slot not in ("i7", "i5"):
+            continue
+        kept = sample.index2 if slot == "i7" else sample.index1
+        new = _reads_as(kit.default_read1_override, kit.default_read2_override, run_cycles)
+        own = _reads_as(sample.read1_override_pattern, sample.read2_override_pattern, run_cycles)
+        if kept is not None and own != new:
+            shown = (_plain_pattern(kit.default_read1_override) or "plain",
+                     _plain_pattern(kit.default_read2_override) or "plain")
+            clashes.setdefault(kit.name, (shown, []))[1].append(sample.sample_id)
+    if not clashes:
+        return None
+    name, ((r1, r2), ids) = next(iter(clashes.items()))
+    # What to do comes before the IDs: the page's error banner shows the
+    # first 300 characters.
+    return Response(
+        f"These samples keep an index from a kit that reads Read 1 and Read 2 differently "
+        f"from {name} (Read 1 {r1}, Read 2 {r2}). Assign both indexes from one kit, or clear "
+        f"these samples' indexes first: {name_list(ids)}.",
+        status_code=400,
+    )
+
+
 def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
     """Validate and normalize lane selection payload.
 
@@ -918,6 +968,13 @@ async def assign_indexes_bulk(
             "The sample list changed since this page was loaded. Reload the page and drag again.",
             status_code=409,
         )
+    refusal = _kit_swap_refusal([
+        (run.samples[start_idx + offset], idx_type, kit)
+        for offset, (idx_type, _index, kit) in enumerate(resolved_assignments)
+        if start_idx + offset < len(run.samples)
+    ], run.run_cycles)
+    if refusal:
+        return refusal
 
     with saving_run(run, ctx, request):
         for offset, (idx_type, resolved_index, kit) in enumerate(resolved_assignments):
@@ -1066,6 +1123,13 @@ async def assign_index_to_selected(
             return error
     else:
         return Response("Missing index_pair_id or index_id/index_type", status_code=400)
+    slot = "pair" if index_pair else index_type
+    refusal = _kit_swap_refusal([
+        (sample, slot, kit)
+        for sample in (run.get_sample(sid) for sid in dict.fromkeys(sample_ids)) if sample
+    ], run.run_cycles)
+    if refusal:
+        return refusal
 
     with saving_run(run, ctx, request):
         for sid in sample_ids:
@@ -1508,6 +1572,9 @@ async def assign_index(
         # the with block would trigger the else clause and save a touched run.
         if index_type not in ("i7", "i5"):
             return Response(f"Invalid index type: {index_type}", status_code=400)
+        refusal = _kit_swap_refusal([(sample, index_type, kit)], run.run_cycles)
+        if refusal:
+            return refusal
 
         with saving_run(run, ctx, request):
             if index_type == "i7":

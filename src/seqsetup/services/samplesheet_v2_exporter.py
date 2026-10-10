@@ -651,15 +651,19 @@ class SampleSheetV2Exporter:
                     # i5 sequence in sample-sheet orientation.
                     row.append(cls._escape_csv(cls._resolve_i5(sample, run)))
                 elif col == "BarcodeMismatchesIndex1":
+                    # A number for an index the sample does not have must be
+                    # blank or na (spec 2026-10-10 later list slice 1, §3).
                     val = sample.barcode_mismatches_index1
                     row.append(
-                        str(val) if val is not None
+                        "na" if not sample.index1_sequence
+                        else str(val) if val is not None
                         else cls._profile_mismatch_cell(own.data.get(field, ""), col)
                     )
                 elif col == "BarcodeMismatchesIndex2":
                     val = sample.barcode_mismatches_index2
                     row.append(
-                        str(val) if val is not None
+                        "na" if not sample.index2_sequence
+                        else str(val) if val is not None
                         else cls._profile_mismatch_cell(own.data.get(field, ""), col)
                     )
                 elif col == "OverrideCycles":

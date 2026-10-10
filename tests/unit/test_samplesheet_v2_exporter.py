@@ -1163,7 +1163,8 @@ class TestProfileCellGuard:
         has no value of its own."""
         with pytest.raises(ValueError, match="U\\+000A"):
             _export_with_profile(
-                {}, {"BarcodeMismatchesIndex1": "1\n"}, ["Sample_ID", "BarcodeMismatchesIndex1"], {},
+                {}, {"BarcodeMismatchesIndex1": "1\n"}, ["Sample_ID", "Index", "Index2",
+                                                    "BarcodeMismatchesIndex1"], {},
                 barcode_mismatches_index1=None,
             )
 
@@ -1228,7 +1229,8 @@ class TestProfileValueBracketGuard:
     def test_mismatch_default_starting_a_section_is_refused(self):
         with pytest.raises(ValueError, match="starting with"):
             _export_with_profile(
-                {}, {"BarcodeMismatchesIndex1": "[1"}, ["BarcodeMismatchesIndex1", "Sample_ID"], {},
+                {}, {"BarcodeMismatchesIndex1": "[1"}, ["BarcodeMismatchesIndex1", "Sample_ID", "Index",
+                                                    "Index2"], {},
                 barcode_mismatches_index1=None,
             )
 
@@ -1392,7 +1394,8 @@ class TestProfileSafetyNet:
         with pytest.raises(
             ValueError, match="BarcodeMismatchesIndex1 in the profile's Settings must be 0, 1 or 2"
         ):
-            _export_with_profile({"BarcodeMismatchesIndex1": value}, {}, ["Sample_ID"], {})
+            _export_with_profile({"BarcodeMismatchesIndex1": value}, {}, ["Sample_ID", "Index", "Index2"],
+                                 {})
 
     @pytest.mark.parametrize("value", [
         pytest.param(3, id="3"),
@@ -1409,14 +1412,14 @@ class TestProfileSafetyNet:
         ):
             _export_with_profile(
                 {}, {"BarcodeMismatchesIndex2": value},
-                ["Sample_ID", "BarcodeMismatchesIndex2"], {},
+                ["Sample_ID", "Index", "Index2", "BarcodeMismatchesIndex2"], {},
                 barcode_mismatches_index2=None,
             )
 
     def test_a_translated_mismatch_default_is_checked(self):
         with pytest.raises(ValueError, match="BarcodeMismatchesIndex1 in the profile's Data"):
             _export_with_profile(
-                {}, {"Mm1": 3}, ["Sample_ID", "Mm1"], {"Mm1": "BarcodeMismatchesIndex1"},
+                {}, {"Mm1": 3}, ["Sample_ID", "Index", "Index2", "Mm1"], {"Mm1": "BarcodeMismatchesIndex1"},
                 barcode_mismatches_index1=None,
             )
 
@@ -1431,11 +1434,12 @@ class TestProfileSafetyNet:
     def test_the_samples_own_value_is_written(self):
         # Decision 5: the default is checked only where it is used.
         output = _export_with_profile(
-            {}, {"BarcodeMismatchesIndex1": 3}, ["Sample_ID", "BarcodeMismatchesIndex1"], {},
-            barcode_mismatches_index1=2,
+            {}, {"BarcodeMismatchesIndex1": 3}, ["Sample_ID", "Index", "Index2",
+                                                   "BarcodeMismatchesIndex1"],
+            {}, barcode_mismatches_index1=2,
         )
 
-        assert "S1,2" in output.split("\n")
+        assert "S1,ATTACTCG,TATAGCCT,2" in output.split("\n")
 
     @pytest.mark.parametrize("fields,data,translate", [
         pytest.param([], {}, {}, id="no-columns"),

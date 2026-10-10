@@ -67,6 +67,9 @@ MISMATCH_COLUMNS = ("BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2")
 I5_RULE_SETTINGS = (
     "OverrideCycles", "OverrideReads",
     "RunInfoIndex2ReverseComplement", "Index2ColumnReverseComplement",
+    # It would put "the i5s are forward" back on a sheet that writes them
+    # reversed (spec 2026-10-10 later list slice 1, §3).
+    "IndexOrientation",
 )
 
 

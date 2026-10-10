@@ -212,12 +212,14 @@ class TestReplacingOneIndexKeepsTheOthersSettings:
     replacing one takes the new kit's cycles for that one and keeps the
     other's. Each route must pass the slot it assigned: with the wrong slot
     the old 8 cycles stay on the new index, or the other index loses its
-    own (plan review F-1; spec 2026-10-03 group A1, §2)."""
+    own (plan review F-1; spec 2026-10-03 group A1, §2). Both kits read
+    Read 1 and Read 2 alike: a swap between kits that do not is refused
+    (spec 2026-10-10 later list slice 1, §2)."""
 
     @pytest.mark.parametrize("route", ["one", "selected", "drop"])
     @pytest.mark.parametrize("side,settings,override_cycles", [
-        pytest.param("i5", (8, 7, None, None), "Y151;I8N2;I7N3;Y151", id="i5"),
-        pytest.param("i7", (7, 8, None, None), "Y151;I7N3;I8N2;Y151", id="i7"),
+        pytest.param("i5", (8, 7, "U8Y*", "U8Y*"), "U8Y143;I8N2;I7N3;U8Y143", id="i5"),
+        pytest.param("i7", (7, 8, "U8Y*", "U8Y*"), "U8Y143;I7N3;I8N2;U8Y143", id="i7"),
     ])
     def test_the_other_index_keeps_its_cycles(
         self, logged_in_client, fresh_app, route, side, settings, override_cycles
@@ -229,6 +231,7 @@ class TestReplacingOneIndexKeepsTheOthersSettings:
         )
         short = _combo_kit(
             ctx, "ShortCombo", COMBO_B_I7, COMBO_B_I5, default_index1_cycles=7, default_index2_cycles=7,
+            default_read1_override="U8Y*", default_read2_override="U8Y*",
         )
         _run(ctx, ["PAT1", "PAT2"])
         _assign(logged_in_client, "one", "i7", umi)

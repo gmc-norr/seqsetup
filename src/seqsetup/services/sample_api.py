@@ -239,6 +239,21 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
         )
 
 
+def _refuse_a_repeated_name(pairs: list) -> dict:
+    """One JSON object of a LIMS reply: a name twice is refused, never
+    resolved; json.loads would keep the last and lose a patient's row (spec
+    2026-10-10 later list slice 1, §1)."""
+    seen = set()
+    for name, _value in pairs:
+        if name in seen:
+            raise SampleApiError(
+                f"The LIMS reply has the name {shown_value(name)!r} twice in one object. "
+                f"SeqSetup cannot tell which value is right, so the reply was not used."
+            )
+        seen.add(name)
+    return dict(pairs)
+
+
 def _api_get(url: str, api_key: str = "") -> dict | list:
     """Make a GET request to the API and return parsed JSON.
 
@@ -323,7 +338,7 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
         if len(data) > _MAX_RESPONSE_SIZE:
             raise SampleApiError("API response exceeds maximum size limit")
         try:
-            return json.loads(data.decode("utf-8"))
+            return json.loads(data.decode("utf-8"), object_pairs_hook=_refuse_a_repeated_name)
         except json.JSONDecodeError:
             raise SampleApiError("API response is not valid JSON")
     finally:
@@ -572,9 +587,12 @@ def fetch_worklist_samples(config: SampleApiConfig, worklist_id: str) -> Tuple[b
         if len(samples) == 0:
             return False, "Worksheet contains no samples", []
 
-        # Add worksheet_id to each sample if not present
+        # Add worksheet_id to each sample if not present, in any capitals:
+        # parse_api_samples refuses two spellings of one name, so it must see
+        # only names the LIMS sent (spec 2026-10-10 later list slice 1, §1).
         for s in samples:
-            if isinstance(s, dict) and "worksheet_id" not in s:
+            if isinstance(s, dict) and not any(
+                    isinstance(k, str) and k.lower() == "worksheet_id" for k in s):
                 s["worksheet_id"] = worklist_id
 
         logger.info(f"Fetched {len(samples)} samples for worksheet {worklist_id}")
@@ -621,16 +639,37 @@ def _lims_test_version(sample_id: str, value) -> str:
 
 
 def _refuse_a_changed_value(what: str, value) -> None:
-    """A sample ID or a test, by its JSON type: str() would read JSON 23.10
-    as "23.1" and true as "True", so these are refused, never changed (spec
-    2026-10-07 group A4, §2, decision 12). Text and whole numbers pass."""
-    if isinstance(value, bool):
-        raise ValueError(f"{what} that is not text or a whole number ({json.dumps(value)}).")
+    """A value read from a LIMS row, by its JSON type: str() would read JSON
+    23.10 as "23.1", true as "True" and a list as "['a']", so these are
+    refused, never changed (spec 2026-10-07 group A4, §2, decision 12; spec
+    2026-10-10 later list slice 1, §1). Text, whole numbers and None (a
+    value that is absent or null) pass."""
+    if value is None or isinstance(value, str):
+        return
     if isinstance(value, float):
         raise ValueError(
             f"{what} that is a number with a decimal point ({value!r}), which JSON may have "
             f'changed (1.10 is read as 1.1). Send it as text, for example "1.10".'
         )
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(
+            f"{what} that is not text or a whole number ({shown_value(json.dumps(value))})."
+        )
+
+
+# How a message names a sample field read from a LIMS row; the fields checked
+# by their JSON type (spec 2026-10-10 later list slice 1, §1). The test and
+# its version have their own checks; worksheet fields an admin maps are not
+# checked.
+_FIELD_LABELS = {
+    "sample_id": "a sample ID",
+    "worksheet_id": "a worksheet ID",
+    "index1_sequence": "an i7 sequence",
+    "index2_sequence": "an i5 sequence",
+    "index_pair_name": "an index name",
+    "index1_name": "an i7 name",
+    "index2_name": "an i5 name",
+}
 
 
 def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None) -> list[dict]:
@@ -666,6 +705,11 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         "index2_name": ["i5_name", "index_i5_name", "index2_name"],
     }
 
+    # The import's own sample fields; an admin's other mappings (investigator,
+    # updated_at, samples) name worksheet fields, which a sample row does not
+    # use (spec 2026-10-10 later list slice 1, §1).
+    sample_fields = set(field_aliases)
+
     # Add custom field mappings from config
     if config and config.field_mappings:
         for seqsetup_field, api_field in config.field_mappings.items():
@@ -678,11 +722,27 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
 
     results = []
     rows_missing_sample_id: list[int] = []  # 1-based positions of dropped rows
+    read_names = {alias for field in sample_fields for alias in field_aliases[field]}
 
     for index, item in enumerate(data, start=1):
         if not isinstance(item, dict):
             rows_missing_sample_id.append(index)
             continue
+
+        # Two names SeqSetup reads that differ only in capitals would be read
+        # as one, and one value lost (spec 2026-10-10 later list slice 1, §1).
+        first_spelling = {}
+        for name in item:
+            lower = name.lower()
+            if lower not in read_names:
+                continue
+            if lower in first_spelling:
+                raise ValueError(
+                    f"LIMS row {index} has the names {shown_value(first_spelling[lower])!r} and "
+                    f"{shown_value(name)!r}, which SeqSetup reads as one name. "
+                    f"Send only one of them."
+                )
+            first_spelling[lower] = name
 
         # Build a lowercase key lookup
         lower_item = {k.lower(): v for k, v in item.items()}
@@ -692,11 +752,12 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
             for alias in aliases:
                 if alias in lower_item and lower_item[alias] is not None:
                     val = lower_item[alias]
-                    if field == "sample_id":
-                        _refuse_a_changed_value(f"LIMS row {index} has a sample ID", val)
+                    label = _FIELD_LABELS.get(field)
+                    if label:
+                        _refuse_a_changed_value(f"LIMS row {index} has {label}", val)
                     # Strip + length-clamp per CLAUDE.md input-sanitization rule.
                     # LIMS payloads aren't trusted to honor field widths.
-                    sample[field] = str(val).strip()[:_MAX_FIELD_LEN] if val else ""
+                    sample[field] = str(val).strip()[:_MAX_FIELD_LEN]
                     break
 
         # Must have at least sample_id. Silent skip would route the dropped
