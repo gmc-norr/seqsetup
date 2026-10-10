@@ -80,11 +80,14 @@ The measurements are in the work notes (`measure_today.py`, not committed).
 1. The slice is these six items (the user: "2", 2026-10-10).
 2. A sample keeps an index from a kit whose read patterns differ from the new kit's: the
    assignment is **refused** (the user: "1"). The read patterns do not follow the i7: a
-   UMI may sit on either adapter, so that would be a guess.
+   UMI may sit on either adapter, so that would be a guess. Patterns are compared as the
+   run reads them, so two kits that read alike are never refused (the user: "1", after the
+   review of `91fbe8e`).
 3. A repeated name anywhere in a LIMS reply refuses the whole reply. Two names in one row
-   that differ only in capitals refuse the whole import when SeqSetup reads that name.
-4. Every field SeqSetup reads from a LIMS row is text or a whole number, or the import is
-   refused. A whole number is written as its digits, `0` too.
+   that differ only in capitals refuse the whole import when the import reads that name.
+4. Every sample field the import reads from a LIMS row is text or a whole number, or the
+   import is refused. A whole number is written as its digits, `0` too. Worksheet fields an
+   admin maps are not checked on a sample row.
 5. `IndexOrientation` joins the BCLConvert `Settings` names SeqSetup refuses.
 6. A sample with no i7 gets `na` in its `BarcodeMismatchesIndex1` cell, and one with no i5
    gets `na` in its `BarcodeMismatchesIndex2` cell. `na`, not blank: the NovaSeq X page
@@ -112,8 +115,12 @@ The LIMS reply has the name <name> twice in one object. SeqSetup cannot tell whi
 ### Two names that differ only in capitals
 
 In `parse_api_samples`, before a row's names are lower-cased: if two of the row's names are
-equal ignoring capitals, and that name is one SeqSetup reads (one of `field_aliases`,
-including an admin's field mappings), the import is refused with `ValueError`:
+equal ignoring capitals, and that name is one the import reads, the import is refused with
+`ValueError`. The import reads the names of its sample fields — the sample ID, the test, the
+test version, the worksheet ID, the index sequences and the index names — with an admin's
+mapping for them. The admin's other mappings (`investigator`, `updated_at`, `samples`,
+`routes/admin/sample_api.py:61-70`) name worksheet fields, which a sample row does not use, so
+they are not checked here (review of `91fbe8e`). The message:
 
 ```
 LIMS row <n> has the names <a> and <b>, which SeqSetup reads as one name. Send only one of them.
@@ -145,9 +152,10 @@ are, and a list, an object or any other type gets the `bool` message:
 
 `<json>` is `shown_value(json.dumps(value))`.
 
-`parse_api_samples` calls it for every field it reads in a row, before the value is
+`parse_api_samples` calls it for each of its sample fields in a row, before the value is
 written, except the test and the test version, which keep their own checks and messages
-(group A4). `<what>` is `LIMS row <n> has <label>`, with these labels:
+(group A4). The worksheet fields an admin may map (above) are not checked, as today (review
+of `91fbe8e`). `<what>` is `LIMS row <n> has <label>`, with these labels:
 
 | Field | Label |
 |---|---|
@@ -158,19 +166,26 @@ written, except the test and the test version, which keep their own checks and m
 | `index_pair_name` | `an index name` |
 | `index1_name` | `an i7 name` |
 | `index2_name` | `an i5 name` |
-| an admin's own mapped field | `a value for <field>` |
 
 A value that passes is written as `str(val).strip()[:256]`: the `if val else ""` goes, so a
 whole number `0` is `"0"`. A `null` gives way to the next name, as today.
 
 ## §2 Kit swaps (`routes/samples.py`)
 
-A kit's read patterns are the pair (`default_read1_override or None`,
-`default_read2_override or None`). An assignment of only an i7 or only an i5 (slot `"i7"` or
-`"i5"`) to a sample that keeps an index assigned on its own — an i7 assignment to a sample
-whose `index2` is set, an i5 assignment to a sample whose `index1` is set — and whose read
-patterns (`read1_override_pattern or None`, `read2_override_pattern or None`) differ from
-the new kit's is refused.
+An assignment of only an i7 or only an i5 (slot `"i7"` or `"i5"`) to a sample that keeps an
+index assigned on its own — an i7 assignment to a sample whose `index2` is set, an i5
+assignment to a sample whose `index1` is set — is refused when the sample's read patterns
+(`read1_override_pattern`, `read2_override_pattern`) and the new kit's
+(`default_read1_override`, `default_read2_override`) read the run's reads differently.
+
+They are compared as the run reads them: each pattern becomes the segment the cycle
+calculator writes for that read's cycles (`CycleCalculator._build_read_segment`), for each
+read the run performs (cycles above 0). So `Y*` and no pattern are the same (`Y151` on a
+151-cycle read), and `U8Y*` equals `U8Y143`. An upload stores `Y*` as no pattern
+(`routes/indexes.py:204-209`), while a synced or file kit keeps `Y*`
+(`services/index_kit_sync_parser.py:119`), so comparing the text would refuse two plain
+kits (review of `91fbe8e`, reproduced). A run without cycles compares the patterns as text,
+upper-cased, with `Y*` and an empty pattern counted as none.
 
 A sample with a pair keeps nothing of it: `assign_index1` and `assign_index2`
 (`models/sample.py:318-333`) clear `index_pair`, and a pair assignment clears `index1` and
@@ -190,11 +205,13 @@ so it cannot meet this and does not change.
 The message, one for the request:
 
 ```
-These samples keep an index from a kit that reads Read 1 and Read 2 differently from <kit> (<kit>: Read 1 <r1>, Read 2 <r2>): <ids>. Assign both indexes from one kit, or clear these samples' indexes first.
+These samples keep an index from a kit that reads Read 1 and Read 2 differently from <kit> (Read 1 <r1>, Read 2 <r2>). Assign both indexes from one kit, or clear these samples' indexes first: <ids>.
 ```
 
-`<kit>` is the new kit's name; `<r1>`/`<r2>` its patterns, `plain` for none; `<ids>` the
-sample IDs as `name_list` gives them.
+`<kit>` is the new kit's name; `<r1>`/`<r2>` its patterns as stored, `plain` for none, an
+empty one or `Y*`; `<ids>` the sample IDs as `name_list` gives them. What to do comes before
+the IDs: the page's error banner shows the first 300 characters (`static/js/app.js:718`;
+review of `91fbe8e`).
 
 ## §3 The Sample Sheet
 
@@ -240,7 +257,10 @@ BCLConvert profile <label> has a Lane column, and NoLaneSplitting is true (<wher
 
 Both problems are sheet-plan problems, so the checks show them and Mark Ready refuses, as
 for the other problems (group A3). `NoLaneSplitting,false` next to a Lane column stays as
-today.
+today. The validation page names them `Mismatch setting without the index` and
+`No lane splitting with a Lane column`
+(`templates/validation/_configuration_error_detail.html`; without a label it would show the
+category title-cased; review of `91fbe8e`).
 
 ## §4 Tests
 
@@ -253,10 +273,13 @@ TDD: each rule gets a failing test first, valid and refused cases.
   pass; `0` is `"0"`; the test and version messages are unchanged (group A4's tests stay);
   a row with no test, or a `null` test, is read as today.
   Fetched rows: a row with only `Worksheet_ID` (or `WORKSHEET_ID`) is read with its own
-  value, not refused; a row with iGene's `WorksheetID` is read as today.
+  value, not refused; a row with iGene's `WorksheetID` is read as today. A worksheet field an
+  admin maps (`investigator`, `updated_at`) is neither type-checked nor capitals-checked on a
+  sample row.
 - Kit swaps: on each of the three routes, a UMI kit's i7 and i5 assigned one by one, then an
   i5 (and an i7) from a plain kit → 400, the message, nothing saved; the same swap between
-  two kits with the same patterns → as today; a pair assignment → as today; a UMI pair, then
+  two kits with the same patterns → as today, also when one stores `Y*` and the other none,
+  or one `U8Y*` and the other `U8Y143` on a 151-cycle run; a pair assignment → as today; a UMI pair, then
   one index from a plain kit → as today (`TestANewKitReplacesTheOldKitsSettings` stays
   unchanged). `TestReplacingOneIndexKeepsTheOthersSettings`
   (`tests/integration/test_group_a1.py:210-242`) changes: its two kits get the same read
@@ -299,3 +322,8 @@ stops Mark Ready until the lab removes it and syncs, as for the other four names
 - A LIMS value longer than 256 characters is cut, not refused (measured: 300 → 256).
 - The fallback sheet writer (`_write_bclconvert_data`) keeps writing mismatch numbers for
   an index a sample does not have; no app route uses it.
+- The worksheet list (`fetch_worklists`, `_get_field_value`) still writes its values with
+  `str()`: a worksheet ID sent as JSON `25.10` is listed as `25.1` (review of `91fbe8e`).
+- No page sets a run's own `no_lane_splitting` (only `POST /runs/{run_id}/bclconvert` and a
+  run template copied from such a run), so the message's "Set NoLaneSplitting to false"
+  cannot be followed in the app for that case (review of `91fbe8e`).
