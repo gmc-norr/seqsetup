@@ -137,7 +137,9 @@ instead of reaching the sheet.
 The collision check uses the barcode mismatch numbers the sheet gives BCL
 Convert: each sample's number in the ``BarcodeMismatchesIndex1`` /
 ``BarcodeMismatchesIndex2`` columns, else the profile's ``Settings``
-number, else 1, BCL Convert's default.
+number, else 1, BCL Convert's default. A sample without an i7 or an i5
+gets ``na`` in that mismatch column: DRAGEN wants a setting that does not
+apply to a sample blank or ``na``.
 
 .. note::
    How the i5 and the Index 2 part of Override Cycles are written depends

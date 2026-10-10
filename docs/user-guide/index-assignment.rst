@@ -204,6 +204,14 @@ shortened index. An index that the assignment removes takes its index
 cycles with it -- an i7 from a single-index kit replaces a dual-index
 pair, and the pair's i5 cycles go with the pair.
 
+An i7 or an i5 on its own is refused when the sample keeps its other index
+from a kit that reads Read 1 and Read 2 differently -- a plain kit's i5 on
+a sample with a UMI kit's i7, for example: one set of read patterns cannot
+fit both. Assign both indexes from one kit, or clear the sample's indexes
+first. A pair always replaces both indexes. The patterns are compared as the
+run reads them, so a kit that stores ``Y*`` and one that stores no pattern
+read alike.
+
 SeqSetup computes the index override pattern (for example ``I8N2``) from the
 index cycles above and the run's cycle configuration, then recalculates
 Override Cycles from both. Any of it can still be changed by hand afterward

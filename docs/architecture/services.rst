@@ -77,8 +77,8 @@ mark (NextSeq 500/550, MiniSeq standard kits, NovaSeq 6000 v1.5, HiSeq
 part as stored (``I8N2``), and the header without
 ``IndexOrientation,Forward``. A ``BCLConvert`` profile whose ``Settings``
 set ``OverrideCycles``, ``OverrideReads``,
-``RunInfoIndex2ReverseComplement`` or ``Index2ColumnReverseComplement`` is
-refused.
+``RunInfoIndex2ReverseComplement``, ``Index2ColumnReverseComplement`` or
+``IndexOrientation`` is refused.
 
 Sheet plan
 ----------

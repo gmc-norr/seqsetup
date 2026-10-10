@@ -208,12 +208,22 @@ needs a test: a sample with a version and no test is refused. A field that is
 in the ``{"S001": "WES"}`` form carries no versions; set them on the run
 page after the import.
 
-A sample ID and a test are checked by their JSON type too: text and whole
-numbers are read as before, but a number with a decimal point, ``true`` or
-``false`` rejects the **entire import**, naming the row (for a sample ID) or
-the sample (for a test). JSON reads ``23.10`` as ``23.1``, which would
-quietly turn sample 23.10 into another sample -- send IDs as text
-(``"23.10"``).
+Every other sample field SeqSetup reads -- the sample ID, the test, the
+worksheet ID, the index sequences and names -- is checked by its JSON type
+too: text and whole numbers are read as before (a whole number keeps its
+digits, ``0`` too), but a number with a decimal point, ``true``, ``false``, a
+list or an object rejects the **entire import**, naming the row (the sample,
+for a test). JSON reads ``23.10`` as ``23.1``, which would quietly turn sample
+23.10 into another sample -- send IDs as text (``"23.10"``). The worksheet
+fields you can map (investigator, updated, samples) are not read from a
+sample row and are not checked there.
+
+A reply with one name twice in one object -- ``"S001"`` twice in the
+``{"S001": "WES"}`` form, or ``SampleID`` twice in one sample -- is refused
+whole, because JSON keeps only the last of a repeated name and a sample
+could be lost. So is a sample with two spellings of a name SeqSetup reads
+(``SampleID`` and ``sampleid``), since SeqSetup reads names without their
+capitals.
 
 .. warning::
    A worklist row with content but no recognizable ``sample_id`` is never

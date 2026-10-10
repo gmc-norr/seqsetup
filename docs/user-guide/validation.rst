@@ -136,7 +136,9 @@ is one of these:
   profile column written twice, a setting in two places, or a name
   SeqSetup uses spelled otherwise; a BCL Convert profile without a column a
   sample needs, a sample with no lanes picked where the sheet has a Lane
-  column, or an empty mismatch cell. See :doc:`/admin-guide/profiles`.
+  column, an empty mismatch cell, a profile's ``Settings`` mismatch number
+  with a sample that has no such index, or ``NoLaneSplitting`` with a Lane
+  column. See :doc:`/admin-guide/profiles`.
 
 Two warnings point at the Sample Sheets without stopping **Mark Ready**:
 *"No v1 sheet will be made for this run: ..."* on MiSeq and NovaSeq 6000
