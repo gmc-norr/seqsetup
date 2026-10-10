@@ -68,6 +68,7 @@
                 ('field_investigator', 'Investigator field', "API field name for investigator."),
                 ('field_updated_at', 'Updated timestamp field', "API field name for last updated timestamp."),
                 ('field_samples', 'Samples field', "API field name for embedded samples data."),
+                ('field_test_version', 'Test version field', "API field name for each sample's test version (default: 'test_version')."),
             ] %}
                 {% set mapping_key = field_name.replace('field_', '') %}
                 <div>

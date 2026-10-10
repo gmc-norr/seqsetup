@@ -33,7 +33,7 @@ def clean_run_id(app_ctx):
         created_at=t, updated_at=t,
     )
     run.add_sample(Sample(
-        id="clean-s1", sample_id="CLEAN-01", test_id="WGS", lanes=[1],
+        id="clean-s1", sample_id="CLEAN-01", test_id="WGS", test_version="1", lanes=[1],
         index_pair=IndexPair(
             id="clean-p1", name="UDP0001",
             index1=Index(name="i7-01", sequence="ATTACTCG", index_type=IndexType.I7),

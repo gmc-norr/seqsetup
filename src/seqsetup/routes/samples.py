@@ -15,7 +15,7 @@ from starlette.responses import HTMLResponse, Response
 from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
-from ..models.sample import Sample
+from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, Sample
 from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import RunCycles, SequencingRun
 from ..services.audit_log import audit
@@ -26,9 +26,17 @@ from ..services.cycle_calculator import (
     CycleCalculator,
 )
 from ..services.index_fill import build_fill_plan
-from ..services.paste_preview import build_paste_preview, repeated_sample_ids
+from ..services.paste_preview import (
+    build_paste_preview,
+    picked_test_needs_version_text,
+    picked_tests_without_version,
+    repeated_sample_ids,
+    version_needs_test_text,
+    versions_without_test,
+)
 from ..services.sample_api import name_list
 from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
+from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
 from .dependencies import get_ctx, get_editable_run, saving_run
 from .utils import (
@@ -75,7 +83,7 @@ def _render_sample_section(
     sample_api_cfg = ctx.sample_api_config
     sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
     index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
-    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []
 
     section_html = templates.env.get_template("runs/_sample_section.html").render(
         run=run, index_kits=index_kits, test_profiles=test_profiles,
@@ -255,16 +263,32 @@ _MAX_PASTE_CHARS = 10 * 1024 * 1024
 
 @dataclass
 class _PasteInput:
-    """What an Add-samples form sent: the text, and the picked lanes and test."""
+    """What an Add-samples form sent: the text, and the picked lanes, test
+    and version."""
     text: str
     lanes: list[int]
     default_test: str
     file_name: str = ""
+    default_version: str = ""
 
 
 def _test_types(ctx: AppContext) -> set[str]:
     repo = ctx.test_profile_repo
     return {tp.test_type for tp in repo.list_all()} if repo else set()
+
+
+def _test_version_with(test_id: str, raw) -> tuple[str, str]:
+    """(version, "") or ("", the 400 text): a test and its version are set
+    together, and a version is stripped, never cut (spec 2026-10-07 group A4,
+    §2). Both empty clears both."""
+    version = raw.strip() if isinstance(raw, str) else ""
+    if version and not TEST_VERSION_RE.match(version):
+        return "", f"{TEST_VERSION_RULE}."
+    if test_id and not version:
+        return "", "Give the test version too, for example 1."
+    if version and not test_id:
+        return "", "Pick a test for this version."
+    return version, ""
 
 
 async def _read_paste_input(
@@ -313,7 +337,15 @@ async def _read_paste_input(
     if default_test and default_test not in _test_types(ctx):
         return None, f'No test called "{default_test}".'
 
-    return _PasteInput(text=text, lanes=lanes, default_test=default_test, file_name=file_name), ""
+    # Stripped, never cut: a cut could make a bad version good (spec
+    # 2026-10-07 group A4, §2).
+    default_version = form.get("default_test_version", "")
+    default_version = default_version.strip() if isinstance(default_version, str) else ""
+    if default_version and not TEST_VERSION_RE.match(default_version):
+        return None, f"Version for rows without one: {TEST_VERSION_RULE}."
+
+    return _PasteInput(text=text, lanes=lanes, default_test=default_test, file_name=file_name,
+                       default_version=default_version), ""
 
 
 def _lane_words(lanes: list[int]) -> str:
@@ -397,12 +429,16 @@ async def add_sample(
     sample_name = sanitize_string(sample_name, 256)
     project = sanitize_string(project, 256)
     test_id = sanitize_string(test_id, 256)
+    test_version, problem = _test_version_with(test_id, form.get("test_version", ""))
+    if problem:
+        return Response(problem, status_code=400)
 
     sample = Sample(
         sample_id=sample_id,
         sample_name=sample_name,
         project=project,
         test_id=test_id,
+        test_version=test_version,
         lanes=[1],
     )
     with saving_run(run, ctx, request):
@@ -413,6 +449,7 @@ async def add_sample(
         target=run_id,
         sample_id=sample.id,
         test_id=sample.test_id,
+        test_version=sample.test_version,
     )
 
     return _render_sample_row(request, sample, run, show_drop_zones=False)
@@ -458,16 +495,38 @@ async def add_bulk_samples(
             }],
         )
 
+    # A test and its version are set together (spec 2026-10-07 group A4, §2).
+    # A row already in the run is skipped, never added, so it is not checked.
     existing_sample_ids = {s.sample_id for s in run.samples}
+    to_add = [ps for ps in parsed if ps.sample_id not in existing_sample_ids]
+    without_test = versions_without_test(to_add, paste.default_test)
+    if without_test:
+        return _render_sample_section(
+            run, request, ctx,
+            messages=[{"text": f"Bulk import rejected: {version_needs_test_text(without_test)}",
+                       "kind": "error"}],
+        )
+    without_version = picked_tests_without_version(to_add, paste.default_test,
+                                                   paste.default_version)
+    if without_version:
+        return _render_sample_section(
+            run, request, ctx,
+            messages=[{"text": "Bulk import rejected: "
+                               f"{picked_test_needs_version_text(without_version)}",
+                       "kind": "error"}],
+        )
+
     skipped_duplicates: list[str] = []
     new_samples = []
     for ps in parsed:
         if ps.sample_id in existing_sample_ids:
             skipped_duplicates.append(ps.sample_id)
             continue
+        test = ps.test_id or paste.default_test
         sample = Sample(
             sample_id=ps.sample_id,
-            test_id=ps.test_id or paste.default_test,
+            test_id=test,
+            test_version=(ps.test_version or paste.default_version) if test else "",
             lanes=list(paste.lanes),
         )
 
@@ -522,6 +581,7 @@ async def add_bulk_samples(
             skipped_duplicates_count=len(skipped_duplicates),
             lanes=",".join(str(n) for n in paste.lanes),
             default_test_id=paste.default_test,
+            default_test_version=paste.default_version,
         )
 
     # Surface per-import feedback so skips are never silent.
@@ -563,7 +623,7 @@ async def preview_paste(
     if paste is None:
         return Response(error, status_code=400)
 
-    test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []
     cap = sequencing_run_module.MAX_SAMPLES_PER_RUN
     preview, read_error = None, ""
     try:
@@ -577,6 +637,7 @@ async def preview_paste(
             test_types={tp.test_type for tp in test_profiles},
             default_test=paste.default_test,
             room=cap - len(run.samples),
+            default_version=paste.default_version,
         )
 
     return render(request, "runs/_paste_preview.html", {
@@ -717,6 +778,7 @@ async def import_worklist_samples(
         sample = Sample(
             sample_id=sample_id,
             test_id=api_sample.get("test_id", ""),
+            test_version=api_sample.get("test_version", ""),
             worksheet_id=api_sample.get("worksheet_id", worklist_id),
             lanes=[1],
         )
@@ -1234,12 +1296,37 @@ async def set_test_id_bulk(
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
 
+    # A fix box says what its samples lacked when the page was loaded; the
+    # bulk panel's "Set test" sends none (spec 2026-10-07 group A4, §2).
+    only_if = form.get("only_if", "")
+    if only_if not in ("", "no_test", "no_version"):
+        return Response("only_if must be no_test or no_version", status_code=400)
+
     test_id = sanitize_string(test_id_str, 256)
+    test_version, problem = _test_version_with(test_id, form.get("test_version", ""))
+    if problem:
+        return Response(problem, status_code=400)
+
+    # A box from a page that is out of date must not change a sample someone
+    # has changed since: it could give that sample another test.
+    changed = [
+        sample.sample_id for sample in run.samples if sample.id in sample_ids and (
+            (only_if == "no_test" and sample.test_id)
+            or (only_if == "no_version"
+                and (sample.test_id != test_id or sample.test_version)))
+    ]
+    if changed:
+        return Response(
+            f"These samples changed since this page was loaded: {name_list(changed)}. "
+            f"Reload the page and try again.",
+            status_code=409,
+        )
 
     with saving_run(run, ctx, request):
         for sample in run.samples:
             if sample.id in sample_ids:
                 sample.test_id = test_id
+                sample.test_version = test_version
 
     audit(
         "sample.bulk_test_id_set",
@@ -1247,6 +1334,7 @@ async def set_test_id_bulk(
         target=run_id,
         sample_count=len(sample_ids),
         test_id=test_id,
+        test_version=test_version,
     )
 
     return _render_sample_section(run, request, ctx)

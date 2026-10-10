@@ -3,6 +3,7 @@
 import json
 from io import BytesIO
 from typing import Any, Optional
+from xml.sax.saxutils import escape as xml_escape
 
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend
@@ -26,6 +27,7 @@ from reportlab.platypus import (
 from ..models.sequencing_run import SequencingRun
 from .index_collision_validator import MAX_HEATMAP_SAMPLES
 from .validation_summary import error_messages
+from .versioned_tests import versions_used_text
 from ..utils.clock import local_time, to_local, utcnow
 from ..models.validation import (
     ColorBalanceStatus,
@@ -63,6 +65,7 @@ class ValidationReportJSON:
             "flowcell": run.flowcell_type,
             "i5_workflow": _i5_value(result.i5_workflow, result),
             "i5_read_orientation": _i5_value(result.i5_read_orientation, result),
+            "tests": [dict(used) for used in result.test_versions],
             "timestamp": to_local(utcnow()).isoformat(),
             "summary": {
                 "error_count": result.error_count,
@@ -199,7 +202,10 @@ class ValidationReportPDF:
         elements.append(Spacer(1, 4 * mm))
 
         # Run info table
-        info_table = Table(cls._run_info(run, result), colWidths=[5 * cm, 12 * cm])
+        # splitInRow: a run with very many tests makes a Tests cell taller
+        # than a page, which is a LayoutError unless the row may break.
+        info_table = Table(cls._run_info_cells(run, result), colWidths=[5 * cm, 12 * cm],
+                           splitInRow=1)
         info_table.setStyle(TableStyle([
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
@@ -307,6 +313,16 @@ class ValidationReportPDF:
         return buf.getvalue()
 
     @classmethod
+    def _run_info_cells(cls, run: SequencingRun, result: ValidationResult) -> list[list]:
+        """The run lines as table cells. The Tests line is a paragraph, so it
+        wraps inside its column; a plain string does not (spec 2026-10-07
+        group A4, §3)."""
+        style = ParagraphStyle("RunInfoValue", parent=getSampleStyleSheet()["Normal"],
+                               fontSize=9, leading=11)
+        return [[label, Paragraph(xml_escape(value), style) if label == "Tests" else value]
+                for label, value in cls._run_info(run, result)]
+
+    @classmethod
     def _run_info(cls, run: SequencingRun, result: ValidationResult) -> list[list[str]]:
         """The run lines at the top of the report."""
         return [
@@ -316,6 +332,7 @@ class ValidationReportPDF:
             ["Flowcell", run.flowcell_type or "—"],
             ["i5 workflow", _i5_value(result.i5_workflow, result)],
             ["i5 read direction", _i5_value(result.i5_read_orientation, result)],
+            ["Tests", versions_used_text(result.test_versions) or "—"],
             ["Report Generated", local_time(utcnow(), seconds=True)],
         ]
 

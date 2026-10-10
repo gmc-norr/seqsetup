@@ -1,16 +1,17 @@
 {#
-   Add-samples form: paste or file, test for blank rows, lanes. Preview
+   Add-samples form: paste or file, test and version for blank rows, lanes. Preview
    swaps the preview into #paste-area; nothing is saved until the
    preview's Add button.
 
    Inputs:
      run:           SequencingRun
-     test_profiles: list[TestProfile]
+     test_profiles: list[OfferedTest] — one per test
      num_lanes:     int
      paste:         _PasteInput | undefined — refills the form after a preview
 #}
 {% set chosen_lanes = paste.lanes if paste else [1] %}
 {% set chosen_test = paste.default_test if paste else '' %}
+{% set chosen_version = paste.default_version if paste else '' %}
 <form class="paste-form"
       hx-post="/runs/{{ run.id }}/samples/preview"
       hx-target="#paste-area"
@@ -19,9 +20,9 @@
     {% include "wizard/_sample_paste_format_help.html" %}
     <label for="paste_data" class="paste-label">Paste rows from a spreadsheet</label>
     <textarea name="paste_data" id="paste_data" class="paste-textarea" rows="6"
-              placeholder="sample_id&#9;test_id&#9;index_i7&#9;index_i5&#10;Sample001&#9;WGS&#9;ATTACTCG&#9;TATAGCCT">
+              placeholder="sample_id&#9;test_id&#9;test_version&#9;index_i7&#9;index_i5&#10;Sample001&#9;WGS&#9;1&#9;ATTACTCG&#9;TATAGCCT">
 {{ paste.text if paste else '' }}</textarea>
-    <p class="paste-hint">Safest: make the first row name the columns, like <code>sample_id, test_id, index_i7, index_i5</code>.</p>
+    <p class="paste-hint">Safest: make the first row name the columns, like <code>sample_id, test_id, test_version, index_i7, index_i5</code>.</p>
     <div class="file-upload-row">
         <label for="sample_file" class="file-upload-label">Or a file (.csv, .tsv, .txt):</label>
         <input type="file" name="sample_file" id="sample_file" accept=".csv,.tsv,.txt" class="sample-file-input">
@@ -36,6 +37,13 @@
                 {% endfor %}
             </select>
             <span class="paste-option-help">Rows that already have a test keep it.</span>
+        </div>
+        <div class="paste-option">
+            <label for="default_test_version" class="paste-option-label">Version for rows without one</label>
+            <input type="text" name="default_test_version" id="default_test_version" class="paste-select"
+                   value="{{ chosen_version }}" placeholder="e.g. 1">
+            <span class="paste-option-help">1 means the newest 1.x.x. Rows that already have a version keep it; rows without a test get none.</span>
+            {% include "wizard/_test_versions_hint.html" %}
         </div>
         {% if num_lanes > 1 %}
         <fieldset class="paste-option">

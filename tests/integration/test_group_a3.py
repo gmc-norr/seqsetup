@@ -28,13 +28,15 @@ INDEX2_ORDER_RULE = (
 
 def _indexed_draft(ctx, run_id: str, override: str = "", i7: str = "ATTACTCG",
                    i5: str = "TATAGCCT", cycles: RunCycles = RunCycles(151, 151, 10, 10),
-                   index1_cycles=None, test_id: str = "") -> SequencingRun:
+                   index1_cycles=None, test_id: str = "",
+                   test_version: str = "1") -> SequencingRun:
     from seqsetup.models.index import Index, IndexPair, IndexType
     from seqsetup.models.sample import Sample
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=NOVASEQ_X,
                         flowcell_type="10B", run_cycles=cycles)
     run.add_sample(Sample(sample_id="S1", lanes=[1], override_cycles=override or None,
                           index1_cycles=index1_cycles, test_id=test_id,
+                          test_version=test_version if test_id else "",
                           index_pair=IndexPair(
                               id="p1", name="p1",
                               index1=Index(name="i7", sequence=i7, index_type=IndexType.I7),
@@ -504,7 +506,7 @@ def _miseq_profile_draft(ctx, run_id: str, index_cycles=8, i7="ATTACTCG", i5="TA
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.MISEQ,
                         flowcell_type="v3",
                         run_cycles=RunCycles(151, 151, index_cycles, index_cycles))
-    run.add_sample(Sample(sample_id="S1", test_id="A3M", lanes=[1],
+    run.add_sample(Sample(sample_id="S1", test_id="A3M", test_version="1", lanes=[1],
                           barcode_mismatches_index1=mismatch_index1,
                           barcode_mismatches_index2=None,
                           index_pair=IndexPair(

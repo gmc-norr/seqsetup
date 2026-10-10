@@ -164,7 +164,9 @@ def test_focus_ring_input(logged_in_page, base_url, seeded_ids):
     page = logged_in_page
     page.goto(base_url + f"/runs/{seeded_ids['screenshot_draft_run_id']}")
     page.wait_for_load_state("networkidle")
-    inp = page.locator("input[type='text'], input:not([type])").first
+    # The first one shown: the folded Add Samples section holds a text box
+    # too (its version box, spec 2026-10-07 group A4), which cannot take focus.
+    inp = page.locator("input[type='text']:visible, input:not([type]):visible").first
     inp.focus()
     shadow = page.evaluate(
         "() => getComputedStyle(document.activeElement).boxShadow"

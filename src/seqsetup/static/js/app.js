@@ -577,10 +577,13 @@ function applyBulkTestIdForm() {
     }
 
     const testId = document.getElementById('bulk-test-id-input').value;
+    const testVersion = document.getElementById('bulk-test-version-input').value;
 
-    // Populate hidden form fields
+    // Populate hidden form fields; the server sets a test and its version
+    // together (spec 2026-10-07 group A4, §2).
     document.getElementById('bulk-test-id-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-test-id').value = testId;
+    document.getElementById('bulk-test-version').value = testVersion;
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-test-id-form', 'submit');
@@ -596,6 +599,7 @@ function clearBulkTestIdForm() {
     // Populate hidden form fields with empty value to clear
     document.getElementById('bulk-test-id-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-test-id').value = '';
+    document.getElementById('bulk-test-version').value = '';
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-test-id-form', 'submit');

@@ -670,7 +670,11 @@ class TestProfileVersions:
         ]
 
     def test_test_profile_version_is_refused(self):
+        # A test profile's Version must also be three whole numbers (spec
+        # 2026-10-07 group A4, §1).
         assert _test_profile_errors({**TEST, "Version": 1.1}) == [
+            "Field 'Version' must be three whole numbers joined by dots, each at most 9 "
+            "digits, like 1.0.0: '1.1'",
             f"Field 'Version' {DECIMAL_VERSION}"
         ]
 
@@ -694,8 +698,9 @@ class TestProfileVersions:
         pytest.param(2, id="whole-number"),
     ])
     def test_quoted_and_whole_versions_pass(self, version):
+        # A test profile's Version is three whole numbers only (spec
+        # 2026-10-07 group A4): tests/unit/test_test_profile_version_rule.py.
         assert _errors({**APP, "ApplicationProfileVersion": version}) == []
-        assert _test_profile_errors({**TEST, "Version": version}) == []
 
 
 class TestEmptyRequiredFields:

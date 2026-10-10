@@ -13,9 +13,10 @@ The profile system consists of two types:
 
 **Test Profiles**
    Define a sequencing test type (e.g., "WGS", "Exome", "RNA-Seq") and link
-   it to one or more application profiles. When a sample has a test ID,
-   SeqSetup resolves the test profile and includes the associated
-   application pipelines in the sample sheet.
+   it to one or more application profiles. When a sample has a test ID and
+   a test version, SeqSetup resolves the test profile (the newest synced
+   version that matches; see *Test versions* below) and includes the
+   associated application pipelines in the sample sheet.
 
 **Application Profiles**
    Define analysis pipeline configurations -- for on-instrument DRAGEN
@@ -41,7 +42,7 @@ Required Fields
      - Description
    * - ``TestType``
      - string
-     - Unique identifier matching the test ID assigned to samples
+     - The test's name, matching the test ID assigned to samples
    * - ``TestName``
      - string
      - Human-readable display name
@@ -50,7 +51,8 @@ Required Fields
      - Description of the test
    * - ``Version``
      - string
-     - Profile version (PEP 440 format, e.g., ``1.0.0``)
+     - Three whole numbers joined by dots, each at most 9 digits and without
+       a leading zero, e.g. ``1.0.0`` (see `Test versions`_)
    * - ``ApplicationProfiles``
      - list
      - List of application profile references (see below)
@@ -76,6 +78,45 @@ one application twice (two profiles, or the same profile twice, also as
 ``1.0`` and ``~=1.0``) would write its samples twice. **Mark Ready** refuses
 both (the sync cannot: it does not know the referenced profiles'
 applications).
+
+Test versions
+~~~~~~~~~~~~~
+
+One test can have several versions, each in its own file with the same
+``TestType`` and its own ``Version``. Every sample names its test and a
+version: ``1`` picks the newest synced 1.x.x, ``1.2`` the newest 1.2.x, and
+``1.2.3`` exactly 1.2.3, comparing numbers (1.10.0 is newer than 1.9.0).
+**Mark Ready** picks the version, checks and writes the Sample Sheet with
+it, and saves it on the Ready run; a version synced later does not change
+a Ready run.
+
+The sync refuses a test file whose ``Version`` is not three whole numbers
+(``1.0``, ``1``, ``1.0.0rc1``, ``01.0.0`` and ``v1.0.0`` are all refused),
+and refuses **every** file of a test and version that is in more than one
+file -- a sample could get either -- naming them in the log::
+
+   Test profiles refused: WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. A test and version may be in one file only.
+
+**Any refused test file stops every test profile change**: one that breaks
+these rules, cannot be read as YAML, is empty, or sits in a sub-folder that
+cannot be listed. The sync then stores no test profile, keeps the ones
+already stored, still syncs the application profiles, and ends with
+**error**, naming each file::
+
+   Test profile files were refused, so no test profiles were stored and the stored ones are kept: profiles/test_profiles/Wgs_1.3.yaml: is empty. Synced 3 application profiles.
+
+Without this, a refused newest file would quietly make ``1`` pick an older
+version. Fix the file and sync again. Removing a file on purpose is not a
+refusal: the next sync stores the files that are left. The **Config Sync**
+page shows the last sync, manual or scheduled -- its time, whether it
+succeeded and its message -- in red when it failed (see :ref:`config-sync`).
+
+A test file is any file in the test profile folder whose name ends in
+``.yaml`` or ``.yml``, in any case (``Wgs_1.3.YAML`` is read too). Other
+files there, such as a ``README.md``, are skipped.
+
+**Mark Ready** refuses a sample whose version no synced file matches
+(*"No synced WGS version matches 1. Synced WGS versions: 2.0.0."*).
 
 Example Test Profile
 ~~~~~~~~~~~~~~~~~~~~~
@@ -349,13 +390,17 @@ Test Profile Validation
 
 - All required fields must be present and non-empty; a field with nothing
   after it (``Version:``) is empty
-- ``Version`` must be a valid PEP 440 version
+- ``Version`` must be three whole numbers joined by dots, each at most 9
+  digits and without a leading zero (see `Test versions`_). A PEP 440
+  version that is not three whole numbers, such as ``1.0.0rc1``, is refused
 - ``ApplicationProfiles`` must be a non-empty list
 - Each application profile reference must have a name and a version
   constraint, and the constraint must itself be valid PEP 440
 - A version written as a number with a decimal point -- ``Version: 1.10``,
   or ``ApplicationProfileVersion: 1.10`` in a reference -- is refused: YAML
-  reads it as the number 1.1. Put it in quotes: ``"1.10"``
+  reads it as the number 1.1. Put it in quotes: ``"1.10"``. For a test
+  profile's ``Version`` the quotes alone are not enough -- ``"1.10"`` is
+  still refused, since it is not three whole numbers; write ``"1.10.0"``
 
 Application Profile Validation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -539,6 +584,11 @@ repository configured -- the default -- nothing ever runs on its own.
 
 Both the interactive and the scheduled sync record an entry on the
 :doc:`audit-trail` page.
+
+The page's status panel shows the **Last sync**: when it ran, whether it
+succeeded (``success`` or ``error``) and its message, in red when it
+failed -- for a scheduled sync too, which has no other place to say so. A
+manual sync's result is shown above the panel, in red when it failed.
 
 Who can do this
 -------------------

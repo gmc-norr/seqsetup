@@ -820,8 +820,8 @@ class _StubTestProfileRepo:
     without exercising real profile resolution.
     """
 
-    def get_by_test_type(self, test_id):
-        return None
+    def list_by_test_type(self, test_id):
+        return []
 
 
 class _StubAppProfileRepo:

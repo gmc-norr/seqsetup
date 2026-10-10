@@ -40,8 +40,9 @@ Specifies the number of cycles for each segment of the run.
 Application sections
 ^^^^^^^^^^^^^^^^^^^^^
 
-For every sample's **Test ID**, SeqSetup resolves the test profile it
-points to and the application profiles that test profile references, and
+For every sample's **Test ID** and test version, SeqSetup resolves the
+test profile they point to (the newest synced version that matches) and
+the application profiles that test profile references, and
 writes one ``[AppName_Settings]`` / ``[AppName_Data]`` pair for each
 ``ApplicationName`` -- for example ``[BCLConvert_Settings]`` /
 ``[BCLConvert_Data]``, or ``[DragenGermline_Settings]`` /
@@ -95,8 +96,9 @@ pair and, for each configured DRAGEN onboard analysis, a matching
 ``_write_dragen_sections``) -- this path exists in the exporter but the
 running application never calls it.
 
-A sample without a Test ID, a test or profile that cannot be found, or any
-other plan problem stops the writer (``SheetPlanProblem``) instead of
+A sample without a Test ID, a sample with a test but no test version, a
+test, version or profile that cannot be found, or any other plan problem
+stops the writer (``SheetPlanProblem``) instead of
 leaving the sample out; Mark Ready reports the same problems as errors
 first.
 

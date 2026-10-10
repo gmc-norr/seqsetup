@@ -14,7 +14,7 @@ RC = RunCycles(151, 151, 10, 10)
 
 
 def _sample(sample_id, i7, i5=None, test="WGS") -> Sample:
-    sample = Sample(sample_id=sample_id, test_id=test, lanes=[1])
+    sample = Sample(sample_id=sample_id, test_id=test, test_version="1" if test else "", lanes=[1])
     if i5 is None:
         sample.assign_index1(Index(name=f"{sample_id}7", sequence=i7, index_type=IndexType.I7))
     else:

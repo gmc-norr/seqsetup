@@ -22,7 +22,7 @@ def _run(ctx, run_id="fix-test-run", *, status=RunStatus.DRAFT):
         run_cycles=RunCycles(151, 151, 8, 8), status=status,
     )
     run.add_sample(Sample(id="s1", sample_id="S1", lanes=[1]))
-    run.add_sample(Sample(id="s2", sample_id="S2", lanes=[1], test_id="WGS"))
+    run.add_sample(Sample(id="s2", sample_id="S2", lanes=[1], test_id="WGS", test_version="1"))
     run.add_sample(Sample(id="s3", sample_id="S3", lanes=[1]))
     ctx.run_repo.save(run)
     return run_id
@@ -48,7 +48,7 @@ class TestSetTestFromCheck:
         _profiles(ctx, "WGS")
         run_id = _run(ctx)
         panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
-        assert "Set test for the 2 samples without one" in panel
+        assert "Set test and version for the 2 samples without one" in panel
         assert sorted(_fix_ids(panel)) == ["s1", "s3"]
         assert f'hx-post="/runs/{run_id}/samples/set-test-id"' in panel
         page = logged_in_client.get(f"/runs/{run_id}").text
@@ -61,7 +61,7 @@ class TestSetTestFromCheck:
         ids = _fix_ids(logged_in_client.get(f"/runs/{run_id}/validate-panel").text)
         r = logged_in_client.post(
             f"/runs/{run_id}/samples/set-test-id",
-            data={"sample_ids": json.dumps(ids), "test_id": "RNA"},
+            data={"sample_ids": json.dumps(ids), "test_id": "RNA", "test_version": "1"},
             headers=ORIGIN,
         )
         assert r.status_code == 200

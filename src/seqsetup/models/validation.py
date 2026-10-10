@@ -220,7 +220,8 @@ class ApplicationValidationError:
     test_id: str  # The sample's test_id
     application_name: str  # e.g. "DragenGermline"
     profile_name: str  # ApplicationProfileName
-    error_type: str  # "app_not_available", "version_not_available", "profile_not_found", "test_profile_not_found"
+    error_type: str  # "app_not_available", "version_not_available", "profile_not_found", "test_profile_not_found",
+    # "test_version_not_found", "test_version_stored_twice" (spec 2026-10-07 group A4)
     detail: str  # Human-readable message
 
 
@@ -301,6 +302,10 @@ class ValidationResult:
     # used; "" when one can, or the instrument has none (spec 2026-10-05
     # group A3, §3). Mark Ready stores it with the run.
     v1_sheet_withheld: str = ""
+    # For each test and version text the samples ask for, the exact version
+    # the checks used and its file: {"test", "asked", "version", "file"}, in
+    # the order first seen (spec 2026-10-07 group A4, §3). Mark Ready stores it.
+    test_versions: list[dict] = field(default_factory=list)
 
     @property
     def has_errors(self) -> bool:

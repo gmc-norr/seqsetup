@@ -39,9 +39,10 @@ The generated SampleSheet v2 contains the following sections:
 - ``[Header]`` -- Run metadata and instrument platform
 - ``[Reads]`` -- Cycle counts for all read and index segments
 - One ``[AppName_Settings]`` / ``[AppName_Data]`` pair per application
-  profile a sample's Test ID resolves to (e.g. ``[BCLConvert_Settings]`` /
+  profile a sample's Test ID and test version resolve to (e.g.
+  ``[BCLConvert_Settings]`` /
   ``[BCLConvert_Data]``, ``[DragenGermline_Settings]`` /
-  ``[DragenGermline_Data]``) -- absent entirely if no sample's Test ID
+  ``[DragenGermline_Data]``) -- absent entirely if no sample's test
   resolves to one
 - ``[Cloud_Settings]`` / ``[Cloud_Data]`` -- always written
 

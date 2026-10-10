@@ -1,7 +1,5 @@
 """Repository for TestProfile database operations."""
 
-from typing import Optional
-
 from ..models.test_profile import TestProfile
 from .base import BaseRepository
 
@@ -12,15 +10,10 @@ class TestProfileRepository(BaseRepository[TestProfile]):
     COLLECTION = "test_profiles"
     MODEL_CLASS = TestProfile
 
-    def get_by_test_type(self, test_type: str) -> Optional[TestProfile]:
-        """Get a test profile by test type.
-
-        This is used to match sample.test_id to a TestProfile.
-        """
-        doc = self.collection.find_one({"test_type": test_type})
-        if doc:
-            return TestProfile.from_dict(doc)
-        return None
+    def list_by_test_type(self, test_type: str) -> list[TestProfile]:
+        """Every stored version of a test. Which one a sample gets is
+        services/versioned_tests.resolve_test's to decide."""
+        return [TestProfile.from_dict(doc) for doc in self.collection.find({"test_type": test_type})]
 
     def delete_all(self) -> int:
         """Delete all test profiles. Used for full resync."""

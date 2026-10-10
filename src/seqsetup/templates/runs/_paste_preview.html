@@ -8,7 +8,7 @@
 
    Inputs:
      run, test_profiles, num_lanes — as for runs/_paste_form.html
-     paste:      _PasteInput — text, lanes, default_test, file_name
+     paste:      _PasteInput — text, lanes, default_test, file_name, default_version
      preview:    PastePreview | None — None when the text could not be read
      read_error: str — the parser's message when preview is None
      line_count: int
@@ -22,6 +22,7 @@
         <div class="paste-recap">
             <span>{% if paste.file_name %}File {{ paste.file_name }}{% else %}Pasted text, {{ line_count }} line{{ '' if line_count == 1 else 's' }}{% endif %}</span>
             <span>Test for blank rows: <b>{{ paste.default_test or 'leave blank' }}</b></span>
+            <span>Version for blank rows: <b>{{ paste.default_version or 'leave blank' }}</b></span>
             <span>Lanes: <b>{{ paste.lanes | join(', ') }}</b></span>
             <button type="button" class="paste-link" @click="editing = true">Edit paste</button>
         </div>
@@ -40,6 +41,18 @@
             <div class="paste-notice paste-notice--blocked" role="alert">
                 <b>Can't add yet.</b>
                 <span>Same sample ID more than once in the paste: {{ preview.repeated_ids | join(', ') }}. We can't tell which row is right. Fix the paste, then preview again.</span>
+            </div>
+            {% endif %}
+            {% if preview.versions_without_test %}
+            <div class="paste-notice paste-notice--blocked" role="alert">
+                <b>Can't add yet.</b>
+                <span>{{ preview.versions_without_test_text }}</span>
+            </div>
+            {% endif %}
+            {% if preview.picked_tests_without_version %}
+            <div class="paste-notice paste-notice--blocked" role="alert">
+                <b>Can't add yet.</b>
+                <span>{{ preview.picked_tests_without_version_text }}</span>
             </div>
             {% endif %}
             {% if preview.over_cap %}
@@ -79,6 +92,7 @@
                             <th scope="col">Line</th>
                             <th scope="col">Sample ID</th>
                             <th scope="col">Test</th>
+                            <th scope="col">Version</th>
                             <th scope="col">i7</th>
                             <th scope="col">i5</th>
                             <th scope="col">Index name</th>
@@ -92,6 +106,7 @@
                             <td>{{ r.line }}</td>
                             <td>{{ r.sample_id }}</td>
                             <td>{% if r.test_picked %}<i>{{ r.test_id }}</i> <span class="paste-picked">(picked)</span>{% else %}{{ r.test_id or '–' }}{% endif %}</td>
+                            <td>{% if r.version_picked %}<i>{{ r.test_version }}</i> <span class="paste-picked">(picked)</span>{% else %}{{ r.test_version or '–' }}{% endif %}</td>
                             <td class="seq i7">{% if r.index1 %}{{ r.index1 }}{% else %}<span class="paste-none">none</span>{% endif %}</td>
                             <td class="seq i5">{% if r.index2 %}{{ r.index2 }}{% else %}<span class="paste-none">none</span>{% endif %}</td>
                             <td>{{ r.index_name }}</td>
@@ -117,11 +132,12 @@
 {{ paste.text }}</textarea>
                 {% for lane in paste.lanes %}<input type="hidden" name="lanes" value="{{ lane }}">{% endfor %}
                 <input type="hidden" name="default_test_id" value="{{ paste.default_test }}">
+                <input type="hidden" name="default_test_version" value="{{ paste.default_version }}">
                 <button type="submit" class="btn btn-primary">Add {{ preview.to_add }} sample{{ '' if preview.to_add == 1 else 's' }}</button>
             </form>
             {% else %}
             <button type="button" class="btn btn-primary" disabled>Add samples</button>
-            <span class="paste-blocked-hint">{% if read_error or (preview and (preview.repeated_ids or preview.over_cap)) %}Fix the red rows first.{% else %}Nothing to add.{% endif %}</span>
+            <span class="paste-blocked-hint">{% if read_error or (preview and (preview.repeated_ids or preview.over_cap)) %}Fix the red rows first.{% elif preview and (preview.versions_without_test or preview.picked_tests_without_version) %}Fix the rows named above first.{% else %}Nothing to add.{% endif %}</span>
             {% endif %}
             <button type="button" class="paste-link" @click="editing = true">Back to edit</button>
             {% if preview and preview.can_add %}<span class="paste-option-help">Adds exactly what is shown here.</span>{% endif %}

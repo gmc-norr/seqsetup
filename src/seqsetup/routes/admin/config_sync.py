@@ -49,9 +49,11 @@ class ConfigSyncForm(BaseModel):
     sync_interval_minutes: Annotated[int, BeforeValidator(clamp(1, 1440))] = 60
 
 
-def _page_ctx(ctx: AppContext, message: str = "") -> dict:
+def _page_ctx(ctx: AppContext, message: str = "", message_ok: bool = True) -> dict:
     """Build the template context. Profiles are listed in the page
-    sidebar; pre-resolve here so the template stays pure render."""
+    sidebar; pre-resolve here so the template stays pure render.
+    ``message_ok`` False shows the message as an error (spec 2026-10-07
+    group A4, §1, decision 10)."""
     config = ctx.profile_sync_config_repo.get()
     app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
     test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
@@ -60,6 +62,7 @@ def _page_ctx(ctx: AppContext, message: str = "") -> dict:
         "app_profiles": app_profiles,
         "test_profiles": test_profiles,
         "message": message,
+        "message_ok": message_ok,
     }
 
 
@@ -129,7 +132,7 @@ def trigger_manual_sync(
         return render(
             request,
             "admin/config_sync.html",
-            _page_ctx(ctx, message="Sync service not available"),
+            _page_ctx(ctx, message="Sync service not available", message_ok=False),
             block_name="config_sync_page",
         )
 
@@ -151,6 +154,6 @@ def trigger_manual_sync(
     return render(
         request,
         "admin/config_sync.html",
-        _page_ctx(ctx, message=message),
+        _page_ctx(ctx, message=message, message_ok=success),
         block_name="config_sync_page",
     )

@@ -15,6 +15,7 @@ from ..models.sample import Sample
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .sheet_text import MISMATCH_COLUMNS, is_allowed_mismatch
+from .versioned_tests import resolve_test
 
 BCLCONVERT = "BCLConvert"
 
@@ -86,6 +87,9 @@ class SheetPlan:
     # Convert, for each sample in the BCLConvert section (spec §2).
     mismatches: dict[tuple[str, int], int] = field(default_factory=dict)
     fingerprint: str = ""
+    # Each test and version text, and the exact version it found (spec
+    # 2026-10-07 group A4, §3): {"test", "asked", "version", "file"}.
+    test_versions: list[dict] = field(default_factory=list)
 
     @property
     def check_errors(self) -> list[SheetProblem]:
@@ -181,29 +185,33 @@ def plan_sheet(
     the flow cell's lane count."""
     plan = SheetPlan()
 
-    # Problem 1: a sample without a test (the writer's own text).
-    tests: dict[str, list[Sample]] = {}
+    # Problem 1: a sample without a test or its version (the writer's own
+    # texts). Samples are grouped by test and version text (spec 2026-10-07
+    # group A4, §3).
+    tests: dict[tuple[str, str], list[Sample]] = {}
     for sample in run.samples:
         if not sample.test_id:
             plan.problems.append(SheetProblem(
                 "", f"Sample {_name(sample)} has no test, so it would not be on the Sample Sheet."))
             continue
-        tests.setdefault(sample.test_id, []).append(sample)
+        if not sample.test_version:
+            plan.problems.append(SheetProblem(
+                "", f"Sample {_name(sample)} has no test version, so it would not be on the "
+                    f"Sample Sheet."))
+            continue
+        tests.setdefault((sample.test_id, sample.test_version), []).append(sample)
 
-    test_cache: dict = {}
     profile_cache: dict = {}
     fingerprint_tests = []
     sections: dict[str, PlannedSection] = {}
     first_test: dict[tuple[str, str], str] = {}
     bclconvert_of: dict[str, ApplicationProfile] = {}
 
-    for test, samples in tests.items():
-        if test not in test_cache:
-            test_cache[test] = test_profile_repo.get_by_test_type(test)
-        test_profile = test_cache[test]
+    for (test, asked), samples in tests.items():
+        test_profile = resolve_test(test_profile_repo, test, asked).profile
         if test_profile is None:
-            plan.problems.append(SheetProblem("", f"Test '{test}' has no test profile."))
-            fingerprint_tests.append([test, None, []])
+            plan.problems.append(SheetProblem("", f"Test '{test}' {asked} has no test profile."))
+            fingerprint_tests.append([test, asked, None, []])
             continue
 
         resolved: list[tuple] = []  # (reference, profile)
@@ -218,11 +226,13 @@ def plan_sheet(
             if profile is None:
                 unresolved = True
                 plan.problems.append(SheetProblem(
-                    "", f"Test '{test}' lists {ref.profile_name} {ref.profile_version}, "
+                    "", f"Test '{test}' {asked} lists {ref.profile_name} {ref.profile_version}, "
                         f"which is not stored."))
                 continue
             resolved.append((ref, profile))
-        fingerprint_tests.append([test, _content(test_profile), refs_content])
+        fingerprint_tests.append([test, asked, _content(test_profile), refs_content])
+        plan.test_versions.append({"test": test, "asked": asked, "version": test_profile.version,
+                                   "file": test_profile.source_file})
 
         by_application: dict[str, list[tuple]] = {}
         for ref, profile in resolved:
@@ -233,7 +243,7 @@ def plan_sheet(
         if not unresolved and BCLCONVERT not in by_application:
             plan.problems.append(SheetProblem(
                 "test_without_bclconvert_profile",
-                f"Test '{test}' has no BCLConvert profile, so its {len(names)} sample(s) "
+                f"Test '{test}' {asked} has no BCLConvert profile, so its {len(names)} sample(s) "
                 f"would not be demultiplexed: {_ids(names)}. Add one BCLConvert profile to "
                 f"the test profile.",
                 tuple(names),
@@ -245,7 +255,7 @@ def plan_sheet(
                 listed = ", ".join(f"{ref.profile_name} {ref.profile_version}" for ref, _ in pairs)
                 plan.problems.append(SheetProblem(
                     "test_with_two_profiles_for_one_application",
-                    f"Test '{test}' lists {len(pairs)} profiles for {application}: {listed}. "
+                    f"Test '{test}' {asked} lists {len(pairs)} profiles for {application}: {listed}. "
                     f"A test may list one profile per application, once.",
                     tuple(names),
                 ))
@@ -259,7 +269,9 @@ def plan_sheet(
                     continue
                 seen_here.append(identity)
                 if identity not in first_test:
-                    first_test[identity] = test
+                    # The test and the version asked, so two versions of one
+                    # test can be told apart (spec 2026-10-07 group A4, §3).
+                    first_test[identity] = f"{test} {asked}"
                     section.profiles.append(profile)
                 section.rows.extend((sample, profile) for sample in samples)
                 if application == BCLCONVERT:

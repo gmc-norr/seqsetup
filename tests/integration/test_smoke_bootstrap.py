@@ -575,7 +575,7 @@ def test_sample_add_emits_audit(logged_in_client, fresh_app, monkeypatch):
 
     response = logged_in_client.post(
         f"/runs/{run.id}/samples",
-        data={"sample_id": "S1", "test_id": "WGS"},
+        data={"sample_id": "S1", "test_id": "WGS", "test_version": "1"},
         headers={"Origin": "http://testserver"},
     )
     assert response.status_code == 200

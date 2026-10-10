@@ -4,7 +4,7 @@
    Inputs:
      run:           SequencingRun (run.id used for HTMX form actions)
      num_lanes:     int
-     test_profiles: list[TestProfile] | None
+     test_profiles: list[OfferedTest] | None — one per test
 
    The five hidden forms' HX-target / HX-swap must match what their route
    actually returns:
@@ -53,6 +53,7 @@
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-test-id-sample-ids">
         <input type="hidden" name="test_id" id="bulk-test-id">
+        <input type="hidden" name="test_version" id="bulk-test-version">
     </form>
     <form id="bulk-delete-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/bulk-delete"
@@ -117,11 +118,16 @@
             {# Test ID #}
             <div class="bulk-action-row">
                 <span class="bulk-action-label">Test ID:</span>
-                {% include "wizard/_test_id_dropdown.html" %}
+                <div class="bulk-test-inputs">
+                    {% include "wizard/_test_id_dropdown.html" %}
+                    <input type="text" id="bulk-test-version-input" class="bulk-test-version-input"
+                           aria-label="Test version" placeholder="Version, e.g. 1">
+                </div>
                 <div class="bulk-action-buttons">
                     <button type="button" class="btn btn-primary btn-small" data-action="bulk-apply-testid">Apply</button>
                     <button type="button" class="btn btn-secondary btn-small" data-action="bulk-clear-testid">Clear</button>
                 </div>
+                {% include "wizard/_test_versions_hint.html" %}
             </div>
         </div>
     </div>

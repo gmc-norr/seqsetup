@@ -14,6 +14,7 @@ from collections import Counter
 from urllib.parse import urlparse
 from typing import Optional, Tuple
 
+from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, shown_value
 from ..models.sample_api_config import SampleApiConfig
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
@@ -554,9 +555,11 @@ def fetch_worklist_samples(config: SampleApiConfig, worklist_id: str) -> Tuple[b
                 if isinstance(embedded_samples, dict):
                     # Convert {sample_id: test_id} dict to list of sample objects
                     for sample_id, test_id in embedded_samples.items():
+                        # The test as sent, so parse_api_samples checks it by
+                        # its JSON type (spec 2026-10-07 group A4, §2).
                         samples.append({
                             "sample_id": sample_id,
-                            "test_id": test_id if test_id else "",
+                            "test_id": test_id if test_id is not None else "",
                             "worksheet_id": worklist_id,
                         })
                 elif isinstance(embedded_samples, list):
@@ -591,6 +594,45 @@ def name_list(ids: list[str], limit: int = 10) -> str:
     return f"{shown} and {len(ids) - limit} more" if len(ids) > limit else shown
 
 
+def _lims_test_version(sample_id: str, value) -> str:
+    """A LIMS sample's test version, by its JSON type, before anything turns
+    it into text: str() would read JSON 1.10 as "1.1" and drop a 0 (spec
+    2026-10-07 group A4, §2). Never cut. ValueError names the sample."""
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        raise ValueError(
+            f"Sample '{sample_id}' has a test version that is a number with a decimal point "
+            f"({value!r}), which JSON may have changed (1.10 is read as 1.1). Send it as text, "
+            f'for example "1.10".'
+        )
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise ValueError(
+            f"Sample '{sample_id}' has a test version that is not text or a whole number "
+            f"({shown_value(json.dumps(value))})."
+        )
+    text = str(value).strip()
+    if text and not TEST_VERSION_RE.match(text):
+        raise ValueError(
+            f"Sample '{sample_id}' has a test version that is not right ({shown_value(text)!r}). "
+            f"{TEST_VERSION_RULE}."
+        )
+    return text
+
+
+def _refuse_a_changed_value(what: str, value) -> None:
+    """A sample ID or a test, by its JSON type: str() would read JSON 23.10
+    as "23.1" and true as "True", so these are refused, never changed (spec
+    2026-10-07 group A4, §2, decision 12). Text and whole numbers pass."""
+    if isinstance(value, bool):
+        raise ValueError(f"{what} that is not text or a whole number ({json.dumps(value)}).")
+    if isinstance(value, float):
+        raise ValueError(
+            f"{what} that is a number with a decimal point ({value!r}), which JSON may have "
+            f'changed (1.10 is read as 1.1). Send it as text, for example "1.10".'
+        )
+
+
 def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None) -> list[dict]:
     """
     Parse API response into a normalized list of sample dicts.
@@ -613,6 +655,9 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
     field_aliases = {
         "sample_id": ["sample_id", "sampleid", "sample", "id", "name", "sample_name"],
         "test_id": ["test_id", "testid", "test", "test_type", "assay", "application"],
+        # Not "version" alone: another field may have that name (spec
+        # 2026-10-07 group A4, §2).
+        "test_version": ["test_version", "testversion"],
         "worksheet_id": ["worksheet_id", "worksheetid", "worksheet", "worklist_id", "al"],
         "index1_sequence": ["index_i7", "index1", "i7", "index_i7_sequence", "i7_sequence"],
         "index2_sequence": ["index_i5", "index2", "i5", "index_i5_sequence", "i5_sequence"],
@@ -647,6 +692,8 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
             for alias in aliases:
                 if alias in lower_item and lower_item[alias] is not None:
                     val = lower_item[alias]
+                    if field == "sample_id":
+                        _refuse_a_changed_value(f"LIMS row {index} has a sample ID", val)
                     # Strip + length-clamp per CLAUDE.md input-sanitization rule.
                     # LIMS payloads aren't trusted to honor field widths.
                     sample[field] = str(val).strip()[:_MAX_FIELD_LEN] if val else ""
@@ -658,6 +705,17 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         if "sample_id" not in sample or not sample["sample_id"]:
             rows_missing_sample_id.append(index)
             continue
+
+        # A null name gives way to the next one, as for every field above.
+        raw_test = next((lower_item[alias] for alias in field_aliases["test_id"]
+                         if lower_item.get(alias) is not None), None)
+        _refuse_a_changed_value(f"Sample '{sample['sample_id']}' has a test", raw_test)
+        raw_version = next((lower_item[alias] for alias in field_aliases["test_version"]
+                            if lower_item.get(alias) is not None), None)
+        sample["test_version"] = _lims_test_version(sample["sample_id"], raw_version)
+        # A test and its version are set together (spec 2026-10-07 group A4, §2).
+        if sample["test_version"] and not sample.get("test_id"):
+            raise ValueError(f"Sample '{sample['sample_id']}' has a test version but no test.")
 
         # Index sequences must be DNA — uppercase + validate here, naming the
         # sample, instead of letting Index() raise an opaque 500 downstream.

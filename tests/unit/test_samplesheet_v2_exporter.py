@@ -409,7 +409,7 @@ class TestSampleSheetV2Exporter:
             samples=[
                 Sample(
                     sample_id="S1",
-                    test_id="WGS",
+                    test_id="WGS", test_version="1",
                     index_pair=IndexPair(
                         id="p1", name="p1",
                         index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
@@ -446,7 +446,7 @@ class TestSampleSheetV2Exporter:
             samples=[
                 Sample(
                     sample_id="S1",
-                    test_id="WGS",
+                    test_id="WGS", test_version="1",
                     index_pair=IndexPair(
                         id="p1", name="p1",
                         index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
@@ -632,8 +632,9 @@ class _StubTestProfileRepo:
     def __init__(self, profiles_by_test_type: dict):
         self._profiles = profiles_by_test_type
 
-    def get_by_test_type(self, test_type):
-        return self._profiles.get(test_type)
+    def list_by_test_type(self, test_type):
+        profile = self._profiles.get(test_type)
+        return [profile] if profile else []
 
 
 class _StubAppProfileRepo:
@@ -682,7 +683,7 @@ class TestApplicationSectionsAcrossTestProfiles:
     def _make_sample(self, sample_id, test_id, i7, i5):
         return Sample(
             sample_id=sample_id,
-            test_id=test_id,
+            test_id=test_id, test_version="1",
             index_pair=IndexPair(
                 id=f"pair_{sample_id}",
                 name=f"pair_{sample_id}",
@@ -770,7 +771,7 @@ class TestApplicationSectionsAcrossTestProfiles:
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
             flowcell_type="10B",
             run_cycles=RunCycles(151, 151, 8, 8),
-            samples=[Sample(sample_id="S_SINGLE", test_id="WGS", index1=Index(
+            samples=[Sample(sample_id="S_SINGLE", test_id="WGS", test_version="1", index1=Index(
                 name="i7", sequence="ATTACTCG", index_type=IndexType.I7))],
         )
         test_profile_repo = _StubTestProfileRepo({"WGS": self._make_test_profile("WGS")})
@@ -801,7 +802,7 @@ class TestProfileDrivenBclConvertData:
     def _make_sample(self, sample_id, lanes):
         return Sample(
             sample_id=sample_id,
-            test_id="WGS",
+            test_id="WGS", test_version="1",
             lanes=lanes,
             index_pair=IndexPair(
                 id=f"pair_{sample_id}",
@@ -951,7 +952,7 @@ class TestSampleIdentifiersWrittenExactly:
             run_cycles=RunCycles(151, 151, 8, 8),
             samples=[Sample(
                 sample_id=sample_id,
-                test_id="WGS",
+                test_id="WGS", test_version="1",
                 index_pair=IndexPair(
                     id="p1", name="p1",
                     index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
@@ -1064,7 +1065,7 @@ class TestSheetTextGuards:
             run_cycles=RunCycles(151, 151, 8, 8),
             samples=[Sample(
                 sample_id="S1",
-                test_id="WGS",
+                test_id="WGS", test_version="1",
                 index_pair=IndexPair(
                     id="p1", name="p1",
                     index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
@@ -1124,7 +1125,7 @@ def _export_with_profile(settings, data, data_fields, translate, **sample_fields
         instrument_platform=InstrumentPlatform.NOVASEQ_X,
         flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8),
-        samples=[Sample(sample_id="S1", test_id="WGS", **sample_fields)],
+        samples=[Sample(sample_id="S1", test_id="WGS", test_version="1", **sample_fields)],
     )
     app_profile = ApplicationProfile(
         name="P", version="1.0.0", application_type="Custom",
@@ -1253,7 +1254,7 @@ def test_shipped_application_profiles_export(path):
         run_cycles=RunCycles(151, 151, 8, 8),
         samples=[Sample(
             sample_id="S1",
-            test_id="WGS",
+            test_id="WGS", test_version="1",
             lanes=[1, 2],
             index_pair=IndexPair(
                 id="p1", name="p1",
@@ -1310,7 +1311,7 @@ def _export_stored_profile(profile) -> str:
         run_cycles=RunCycles(151, 151, 8, 8),
         samples=[Sample(
             sample_id="S1",
-            test_id="WGS",
+            test_id="WGS", test_version="1",
             index_pair=IndexPair(
                 id="p1", name="p1",
                 index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
