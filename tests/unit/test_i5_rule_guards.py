@@ -73,13 +73,14 @@ def _profile(settings: dict, app_name: str = "BCLConvert") -> dict:
 
 
 class TestProfilesCannotChangeTheRule:
-    """A BCL Convert profile's Settings may not carry the four settings that
+    """A BCL Convert profile's Settings may not carry the five settings that
     change how BCL Convert reads the i5; OverrideCycles as a data column stays."""
 
-    def test_the_four_settings(self):
+    def test_the_five_settings(self):
         assert I5_RULE_SETTINGS == (
             "OverrideCycles", "OverrideReads",
             "RunInfoIndex2ReverseComplement", "Index2ColumnReverseComplement",
+            "IndexOrientation",
         )
 
     @pytest.mark.parametrize("key", list(I5_RULE_SETTINGS) + ["overridecycles"])
