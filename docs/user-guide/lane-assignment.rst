@@ -84,7 +84,8 @@ Lanes in the exported Sample Sheet
 --------------------------------------
 
 Whether the exported Sample Sheet has a ``Lane`` column at all is decided
-by the application profile a sample's Test ID resolves to (see
+by the application profile a sample's Test ID and test version resolve to
+(see
 :doc:`export`), not by whether any sample in the run has an explicit
 lane. In the shipped BCLConvert profile, ``Lane`` is always a column: a
 sample still left on "All" gets a blank cell there rather than a lane

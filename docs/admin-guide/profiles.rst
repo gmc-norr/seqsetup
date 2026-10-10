@@ -13,9 +13,10 @@ The profile system consists of two types:
 
 **Test Profiles**
    Define a sequencing test type (e.g., "WGS", "Exome", "RNA-Seq") and link
-   it to one or more application profiles. When a sample has a test ID,
-   SeqSetup resolves the test profile and includes the associated
-   application pipelines in the sample sheet.
+   it to one or more application profiles. When a sample has a test ID and
+   a test version, SeqSetup resolves the test profile (the newest synced
+   version that matches; see *Test versions* below) and includes the
+   associated application pipelines in the sample sheet.
 
 **Application Profiles**
    Define analysis pipeline configurations -- for on-instrument DRAGEN

@@ -98,8 +98,8 @@ The exported file follows the Illumina Sample Sheet v2 CSV format:
    Cycle counts for Read 1, Read 2, Index 1, and Index 2.
 
 One ``[AppName_Settings]`` / ``[AppName_Data]`` pair per application
-   For every sample's **Test ID**, SeqSetup resolves the matching test
-   profile and the application profiles it references, and writes one
+   For every sample's **Test ID** and test version, SeqSetup resolves the
+   matching test profile and the application profiles it references, and writes one
    ``Settings``/``Data`` section pair for each application, named after it
    -- for example ``[BCLConvert_Settings]`` / ``[BCLConvert_Data]``, or
    ``[DragenGermline_Settings]`` / ``[DragenGermline_Data]``. Every sample
@@ -126,7 +126,8 @@ export of the same run.
 
 **Mark Ready** refuses a run whose sheet would leave a sample out of
 ``[BCLConvert_Data]``, write one twice, or not carry a value the checks
-used: a sample without a Test ID, a test or profile that is not stored, a
+used: a sample without a Test ID or without a test version, a test,
+version or profile that is not stored, a
 test without a ``BCLConvert`` profile, or a ``BCLConvert`` profile without
 a column a sample needs (see :doc:`/admin-guide/profiles`). The sheet
 writer checks the same again before it writes, so a profile changed or
