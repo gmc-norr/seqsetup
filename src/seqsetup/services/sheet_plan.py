@@ -357,6 +357,7 @@ def plan_sheet(
     lanes_empty = _Grouped()
     cells_empty = _Grouped()
     not_carried = _Grouped()
+    setting_without_index = _Grouped()
     all_lanes = set(range(1, lanes + 1))
     plain = full_reads(run) if run.run_cycles else ""
     for section in plan.sections:
@@ -402,6 +403,9 @@ def plan_sheet(
                               and is_allowed_mismatch(setting, per_sample=False) else 1)
                     if has_index and own is not None and own != number:
                         not_carried.add((label, column, own, number), name)
+                    if setting is not None and not has_index:
+                        setting_without_index.add(
+                            (label, column, "i7" if index_num == 1 else "i5"), name)
                 plan.mismatches[(sample.id, index_num)] = number
 
     for (label, column, reason), names in missing.groups.items():
@@ -425,6 +429,17 @@ def plan_sheet(
             f"{len(names)} sample(s) would get an empty {column} cell from BCLConvert profile "
             f"{label}: {_ids(names)}. Set their mismatch number, or give the profile a Data "
             f"default for {column}.",
+            tuple(names),
+        ))
+    # DRAGEN takes a Settings mismatch value only when every sample has that
+    # index (spec 2026-10-10 later list slice 1, §3).
+    for (label, column, index), names in setting_without_index.groups.items():
+        plan.problems.append(SheetProblem(
+            "mismatch_setting_without_index",
+            f"BCLConvert profile {label} sets {column} for the whole run in its Settings, but "
+            f"{len(names)} sample(s) have no {index}: {_ids(names)}. DRAGEN takes {column} in "
+            f"Settings only when every sample has that index. Move {column} from the "
+            f"profile's Settings to its DataFields, or put these samples in another run.",
             tuple(names),
         ))
     for (label, column, own, number), names in not_carried.groups.items():

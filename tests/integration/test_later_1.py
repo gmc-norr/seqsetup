@@ -228,3 +228,81 @@ class TestTheKitSwapMessage:
         assert not refused()
         assert not refused(default_read1_override="Y*", default_read2_override="")
         assert refused(default_read1_override="U8Y*")
+
+
+# --- spec §3: mismatch numbers for an index the sample does not have --------
+
+import html  # noqa: E402
+
+from seqsetup.models.index import Index, IndexType  # noqa: E402
+from seqsetup.models.sample import Sample  # noqa: E402
+from seqsetup.models.sequencing_run import (  # noqa: E402
+    InstrumentPlatform,
+    RunCycles,
+    RunStatus,
+    SequencingRun,
+)
+
+from .conftest import mark_ready  # noqa: E402
+from .test_group_a3 import BCL_FIELDS, _bcl_profile, profiles  # noqa: E402,F401
+
+
+def _single_index_draft(ctx, run_id, **fields):
+    """S1 and S2 with an i7 only, in lane 1 of a run that reads 10 cycles of
+    Index 2, on the test A3T of group A3's ``profiles``."""
+    run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.NOVASEQ_X,
+                        flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10), **fields)
+    for n, i7 in enumerate(("ACGTACGTAC", "TGCATGCAAC"), start=1):
+        sample = Sample(sample_id=f"S{n}", lanes=[1], test_id="A3T", test_version="1")
+        sample.assign_index1(Index(name=f"i7-{n}", sequence=i7, index_type=IndexType.I7))
+        run.add_sample(sample)
+    ctx.run_repo.save(run)
+    return ctx.run_repo.get_by_id(run_id)
+
+
+def _replace_profile(ctx, **fields):
+    stored = ctx.app_profile_repo.list_all()[0]
+    profile = _bcl_profile(profile_id=stored.id)
+    for name, value in fields.items():
+        setattr(profile, name, value)
+    ctx.app_profile_repo.save(profile)
+
+
+class TestTheReadySheetHasNaForAMissingIndex:
+
+    def test_a_single_index_sample_gets_na(self, logged_in_client, profiles):
+        run = _single_index_draft(profiles, "l1-na")
+
+        resp = mark_ready(logged_in_client, run.id, ORIGIN)
+
+        stored = profiles.run_repo.get_by_id(run.id)
+        assert stored.status == RunStatus.READY, html.unescape(resp.text)[:400]
+        rows = stored.generated_samplesheet_v2.split("[BCLConvert_Data]\n")[1].split("\n\n")[0]
+        assert rows.splitlines()[1:] == ["S1,1,ACGTACGTAC,,Y151;I10;N10;Y151,1,na",
+                                         "S2,1,TGCATGCAAC,,Y151;I10;N10;Y151,1,na"]
+
+
+class TestMarkReadyRefusesAMismatchSettingWithoutTheIndex:
+
+    def test_it_refuses(self, logged_in_client, profiles):
+        _replace_profile(profiles, settings={"SoftwareVersion": "4.3.6",
+                                             "BarcodeMismatchesIndex2": 1},
+                         data={"BarcodeMismatchesIndex1": 1}, data_fields=BCL_FIELDS[:6])
+        run = _single_index_draft(profiles, "l1-setting")
+
+        resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
+
+        assert resp.headers.get("HX-Retarget") == "#ready-message"
+        assert ("BCLConvert profile A3BCL 1.0.0 sets BarcodeMismatchesIndex2 for the whole run "
+                "in its Settings, but 2 sample(s) have no i5: S1, S2.") in html.unescape(resp.text)
+        assert profiles.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+    def test_the_validation_page_names_it(self, logged_in_client, profiles):
+        _replace_profile(profiles, settings={"SoftwareVersion": "4.3.6",
+                                             "BarcodeMismatchesIndex2": 1},
+                         data={"BarcodeMismatchesIndex1": 1}, data_fields=BCL_FIELDS[:6])
+        run = _single_index_draft(profiles, "l1-setting-page")
+
+        page = html.unescape(logged_in_client.get(f"/runs/{run.id}/validation").text)
+
+        assert "Mismatch setting without the index: " in page
