@@ -639,16 +639,37 @@ def _lims_test_version(sample_id: str, value) -> str:
 
 
 def _refuse_a_changed_value(what: str, value) -> None:
-    """A sample ID or a test, by its JSON type: str() would read JSON 23.10
-    as "23.1" and true as "True", so these are refused, never changed (spec
-    2026-10-07 group A4, §2, decision 12). Text and whole numbers pass."""
-    if isinstance(value, bool):
-        raise ValueError(f"{what} that is not text or a whole number ({json.dumps(value)}).")
+    """A value read from a LIMS row, by its JSON type: str() would read JSON
+    23.10 as "23.1", true as "True" and a list as "['a']", so these are
+    refused, never changed (spec 2026-10-07 group A4, §2, decision 12; spec
+    2026-10-10 later list slice 1, §1). Text, whole numbers and None (a
+    value that is absent or null) pass."""
+    if value is None or isinstance(value, str):
+        return
     if isinstance(value, float):
         raise ValueError(
             f"{what} that is a number with a decimal point ({value!r}), which JSON may have "
             f'changed (1.10 is read as 1.1). Send it as text, for example "1.10".'
         )
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(
+            f"{what} that is not text or a whole number ({shown_value(json.dumps(value))})."
+        )
+
+
+# How a message names a sample field read from a LIMS row; the fields checked
+# by their JSON type (spec 2026-10-10 later list slice 1, §1). The test and
+# its version have their own checks; worksheet fields an admin maps are not
+# checked.
+_FIELD_LABELS = {
+    "sample_id": "a sample ID",
+    "worksheet_id": "a worksheet ID",
+    "index1_sequence": "an i7 sequence",
+    "index2_sequence": "an i5 sequence",
+    "index_pair_name": "an index name",
+    "index1_name": "an i7 name",
+    "index2_name": "an i5 name",
+}
 
 
 def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None) -> list[dict]:
@@ -731,11 +752,12 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
             for alias in aliases:
                 if alias in lower_item and lower_item[alias] is not None:
                     val = lower_item[alias]
-                    if field == "sample_id":
-                        _refuse_a_changed_value(f"LIMS row {index} has a sample ID", val)
+                    label = _FIELD_LABELS.get(field)
+                    if label:
+                        _refuse_a_changed_value(f"LIMS row {index} has {label}", val)
                     # Strip + length-clamp per CLAUDE.md input-sanitization rule.
                     # LIMS payloads aren't trusted to honor field widths.
-                    sample[field] = str(val).strip()[:_MAX_FIELD_LEN] if val else ""
+                    sample[field] = str(val).strip()[:_MAX_FIELD_LEN]
                     break
 
         # Must have at least sample_id. Silent skip would route the dropped
