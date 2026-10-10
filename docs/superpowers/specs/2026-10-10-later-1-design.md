@@ -32,8 +32,8 @@ the lab. Each was measured on `862d81f` (MongoDB at `127.0.0.1:1`, mongomock for
    `[Header]`, gets `IndexOrientation,Forward` in `[BCLConvert_Settings]`.
 3. **One sample, two kits with different read patterns.** `_apply_kit_defaults`
    (`routes/samples.py:209-222`) gives a sample the read patterns of the last kit assigned
-   from, also when only its i5 or only its i7 changes. A sample with a UMI kit's i7 and i5
-   (`U8Y*`, OverrideCycles `U8Y143;I8N2;I8N2;U8Y143`) whose i5 is replaced from a plain kit
+   from, also when only its i5 or only its i7 changes. A sample with a UMI kit's i7 and i5,
+   assigned one by one from a combinatorial kit (`U8Y*`, OverrideCycles `U8Y143;I8N2;I8N2;U8Y143`) whose i5 is replaced from a plain kit
    gets `Y151;I8N2;I7N3;Y151`: the 8 UMI bases of each read go into the patient's reads.
    `tests/integration/test_group_a1.py:210-242` pins this today (6 cases, passing).
 4. **LIMS values of the wrong JSON type are changed, not refused.** `parse_api_samples`
@@ -122,11 +122,22 @@ LIMS row <n> has the names <a> and <b>, which SeqSetup reads as one name. Send o
 `<n>` is the row's 1-based position, as in the other row messages; `<a>` and `<b>` are
 `repr(shown_value(...))`, in the row's order. Names SeqSetup does not read are not checked.
 
+The check must see only names the LIMS sent. `fetch_worklist_samples` adds `worksheet_id`
+to a row that lacks that exact spelling (`services/sample_api.py:576-578`), so a row with
+`Worksheet_ID` reaches `parse_api_samples` with both names (measured on `862d81f`:
+`['sample_id', 'Worksheet_ID', 'worksheet_id']`; review of `4d59f3e`). It now adds
+`worksheet_id` only when no name of the row equals it ignoring capitals; such a row keeps
+its own value. A row with iGene's `WorksheetID` (lower-cased `worksheetid`, another name)
+gets `worksheet_id` added as today.
+
 ### Values of the wrong type
 
-`_refuse_a_changed_value(what, value)` refuses anything that is not text or a whole number
-(`bool` is refused; it is an `int` in Python). Today it refuses `bool` and `float` only. The
-messages stay as they are, and a list, an object or any other type gets the `bool` message:
+`_refuse_a_changed_value(what, value)` refuses anything that is not text, a whole number or
+`None` (`bool` is refused; it is an `int` in Python). `None` passes: it is how
+`parse_api_samples` (`:710-712`) passes a test that is absent or `null`, so a row with no
+test is read as today and the "test version but no test" message stays (review of
+`4d59f3e`). Today the helper refuses `bool` and `float` only. The messages stay as they
+are, and a list, an object or any other type gets the `bool` message:
 
 ```
 <what> that is not text or a whole number (<json>).
@@ -156,10 +167,17 @@ whole number `0` is `"0"`. A `null` gives way to the next name, as today.
 
 A kit's read patterns are the pair (`default_read1_override or None`,
 `default_read2_override or None`). An assignment of only an i7 or only an i5 (slot `"i7"` or
-`"i5"`) to a sample that keeps the other index — an i5 for an i7 assignment, an i7 for an i5
-assignment, in the pair or on its own — and whose read patterns
-(`read1_override_pattern or None`, `read2_override_pattern or None`) differ from the new
-kit's is refused.
+`"i5"`) to a sample that keeps an index assigned on its own — an i7 assignment to a sample
+whose `index2` is set, an i5 assignment to a sample whose `index1` is set — and whose read
+patterns (`read1_override_pattern or None`, `read2_override_pattern or None`) differ from
+the new kit's is refused.
+
+A sample with a pair keeps nothing of it: `assign_index1` and `assign_index2`
+(`models/sample.py:318-333`) clear `index_pair`, and a pair assignment clears `index1` and
+`index2` (`:302-305`). Measured on `862d81f`: a pair, then an i7 on its own, leaves
+`index_pair None`, `index2 None`. So replacing a pair with one index from another kit works
+as today (`TestANewKitReplacesTheOldKitsSettings`, kind `single-i7`,
+`tests/integration/test_group_a1.py:138-201`; review of `4d59f3e`).
 
 Where: `assign_index` (`POST /runs/{run_id}/samples/{sample_id}/assign-index`),
 `assign_index_to_selected` (`POST /runs/{run_id}/samples/assign-index-to-selected`) and
@@ -232,10 +250,15 @@ TDD: each rule gets a failing test first, valid and refused cases.
   worklist list; a reply without one is read as today. Capitals: `SampleID` + `sampleid`
   refused; a name SeqSetup does not read, twice in different capitals, passes. Types: each
   label in the table with a decimal, `true`, a list and an object; whole numbers and text
-  pass; `0` is `"0"`; the test and version messages are unchanged (group A4's tests stay).
-- Kit swaps: on each of the three routes, a UMI kit's i7 and i5, then an i5 (and an i7) from
-  a plain kit → 400, the message, nothing saved; the same swap between two kits with the
-  same patterns → as today; a pair assignment → as today. `TestReplacingOneIndexKeepsTheOthersSettings`
+  pass; `0` is `"0"`; the test and version messages are unchanged (group A4's tests stay);
+  a row with no test, or a `null` test, is read as today.
+  Fetched rows: a row with only `Worksheet_ID` (or `WORKSHEET_ID`) is read with its own
+  value, not refused; a row with iGene's `WorksheetID` is read as today.
+- Kit swaps: on each of the three routes, a UMI kit's i7 and i5 assigned one by one, then an
+  i5 (and an i7) from a plain kit → 400, the message, nothing saved; the same swap between
+  two kits with the same patterns → as today; a pair assignment → as today; a UMI pair, then
+  one index from a plain kit → as today (`TestANewKitReplacesTheOldKitsSettings` stays
+  unchanged). `TestReplacingOneIndexKeepsTheOthersSettings`
   (`tests/integration/test_group_a1.py:210-242`) changes: its two kits get the same read
   patterns, so it keeps testing what it is for (each route passes the slot it assigned).
 - Sheet: `IndexOrientation` refused at sync and by the writer, in two spellings; a
