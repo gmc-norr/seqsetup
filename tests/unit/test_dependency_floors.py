@@ -30,8 +30,7 @@ FLOORS = {
     "pyasn1": "0.6.4",             # LDAP: decoder denial of service
     "pillow": "12.3.0",            # PDF and plot images: heap overflows, decompression bombs
     "openssl": "3.6.2",            # N-26: the TLS stack for the LIMS, LDAP and GitHub
-    # In the image, not used by the app (plots, docs and test tools).
-    "tornado": "6.5.9",
+    # In the image, not used by the app (docs and test tools).
     "urllib3": "2.8.0",
     "requests": "2.33.0",
     "pytest": "9.0.3",
@@ -53,6 +52,16 @@ def _locked() -> dict:
             name, version, _build = stem.rsplit("-", 2)
         found.setdefault(name.lower().replace("_", "-"), []).append(version)
     return found
+
+
+class TestNoDesktopToolkit:
+    """The server draws its plots with matplotlib's Agg backend, so it needs
+    matplotlib-base. conda's `matplotlib` adds PySide6 and Qt, a desktop GUI
+    toolkit with its own security fixes to follow, and nothing the app uses."""
+
+    @pytest.mark.parametrize("name", ["matplotlib", "pyside6", "qt6-main"])
+    def test_the_lock_has_no_gui_toolkit(self, name):
+        assert name not in _locked()
 
 
 class TestDependencyFloors:

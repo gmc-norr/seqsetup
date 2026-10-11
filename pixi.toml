@@ -28,7 +28,7 @@ css-watch = { cmd = "bash -c '.pixi/bin/tailwindcss -i src/seqsetup/static/css/i
 python = ">=3.14"
 pytest = ">=9.0.3"
 pyyaml = ">=6.0"
-matplotlib = ">=3.10.8,<4"
+matplotlib-base = ">=3.10.8,<4"  # not `matplotlib`, which adds the Qt desktop toolkit
 reportlab = ">=5.0.1,<6"
 pillow = ">=12.3.0"
 
