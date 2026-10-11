@@ -236,3 +236,31 @@ SeqSetup has never been deployed. No stored data changes; nothing to migrate.
 - Can `0` be a placeholder sample ID in the lab's LIMS? Today the number `0` and the text
   `"0"` are both sample `0` (slice 1 build, ESCALATE-3; a question for the lab).
 - The worksheet list's display fields (name, investigator, updated) are written with `str()`.
+
+## After the build (2026-10-11)
+
+The build's reviews found three issues it did not fix (its ESCALATEs) and a list of smaller
+ones; all are older than this slice except where noted. On the user's word ("fix all issues,
+also old ones") they were fixed, each test-first in its own commit after the build:
+
+- **§3, a worksheet ID is used as sent** (E-3). "Written as today" stripped spaces: `"W2 "`
+  was listed as `W2` and fetched worksheet `W2`. Now an ID the LIMS could not be asked for
+  exactly as sent (spaces around or in it, a sign other than `.`, `_`, `-`, `~`, more than
+  128 characters) leaves that worksheet out, with a warning; so does an ID that two
+  worksheets in the list share (all of them). The plan's `test_text_and_whole_numbers`,
+  which pinned the strip, was changed on purpose.
+- **§4, a blank worksheet ID on a row** gets the picked worksheet (E-2), as this spec says;
+  the code had kept the blank.
+- **§2, the banner** (E-1): `static/js/app.js` cleared the banner after a success from a
+  button whose last request failed, after the swap, so it wiped what that answer wrote there
+  (an import's "Added 2 samples", and a paste's refusal, which answers 200). It now keeps
+  what the answer writes to the banner out of band. This changes one rule in `app.js`, for
+  every button.
+- A row with an i7 or i5 name but no sequence for it refuses the worksheet; the sample came
+  in with no index and no message.
+- Load Worklists takes a draft run, as the preview and the import do.
+- An entry of the list that is not a JSON object is left out with a warning; a `created`
+  value that is not text no longer stops the list; a run shows at most ten warnings; the
+  admin's connection check counts worksheets as a run lists them; the Import button is off
+  while it works; the import runs in the thread pool, not on the event loop; a test shows
+  the preview changes nothing; the docs say all of this.
