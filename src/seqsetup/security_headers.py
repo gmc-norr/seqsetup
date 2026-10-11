@@ -5,7 +5,8 @@ Sets headers that defend against common browser-side attacks:
 - X-Content-Type-Options: nosniff — disables MIME sniffing
 - X-Frame-Options: DENY — blocks framing (clickjacking)
 - Referrer-Policy: same-origin — limits referrer leakage to other origins
-- Strict-Transport-Security — pins HTTPS (only when served over TLS)
+- Strict-Transport-Security — pins HTTPS (when served over TLS, and on every
+  answer when SEQSETUP_HTTPS_ONLY is on)
 - Cross-Origin-Opener-Policy: same-origin — isolates browsing context
 - Cross-Origin-Resource-Policy: same-origin — restricts cross-origin loads
 - Content-Security-Policy — defense-in-depth against XSS
@@ -32,7 +33,7 @@ import os
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import PlainTextResponse, Response
 
 
 _CSP = "; ".join((
@@ -83,8 +84,10 @@ def https_only_from_env() -> bool:
 def apply_security_headers(response: Response, is_https: bool) -> None:
     """Set security headers on the given response in-place.
 
-    Strict-Transport-Security is only set when the request was over HTTPS —
-    sending HSTS over plaintext is meaningless and confuses browsers in dev.
+    Strict-Transport-Security is set only when ``is_https``: the request came
+    over HTTPS, or SEQSETUP_HTTPS_ONLY is on. Browsers ignore HSTS that arrives
+    over plain HTTP (RFC 6797, section 8.1); unset, a developer's plain-HTTP
+    machine gets none.
     """
     for name, value in _SECURITY_HEADERS.items():
         # Don't clobber a value an inner handler already set deliberately.
@@ -96,9 +99,35 @@ def apply_security_headers(response: Response, is_https: bool) -> None:
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Starlette ASGI middleware that applies the security headers above."""
+    """Starlette ASGI middleware that applies the security headers above.
+
+    With ``https_only`` (SEQSETUP_HTTPS_ONLY) every answer gets HSTS, also when
+    a TLS proxy the app does not trust makes the request look like http.
+    """
+
+    def __init__(self, app, https_only: bool = False):
+        super().__init__(app)
+        self._https_only = https_only
 
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
-        apply_security_headers(response, is_https=request.url.scheme == "https")
+        apply_security_headers(
+            response, is_https=self._https_only or request.url.scheme == "https"
+        )
         return response
+
+
+def server_error_handler(https_only: bool):
+    """A handler for unhandled errors: today's 500 page, with the security headers.
+
+    Starlette makes an unhandled error's 500 in its outermost layer, outside
+    every middleware, so SecurityHeadersMiddleware never sees it. Starlette
+    still re-raises the error after this answer, so the server logs it.
+    """
+
+    async def handle(request: Request, exc: Exception) -> Response:
+        response = PlainTextResponse("Internal Server Error", status_code=500)
+        apply_security_headers(response, is_https=https_only or request.url.scheme == "https")
+        return response
+
+    return handle

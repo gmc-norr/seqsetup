@@ -139,3 +139,90 @@ class TestTheAppChecksHttpsOnlyFirst:
                               capture_output=True, text=True, timeout=300)
         assert proc.returncode != 0
         assert _UNKNOWN_VALUE_MESSAGE.format("on") in proc.stderr
+
+
+_HSTS = "max-age=63072000; includeSubDomains"
+
+
+class TestHstsFollowsHttpsOnly:
+    """With SEQSETUP_HTTPS_ONLY on, HSTS goes on every answer, over http too:
+    behind a TLS proxy the app does not trust, the app sees http."""
+
+    def _get(self, base_url, **middleware_options):
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+        from starlette.testclient import TestClient
+
+        from seqsetup.security_headers import SecurityHeadersMiddleware
+
+        async def homepage(request):
+            return PlainTextResponse("hello")
+
+        app = Starlette(routes=[Route("/", homepage)])
+        app.add_middleware(SecurityHeadersMiddleware, **middleware_options)
+        return TestClient(app, base_url=base_url).get("/")
+
+    def test_https_only_sends_hsts_over_http(self):
+        response = self._get("http://test", https_only=True)
+        assert response.headers.get_list("strict-transport-security") == [_HSTS]
+
+    def test_https_only_over_https_sends_one_hsts_header(self):
+        response = self._get("https://test", https_only=True)
+        assert response.headers.get_list("strict-transport-security") == [_HSTS]
+
+    def test_https_only_off_sends_no_hsts_over_http(self):
+        response = self._get("http://test", https_only=False)
+        assert "strict-transport-security" not in response.headers
+
+
+class TestServerErrorHandler:
+    """An unhandled error's 500 is made outside every middleware; the handler
+    gives it the security headers."""
+
+    def _get(self, base_url, https_only):
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+        from starlette.testclient import TestClient
+
+        from seqsetup.security_headers import server_error_handler
+
+        async def boom(request):
+            raise RuntimeError("probe: an unhandled error")
+
+        app = Starlette(routes=[Route("/", boom)],
+                        exception_handlers={Exception: server_error_handler(https_only)})
+        return TestClient(app, base_url=base_url, raise_server_exceptions=False).get("/")
+
+    def test_the_500_page_is_todays_with_the_headers(self):
+        response = self._get("http://test", https_only=False)
+        assert response.status_code == 500
+        assert response.text == "Internal Server Error"
+        assert response.headers["content-type"].startswith("text/plain")
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "Content-Security-Policy" in response.headers
+        assert "strict-transport-security" not in response.headers
+
+    def test_https_only_adds_hsts_over_http(self):
+        response = self._get("http://test", https_only=True)
+        assert response.headers.get_list("strict-transport-security") == [_HSTS]
+
+    def test_hsts_over_https_without_https_only(self):
+        response = self._get("https://test", https_only=False)
+        assert response.headers.get_list("strict-transport-security") == [_HSTS]
+
+    def test_the_error_still_reaches_the_server(self):
+        """Starlette re-raises after the handler's answer, so the server logs it."""
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+        from starlette.testclient import TestClient
+
+        from seqsetup.security_headers import server_error_handler
+
+        async def boom(request):
+            raise RuntimeError("probe: an unhandled error")
+
+        app = Starlette(routes=[Route("/", boom)],
+                        exception_handlers={Exception: server_error_handler(False)})
+        with pytest.raises(RuntimeError, match="probe: an unhandled error"):
+            TestClient(app).get("/")

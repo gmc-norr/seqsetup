@@ -40,7 +40,7 @@ from .routes.admin import (
     logs as admin_logs,
     sample_api as admin_sample_api,
 )
-from .security_headers import SecurityHeadersMiddleware, https_only_from_env
+from .security_headers import SecurityHeadersMiddleware, https_only_from_env, server_error_handler
 from .services.log_capture import setup_log_capture
 from .services import web_sessions
 from .services.audit_log import set_audit_sink
@@ -112,12 +112,15 @@ app.add_middleware(
     session_cookie="seqsetup_session",
 )
 app.add_middleware(OriginCheckMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SecurityHeadersMiddleware, https_only=_SESS_HTTPS_ONLY)
 
 # Register HTML-aware exception handlers (HTTPException, RequestValidationError,
 # ConflictError). Must be registered AFTER middleware and BEFORE the /api sub-app
 # mount so that the sub-app can keep its own JSON-default handlers.
 install_exception_handlers(app)
+# An unhandled error's 500 is made outside every middleware above; this handler
+# gives it the security headers (security_headers.py).
+app.add_exception_handler(Exception, server_error_handler(_SESS_HTTPS_ONLY))
 
 # Static asset mounts. The previous FastHTML host auto-mounted these by
 # scanning the static dir; FastAPI/Starlette needs each subdir mounted
