@@ -859,7 +859,7 @@ class TestALimsWorklistCarriesVersions:
         ])
         before = _stored(ctx).to_dict()
         resp = _import(logged_in_client)
-        assert resp.status_code == 200
+        assert resp.status_code == 400   # a refusal, aimed at the banner (slice 2, §2)
         assert ("Worklist import rejected: Sample 'P2' has a test version that is a number "
                 "with a decimal point (1.1)") in html.unescape(resp.text)
         assert _stored(ctx).to_dict() == before
@@ -873,7 +873,7 @@ class TestALimsWorklistCarriesVersions:
         _lims(ctx, monkeypatch, [{"sample_id": "P1", "test_version": "1"}])
         before = _stored(ctx).to_dict()
         resp = _import(logged_in_client)
-        assert resp.status_code == 200
+        assert resp.status_code == 400   # a refusal, aimed at the banner (slice 2, §2)
         assert ("Worklist import rejected: Sample 'P1' has a test version but no test."
                 in html.unescape(resp.text))
         assert _stored(ctx).to_dict() == before
@@ -887,7 +887,7 @@ class TestALimsWorklistCarriesVersions:
                                  {"sample_id": 23.10, "test_id": "WGS", "test_version": "1"}])
         before = _stored(ctx).to_dict()
         resp = _import(logged_in_client)
-        assert resp.status_code == 200
+        assert resp.status_code == 400   # a refusal, aimed at the banner (slice 2, §2)
         assert ("Worklist import rejected: LIMS row 2 has a sample ID that is a number with a "
                 "decimal point (23.1)") in html.unescape(resp.text)
         assert _stored(ctx).to_dict() == before

@@ -7,9 +7,9 @@ Depends(get_editable_run) + with saving_run(...).
 import json
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
@@ -107,6 +107,17 @@ def _messages_only(request, messages) -> HTMLResponse:
     """Render the _messages.html partial as the entire response."""
     html = templates.env.get_template("_messages.html").render(messages=messages)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+def _banner_only(request, messages) -> HTMLResponse:
+    """The _messages.html partial as a 400 aimed at the page's error banner,
+    for a refusal that leaves the page as it was. A 400, not a 200: app.js
+    clears the banner after a 200 from a button whose last request failed
+    (spec 2026-10-10 later list slice 2, §2)."""
+    html = templates.env.get_template("_messages.html").render(messages=messages)
+    return HTMLResponse(html, status_code=400, headers={
+        "HX-Retarget": "#error-banner", "HX-Reswap": "innerHTML",
+        "HX-Reselect": "unset", "Cache-Control": "no-store"})
 
 
 def _render_sample_row(
@@ -781,27 +792,31 @@ async def import_worklist_samples(
     request: Request,
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
-    worklist_id: str = "",
+    worklist_id: Annotated[str, Form()] = "",
     context: str = "",
 ) -> Response:
-    """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist."""
+    """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist.
+
+    The page posts the worksheet in the form body. A refusal goes to the
+    error banner and leaves the samples section as it was (spec 2026-10-10
+    later list slice 2, §2)."""
     run_id = run.id
 
     if ctx.sample_api_config_repo is None:
-        return _messages_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
+        return _banner_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
 
     if not worklist_id:
-        return _messages_only(request, [{"text": "No worklist selected.", "kind": "error"}])
+        return _banner_only(request, [{"text": "No worklist selected.", "kind": "error"}])
 
     from ..services.sample_api import fetch_worklist_samples, parse_api_samples
 
     api_config = ctx.sample_api_config
     if not api_config.enabled or not api_config.base_url:
-        return _messages_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
+        return _banner_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
 
     success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
     if not success:
-        return _messages_only(request, [{"text": f"Failed to fetch worklist samples: {message}", "kind": "error"}])
+        return _banner_only(request, [{"text": f"Failed to fetch worklist samples: {message}", "kind": "error"}])
 
     try:
         api_samples = parse_api_samples(raw_data, api_config)
@@ -809,10 +824,10 @@ async def import_worklist_samples(
         # parse_api_samples raises if any LIMS row is missing sample_id —
         # reject the whole import rather than silently routing patient
         # reads to Undetermined.
-        return _messages_only(request, [{"text": f"Worklist import rejected: {e}", "kind": "error"}])
+        return _banner_only(request, [{"text": f"Worklist import rejected: {e}", "kind": "error"}])
 
     if not api_samples:
-        return _messages_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
+        return _banner_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
 
     existing_sample_ids = {s.sample_id for s in run.samples}
     added_count = 0
@@ -866,7 +881,7 @@ async def import_worklist_samples(
 
     cap = sequencing_run_module.MAX_SAMPLES_PER_RUN
     if len(run.samples) + len(new_samples) > cap:
-        return _messages_only(request, [{
+        return _banner_only(request, [{
             "text": (
                 f"Worklist import rejected: a run accepts a maximum of {cap} "
                 f"samples (run already has {len(run.samples)})."

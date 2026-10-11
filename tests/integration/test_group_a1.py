@@ -405,8 +405,10 @@ def _lims(ctx, monkeypatch, rows):
 
 
 def _import(client):
+    # In the form body, as the page sends it (spec 2026-10-10 later list
+    # slice 2, §2).
     return client.post(
-        f"/runs/{RUN}/samples/fetch-worklist", params={"worklist_id": "WS1"}, headers=ORIGIN,
+        f"/runs/{RUN}/samples/fetch-worklist", data={"worklist_id": "WS1"}, headers=ORIGIN,
     )
 
 
@@ -428,7 +430,7 @@ class TestWorklistWithARepeatedSampleId:
 
         resp = _import(logged_in_client)
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400   # a refusal, aimed at the banner (slice 2, §2)
         assert REPEATED in resp.text
         assert _stored(ctx).to_dict() == before
 

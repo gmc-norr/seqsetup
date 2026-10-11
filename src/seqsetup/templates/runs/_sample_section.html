@@ -36,7 +36,7 @@
                     {% include "runs/_paste_form.html" %}
                 </div>
                 {% if sample_api_enabled %}
-                    {% with context='', existing_ids='' %}
+                    {% with run_id=run.id, context='', existing_ids='' %}
                     {% include "wizard/_fetch_from_api_section.html" %}
                     {% endwith %}
                 {% endif %}

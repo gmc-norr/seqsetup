@@ -7,14 +7,14 @@
      worklists:    list[dict] — each has 'id', optional 'investigator', optional 'updated_at'
      warnings:     list[dict] — _messages.html entries for worksheets left out of the list
      context:      str — "add_step1" routes import to #worklist-import-result innerHTML,
-                          else to #sample-table outerHTML
+                          else to #sample-section outerHTML, the element the import answers with
      existing_ids: str — comma-separated sample ids that already existed pre-wizard
 #}
 {% set params = [] %}
 {% if context %}{% set _ = params.append('context=' ~ context) %}{% endif %}
 {% if existing_ids %}{% set _ = params.append('existing_ids=' ~ existing_ids) %}{% endif %}
 {% set query_string = ('?' ~ params|join('&')) if params else '' %}
-{% set import_target = '#worklist-import-result' if context == 'add_step1' else '#sample-table' %}
+{% set import_target = '#worklist-import-result' if context == 'add_step1' else '#sample-section' %}
 {% set import_swap = 'innerHTML' if context == 'add_step1' else 'outerHTML' %}
 <div>
     {% if warnings %}{% with messages = warnings %}{% include "_messages.html" %}{% endwith %}{% endif %}
