@@ -48,6 +48,12 @@ sheet's. The Check panel on the run page checks the same way, and on a
 Ready or Archived run it says so too, under its badges; there the
 **Test ID** column shows the versions the sheet was written with.
 
+.. note::
+   The PDF report shows every error and warning as the text that was
+   typed. A sample named, say, ``<b>S1`` reads as ``<b>S1`` in the PDF --
+   the angle brackets are not taken as formatting, so no name can hide a
+   line of the report or stop the PDF from being made.
+
 Errors and warnings
 --------------------
 
