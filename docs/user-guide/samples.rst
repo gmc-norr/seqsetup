@@ -105,8 +105,9 @@ the paste form. Selecting it lists the worklists the configured system
 currently offers. A worksheet whose ID SeqSetup cannot read for sure -- a
 number with a decimal point (``25.10`` arrives as ``25.1``), ``true`` or
 ``false``, a list or an object, or an ID under two spellings of one name --
-is not in the list; a warning above the list names it. Ask your
-administrator to have the LIMS send worksheet IDs as text.
+is not in the list; a warning above the list quotes the ID SeqSetup read,
+or the two spellings. Ask your administrator to have the LIMS send worksheet
+IDs as text.
 
 Choosing one and selecting **Preview** shows what the import would do, if
 you want to check it first -- this step is optional. It shows the samples

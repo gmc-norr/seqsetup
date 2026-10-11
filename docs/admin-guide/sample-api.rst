@@ -122,8 +122,9 @@ name. A worksheet whose ID is a number with a decimal point (JSON reads
 ``25.10`` as ``25.1``, which would fetch another worksheet), ``true``,
 ``false``, a list or an object, or whose entry has two spellings of one of
 those names (``Worksheet_ID`` and ``WORKSHEET_ID``), is left out of the
-list, and a warning above the list names it. Send worksheet IDs as text
-(``"25.10"``).
+list, and a warning above the list quotes the ID SeqSetup read, or the two
+spellings. The warning does not name the worksheet, so match it against the
+IDs in the reply. Send worksheet IDs as text (``"25.10"``).
 
 Get Worklist Samples
 ^^^^^^^^^^^^^^^^^^^^^
@@ -270,7 +271,8 @@ SeqSetup surfaces every failure to the user rather than failing silently:
 - **Invalid JSON** -- a response that isn't a valid JSON array.
 - **Empty responses** -- no worklists, or no valid samples, in the response.
 - **Worksheets left out** -- a worksheet whose ID cannot be read for sure is
-  left out of the list, with a warning that names it (see List Worklists).
+  left out of the list, with a warning that quotes the ID SeqSetup read, or
+  the two spellings (see List Worklists).
 
 Who can do this
 -------------------
