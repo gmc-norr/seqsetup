@@ -663,12 +663,15 @@ def fetch_worklist_samples(config: SampleApiConfig, worklist_id: str) -> Tuple[b
         if len(samples) == 0:
             return False, "Worksheet contains no samples", []
 
-        # Add worksheet_id to each sample if not present, in any capitals:
-        # parse_api_samples refuses two spellings of one name, so it must see
-        # only names the LIMS sent (spec 2026-10-10 later list slice 1, §1).
+        # Add worksheet_id to a sample only when it has none under a name the
+        # import reads it from, in any capitals: parse_api_samples refuses two
+        # spellings of one name, so it must see only names the LIMS sent (spec
+        # 2026-10-10 later list slice 1, §1), and beside the row's own
+        # worklist_id or AL it hid that one (Astra's review of slice 2).
+        names = set(_SAMPLE_WORKSHEET_ID_NAMES) | {config.get_api_field("worksheet_id").lower()}
         for s in samples:
             if isinstance(s, dict) and not any(
-                    isinstance(k, str) and k.lower() == "worksheet_id" for k in s):
+                    isinstance(k, str) and k.lower() in names for k in s):
                 s["worksheet_id"] = worklist_id
 
         logger.info(f"Fetched {len(samples)} samples for worksheet {worklist_id}")
@@ -733,6 +736,12 @@ def _refuse_a_changed_value(what: str, value) -> None:
         )
 
 
+# The names a LIMS sample row's worksheet ID is read from, before an admin's
+# mapped name; fetch_worklist_samples adds the picked worksheet only to a row
+# with none of them.
+_SAMPLE_WORKSHEET_ID_NAMES = ("worksheet_id", "worksheetid", "worksheet", "worklist_id", "al")
+
+
 # How a message names a sample field read from a LIMS row; the fields checked
 # by their JSON type (spec 2026-10-10 later list slice 1, §1). The test and
 # its version have their own checks; worksheet fields an admin maps are not
@@ -773,7 +782,7 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         # Not "version" alone: another field may have that name (spec
         # 2026-10-07 group A4, §2).
         "test_version": ["test_version", "testversion"],
-        "worksheet_id": ["worksheet_id", "worksheetid", "worksheet", "worklist_id", "al"],
+        "worksheet_id": list(_SAMPLE_WORKSHEET_ID_NAMES),
         "index1_sequence": ["index_i7", "index1", "i7", "index_i7_sequence", "i7_sequence"],
         "index2_sequence": ["index_i5", "index2", "i5", "index_i5_sequence", "i5_sequence"],
         "index_pair_name": ["index_pair_name", "pair_name", "index_pair", "index_kit", "kit_name"],

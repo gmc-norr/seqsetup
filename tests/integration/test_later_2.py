@@ -407,6 +407,18 @@ class TestThePlanGivesARowThePickedWorksheet:
         assert {s.sample_id: s.worksheet_id for s in ctx.run_repo.get_by_id(RUN).samples} == {
             "P1": "WS9", "P2": "WS9", "P3": "W7"}
 
+    @pytest.mark.parametrize("name", ["worklist_id", "worksheetid", "worksheet", "AL"])
+    def test_a_row_with_its_own_under_another_name_keeps_it(
+            self, logged_in_client, fresh_app, monkeypatch, name):
+        """The picked worksheet hid it (Astra's review of later list slice 2)."""
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [{"sample_id": "PATIENT", name: "ORIGINAL"}])
+        assert _import(logged_in_client, worklist_id="WS1").status_code == 200
+        assert [(s.sample_id, s.worksheet_id) for s in ctx.run_repo.get_by_id(RUN).samples] == [
+            ("PATIENT", "ORIGINAL")]
+
     def test_the_plan_itself(self, fresh_app):
         from seqsetup.routes.samples import _plan_worklist_import
         _app, ctx, _db = fresh_app

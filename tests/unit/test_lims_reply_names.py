@@ -131,10 +131,25 @@ class TestTheFetcherAddsTheWorksheetOnlyWhenItIsMissing:
         assert samples == [{"sample_id": "S1", name: "W9"}]
         assert parse_api_samples(samples)[0]["worksheet_id"] == "W9"
 
-    def test_a_row_with_igenes_worksheetid_gets_it_added_as_today(self):
-        samples = _fetched([{"SampleID": "S1", "WorksheetID": "W9"}])
-        assert samples == [{"SampleID": "S1", "WorksheetID": "W9", "worksheet_id": "W1"}]
-        assert parse_api_samples(samples)[0]["worksheet_id"] == "W1"
+    @pytest.mark.parametrize("name", ["WorksheetID", "worklist_id", "Worksheet", "AL", "al"])
+    def test_a_row_with_another_name_of_the_worksheet_keeps_its_own(self, name):
+        """The picked worksheet, added as worksheet_id, came first among the
+        names the import reads, and hid the row's own: picking W1 and
+        importing {"sample_id": "P", "worklist_id": "W9"} saved W1 (Astra's
+        review of later list slice 2). This test said "gets it added as
+        today" for iGene's WorksheetID."""
+        samples = _fetched([{"SampleID": "S1", name: "W9"}])
+        assert samples == [{"SampleID": "S1", name: "W9"}]
+        assert parse_api_samples(samples)[0]["worksheet_id"] == "W9"
+
+    def test_a_row_with_the_admins_worksheet_field_keeps_its_own(self):
+        config = SampleApiConfig(base_url=CONFIG.base_url, enabled=True,
+                                 field_mappings={"worksheet_id": "WsNo"})
+        with patch.object(sample_api_module, "_api_get",
+                          lambda url, key="": [{"sample_id": "S1", "WSNO": "W9"}]):
+            ok, _message, samples = fetch_worklist_samples(config, "W1")
+        assert ok
+        assert parse_api_samples(samples, config)[0]["worksheet_id"] == "W9"
 
     def test_a_row_without_one_gets_it_added(self):
         assert _fetched([{"sample_id": "S1"}]) == [{"sample_id": "S1", "worksheet_id": "W1"}]
