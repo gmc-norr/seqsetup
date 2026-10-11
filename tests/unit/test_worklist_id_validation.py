@@ -15,6 +15,12 @@ from seqsetup.models.sample_api_config import (
 
 
 class TestValidateWorklistId:
+    def test_a_newline_at_the_end_is_refused(self):
+        """The pattern's $ also matched before a final newline, so "W2\\n"
+        passed (review of the fixes after the build of later list slice 2)."""
+        with pytest.raises(InvalidWorklistIdError):
+            validate_worklist_id("W2\n")
+
     def test_well_formed_id_allowed(self):
         validate_worklist_id("WL-2025-001")
         validate_worklist_id("worklist.123")

@@ -94,7 +94,7 @@ class TestAnIdSeqSetupWouldChangeIsLeftOut:
 
     @pytest.mark.parametrize("raw, shown", [
         (b'"WS 12"', "'WS 12'"), (b'"WS/12"', "'WS/12'"), (b'"WS?12"', "'WS?12'"),
-        (b'"W\\u00e5"', "'Wå'"),
+        (b'"W\\u00e5"', "'Wå'"), (b'"W2\\n"', "'W2\\n'"),
     ])
     def test_a_character_the_lims_cannot_be_asked_for(self, lims_wire, raw, shown):
         assert _listed(lims_wire, b'[{"id": "W1"}, {"id": ' + raw + b'}]') == (

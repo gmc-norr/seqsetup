@@ -28,7 +28,9 @@ def validate_worklist_id(worklist_id: str) -> None:
         raise InvalidWorklistIdError("worklist_id is required")
     if len(worklist_id) > 128:
         raise InvalidWorklistIdError("worklist_id is too long (max 128 chars)")
-    if not _VALID_WORKLIST_ID_RE.match(worklist_id):
+    # fullmatch: the pattern's $ also matches before a final newline, and
+    # "W2\n" passed (review of the fixes after the build of later list slice 2).
+    if not _VALID_WORKLIST_ID_RE.fullmatch(worklist_id):
         raise InvalidWorklistIdError(
             f"worklist_id {worklist_id!r} contains unsafe characters. "
             f"Allowed: letters, digits, '.', '_', '-', '~'."
