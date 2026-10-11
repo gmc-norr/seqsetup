@@ -55,7 +55,8 @@ Configuring the connection
    tests the connection immediately on save. On failure, it force-disables
    the integration, saves it disabled, and shows the connection error --
    rather than saving an integration that looks enabled but cannot be
-   reached.
+   reached. On success it shows how many worksheets a run would list, and
+   how many other entries of the reply are not listed (see List Worklists).
 
 Network safety (SSRF protection)
 ------------------------------------
@@ -116,15 +117,29 @@ display purposes.
 
 Field names are matched case-insensitively.
 
-The worksheet ID -- the **Worksheet ID field** if you mapped one, else
-``worksheet_id``, else ``id`` -- must be text or a whole number, under one
-name. A worksheet whose ID is a number with a decimal point (JSON reads
-``25.10`` as ``25.1``, which would fetch another worksheet), ``true``,
-``false``, a list or an object, or whose entry has two spellings of one of
-those names (``Worksheet_ID`` and ``WORKSHEET_ID``), is left out of the
-list, and a warning above the list quotes the ID SeqSetup read, or the two
-spellings. The warning does not name the worksheet, so match it against the
-IDs in the reply. Send worksheet IDs as text (``"25.10"``).
+The worksheet ID is the **Worksheet ID field** if you mapped one, else
+``worksheet_id``; when that is absent, ``null`` or blank, it is ``id``. It
+must be text or a whole number, under one name, and SeqSetup asks for the
+worksheet by that ID exactly as sent, so it must also be at most 128
+letters, digits, ``.``, ``_``, ``-`` or ``~``, with no spaces. A worksheet
+is left out of the list when:
+
+- its ID is a number with a decimal point (JSON reads ``25.10`` as
+  ``25.1``, which would fetch another worksheet), ``true``, ``false``, a
+  list or an object;
+- its ID has spaces around or in it (``"W2 "`` was shown as ``W2`` and
+  fetched worksheet ``W2``), another sign, or more than 128 characters;
+- its entry has two spellings of one of those names (``Worksheet_ID`` and
+  ``WORKSHEET_ID``);
+- another worksheet in the list has the same ID (``"7"`` and ``7`` count as
+  the same): all of them are left out;
+- the entry is not a JSON object.
+
+A warning on the run page quotes each one -- the ID SeqSetup read, the two
+spellings, or the entry -- at most ten, then how many more. The warning
+does not name the worksheet, so match it against the IDs in the reply. An
+entry with no ID at all (absent, ``null`` or blank) is not listed, and gets
+no warning. Send each worksheet's ID once, as text (``"25.10"``).
 
 Get Worklist Samples
 ^^^^^^^^^^^^^^^^^^^^^
@@ -203,10 +218,14 @@ shows recognized field names for each attribute:
      - ``i5_name``, ``index_i5_name``, ``index2_name``
      - i5 index identifier name
 
-Every value pulled from the API is trimmed and capped at 256 characters, and
-an index sequence is uppercased and checked against ``[ACGTN]`` before it is
-accepted -- naming the offending sample instead of failing with an
-unrelated server error later.
+Every value pulled from a sample row is trimmed and capped at 256
+characters, and an index sequence is uppercased and checked against
+``[ACGTN]`` before it is accepted -- naming the offending sample instead of
+failing with an unrelated server error later. An i7 or i5 name without the
+sequence for it rejects the **entire import**, naming the sample: SeqSetup
+does not look an index up by its name, and the sample would come in
+without that index. A sample row with no worksheet ID (absent, ``null`` or
+blank) gets the worksheet that was picked.
 
 A test version is checked by its JSON type, before anything turns it into
 text, and is never cut: text is checked as it is, a whole number keeps its
@@ -253,12 +272,14 @@ Using it from a run
 
 On a **Draft** run's sample-entry screen, **Load Worklists** (visible only
 when the integration is enabled and configured, as above) fetches the
-worklist list, lets you preview one, and imports its samples. The preview
-shows what the import would do: the samples it would add, the ones already
-in the run, or the refusal it would give. If importing the worklist would
-push the run over the per-run sample maximum, the whole import is refused
-rather than adding a partial worklist. A refused import shows its message in
-the page's error banner and changes nothing.
+worklist list, lets you preview one, and imports its samples; all three
+answer only for a Draft run. The preview shows what the import would do:
+the samples it would add, the ones already in the run, or the refusal it
+would give. It is not a lock: the import fetches the worksheet again, so it
+adds what the LIMS sends at that moment, with every check. If importing the
+worklist would push the run over the per-run sample maximum, the whole
+import is refused rather than adding a partial worklist. A refused import
+shows its message in the page's error banner and changes nothing.
 
 Error Handling
 --------------
@@ -270,9 +291,9 @@ SeqSetup surfaces every failure to the user rather than failing silently:
 - **HTTP errors** -- non-2xx responses, with the status code and reason.
 - **Invalid JSON** -- a response that isn't a valid JSON array.
 - **Empty responses** -- no worklists, or no valid samples, in the response.
-- **Worksheets left out** -- a worksheet whose ID cannot be read for sure is
-  left out of the list, with a warning that quotes the ID SeqSetup read, or
-  the two spellings (see List Worklists).
+- **Worksheets left out** -- a worksheet SeqSetup cannot fetch for sure is
+  left out of the list, with a warning that quotes the ID SeqSetup read, the
+  two spellings, or the entry (see List Worklists).
 
 Who can do this
 -------------------
