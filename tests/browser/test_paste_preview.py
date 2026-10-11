@@ -38,6 +38,26 @@ def test_preview_then_add(logged_in_page, base_url, app_ctx, mutable_run_id):
 
 
 @pytest.mark.browser
+def test_a_file_over_a_megabyte_previews_and_adds(
+        logged_in_page, base_url, app_ctx, mutable_run_id):
+    """Starlette 1.x bounds a form field at 1 MB unless the route asks for
+    more (group 3b). Preview reads a file of up to 10 MB, and its Add form
+    sends that text back: Add must take what preview took."""
+    page = logged_in_page
+    _open_paste(page, base_url, mutable_run_id)
+    comment = "c" * 250
+    text = "Sample_ID,Comment\n" + "".join(f"W{i:05d},{comment}\n" for i in range(4500))
+    assert len(text) > 1024 * 1024
+    page.set_input_files("#sample_file", files=[
+        {"name": "wide.csv", "mimeType": "text/csv", "buffer": text.encode()}])
+    _preview(page)
+
+    page.click("text=Add 4500 samples")
+    expect(page.locator("#error-banner")).to_contain_text("Added 4500 samples", timeout=60_000)
+    assert len(app_ctx.run_repo.get_by_id(mutable_run_id).samples) == 4 + 4500
+
+
+@pytest.mark.browser
 def test_back_to_edit_keeps_the_text(logged_in_page, base_url, mutable_run_id):
     page = logged_in_page
     _open_paste(page, base_url, mutable_run_id)

@@ -285,6 +285,84 @@ class TestBulkPasteSizeCap:
         assert response.status_code == 400
         assert "too large" in response.text.lower()
 
+    # Starlette 1.x bounds every form field at 1 MB unless the route asks for
+    # more (group 3b). Preview reads a file of up to 10 MB, and its Add form
+    # sends that text back, so Add must take what preview took.
+
+    @staticmethod
+    def _wide_file(rows: int) -> str:
+        """A LIMS export with a wide column the parser ignores."""
+        comment = "c" * 250
+        return "Sample_ID,Comment\n" + "".join(
+            f"S{i:05d},{comment}\n" for i in range(rows))
+
+    def test_the_add_form_is_sent_as_multipart(self, logged_in_client):
+        run_id = _create_run(logged_in_client)
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/preview",
+            data={"paste_data": "S1\nS2\n", "lanes": "1"},
+            headers=_origin(),
+        )
+        assert response.status_code == 200
+        add_form = response.text.split(f'hx-post="/runs/{run_id}/samples/bulk"', 1)[1]
+        add_form = add_form.split(">", 1)[0]
+        assert 'hx-encoding="multipart/form-data"' in add_form
+
+    def test_add_takes_a_file_over_a_megabyte(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        text = self._wide_file(4500)
+        assert len(text) > 1024 * 1024
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/bulk",
+            files={"paste_data": (None, text), "lanes": (None, "1")},
+            headers=_origin(),
+        )
+        assert response.status_code == 200, response.text[:300]
+        assert len(ctx.run_repo.get_by_id(run_id).samples) == 4500
+
+    def test_add_counts_a_line_end_once(self, logged_in_client, fresh_app):
+        """A file just under 10 MiB previews; the browser sends its text back
+        with CR LF line ends, which must not push it over the cap."""
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        comment = "c" * 2613
+        text = "Sample_ID,Comment\n" + "".join(f"W{i:05d},{comment}\n" for i in range(4000))
+        sent = text.replace("\n", "\r\n")
+        assert len(text) <= 10 * 1024 * 1024 < len(sent)
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/bulk",
+            files={"paste_data": (None, sent), "lanes": (None, "1")},
+            headers=_origin(),
+        )
+        assert response.status_code == 200, response.text[:300]
+        assert len(ctx.run_repo.get_by_id(run_id).samples) == 4000
+
+    def test_add_refuses_a_field_over_20_mb(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/bulk",
+            files={"paste_data": (None, "S1\n" + " " * (20 * 1024 * 1024)),
+                   "lanes": (None, "1")},
+            headers=_origin(),
+        )
+        assert response.status_code == 400
+        # Starlette stops reading at the limit; the app's own 10 MB check
+        # would only see the field after all of it was read into memory.
+        assert "20480KB" in response.text
+        assert ctx.run_repo.get_by_id(run_id).samples == []
+
+    def test_the_paste_box_keeps_its_1_mb_field_limit(self, logged_in_client):
+        run_id = _create_run(logged_in_client)
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/preview",
+            files={"paste_data": (None, self._wide_file(4500)), "lanes": (None, "1")},
+            headers=_origin(),
+        )
+        assert response.status_code == 400
+        assert "1024KB" in response.text
+
     def test_paste_data_with_invalid_row_rejects_whole_import(
         self, logged_in_client, fresh_app
     ):

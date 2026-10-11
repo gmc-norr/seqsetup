@@ -26,6 +26,12 @@ from ..utils.clock import as_utc
 _DEFAULT_PAGE_SIZE = 50
 _MAX_PAGE_SIZE = 200
 
+# FastAPI 0.142 traces requests and sets up OpenTelemetry export by itself when
+# OTEL_EXPORTER_OTLP_* settings are present. SeqSetup sends no telemetry: both
+# apps pass this, so nothing about a request leaves the server that way.
+NO_TELEMETRY = {"tracing": False, "metrics": False, "logs": False,
+                "operation_spans": False, "auto_configure": False}
+
 
 # Pinned Swagger UI version. Audit C5 specifically called out the
 # "unpkg.com CDN with inline script and no CSP" combo; FastAPI's default
@@ -33,20 +39,24 @@ _MAX_PAGE_SIZE = 200
 # version, host the assets from the same origin via Swagger's UNPKG-served
 # bundle, AND restrict via a strict CSP. (For maximum hardening, operators
 # can mirror these files behind /static/swagger and switch _SWAGGER_BASE.)
-_SWAGGER_VERSION = "5.17.14"
+_SWAGGER_VERSION = "5.33.1"
 _SWAGGER_BASE = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{_SWAGGER_VERSION}"
 
-# SRI hashes pinned for Swagger UI 5.17.14. If a future version-bump replaces
-# _SWAGGER_VERSION, regenerate these (e.g.
+# SRI hashes pinned for Swagger UI 5.33.1: the SHA-384 of each file in the npm
+# package swagger-ui-dist@5.33.1, whose registry integrity was checked; jsDelivr
+# serves the same bytes. If a future version-bump replaces _SWAGGER_VERSION,
+# regenerate these (e.g.
 # ``curl -sL $URL | openssl dgst -sha384 -binary | openssl base64 -A``)
 # or the browser will refuse to execute the script.
-_SWAGGER_CSS_SRI = "sha384-wxLW6kwyHktdDGr6Pv1zgm/VGJh99lfUbzSn6HNHBENZlCN7W602k9VkGdxuFvPn"
-_SWAGGER_JS_SRI = "sha384-wmyclcVGX/WhUkdkATwhaK1X1JtiNrr2EoYJ+diV3vj4v6OC5yCeSu+yW13SYJep"
+_SWAGGER_CSS_SRI = "sha384-Ov4/wv3j2bmct8cDc5X4ngJZohVPzEmc6uDPH8WeljUxO5vtoykvMEfbu9Vh6RaW"
+_SWAGGER_JS_SRI = "sha384-ZPehFMQommnnuaZ4rpxgkgTT2DKFVp4hZC/7pLit+9Lek9T1YGSo23eHFbvNkXkw"
 
+# The "/" after _SWAGGER_BASE matters: a CSP source path without a trailing
+# "/" matches only that exact URL, never the files under it.
 _SWAGGER_CSP = (
     "default-src 'none'; "
-    f"script-src 'self' {_SWAGGER_BASE}; "
-    f"style-src 'self' {_SWAGGER_BASE} 'unsafe-inline'; "
+    f"script-src 'self' {_SWAGGER_BASE}/; "
+    f"style-src 'self' {_SWAGGER_BASE}/ 'unsafe-inline'; "
     "img-src 'self' data: https:; "
     "font-src 'self' data:; "
     "connect-src 'self'; "
@@ -142,6 +152,7 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         openapi_url=None,
         docs_url=None,
         redoc_url=None,
+        telemetry=NO_TELEMETRY,
     )
 
     bearer_auth = make_bearer_auth(ctx)

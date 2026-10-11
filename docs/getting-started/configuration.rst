@@ -34,6 +34,14 @@ Environment Variables
 
 Environment variables take precedence over configuration files.
 
+.. note::
+
+   SeqSetup sends no telemetry: it turns FastAPI's OpenTelemetry support
+   off. Leave the ``OTEL_*`` variables unset for it all the same. FastAPI
+   reads ``OTEL_PROPAGATORS`` as it loads, and a value naming a propagator
+   that is not installed (``b3``, for example) stops SeqSetup from starting
+   with ``ValueError: Propagator b3 not found``.
+
 Configuration Files
 -------------------
 

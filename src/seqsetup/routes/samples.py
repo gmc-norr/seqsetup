@@ -320,6 +320,16 @@ def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
 
 
 _MAX_PASTE_CHARS = 10 * 1024 * 1024
+# Starlette bounds each form field at 1 MB unless a route asks for more. The
+# preview's Add form sends back the text preview read, which may come from a
+# file of up to 10 MB, and a browser sends each line end of a textarea as CR LF:
+# up to twice the bytes. Preview keeps the 1 MB, as for every other form.
+_STARLETTE_FIELD_BYTES = 1024 * 1024
+_MAX_ADD_FIELD_BYTES = 2 * _MAX_PASTE_CHARS
+# Caps on the whole request (app.py, body_limit.py): the biggest field plus
+# 1 MB for the other fields and the multipart headers.
+PREVIEW_MAX_BODY_BYTES = _MAX_PASTE_CHARS + 1024 * 1024
+ADD_MAX_BODY_BYTES = _MAX_ADD_FIELD_BYTES + 1024 * 1024
 
 
 @dataclass
@@ -354,6 +364,7 @@ def _test_version_with(test_id: str, raw) -> tuple[str, str]:
 
 async def _read_paste_input(
     request: Request, run: SequencingRun, ctx: AppContext,
+    max_field_bytes: int = _STARLETTE_FIELD_BYTES,
 ) -> tuple[Optional[_PasteInput], str]:
     """Read an Add-samples form (preview or add). Returns (input, "") or
     (None, message) for a 400. Saves nothing.
@@ -362,7 +373,7 @@ async def _read_paste_input(
     error, never "all lanes". The default test must be empty or a known
     test profile.
     """
-    form = await request.form()
+    form = await request.form(max_part_size=max_field_bytes)
 
     file_name = ""
     sample_file = form.get("sample_file")
@@ -383,8 +394,10 @@ async def _read_paste_input(
         text = form.get("paste_data", "")
         # Mirror the 10 MB cap from the file-upload branch — without this an
         # authenticated user can post unbounded paste_data and balloon the
-        # run document past MongoDB's 16 MB BSON limit on save.
-        if len(text) > _MAX_PASTE_CHARS:
+        # run document past MongoDB's 16 MB BSON limit on save. A browser
+        # sends each line end of a textarea as CR LF; it counts once, as in
+        # the file the preview read, so Add takes every text preview took.
+        if len(text.replace("\r\n", "\n")) > _MAX_PASTE_CHARS:
             return None, "Pasted data too large (max 10 MB)"
 
     max_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
@@ -526,7 +539,8 @@ async def add_bulk_samples(
     """POST /runs/{run_id}/samples/bulk — add multiple samples from paste/file."""
     run_id = run.id
 
-    paste, error = await _read_paste_input(request, run, ctx)
+    paste, error = await _read_paste_input(
+        request, run, ctx, max_field_bytes=_MAX_ADD_FIELD_BYTES)
     if paste is None:
         return Response(error, status_code=400)
 
