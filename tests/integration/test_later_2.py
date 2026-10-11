@@ -453,3 +453,47 @@ class TestAnIndexNameWithoutItsSequence:
         stored = {s.sample_id: s for s in ctx.run_repo.get_by_id(RUN).samples}
         assert (stored["P1"].index1_name, stored["P1"].index1_sequence) == ("D701", "ACGTACGT")
         assert stored["P2"].index1_sequence is None
+
+
+class TestTheWorksheetListNeedsADraft:
+    """Load Worklists asked the LIMS for any run ID, a Ready run's or none
+    (build review of later list slice 2, M3-3, MB-1); the preview and the
+    import take a draft only, and so does the list now."""
+
+    def _asked(self, monkeypatch):
+        asked = []
+
+        def answer(url, api_key=""):
+            asked.append(url)
+            return [{"id": "W1"}]
+
+        monkeypatch.setattr(sample_api_module, "_api_get", answer)
+        return asked
+
+    def test_a_ready_run(self, logged_in_client, fresh_app, monkeypatch):
+        from seqsetup.models.sequencing_run import RunStatus
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        run = ctx.run_repo.get_by_id(RUN)
+        run.status = RunStatus.READY
+        ctx.run_repo.save(run)
+        _lims_on(ctx)
+        asked = self._asked(monkeypatch)
+        assert logged_in_client.get(f"/runs/{RUN}/samples/worklists").status_code == 403
+        assert asked == []
+
+    def test_no_such_run(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _lims_on(ctx)
+        asked = self._asked(monkeypatch)
+        assert logged_in_client.get("/runs/no-such-run/samples/worklists").status_code == 404
+        assert asked == []
+
+    def test_a_draft_is_listed(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        self._asked(monkeypatch)
+        resp = logged_in_client.get(f"/runs/{RUN}/samples/worklists")
+        assert resp.status_code == 200
+        assert _options(resp.text) == ["W1"]

@@ -721,11 +721,14 @@ async def preview_paste(
 @router.get("/runs/{run_id}/samples/worklists", response_class=HTMLResponse)
 def list_worklists(
     request: Request,
-    run_id: str,
+    run: SequencingRun = Depends(get_editable_run),
     context: str = "",
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """GET /runs/{run_id}/samples/worklists — list available worklists."""
+    """GET /runs/{run_id}/samples/worklists — list available worklists. A
+    draft only, as the preview and the import: it asked the LIMS for any run
+    ID (build review of later list slice 2, M3-3)."""
+    run_id = run.id
     if ctx.sample_api_config_repo is None:
         return _messages_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
 
