@@ -331,6 +331,9 @@ class TestBulkPasteSizeCap:
             headers=_origin(),
         )
         assert response.status_code == 400
+        # Starlette stops reading at the limit; the app's own 10 MB check
+        # would only see the field after all of it was read into memory.
+        assert "20480KB" in response.text
         assert ctx.run_repo.get_by_id(run_id).samples == []
 
     def test_the_paste_box_keeps_its_1_mb_field_limit(self, logged_in_client):
