@@ -87,6 +87,11 @@ Select **Download YAML** to export the kit as a YAML file, in SeqSetup's own
 format -- useful for backing up a kit, or for checking it into a GitHub repo
 that :doc:`Config Sync <profiles>` will later pick up.
 
+The file is named after the kit and its version, lower-cased
+(``asciikit_v1_0.yaml``). A kit named in an alphabet other than the Latin
+one still downloads: it is offered under the kit's own name, with a
+plain-ASCII name as the fallback for older browsers.
+
 Deleting a kit
 -----------------
 

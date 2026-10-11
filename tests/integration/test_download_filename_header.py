@@ -7,8 +7,11 @@ fine and stored on the run. The header now carries an ASCII ``filename``
 and the name as typed in ``filename*`` (RFC 6266 / RFC 5987).
 """
 
+from urllib.parse import quote
+
 import pytest
 
+from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (
     InstrumentPlatform,
@@ -136,3 +139,74 @@ class TestHeaderBuiltBeforeGeneration:
         for route, _suffix, _default in EXPORT_ROUTES:
             with pytest.raises(HeaderBoom):
                 logged_in_client.get(f"/runs/{run_id}/export/{route}")
+
+
+class TestIndexKitDownloadHeader:
+    """The index-kit YAML download -- open to every signed-in user, not only
+    admins, and with no try/except -- had the same bug in its own filter
+    (``str.isalnum()`` is Unicode-aware too), so it answered a raw 500."""
+
+    @staticmethod
+    def _kit(ctx, name: str, version: str) -> str:
+        kit = IndexKit(
+            name=name, version=version, index_mode=IndexMode.UNIQUE_DUAL,
+            index_pairs=[IndexPair(
+                id="p1", name="p1",
+                index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
+            )],
+        )
+        ctx.index_kit_repo.save(kit)
+        return f"/indexes/download/{quote(name)}/{quote(version)}"
+
+    def test_an_ascii_kit_header_is_unchanged(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        url = self._kit(ctx, "AsciiKit", "1.0")
+
+        resp = logged_in_client.get(url)
+
+        assert resp.status_code == 200
+        assert resp.headers["content-disposition"] == (
+            'attachment; filename="asciikit_v1_0.yaml"'
+        )
+
+    def test_a_cjk_kit_name_downloads_with_both_parameters(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        url = self._kit(ctx, "日本キット", "1.0")
+
+        resp = logged_in_client.get(url)
+
+        assert resp.status_code == 200
+        assert resp.headers["content-disposition"] == (
+            'attachment; filename="_v1_0.yaml"'
+            "; filename*=UTF-8''%E6%97%A5%E6%9C%AC%E3%82%AD%E3%83%83%E3%83%88_v1_0.yaml"
+        )
+        assert "index_pairs" in resp.text
+
+    def test_a_kit_whose_name_and_version_both_fold_away(self, logged_in_client, fresh_app):
+        """Nothing of either is ASCII: the latin-1-safe name is what the kit's
+        own filename leaves (the ``_v`` separator), and the name as typed is
+        carried in full by ``filename*``."""
+        _app, ctx, _db = fresh_app
+        url = self._kit(ctx, "日本", "一")
+
+        resp = logged_in_client.get(url)
+
+        assert resp.status_code == 200
+        assert resp.headers["content-disposition"] == (
+            'attachment; filename="_v.yaml"'
+            "; filename*=UTF-8''%E6%97%A5%E6%9C%AC_v%E4%B8%80.yaml"
+        )
+
+    def test_a_standard_user_gets_the_same_header(self, logged_in_standard_client, fresh_app):
+        """The route is not admin-gated; the fix must hold for the user who
+        can actually reach it."""
+        _app, ctx, _db = fresh_app
+        url = self._kit(ctx, "日本キット", "1.0")
+
+        resp = logged_in_standard_client.get(url)
+
+        assert resp.status_code == 200
+        assert resp.headers["content-disposition"].startswith(
+            'attachment; filename="_v1_0.yaml"; filename*=UTF-8\'\''
+        )
