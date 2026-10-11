@@ -245,6 +245,29 @@ class TestSwaggerGated:
         assert re.search(rf'href="{base}/swagger-ui\.css"\s+integrity="{css}"', body)
         assert re.search(rf'src="{base}/swagger-ui-bundle\.js"\s+integrity="{js}"', body)
 
+    def test_docs_page_csp_allows_the_files_it_loads(self, client, fresh_app):
+        """A CSP source with a path matches that exact URL unless the path ends
+        in "/", which matches every URL under it (CSP Level 3, "path-part
+        matching"). Without the "/" the browser blocked Swagger's own script
+        and stylesheet, so /api/docs stayed blank (found in group 3b)."""
+        import re
+        _app, ctx, _db = fresh_app
+        plaintext = _seed_api_token(ctx)
+        response = client.get("/api/docs", headers={"Authorization": f"Bearer {plaintext}"})
+        directives = dict(part.strip().split(" ", 1)
+                          for part in response.headers["content-security-policy"].split(";"))
+
+        def allowed(directive, url):
+            sources = [s for s in directives[directive].split() if s.startswith("https://")]
+            return any(url.startswith(s) if s.endswith("/") else url == s for s in sources)
+
+        for directive, pattern in (("style-src", r'href="(https://[^"]+\.css)"'),
+                                   ("script-src", r'src="(https://[^"]+\.js)"')):
+            urls = re.findall(pattern, response.text)
+            assert urls, directive
+            for url in urls:
+                assert allowed(directive, url), f"{directive} blocks {url}"
+
 
 class TestTokenExpiry:
     """A token past its expires_at must not authenticate."""

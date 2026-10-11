@@ -51,10 +51,12 @@ _SWAGGER_BASE = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{_SWAGGER_VERSION
 _SWAGGER_CSS_SRI = "sha384-Ov4/wv3j2bmct8cDc5X4ngJZohVPzEmc6uDPH8WeljUxO5vtoykvMEfbu9Vh6RaW"
 _SWAGGER_JS_SRI = "sha384-ZPehFMQommnnuaZ4rpxgkgTT2DKFVp4hZC/7pLit+9Lek9T1YGSo23eHFbvNkXkw"
 
+# The "/" after _SWAGGER_BASE matters: a CSP source path without a trailing
+# "/" matches only that exact URL, never the files under it.
 _SWAGGER_CSP = (
     "default-src 'none'; "
-    f"script-src 'self' {_SWAGGER_BASE}; "
-    f"style-src 'self' {_SWAGGER_BASE} 'unsafe-inline'; "
+    f"script-src 'self' {_SWAGGER_BASE}/; "
+    f"style-src 'self' {_SWAGGER_BASE}/ 'unsafe-inline'; "
     "img-src 'self' data: https:; "
     "font-src 'self' data:; "
     "connect-src 'self'; "
