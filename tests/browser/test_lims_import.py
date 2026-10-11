@@ -104,3 +104,23 @@ def test_a_refusal_after_a_failed_import_stays(logged_in_page, base_url, app_ctx
         page.locator("#worklist-select-area").get_by_role("button", name="Import Samples").click()
     expect(page.locator("#error-banner")).to_contain_text(
         "Worklist import rejected: these sample IDs appear more than once in the worklist: LIMS-01.")
+
+
+@pytest.mark.browser
+def test_a_success_after_a_refusal_shows_its_message(logged_in_page, base_url, app_ctx,
+                                                     mutable_run_id, lims):
+    """app.js cleared the banner after a success from a button whose last
+    request failed, after the swap, so the import's own "Added 2 samples"
+    was wiped (build review of later list slice 2, E-1)."""
+    page = logged_in_page
+    lims.rows = REPEATED
+    _load_worksheets(page, base_url, mutable_run_id)
+    area = page.locator("#worklist-select-area")
+    with page.expect_response(lambda r: r.url.endswith("/samples/fetch-worklist")):
+        area.get_by_role("button", name="Import Samples").click()
+    expect(page.locator("#error-banner")).to_contain_text("appear more than once")
+
+    lims.rows = GOOD
+    with page.expect_response(lambda r: r.url.endswith("/samples/fetch-worklist")):
+        area.get_by_role("button", name="Import Samples").click()
+    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist.")

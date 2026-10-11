@@ -165,3 +165,64 @@ def test_banner_kept_when_a_different_input_saves(logged_in_page, base_url, muta
     _set_override(page, _override_box(page, 1), "Y151;I8;I8;Y151", 200)
 
     expect(page.locator("#error-banner")).to_contain_text("not valid OverrideCycles")
+
+
+def _paste_two_samples(page, base_url, run_id):
+    page.goto(f"{base_url}/runs/{run_id}")
+    page.wait_for_load_state("networkidle")
+    page.click("summary.paste-section-summary")
+    page.fill("#paste_data", "sample_id,test_id\nZB-01,\nZB-02,\n")
+    with page.expect_response(lambda r: r.url.endswith("/samples/preview") and r.status == 200):
+        page.click(".paste-form button[type=submit]")
+
+
+def _add_refused_as_not_a_draft(page, app_ctx, run_id):
+    """The Add button's request fails (403): the run is Ready for it."""
+    from seqsetup.models.sequencing_run import RunStatus
+
+    def set_status(status):
+        run = app_ctx.run_repo.get_by_id(run_id)
+        run.status = status
+        app_ctx.run_repo.save(run)
+
+    set_status(RunStatus.READY)
+    try:
+        with page.expect_response(lambda r: r.url.endswith("/samples/bulk") and r.status == 403):
+            page.click("text=Add 2 samples")
+    finally:
+        set_status(RunStatus.DRAFT)
+    expect(page.locator("#error-banner")).to_contain_text("cannot be edited")
+
+
+@pytest.mark.browser
+def test_a_success_that_writes_the_banner_keeps_it(logged_in_page, base_url, app_ctx,
+                                                   mutable_run_id):
+    """The banner is cleared when the element whose request failed succeeds,
+    but not of what that answer itself writes there: app.js cleared it after
+    the swap, wiping "Added 2 samples" (build review of later list slice 2,
+    E-1, on the paste's Add button)."""
+    page = logged_in_page
+    _paste_two_samples(page, base_url, mutable_run_id)
+    _add_refused_as_not_a_draft(page, app_ctx, mutable_run_id)
+    with page.expect_response(lambda r: r.url.endswith("/samples/bulk") and r.status == 200):
+        page.click("text=Add 2 samples")
+    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples")
+
+
+@pytest.mark.browser
+def test_a_refusal_answered_200_after_a_failure_stays(logged_in_page, base_url, app_ctx,
+                                                      mutable_run_id, monkeypatch):
+    """The paste's refusals answer 200 with the section and the message in
+    the banner; one right after a failure of the same button was wiped the
+    same way (build review of later list slice 2, MB-5)."""
+    from seqsetup.models import sequencing_run as sequencing_run_module
+
+    page = logged_in_page
+    _paste_two_samples(page, base_url, mutable_run_id)
+    _add_refused_as_not_a_draft(page, app_ctx, mutable_run_id)
+    monkeypatch.setattr(sequencing_run_module, "MAX_SAMPLES_PER_RUN", 4)
+    with page.expect_response(lambda r: r.url.endswith("/samples/bulk") and r.status == 200):
+        page.click("text=Add 2 samples")
+    expect(page.locator("#error-banner")).to_contain_text(
+        "Bulk import rejected: a run accepts a maximum of 4 samples")
+    assert len(app_ctx.run_repo.get_by_id(mutable_run_id).samples) == 4
