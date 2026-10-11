@@ -106,6 +106,7 @@ def update_sample_api_config(
 
     # Clinical: if the user enables an unreachable backend, force-disable
     # before saving so a broken LIMS doesn't enter the pipeline.
+    saved = "LIMS integration configuration saved"
     if config.enabled and config.base_url:
         from ...services.sample_api import check_connection
         success, msg = check_connection(config)
@@ -131,6 +132,9 @@ def update_sample_api_config(
                 },
                 block_name="sample_api_config_form",
             )
+        # Its count, as a run lists the worksheets, showed only on a failure
+        # (review of the fixes after the build of later list slice 2).
+        saved = f"{saved}. {msg}"
 
     ctx.sample_api_config_repo.save(config)
     audit(
@@ -145,7 +149,7 @@ def update_sample_api_config(
         "admin/sample_api.html",
         {
             "config": config,
-            "message": "LIMS integration configuration saved",
+            "message": saved,
             "error": "",
         },
         block_name="sample_api_config_form",

@@ -793,6 +793,14 @@ def _plan_worklist_import(run, raw_rows, api_config, worklist_id: str) -> tuple:
                     f"Sample '{sample_id}' has an {which} name ({shown_value(name)!r}) "
                     f"but no {which} sequence."
                 )
+        # So would a pair name with no sequence at all (review of the fixes
+        # after the build of later list slice 2).
+        pair_name = api_sample.get("index_pair_name", "")
+        if pair_name and not (api_sample.get("index1_sequence") or api_sample.get("index2_sequence")):
+            raise ValueError(
+                f"Sample '{sample_id}' has an index pair name ({shown_value(pair_name)!r}) "
+                f"but no index sequence."
+            )
         if sample_id in existing_sample_ids:
             skipped_duplicates.append(sample_id)
             continue

@@ -430,6 +430,10 @@ class TestAnIndexNameWithoutItsSequence:
          "Sample 'P1' has an i5 name ('D501') but no i5 sequence."),
         ([{"sample_id": "P1", "index_i7": "ACGTACGT", "index_i5": "", "i5_name": "D501"}],
          "Sample 'P1' has an i5 name ('D501') but no i5 sequence."),
+        ([{"sample_id": "P1", "index_pair_name": "UDP0001"}],
+         "Sample 'P1' has an index pair name ('UDP0001') but no index sequence."),
+        ([{"sample_id": "P1", "kit_name": "Kit A"}],
+         "Sample 'P1' has an index pair name ('Kit A') but no index sequence."),
     ]
 
     @pytest.mark.parametrize("rows, text", ROWS)
@@ -455,18 +459,18 @@ class TestAnIndexNameWithoutItsSequence:
         assert (f'<p class="error-message">Importing this worksheet would be refused: '
                 f'{escape(text)}</p>') in resp.text
 
-    def test_a_name_with_its_sequence_and_a_kit_name_alone_are_imported(
-            self, logged_in_client, fresh_app, monkeypatch):
+    def test_a_name_with_its_sequence_is_imported(self, logged_in_client, fresh_app, monkeypatch):
+        """A pair name with only an i7 is a single-index sample, as before."""
         _app, ctx, _db = fresh_app
         _run(ctx)
         _lims_on(ctx)
         _worksheet(monkeypatch, [
             {"sample_id": "P1", "index_i7": "ACGTACGT", "i7_name": "D701"},
-            {"sample_id": "P2", "kit_name": "Kit A"}])
+            {"sample_id": "P2", "kit_name": "Kit A", "index_i7": "TTGGCCAA"}])
         assert _import(logged_in_client, worklist_id="WS1").status_code == 200
         stored = {s.sample_id: s for s in ctx.run_repo.get_by_id(RUN).samples}
         assert (stored["P1"].index1_name, stored["P1"].index1_sequence) == ("D701", "ACGTACGT")
-        assert stored["P2"].index1_sequence is None
+        assert (stored["P2"].index_kit_name, stored["P2"].index1_sequence) == ("Kit A", "TTGGCCAA")
 
 
 class TestTheWorksheetListNeedsADraft:
@@ -545,3 +549,27 @@ class TestTheLimsRoutesAreSafeToUse:
         resp = _preview(logged_in_client)
         assert "1 sample to add" in resp.text and "1 already in this run" in resp.text
         assert ctx.run_repo.get_by_id(RUN).to_dict() == before
+
+
+class TestTheAdminSeesTheConnectionCount:
+    """The save tested the connection but showed its message only on a
+    failure, so the count of worksheets a run would list never showed
+    (review of the fixes after the build of later list slice 2)."""
+
+    def test_the_count_is_shown_after_a_save(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _worksheet_list(monkeypatch, [{"id": "W1"}, {"id": 2.5}, "x"])
+        resp = logged_in_client.post("/admin/settings/sample-api", data={
+            "base_url": "https://lims.example.org/api", "enabled": "on"}, headers=ORIGIN)
+        assert resp.status_code == 200
+        assert ("LIMS integration configuration saved. Connection successful (1 worksheets "
+                "found; 2 other entries in the reply are not listed)") in resp.text
+        assert ctx.sample_api_config_repo.get().enabled is True
+
+    def test_a_save_that_is_not_enabled_tests_nothing(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        asked = _worksheet(monkeypatch, [])
+        resp = logged_in_client.post("/admin/settings/sample-api", data={
+            "base_url": "https://lims.example.org/api"}, headers=ORIGIN)
+        assert ">LIMS integration configuration saved</div>" in resp.text
+        assert asked == []
