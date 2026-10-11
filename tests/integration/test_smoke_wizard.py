@@ -321,6 +321,23 @@ class TestBulkPasteSizeCap:
         assert response.status_code == 200, response.text[:300]
         assert len(ctx.run_repo.get_by_id(run_id).samples) == 4500
 
+    def test_add_counts_a_line_end_once(self, logged_in_client, fresh_app):
+        """A file just under 10 MiB previews; the browser sends its text back
+        with CR LF line ends, which must not push it over the cap."""
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        comment = "c" * 2613
+        text = "Sample_ID,Comment\n" + "".join(f"W{i:05d},{comment}\n" for i in range(4000))
+        sent = text.replace("\n", "\r\n")
+        assert len(text) <= 10 * 1024 * 1024 < len(sent)
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/bulk",
+            files={"paste_data": (None, sent), "lanes": (None, "1")},
+            headers=_origin(),
+        )
+        assert response.status_code == 200, response.text[:300]
+        assert len(ctx.run_repo.get_by_id(run_id).samples) == 4000
+
     def test_add_refuses_a_field_over_20_mb(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _create_run(logged_in_client)

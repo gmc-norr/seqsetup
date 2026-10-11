@@ -53,6 +53,9 @@ def _asset_hash(rel_path: str) -> str:
 
 
 templates = Jinja2Blocks(directory=str(TEMPLATES_DIR))
+# Starlette 1.x escapes only templates named .html, .htm or .xml; escape every
+# template, whatever its name, as Starlette 0.x did.
+templates.env.autoescape = True
 
 
 def _asset_url(rel_path: str) -> str:

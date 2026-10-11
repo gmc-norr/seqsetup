@@ -390,8 +390,10 @@ async def _read_paste_input(
         text = form.get("paste_data", "")
         # Mirror the 10 MB cap from the file-upload branch — without this an
         # authenticated user can post unbounded paste_data and balloon the
-        # run document past MongoDB's 16 MB BSON limit on save.
-        if len(text) > _MAX_PASTE_CHARS:
+        # run document past MongoDB's 16 MB BSON limit on save. A browser
+        # sends each line end of a textarea as CR LF; it counts once, as in
+        # the file the preview read, so Add takes every text preview took.
+        if len(text.replace("\r\n", "\n")) > _MAX_PASTE_CHARS:
             return None, "Pasted data too large (max 10 MB)"
 
     max_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)

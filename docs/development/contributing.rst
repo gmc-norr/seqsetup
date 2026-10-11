@@ -680,12 +680,14 @@ in the DOM.
 **Form data not received**: Ensure form inputs have ``name`` attributes and
 the form has the correct ``hx-post`` or method.
 
-**Form refused with "Field exceeded maximum size of 1024KB"**: Starlette
-reads at most 1000 fields and 1 MB per field from a form. A plain
-(urlencoded) form counts encoded bytes, so a comma or a line break counts
-three. A route that must take more passes ``max_part_size`` to
-``request.form()`` (see the Add form of the sample paste in
-``routes/samples.py``); send a large text as ``multipart/form-data``.
+**Form refused with "Field exceeded maximum size of 1024KB"** (a plain
+form) **or "Part exceeded maximum size of 1024KB"** (a multipart form):
+Starlette reads at most 1000 fields and 1 MB per field from a form. A plain
+(urlencoded) form counts encoded bytes: a comma counts three, and a line
+break from a textarea, which the browser sends as CR LF, counts six. A
+route that must take more passes ``max_part_size`` to ``request.form()``
+(see the Add form of the sample paste in ``routes/samples.py``); send a
+large text as ``multipart/form-data``.
 
 **Authentication redirect loop**: Check that the route is not in
 ``PUBLIC_ROUTES`` if it should require login.
