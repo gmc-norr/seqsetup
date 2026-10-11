@@ -724,13 +724,18 @@ def list_worklists(
     if not api_config.enabled or not api_config.base_url:
         return _messages_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
 
-    success, message, worklists = fetch_worklists(api_config)
+    success, message, worklists, left_out = fetch_worklists(api_config)
+    # A worksheet whose ID cannot be read for sure is left out of the list,
+    # with a warning (spec 2026-10-10 later list slice 2, §3).
+    warnings = [{"text": text, "kind": "warning"} for text in left_out]
     if not success:
-        return _messages_only(request, [{"text": f"Failed to load worklists: {message}", "kind": "error"}])
+        return _messages_only(
+            request, [{"text": f"Failed to load worklists: {message}", "kind": "error"}] + warnings)
 
     return render(request, "wizard/_worklist_selector.html", {
         "run_id": run_id,
         "worklists": worklists,
+        "warnings": warnings,
         "context": context,
         "existing_ids": "",
     })

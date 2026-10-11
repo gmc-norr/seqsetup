@@ -5,6 +5,7 @@
    Inputs:
      run_id:       str
      worklists:    list[dict] — each has 'id', optional 'investigator', optional 'updated_at'
+     warnings:     list[dict] — _messages.html entries for worksheets left out of the list
      context:      str — "add_step1" routes import to #worklist-import-result innerHTML,
                           else to #sample-table outerHTML
      existing_ids: str — comma-separated sample ids that already existed pre-wizard
@@ -16,6 +17,7 @@
 {% set import_target = '#worklist-import-result' if context == 'add_step1' else '#sample-table' %}
 {% set import_swap = 'innerHTML' if context == 'add_step1' else 'outerHTML' %}
 <div>
+    {% if warnings %}{% with messages = warnings %}{% include "_messages.html" %}{% endwith %}{% endif %}
     <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
         <select name="worklist_id" id="worklist-select" class="index-kit-dropdown" style="min-width:400px; display:inline-block;">
             {% for wl in worklists %}
