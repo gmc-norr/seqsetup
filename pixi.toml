@@ -8,7 +8,9 @@ version = "0.2.0"
 # to be found and pulled before it reaches the lab. Move the date forward when
 # updating the lock (`pixi update`); tests/unit/test_dependency_floors.py checks
 # that every library with a known security advisory is locked at a fixed version.
-exclude-newer = "2026-09-27"
+# A security release may justify a later date: 2026-10-04 lets in OpenSSL 3.6.5
+# (conda-forge, 2026-10-04), which fixes 12 advisories in 3.6.4.
+exclude-newer = "2026-10-04"
 
 [tasks]
 serve = { cmd = "PYTHONPATH=src python -m seqsetup.app", depends-on = ["css"] }
@@ -26,6 +28,7 @@ css-watch = { cmd = "bash -c '.pixi/bin/tailwindcss -i src/seqsetup/static/css/i
 
 [dependencies]
 python = ">=3.14"
+openssl = ">=3.6.5"
 pytest = ">=9.0.3"
 pyyaml = ">=6.0"
 matplotlib-base = ">=3.10.8,<4"  # not `matplotlib`, which adds the Qt desktop toolkit

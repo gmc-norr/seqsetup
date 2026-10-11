@@ -26,6 +26,12 @@ from ..utils.clock import as_utc
 _DEFAULT_PAGE_SIZE = 50
 _MAX_PAGE_SIZE = 200
 
+# FastAPI 0.142 traces requests and sets up OpenTelemetry export by itself when
+# OTEL_EXPORTER_OTLP_* settings are present. SeqSetup sends no telemetry: both
+# apps pass this, so nothing about a request leaves the server that way.
+NO_TELEMETRY = {"tracing": False, "metrics": False, "logs": False,
+                "operation_spans": False, "auto_configure": False}
+
 
 # Pinned Swagger UI version. Audit C5 specifically called out the
 # "unpkg.com CDN with inline script and no CSP" combo; FastAPI's default
@@ -142,6 +148,7 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         openapi_url=None,
         docs_url=None,
         redoc_url=None,
+        telemetry=NO_TELEMETRY,
     )
 
     bearer_auth = make_bearer_auth(ctx)

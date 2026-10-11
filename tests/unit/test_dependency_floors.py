@@ -29,7 +29,8 @@ FLOORS = {
     "pymongo": "4.18.2",           # connection-string host injection, BSON heap overflow
     "pyasn1": "0.6.4",             # LDAP: decoder denial of service
     "pillow": "12.3.0",            # PDF and plot images: heap overflows, decompression bombs
-    "openssl": "3.6.2",            # N-26: the TLS stack for the LIMS, LDAP and GitHub
+    "openssl": "3.6.5",            # N-26: the TLS stack for the LIMS, LDAP and GitHub;
+                                   # 3.6.5 per openssl-library.org (2026-09-29), not OSV
     # In the image, not used by the app (docs and test tools).
     "urllib3": "2.8.0",
     "requests": "2.33.0",

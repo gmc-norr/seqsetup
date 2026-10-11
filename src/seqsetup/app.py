@@ -25,7 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 from starlette.staticfiles import StaticFiles
 
-from .api.app import create_api_app
+from .api.app import NO_TELEMETRY, create_api_app
 from .csrf import OriginCheckMiddleware
 from .data.instruments import set_instrument_definition_repo
 from .exception_handlers import install as install_exception_handlers
@@ -84,6 +84,7 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
+    telemetry=NO_TELEMETRY,
 )
 
 # Middleware ordering: Starlette's add_middleware prepends — the LAST
