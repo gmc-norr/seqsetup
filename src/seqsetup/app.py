@@ -15,6 +15,7 @@ Middleware order (outermost → innermost):
     OriginCheckMiddleware       ← CSRF defense-in-depth
     SessionMiddleware           ← parses/sets the session cookie
     AuthMiddleware              ← requires ``request.session`` to exist
+    BodyLimitMiddleware         ← caps each request body (413)
 """
 
 import os
@@ -26,6 +27,7 @@ from starlette.responses import RedirectResponse
 from starlette.staticfiles import StaticFiles
 
 from .api.app import NO_TELEMETRY, create_api_app
+from .body_limit import BodyLimitMiddleware
 from .csrf import OriginCheckMiddleware
 from .data.instruments import set_instrument_definition_repo
 from .exception_handlers import install as install_exception_handlers
@@ -90,7 +92,16 @@ app = FastAPI(
 # Middleware ordering: Starlette's add_middleware prepends — the LAST
 # add_middleware call ends up OUTERMOST. So the order below produces the
 # wrap order documented in the module docstring (Security → Origin →
-# Session → Auth → app).
+# Session → Auth → BodyLimit → app).
+#
+# Each request body is capped at 2 MB; only the two routes that take a sample
+# file, or its text back, take more (body_limit.py). The cap is innermost: a
+# BaseHTTPMiddleware (Origin, Auth) reads the body inside a task group, which
+# would wrap the cap's 413 in an ExceptionGroup that no handler catches (a 500).
+app.add_middleware(BodyLimitMiddleware, by_path=[
+    (r"/runs/[^/]+/samples/preview", samples.PREVIEW_MAX_BODY_BYTES),
+    (r"/runs/[^/]+/samples/bulk", samples.ADD_MAX_BODY_BYTES),
+])
 app.add_middleware(AuthMiddleware)
 # Logins live server-side (services/web_sessions.py): 30 minutes unused or
 # 8 hours after login ends them, whatever the cookie says. The cookie's own

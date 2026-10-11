@@ -321,6 +321,10 @@ Example nginx configuration:
        ssl_certificate /etc/ssl/certs/seqsetup.crt;
        ssl_certificate_key /etc/ssl/private/seqsetup.key;
 
+       # nginx refuses bodies over 1 MB by default. SeqSetup takes up to
+       # 21 MB (adding samples from a file) and caps each route itself.
+       client_max_body_size 21m;
+
        location / {
            proxy_pass http://127.0.0.1:5001;
            proxy_set_header Host $host;

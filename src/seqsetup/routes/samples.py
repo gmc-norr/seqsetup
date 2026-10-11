@@ -326,6 +326,10 @@ _MAX_PASTE_CHARS = 10 * 1024 * 1024
 # up to twice the bytes. Preview keeps the 1 MB, as for every other form.
 _STARLETTE_FIELD_BYTES = 1024 * 1024
 _MAX_ADD_FIELD_BYTES = 2 * _MAX_PASTE_CHARS
+# Caps on the whole request (app.py, body_limit.py): the biggest field plus
+# 1 MB for the other fields and the multipart headers.
+PREVIEW_MAX_BODY_BYTES = _MAX_PASTE_CHARS + 1024 * 1024
+ADD_MAX_BODY_BYTES = _MAX_ADD_FIELD_BYTES + 1024 * 1024
 
 
 @dataclass
