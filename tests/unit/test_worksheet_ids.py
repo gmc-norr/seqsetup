@@ -192,3 +192,40 @@ class TestEveryWorksheetLeftOut:
             ['A worksheet in the LIMS list has an ID that is a number with a decimal point (1.5), '
              'which JSON may have changed (1.10 is read as 1.1). Send it as text, for example '
              '"1.10". It is left out of the list.', _not_text("true")])
+
+
+class TestAnEntryThatIsNotAWorksheet:
+    """An entry that is not a JSON object was dropped with no warning (build
+    review of later list slice 2, M1-5)."""
+
+    def test_it_is_left_out_with_a_warning(self, lims_wire):
+        body = b'[{"id": "W1"}, "25.10", 7, null, ["W2"]]'
+        assert _listed(lims_wire, body) == (True, "Found 1 worksheets", ["W1"], [
+            f"An entry in the LIMS list is not a worksheet ({shown}). It is left out of the list."
+            for shown in ('"25.10"', "7", "null", '["W2"]')])
+
+
+class TestTheListIsSortedWhateverTheDates:
+    """A created value that is not text stopped the sort, and the whole list
+    failed with "Unexpected error" (build review of later list slice 2, M1-4)."""
+
+    def test_a_number_and_text(self, lims_wire):
+        body = b'[{"id": "W1", "created": 5}, {"id": "W2", "updated_at": "2026-01-01"}]'
+        assert _listed(lims_wire, body) == (True, "Found 2 worksheets", ["W1", "W2"], [])
+
+
+class TestTheConnectionCheckCountsAsTheListShows:
+    """The admin's check counted the reply's entries, and could say 3
+    worksheets where a run lists 1 (build review of later list slice 2, MB-6)."""
+
+    def test_entries_not_listed_are_named(self, lims_wire):
+        from seqsetup.services.sample_api import check_connection
+        lims_wire.body = b'[{"id": "W1"}, {"id": 2.5}, "x", {"name": "no id"}]'
+        assert check_connection(CONFIG) == (
+            True, "Connection successful (1 worksheets found; 3 other entries in the reply are "
+                  "not listed)")
+
+    def test_every_entry_listed(self, lims_wire):
+        from seqsetup.services.sample_api import check_connection
+        lims_wire.body = b'[[{"id": "W1"}, {"id": "W2"}], {"page": 1}]'
+        assert check_connection(CONFIG) == (True, "Connection successful (2 worksheets found)")

@@ -66,6 +66,20 @@ class TestTheWorksheetListShowsWhatIsLeftOut:
         assert f'<p class="warning-message">{escape(TWO)}</p>' in resp.text
         assert resp.text.index(str(escape(LEFT_OUT))) < resp.text.index('id="worklist-select"')
 
+    def test_at_most_ten_warnings(self, logged_in_client, fresh_app, monkeypatch):
+        """300 bad IDs gave 300 warnings above the list (build review of later
+        list slice 2, M1-1, MB-2)."""
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet_list(monkeypatch, [{"id": "W1"}] + [{"id": k + 0.5} for k in range(12)])
+        resp = logged_in_client.get(f"/runs/{RUN}/samples/worklists")
+        assert _options(resp.text) == ["W1"]
+        assert resp.text.count('<p class="warning-message">') == 11
+        assert "(9.5)" in resp.text and "(10.5)" not in resp.text
+        assert ('<p class="warning-message">2 more warnings about the LIMS list are not '
+                'shown.</p>') in resp.text
+
     def test_nothing_left_to_list_shows_the_error_and_the_warnings(
             self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app

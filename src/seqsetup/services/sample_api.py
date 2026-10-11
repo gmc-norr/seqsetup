@@ -424,6 +424,76 @@ def _worksheet_id(item: dict, config: SampleApiConfig) -> str:
     return text
 
 
+def _read_worksheets(worksheets_data: list, config: SampleApiConfig) -> Tuple[list[dict], list[str]]:
+    """The worksheets of a LIMS list, as a run lists them, and the warnings
+    for the entries left out. The list and the admin's connection check
+    both read it so (build review of later list slice 2, MB-6)."""
+    # Normalize worksheet entries using field mappings
+    worksheets = []
+    left_out = []
+    for item in worksheets_data:
+        if not isinstance(item, dict):
+            # Dropped with no warning (build review of later list slice 2, M1-5).
+            left_out.append(
+                f"An entry in the LIMS list is not a worksheet "
+                f"({shown_value(json.dumps(item))}). It is left out of the list."
+            )
+            continue
+
+        # Get worksheet ID using field mapping (e.g., "AL" -> "worksheet_id"),
+        # else the standard "id" field
+        try:
+            wl_id = _worksheet_id(item, config)
+        except ValueError as e:
+            left_out.append(f"{e} It is left out of the list.")
+            continue
+        if not wl_id:
+            continue
+
+        # Get other fields using mappings
+        wl_name = _get_field_value(item, "name", config) or wl_id
+        investigator = _get_field_value(item, "investigator", config)
+        updated_at = _get_field_value(item, "updated_at", config)
+
+        # Build normalized worksheet entry
+        worksheet = {
+            "id": wl_id,
+            "name": wl_name,
+        }
+        if investigator:
+            worksheet["investigator"] = investigator
+        if updated_at:
+            worksheet["updated_at"] = updated_at
+
+        # Preserve samples dict if present (for embedded samples format)
+        samples_field = config.get_api_field("samples")
+        if samples_field in item:
+            worksheet["samples"] = item[samples_field]
+        elif "samples" in item:
+            worksheet["samples"] = item["samples"]
+
+        # Preserve any other fields (lowercased)
+        for k, v in item.items():
+            lower_k = k.lower()
+            if lower_k not in ("id", "name", "samples", "investigator", "updated_at"):
+                # Skip the mapped field names
+                if k not in (config.get_api_field(f) for f in ["worksheet_id", "name", "investigator", "updated_at", "samples"]):
+                    worksheet[lower_k] = v
+
+        worksheets.append(worksheet)
+
+    # Two worksheets with one ID would be two options that fetch the same
+    # worksheet, one under the other's label (build review of slice 2, E-3).
+    counts = Counter(w["id"] for w in worksheets)
+    for wl_id in [i for i in counts if counts[i] > 1]:
+        left_out.append(
+            f"{counts[wl_id]} worksheets in the LIMS list have the ID {shown_value(wl_id)!r}, and "
+            f"SeqSetup cannot tell which one the LIMS means. They are left out of the list."
+        )
+    worksheets = [w for w in worksheets if counts[w["id"]] == 1]
+    return worksheets, left_out
+
+
 def fetch_worklists(
     config: SampleApiConfig,
     status: Optional[str] = None,
@@ -466,71 +536,17 @@ def fetch_worklists(
         if len(worksheets_data) == 0:
             return False, "No worksheets available", [], []
 
-        # Normalize worksheet entries using field mappings
-        worksheets = []
-        left_out = []
-        for item in worksheets_data:
-            if not isinstance(item, dict):
-                continue
-
-            # Get worksheet ID using field mapping (e.g., "AL" -> "worksheet_id"),
-            # else the standard "id" field
-            try:
-                wl_id = _worksheet_id(item, config)
-            except ValueError as e:
-                left_out.append(f"{e} It is left out of the list.")
-                continue
-            if not wl_id:
-                continue
-
-            # Get other fields using mappings
-            wl_name = _get_field_value(item, "name", config) or wl_id
-            investigator = _get_field_value(item, "investigator", config)
-            updated_at = _get_field_value(item, "updated_at", config)
-
-            # Build normalized worksheet entry
-            worksheet = {
-                "id": wl_id,
-                "name": wl_name,
-            }
-            if investigator:
-                worksheet["investigator"] = investigator
-            if updated_at:
-                worksheet["updated_at"] = updated_at
-
-            # Preserve samples dict if present (for embedded samples format)
-            samples_field = config.get_api_field("samples")
-            if samples_field in item:
-                worksheet["samples"] = item[samples_field]
-            elif "samples" in item:
-                worksheet["samples"] = item["samples"]
-
-            # Preserve any other fields (lowercased)
-            for k, v in item.items():
-                lower_k = k.lower()
-                if lower_k not in ("id", "name", "samples", "investigator", "updated_at"):
-                    # Skip the mapped field names
-                    if k not in (config.get_api_field(f) for f in ["worksheet_id", "name", "investigator", "updated_at", "samples"]):
-                        worksheet[lower_k] = v
-
-            worksheets.append(worksheet)
-
-        # Two worksheets with one ID would be two options that fetch the same
-        # worksheet, one under the other's label (build review of slice 2, E-3).
-        counts = Counter(w["id"] for w in worksheets)
-        for wl_id in [i for i in counts if counts[i] > 1]:
-            left_out.append(
-                f"{counts[wl_id]} worksheets in the LIMS list have the ID {shown_value(wl_id)!r}, and "
-                f"SeqSetup cannot tell which one the LIMS means. They are left out of the list."
-            )
-        worksheets = [w for w in worksheets if counts[w["id"]] == 1]
+        worksheets, left_out = _read_worksheets(worksheets_data, config)
 
         if not worksheets:
             return False, "No valid worksheets found in API response", [], left_out
 
         # Sort by date if requested (newest first)
         if sort_by_date:
-            worksheets.sort(key=lambda w: w.get("updated_at", w.get("created", "")), reverse=True)
+            # As text: a created value that is not text stopped the sort (build
+            # review of later list slice 2, M1-4).
+            worksheets.sort(key=lambda w: str(w.get("updated_at", w.get("created", ""))),
+                            reverse=True)
 
         logger.info(f"Fetched {len(worksheets)} worksheets from API")
         return True, f"Found {len(worksheets)} worksheets", worksheets, left_out
@@ -560,16 +576,19 @@ def check_connection(config: SampleApiConfig) -> Tuple[bool, str]:
         data = _api_get(url, config.effective_api_key())
 
         # Handle response format: [worksheets_list, pagination_info]
-        count = 0
-        if isinstance(data, list):
-            if len(data) == 2 and isinstance(data[0], list) and isinstance(data[1], dict):
-                count = len(data[0])
-            else:
-                count = len(data)
-        else:
+        if not isinstance(data, list):
             return False, "API response is not a valid format"
+        entries = data
+        if len(data) == 2 and isinstance(data[0], list) and isinstance(data[1], dict):
+            entries = data[0]
 
-        return True, f"Connection successful ({count} worksheets found)"
+        # Counted as a run lists them (build review of later list slice 2, MB-6).
+        worksheets, _left_out = _read_worksheets(entries, config)
+        unlisted = len(entries) - len(worksheets)
+        if unlisted:
+            return True, (f"Connection successful ({len(worksheets)} worksheets found; "
+                          f"{unlisted} other entries in the reply are not listed)")
+        return True, f"Connection successful ({len(worksheets)} worksheets found)"
     except SampleApiError as e:
         return False, str(e)
     except Exception as e:

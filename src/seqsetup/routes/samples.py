@@ -741,7 +741,11 @@ def list_worklists(
     success, message, worklists, left_out = fetch_worklists(api_config)
     # A worksheet whose ID cannot be read for sure is left out of the list,
     # with a warning (spec 2026-10-10 later list slice 2, §3).
-    warnings = [{"text": text, "kind": "warning"} for text in left_out]
+    # At most ten: 300 bad IDs gave 300 warnings (build review of slice 2, M1-1).
+    warnings = [{"text": text, "kind": "warning"} for text in left_out[:10]]
+    if len(left_out) > 10:
+        warnings.append({"text": f"{len(left_out) - 10} more warnings about the LIMS list are "
+                                 f"not shown.", "kind": "warning"})
     if not success:
         return _messages_only(
             request, [{"text": f"Failed to load worklists: {message}", "kind": "error"}] + warnings)
