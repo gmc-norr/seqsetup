@@ -111,8 +111,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
+        # The scope's scheme, not request.url: a Host header such as "[" makes
+        # request.url raise, and the answer would leave without these headers.
         apply_security_headers(
-            response, is_https=self._https_only or request.url.scheme == "https"
+            response, is_https=self._https_only or request.scope.get("scheme") == "https"
         )
         return response
 
@@ -127,7 +129,9 @@ def server_error_handler(https_only: bool):
 
     async def handle(request: Request, exc: Exception) -> Response:
         response = PlainTextResponse("Internal Server Error", status_code=500)
-        apply_security_headers(response, is_https=https_only or request.url.scheme == "https")
+        apply_security_headers(
+            response, is_https=https_only or request.scope.get("scheme") == "https"
+        )
         return response
 
     return handle

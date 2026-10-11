@@ -140,6 +140,16 @@ class TestTheAppChecksHttpsOnlyFirst:
         assert proc.returncode != 0
         assert _UNKNOWN_VALUE_MESSAGE.format("on") in proc.stderr
 
+    def test_the_setting_is_checked_before_the_session_secret(self, tmp_path):
+        # A secret the app refuses: if the secret came first, its refusal would be the one shown.
+        src = Path(__file__).resolve().parents[2] / "src"
+        env = {**os.environ, "SEQSETUP_HTTPS_ONLY": "on", "PYTHONPATH": str(src),
+               "MONGODB_URI": "mongodb://127.0.0.1:1", "SEQSETUP_SESSION_SECRET": "short"}
+        proc = subprocess.run([sys.executable, "-c", "import seqsetup.app"], env=env, cwd=tmp_path,
+                              capture_output=True, text=True, timeout=300)
+        assert proc.returncode != 0
+        assert _UNKNOWN_VALUE_MESSAGE.format("on") in proc.stderr
+
 
 _HSTS = "max-age=63072000; includeSubDomains"
 
@@ -226,3 +236,43 @@ class TestServerErrorHandler:
                         exception_handlers={Exception: server_error_handler(False)})
         with pytest.raises(RuntimeError, match="probe: an unhandled error"):
             TestClient(app).get("/")
+
+
+class TestABrokenHostHeader:
+    """A Host header such as "[" makes request.url raise; the headers read the
+    scheme from the ASGI scope, so such a request still gets them."""
+
+    def _app(self, endpoint):
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+
+        from seqsetup.security_headers import SecurityHeadersMiddleware, server_error_handler
+
+        app = Starlette(routes=[Route("/", endpoint)],
+                        exception_handlers={Exception: server_error_handler(False)})
+        app.add_middleware(SecurityHeadersMiddleware, https_only=False)
+        return app
+
+    def test_an_answer_gets_the_headers(self):
+        from starlette.testclient import TestClient
+
+        async def homepage(request):
+            return PlainTextResponse("hello")
+
+        response = TestClient(self._app(homepage)).get("/", headers={"host": "["})
+        assert response.status_code == 200
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "strict-transport-security" not in response.headers
+
+    def test_a_crash_page_gets_the_headers(self):
+        from starlette.testclient import TestClient
+
+        async def boom(request):
+            raise RuntimeError("probe: an unhandled error")
+
+        client = TestClient(self._app(boom), raise_server_exceptions=False)
+        response = client.get("/", headers={"host": "["})
+        assert response.status_code == 500
+        assert response.text == "Internal Server Error"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "Content-Security-Policy" in response.headers
