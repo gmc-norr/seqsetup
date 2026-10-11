@@ -250,3 +250,141 @@ class TestEachRefusalOfTheImportGoesToTheBanner:
         assert _headers(resp) == {name: None for name in BANNER}
         assert 'id="sample-section"' in resp.text
         assert '<p class="warning-message">No new samples added from worklist.</p>' in resp.text
+
+
+# --- spec §4: the preview is the import's plan -------------------------------
+
+def _preview(client, worklist_id="WS1"):
+    return client.get(f"/runs/{RUN}/samples/preview-worklist", params={"worklist_id": worklist_id})
+
+
+def _cells(html):
+    return [re.findall(r"<td>(.*?)</td>", row) for row in re.findall(r"<tr>(.*?)</tr>", html, re.S)
+            if "<td>" in row]
+
+
+GOOD_ROWS = [
+    {"Sample": "P1", "Test": "WGS", "test_version": "1", "index_i7": "ACGTACGT",
+     "index_i5": "TTGGCCAA"},
+    {"sample_id": "P2", "test_id": "WES", "test_version": "2.1"},
+    {"sample_id": "OLD1", "test_id": "WGS", "test_version": "1"},
+]
+
+
+class TestThePreviewShowsWhatTheImportWouldAdd:
+    """The preview showed the rows as the LIMS sent them, by two names only,
+    20 at most, with no version, and a worksheet the import refuses looked
+    like any other. Now it shows the import's own plan."""
+
+    def test_a_good_worksheet(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx, ["OLD1"])
+        _lims_on(ctx)
+        _worksheet(monkeypatch, GOOD_ROWS)
+        resp = _preview(logged_in_client)
+        assert resp.status_code == 200
+        assert "<h4>Worksheet WS1: 2 samples to add</h4>" in resp.text
+        assert _cells(resp.text) == [["P1", "WGS", "1", "ACGTACGT", "TTGGCCAA"],
+                                     ["P2", "WES", "2.1", "-", "-"]]
+        assert ('<p class="warning-message">1 already in this run, will be skipped: OLD1</p>'
+                in resp.text)
+
+    def test_the_import_adds_what_the_preview_showed(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx, ["OLD1"])
+        _lims_on(ctx)
+        _worksheet(monkeypatch, GOOD_ROWS)
+        shown = _cells(_preview(logged_in_client).text)
+        assert _import(logged_in_client, worklist_id="WS1").status_code == 200
+        added = [[s.sample_id, s.test_id or "-", s.test_version or "-", s.index1_sequence or "-",
+                  s.index2_sequence or "-"] for s in ctx.run_repo.get_by_id(RUN).samples[1:]]
+        assert added == shown
+
+    def test_one_sample(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [{"sample_id": "P1"}])
+        resp = _preview(logged_in_client)
+        assert "<h4>Worksheet WS1: 1 sample to add</h4>" in resp.text
+        assert "already in this run" not in resp.text
+
+    def test_every_row_is_shown(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [{"sample_id": f"P{k}"} for k in range(25)])
+        resp = _preview(logged_in_client)
+        assert [row[0] for row in _cells(resp.text)] == [f"P{k}" for k in range(25)]
+        assert "more samples" not in resp.text
+
+    def test_an_admins_test_version_field_is_read(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx, {"test_version": "TV"})
+        _worksheet(monkeypatch, [{"sample_id": "P1", "test_id": "WGS", "TV": "1.2"}])
+        assert _cells(_preview(logged_in_client).text) == [["P1", "WGS", "1.2", "-", "-"]]
+
+    def test_a_refused_worksheet_shows_the_imports_refusal(
+            self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [{"sample_id": "P1"}, {"sample_id": "P1"}])
+        refusal = ("these sample IDs appear more than once in the worklist: P1. "
+                   "Nothing was added.")
+        resp = _preview(logged_in_client)
+        assert resp.status_code == 200
+        assert (f'<p class="error-message">Importing this worksheet would be refused: {refusal}</p>'
+                in resp.text)
+        assert "<table" not in resp.text
+        assert (f'<p class="error-message">Worklist import rejected: {refusal}</p>'
+                in _import(logged_in_client, worklist_id="WS1").text)
+
+    def test_the_runs_sample_maximum(self, logged_in_client, fresh_app, monkeypatch):
+        from seqsetup.models import sequencing_run as sequencing_run_module
+        _app, ctx, _db = fresh_app
+        _run(ctx, ["OLD1"])
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [{"sample_id": "P1"}])
+        monkeypatch.setattr(sequencing_run_module, "MAX_SAMPLES_PER_RUN", 1)
+        assert ('<p class="error-message">Importing this worksheet would be refused: a run accepts '
+                'a maximum of 1 samples (run already has 1).</p>') in _preview(logged_in_client).text
+
+    def test_the_preview_of_a_ready_run_is_refused(self, logged_in_client, fresh_app, monkeypatch):
+        from seqsetup.models.sequencing_run import RunStatus
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        run = ctx.run_repo.get_by_id(RUN)
+        run.status = RunStatus.READY
+        ctx.run_repo.save(run)
+        _lims_on(ctx)
+        asked = _worksheet(monkeypatch, [{"sample_id": "P1"}])
+        assert _preview(logged_in_client).status_code == 403
+        assert asked == []
+
+
+class TestThePlanGivesARowThePickedWorksheet:
+    """A row whose worksheet ID is null has none after parsing; the import
+    gives it the worksheet that was picked, and so does the plan."""
+
+    def test_null_in_either_spelling(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [{"sample_id": "P1", "worksheet_id": None},
+                                 {"sample_id": "P2", "Worksheet_ID": None},
+                                 {"sample_id": "P3", "worksheet_id": "W7"}])
+        assert _import(logged_in_client, worklist_id="WS9").status_code == 200
+        assert {s.sample_id: s.worksheet_id for s in ctx.run_repo.get_by_id(RUN).samples} == {
+            "P1": "WS9", "P2": "WS9", "P3": "W7"}
+
+    def test_the_plan_itself(self, fresh_app):
+        from seqsetup.routes.samples import _plan_worklist_import
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        rows = [{"sample_id": "P1", "worksheet_id": None}, {"sample_id": "P2", "worksheet_id": "W7"}]
+        config = SampleApiConfig(base_url="https://lims.example.org/api", enabled=True)
+        new, skipped = _plan_worklist_import(ctx.run_repo.get_by_id(RUN), rows, config, "WS9")
+        assert [(s.sample_id, s.worksheet_id) for s in new] == [("P1", "WS9"), ("P2", "W7")]
+        assert skipped == []

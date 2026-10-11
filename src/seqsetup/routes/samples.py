@@ -752,85 +752,22 @@ def list_worklists(
     })
 
 
-@router.get("/runs/{run_id}/samples/preview-worklist", response_class=HTMLResponse)
-def preview_worklist(
-    request: Request,
-    run_id: str,
-    worklist_id: str = "",
-    ctx: AppContext = Depends(get_ctx),
-) -> Response:
-    """GET /runs/{run_id}/samples/preview-worklist — preview samples in a worklist."""
-    if ctx.sample_api_config_repo is None:
-        return _messages_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
+def _plan_worklist_import(run, raw_rows, api_config, worklist_id: str) -> tuple:
+    """What importing these LIMS rows would do to the run, changing nothing:
+    the samples it would add, built as the import builds them, and the sample
+    IDs already in the run, which it skips. A row with no worksheet ID gets
+    the worksheet that was picked. The preview shows this plan and the import
+    saves it, so they cannot disagree (spec 2026-10-10 later list slice 2,
+    §4). ValueError, with the text after "Worklist import rejected: ", when
+    the rows are refused or the run's sample maximum would be passed."""
+    from ..services.sample_api import parse_api_samples
 
-    if not worklist_id:
-        return _messages_only(request, [{"text": "No worksheet selected.", "kind": "error"}])
-
-    from ..services.sample_api import fetch_worklist_samples
-
-    api_config = ctx.sample_api_config
-    if not api_config.enabled or not api_config.base_url:
-        return _messages_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
-
-    success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
-    if not success:
-        return _messages_only(request, [{"text": f"Failed to fetch worksheet samples: {message}", "kind": "error"}])
-
-    return render(request, "wizard/_worklist_preview.html", {
-        "samples": raw_data,
-        "worklist_id": worklist_id,
-    })
-
-
-# ---------------------------------------------------------------------------
-# More mutation handlers
-# ---------------------------------------------------------------------------
-
-
-@router.post("/runs/{run_id}/samples/fetch-worklist", response_class=HTMLResponse)
-async def import_worklist_samples(
-    request: Request,
-    run: SequencingRun = Depends(get_editable_run),
-    ctx: AppContext = Depends(get_ctx),
-    worklist_id: Annotated[str, Form()] = "",
-    context: str = "",
-) -> Response:
-    """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist.
-
-    The page posts the worksheet in the form body. A refusal goes to the
-    error banner and leaves the samples section as it was (spec 2026-10-10
-    later list slice 2, §2)."""
-    run_id = run.id
-
-    if ctx.sample_api_config_repo is None:
-        return _banner_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
-
-    if not worklist_id:
-        return _banner_only(request, [{"text": "No worklist selected.", "kind": "error"}])
-
-    from ..services.sample_api import fetch_worklist_samples, parse_api_samples
-
-    api_config = ctx.sample_api_config
-    if not api_config.enabled or not api_config.base_url:
-        return _banner_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
-
-    success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
-    if not success:
-        return _banner_only(request, [{"text": f"Failed to fetch worklist samples: {message}", "kind": "error"}])
-
-    try:
-        api_samples = parse_api_samples(raw_data, api_config)
-    except ValueError as e:
-        # parse_api_samples raises if any LIMS row is missing sample_id —
-        # reject the whole import rather than silently routing patient
-        # reads to Undetermined.
-        return _banner_only(request, [{"text": f"Worklist import rejected: {e}", "kind": "error"}])
-
-    if not api_samples:
-        return _banner_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
+    # parse_api_samples raises if any LIMS row is missing sample_id —
+    # reject the whole import rather than silently routing patient
+    # reads to Undetermined.
+    api_samples = parse_api_samples(raw_rows, api_config)
 
     existing_sample_ids = {s.sample_id for s in run.samples}
-    added_count = 0
     skipped_duplicates: list[str] = []
     new_samples = []
 
@@ -877,18 +814,103 @@ async def import_worklist_samples(
         _update_override_cycles(sample, run)
 
         new_samples.append(sample)
-        added_count += 1
 
     cap = sequencing_run_module.MAX_SAMPLES_PER_RUN
     if len(run.samples) + len(new_samples) > cap:
-        return _banner_only(request, [{
-            "text": (
-                f"Worklist import rejected: a run accepts a maximum of {cap} "
-                f"samples (run already has {len(run.samples)})."
-            ),
-            "kind": "error",
-        }])
+        raise ValueError(
+            f"a run accepts a maximum of {cap} samples (run already has {len(run.samples)})."
+        )
+    return new_samples, skipped_duplicates
 
+
+@router.get("/runs/{run_id}/samples/preview-worklist", response_class=HTMLResponse)
+def preview_worklist(
+    request: Request,
+    run: SequencingRun = Depends(get_editable_run),
+    worklist_id: str = "",
+    ctx: AppContext = Depends(get_ctx),
+) -> Response:
+    """GET /runs/{run_id}/samples/preview-worklist — what importing a worklist
+    would add to this run: the import's own plan, or its refusal (spec
+    2026-10-10 later list slice 2, §4). A draft only, as the import."""
+    if ctx.sample_api_config_repo is None:
+        return _messages_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
+
+    if not worklist_id:
+        return _messages_only(request, [{"text": "No worksheet selected.", "kind": "error"}])
+
+    from ..services.sample_api import fetch_worklist_samples
+
+    api_config = ctx.sample_api_config
+    if not api_config.enabled or not api_config.base_url:
+        return _messages_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
+
+    success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
+    if not success:
+        return _messages_only(request, [{"text": f"Failed to fetch worksheet samples: {message}", "kind": "error"}])
+
+    try:
+        new_samples, skipped = _plan_worklist_import(run, raw_data, api_config, worklist_id)
+    except ValueError as e:
+        return _messages_only(
+            request, [{"text": f"Importing this worksheet would be refused: {e}", "kind": "error"}])
+
+    if not new_samples and not skipped:
+        return _messages_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
+
+    return render(request, "wizard/_worklist_preview.html", {
+        "samples": new_samples,
+        "skipped": name_list(skipped),
+        "skipped_count": len(skipped),
+        "worklist_id": worklist_id,
+    })
+
+
+# ---------------------------------------------------------------------------
+# More mutation handlers
+# ---------------------------------------------------------------------------
+
+
+@router.post("/runs/{run_id}/samples/fetch-worklist", response_class=HTMLResponse)
+async def import_worklist_samples(
+    request: Request,
+    run: SequencingRun = Depends(get_editable_run),
+    ctx: AppContext = Depends(get_ctx),
+    worklist_id: Annotated[str, Form()] = "",
+    context: str = "",
+) -> Response:
+    """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist.
+
+    The page posts the worksheet in the form body. A refusal goes to the
+    error banner and leaves the samples section as it was (spec 2026-10-10
+    later list slice 2, §2)."""
+    run_id = run.id
+
+    if ctx.sample_api_config_repo is None:
+        return _banner_only(request, [{"text": "Sample API is not configured.", "kind": "error"}])
+
+    if not worklist_id:
+        return _banner_only(request, [{"text": "No worklist selected.", "kind": "error"}])
+
+    from ..services.sample_api import fetch_worklist_samples
+
+    api_config = ctx.sample_api_config
+    if not api_config.enabled or not api_config.base_url:
+        return _banner_only(request, [{"text": "Sample API is not enabled or base URL is not configured.", "kind": "error"}])
+
+    success, message, raw_data = fetch_worklist_samples(api_config, worklist_id)
+    if not success:
+        return _banner_only(request, [{"text": f"Failed to fetch worklist samples: {message}", "kind": "error"}])
+
+    try:
+        new_samples, skipped_duplicates = _plan_worklist_import(run, raw_data, api_config, worklist_id)
+    except ValueError as e:
+        return _banner_only(request, [{"text": f"Worklist import rejected: {e}", "kind": "error"}])
+
+    if not new_samples and not skipped_duplicates:
+        return _banner_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
+
+    added_count = len(new_samples)
     if added_count > 0:
         with saving_run(run, ctx, request):
             for sample in new_samples:
