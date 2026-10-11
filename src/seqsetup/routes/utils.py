@@ -15,7 +15,8 @@ Implement it consistently or not at all.
 """
 
 import re
-from urllib.parse import unquote
+import unicodedata
+from urllib.parse import quote, unquote
 
 from starlette.responses import Response
 
@@ -82,6 +83,34 @@ def sanitize_filename(name: str, default: str = "export") -> str:
     sanitized = sanitized.strip('. ')
     sanitized = sanitized[:100]
     return sanitized if sanitized else default
+
+
+def _ascii_only(name: str) -> str:
+    """``name`` with its accents removed and every other non-ASCII character
+    dropped, so the result is always encodable in a header value."""
+    return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+
+
+def attachment_disposition(stem: str, default: str, suffix: str = "") -> str:
+    """The ``Content-Disposition`` value for a download named ``stem + suffix``.
+
+    ``stem`` is the variable part of the name — a run name or a kit name —
+    already scrubbed of anything that cannot appear in a header (see
+    ``sanitize_filename``), and ``default`` stands in for it when nothing
+    ASCII is left of it.
+
+    Starlette encodes header values as latin-1, so a name in a script
+    outside latin-1 (Polish, Czech, Turkish, Cyrillic, CJK, …) raises there
+    and the route reports a failure it does not have. The ``filename``
+    parameter is therefore always ASCII, and the name as typed rides in
+    ``filename*`` (RFC 6266 / RFC 5987) — added only when the two differ, so
+    a header for a name that is ASCII is unchanged.
+    """
+    ascii_stem = _ascii_only(stem) or default
+    header = f'attachment; filename="{ascii_stem}{suffix}"'
+    if ascii_stem != stem:
+        header += f"; filename*=UTF-8''{quote(stem + suffix, safe='')}"
+    return header
 
 
 def sanitize_string(value: str, max_len: int = 256) -> str:

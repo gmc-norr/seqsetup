@@ -25,7 +25,7 @@ from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
 from .dependencies import get_ctx, get_exportable_run
-from .utils import get_username, sanitize_filename
+from .utils import attachment_disposition, get_username, sanitize_filename
 
 
 logger = logging.getLogger("seqsetup")
@@ -34,12 +34,13 @@ logger = logging.getLogger("seqsetup")
 router = APIRouter(tags=["export"])
 
 
-def _attachment_headers(filename: str) -> dict:
+def _attachment_headers(name: str, default: str, suffix: str) -> dict:
     # ``no-store`` blocks corporate caching proxies from holding onto a
     # clinical Sample Sheet / validation report. The body identifies a
     # specific run and is not safe to re-serve from an intermediary.
     return {
-        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Disposition": attachment_disposition(
+            sanitize_filename(name, default), default, suffix),
         "Cache-Control": "no-store",
     }
 
@@ -59,6 +60,8 @@ def export_samplesheet_v2(
     run: SequencingRun = Depends(get_exportable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
+    # Before the try: a header that cannot be built is not a failed export.
+    headers = _attachment_headers(run.run_name, "SampleSheet_v2", ".csv")
     try:
         if run.generated_samplesheet_v2:
             content = run.generated_samplesheet_v2
@@ -69,18 +72,13 @@ def export_samplesheet_v2(
                 app_profile_repo=ctx.app_profile_repo,
                 instrument_config=ctx.instrument_config,
             )
-        filename = f"{sanitize_filename(run.run_name, 'SampleSheet_v2')}.csv"
         audit(
             "export.downloaded",
             actor=get_username(request),
             target=run.id,
             format="samplesheet_v2",
         )
-        return Response(
-            content=content,
-            media_type="text/csv",
-            headers=_attachment_headers(filename),
-        )
+        return Response(content=content, media_type="text/csv", headers=headers)
     except (InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).
@@ -104,6 +102,8 @@ def export_samplesheet_v1(
             content="SampleSheet v1 not supported for this instrument",
             status_code=400,
         )
+    # Before the try: a header that cannot be built is not a failed export.
+    headers = _attachment_headers(run.run_name, "SampleSheet", ".csv")
     try:
         # Mark Ready stored why it made no v1 sheet (spec 2026-10-05 group
         # A3, §3); a run made before exports were stored gets one on the
@@ -120,18 +120,13 @@ def export_samplesheet_v1(
         if withheld:
             return Response(content=f"No v1 sheet for this run: {withheld}.", status_code=409)
         content = run.generated_samplesheet_v1 or SampleSheetV1Exporter.export(run)
-        filename = f"{sanitize_filename(run.run_name, 'SampleSheet')}.csv"
         audit(
             "export.downloaded",
             actor=get_username(request),
             target=run.id,
             format="samplesheet_v1",
         )
-        return Response(
-            content=content,
-            media_type="text/csv",
-            headers=_attachment_headers(filename),
-        )
+        return Response(content=content, media_type="text/csv", headers=headers)
     except (InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).
@@ -149,20 +144,17 @@ def export_json(
     request: Request,
     run: SequencingRun = Depends(get_exportable_run),
 ) -> Response:
+    # Before the try: a header that cannot be built is not a failed export.
+    headers = _attachment_headers(run.run_name, "run_metadata", ".json")
     try:
         content = run.generated_json or JSONExporter.export(run)
-        filename = f"{sanitize_filename(run.run_name, 'run_metadata')}.json"
         audit(
             "export.downloaded",
             actor=get_username(request),
             target=run.id,
             format="json",
         )
-        return Response(
-            content=content,
-            media_type="application/json",
-            headers=_attachment_headers(filename),
-        )
+        return Response(content=content, media_type="application/json", headers=headers)
     except Exception:
         logger.exception("Failed to generate JSON export")
         return Response(
@@ -177,23 +169,20 @@ def export_validation_json(
     run: SequencingRun = Depends(get_exportable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
+    # Before the try: a header that cannot be built is not a failed export.
+    headers = _attachment_headers(run.run_name, "validation_report", "_validation.json")
     try:
         if run.generated_validation_json:
             content = run.generated_validation_json
         else:
             content = ValidationReportJSON.export(run, _run_validation(run, ctx))
-        filename = f"{sanitize_filename(run.run_name, 'validation_report')}_validation.json"
         audit(
             "export.downloaded",
             actor=get_username(request),
             target=run.id,
             format="validation_json",
         )
-        return Response(
-            content=content,
-            media_type="application/json",
-            headers=_attachment_headers(filename),
-        )
+        return Response(content=content, media_type="application/json", headers=headers)
     except (InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).
@@ -212,6 +201,8 @@ def export_validation_pdf(
     run: SequencingRun = Depends(get_exportable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
+    # Before the try: a header that cannot be built is not a failed export.
+    headers = _attachment_headers(run.run_name, "validation_report", "_validation.pdf")
     try:
         # PDF is pre-generated on DRAFT→READY transition (see routes/runs.py
         # update_run_status). Never write back here — that would mutate a
@@ -221,18 +212,13 @@ def export_validation_pdf(
         pdf_bytes = run.generated_validation_pdf or ValidationReportPDF.export(
             run, _run_validation(run, ctx)
         )
-        filename = f"{sanitize_filename(run.run_name, 'validation_report')}_validation.pdf"
         audit(
             "export.downloaded",
             actor=get_username(request),
             target=run.id,
             format="validation_pdf",
         )
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers=_attachment_headers(filename),
-        )
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
     except (InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).

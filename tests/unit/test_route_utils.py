@@ -1,11 +1,13 @@
 """Tests for route utility functions."""
 
 import asyncio
+import re
 
 import pytest
 
 from seqsetup.routes.utils import (
     UploadTooLargeError,
+    attachment_disposition,
     get_username,
     read_upload_capped,
     sanitize_filename,
@@ -366,3 +368,71 @@ class TestSanitizeString:
         once = sanitize_string(s, max_len=256)
         twice = sanitize_string(once, max_len=256)
         assert once == twice
+
+# ---------------------------------------------------------------------------
+# attachment_disposition
+# ---------------------------------------------------------------------------
+
+
+class TestAttachmentDisposition:
+    """The one place a download's Content-Disposition value is built.
+
+    Starlette encodes header values as latin-1, so the ``filename``
+    parameter must be ASCII; the name as typed rides in ``filename*``
+    (RFC 6266 / RFC 5987) and is added only when the two differ, so a
+    header for a name that is ASCII is unchanged.
+    """
+
+    def test_ascii_stem_is_the_single_filename_parameter(self):
+        assert attachment_disposition("MyRun_001", "export", ".csv") == (
+            'attachment; filename="MyRun_001.csv"'
+        )
+
+    @pytest.mark.parametrize("name", [
+        "MyRun_001", "My Run 001", "run-001.csv", "", "!@#$%^&*()", "A" * 200,
+        "../../../etc/passwd", "...hidden...",
+    ])
+    def test_an_ascii_name_header_is_byte_identical_to_the_old_one(self, name):
+        """What the five export routes used to build, for every ASCII name."""
+        stem = sanitize_filename(name, "SampleSheet_v2")
+        header = attachment_disposition(stem, "SampleSheet_v2", ".csv")
+        assert header == f'attachment; filename="{stem}.csv"'
+        assert "filename*" not in header
+
+    def test_a_polish_name_gets_an_ascii_fallback_and_the_name_as_typed(self):
+        assert attachment_disposition("Próba_Łukasz_1", "SampleSheet_v2", ".csv") == (
+            'attachment; filename="Proba_ukasz_1.csv"'
+            "; filename*=UTF-8''Pr%C3%B3ba_%C5%81ukasz_1.csv"
+        )
+
+    def test_a_name_with_nothing_ascii_left_uses_the_default(self):
+        assert attachment_disposition("日本語ラン", "SampleSheet_v2", ".csv") == (
+            'attachment; filename="SampleSheet_v2.csv"'
+            "; filename*=UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E%E3%83%A9%E3%83%B3.csv"
+        )
+
+    @pytest.mark.parametrize("stem", [
+        "Próba_Łukasz_1", "Příliš_žluťoučký", "Şükrü_Run", "日本語ラン", "Русский",
+        "Ελληνικά", "עברית", "ไทย", "Rūna_Latviski", "café",
+    ])
+    def test_every_header_is_latin_1_encodable(self, stem):
+        """The whole point: Starlette must be able to encode what we return."""
+        attachment_disposition(stem, "export", ".csv").encode("latin-1")
+
+    @pytest.mark.parametrize("stem", [
+        "Próba_Łukasz_1", "日本語ラン", "Русский", "ไทย", "café",
+    ])
+    def test_the_extended_parameter_is_a_valid_rfc_5987_value(self, stem):
+        header = attachment_disposition(stem, "export", ".csv")
+        assert "filename*=UTF-8''" in header, header
+        value = header.split("filename*=UTF-8''", 1)[1]
+        # attr-char / pct-encoded only (RFC 5987 §3.2.1), and every % starts
+        # a complete hex triplet.
+        assert re.fullmatch(r"[A-Za-z0-9!#$&+\-.^_`|~%]+", value), value
+        assert re.fullmatch(r"(?:[^%]|%[0-9A-F]{2})+", value), value
+
+    def test_a_header_injection_attempt_survives_as_nothing_dangerous(self):
+        stem = sanitize_filename('a\r\nb: "c"', "export")
+        assert stem == "ab_c"
+        header = attachment_disposition(stem, "export", ".csv")
+        assert header == 'attachment; filename="ab_c.csv"'
