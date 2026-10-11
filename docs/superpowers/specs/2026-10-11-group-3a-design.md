@@ -397,3 +397,23 @@ All without network and without the real MongoDB (`MONGODB_URI=mongodb://127.0.0
 - If this machine can build images: `docker build` runs the real download and passes the
   check; with one pinned hash changed in a scratch copy it stops at `RUN pixi run css`.
 - Today's Sample Sheets: unchanged (nothing here touches them; checked anyway).
+
+## After the build (2026-10-11)
+
+Built test-first directly on the branch (the user chose to skip the plan and the detached
+build for the remaining fixes). Two changes from the design above, both measured:
+
+- **The install never runs the binary.** Section 5, step 7 said it runs `--version`. In
+  Tailwind v4 `--version` also compiles and prints a whole stylesheet (166 KB of output,
+  measured with the real v4.3.0 binary; the old script did the same). The script prints
+  `Installed Tailwind <version> at .pixi/bin/tailwindcss` instead, and the tests check that
+  neither an installed nor a new binary is ever run by the install. The `css` task runs it
+  next anyway. The refusals go to stderr.
+- **The Dockerfile installs curl** (not in the design). `docker build` with today's
+  `ghcr.io/prefix-dev/pixi:latest` (Ubuntu 24.04.4) stopped at `RUN pixi run css` with
+  `curl: command not found`, on main `6484500` too: neither the base image nor the pixi
+  environment has curl. Adding it to the pixi environment would re-solve `pixi.lock` and
+  change 37 other packages (measured with `pixi add --no-install curl`), so the Dockerfile
+  installs Ubuntu's `curl` and `ca-certificates` with `apt-get` before the build steps. The
+  downloaded Tailwind binary is still checked against its pin. This is the floating base
+  image of "For the later list" at work.
