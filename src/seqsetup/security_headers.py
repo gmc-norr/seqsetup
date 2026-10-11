@@ -28,6 +28,8 @@ scripts can call ``eval``-equivalents at all) and is the standard
 trade-off accepted by every Alpine-based app.
 """
 
+import os
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -55,6 +57,27 @@ _SECURITY_HEADERS = {
     "Cross-Origin-Resource-Policy": "same-origin",
     "Content-Security-Policy": _CSP,
 }
+
+
+_HTTPS_ONLY_ON = ("1", "true", "yes")
+_HTTPS_ONLY_OFF = ("", "0", "false", "no")
+
+
+def https_only_from_env() -> bool:
+    """SEQSETUP_HTTPS_ONLY as a bool. Raise RuntimeError on a value it does not know.
+
+    Read loosely, a typo such as ``on`` would quietly leave the session cookie
+    without Secure, so a value outside the two lists stops the start.
+    """
+    value = os.environ.get("SEQSETUP_HTTPS_ONLY", "")
+    if value.lower() in _HTTPS_ONLY_ON:
+        return True
+    if value.lower() in _HTTPS_ONLY_OFF:
+        return False
+    raise RuntimeError(
+        f"SEQSETUP_HTTPS_ONLY={value!r} is not a known value. Set it to 1 (or true, yes) "
+        "when users reach SeqSetup over HTTPS, or to 0 (or false, no) when they do not."
+    )
 
 
 def apply_security_headers(response: Response, is_https: bool) -> None:

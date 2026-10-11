@@ -40,7 +40,7 @@ from .routes.admin import (
     logs as admin_logs,
     sample_api as admin_sample_api,
 )
-from .security_headers import SecurityHeadersMiddleware
+from .security_headers import SecurityHeadersMiddleware, https_only_from_env
 from .services.log_capture import setup_log_capture
 from .services import web_sessions
 from .services.audit_log import set_audit_sink
@@ -63,15 +63,16 @@ _STATIC_DIR = Path(__file__).parent / "static"
 # be shown in UTC without anyone noticing (utils/clock.py).
 check_display_zone()
 
+# Production deployments must set SEQSETUP_HTTPS_ONLY=1 so the session cookie
+# carries the Secure attribute. Local-dev HTTP leaves it unset. A value it does
+# not know stops the start here, before anything connects (security_headers.py).
+_SESS_HTTPS_ONLY = https_only_from_env()
+
 # Resolve session secret
 _SESSION_SECRET = resolve_session_secret()
 
 # Initialize repositories
 init_repos()
-
-# Production deployments must set SEQSETUP_HTTPS_ONLY=1 so the session cookie
-# carries the Secure attribute. Local-dev HTTP leaves it unset.
-_SESS_HTTPS_ONLY = os.environ.get("SEQSETUP_HTTPS_ONLY", "").lower() in ("1", "true", "yes")
 
 
 # Disable FastAPI's built-in /docs, /redoc and /openapi.json at the root —
