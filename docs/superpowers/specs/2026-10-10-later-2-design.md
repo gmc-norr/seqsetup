@@ -261,6 +261,10 @@ also old ones") they were fixed, each test-first in its own commit after the bui
 - The admin's save shows the connection check's count; it showed the check's message only
   on a failure. The ID check uses `fullmatch`: its `$` let an ID ending in a line break
   through (a review of the fixes found these three).
+- A sample row keeps its own worksheet ID under any name the import reads it from
+  (`worklist_id`, `worksheetid`, `worksheet`, `AL`); the fetch added the picked worksheet as
+  `worksheet_id`, which came first and hid it, for iGene's `WorksheetID` too (Astra's review
+  of the branch).
 - Load Worklists takes a draft run, as the preview and the import do.
 - An entry of the list that is not a JSON object is left out with a warning; a `created`
   value that is not text no longer stops the list; a run shows at most ten warnings; the

@@ -226,8 +226,10 @@ failing with an unrelated server error later. An i7 or i5 name without the
 sequence for it, or an index pair name with no sequence at all, rejects the
 **entire import**, naming the sample: SeqSetup
 does not look an index up by its name, and the sample would come in
-without that index. A sample row with no worksheet ID (absent, ``null`` or
-blank) gets the worksheet that was picked.
+without that index. A sample row keeps its own worksheet ID, read from the
+**Worksheet ID field** if you mapped one, else ``worksheet_id``,
+``worksheetid``, ``worksheet``, ``worklist_id`` or ``AL``; a row with none
+(absent, ``null`` or blank) gets the worksheet that was picked.
 
 A test version is checked by its JSON type, before anything turns it into
 text, and is never cut: text is checked as it is, a whole number keeps its
