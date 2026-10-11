@@ -279,7 +279,8 @@ class TestThePinnedHashes:
         [],
         ["0" * 64 + "  tailwindcss-linux-arm64"],
         [f"{_sha256(GOOD)}  tailwindcss-linux-x64", f"{_sha256(GOOD)}  tailwindcss-linux-x64"],
-        [f"# {_sha256(GOOD)}  tailwindcss-linux-x64"],
+        # No space after "#": without the comment rule, awk would read the name as field 2.
+        [f"#{_sha256(GOOD)}  tailwindcss-linux-x64"],
     ], ids=["empty", "other-platform-only", "twice", "commented-out"])
     def test_no_single_pin_stops_before_downloading(self, tmp_path, sums_lines):
         checkout = Checkout(tmp_path, sums_lines=sums_lines)
