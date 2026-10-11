@@ -145,7 +145,15 @@ Local Development Setup
 
       pixi run serve
 
-   The application starts at ``http://localhost:5001``.
+   The application starts at ``http://localhost:5001``. It listens on every
+   network interface of this computer, so on a shared network other machines
+   can reach it too; use a firewall, or the Docker setup in
+   :doc:`deployment`, which opens the port only on the server itself.
+
+   The first run downloads Tailwind CSS, which builds the stylesheet. The
+   download is checked against the SHA-256 pinned in
+   ``tools/tailwind-sha256.txt``; a file that does not match is not installed,
+   and the start stops.
 
 5. **Log in**
 

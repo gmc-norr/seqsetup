@@ -22,9 +22,14 @@ Quick Start with Docker Compose
 -------------------------------
 
 The simplest way to run SeqSetup is with Docker Compose, which starts both
-the application and MongoDB:
+the application and MongoDB. First copy ``.env.example`` to ``.env`` and fill
+it in: ``docker compose`` refuses to start while a required value is missing,
+``SEQSETUP_HTTPS_ONLY`` among them (see :ref:`port-and-https`).
 
 .. code-block:: bash
+
+   # Your settings (once), then fill in .env
+   cp .env.example .env
 
    # Build and start both containers
    docker compose up --build
@@ -41,7 +46,53 @@ the application and MongoDB:
    # Stop and remove data volume (destroys all data!)
    docker compose down -v
 
-The application will be available at http://localhost:5001.
+The application will be available at http://localhost:5001 on the server
+itself; other machines reach it through your TLS proxy (see
+:ref:`port-and-https`).
+
+.. _port-and-https:
+
+Port and HTTPS
+~~~~~~~~~~~~~~
+
+``docker-compose.yml`` publishes the app's port 5001 on ``127.0.0.1`` only:
+the server itself, and a TLS proxy running on it, can reach the app; other
+machines cannot. When the proxy runs on another machine, set
+``SEQSETUP_PUBLISH_ADDRESS`` in ``.env`` to this server's address on the
+network the proxy uses (``0.0.0.0`` for every interface). A proxy that itself
+runs in a container cannot use ``127.0.0.1``, which inside its container is its
+own: run it in this Compose project (for example as a service in a
+``docker-compose.override.yml``), point it at ``http://app:5001``, and leave
+``SEQSETUP_PUBLISH_ADDRESS`` unset.
+
+.. important::
+
+   This needs **Docker Engine 28.0.0 or newer**. In older releases, machines
+   on the same network switch can reach ports published to ``127.0.0.1``
+   (Docker's own warning; moby/moby#45610). Check the version with
+   ``docker version --format '{{.Server.Version}}'``, and upgrade an older
+   engine before installing SeqSetup. A host firewall such as ufw is no
+   substitute: Docker routes published ports before ufw's rules apply (Docker's
+   page "Packet filtering and firewalls"). The same holds when
+   ``SEQSETUP_PUBLISH_ADDRESS`` opens the port: ufw rules on this server do not
+   limit who reaches it.
+
+``.env`` must set ``SEQSETUP_HTTPS_ONLY``; ``docker compose`` refuses to start
+without it. Set it to ``1`` when users reach SeqSetup over HTTPS: the session
+cookie is marked ``Secure`` (browsers send it only over HTTPS), and every
+answer carries HSTS (``Strict-Transport-Security: max-age=63072000;
+includeSubDomains``), which tells browsers to use only HTTPS for this host
+name. Set it to ``0`` only for a trial over plain HTTP. ``1``, ``true`` and
+``yes`` mean on, ``0``, ``false`` and ``no`` off, in any case; any other value
+stops SeqSetup at start and says so.
+
+.. note::
+
+   ``includeSubDomains``: once a browser has seen HSTS from SeqSetup's host
+   name, that name, on every port, and every name under it
+   (``x.seqsetup.example.com``) work only over HTTPS in that browser, for two
+   years. Give SeqSetup a host name of its own, with no plain-HTTP service on
+   another port; names beside it (``other.example.com``) are not affected.
 
 Building the Docker Image
 -------------------------
@@ -59,13 +110,15 @@ Connecting to External MongoDB
 ------------------------------
 
 If you have an existing MongoDB instance (self-hosted or cloud service),
-run only the application container:
+run only the application container. As with Docker Compose, publish the port
+on ``127.0.0.1`` and set ``SEQSETUP_HTTPS_ONLY`` (see :ref:`port-and-https`):
 
 .. code-block:: bash
 
    docker run -d \
      --name seqsetup \
-     -p 5001:5001 \
+     -p 127.0.0.1:5001:5001 \
+     -e SEQSETUP_HTTPS_ONLY=1 \
      -e MONGODB_URI=mongodb://your-mongodb-host:27017 \
      -e MONGODB_DATABASE=seqsetup \
      -e SEQSETUP_SESSION_SECRET=$(openssl rand -hex 32) \
@@ -81,7 +134,8 @@ For MongoDB Atlas, use the connection string from the Atlas dashboard:
 
    docker run -d \
      --name seqsetup \
-     -p 5001:5001 \
+     -p 127.0.0.1:5001:5001 \
+     -e SEQSETUP_HTTPS_ONLY=1 \
      -e MONGODB_URI="mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true" \
      -e MONGODB_DATABASE=seqsetup \
      -e SEQSETUP_SESSION_SECRET=$(openssl rand -hex 32) \
@@ -115,6 +169,16 @@ Configure the application using environment variables:
      - The time zone SeqSetup shows times in, an IANA name such as
        ``Europe/Stockholm`` (see :ref:`time-zone`)
      - The server's own zone
+   * - ``SEQSETUP_HTTPS_ONLY``
+     - ``1`` (or ``true``, ``yes``) when users reach SeqSetup over HTTPS:
+       Secure session cookie and HSTS; ``0`` (or ``false``, ``no``) for plain
+       HTTP. Any other value stops the start. Required with Docker Compose
+       (see :ref:`port-and-https`)
+     - Off
+   * - ``SEQSETUP_PUBLISH_ADDRESS``
+     - Docker Compose only: the address the app's port is published on
+       (see :ref:`port-and-https`)
+     - ``127.0.0.1``
 
 .. _time-zone:
 
@@ -156,11 +220,12 @@ Create a ``docker-compose.prod.yml``:
      app:
        image: seqsetup:latest
        ports:
-         - "5001:5001"
+         - "127.0.0.1:5001:5001"
        environment:
          - MONGODB_URI=mongodb://mongodb:27017
          - MONGODB_DATABASE=seqsetup
          - SEQSETUP_SESSION_SECRET=${SESSION_SECRET}
+         - SEQSETUP_HTTPS_ONLY=1
        volumes:
          - ./config:/app/config:ro
        depends_on:
@@ -234,6 +299,9 @@ Before deploying to production:
    - Rate limiting
    - Access logging
 
+   Set ``SEQSETUP_HTTPS_ONLY=1`` and keep the app's port on ``127.0.0.1``
+   (see :ref:`port-and-https`).
+
 7. **Back up MongoDB regularly**
 
    Set up automated backups of the MongoDB data volume or use MongoDB
@@ -254,7 +322,7 @@ Example nginx configuration:
        ssl_certificate_key /etc/ssl/private/seqsetup.key;
 
        location / {
-           proxy_pass http://localhost:5001;
+           proxy_pass http://127.0.0.1:5001;
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -267,11 +335,12 @@ Example nginx configuration:
    Behind a **TLS-terminating** reverse proxy (HTTPS at the proxy, plain HTTP to
    the app), the app sees ``http`` as its own scheme while browsers send
    ``Origin: https://your-host``. The CSRF Origin check then rejects every
-   state-changing request (POST/PUT/PATCH/DELETE) with HTTP 403, and HSTS is not
-   emitted. Set ``SEQSETUP_TRUSTED_ORIGINS`` to your public HTTPS origin(s)
-   (comma-separated, e.g. ``https://seqsetup.example.com``) so the Origin check
-   and security headers work correctly. This is required production config
-   alongside ``SEQSETUP_HTTPS_ONLY`` whenever TLS is terminated upstream.
+   state-changing request (POST/PUT/PATCH/DELETE) with HTTP 403. Set
+   ``SEQSETUP_TRUSTED_ORIGINS`` to your public HTTPS origin(s) (comma-separated,
+   e.g. ``https://seqsetup.example.com``) so the Origin check accepts them. HSTS
+   does not depend on it: with ``SEQSETUP_HTTPS_ONLY=1`` every answer carries
+   HSTS (see :ref:`port-and-https`). Both are required production config
+   whenever TLS is terminated upstream.
 
 Fail-Closed External-Service Gates
 ----------------------------------
