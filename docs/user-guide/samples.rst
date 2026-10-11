@@ -108,8 +108,8 @@ sure is not in the list:
 
 - its ID is a number with a decimal point (``25.10`` arrives as ``25.1``),
   ``true`` or ``false``, a list or an object;
-- its ID has spaces around or in it, a sign other than ``.``, ``_``, ``-``
-  and ``~``, or more than 128 characters;
+- its ID has spaces or line breaks around or in it, a sign other than
+  ``.``, ``_``, ``-`` and ``~``, or more than 128 characters;
 - its entry has the ID under two spellings of one name;
 - another worksheet in the list has the same ID.
 
@@ -144,8 +144,8 @@ assigned immediately, with Override Cycles calculated automatically.
    too, like a paste (*"Worklist import rejected: these sample IDs appear
    more than once in the worklist: <IDs>. Nothing was added."*). So is a
    row with an i7 or i5 name but no sequence for it (*"Sample 'S1' has an
-   i7 name ('D701') but no i7 sequence."*): the sample would come in without
-   that index. As with a paste, a sample ID already in the run is skipped
+   i7 name ('D701') but no i7 sequence."*), or with an index pair name and
+   no sequence at all: the sample would come in without that index. As with a paste, a sample ID already in the run is skipped
    rather than blocking.
 
 Without a sample API configured, this button does not appear at all --

@@ -245,8 +245,8 @@ also old ones") they were fixed, each test-first in its own commit after the bui
 
 - **§3, a worksheet ID is used as sent** (E-3). "Written as today" stripped spaces: `"W2 "`
   was listed as `W2` and fetched worksheet `W2`. Now an ID the LIMS could not be asked for
-  exactly as sent (spaces around or in it, a sign other than `.`, `_`, `-`, `~`, more than
-  128 characters) leaves that worksheet out, with a warning; so does an ID that two
+  exactly as sent (spaces or line breaks around or in it, a sign other than `.`, `_`, `-`,
+  `~`, more than 128 characters) leaves that worksheet out, with a warning; so does an ID that two
   worksheets in the list share (all of them). The plan's `test_text_and_whole_numbers`,
   which pinned the strip, was changed on purpose.
 - **§4, a blank worksheet ID on a row** gets the picked worksheet (E-2), as this spec says;
@@ -256,8 +256,11 @@ also old ones") they were fixed, each test-first in its own commit after the bui
   (an import's "Added 2 samples", and a paste's refusal, which answers 200). It now keeps
   what the answer writes to the banner out of band. This changes one rule in `app.js`, for
   every button.
-- A row with an i7 or i5 name but no sequence for it refuses the worksheet; the sample came
-  in with no index and no message.
+- A row with an i7 or i5 name but no sequence for it, or an index pair name and no sequence
+  at all, refuses the worksheet; the sample came in with no index and no message.
+- The admin's save shows the connection check's count; it showed the check's message only
+  on a failure. The ID check uses `fullmatch`: its `$` let an ID ending in a line break
+  through (a review of the fixes found these three).
 - Load Worklists takes a draft run, as the preview and the import do.
 - An entry of the list that is not a JSON object is left out with a warning; a `created`
   value that is not text no longer stops the list; a run shows at most ten warnings; the

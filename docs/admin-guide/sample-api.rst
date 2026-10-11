@@ -127,8 +127,9 @@ is left out of the list when:
 - its ID is a number with a decimal point (JSON reads ``25.10`` as
   ``25.1``, which would fetch another worksheet), ``true``, ``false``, a
   list or an object;
-- its ID has spaces around or in it (``"W2 "`` was shown as ``W2`` and
-  fetched worksheet ``W2``), another sign, or more than 128 characters;
+- its ID has spaces or line breaks around or in it (``"W2 "`` was shown
+  as ``W2`` and fetched worksheet ``W2``), another sign, or more than 128
+  characters;
 - its entry has two spellings of one of those names (``Worksheet_ID`` and
   ``WORKSHEET_ID``);
 - another worksheet in the list has the same ID (``"7"`` and ``7`` count as
@@ -222,7 +223,8 @@ Every value pulled from a sample row is trimmed and capped at 256
 characters, and an index sequence is uppercased and checked against
 ``[ACGTN]`` before it is accepted -- naming the offending sample instead of
 failing with an unrelated server error later. An i7 or i5 name without the
-sequence for it rejects the **entire import**, naming the sample: SeqSetup
+sequence for it, or an index pair name with no sequence at all, rejects the
+**entire import**, naming the sample: SeqSetup
 does not look an index up by its name, and the sample would come in
 without that index. A sample row with no worksheet ID (absent, ``null`` or
 blank) gets the worksheet that was picked.
