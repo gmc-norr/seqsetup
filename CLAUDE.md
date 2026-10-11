@@ -145,6 +145,7 @@ src/seqsetup/
 ├── csrf.py              # OriginCheckMiddleware (state-changing requests)
 ├── rate_limit.py        # Token-bucket login limiter
 ├── security_headers.py  # CSP/X-Frame-Options/etc. response headers
+├── body_limit.py        # Caps each request body by path (413)
 ├── exception_handlers.py # HTML/HTMX-aware HTTPException + 422 handlers
 ├── api/                 # FastAPI sub-app for /api/* (Bearer-auth JSON API + Swagger)
 ├── forms/               # Pydantic Form() validators (shared across routes)

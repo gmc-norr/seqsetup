@@ -8,6 +8,7 @@ deployments and survives external CDN outages.
 |---|---|---|---|
 | htmx.min.js | npm `htmx.org`, `dist/htmx.min.js` | 2.0.11 | `d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717` |
 | alpine.min.js | npm `alpinejs`, `dist/cdn.min.js` | 3.17.4 | `232519394c6c8fdba6f362b1d9da16106db513cdbf899011f00daab4051df31c` |
+| axe.min.js | npm `axe-core`, `axe.min.js` (accessibility tests only) | 4.9.1 | `182a40dc5d8207e626c09861ad65027d45e85e3a56d01045d068e2e88ee432ea` |
 
 To bump: download the package from the npm registry and check it against the
 registry's `integrity` hash, copy the file named under Source, update its row

@@ -46,12 +46,39 @@ class TestTheLoginRequestIsCapped:
 
 
 class TestOtherRoutesAreCappedAt2Mb:
-    def test_a_run_form_over_2_mb_is_refused(self, logged_in_client):
+    """Every route the paste routes do not name, logged in or not."""
+
+    def test_a_run_form_over_2_mb_is_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
         run_id = _create_run(logged_in_client)
         pads = {f"pad{i}": "a" * (900 * 1024) for i in range(3)}
         response = logged_in_client.post(f"/runs/{run_id}/name", data={**pads, "run_name": "R1"},
                                          headers=_ORIGIN)
         assert response.status_code == 413
+        assert ctx.run_repo.get_by_id(run_id).run_name != "R1"
+
+
+class TestARefusedRequestChangesNothing:
+    """A 413 means nothing happened. Starlette's cap acts when the body is
+    read or the response starts, so a route that never reads its body would
+    run, and save, before its answer became 413; a body whose Content-Length
+    is over the cap is refused before any route runs."""
+
+    def test_an_oversized_post_to_a_route_that_reads_no_body_saves_nothing(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        added = logged_in_client.post(f"/runs/{run_id}/samples", headers=_ORIGIN,
+                                      data={"sample_id": "S001", "test_id": "WGS", "test_version": "1"})
+        assert added.status_code == 200
+        run = ctx.run_repo.get_by_id(run_id)
+        response = logged_in_client.post(
+            f"/runs/{run_id}/samples/{run.samples[0].id}/clear-index",
+            content=b"pad=" + b"a" * (3 * MB),
+            headers={**_ORIGIN, "Content-Type": "application/x-www-form-urlencoded"})
+        assert response.status_code == 413
+        assert ctx.run_repo.get_by_id(run_id).updated_at == run.updated_at
+        assert "max 2 MB" in response.text
 
 
 class TestThePasteRoutesTakeTheirFiles:
@@ -93,15 +120,35 @@ class TestThePasteRoutesTakeTheirFiles:
 
 
 class TestTheProxyExampleLetsTheBodiesThrough:
-    def test_nginx_client_max_body_size_covers_the_largest_cap(self):
-        """nginx refuses bodies over 1 MB unless told otherwise: the deploy
-        guide's example must let through what the app itself takes."""
-        import re
+    """The nginx example in docs/getting-started/deployment.rst. nginx refuses
+    bodies over 1 MB unless told otherwise; the example lets through what the
+    app takes, and the larger size only on the paste routes."""
+
+    def _example(self) -> str:
         from pathlib import Path
+
+        guide = Path(__file__).resolve().parents[2] / "docs" / "getting-started" / "deployment.rst"
+        return guide.read_text()
+
+    def test_the_server_size_covers_the_default_cap(self):
+        import re
+
+        from seqsetup.body_limit import DEFAULT_MAX_BODY_BYTES
+
+        sizes = re.findall(r"^       client_max_body_size (\d+)m;", self._example(), re.M)
+        assert len(sizes) == 1
+        assert int(sizes[0]) * MB >= DEFAULT_MAX_BODY_BYTES
+
+    def test_the_paste_location_covers_the_paste_caps(self):
+        import re
 
         from seqsetup.routes.samples import ADD_MAX_BODY_BYTES, PREVIEW_MAX_BODY_BYTES
 
-        guide = Path(__file__).resolve().parents[2] / "docs" / "getting-started" / "deployment.rst"
-        sizes = re.findall(r"^\s*client_max_body_size (\d+)m;", guide.read_text(), re.M)
-        assert len(sizes) == 1
-        assert int(sizes[0]) * MB >= max(ADD_MAX_BODY_BYTES, PREVIEW_MAX_BODY_BYTES)
+        found = re.findall(r"^       location ~ (\S+) \{\n           client_max_body_size (\d+)m;",
+                           self._example(), re.M)
+        assert len(found) == 1
+        pattern, size = found[0]
+        for path in ("/runs/abc/samples/preview", "/runs/abc/samples/bulk"):
+            assert re.search(pattern, path), path
+        assert not re.search(pattern, "/login/submit")
+        assert int(size) * MB >= max(ADD_MAX_BODY_BYTES, PREVIEW_MAX_BODY_BYTES)

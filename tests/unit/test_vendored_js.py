@@ -24,9 +24,10 @@ def _rows() -> dict:
 class TestVendoredJs:
     """Each file the app serves from static/js/vendor."""
 
-    @pytest.mark.parametrize("name", ["htmx.min.js", "alpine.min.js"])
+    @pytest.mark.parametrize("name", sorted(p.name for p in VENDOR.glob("*.js")))
     def test_the_file_is_the_one_versions_md_names(self, name):
+        assert name in _rows(), f"{name} has no row in VERSIONS.md"
         _file, _source, version, sha256 = _rows()[name]
         data = (VENDOR / name).read_bytes()
         assert hashlib.sha256(data).hexdigest() == sha256
-        assert f'version:"{version}"' in data.decode()
+        assert f'"{version}"' in data.decode()
