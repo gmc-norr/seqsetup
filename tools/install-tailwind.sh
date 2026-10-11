@@ -18,12 +18,23 @@ case "$(uname -sm)" in
 esac
 NAME="tailwindcss-$PLATFORM"
 
-COUNT=$(awk -v name="$NAME" '!/^#/ && $2 == name { n++ } END { print n + 0 }' "$SUMS")
+IFS= read -r PINNED < "$SUMS" || true
+if [ "$PINNED" != "# tailwindcss $VERSION" ]; then
+  echo "$SUMS pins ${PINNED#\# }, not $VERSION (tools/tailwind-version.txt)." >&2
+  echo "Copy the new release's values from its sha256sums.txt into $SUMS" >&2
+  echo "and change its first line." >&2
+  exit 1
+fi
+
+# A name is read as written in the release's sha256sums.txt (./tailwindcss-...) or without
+# the leading ./.
+PIN='!/^#/ && ($2 == name || $2 == "./" name)'
+COUNT=$(awk -v name="$NAME" "$PIN { n++ } END { print n + 0 }" "$SUMS")
 if [ "$COUNT" != 1 ]; then
   echo "$SUMS has no single SHA-256 for $NAME." >&2
   exit 1
 fi
-EXPECTED=$(awk -v name="$NAME" '!/^#/ && $2 == name { print $1 }' "$SUMS")
+EXPECTED=$(awk -v name="$NAME" "$PIN { print \$1 }" "$SUMS")
 
 if command -v sha256sum >/dev/null 2>&1; then
   sha256_of() { sha256sum "$1" | awk '{ print $1 }'; }
@@ -35,9 +46,14 @@ else
 fi
 
 # A binary already installed is hashed, never run, before it is trusted.
+if [ -e "$DEST" ] && [ ! -f "$DEST" ]; then
+  echo "$DEST is not a file. Remove it and run the install again." >&2
+  exit 1
+fi
 if [ -f "$DEST" ]; then
   INSTALLED=$(sha256_of "$DEST")
   if [ "$INSTALLED" = "$EXPECTED" ]; then
+    [ -x "$DEST" ] || chmod 755 "$DEST"
     echo "Tailwind $VERSION already installed at $DEST"
     exit 0
   fi
@@ -70,6 +86,6 @@ if [ "$ACTUAL" != "$EXPECTED" ]; then
   exit 1
 fi
 
-chmod +x "$STAGING"
+chmod 755 "$STAGING"
 mv -f "$STAGING" "$DEST"
 echo "Installed Tailwind $VERSION at $DEST"

@@ -10,6 +10,7 @@ goes to the network. The fake programs leave a marker file when they run.
 import hashlib
 import os
 import shutil
+import stat
 import subprocess
 import time
 import tomllib
@@ -57,6 +58,12 @@ echo "$out"
 UNSUPPORTED = "tools/tailwind-sha256.txt has no single SHA-256 for tailwindcss-linux-x64."
 NO_HASH_TOOL = ("Neither sha256sum nor shasum is installed, so the Tailwind binary cannot "
                 "be checked.")
+NOT_A_FILE = ".pixi/bin/tailwindcss is not a file. Remove it and run the install again."
+OTHER_VERSION = (
+    "tools/tailwind-sha256.txt pins tailwindcss v4.3.0, not v4.4.0 (tools/tailwind-version.txt).\n"
+    "Copy the new release's values from its sha256sums.txt into tools/tailwind-sha256.txt\n"
+    "and change its first line.\n"
+)
 
 
 def _sha256(text: str) -> str:
@@ -76,12 +83,12 @@ def _refusal(source: str, actual: str) -> str:
 class Checkout:
     """A scratch folder the script runs in, as if it were the repo root."""
 
-    def __init__(self, root: Path, sums_lines=None):
+    def __init__(self, root: Path, sums_lines=None, version="v4.3.0"):
         self.root = root
         self.markers = root / "markers"
         self.markers.mkdir()
         (root / "tools").mkdir()
-        (root / "tools" / "tailwind-version.txt").write_text("v4.3.0\n")
+        (root / "tools" / "tailwind-version.txt").write_text(version + "\n")
         if sums_lines is None:
             sums_lines = [f"{_sha256(GOOD)}  tailwindcss-linux-x64"]
         (root / "tools" / "tailwind-sha256.txt").write_text(
@@ -112,11 +119,19 @@ class Checkout:
         path.write_text(text)
         path.chmod(mode)
 
-    def install(self, text: str) -> None:
+    def install(self, text: str, mode: int = 0o755) -> None:
         path = self.root / ".pixi" / "bin" / "tailwindcss"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
-        path.chmod(0o755)
+        path.chmod(mode)
+
+    def tools_only_path(self, *extra: str) -> str:
+        """A PATH with the stand-ins and only the tools the script needs, plus extra."""
+        tools = self.root / "tools-only"
+        tools.mkdir()
+        for name in ("cat", "mkdir", "mktemp", "rm", "mv", "chmod", "awk", "head", "touch", *extra):
+            (tools / name).symlink_to(shutil.which(name))
+        return f"{self.fakebin}:{tools}"
 
     def env(self, path=None, **extra) -> dict:
         env = {**os.environ, "MARKERS": str(self.markers),
@@ -166,7 +181,7 @@ class TestADownload:
         result = checkout.run()
         assert result.returncode == 0, result.stderr
         assert checkout.installed.read_text() == GOOD
-        assert os.access(checkout.installed, os.X_OK)
+        assert stat.S_IMODE(checkout.installed.stat().st_mode) == 0o755
         assert checkout.bin_files() == ["tailwindcss"]
         assert checkout.curl_calls() == [f"curl -fsSL -o {checkout.curl_calls()[0].split()[3]} {URL}"]
         assert "Installed Tailwind v4.3.0 at .pixi/bin/tailwindcss" in result.stdout
@@ -203,15 +218,24 @@ class TestTheHashTool:
         assert not checkout.ran("good")
 
     def test_no_hash_tool_stops_before_downloading(self, checkout):
-        # A PATH with only the tools the script needs, without sha256sum and shasum.
-        tools = checkout.root / "tools-only"
-        tools.mkdir()
-        for name in ("cat", "mkdir", "mktemp", "rm", "mv", "chmod", "awk", "head", "touch"):
-            (tools / name).symlink_to(shutil.which(name))
-        result = checkout.run(path=f"{checkout.fakebin}:{tools}")
+        # Without sha256sum and shasum.
+        result = checkout.run(path=checkout.tools_only_path())
         assert result.returncode == 1
         assert NO_HASH_TOOL in result.stderr
         assert checkout.curl_calls() == []
+        assert checkout.bin_files() == []
+
+    def test_shasum_is_used_where_there_is_no_sha256sum(self, checkout):
+        """macOS has shasum, not sha256sum."""
+        result = checkout.run(path=checkout.tools_only_path("shasum"))
+        assert result.returncode == 0, result.stderr
+        assert checkout.installed.read_text() == GOOD
+
+    def test_shasum_refuses_a_bad_download(self, checkout):
+        checkout.serve(BAD)
+        result = checkout.run(path=checkout.tools_only_path("shasum"))
+        assert result.returncode == 1
+        assert _refusal(URL, _sha256(BAD)) in result.stderr
         assert checkout.bin_files() == []
 
 
@@ -225,6 +249,23 @@ class TestAnInstalledBinary:
         assert "Tailwind v4.3.0 already installed at .pixi/bin/tailwindcss" in result.stdout
         assert checkout.curl_calls() == []
         assert not checkout.ran("good")
+
+    def test_a_matching_install_that_is_not_executable_is_made_executable(self, checkout):
+        checkout.install(GOOD, mode=0o644)
+        result = checkout.run()
+        assert result.returncode == 0, result.stderr
+        assert "Tailwind v4.3.0 already installed at .pixi/bin/tailwindcss" in result.stdout
+        assert stat.S_IMODE(checkout.installed.stat().st_mode) == 0o755
+        assert checkout.curl_calls() == []
+        assert not checkout.ran("good")
+
+    def test_a_directory_in_the_way_is_refused(self, checkout):
+        checkout.installed.mkdir(parents=True)
+        result = checkout.run()
+        assert result.returncode == 1
+        assert NOT_A_FILE in result.stderr
+        assert checkout.curl_calls() == []
+        assert checkout.installed.is_dir() and list(checkout.installed.iterdir()) == []
 
     def test_a_mismatching_install_is_replaced_without_running(self, checkout):
         checkout.install(OLD)
@@ -289,6 +330,32 @@ class TestThePinnedHashes:
         assert UNSUPPORTED in result.stderr
         assert checkout.curl_calls() == []
         assert checkout.bin_files() == []
+
+
+class TestThePinsFile:
+    """The pins file's first line names the version; Tailwind's own sha256sums.txt
+    writes each name as ./tailwindcss-<platform>, which is read too."""
+
+    def test_a_version_the_pins_do_not_name_is_refused(self, tmp_path):
+        checkout = Checkout(tmp_path, version="v4.4.0")
+        checkout.install(GOOD)
+        result = checkout.run()
+        assert result.returncode == 1
+        assert OTHER_VERSION in result.stderr
+        assert checkout.curl_calls() == []
+
+    def test_a_name_with_a_leading_dot_slash_is_read(self, tmp_path):
+        checkout = Checkout(tmp_path, sums_lines=[f"{_sha256(GOOD)}  ./tailwindcss-linux-x64"])
+        result = checkout.run()
+        assert result.returncode == 0, result.stderr
+        assert checkout.installed.read_text() == GOOD
+
+    def test_one_name_written_both_ways_is_two_pins(self, tmp_path):
+        checkout = Checkout(tmp_path, sums_lines=[f"{_sha256(GOOD)}  ./tailwindcss-linux-x64",
+                                                  f"{_sha256(GOOD)}  tailwindcss-linux-x64"])
+        result = checkout.run()
+        assert result.returncode == 1
+        assert UNSUPPORTED in result.stderr
 
 
 class TestTwoInstallsAtOnce:
