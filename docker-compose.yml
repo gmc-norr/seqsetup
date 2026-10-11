@@ -11,7 +11,11 @@ services:
     cap_drop:
       - ALL
     ports:
-      - "5001:5001"
+      # Only this server can reach the app (a TLS proxy on it still can). To let a proxy on
+      # another machine in, set SEQSETUP_PUBLISH_ADDRESS in .env to this server's address
+      # on that network (0.0.0.0 for every interface). Needs Docker Engine 28.0.0 or
+      # newer: older engines let machines on the same network switch reach 127.0.0.1 ports.
+      - "${SEQSETUP_PUBLISH_ADDRESS:-127.0.0.1}:5001:5001"
     environment:
       # Mongo connection uses authenticated credentials from .env (see env_file below).
       # If you want to omit auth for a local-only dev run, override MONGODB_URI in
@@ -21,7 +25,8 @@ services:
       # Session + secrets: set these in .env. The app fails closed if SEQSETUP_SESSION_SECRET
       # is too short, so an empty value here is rejected at startup.
       - SEQSETUP_SESSION_SECRET=${SEQSETUP_SESSION_SECRET:?must set in .env}
-      - SEQSETUP_HTTPS_ONLY=${SEQSETUP_HTTPS_ONLY:-0}
+      # 1 behind TLS: Secure session cookie and HSTS. No default: decide it in .env.
+      - SEQSETUP_HTTPS_ONLY=${SEQSETUP_HTTPS_ONLY:?must set in .env}
       - SEQSETUP_LIMS_API_KEY=${SEQSETUP_LIMS_API_KEY:-}
     env_file:
       - .env
