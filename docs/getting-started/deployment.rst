@@ -22,9 +22,14 @@ Quick Start with Docker Compose
 -------------------------------
 
 The simplest way to run SeqSetup is with Docker Compose, which starts both
-the application and MongoDB:
+the application and MongoDB. First copy ``.env.example`` to ``.env`` and fill
+it in: ``docker compose`` refuses to start while a required value is missing,
+``SEQSETUP_HTTPS_ONLY`` among them (see :ref:`port-and-https`).
 
 .. code-block:: bash
+
+   # Your settings (once), then fill in .env
+   cp .env.example .env
 
    # Build and start both containers
    docker compose up --build
@@ -41,11 +46,9 @@ the application and MongoDB:
    # Stop and remove data volume (destroys all data!)
    docker compose down -v
 
-The application will be available at http://localhost:5001.
-
-Before the first start, copy ``.env.example`` to ``.env`` and fill it in:
-``docker compose`` refuses to start while a required value is missing,
-``SEQSETUP_HTTPS_ONLY`` among them (see :ref:`port-and-https`).
+The application will be available at http://localhost:5001 on the server
+itself; other machines reach it through your TLS proxy (see
+:ref:`port-and-https`).
 
 .. _port-and-https:
 
@@ -56,16 +59,23 @@ Port and HTTPS
 the server itself, and a TLS proxy running on it, can reach the app; other
 machines cannot. When the proxy runs on another machine, set
 ``SEQSETUP_PUBLISH_ADDRESS`` in ``.env`` to this server's address on the
-network the proxy uses (``0.0.0.0`` for every interface).
+network the proxy uses (``0.0.0.0`` for every interface). A proxy that itself
+runs in a container cannot use ``127.0.0.1``, which inside its container is its
+own: run it in this Compose project (for example as a service in a
+``docker-compose.override.yml``), point it at ``http://app:5001``, and leave
+``SEQSETUP_PUBLISH_ADDRESS`` unset.
 
 .. important::
 
    This needs **Docker Engine 28.0.0 or newer**. In older releases, machines
    on the same network switch can reach ports published to ``127.0.0.1``
    (Docker's own warning; moby/moby#45610). Check the version with
-   ``docker version --format '{{.Server.Version}}'``. On an older engine,
-   upgrade; until then, add a host firewall rule that drops port 5001 from
-   other machines.
+   ``docker version --format '{{.Server.Version}}'``, and upgrade an older
+   engine before installing SeqSetup. A host firewall such as ufw is no
+   substitute: Docker routes published ports before ufw's rules apply (Docker's
+   page "Packet filtering and firewalls"). The same holds when
+   ``SEQSETUP_PUBLISH_ADDRESS`` opens the port: ufw rules on this server do not
+   limit who reaches it.
 
 ``.env`` must set ``SEQSETUP_HTTPS_ONLY``; ``docker compose`` refuses to start
 without it. Set it to ``1`` when users reach SeqSetup over HTTPS: the session
@@ -79,9 +89,10 @@ stops SeqSetup at start and says so.
 .. note::
 
    ``includeSubDomains``: once a browser has seen HSTS from SeqSetup's host
-   name, that name and every name under it (``x.seqsetup.example.com``) work
-   only over HTTPS in that browser, for two years. Give SeqSetup a host name
-   of its own; names beside it (``other.example.com``) are not affected.
+   name, that name, on every port, and every name under it
+   (``x.seqsetup.example.com``) work only over HTTPS in that browser, for two
+   years. Give SeqSetup a host name of its own, with no plain-HTTP service on
+   another port; names beside it (``other.example.com``) are not affected.
 
 Building the Docker Image
 -------------------------
@@ -311,7 +322,7 @@ Example nginx configuration:
        ssl_certificate_key /etc/ssl/private/seqsetup.key;
 
        location / {
-           proxy_pass http://localhost:5001;
+           proxy_pass http://127.0.0.1:5001;
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

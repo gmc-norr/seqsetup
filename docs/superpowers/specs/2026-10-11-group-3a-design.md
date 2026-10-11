@@ -417,3 +417,30 @@ build for the remaining fixes). Two changes from the design above, both measured
   installs Ubuntu's `curl` and `ca-certificates` with `apt-get` before the build steps. The
   downloaded Tailwind binary is still checked against its pin. This is the floating base
   image of "For the later list" at work.
+
+### After a review of the build (2026-10-11)
+
+A fresh-context code review of `106665a` (Astra had no tokens left) found nothing critical
+and one important docs gap; each finding was checked and is fixed:
+
+- **Docs: no firewall workaround for Docker older than 28.0.0.** Docker's page "Packet
+  filtering and firewalls" says published ports are routed before ufw's rules apply, so
+  "add a host firewall rule" did not close the port. The docs now require 28.0.0 or newer
+  and say ufw is no substitute, also for a port opened with `SEQSETUP_PUBLISH_ADDRESS`.
+- **Docs:** a TLS proxy in a container uses the Compose network (`http://app:5001`), not
+  `SEQSETUP_PUBLISH_ADDRESS`; the nginx example proxies to `127.0.0.1`, not `localhost`
+  (which can mean `::1`, no longer published); the quick starts copy `.env.example` first;
+  `SEQSETUP_TRUSTED_ORIGINS` moves to "Recommended for production" in `.env.example`; the
+  HSTS note says "on every port".
+- **The install script** refuses a pins file whose first line names another version than
+  `tools/tailwind-version.txt` (before, a machine with the old binary said "already
+  installed"), and a `.pixi/bin/tailwindcss` that is not a file (before, the binary was moved
+  into it); it reads names as Tailwind's `sha256sums.txt` writes them (`./tailwindcss-…`); a
+  matching install that is not executable is made executable (before, the CSS step failed
+  with 126 on every run); a new binary gets mode 755, as before this branch (`chmod +x` on the
+  mode-600 staging file gave 711 or 710).
+- **The headers read the scheme from the ASGI scope**, not `request.url`, which raises on a
+  Host header such as `[`; such a request, crash page included, left without the headers
+  when "HTTPS only" was off.
+- **Tests added** for the `shasum` path and for the setting being checked before the session
+  secret (each was a break test that stayed green).

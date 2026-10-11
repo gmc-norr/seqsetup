@@ -17,11 +17,15 @@ This is the recommended way to run a fully functional instance.
 git clone <repository-url>
 cd seqsetup
 
+# Your settings: copy, then fill in .env (docker compose refuses to start
+# while a required value is missing)
+cp .env.example .env
+
 # Start the application and MongoDB
 docker compose up --build
 ```
 
-The application will be available at `http://localhost:5001`.
+The application will be available at `http://localhost:5001` on the server itself; other machines reach it through your TLS proxy. See `docs/getting-started/deployment.rst` ("Port and HTTPS").
 
 To run in the background:
 
