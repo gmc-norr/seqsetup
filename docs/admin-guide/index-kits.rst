@@ -89,8 +89,9 @@ that :doc:`Config Sync <profiles>` will later pick up.
 
 The file is named after the kit and its version, lower-cased
 (``asciikit_v1_0.yaml``). A kit named in an alphabet other than the Latin
-one still downloads: it is offered under the kit's own name, with a
-plain-ASCII name as the fallback for older browsers.
+one still downloads: the file keeps the kit name's own letters, after that
+same lower-casing and tidying, with a plain-ASCII name as the fallback for
+older browsers.
 
 Deleting a kit
 -----------------

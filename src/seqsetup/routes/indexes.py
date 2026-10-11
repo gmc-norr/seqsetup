@@ -358,8 +358,10 @@ def download_index_kit(
     if not kit:
         return Response("Index kit not found", status_code=404)
     # Before the export: a kit named outside latin-1 used to raise inside
-    # Response(), uncaught, as a raw 500. get_filename keeps the name as
-    # typed; attachment_disposition is what makes the header encodable.
+    # Response(), uncaught, as a raw 500. get_filename lower-cases the name,
+    # turns spaces into _ and / into -, and drops everything that is not
+    # alphanumeric, _ or - (which leaves non-latin-1 letters in);
+    # attachment_disposition is what makes the header encodable.
     headers = {
         "Content-Disposition": attachment_disposition(
             IndexKitYamlExporter.get_filename(kit), "index_kit.yaml"),

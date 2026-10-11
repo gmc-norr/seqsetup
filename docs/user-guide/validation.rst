@@ -51,8 +51,7 @@ Ready or Archived run it says so too, under its badges; there the
 .. note::
    The PDF report shows every error and warning as the text that was
    typed. A sample named, say, ``<b>S1`` reads as ``<b>S1`` in the PDF --
-   the angle brackets are not taken as formatting, so no name can hide a
-   line of the report or stop the PDF from being made.
+   the angle brackets are shown as text, not taken as formatting.
 
 Errors and warnings
 --------------------
