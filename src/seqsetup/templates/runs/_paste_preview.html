@@ -127,7 +127,8 @@
             <form hx-post="/runs/{{ run.id }}/samples/bulk"
                   hx-target="#sample-section"
                   hx-swap="outerHTML"
-                  hx-disabled-elt="find button">
+                  hx-disabled-elt="find button"
+                  hx-encoding="multipart/form-data">
                 <textarea name="paste_data" hidden>
 {{ paste.text }}</textarea>
                 {% for lane in paste.lanes %}<input type="hidden" name="lanes" value="{{ lane }}">{% endfor %}
