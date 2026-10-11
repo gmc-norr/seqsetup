@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, shown_value
-from ..models.sample_api_config import SampleApiConfig
+from ..models.sample_api_config import InvalidWorklistIdError, SampleApiConfig, validate_worklist_id
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
 logger = logging.getLogger(__name__)
@@ -390,7 +390,10 @@ def _worksheet_id(item: dict, config: SampleApiConfig) -> str:
     that is absent, null or blank. ValueError when two names of the item are
     one of those names once lower-cased, or when the ID read is not text or a
     whole number: str() would read JSON 25.10 as "25.1", and the import would
-    fetch that other worksheet (spec 2026-10-10 later list slice 2, §3)."""
+    fetch that other worksheet (spec 2026-10-10 later list slice 2, §3). The
+    ID is used as sent: one the import could not ask the LIMS for as it is,
+    with spaces around it for one, is a ValueError too; stripped, " W2 " was
+    listed as W2 and fetched worksheet W2 (build review of slice 2, E-3)."""
     names = {name.lower() for name in (config.get_api_field("worksheet_id"), "worksheet_id", "id")}
     first_spelling: dict = {}
     for key in item:
@@ -399,15 +402,26 @@ def _worksheet_id(item: dict, config: SampleApiConfig) -> str:
             continue
         if lower in first_spelling:
             raise ValueError(
-                f"A worksheet in the LIMS list has the names {first_spelling[lower]!r} and "
-                f"{key!r}, which SeqSetup reads as one name. Send only one of them."
+                f"A worksheet in the LIMS list has the names {shown_value(first_spelling[lower])!r} "
+                f"and {shown_value(key)!r}, which SeqSetup reads as one name. Send only one of them."
             )
         first_spelling[lower] = key
     raw = _raw_field_value(item, "worksheet_id", config)
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         raw = _raw_field_value(item, "id", config)
     _refuse_a_changed_value("A worksheet in the LIMS list has an ID", raw)
-    return str(raw).strip()[:_MAX_FIELD_LEN] if raw is not None else ""
+    if raw is None or not str(raw).strip():
+        return ""
+    text = str(raw)
+    try:
+        validate_worklist_id(text)
+    except InvalidWorklistIdError:
+        raise ValueError(
+            f"A worksheet in the LIMS list has the ID {shown_value(text)!r}, which SeqSetup cannot "
+            f"ask the LIMS for as it was sent: an ID is at most 128 letters, digits, '.', '_', '-' "
+            f"or '~', with no spaces."
+        )
+    return text
 
 
 def fetch_worklists(
@@ -500,6 +514,16 @@ def fetch_worklists(
                         worksheet[lower_k] = v
 
             worksheets.append(worksheet)
+
+        # Two worksheets with one ID would be two options that fetch the same
+        # worksheet, one under the other's label (build review of slice 2, E-3).
+        counts = Counter(w["id"] for w in worksheets)
+        for wl_id in [i for i in counts if counts[i] > 1]:
+            left_out.append(
+                f"{counts[wl_id]} worksheets in the LIMS list have the ID {shown_value(wl_id)!r}, and "
+                f"SeqSetup cannot tell which one the LIMS means. They are left out of the list."
+            )
+        worksheets = [w for w in worksheets if counts[w["id"]] == 1]
 
         if not worksheets:
             return False, "No valid worksheets found in API response", [], left_out

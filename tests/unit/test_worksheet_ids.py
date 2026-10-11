@@ -54,12 +54,74 @@ class TestAnIdOfTheWrongTypeIsLeftOut:
 class TestTextAndWholeNumbersAreListedAsToday:
 
     def test_text_and_whole_numbers(self, lims_wire):
-        assert _listed(lims_wire, b'[{"id": "25.10"}, {"id": 7}, {"id": 0}, {"id": " W2 "}]') == (
-            True, "Found 4 worksheets", ["25.10", "7", "0", "W2"], [])
+        assert _listed(lims_wire, b'[{"id": "25.10"}, {"id": 7}, {"id": 0}, {"id": "W-2_a.b~c"}]') == (
+            True, "Found 4 worksheets", ["25.10", "7", "0", "W-2_a.b~c"], [])
 
     def test_a_worksheet_without_an_id_is_not_listed_as_today(self, lims_wire):
         assert _listed(lims_wire, b'[{"id": "W1"}, {"name": "no id"}, {"id": null}]') == (
             True, "Found 1 worksheets", ["W1"], [])
+
+
+def _cannot(shown):
+    return (f"A worksheet in the LIMS list has the ID {shown}, which SeqSetup cannot ask the "
+            f"LIMS for as it was sent: an ID is at most 128 letters, digits, '.', '_', '-' or "
+            f"'~', with no spaces. It is left out of the list.")
+
+
+def _same(count, shown):
+    return (f"{count} worksheets in the LIMS list have the ID {shown}, and SeqSetup cannot "
+            f"tell which one the LIMS means. They are left out of the list.")
+
+
+class TestAnIdSeqSetupWouldChangeIsLeftOut:
+    """The list showed " W2 " as W2 and the import fetched W2: two worksheets
+    whose IDs differ only in spaces gave two W2 options that fetched one of
+    them (build review of later list slice 2, E-3). The ID is used as sent,
+    or the worksheet is left out."""
+
+    def test_spaces_around_the_id(self, lims_wire):
+        body = b'[{"id": "W1"}, {"id": " W2 "}, {"id": "W2 "}]'
+        assert _listed(lims_wire, body) == (
+            True, "Found 1 worksheets", ["W1"], [_cannot("' W2 '"), _cannot("'W2 '")])
+
+    def test_the_review_case_lists_only_the_id_sent_as_it_is(self, lims_wire):
+        body = (b'[{"id": "W2 ", "investigator": "Smith"}, {"id": " W2 ", "investigator": "Jones"},'
+                b' {"id": "W2", "investigator": "Brown"}]')
+        lims_wire.body = body
+        ok, _message, worksheets, left_out = fetch_worklists(CONFIG)
+        assert [(w["id"], w["investigator"]) for w in worksheets] == [("W2", "Brown")]
+        assert left_out == [_cannot("'W2 '"), _cannot("' W2 '")]
+
+    @pytest.mark.parametrize("raw, shown", [
+        (b'"WS 12"', "'WS 12'"), (b'"WS/12"', "'WS/12'"), (b'"WS?12"', "'WS?12'"),
+        (b'"W\\u00e5"', "'Wå'"),
+    ])
+    def test_a_character_the_lims_cannot_be_asked_for(self, lims_wire, raw, shown):
+        assert _listed(lims_wire, b'[{"id": "W1"}, {"id": ' + raw + b'}]') == (
+            True, "Found 1 worksheets", ["W1"], [_cannot(shown)])
+
+    def test_a_long_id(self, lims_wire):
+        body = b'[{"id": "' + b"W" * 128 + b'"}, {"id": "' + b"X" * 129 + b'"}]'
+        assert _listed(lims_wire, body) == (
+            True, "Found 1 worksheets", ["W" * 128], [_cannot("'" + "X" * 40 + "…'")])
+
+    def test_the_mapped_field_is_checked_too(self, lims_wire):
+        assert _listed(lims_wire, b'[{"AL": "W2 "}, {"AL": "W3"}]', MAPPED) == (
+            True, "Found 1 worksheets", ["W3"], [_cannot("'W2 '")])
+
+
+class TestTwoWorksheetsWithOneId:
+    """Each would be an option that fetches the same worksheet, under another
+    worksheet's label."""
+
+    def test_both_are_left_out(self, lims_wire):
+        body = (b'[{"id": "W2", "investigator": "Smith"}, {"id": "W1"},'
+                b' {"id": "W2", "investigator": "Brown"}]')
+        assert _listed(lims_wire, body) == (True, "Found 1 worksheets", ["W1"], [_same(2, "'W2'")])
+
+    def test_text_and_a_number_with_the_same_digits(self, lims_wire):
+        assert _listed(lims_wire, b'[{"id": "7"}, {"id": 7}, {"id": "7"}]') == (
+            False, "No valid worksheets found in API response", [], [_same(3, "'7'")])
 
 
 class TestTheIdFallback:
@@ -108,6 +170,14 @@ class TestTwoSpellingsOfAnIdName:
         body = b'[{"worksheet_id": "W1", "Id": "a", "ID": "b"}]'
         assert _listed(lims_wire, body) == (
             False, "No valid worksheets found in API response", [], [_two("Id", "ID")])
+
+    def test_a_long_name_is_shortened_in_the_message(self, lims_wire):
+        long = "A" + "l" * 60
+        config = SampleApiConfig(base_url="https://lims.example.org/api", enabled=True,
+                                 field_mappings={"worksheet_id": long})
+        body = ('[{"%s": "W_A", "%s": "W_B"}]' % (long, long.upper())).encode()
+        assert _listed(lims_wire, body, config)[3] == [
+            _two(long[:40] + "…", long.upper()[:40] + "…")]
 
     def test_other_names_may_come_in_two_spellings(self, lims_wire):
         body = b'[{"id": "W1", "Name": "a", "NAME": "b"}]'
