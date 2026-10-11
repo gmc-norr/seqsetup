@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, shown_value
-from ..models.sample_api_config import SampleApiConfig
+from ..models.sample_api_config import InvalidWorklistIdError, SampleApiConfig, validate_worklist_id
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
 logger = logging.getLogger(__name__)
@@ -345,6 +345,31 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
         conn.close()
 
 
+def _raw_field_value(item: dict, field_name: str, config: SampleApiConfig):
+    """A field's value as the API sent it, found by the field mappings: the
+    mapped name, then in any capitals, then the SeqSetup name the same two
+    ways. None if not found."""
+    # Get the API field name from mappings, or use the SeqSetup field name
+    api_field = config.get_api_field(field_name)
+
+    # Try exact match first
+    if api_field in item:
+        return item[api_field]
+
+    # Try case-insensitive match
+    lower_item = {k.lower(): v for k, v in item.items()}
+    if api_field.lower() in lower_item:
+        return lower_item[api_field.lower()]
+
+    # Try the original field name as fallback
+    if field_name in item:
+        return item[field_name]
+    if field_name.lower() in lower_item:
+        return lower_item[field_name.lower()]
+
+    return None
+
+
 def _get_field_value(item: dict, field_name: str, config: SampleApiConfig) -> str:
     """Get a field value from an API response item using field mappings.
 
@@ -356,29 +381,117 @@ def _get_field_value(item: dict, field_name: str, config: SampleApiConfig) -> st
     Returns:
         The field value as a string, or empty string if not found.
     """
-    # Get the API field name from mappings, or use the SeqSetup field name
-    api_field = config.get_api_field(field_name)
+    val = _raw_field_value(item, field_name, config)
+    return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
 
-    # Try exact match first
-    if api_field in item:
-        val = item[api_field]
-        return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
 
-    # Try case-insensitive match
-    lower_item = {k.lower(): v for k, v in item.items()}
-    if api_field.lower() in lower_item:
-        val = lower_item[api_field.lower()]
-        return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
+def _worksheet_id(item: dict, config: SampleApiConfig) -> str:
+    """A worksheet's ID in the LIMS list: the worksheet ID field, or id when
+    that is absent, null or blank. ValueError when two names of the item are
+    one of those names once lower-cased, or when the ID read is not text or a
+    whole number: str() would read JSON 25.10 as "25.1", and the import would
+    fetch that other worksheet (spec 2026-10-10 later list slice 2, §3). The
+    ID is used as sent: one the import could not ask the LIMS for as it is,
+    with spaces around it for one, is a ValueError too; stripped, " W2 " was
+    listed as W2 and fetched worksheet W2 (build review of slice 2, E-3)."""
+    names = {name.lower() for name in (config.get_api_field("worksheet_id"), "worksheet_id", "id")}
+    first_spelling: dict = {}
+    for key in item:
+        lower = key.lower()
+        if lower not in names:
+            continue
+        if lower in first_spelling:
+            raise ValueError(
+                f"A worksheet in the LIMS list has the names {shown_value(first_spelling[lower])!r} "
+                f"and {shown_value(key)!r}, which SeqSetup reads as one name. Send only one of them."
+            )
+        first_spelling[lower] = key
+    raw = _raw_field_value(item, "worksheet_id", config)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raw = _raw_field_value(item, "id", config)
+    _refuse_a_changed_value("A worksheet in the LIMS list has an ID", raw)
+    if raw is None or not str(raw).strip():
+        return ""
+    text = str(raw)
+    try:
+        validate_worklist_id(text)
+    except InvalidWorklistIdError:
+        raise ValueError(
+            f"A worksheet in the LIMS list has the ID {shown_value(text)!r}, which SeqSetup cannot "
+            f"ask the LIMS for as it was sent: an ID is at most 128 letters, digits, '.', '_', '-' "
+            f"or '~', with no spaces."
+        )
+    return text
 
-    # Try the original field name as fallback
-    if field_name in item:
-        val = item[field_name]
-        return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
-    if field_name.lower() in lower_item:
-        val = lower_item[field_name.lower()]
-        return str(val).strip()[:_MAX_FIELD_LEN] if val is not None else ""
 
-    return ""
+def _read_worksheets(worksheets_data: list, config: SampleApiConfig) -> Tuple[list[dict], list[str]]:
+    """The worksheets of a LIMS list, as a run lists them, and the warnings
+    for the entries left out. The list and the admin's connection check
+    both read it so (build review of later list slice 2, MB-6)."""
+    # Normalize worksheet entries using field mappings
+    worksheets = []
+    left_out = []
+    for item in worksheets_data:
+        if not isinstance(item, dict):
+            # Dropped with no warning (build review of later list slice 2, M1-5).
+            left_out.append(
+                f"An entry in the LIMS list is not a worksheet "
+                f"({shown_value(json.dumps(item))}). It is left out of the list."
+            )
+            continue
+
+        # Get worksheet ID using field mapping (e.g., "AL" -> "worksheet_id"),
+        # else the standard "id" field
+        try:
+            wl_id = _worksheet_id(item, config)
+        except ValueError as e:
+            left_out.append(f"{e} It is left out of the list.")
+            continue
+        if not wl_id:
+            continue
+
+        # Get other fields using mappings
+        wl_name = _get_field_value(item, "name", config) or wl_id
+        investigator = _get_field_value(item, "investigator", config)
+        updated_at = _get_field_value(item, "updated_at", config)
+
+        # Build normalized worksheet entry
+        worksheet = {
+            "id": wl_id,
+            "name": wl_name,
+        }
+        if investigator:
+            worksheet["investigator"] = investigator
+        if updated_at:
+            worksheet["updated_at"] = updated_at
+
+        # Preserve samples dict if present (for embedded samples format)
+        samples_field = config.get_api_field("samples")
+        if samples_field in item:
+            worksheet["samples"] = item[samples_field]
+        elif "samples" in item:
+            worksheet["samples"] = item["samples"]
+
+        # Preserve any other fields (lowercased)
+        for k, v in item.items():
+            lower_k = k.lower()
+            if lower_k not in ("id", "name", "samples", "investigator", "updated_at"):
+                # Skip the mapped field names
+                if k not in (config.get_api_field(f) for f in ["worksheet_id", "name", "investigator", "updated_at", "samples"]):
+                    worksheet[lower_k] = v
+
+        worksheets.append(worksheet)
+
+    # Two worksheets with one ID would be two options that fetch the same
+    # worksheet, one under the other's label (build review of slice 2, E-3).
+    counts = Counter(w["id"] for w in worksheets)
+    for wl_id in [i for i in counts if counts[i] > 1]:
+        left_out.append(
+            f"{counts[wl_id]} worksheets in the LIMS list have the ID {shown_value(wl_id)!r}, and "
+            f"SeqSetup cannot tell which one the LIMS means. They are left out of the list."
+        )
+    worksheets = [w for w in worksheets if counts[w["id"]] == 1]
+    return worksheets, left_out
 
 
 def fetch_worklists(
@@ -386,7 +499,7 @@ def fetch_worklists(
     status: Optional[str] = None,
     limit: Optional[int] = None,
     sort_by_date: bool = True,
-) -> Tuple[bool, str, list[dict]]:
+) -> Tuple[bool, str, list[dict], list[str]]:
     """
     Fetch available worksheets from the API.
 
@@ -397,14 +510,15 @@ def fetch_worklists(
         sort_by_date: Sort worksheets by created date (newest first).
 
     Returns:
-        Tuple of (success, message, worksheets)
-        where worksheets is a list of dicts with at least 'id' and 'name'.
+        Tuple of (success, message, worksheets, left_out)
+        where worksheets is a list of dicts with at least 'id' and 'name',
+        and left_out the warnings for worksheets left out of the list.
     """
     if not config.base_url:
-        return False, "API base URL is not configured", []
+        return False, "API base URL is not configured", [], []
 
     if not config.enabled:
-        return False, "Sample API is not enabled", []
+        return False, "Sample API is not enabled", [], []
 
     try:
         url = config.worklists_url(status=status, limit=limit)
@@ -417,73 +531,32 @@ def fetch_worklists(
                 worksheets_data = data[0]
 
         if not isinstance(worksheets_data, list):
-            return False, "API response is not a valid format", []
+            return False, "API response is not a valid format", [], []
 
         if len(worksheets_data) == 0:
-            return False, "No worksheets available", []
+            return False, "No worksheets available", [], []
 
-        # Normalize worksheet entries using field mappings
-        worksheets = []
-        for item in worksheets_data:
-            if not isinstance(item, dict):
-                continue
-
-            # Get worksheet ID using field mapping (e.g., "AL" -> "worksheet_id")
-            wl_id = _get_field_value(item, "worksheet_id", config)
-            if not wl_id:
-                # Fall back to standard "id" field
-                wl_id = _get_field_value(item, "id", config)
-            if not wl_id:
-                continue
-
-            # Get other fields using mappings
-            wl_name = _get_field_value(item, "name", config) or wl_id
-            investigator = _get_field_value(item, "investigator", config)
-            updated_at = _get_field_value(item, "updated_at", config)
-
-            # Build normalized worksheet entry
-            worksheet = {
-                "id": wl_id,
-                "name": wl_name,
-            }
-            if investigator:
-                worksheet["investigator"] = investigator
-            if updated_at:
-                worksheet["updated_at"] = updated_at
-
-            # Preserve samples dict if present (for embedded samples format)
-            samples_field = config.get_api_field("samples")
-            if samples_field in item:
-                worksheet["samples"] = item[samples_field]
-            elif "samples" in item:
-                worksheet["samples"] = item["samples"]
-
-            # Preserve any other fields (lowercased)
-            for k, v in item.items():
-                lower_k = k.lower()
-                if lower_k not in ("id", "name", "samples", "investigator", "updated_at"):
-                    # Skip the mapped field names
-                    if k not in (config.get_api_field(f) for f in ["worksheet_id", "name", "investigator", "updated_at", "samples"]):
-                        worksheet[lower_k] = v
-
-            worksheets.append(worksheet)
+        worksheets, left_out = _read_worksheets(worksheets_data, config)
 
         if not worksheets:
-            return False, "No valid worksheets found in API response", []
+            return False, "No valid worksheets found in API response", [], left_out
 
         # Sort by date if requested (newest first)
         if sort_by_date:
-            worksheets.sort(key=lambda w: w.get("updated_at", w.get("created", "")), reverse=True)
+            # As text: a created value that is not text stopped the sort (build
+            # review of later list slice 2, M1-4).
+            worksheets.sort(key=lambda w: str(w.get("updated_at", w.get("created", ""))),
+                            reverse=True)
 
         logger.info(f"Fetched {len(worksheets)} worksheets from API")
-        return True, f"Found {len(worksheets)} worksheets", worksheets
+        return True, f"Found {len(worksheets)} worksheets", worksheets, left_out
 
     except SampleApiError as e:
-        return False, str(e), []
+        return False, str(e), [], []
     except Exception as e:
         msg = f"Unexpected error: {e}"
         logger.exception("Worksheet fetch failed")
-        return False, msg, []
+        return False, msg, [], []
 
 
 def check_connection(config: SampleApiConfig) -> Tuple[bool, str]:
@@ -503,16 +576,19 @@ def check_connection(config: SampleApiConfig) -> Tuple[bool, str]:
         data = _api_get(url, config.effective_api_key())
 
         # Handle response format: [worksheets_list, pagination_info]
-        count = 0
-        if isinstance(data, list):
-            if len(data) == 2 and isinstance(data[0], list) and isinstance(data[1], dict):
-                count = len(data[0])
-            else:
-                count = len(data)
-        else:
+        if not isinstance(data, list):
             return False, "API response is not a valid format"
+        entries = data
+        if len(data) == 2 and isinstance(data[0], list) and isinstance(data[1], dict):
+            entries = data[0]
 
-        return True, f"Connection successful ({count} worksheets found)"
+        # Counted as a run lists them (build review of later list slice 2, MB-6).
+        worksheets, _left_out = _read_worksheets(entries, config)
+        unlisted = len(entries) - len(worksheets)
+        if unlisted:
+            return True, (f"Connection successful ({len(worksheets)} worksheets found; "
+                          f"{unlisted} other entries in the reply are not listed)")
+        return True, f"Connection successful ({len(worksheets)} worksheets found)"
     except SampleApiError as e:
         return False, str(e)
     except Exception as e:
@@ -587,12 +663,15 @@ def fetch_worklist_samples(config: SampleApiConfig, worklist_id: str) -> Tuple[b
         if len(samples) == 0:
             return False, "Worksheet contains no samples", []
 
-        # Add worksheet_id to each sample if not present, in any capitals:
-        # parse_api_samples refuses two spellings of one name, so it must see
-        # only names the LIMS sent (spec 2026-10-10 later list slice 1, §1).
+        # Add worksheet_id to a sample only when it has none under a name the
+        # import reads it from, in any capitals: parse_api_samples refuses two
+        # spellings of one name, so it must see only names the LIMS sent (spec
+        # 2026-10-10 later list slice 1, §1), and beside the row's own
+        # worklist_id or AL it hid that one (Astra's review of slice 2).
+        names = set(_SAMPLE_WORKSHEET_ID_NAMES) | {config.get_api_field("worksheet_id").lower()}
         for s in samples:
             if isinstance(s, dict) and not any(
-                    isinstance(k, str) and k.lower() == "worksheet_id" for k in s):
+                    isinstance(k, str) and k.lower() in names for k in s):
                 s["worksheet_id"] = worklist_id
 
         logger.info(f"Fetched {len(samples)} samples for worksheet {worklist_id}")
@@ -657,6 +736,12 @@ def _refuse_a_changed_value(what: str, value) -> None:
         )
 
 
+# The names a LIMS sample row's worksheet ID is read from, before an admin's
+# mapped name; fetch_worklist_samples adds the picked worksheet only to a row
+# with none of them.
+_SAMPLE_WORKSHEET_ID_NAMES = ("worksheet_id", "worksheetid", "worksheet", "worklist_id", "al")
+
+
 # How a message names a sample field read from a LIMS row; the fields checked
 # by their JSON type (spec 2026-10-10 later list slice 1, §1). The test and
 # its version have their own checks; worksheet fields an admin maps are not
@@ -697,7 +782,7 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         # Not "version" alone: another field may have that name (spec
         # 2026-10-07 group A4, §2).
         "test_version": ["test_version", "testversion"],
-        "worksheet_id": ["worksheet_id", "worksheetid", "worksheet", "worklist_id", "al"],
+        "worksheet_id": list(_SAMPLE_WORKSHEET_ID_NAMES),
         "index1_sequence": ["index_i7", "index1", "i7", "index_i7_sequence", "i7_sequence"],
         "index2_sequence": ["index_i5", "index2", "i5", "index_i5_sequence", "i5_sequence"],
         "index_pair_name": ["index_pair_name", "pair_name", "index_pair", "index_kit", "kit_name"],

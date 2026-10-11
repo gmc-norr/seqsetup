@@ -101,13 +101,40 @@ Importing from a worklist (LIMS)
 
 If your administrator has configured and enabled a sample API under
 :doc:`/admin-guide/sample-api`, a **Load Worklists** button appears below
-the paste form. Selecting it lists the worklists the configured system
-currently offers. Choosing one and selecting **Preview** shows its
-samples first, if you want to check them -- this step is optional.
-Selecting **Import Samples** adds them to the run right away, without a
-separate confirm step. An imported row also carries its worksheet ID into
-the **Worksheet** column, and any index sequence it supplies is assigned
-immediately, with Override Cycles calculated automatically.
+the paste form of a **Draft** run. Selecting it lists the worklists the
+configured system currently offers. SeqSetup asks the LIMS for a worksheet
+by its ID exactly as the list sent it, so a worksheet it cannot fetch for
+sure is not in the list:
+
+- its ID is a number with a decimal point (``25.10`` arrives as ``25.1``),
+  ``true`` or ``false``, a list or an object;
+- its ID has spaces or line breaks around or in it, a sign other than
+  ``.``, ``_``, ``-`` and ``~``, or more than 128 characters;
+- its entry has the ID under two spellings of one name;
+- another worksheet in the list has the same ID.
+
+A warning quotes each one -- the ID SeqSetup read, or the two spellings --
+above the list, or under the error when nothing is left to list; at most
+ten are shown, then how many more. Ask your administrator to have the LIMS
+send each worksheet's ID once, as text, under one name.
+
+Choosing one and selecting **Preview** shows what the import would do, if
+you want to check it first -- this step is optional. It shows the samples
+the import would add, each with its Sample ID, test, version, i7 and i5
+(``-`` for none), and the sample IDs already in the run, which the import
+skips (the first ten, then how many more). If the import would be refused,
+the preview shows that refusal instead (*"Importing this worksheet would be
+refused: ..."*). The import fetches the worksheet again, so it adds what the
+LIMS sends at that moment, with every check.
+
+Selecting **Import Samples** adds the worksheet's samples to the run right
+away, without a separate confirm step; the button is off until the import
+answers. Its result shows in the banner at the top of the page (*"Added 2
+samples from worklist."*). If the import is refused, its message shows in
+the banner instead, and the run's samples stay as they were. An imported
+row carries its worksheet ID into the **Worksheet** column -- the picked
+worksheet's when the row has none -- and any index sequence it supplies is
+assigned immediately, with Override Cycles calculated automatically.
 
 .. warning::
    A worklist import follows the exact same rule as a paste: any LIMS row
@@ -115,9 +142,11 @@ immediately, with Override Cycles calculated automatically.
    sample_id is missing or empty."*), not just that one row. A worklist
    that lists the same sample ID more than once is refused as a whole
    too, like a paste (*"Worklist import rejected: these sample IDs appear
-   more than once in the worklist: <IDs>. Nothing was added."*). As with
-   a paste, a sample ID already in the run is skipped rather than
-   blocking.
+   more than once in the worklist: <IDs>. Nothing was added."*). So is a
+   row with an i7 or i5 name but no sequence for it (*"Sample 'S1' has an
+   i7 name ('D701') but no i7 sequence."*), or with an index pair name and
+   no sequence at all: the sample would come in without that index. As with a paste, a sample ID already in the run is skipped
+   rather than blocking.
 
 Without a sample API configured, this button does not appear at all --
 there is nothing to import from, so the paste form is the only way to add

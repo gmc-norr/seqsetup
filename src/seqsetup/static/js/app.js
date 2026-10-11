@@ -703,7 +703,10 @@ document.body.addEventListener('htmx:afterRequest', function(event) {
 // text goes into #error-banner. Either way an error toast is raised too, as
 // the banner can be scrolled out of view. The banner is cleared once the
 // element whose request failed succeeds — not on any later success, which
-// could hide a failure whose unsaved value is still on screen. isError stays
+// could hide a failure whose unsaved value is still on screen — but not of
+// what that answer itself wrote there out of band (an import's "Added 2
+// samples", a paste's refusal): the clearing runs after the swap, and wiped
+// it (build review of later list slice 2, E-1). isError stays
 // true, so htmx still reports the request as failed (data-navigate-after does
 // not navigate). Error bodies are only ever read as text, never rendered.
 let errorSource = null;  // element whose failed request #error-banner describes
@@ -734,8 +737,22 @@ function showErrorBanner(message) {
     banner.replaceChildren(div);
 }
 
-function clearErrorSlots() {
+// The error slots an answer fills itself, out of band.
+function slotsFilledBy(xhr) {
+    const filled = new Set();
+    const text = xhr.responseText || '';
+    if (!text.includes('hx-swap-oob')) return filled;
+    const doc = new DOMParser().parseFromString(text, 'text/html');
     for (const id of ['error-banner', 'form-errors']) {
+        const node = doc.getElementById(id);
+        if (node && node.hasAttribute('hx-swap-oob')) filled.add(id);
+    }
+    return filled;
+}
+
+function clearErrorSlots(keep) {
+    for (const id of ['error-banner', 'form-errors']) {
+        if (keep && keep.has(id)) continue;
         const slot = document.getElementById(id);
         if (slot) slot.replaceChildren();
     }
@@ -768,7 +785,7 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
             showErrorToast(message);
             errorSource = source;
         } else if (source === errorSource) {
-            clearErrorSlots();
+            clearErrorSlots(slotsFilledBy(xhr));
             errorSource = null;
         }
     });
