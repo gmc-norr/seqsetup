@@ -511,3 +511,37 @@ class TestTheWorksheetListNeedsADraft:
         resp = logged_in_client.get(f"/runs/{RUN}/samples/worklists")
         assert resp.status_code == 200
         assert _options(resp.text) == ["W1"]
+
+
+class TestTheLimsRoutesAreSafeToUse:
+    """Three findings of the build review of later list slice 2."""
+
+    def test_the_import_button_is_off_while_it_works(self, logged_in_client, fresh_app, monkeypatch):
+        """Two quick clicks sent two imports; the paste's Add has this (M2-4)."""
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet_list(monkeypatch, [{"id": "W1"}])
+        resp = logged_in_client.get(f"/runs/{RUN}/samples/worklists")
+        [button] = re.findall(r"<button[^>]*samples/fetch-worklist[^>]*>", resp.text)
+        assert 'hx-disabled-elt="this"' in button
+
+    def test_the_lims_routes_run_in_the_thread_pool(self):
+        """An async def import made its LIMS call, up to 30 s, on the server's
+        event loop, which served no other request meanwhile (M3-5)."""
+        import inspect
+        from seqsetup.routes import samples
+        assert [inspect.iscoroutinefunction(f) for f in (
+            samples.list_worklists, samples.preview_worklist, samples.import_worklist_samples)] == [
+            False, False, False]
+
+    def test_the_preview_changes_nothing(self, logged_in_client, fresh_app, monkeypatch):
+        """Nothing tested it (M3-4)."""
+        _app, ctx, _db = fresh_app
+        _run(ctx, ["OLD1"])
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [{"sample_id": "OLD1"}, {"sample_id": "P1", "index_i7": "ACGTACGT"}])
+        before = ctx.run_repo.get_by_id(RUN).to_dict()
+        resp = _preview(logged_in_client)
+        assert "1 sample to add" in resp.text and "1 already in this run" in resp.text
+        assert ctx.run_repo.get_by_id(RUN).to_dict() == before

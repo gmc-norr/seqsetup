@@ -40,7 +40,8 @@
                 hx-post="/runs/{{ run_id }}/samples/fetch-worklist{{ query_string }}"
                 hx-include="#worklist-select"
                 hx-target="{{ import_target }}"
-                hx-swap="{{ import_swap }}">Import Samples</button>
+                hx-swap="{{ import_swap }}"
+                hx-disabled-elt="this">Import Samples</button>
     </div>
     <div id="worklist-preview" class="worklist-preview"></div>
     <div id="worklist-import-result"></div>

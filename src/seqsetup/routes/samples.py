@@ -888,7 +888,7 @@ def preview_worklist(
 
 
 @router.post("/runs/{run_id}/samples/fetch-worklist", response_class=HTMLResponse)
-async def import_worklist_samples(
+def import_worklist_samples(
     request: Request,
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
