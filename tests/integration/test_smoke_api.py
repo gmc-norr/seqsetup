@@ -230,6 +230,21 @@ class TestSwaggerGated:
         for tag in re.findall(r"<script\b[^>]*>(.*?)</script>", body, re.DOTALL):
             assert tag.strip() == "", f"Inline script content found in /api/docs: {tag[:120]!r}"
 
+    def test_docs_page_loads_swagger_ui_by_its_npm_hashes(self, client, fresh_app):
+        """Swagger UI 5.33.1 (group 3b). Each SHA-384 is that of the file in
+        the npm package swagger-ui-dist@5.33.1 (registry integrity checked);
+        jsDelivr serves the same bytes. A version bumped without its hashes,
+        or the other way round, fails here."""
+        _app, ctx, _db = fresh_app
+        plaintext = _seed_api_token(ctx)
+        body = client.get("/api/docs", headers={"Authorization": f"Bearer {plaintext}"}).text
+        import re
+        base = re.escape("https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.1")
+        css = re.escape("sha384-Ov4/wv3j2bmct8cDc5X4ngJZohVPzEmc6uDPH8WeljUxO5vtoykvMEfbu9Vh6RaW")
+        js = re.escape("sha384-ZPehFMQommnnuaZ4rpxgkgTT2DKFVp4hZC/7pLit+9Lek9T1YGSo23eHFbvNkXkw")
+        assert re.search(rf'href="{base}/swagger-ui\.css"\s+integrity="{css}"', body)
+        assert re.search(rf'src="{base}/swagger-ui-bundle\.js"\s+integrity="{js}"', body)
+
 
 class TestTokenExpiry:
     """A token past its expires_at must not authenticate."""
