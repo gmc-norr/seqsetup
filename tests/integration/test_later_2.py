@@ -379,6 +379,19 @@ class TestThePlanGivesARowThePickedWorksheet:
         assert {s.sample_id: s.worksheet_id for s in ctx.run_repo.get_by_id(RUN).samples} == {
             "P1": "WS9", "P2": "WS9", "P3": "W7"}
 
+    def test_blank_in_either_spelling(self, logged_in_client, fresh_app, monkeypatch):
+        """A blank kept the blank, so the row named no worksheet (build review
+        of slice 2, E-2); spec §4 says absent, null or blank."""
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [{"sample_id": "P1", "worksheet_id": ""},
+                                 {"sample_id": "P2", "Worksheet_ID": "  "},
+                                 {"sample_id": "P3", "worksheet_id": "W7"}])
+        assert _import(logged_in_client, worklist_id="WS9").status_code == 200
+        assert {s.sample_id: s.worksheet_id for s in ctx.run_repo.get_by_id(RUN).samples} == {
+            "P1": "WS9", "P2": "WS9", "P3": "W7"}
+
     def test_the_plan_itself(self, fresh_app):
         from seqsetup.routes.samples import _plan_worklist_import
         _app, ctx, _db = fresh_app

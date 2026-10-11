@@ -786,7 +786,7 @@ def _plan_worklist_import(run, raw_rows, api_config, worklist_id: str) -> tuple:
             sample_id=sample_id,
             test_id=api_sample.get("test_id", ""),
             test_version=api_sample.get("test_version", ""),
-            worksheet_id=api_sample.get("worksheet_id", worklist_id),
+            worksheet_id=api_sample.get("worksheet_id") or worklist_id,
             lanes=[1],
         )
 
