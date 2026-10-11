@@ -116,6 +116,15 @@ display purposes.
 
 Field names are matched case-insensitively.
 
+The worksheet ID -- the **Worksheet ID field** if you mapped one, else
+``worksheet_id``, else ``id`` -- must be text or a whole number, under one
+name. A worksheet whose ID is a number with a decimal point (JSON reads
+``25.10`` as ``25.1``, which would fetch another worksheet), ``true``,
+``false``, a list or an object, or whose entry has two spellings of one of
+those names (``Worksheet_ID`` and ``WORKSHEET_ID``), is left out of the
+list, and a warning above the list names it. Send worksheet IDs as text
+(``"25.10"``).
+
 Get Worklist Samples
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -243,9 +252,12 @@ Using it from a run
 
 On a **Draft** run's sample-entry screen, **Load Worklists** (visible only
 when the integration is enabled and configured, as above) fetches the
-worklist list, lets you preview one, and imports its samples. If importing
-the worklist would push the run over the per-run sample maximum, the whole
-import is refused rather than adding a partial worklist.
+worklist list, lets you preview one, and imports its samples. The preview
+shows what the import would do: the samples it would add, the ones already
+in the run, or the refusal it would give. If importing the worklist would
+push the run over the per-run sample maximum, the whole import is refused
+rather than adding a partial worklist. A refused import shows its message in
+the page's error banner and changes nothing.
 
 Error Handling
 --------------
@@ -257,6 +269,8 @@ SeqSetup surfaces every failure to the user rather than failing silently:
 - **HTTP errors** -- non-2xx responses, with the status code and reason.
 - **Invalid JSON** -- a response that isn't a valid JSON array.
 - **Empty responses** -- no worklists, or no valid samples, in the response.
+- **Worksheets left out** -- a worksheet whose ID cannot be read for sure is
+  left out of the list, with a warning that names it (see List Worklists).
 
 Who can do this
 -------------------

@@ -102,10 +102,25 @@ Importing from a worklist (LIMS)
 If your administrator has configured and enabled a sample API under
 :doc:`/admin-guide/sample-api`, a **Load Worklists** button appears below
 the paste form. Selecting it lists the worklists the configured system
-currently offers. Choosing one and selecting **Preview** shows its
-samples first, if you want to check them -- this step is optional.
+currently offers. A worksheet whose ID SeqSetup cannot read for sure -- a
+number with a decimal point (``25.10`` arrives as ``25.1``), ``true`` or
+``false``, a list or an object, or an ID under two spellings of one name --
+is not in the list; a warning above the list names it. Ask your
+administrator to have the LIMS send worksheet IDs as text.
+
+Choosing one and selecting **Preview** shows what the import would do, if
+you want to check it first -- this step is optional. It shows the samples
+the import would add, each with its Sample ID, test, version, i7 and i5
+(``-`` for none), and the sample IDs already in the run, which the import
+skips. If the import would be refused, the preview shows that refusal
+instead (*"Importing this worksheet would be refused: ..."*). The import
+fetches the worksheet again, so it adds what the LIMS sends at that
+moment, with every check.
+
 Selecting **Import Samples** adds them to the run right away, without a
-separate confirm step. An imported row also carries its worksheet ID into
+separate confirm step. If the import is refused, its message shows in the
+error banner at the top of the page, and the run's samples stay as they
+were. An imported row also carries its worksheet ID into
 the **Worksheet** column, and any index sequence it supplies is assigned
 immediately, with Override Cycles calculated automatically.
 
