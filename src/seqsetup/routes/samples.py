@@ -15,7 +15,7 @@ from starlette.responses import HTMLResponse, Response
 from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
-from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, Sample
+from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, Sample, shown_value
 from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import RunCycles, SequencingRun
 from ..services.audit_log import audit
@@ -777,6 +777,15 @@ def _plan_worklist_import(run, raw_rows, api_config, worklist_id: str) -> tuple:
         # defensive against a future code path that bypasses the parser.
         if not sample_id:
             continue
+        # A name without its sequence would add the sample with no index and
+        # no message (build review of later list slice 2, M2-6).
+        for which, number in (("i7", 1), ("i5", 2)):
+            name = api_sample.get(f"index{number}_name", "")
+            if name and not api_sample.get(f"index{number}_sequence", ""):
+                raise ValueError(
+                    f"Sample '{sample_id}' has an {which} name ({shown_value(name)!r}) "
+                    f"but no {which} sequence."
+                )
         if sample_id in existing_sample_ids:
             skipped_duplicates.append(sample_id)
             continue

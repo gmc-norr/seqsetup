@@ -4,6 +4,7 @@ preview shows what the import would add (spec 2026-10-10 later list slice 2)."""
 
 import re
 
+import pytest
 from markupsafe import escape
 
 from seqsetup.models.sample import Sample
@@ -401,3 +402,54 @@ class TestThePlanGivesARowThePickedWorksheet:
         new, skipped = _plan_worklist_import(ctx.run_repo.get_by_id(RUN), rows, config, "WS9")
         assert [(s.sample_id, s.worksheet_id) for s in new] == [("P1", "WS9"), ("P2", "W7")]
         assert skipped == []
+
+
+class TestAnIndexNameWithoutItsSequence:
+    """A row with an i7 or i5 name and no sequence for it was added with no
+    index and no message (build review of later list slice 2, M2-6): the
+    whole worksheet is refused, as for a row without a sample ID."""
+
+    ROWS = [
+        ([{"sample_id": "P1", "i7_name": "D701"}],
+         "Sample 'P1' has an i7 name ('D701') but no i7 sequence."),
+        ([{"sample_id": "P1", "index_i7": "ACGTACGT", "i5_name": "D501"}],
+         "Sample 'P1' has an i5 name ('D501') but no i5 sequence."),
+        ([{"sample_id": "P1", "index_i7": "ACGTACGT", "index_i5": "", "i5_name": "D501"}],
+         "Sample 'P1' has an i5 name ('D501') but no i5 sequence."),
+    ]
+
+    @pytest.mark.parametrize("rows, text", ROWS)
+    def test_the_import_is_refused(self, logged_in_client, fresh_app, monkeypatch, rows, text):
+        _app, ctx, _db = fresh_app
+        _run(ctx, ["OLD1"])
+        _lims_on(ctx)
+        _worksheet(monkeypatch, rows)
+        before = ctx.run_repo.get_by_id(RUN).to_dict()
+        resp = _import(logged_in_client, worklist_id="WS1")
+        assert resp.status_code == 400
+        assert _headers(resp) == BANNER
+        assert f'<p class="error-message">Worklist import rejected: {escape(text)}</p>' in resp.text
+        assert ctx.run_repo.get_by_id(RUN).to_dict() == before
+
+    @pytest.mark.parametrize("rows, text", ROWS[:1])
+    def test_the_preview_shows_the_refusal(self, logged_in_client, fresh_app, monkeypatch, rows, text):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet(monkeypatch, rows)
+        resp = _preview(logged_in_client)
+        assert (f'<p class="error-message">Importing this worksheet would be refused: '
+                f'{escape(text)}</p>') in resp.text
+
+    def test_a_name_with_its_sequence_and_a_kit_name_alone_are_imported(
+            self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims_on(ctx)
+        _worksheet(monkeypatch, [
+            {"sample_id": "P1", "index_i7": "ACGTACGT", "i7_name": "D701"},
+            {"sample_id": "P2", "kit_name": "Kit A"}])
+        assert _import(logged_in_client, worklist_id="WS1").status_code == 200
+        stored = {s.sample_id: s for s in ctx.run_repo.get_by_id(RUN).samples}
+        assert (stored["P1"].index1_name, stored["P1"].index1_sequence) == ("D701", "ACGTACGT")
+        assert stored["P2"].index1_sequence is None
