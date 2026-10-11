@@ -625,6 +625,22 @@ minimal:
 - HTMX and Alpine are vendored in ``static/js/vendor/``, not installed via
   a package manager
 
+Updating Libraries
+~~~~~~~~~~~~~~~~~~
+
+``pixi.lock`` fixes the version of every library the tests and the Docker
+image use. ``exclude-newer`` in ``pixi.toml`` keeps out releases newer than
+its date, so a broken release has time to be found and pulled before it
+reaches the lab. To update:
+
+1. Move ``exclude-newer`` to a date two weeks back.
+2. Run ``pixi update`` and read the list of packages it changed.
+3. Run ``pixi run test``, ``pixi run smoke-browser`` and ``pixi run docs``.
+4. Check the locked versions for security advisories (for example at
+   https://osv.dev). Raise the floor in
+   ``tests/unit/test_dependency_floors.py`` for any library that needs a
+   fixed version; never lower one.
+
 Debugging Tips
 --------------
 
@@ -663,6 +679,13 @@ in the DOM.
 
 **Form data not received**: Ensure form inputs have ``name`` attributes and
 the form has the correct ``hx-post`` or method.
+
+**Form refused with "Field exceeded maximum size of 1024KB"**: Starlette
+reads at most 1000 fields and 1 MB per field from a form. A plain
+(urlencoded) form counts encoded bytes, so a comma or a line break counts
+three. A route that must take more passes ``max_part_size`` to
+``request.form()`` (see the Add form of the sample paste in
+``routes/samples.py``); send a large text as ``multipart/form-data``.
 
 **Authentication redirect loop**: Check that the route is not in
 ``PUBLIC_ROUTES`` if it should require login.
