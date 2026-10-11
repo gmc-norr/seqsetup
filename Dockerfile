@@ -2,6 +2,13 @@ FROM ghcr.io/prefix-dev/pixi:latest AS build
 
 WORKDIR /app
 
+# The Tailwind install (pixi run css, below) downloads with curl, which the pixi
+# base image does not have. What it downloads is checked against
+# tools/tailwind-sha256.txt before it is made executable.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 # Copy dependency files first for layer caching
 COPY pixi.toml pixi.lock ./
 RUN pixi install --locked
@@ -16,7 +23,8 @@ EXPOSE 5001
 
 # Build Tailwind CSS so the image ships with the generated app.css.
 # The pixi css task is gated behind tailwind-install which downloads the
-# pinned standalone binary into .pixi/bin/.
+# pinned standalone binary into .pixi/bin/ and checks its SHA-256
+# (tools/install-tailwind.sh); a binary that does not match stops the build.
 RUN pixi run css
 
 # Drop root for the runtime process (defense in depth — a process compromise
