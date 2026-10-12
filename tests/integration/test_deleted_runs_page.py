@@ -146,7 +146,7 @@ class TestWhatIsShown:
             if run_id == "r-race" and loaded is not None:
                 done = DeletedRun.of(loaded, "second", T0 + timedelta(minutes=5))
                 ctx.deleted_run_repo.start(done)
-                assert ctx.run_repo.delete_if_unchanged(loaded)
+                assert ctx.run_repo.delete_if_unchanged(loaded, copy_id=done.copy_id)
                 ctx.deleted_run_repo.mark_completed(done.copy_id, T0 + timedelta(minutes=5))
             return real_get(run_id)
 

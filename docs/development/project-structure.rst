@@ -45,7 +45,10 @@ Application Layers
 
    ``RunRepository`` is the exception to plain CRUD: a run is deleted only through
    ``delete_if_unchanged(run)``, which removes the exact version that was read, and
-   the id-only ``delete(run_id)`` raises instead of deleting.
+   the id-only ``delete(run_id)`` raises instead of deleting. A run that was ever
+   Ready is refused unless the call also names the copy kept for it
+   (``copy_id=``), so the copy cannot be forgotten; which runs may be deleted, and
+   by whom, is the route's decision.
 
 **Services** (``services/``)
    Business logic that operates on models. Services are stateless and typically

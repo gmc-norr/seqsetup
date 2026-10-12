@@ -7,7 +7,7 @@ import mongomock
 import pytest
 
 from seqsetup.models.sample import Sample
-from seqsetup.models.sequencing_run import SequencingRun
+from seqsetup.models.sequencing_run import RunStatus, SequencingRun
 from seqsetup.repositories.run_repo import RunRepository
 
 
@@ -19,6 +19,13 @@ def repo():
 def _loaded(repo, run_id="r1"):
     repo.save(SequencingRun(id=run_id, run_name="R"))
     return repo.get_by_id(run_id)
+
+
+def _loaded_was_ready(repo, run_id="r1"):
+    repo.save(SequencingRun(id=run_id, run_name="R", status=RunStatus.READY))
+    run = repo.get_by_id(run_id)
+    assert run.was_ready
+    return run
 
 
 class TestDeleteIfUnchanged:
@@ -61,3 +68,26 @@ class TestIdOnlyDeleteIsRefused:
     def test_an_id_only_delete_of_an_unknown_run_raises_too(self, repo):
         with pytest.raises(ValueError):
             repo.delete("never-stored")
+
+
+class TestARunThatWasReadyNeedsItsCopy:
+    """A run that was ever Ready is deleted only when the caller says where
+    the copy kept for it is, so no caller can forget to write one
+    (spec 2026-09-28 group 2a, F16)."""
+
+    def test_no_copy_id_is_refused_and_deletes_nothing(self, repo):
+        run = _loaded_was_ready(repo)
+        with pytest.raises(ValueError):
+            repo.delete_if_unchanged(run)
+        assert repo.get_by_id("r1") is not None
+
+    def test_an_empty_copy_id_is_no_copy_id(self, repo):
+        run = _loaded_was_ready(repo)
+        with pytest.raises(ValueError):
+            repo.delete_if_unchanged(run, copy_id="")
+        assert repo.get_by_id("r1") is not None
+
+    def test_the_copy_id_lets_the_delete_through(self, repo):
+        run = _loaded_was_ready(repo)
+        assert repo.delete_if_unchanged(run, copy_id="copy-1") is True
+        assert repo.get_by_id("r1") is None
