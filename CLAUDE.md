@@ -162,8 +162,7 @@ src/seqsetup/
 │   └── base.py          # BaseRepository[T], SingletonConfigRepository[C]
 ├── routes/              # Request handlers — follow the pattern above
 │   ├── utils.py         # Guards: check_status_transition, get_username, sanitize_*
-│   ├── dependencies.py  # get_editable_run, get_exportable_run, require_admin_dep, saving_run
-│   └── api.py           # legacy JSON API surface (mostly superseded by api/)
+│   └── dependencies.py  # get_editable_run, get_exportable_run, require_admin_dep, saving_run
 ├── services/            # Business logic — validation, export, LDAP, LIMS API
 │   ├── validation.py    # Read-only validation orchestrator
 │   ├── sample_api.py    # External LIMS API client (SSL verified, SSRF protected)
@@ -198,8 +197,8 @@ src/seqsetup/
 ```bash
 pixi install          # Install dependencies
 pixi run serve        # Run the application (localhost:5001)
-pixi run test         # Run tests (~920 unit + integration tests; pytest)
-pixi run smoke-browser  # 3 Playwright browser smoke tests
+pixi run test         # Run the unit and integration suites (pytest)
+pixi run smoke-browser  # Run the browser suite (Playwright)
 pixi run mock-api     # Start mock LIMS API server (localhost:8100)
 pixi add <pkg>        # Add dependency
 pixi add --feature dev <pkg>  # Add dev dependency
