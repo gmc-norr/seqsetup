@@ -35,7 +35,7 @@ def cleanup(app_ctx):
     ids = []
     yield ids
     for run_id in ids:
-        app_ctx.run_repo.delete(run_id)
+        app_ctx.run_repo.collection.delete_one({"_id": run_id})
 
 
 @pytest.mark.browser

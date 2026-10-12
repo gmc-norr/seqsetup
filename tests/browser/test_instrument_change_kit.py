@@ -31,4 +31,4 @@ def test_instrument_change_refreshes_reagent_kit_select(logged_in_page, base_url
         assert run.reagent_cycles == 36
         assert kit_select.input_value() == "36"
     finally:
-        app_ctx.run_repo.delete(run_id)
+        app_ctx.run_repo.collection.delete_one({"_id": run_id})

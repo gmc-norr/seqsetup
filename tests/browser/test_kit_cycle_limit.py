@@ -46,4 +46,4 @@ def test_limit_warning_and_instrument_change(logged_in_page, base_url, app_ctx, 
         expect(total).to_contain_text("Total: 472 / 340 max (300-cycle kit)")
         expect(page.locator("#cycle-total")).to_have_count(1)
     finally:
-        app_ctx.run_repo.delete(run_id)
+        app_ctx.run_repo.collection.delete_one({"_id": run_id})

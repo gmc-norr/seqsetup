@@ -69,16 +69,38 @@ class RunRepository(BaseRepository[SequencingRun]):
             )
         run._loaded_updated_at = run.updated_at
 
-    def delete_if_unchanged(self, run: SequencingRun) -> bool:
+    def delete(self, item_id: str) -> bool:
+        """Refuse an id-only delete: it would skip the version check.
+
+        A run is deleted only through ``delete_if_unchanged``, so the
+        version that was checked is the version that goes (spec 2026-09-28
+        group 2a, review P1). Other repositories keep the inherited delete.
+        """
+        raise ValueError(
+            f"Run {item_id} cannot be deleted by id alone; "
+            f"refusing to delete it without a version check"
+        )
+
+    def delete_if_unchanged(self, run: SequencingRun, *, copy_id: str = "") -> bool:
         """Delete ``run`` only if the stored version is the one that was loaded.
 
         Returns True if it was deleted, False if nothing matched (the run was
         changed or deleted since it was loaded). Never falls back to an
         id-only delete (spec 2026-09-28 group 2a, review P1).
+
+        ``copy_id`` is the id of the copy kept for this run. A run that was
+        ever Ready is not deleted without it, so this call cannot delete such
+        a run without being told where its copy is (spec 2026-09-28 group 2a,
+        F16). Which runs may be deleted, and by whom, stays in the route.
         """
         if run._loaded_updated_at is None:
             raise ValueError(
                 f"Run {run.id} was never loaded; refusing to delete it without a version check"
+            )
+        if run.was_ready and not copy_id:
+            raise ValueError(
+                f"Run {run.id} was Ready once; refusing to delete it without the id of "
+                f"the copy kept for it"
             )
         result = self.collection.delete_one(
             {"_id": run.id, "updated_at": run._loaded_updated_at.isoformat()}

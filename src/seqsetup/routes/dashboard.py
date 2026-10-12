@@ -180,7 +180,7 @@ def delete_run(
     copy_detail = {"copy_id": copy.copy_id} if copy is not None else {}
 
     try:
-        deleted = ctx.run_repo.delete_if_unchanged(run)
+        deleted = ctx.run_repo.delete_if_unchanged(run, **copy_detail)
     except Exception:
         # The copy stays pending: we cannot know whether the run went. The
         # Deleted runs page decides from whether the run still exists.

@@ -48,7 +48,7 @@ def bulk_lane_panel_run_id(app_ctx):
         run.add_sample(Sample(id=f"{run.id}-s{n}", sample_id=f"BULK-0{n}", lanes=[1]))
     app_ctx.run_repo.save(run)
     yield run.id
-    app_ctx.run_repo.delete(run.id)
+    app_ctx.run_repo.collection.delete_one({"_id": run.id})
 
 
 def _open_and_select_both(page, base_url, run_id):

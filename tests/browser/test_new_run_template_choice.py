@@ -31,7 +31,7 @@ def test_start_new_run_from_template(logged_in_page, base_url, app_ctx, mutable_
         assert app_ctx.run_repo.get_by_id(blank_id) is None
     finally:
         for run_id in made_runs:
-            app_ctx.run_repo.delete(run_id)
+            app_ctx.run_repo.collection.delete_one({"_id": run_id})
         for t in app_ctx.run_template_repo.list_all():
             if t.id not in template_ids_before:
                 app_ctx.run_template_repo.delete(t.id)

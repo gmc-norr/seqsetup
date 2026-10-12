@@ -241,7 +241,7 @@ class TestReviewCases:
         _app, ctx, db = fresh_app
         run_id = _make_run(ctx, RunStatus.ARCHIVED, samples=1)
         monkeypatch.setattr(ctx.run_repo, "delete_if_unchanged",
-                            lambda run: (_ for _ in ()).throw(RuntimeError("db down")))
+                            lambda run, copy_id="": (_ for _ in ()).throw(RuntimeError("db down")))
         resp = logged_in_client.delete(f"/runs/{run_id}", headers=HX)
         assert resp.status_code == 500
         assert "Could not delete this run. Reload the page to see whether it is still there." in resp.text
