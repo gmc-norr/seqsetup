@@ -93,6 +93,14 @@ Select a kit's name, or **View**, to see its full contents: every index
 pair (or i7/i5 list) with its name and sequence, plus the kit's adapter
 and default-override settings. An empty field shows a dash.
 
+A kit's name may hold a ``/`` -- Illumina's own ``IDT for Illumina DNA/RNA
+UD Indexes Set A`` does -- and it opens, downloads and deletes like any
+other: its address reads the version as the last part and the name as
+everything before it. A kit *version* may therefore not hold a ``/``, and
+neither the name nor the version may have a part made only of dots between
+slashes (``a/./b``): the browser rewrites such an address, so the kit could
+be created but never opened or removed.
+
 .. figure:: /_static/screenshots/admin/index-kit-detail.png
    :alt: The index kit detail page, showing the kit's name and version, its adapter and default-override settings, and its Index Pairs table listing each pair's name and its i7 and i5 sequences, with the Delete button outlined at the bottom next to Download YAML.
 

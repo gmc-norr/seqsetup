@@ -108,3 +108,54 @@ class TestAnIndexKitNameOrVersionMadeOnlyOfDots:
         """The 256-character cap is unchanged; it just cannot produce a
         name of dots out of a longer one."""
         assert len(_kit(name="k" * 300).name) == 256
+
+
+class TestAnIndexKitNameWithASlash:
+    """A kit's name may hold a "/" — the shipped "IDT for Illumina DNA/RNA UD
+    Indexes Set A" does — and its routes take the version as the last path
+    segment, so the name may hold any number of them. A part between slashes
+    made only of dots is refused for the same reason a whole name of dots is:
+    the browser rewrites the URL the app would need, and the dot-segment
+    guard in middleware.py refuses a percent-encoded one. A version may not
+    hold a "/" at all: it is the last segment, so a kit with one could never
+    be opened, downloaded or deleted."""
+
+    @pytest.mark.parametrize("name", ["IDT for Illumina DNA/RNA UD Indexes Set A", "a/b/c", "/k"])
+    def test_a_name_with_a_slash_is_kept(self, name):
+        assert _kit(name=name).name == name
+
+    @pytest.mark.parametrize("name", ["a/./b", "a/../b", "./k", "k/..", "a/.../b"])
+    def test_a_part_of_a_name_made_only_of_dots_cannot_be_constructed(self, name):
+        with pytest.raises(ValueError, match="only of dots"):
+            _kit(name=name)
+
+    @pytest.mark.parametrize("name", ["a/./b", "a/../b"])
+    def test_a_part_made_only_of_dots_cannot_be_assigned(self, name):
+        kit = _kit(name="Kit")
+
+        with pytest.raises(ValueError, match="only of dots"):
+            kit.name = name
+
+        assert kit.name == "Kit"
+
+    @pytest.mark.parametrize("name", ["a/./b", "a/../b"])
+    def test_a_part_made_only_of_dots_cannot_be_loaded_from_a_stored_record(self, name):
+        with pytest.raises(ValueError, match="only of dots"):
+            IndexKit.from_dict({"name": name, "version": "1.0"})
+
+    @pytest.mark.parametrize("version", ["1/0", "/1.0", "1.0/"])
+    def test_a_version_with_a_slash_cannot_be_constructed(self, version):
+        with pytest.raises(ValueError, match="cannot hold"):
+            _kit(name="Kit", version=version)
+
+    def test_a_version_with_a_slash_cannot_be_assigned(self):
+        kit = _kit(name="Kit", version="1.0")
+
+        with pytest.raises(ValueError, match="cannot hold"):
+            kit.version = "1/0"
+
+        assert kit.version == "1.0"
+
+    def test_a_version_with_a_slash_cannot_be_loaded_from_a_stored_record(self):
+        with pytest.raises(ValueError, match="cannot hold"):
+            IndexKit.from_dict({"name": "Kit", "version": "1/0"})
