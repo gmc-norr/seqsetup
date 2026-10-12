@@ -15,7 +15,14 @@ from starlette.responses import HTMLResponse, Response
 from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
-from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, Sample, shown_value
+from ..models.sample import (
+    TEST_VERSION_RE,
+    TEST_VERSION_RULE,
+    ZERO_SAMPLE_ID_RULE,
+    Sample,
+    is_zero_only,
+    shown_value,
+)
 from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import RunCycles, SequencingRun
 from ..services.audit_log import audit
@@ -500,6 +507,8 @@ async def add_sample(
     if not sample_id or not sample_id.strip():
         return Response("sample_id is required", status_code=400)
     sample_id = sanitize_string(sample_id, 256)
+    if is_zero_only(sample_id):
+        return Response(f"{ZERO_SAMPLE_ID_RULE}.", status_code=400)
     sample_name = sanitize_string(sample_name, 256)
     project = sanitize_string(project, 256)
     test_id = sanitize_string(test_id, 256)
@@ -1610,6 +1619,8 @@ async def update_sample(
         if not raw or not raw.strip():
             return Response("sample_id is required", status_code=400)
         sample_id_field = sanitize_string(raw, 256)
+        if is_zero_only(sample_id_field):
+            return Response(f"{ZERO_SAMPLE_ID_RULE}.", status_code=400)
 
     sample_name = sanitize_string(form.get("sample_name", ""), 256) if has_sample_name else None
     project = sanitize_string(form.get("project", ""), 256) if has_project else None

@@ -6,7 +6,12 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE
+from ..models.sample import (
+    TEST_VERSION_RE,
+    TEST_VERSION_RULE,
+    ZERO_SAMPLE_ID_RULE,
+    is_zero_only,
+)
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
 # DNA sequence validation pattern (compiled once at module level).
@@ -316,6 +321,7 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     # smell — a 96-sample worklist missing one row would silently produce a
     # 95-sample run with no indication anything was lost.
     rows_missing_sample_id: list[int] = []
+    rows_zero_sample_id: list[int] = []
     rows_bad_version: list[int] = []
 
     for i, (source_line, parts) in enumerate(rows):
@@ -372,6 +378,12 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             rows_missing_sample_id.append(source_line)
             continue
 
+        if is_zero_only(sample_id):
+            # The model refuses it, so the whole paste is refused here —
+            # naming its rows, like a row with no sample ID at all.
+            rows_zero_sample_id.append(source_line)
+            continue
+
         # A version is at most 29 characters, so a cell cut to _MAX_CELL_LEN
         # is still refused: no cut makes a version good (spec 2026-10-07
         # group A4, §2).
@@ -426,6 +438,12 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
         raise ValueError(
             f"Row(s) {rows_str}: sample_id is required. "
             f"Either supply a sample_id or remove the row entirely."
+        )
+    if rows_zero_sample_id:
+        rows_str = ", ".join(str(n) for n in rows_zero_sample_id)
+        raise ValueError(
+            f"Row(s) {rows_str}: {ZERO_SAMPLE_ID_RULE}. "
+            f"Give the sample its real ID or remove the row entirely."
         )
     if rows_bad_version:
         rows_str = ", ".join(str(n) for n in rows_bad_version)

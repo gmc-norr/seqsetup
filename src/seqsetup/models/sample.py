@@ -52,6 +52,25 @@ def shown_value(text: str) -> str:
     return text if len(text) <= 40 else text[:40] + "…"
 
 
+# A LIMS may use 0 for an empty well, and JSON sends that as the number 0, so
+# a worklist row for a well with nothing in it looks like a sample called "0".
+# Stored, it names a patient sample 0 in the Sample Sheet, or hides a real
+# sample behind a duplicate ID. No real sample ID is only zeros.
+ZERO_SAMPLE_ID_RULE = (
+    "A sample ID made only of zeros is not a sample ID — a LIMS may use 0 for "
+    "an empty well"
+)
+# ``\Z``, not ``$``: in Python ``$`` also matches just before a trailing
+# newline, so a value ending in one would pass (project convention).
+_ZERO_ONLY_RE = re.compile(r"0+\Z")
+
+
+def is_zero_only(value) -> bool:
+    """True when ``value`` is a string of nothing but the digit 0, of any
+    length."""
+    return isinstance(value, str) and bool(_ZERO_ONLY_RE.match(value))
+
+
 def checked_test_version(value: Any) -> str:
     """The stripped text of a test version; ValueError with the rule for
     anything else. Never shortened: a cut could make a bad value good."""
@@ -151,11 +170,14 @@ class Sample:
             balloon the document).
           - Free-form string identifiers capped at 256.
           - ``test_version`` text that follows TEST_VERSION_RULE, never cut.
+          - ``sample_id`` rejected when it is made only of zeros.
         """
         if name == "test_version":
             value = checked_test_version(value)
         elif value is not None:
-            if name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
+            if name == "sample_id" and is_zero_only(value):
+                raise ValueError(f"{ZERO_SAMPLE_ID_RULE}: {shown_value(repr(value))}")
+            elif name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
                 value = checked_mismatches(name, value)
             elif name in ("index1_cycles", "index2_cycles"):
                 value = max(1, value)

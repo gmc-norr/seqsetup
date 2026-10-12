@@ -14,7 +14,13 @@ from collections import Counter
 from urllib.parse import urlparse
 from typing import Optional, Tuple
 
-from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, shown_value
+from ..models.sample import (
+    TEST_VERSION_RE,
+    TEST_VERSION_RULE,
+    ZERO_SAMPLE_ID_RULE,
+    is_zero_only,
+    shown_value,
+)
 from ..models.sample_api_config import InvalidWorklistIdError, SampleApiConfig, validate_worklist_id
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
@@ -807,6 +813,7 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
 
     results = []
     rows_missing_sample_id: list[int] = []  # 1-based positions of dropped rows
+    rows_zero_sample_id: list[int] = []  # 1-based positions of rows named only 0
     read_names = {alias for field in sample_fields for alias in field_aliases[field]}
 
     for index, item in enumerate(data, start=1):
@@ -852,6 +859,13 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
             rows_missing_sample_id.append(index)
             continue
 
+        # An empty well a LIMS calls 0, sent as the number 0 or as text. The
+        # model refuses it, so the whole worklist is refused here — naming
+        # its rows, like a row with no sample ID at all.
+        if is_zero_only(sample["sample_id"]):
+            rows_zero_sample_id.append(index)
+            continue
+
         # A null name gives way to the next one, as for every field above.
         raw_test = next((lower_item[alias] for alias in field_aliases["test_id"]
                          if lower_item.get(alias) is not None), None)
@@ -892,6 +906,13 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         rows_str = ", ".join(str(n) for n in rows_missing_sample_id)
         raise ValueError(
             f"LIMS row(s) {rows_str}: sample_id is missing or empty. "
+            f"Fix the upstream record(s) before retrying."
+        )
+
+    if rows_zero_sample_id:
+        rows_str = ", ".join(str(n) for n in rows_zero_sample_id)
+        raise ValueError(
+            f"LIMS row(s) {rows_str}: {ZERO_SAMPLE_ID_RULE}. "
             f"Fix the upstream record(s) before retrying."
         )
 

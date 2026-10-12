@@ -99,6 +99,15 @@ already added.
    bucket with no record that anything was lost, so the paste is refused
    as a whole and you fix the source and try again.
 
+.. warning::
+   A sample ID made only of zeros (``0``, ``00``, ...) is refused, and the
+   whole paste with it (*"Row(s) <line numbers>: A sample ID made only of
+   zeros is not a sample ID -- a LIMS may use 0 for an empty well. Give the
+   sample its real ID or remove the row entirely."*). A LIMS may use 0 for
+   an empty well, so a row for a well with nothing in it looks like a
+   sample called 0; stored, it would name a patient sample 0 in the Sample
+   Sheet. An ID that merely contains a zero (``0A``, ``100``) is fine.
+
 Two other things block the whole paste before you can add it: the same
 sample ID appearing more than once in the pasted text (SeqSetup cannot
 tell which row is right), and a paste that would push the run over its
@@ -154,7 +163,12 @@ assigned immediately, with Override Cycles calculated automatically.
    more than once in the worklist: <IDs>. Nothing was added."*). So is a
    row with an i7 or i5 name but no sequence for it (*"Sample 'S1' has an
    i7 name ('D701') but no i7 sequence."*), or with an index pair name and
-   no sequence at all: the sample would come in without that index. As with a paste, a sample ID already in the run is skipped
+   no sequence at all: the sample would come in without that index. So is
+   a row whose sample ID is made only of zeros, sent as the number ``0`` or
+   as text (*"LIMS row(s) <positions>: A sample ID made only of zeros is
+   not a sample ID -- a LIMS may use 0 for an empty well. Fix the upstream
+   record(s) before retrying."*) -- a LIMS may use 0 for an empty well.
+   As with a paste, a sample ID already in the run is skipped
    rather than blocking.
 
 Without a sample API configured, this button does not appear at all --
@@ -212,6 +226,10 @@ recalculates it from the sample's index and the run's cycle configuration.
 An Override Cycles value you type is checked immediately: anything other
 than the letters ``Y``, ``I``, ``U``, ``N``, digits, ``;`` and ``,`` is
 rejected and nothing is saved.
+
+A sample ID is never made only of zeros: adding a sample called ``0`` or
+``00`` is refused (*"A sample ID made only of zeros is not a sample ID --
+a LIMS may use 0 for an empty well."*) and nothing is saved.
 
 Sample ID is set when a sample is added and cannot be changed afterward in
 this table; to correct a typo, remove the sample and add it again. Test ID
