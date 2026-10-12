@@ -96,6 +96,81 @@ class RateLimiter:
             self._swept_at = time.monotonic()
 
 
+class RefusedRequestCounter:
+    """How many refusals one identity's next audit row should account for.
+
+    Every refused request used to write its own ``login.rate_limited``
+    row, so a flood of a few thousand buried every other event on
+    Admin > Audit under a few thousand rows that all said the same thing.
+    At most one row per identity per window is written now, and it carries
+    the count.
+
+    The audit trail is insert-only -- nothing in SeqSetup changes a row
+    that has been written -- so a row cannot be updated with a count that
+    grows after it went out. Instead the first refusal of an identity's
+    window asks for a row at once, the refusals that follow are counted,
+    and their count is carried by that identity's next row: the first
+    refusal of a later window. Every refusal is therefore accounted for in
+    exactly one row.
+
+    A count still owed when the process stops is lost. That is the known
+    limit of counting in the process, stated in
+    docs/admin-guide/audit-trail.rst. The sweep below never loses one: it
+    forgets an identity whose window has passed only while it owes
+    nothing.
+    """
+
+    def __init__(self, window_seconds: int):
+        self.window_seconds = max(1, int(window_seconds))
+        # identity -> (when its current window started, refusals owed)
+        self._windows: dict[str, tuple[float, int]] = {}
+        self._swept_at = time.monotonic()
+        self._lock = threading.Lock()
+
+    def _sweep(self, now: float) -> None:
+        """Forget identities whose window has passed and owe nothing.
+
+        Called under the lock and at most once per window, like
+        ``RateLimiter._sweep``: without it a flood from many addresses
+        would add a key per address and give none back.
+        """
+        if now - self._swept_at < self.window_seconds:
+            return
+        self._swept_at = now
+        for identity in [key for key, (started, owed) in self._windows.items()
+                         if owed == 0 and now - started >= self.window_seconds]:
+            del self._windows[identity]
+
+    def count_refusal(self, identity: str) -> int:
+        """Record one refusal; return the count a row must carry, or 0 for none."""
+        now = time.monotonic()
+        with self._lock:
+            self._sweep(now)
+            started, owed = self._windows.get(identity, (None, 0))
+            if started is None or now - started >= self.window_seconds:
+                self._windows[identity] = (now, 0)
+                return 1 + owed
+            self._windows[identity] = (started, owed + 1)
+            return 0
+
+    def reset(self) -> None:
+        """Clear all state (for tests)."""
+        with self._lock:
+            self._windows.clear()
+            self._swept_at = time.monotonic()
+
+
+_login_refusal_counter: Optional[RefusedRequestCounter] = None
+
+
+def get_login_refusal_counter() -> "RefusedRequestCounter":
+    """The shared counter for refused sign-ins, on the login limiter's window."""
+    global _login_refusal_counter
+    if _login_refusal_counter is None:
+        _login_refusal_counter = RefusedRequestCounter(get_login_limiter().window_seconds)
+    return _login_refusal_counter
+
+
 def _int_env(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, "") or default)
@@ -135,6 +210,8 @@ def reset_all_limiters() -> None:
         _login_limiter.reset()
     if _api_limiter is not None:
         _api_limiter.reset()
+    if _login_refusal_counter is not None:
+        _login_refusal_counter.reset()
 
 
 def client_identity(req) -> str:

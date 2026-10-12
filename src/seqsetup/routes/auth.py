@@ -22,7 +22,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 
 from .. import startup
 from ..forms.validators import strip_and_truncate
-from ..rate_limit import client_identity, get_login_limiter
+from ..rate_limit import client_identity, get_login_limiter, get_login_refusal_counter
 from ..services.audit_log import audit, unknown_actor
 from ..services import web_sessions
 from ..services.auth import SIGN_IN_FAILED, AuthenticationError
@@ -162,13 +162,22 @@ def make_router(auth_service) -> APIRouter:
             ok_user, retry_user = False, limiter.retry_after(user_key)
         if not (ok_ip and ok_user):
             retry = max(retry_ip, retry_user)
-            audit(
-                "login.rate_limited",
-                actor=_audit_actor(actor),
-                outcome="denied",
-                ip=ip,
-                retry_after=retry,
-            )
+            # At most one row per address per limiter window, carrying how
+            # many refusals it accounts for; the refusals in between are
+            # counted and carried by this address's next row, because the
+            # audit trail is insert-only (rate_limit.py). 0 means a row has
+            # already gone out for this window -- and then no name is looked
+            # up either, so a flood costs no reads.
+            refused = get_login_refusal_counter().count_refusal(ip)
+            if refused:
+                audit(
+                    "login.rate_limited",
+                    actor=_audit_actor(actor),
+                    outcome="denied",
+                    ip=ip,
+                    retry_after=retry,
+                    refused=refused,
+                )
             return PlainTextResponse(
                 "Too many login attempts. Try again later.",
                 status_code=429,

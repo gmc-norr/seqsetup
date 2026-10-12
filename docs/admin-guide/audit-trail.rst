@@ -102,6 +102,36 @@ and it does not ask the directory about a name that was refused -- a
 mistyped password must not be sent anywhere. Once the sign-in succeeds,
 ``login.success`` holds the name the directory confirmed.
 
+.. _rate-limited-rows:
+
+How many refusals one ``login.rate_limited`` row stands for
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Repeated sign-in attempts from one address, or for one name, are refused
+once they pass the limit (see :doc:`/user-guide/authentication`).
+**At most one ``login.rate_limited`` row is written per address per limiter
+window**, and its details say how many refused requests it stands for::
+
+   ip: 198.51.100.7   retry_after: 43   refused: 12
+
+Without this, a flood of a few thousand refusals wrote a few thousand rows
+that all said the same thing, and this page -- which shows 100 at a time --
+could show nothing else for a long while.
+
+The count is built like this: the first refusal from an address writes its
+row at once, so you see the attack while it is happening; the refusals that
+follow in the same window are counted, and their count is carried by that
+address's **next** row. Nothing rewrites a row that has gone out: the
+trail is insert-only.
+
+.. note::
+   One consequence: if SeqSetup is restarted (or stops) while refusals are
+   still being counted, that part of the count is lost -- the rows already
+   written are not changed, so the totals for that last window are low by
+   however many requests had not yet been carried. The server log on the
+   :doc:`logs` page, and your reverse proxy's own access log, still show
+   every request.
+
 .. note::
    If the database cannot be reached when something happens, the action
    still goes through, and the event is written to the :doc:`logs` page as
