@@ -68,4 +68,4 @@ def test_message_shows_for_a_control_that_keeps_one_part(logged_in_page, base_ur
         expect(banner).to_contain_text("Your login has ended, so this was not saved.")
         expect(banner.locator('a[href="/login"]')).to_have_text("Log in again")
     finally:
-        app_ctx.run_repo.delete(run_id)
+        app_ctx.run_repo.collection.delete_one({"_id": run_id})

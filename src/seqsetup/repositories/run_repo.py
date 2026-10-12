@@ -69,6 +69,18 @@ class RunRepository(BaseRepository[SequencingRun]):
             )
         run._loaded_updated_at = run.updated_at
 
+    def delete(self, item_id: str) -> bool:
+        """Refuse an id-only delete: it would skip the version check.
+
+        A run is deleted only through ``delete_if_unchanged``, so the
+        version that was checked is the version that goes (spec 2026-09-28
+        group 2a, review P1). Other repositories keep the inherited delete.
+        """
+        raise ValueError(
+            f"Run {item_id} cannot be deleted by id alone; "
+            f"refusing to delete it without a version check"
+        )
+
     def delete_if_unchanged(self, run: SequencingRun) -> bool:
         """Delete ``run`` only if the stored version is the one that was loaded.
 

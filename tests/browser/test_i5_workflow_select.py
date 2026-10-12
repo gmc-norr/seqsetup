@@ -49,7 +49,7 @@ def test_the_select_shows_for_miseq_i100_and_not_for_novaseq_x(logged_in_page, a
         expect(container).to_be_hidden()
         assert app_ctx.run_repo.get_by_id(run_id).i5_workflow == "Standard"
     finally:
-        app_ctx.run_repo.delete(run_id)
+        app_ctx.run_repo.collection.delete_one({"_id": run_id})
 
 
 @pytest.mark.browser
@@ -66,4 +66,4 @@ def test_a_change_is_saved(logged_in_page, app_ctx):
         page.reload()
         expect(page.locator("#i5_workflow")).to_have_value("Read-first")
     finally:
-        app_ctx.run_repo.delete(run_id)
+        app_ctx.run_repo.collection.delete_one({"_id": run_id})

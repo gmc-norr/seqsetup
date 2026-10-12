@@ -39,7 +39,7 @@ def group_1c_run_id(app_ctx):
                           barcode_mismatches_index1=2, barcode_mismatches_index2=2))
     app_ctx.run_repo.save(run)
     yield run.id
-    app_ctx.run_repo.delete(run.id)
+    app_ctx.run_repo.collection.delete_one({"_id": run.id})
 
 
 def _open(page, base_url, run_id):

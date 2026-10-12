@@ -46,3 +46,18 @@ class TestDeleteIfUnchanged:
     def test_never_loaded_run_is_refused(self, repo):
         with pytest.raises(ValueError):
             repo.delete_if_unchanged(SequencingRun(id="r2"))
+
+
+class TestIdOnlyDeleteIsRefused:
+    """The inherited ``delete(item_id)`` would skip the version check, so a
+    run is never deleted that way."""
+
+    def test_an_id_only_delete_raises_and_deletes_nothing(self, repo):
+        _loaded(repo)
+        with pytest.raises(ValueError):
+            repo.delete("r1")
+        assert repo.get_by_id("r1") is not None
+
+    def test_an_id_only_delete_of_an_unknown_run_raises_too(self, repo):
+        with pytest.raises(ValueError):
+            repo.delete("never-stored")

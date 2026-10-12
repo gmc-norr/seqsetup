@@ -51,6 +51,7 @@ a model or service layer where it cannot be forgotten.
 ### Run state integrity
 - Never allow mutations to a run unless it passes the `Depends(get_editable_run)` guard — DRAFT-only, raises HTTP 403 otherwise (see `routes/dependencies.py`).
 - Never expose draft runs via the API — only `ready` and `archived`.
+- A run is deleted only through `RunRepository.delete_if_unchanged(run)`, which deletes the exact version that was loaded. The inherited id-only `BaseRepository.delete(item_id)` is overridden on `RunRepository` to raise, so a new caller cannot delete a run without a version check (other repositories keep the inherited delete).
 - Always call `run.touch(updated_by=get_username(req))` before saving after mutations. The `saving_run(...)` context manager does this for you — prefer it over manual save calls so reviewers can grep `with saving_run(` to enumerate every mutation handler.
 - Pre-generate all exports (samplesheet v2, v1, JSON, validation) when transitioning to Ready — the API serves pre-generated content, not live exports. The UI export routes share this guarantee; they fall back to live generation only for runs created before pre-generation existed, and any new code path that mutates a Ready/Archived run must re-pre-generate.
 - READY→DRAFT clears the pre-generated exports so a subsequent re-promotion never adopts blobs from before the edit cycle. READY→ARCHIVED retains them — archived runs serve those bytes via the API.

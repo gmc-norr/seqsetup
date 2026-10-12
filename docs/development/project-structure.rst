@@ -43,6 +43,10 @@ Application Layers
    model type. Repositories accept a PyMongo database connection and operate on
    specific collections.
 
+   ``RunRepository`` is the exception to plain CRUD: a run is deleted only through
+   ``delete_if_unchanged(run)``, which removes the exact version that was read, and
+   the id-only ``delete(run_id)`` raises instead of deleting.
+
 **Services** (``services/``)
    Business logic that operates on models. Services are stateless and typically
    implemented as class methods. Examples: cycle calculation, validation, export,

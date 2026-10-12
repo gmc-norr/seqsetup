@@ -589,4 +589,4 @@ def mutable_run_id(app_ctx):
 
     app_ctx.run_repo.save(run)
     yield run_id
-    app_ctx.run_repo.delete(run_id)
+    app_ctx.run_repo.collection.delete_one({"_id": run_id})
