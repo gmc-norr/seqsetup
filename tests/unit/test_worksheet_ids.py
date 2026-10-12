@@ -65,7 +65,7 @@ class TestTextAndWholeNumbersAreListedAsToday:
 def _cannot(shown):
     return (f"A worksheet in the LIMS list has the ID {shown}, which SeqSetup cannot ask the "
             f"LIMS for as it was sent: an ID is at most 128 letters, digits, '.', '_', '-' or "
-            f"'~', with no spaces. It is left out of the list.")
+            f"'~', with no spaces, and not made only of dots. It is left out of the list.")
 
 
 def _same(count, shown):
@@ -108,6 +108,20 @@ class TestAnIdSeqSetupWouldChangeIsLeftOut:
     def test_the_mapped_field_is_checked_too(self, lims_wire):
         assert _listed(lims_wire, b'[{"AL": "W2 "}, {"AL": "W3"}]', MAPPED) == (
             True, "Found 1 worksheets", ["W3"], [_cannot("'W2 '")])
+
+    @pytest.mark.parametrize("raw, shown", [
+        (b'"."', "'.'"), (b'".."', "'..'"), (b'"..."', "'...'"),
+    ])
+    def test_an_id_made_only_of_dots(self, lims_wire, raw, shown):
+        """GET {base}/worksheets/.. would ask the LIMS for the path above the
+        worksheets, with the api-key, and whatever came back would be
+        previewed or imported as samples (security review 2026-10)."""
+        assert _listed(lims_wire, b'[{"id": "W1"}, {"id": ' + raw + b'}]') == (
+            True, "Found 1 worksheets", ["W1"], [_cannot(shown)])
+
+    def test_an_id_that_merely_holds_a_dot_is_listed(self, lims_wire):
+        assert _listed(lims_wire, b'[{"id": "1.2"}, {"id": ".hidden"}]') == (
+            True, "Found 2 worksheets", ["1.2", ".hidden"], [])
 
 
 class TestTwoWorksheetsWithOneId:

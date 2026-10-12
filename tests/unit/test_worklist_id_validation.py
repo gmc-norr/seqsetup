@@ -65,3 +65,34 @@ class TestWorklistUrlBuilder:
         config = SampleApiConfig(base_url="https://lims.example.com/api")
         with pytest.raises(InvalidWorklistIdError):
             config.worklist_samples_url("WL-1/../admin")
+
+
+class TestAnIdMadeOnlyOfDots:
+    """The alphabet admitted ".", ".." and "...", and ``quote`` leaves a dot
+    alone, so ``GET {base}/worksheets/..`` went out with the LIMS api-key --
+    and any server or proxy that normalises dot segments served ``{base}/``
+    instead. Whatever JSON came back was shown in the preview or imported as
+    samples (security review 2026-10)."""
+
+    @pytest.mark.parametrize("worklist_id", [".", "..", "...", "." * 10, "." * 128])
+    def test_it_is_refused(self, worklist_id):
+        with pytest.raises(InvalidWorklistIdError, match="only of dots"):
+            validate_worklist_id(worklist_id)
+
+    @pytest.mark.parametrize("worklist_id", [".", "..", "..."])
+    def test_no_url_is_built_for_it(self, worklist_id):
+        config = SampleApiConfig(base_url="https://lims.example.com/api")
+
+        with pytest.raises(InvalidWorklistIdError, match="only of dots"):
+            config.worklist_samples_url(worklist_id)
+
+    @pytest.mark.parametrize("worklist_id",
+                             ["WL-1", "1.2", "1.0.2", ".hidden", "trailing.", "W-2_a.b~c"])
+    def test_an_id_that_merely_holds_a_dot_still_passes(self, worklist_id):
+        validate_worklist_id(worklist_id)
+
+    def test_an_id_that_merely_holds_a_dot_still_round_trips(self):
+        config = SampleApiConfig(base_url="https://lims.example.com/api")
+
+        assert config.worklist_samples_url("1.2") == (
+            "https://lims.example.com/api/worksheets/1.2")
