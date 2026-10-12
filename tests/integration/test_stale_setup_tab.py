@@ -206,3 +206,31 @@ class TestThePagesOwnSavesKeepItFresh:
 
         assert resp.status_code == 200, resp.text[:300]
         assert _stored(ctx).run_name == "Typed here"
+
+
+class TestThePageSendsTheVersionWithEverySave:
+    """Every control on the setup page that saves sends the version back, so
+    the answer can refresh it; the Continue button's hx-include region holds
+    the hidden field itself."""
+
+    def test_each_control_sends_the_version(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+
+        page = logged_in_client.get(f"/runs/new/step/1?run_id={RUN}").text
+
+        for route in ("name", "cycles", "instrument", "flowcell", "reagent-kit"):
+            post = f'hx-post="/runs/{RUN}/{route}"'
+            assert post in page, post
+            start_tag = page.split(post, 1)[1].split(">", 1)[0]
+            assert "run-version" in start_tag, post
+
+    def test_the_hidden_field_is_in_what_continue_sends(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+
+        page = logged_in_client.get(f"/runs/new/step/1?run_id={RUN}").text
+
+        included = page.split('id="run-setup-fields"', 1)[1].split('id="wizard-nav-step-', 1)[0]
+        assert 'id="run-version"' in included
+        assert 'hx-include="#run-setup-fields"' in page
