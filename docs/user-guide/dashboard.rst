@@ -53,6 +53,11 @@ warning naming the run id goes to :doc:`/admin-guide/logs`. Send the run id
 to your administrator: the record has to be repaired before that run can be
 opened again.
 
+If every run stored is one SeqSetup cannot read, the dashboard shows that
+line and the three tabs with their counts at zero. It never says "No Runs
+Yet": there are runs, and the line above the tabs says how many could not
+be read.
+
 Search
 ------
 

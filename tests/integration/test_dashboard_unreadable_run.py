@@ -188,6 +188,40 @@ class TestUnreadableRunIsRecordedNotHidden:
         assert "could not be read" not in response.text
 
 
+class TestThePageNeverSaysBothThings:
+    """"No Runs Yet" and "1 run could not be read" cannot both be true.
+
+    With exactly one run stored and that run unreadable, the page showed
+    the notice AND a heading saying the lab had no runs at all, with a
+    "+ New Run" button under it. A clinical page must not tell the
+    operator two contradictory things about what is in the database. The
+    empty-state block is now shown only when there is genuinely nothing:
+    no readable runs and no unreadable ones.
+    """
+
+    def test_one_unreadable_run_is_not_called_no_runs_yet(
+            self, logged_in_client, fresh_app):
+        _app, ctx, db = fresh_app
+        _run(ctx, BAD_ID, "Broken run")
+        _make_unreadable(db, BAD_ID)
+
+        response = logged_in_client.get("/")
+
+        assert response.status_code == 200
+        assert BAD_ID in response.text
+        assert "No Runs Yet" not in response.text
+
+    def test_an_empty_database_still_says_no_runs_yet(self, logged_in_client, fresh_app):
+        """The genuinely-empty page is unchanged."""
+        _app, _ctx, _db = fresh_app
+
+        response = logged_in_client.get("/")
+
+        assert response.status_code == 200
+        assert "No Runs Yet" in response.text
+        assert "could not be read" not in response.text
+
+
 class TestArchiveAndDeleteSurviveAnUnreadableRun:
     """The two handlers that WRITE and then render the listing.
 

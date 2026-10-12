@@ -21,7 +21,12 @@
    lives inside this block, so block_name="dashboard_content" renders
    exactly what hx-target="#dashboard" hx-swap="outerHTML" replaces. #}
 {% block dashboard_content %}
-{% if not runs %}
+{# "No Runs Yet" only when there is genuinely nothing: a run whose document
+   could not be read is still a run, and the notice above the list says so,
+   so the empty-state heading and its "+ New Run" button would contradict
+   it. With no readable runs but an unreadable one, the tabs render with
+   their zero counts and the notice names the run. #}
+{% if not runs and not unreadable_run_ids %}
 <div id="dashboard" class="flex items-center justify-center py-16">
     <div class="text-center">
         {% include "_dashboard_unreadable.html" %}
