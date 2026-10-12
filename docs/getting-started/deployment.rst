@@ -325,7 +325,7 @@ Example nginx configuration:
 
        proxy_set_header Host $host;
        proxy_set_header X-Real-IP $remote_addr;
-       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-For $remote_addr;
        proxy_set_header X-Forwarded-Proto $scheme;
 
        # SeqSetup caps each request body itself: 2 MB, and 21 MB only where
@@ -341,6 +341,28 @@ Example nginx configuration:
            proxy_pass http://127.0.0.1:5001;
        }
    }
+
+``X-Forwarded-For`` is set to ``$remote_addr`` -- the address the proxy
+itself is talking to -- and **not** to nginx's ``$proxy_add_x_forwarded_for``,
+which appends to whatever the client sent. SeqSetup gives each client its own
+sign-in limit by reading the first hop of that header, so a header the client
+can write means a client that can choose which limit it spends: a new value
+each time buys unlimited attempts, and someone else's value spends theirs. If
+your proxy is itself behind another proxy, keep the real client's address in
+the first position, and never let a value the client sent reach it.
+
+Then turn on the variable that makes SeqSetup read it, so each user is
+counted separately instead of every user behind the proxy sharing the
+proxy's own address:
+
+.. code-block:: bash
+
+   SEQSETUP_TRUST_FORWARDED_FOR=1   # only behind a proxy that REPLACES the header
+
+The Docker Compose recipe sets this to ``1`` already. Turn it off
+(``SEQSETUP_TRUST_FORWARDED_FOR=0`` in ``.env``) if SeqSetup is ever reached
+directly, without the proxy in front of it: then the header is whatever the
+client typed, and the direct TCP address is the only honest identity.
 
 .. important::
 

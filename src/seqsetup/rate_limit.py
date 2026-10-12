@@ -146,6 +146,13 @@ def client_identity(req) -> str:
     trusted reverse proxy that overwrites the header) do we honor the first
     XFF hop. This protects login + API limits from anonymous spoofing in
     direct-exposed deployments.
+
+    The first hop is the real client only while the proxy REPLACES the
+    header. The deployment recipe does that (``$remote_addr``, not
+    ``$proxy_add_x_forwarded_for``) and sets this variable to 1, so each
+    user behind the proxy has their own sign-in limit instead of every user
+    sharing the proxy's address. See docs/getting-started/deployment.rst,
+    Reverse Proxy Configuration.
     """
     trust_xff = os.environ.get("SEQSETUP_TRUST_FORWARDED_FOR", "").lower() in ("1", "true", "yes")
     if trust_xff:

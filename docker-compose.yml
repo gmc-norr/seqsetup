@@ -27,6 +27,11 @@ services:
       - SEQSETUP_SESSION_SECRET=${SEQSETUP_SESSION_SECRET:?must set in .env}
       # 1 behind TLS: Secure session cookie and HSTS. No default: decide it in .env.
       - SEQSETUP_HTTPS_ONLY=${SEQSETUP_HTTPS_ONLY:?must set in .env}
+      # Each user behind the reverse proxy gets their own sign-in limit, read from
+      # the first X-Forwarded-For hop. Only sound with a proxy that REPLACES that
+      # header (the nginx example in docs/getting-started/deployment.rst does);
+      # set it to 0 in .env if the app is ever reached without the proxy.
+      - SEQSETUP_TRUST_FORWARDED_FOR=${SEQSETUP_TRUST_FORWARDED_FOR:-1}
       - SEQSETUP_LIMS_API_KEY=${SEQSETUP_LIMS_API_KEY:-}
     env_file:
       - .env
