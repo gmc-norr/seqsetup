@@ -214,9 +214,27 @@ set it. DRAGEN 4.3 converts a run without lane splitting only when the
 sheet has no Lane column, so **Mark Ready** refuses it.
 ``NoLaneSplitting,false`` next to a Lane column is fine.
 
+Columns taken from the sample
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A column SeqSetup does not fill itself gets the profile's ``Data`` default,
+the same text in every row. Two columns are an exception, in **every**
+application's section:
+
+- ``Sample_Project`` holds the sample's own project, and
+- ``Sample_Name`` holds the sample's own name,
+
+whenever the sample has one; the profile's ``Data`` default is written only
+for a sample that has none. BCL Convert writes a sample's FASTQ files into a
+directory named after ``Sample_Project`` and names the files after
+``Sample_Name``, so one project for the whole run would put every patient's
+reads in one directory. The v1 sheet has always written each sample's own
+name and project.
+
 Names are compared ignoring case. SeqSetup fills and reads these names
 itself, in this spelling only: in every profile's ``Settings``,
-``SoftwareVersion``; in the ``BCLConvert`` profile, the columns
+``SoftwareVersion``; in every profile's columns, ``Sample_Project`` and
+``Sample_Name``; in the ``BCLConvert`` profile, the columns
 ``Sample_ID``, ``Lane``, ``Index``, ``Index2``, ``OverrideCycles``,
 ``BarcodeMismatchesIndex1``, ``BarcodeMismatchesIndex2`` and the settings
 ``BarcodeMismatchesIndex1``, ``BarcodeMismatchesIndex2``,

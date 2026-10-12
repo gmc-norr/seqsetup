@@ -22,6 +22,10 @@ BCLCONVERT = "BCLConvert"
 # Names SeqSetup fills or reads itself, in the one spelling it uses. Another
 # spelling of one of them is refused (spec §1 problem 7).
 SPELLED_SETTINGS_ANY = ("SoftwareVersion",)
+# Columns the writer fills from the sample in every application's section
+# (spec 2026-10-12 batch 2, 2b): another spelling would get the profile's Data
+# default in every row instead of each sample's own value.
+SPELLED_COLUMNS_ANY = ("Sample_Project", "Sample_Name")
 SPELLED_COLUMNS_BCLCONVERT = (
     "Sample_ID", "Lane", "Index", "Index2", "OverrideCycles",
     "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2",
@@ -333,6 +337,7 @@ def plan_sheet(
 
         # Problem 7: another spelling of a name SeqSetup fills or reads.
         spelled = [("Settings", str(key), SPELLED_SETTINGS_ANY) for key in profile.settings]
+        spelled += [("its columns", str(column), SPELLED_COLUMNS_ANY) for _, column in columns]
         if is_bclconvert:
             spelled += [("Settings", str(key), SPELLED_SETTINGS_BCLCONVERT)
                         for key in profile.settings]

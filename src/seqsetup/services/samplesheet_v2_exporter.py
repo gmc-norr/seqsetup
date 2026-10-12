@@ -644,6 +644,20 @@ class SampleSheetV2Exporter:
             for field, col in data_columns(own):
                 if col == "Sample_ID":
                     row.append(cls._escape_identifier(sample.sample_id))
+                elif col == "Sample_Name":
+                    # The sample's own name, and the profile's Data default
+                    # only for a sample that has none: BCL Convert names the
+                    # FASTQ files after it (spec 2026-10-12 batch 2, 2b).
+                    row.append(cls._escape_identifier(sample.sample_name)
+                               if sample.sample_name
+                               else cls._escape_config_cell(own.data.get(field, "")))
+                elif col == "Sample_Project":
+                    # The sample's own project, and the profile's Data default
+                    # only for a sample that has none: BCL Convert writes the
+                    # sample's FASTQ files into a directory of that name.
+                    row.append(cls._escape_identifier(sample.project)
+                               if sample.project
+                               else cls._escape_config_cell(own.data.get(field, "")))
                 elif col == "Lane":
                     row.append(str(lane) if lane else "")
                 elif col == "Index":
