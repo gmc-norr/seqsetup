@@ -1,8 +1,11 @@
 """The plan of a run's v2 Sample Sheet application sections (spec 2026-10-05
 group A3, §1): which samples go in which section, from which profile, the
 mismatch numbers the sheet gives BCL Convert, and every reason the sheet
-cannot be written. Mark Ready's checks and the v2 writer both use it, so they
-cannot disagree about which samples go where."""
+cannot be written. Mark Ready's checks and the v2 writer both read the plan,
+so they cannot disagree about which samples go where. The module also decides
+what the sheet writes for one sample (sheet_index2, sheet_override_cycles),
+which the v2 writer and the JSON export both read, so the two exports of one
+run cannot state different values (spec 2026-10-12 batch 2, 2a)."""
 
 import hashlib
 import json
