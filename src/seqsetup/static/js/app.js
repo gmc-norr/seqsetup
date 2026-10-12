@@ -113,7 +113,7 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     // delegation on document (inline ondrop is blocked by CSP), so
     // event.currentTarget is document — resolve the real .drop-zone from the
     // event target instead (event.target may be a child node of the zone).
-    const dropZone = event.target.closest('.drop-zone') || event.currentTarget || event.target;
+    const dropZone = event.target.closest('.drop-zone, .replace-zone') || event.currentTarget || event.target;
     dropZone.classList.remove('drag-over');
 
     // Get context from drop zone data attribute (for simplified wizard views)
@@ -262,6 +262,33 @@ function multiDropWarning(targets, indexes) {
             `index${unused === 1 ? '' : 'es'} will not be used.`);
     }
     return parts.length ? parts.join('\n\n') + '\n\nContinue?' : '';
+}
+
+// While "Edit indexes" is on, an assigned index is a .replace-zone
+// (wizard/_sample_row.html): one index dropped there replaces it, but only
+// after a yes. A drop of several goes straight on to handleIndexDrop, whose
+// multiDropWarning names every row it would replace; so does an i7 dropped
+// on an i5 (or the reverse), which handleIndexDrop refuses by itself.
+function replaceDropConfirmed(event, zone) {
+    let dragData = null;
+    try {
+        dragData = JSON.parse(event.dataTransfer.getData('text/plain'));
+    } catch (e) {
+        dragData = null;
+    }
+    const indexes = dragData && dragData.indexes ? dragData.indexes : null;
+    if (indexes && indexes.length > 1) return true;
+    const idx = indexes ? indexes[0] : null;
+    const single = !!idx && (idx.type === 'i7' || idx.type === 'i5');
+    if (single && zone.dataset.dropZoneType && zone.dataset.dropZoneType !== idx.type) return true;
+
+    const current = zone.dataset.indexName ? ` (${zone.dataset.indexName})` : '';
+    let message = `${zone.dataset.sampleName || 'This sample'} already has an index${current}. ` +
+        'Replace it with the one you dropped?';
+    if (single && zone.dataset.hasPair) {
+        message += `\n\nIts index pair goes, i7 and i5 both: the sample keeps only the ${idx.type} you dropped.`;
+    }
+    return window.confirm(message);
 }
 
 function handleIndexKeydown(event) {                 // chip: Enter/Space = select
@@ -810,20 +837,26 @@ document.addEventListener('dragstart', function(event) {
 });
 
 document.addEventListener('dragover', function(event) {
-    const zone = event.target.closest('.drop-zone');
+    const zone = event.target.closest('.drop-zone, .replace-zone');
     if (!zone) return;
     event.preventDefault();
     zone.classList.add('drag-over');
 });
 
 document.addEventListener('dragleave', function(event) {
-    const zone = event.target.closest('.drop-zone');
+    const zone = event.target.closest('.drop-zone, .replace-zone');
     if (zone) zone.classList.remove('drag-over');
 });
 
 document.addEventListener('drop', function(event) {
-    const zone = event.target.closest('.drop-zone');
+    const zone = event.target.closest('.drop-zone, .replace-zone');
     if (!zone) return;
+    if (zone.classList.contains('replace-zone') && !replaceDropConfirmed(event, zone)) {
+        event.preventDefault();
+        zone.classList.remove('drag-over');
+        clearIndexSelection();
+        return;
+    }
     handleIndexDrop(event, zone.dataset.sampleId, zone.dataset.runId, zone.dataset.dropZoneType);
 });
 

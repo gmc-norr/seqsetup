@@ -4,8 +4,9 @@ Index Assignment
 Every sample needs an index (barcode) before its run can go **Ready** --
 it is what lets the sequencer sort each read back to the right sample.
 Indexes come from an index kit and live in a panel next to the sample
-table; the panel only appears while at least one sample in the run has no
-index at all.
+table; the panel appears while at least one sample in the run has no
+index at all, or after you select **Edit indexes** (see `Changing an
+index`_).
 
 Index Kits
 ----------
@@ -55,14 +56,46 @@ target of a sample; either way it fills both. A single **i7** or **i5**
 chip (combinatorial or single-index kits) only fills the matching target
 and refuses the other one. Dropping a new index on a sample that already
 has one does nothing -- once a cell holds an index, it is no longer a
-drop target. There is no button on this page to clear or replace an
-index either; the only way to change one is to remove the whole sample
-and add it again.
+drop target -- unless you are editing indexes (see `Changing an
+index`_).
 
 You can do the same thing from the keyboard: press **Enter** or
 **Space** on an index chip to select it, then **Tab** to the sample's
 drop target and press **Enter** or **Space** there to assign it.
 **Escape** clears the current selection.
+
+Changing an index
+-----------------
+
+In a Draft run, select **Edit indexes** above the sample table. It opens
+the index panel, even when every sample already has an index, and puts a
+small **x** on each assigned index:
+
+- A unique-dual **pair** has one **x** (**Clear index pair**) in its i7
+  cell. It clears the i7 and the i5 together; half of a pair cannot be
+  cleared on its own.
+- An **i7** or **i5** from a combinatorial or single-index kit has its own
+  **x** and clears on its own.
+
+A cleared cell turns back into a drop target: drop the new index on it.
+
+While editing, you can also drop a new index straight onto the old one.
+SeqSetup first asks, naming the sample and the index it has now, and
+changes nothing if you say no. A pair dropped on either cell replaces
+both indexes. A single i7 or i5 dropped on a sample with a pair replaces
+the whole pair: the sample keeps only the index you dropped, and the
+question says so. Several selected indexes dropped together fill the
+rows from there down, as in `Selecting several indexes in order`_, and
+warn about every sample whose index they would replace.
+
+Select **Done editing indexes** to hide the **x** buttons again. It
+closes the panel too, unless the panel was open for a sample without an
+index. Leaving or reloading the page also ends editing; after a reload
+the panel shows again whenever a sample has no index. A Ready or
+Archived run has no **Edit indexes** button.
+
+Clearing an index does not always reset the sample's Override Cycles;
+dropping the new index recalculates them (see :doc:`override-cycles`).
 
 Selecting several indexes in order
 --------------------------------------

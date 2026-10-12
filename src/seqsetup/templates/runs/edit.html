@@ -25,7 +25,10 @@
     {% include "runs/_run_config_panel.html" %}
     {% endwith %}
 
-    <fieldset id="samples" class="config-panel samples-display">
+    {# editingIndexes: "Edit indexes" in the sample section opens the index
+       list and the clear buttons. It lives here, outside #sample-section,
+       so it survives the section and its rows being swapped. #}
+    <fieldset id="samples" class="config-panel samples-display" x-data="{ editingIndexes: false }">
         <legend>Samples and indexes</legend>
         {% with run=run, index_kits=index_kits, test_profiles=test_profiles,
                 num_lanes=num_lanes, is_editable=is_editable,
@@ -54,15 +57,20 @@
         </form>
     </fieldset>
 
+    {# Folded away like "Add Samples"; the history loads the first time it
+       is opened. #}
     <fieldset class="config-panel">
         <legend>Change history</legend>
-        <div class="run-history-panel"
-             aria-live="polite"
-             hx-get="/runs/{{ run.id }}/history"
-             hx-trigger="revealed"
-             hx-swap="innerHTML">
-            <p class="text-slate-500 text-sm">Loading history…</p>
-        </div>
+        <details class="history-section"
+                 hx-get="/runs/{{ run.id }}/history"
+                 hx-trigger="toggle once"
+                 hx-target="find .run-history-panel"
+                 hx-swap="innerHTML">
+            <summary class="history-section-summary">Show change history</summary>
+            <div class="run-history-panel history-section-content" aria-live="polite">
+                <p class="text-slate-500 text-sm">Loading history…</p>
+            </div>
+        </details>
     </fieldset>
 </div>
 {% endblock %}

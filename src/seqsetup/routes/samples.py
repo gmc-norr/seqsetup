@@ -1720,6 +1720,14 @@ async def clear_index(
     # The clear button uses GET-style query params even on POST (htmx default).
 
     sample = run.get_sample(sample_id_path)
+    # Clearing one half of a pair leaves the pair, and both its indexes,
+    # on the sample, yet wipes its kit name and Override Cycles settings
+    # and is audited as cleared; the row's one pair button clears both.
+    if sample and index_type in ("i7", "i5") and sample.index_pair is not None:
+        return Response(
+            "This sample's i7 and i5 are one index pair. Clear the pair instead.",
+            status_code=400,
+        )
     if sample:
         with saving_run(run, ctx, request):
             if index_type == "i7":
