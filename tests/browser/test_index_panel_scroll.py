@@ -77,8 +77,8 @@ SCROLLING = """() => {
 }"""
 
 
-def _open(page, base_url, run_id, kit, width):
-    page.set_viewport_size({"width": width, "height": 900})
+def _open(page, base_url, run_id, kit, width, height=900):
+    page.set_viewport_size({"width": width, "height": height})
     page.goto(f"{base_url}/runs/{run_id}")
     page.wait_for_load_state("networkidle")
     with page.expect_response(lambda r: "/indexes/kit-content" in r.url and r.status == 200):
@@ -89,10 +89,13 @@ def _open(page, base_url, run_id, kit, width):
 
 
 @pytest.mark.browser
-@pytest.mark.parametrize("width", [1600, 1280])
-def test_the_index_list_has_one_scrollbar(logged_in_page, base_url, big_kit, long_run_id, width):
+@pytest.mark.parametrize("width,height", [(1600, 900), (1600, 700), (1280, 900)])
+def test_the_index_list_has_one_scrollbar(logged_in_page, base_url, big_kit, long_run_id, width, height):
+    """At 700 px tall the panel is shorter than the list's own 600 px cap
+    plus the kit picker above it, so a cap left on the list shows a second
+    scrollbar."""
     page = logged_in_page
-    _open(page, base_url, long_run_id, big_kit, width)
+    _open(page, base_url, long_run_id, big_kit, width, height)
     assert len(page.evaluate(SCROLLING)) == 1, page.evaluate(SCROLLING)
 
 

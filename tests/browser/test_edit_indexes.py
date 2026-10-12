@@ -120,12 +120,11 @@ def test_swap_one_sample_index_pair(logged_in_page, base_url, app_ctx, kit, run_
     # The swapped row and its neighbour are still in edit mode.
     expect(_clear(page, run_id, 2)).to_be_visible()
 
-    with page.expect_response(lambda r: "/indexes/kit-content" in r.url and r.status == 200):
-        page.select_option("#index-kit-dropdown", kit.kit_id)
+    _pick_kit(page, kit)
     chip = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
     zone = page.locator(f"#sample-row-{run_id}-s1 .drop-zone").first
     with page.expect_response(lambda r: "/assign-index" in r.url) as resp:
-        chip.drag_to(zone)
+        _drag(page, chip, zone)
     assert resp.value.status == 200
 
     sample = _sample(app_ctx, run_id, 1)
@@ -246,6 +245,22 @@ def _watch(page):
     return seen
 
 
+def _drag(page, chip, target):
+    """Drag ``chip`` onto ``target`` with both on screen, and check that the
+    drag started. With the target below the window, Playwright scrolls in
+    the middle of the drag and no drag starts at all, which a test that
+    expects nothing to happen would pass."""
+    target.scroll_into_view_if_needed()
+    chip.scroll_into_view_if_needed()
+    expect(target).to_be_in_viewport()
+    expect(chip).to_be_in_viewport()
+    page.evaluate("() => { window.__dragstarts = 0;"
+                  " document.addEventListener('dragstart', () => window.__dragstarts++,"
+                  " {capture: true, once: true}); }")
+    chip.drag_to(target)
+    assert page.evaluate("() => window.__dragstarts") == 1
+
+
 @pytest.mark.browser
 def test_a_drop_on_an_index_replaces_it_after_asking(logged_in_page, base_url, app_ctx, kit, run_id):
     page = logged_in_page
@@ -256,7 +271,7 @@ def test_a_drop_on_an_index_replaces_it_after_asking(logged_in_page, base_url, a
 
     chip = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
     with page.expect_response(lambda r: "/assign-index" in r.url) as resp:
-        chip.drag_to(_cell(page, run_id, 1, "i5"))
+        _drag(page, chip, _cell(page, run_id, 1, "i5"))
 
     assert resp.value.status == 200
     assert seen["dialogs"] == ["EI-01 already has an index (EI0). Replace it with the one you dropped?"]
@@ -275,7 +290,7 @@ def test_saying_no_keeps_the_index(logged_in_page, base_url, app_ctx, kit, run_i
     seen["answer"] = False
 
     chip = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
-    chip.drag_to(_cell(page, run_id, 1, "i7"))
+    _drag(page, chip, _cell(page, run_id, 1, "i7"))
     _wait_for_dialog(page, seen)
     page.wait_for_timeout(500)
 
@@ -294,7 +309,7 @@ def test_a_single_index_on_a_pair_says_the_pair_goes(logged_in_page, base_url, a
     seen["answer"] = False
 
     chip = page.locator(f'#index-list-container [data-index-id="{COMBI}_i7_CI7"]')
-    chip.drag_to(_cell(page, run_id, 1, "i7"))
+    _drag(page, chip, _cell(page, run_id, 1, "i7"))
     _wait_for_dialog(page, seen)
     page.wait_for_timeout(500)
 
@@ -313,7 +328,7 @@ def test_an_index_is_no_drop_target_outside_editing(logged_in_page, base_url, ap
     seen = _watch(page)
 
     chip = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
-    chip.drag_to(_cell(page, half_run_id, 1, "i7"))
+    _drag(page, chip, _cell(page, half_run_id, 1, "i7"))
     page.wait_for_timeout(500)
 
     assert seen["dialogs"] == []
@@ -334,7 +349,7 @@ def test_several_dropped_on_an_index_warn_once_and_fill_down(logged_in_page, bas
     first.click()
     last.click(modifiers=["Shift"])
     with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
-        first.drag_to(_cell(page, run_id, 1, "i7"))
+        _drag(page, first, _cell(page, run_id, 1, "i7"))
 
     assert resp.value.status == 200
     [message] = seen["dialogs"]

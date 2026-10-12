@@ -12,6 +12,7 @@ def test_start_new_run_from_template(logged_in_page, base_url, app_ctx, mutable_
     template_ids_before = {t.id for t in app_ctx.run_template_repo.list_all()}
     try:
         page.goto(f"{base_url}/runs/{mutable_run_id}")
+        page.get_by_text("More: Save as template · Change history").click()
         page.fill("#template-name", "Browser template choice")
         page.click("text=Save as template >> nth=-1")
         page.wait_for_url(f"{base_url}/templates")

@@ -134,6 +134,7 @@ def test_new_run_template_choice(demo_page, base_url, demo):
     # unless one exists. Create one for real, through the run page's own
     # "Save as template" form -- the same way a user would.
     page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.get_by_text("More: Save as template · Change history").click()
     page.fill("#template-name", "Standard WGS Setup")
     with page.expect_navigation(url=re.compile(r"/templates$")):
         page.get_by_role("button", name="Save as template").click()
