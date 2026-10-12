@@ -3,10 +3,9 @@
 {% set active_route = "/runs/" ~ run.id %}
 
 {% block content %}
-{# Parts follow the work: setup, samples and indexes (Check just above the
-   samples, so its errors show where they are fixed), (ready: the status
-   bar in the header), export once Ready, then a closed "More" fold. The
-   step bar links to each. #}
+{# Parts follow the work: setup, samples and indexes (Check just below the
+   samples), (ready: the status bar in the header), export once Ready, then
+   a closed "More" fold. The step bar links to each. #}
 <div class="edit-run-layout" id="edit-run-page">
     <div class="run-header">
         <div class="run-header-top">
@@ -32,16 +31,18 @@
        so it survives the section and its rows being swapped. #}
     <fieldset id="samples" class="config-panel samples-display" x-data="{ editingIndexes: false }">
         <legend>Samples and indexes</legend>
-        {# Check refreshes itself (see its header), so it stays outside
-           #sample-section, which sample changes redraw. #}
-        {% with run=run, validation_result=validation_result, sample_errors=sample_errors, error_lines=error_lines, waiting=waiting,
-                fix_test_ids=fix_test_ids, fix_versions=fix_versions, test_profiles=test_profiles %}
-        {% include "runs/_validate_panel.html" %}
-        {% endwith %}
         {% with run=run, index_kits=index_kits, test_profiles=test_profiles,
                 num_lanes=num_lanes, is_editable=is_editable,
                 sample_api_enabled=sample_api_enabled, oob=False %}
         {% include "runs/_sample_section.html" %}
+        {% endwith %}
+        {# Check refreshes itself (see its header), so it stays outside
+           #sample-section, which sample changes redraw. It sits below the
+           samples: its height changes as it refreshes, and above them it
+           moved every row under a dragged index. #}
+        {% with run=run, validation_result=validation_result, sample_errors=sample_errors, error_lines=error_lines, waiting=waiting,
+                fix_test_ids=fix_test_ids, fix_versions=fix_versions, test_profiles=test_profiles %}
+        {% include "runs/_validate_panel.html" %}
         {% endwith %}
     </fieldset>
 

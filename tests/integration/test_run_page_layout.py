@@ -1,8 +1,10 @@
 """One tidy run page (the user's choice over tabs, 2026-10-12).
 
-- Check sits inside "Samples and indexes", just above the samples, so its
-  errors show where they are fixed. It stays outside #sample-section,
-  which sample changes redraw; Check refreshes itself.
+- Check sits inside "Samples and indexes", just below the samples. Above
+  them, it moved every row each time it refreshed and changed height
+  (300 ms after a change), so a quick drag could land on the wrong row.
+  It stays outside #sample-section, which sample changes redraw; Check
+  refreshes itself.
 - Export shows only once the run is Ready. A draft keeps an empty, hidden
   #export-panel so the status change can swap the buttons in.
 - Save as template and Change history share one closed "More" fold at the
@@ -40,20 +42,36 @@ def _tag(html, marker):
 
 
 @pytest.mark.parametrize("status", [RunStatus.DRAFT, RunStatus.READY, RunStatus.ARCHIVED])
-class TestCheckSitsAboveTheSamples:
-    def test_check_is_inside_samples_before_the_table(self, logged_in_client, fresh_app, status):
+class TestCheckSitsBelowTheSamples:
+    def test_check_comes_after_the_table(self, logged_in_client, fresh_app, status):
         _app, ctx, _db = fresh_app
         html = _page(logged_in_client, _run(ctx, f"check-{status.value}", status))
         samples = html.index('id="samples"')
-        check = html.index('id="validate-panel"')
         section = html.index('id="sample-section"')
-        assert samples < check < section
+        check = html.index('id="validate-panel"')
+        export = html.index('id="export-panel"')
+        assert samples < section < check < export
 
     def test_check_still_refreshes_itself(self, logged_in_client, fresh_app, status):
         _app, ctx, _db = fresh_app
         run_id = _run(ctx, f"refresh-{status.value}", status)
         [panel] = _tag(_page(logged_in_client, run_id), 'id="validate-panel"')
         assert f'hx-get="/runs/{run_id}/validate-panel"' in panel
+
+
+def test_a_section_redraw_leaves_check_alone(logged_in_client, fresh_app):
+    """Check is outside #sample-section, so a change that redraws the
+    section does not carry Check with it."""
+    _app, ctx, _db = fresh_app
+    run_id = _run(ctx, "redraw")
+    resp = logged_in_client.post(
+        f"/runs/{run_id}/samples/set-lanes",
+        data={"sample_ids": f'["{run_id}-s1"]', "lanes": "[1]"},
+        headers={"Origin": "http://testserver", "HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    assert 'id="sample-section"' in resp.text
+    assert 'id="validate-panel"' not in resp.text
 
 
 class TestExportOnlyOnceReady:

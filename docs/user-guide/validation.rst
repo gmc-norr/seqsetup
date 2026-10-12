@@ -1,9 +1,9 @@
 Validation
 ==========
 
-Every run's page has a **Check** panel at the top of **Samples and
-indexes**, just above the samples, so its errors show where you fix them.
-It re-runs automatically after every change -- add a sample,
+Every run's page has a **Check** panel at the bottom of **Samples and
+indexes**, just below the samples. It re-runs automatically after every
+change -- add a sample,
 assign an index, edit an override -- so it always reflects what is
 currently saved, not what the page looked like when it was first loaded.
 
