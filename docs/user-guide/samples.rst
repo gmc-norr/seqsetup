@@ -35,6 +35,15 @@ comma-separated:
   ``test_id``, ``test_version``, ``index_i7``, ``index_i5``,
   ``index_pair_name``, ``i7_name``, ``i5_name``. Any column you leave out is
   simply not used. A column named only ``version`` is not read.
+- If the paste has more than one column that could be the sample ID, the
+  one that names the sample ID wins, wherever it sits: ``sample_id``,
+  ``sampleid``, ``sample id`` or ``sample-id`` beats ``sample`` or ``id``,
+  which beats ``name``, ``sample_name`` or ``samplename``. So a paste headed
+  ``Sample_Name``, ``Sample_ID`` takes the Sample ID from ``Sample_ID`` and
+  leaves ``Sample_Name`` unused. Two columns of the same rank: the leftmost
+  wins. A paste whose only such column is ``Sample_Name`` still reads it as
+  the sample ID. The preview's **Columns used** line names the column it
+  actually read, so check it there.
 - A test version is ``1`` (the newest synced 1.x.x), ``1.2`` (the newest
   1.2.x) or ``1.2.3`` (exactly that one); **Mark Ready** picks the version
   and saves it (see :doc:`/admin-guide/profiles`). Any other text in the

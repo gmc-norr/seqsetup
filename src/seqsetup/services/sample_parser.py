@@ -4,6 +4,7 @@ import csv
 import io
 import re
 from dataclasses import dataclass
+from typing import Optional
 
 from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
@@ -35,10 +36,17 @@ class ParsedSample:
 
 
 # Common header names (case-insensitive)
-SAMPLE_HEADERS = {
-    "sample_id", "sampleid", "sample", "sample id",
-    "sample-id", "id", "name", "sample_name", "samplename",
-}
+# A paste may carry more than one sample-ID-ish column. They are ranked, not
+# taken by position: a column that names the sample ID itself wins over
+# "sample"/"id", which win over "name"/"sample_name" — the order the LIMS
+# importer already reads the same aliases in (services/sample_api.py). Two
+# columns of the same rank: the leftmost wins, as before.
+_SAMPLE_HEADER_RANKS = (
+    {"sample_id", "sampleid", "sample id", "sample-id"},
+    {"sample", "id"},
+    {"name", "sample_name", "samplename"},
+)
+SAMPLE_HEADERS = {name for rank in _SAMPLE_HEADER_RANKS for name in rank}
 TEST_HEADERS = {
     "test_id", "testid", "test", "test id", "test-id",
     "test_type", "testtype", "test type", "assay", "application",
@@ -119,6 +127,21 @@ def _describe_columns(
     return used, unused
 
 
+def _sample_id_column(header_parts: list[str]) -> Optional[int]:
+    """Which column holds the sample ID: the best-ranked sample header, and
+    among equals the leftmost. A paste headed Sample_Name, Sample_ID stored
+    the name as the sample ID and dropped the lab's own ID."""
+    best: Optional[tuple[int, int]] = None
+    for i, col in enumerate(header_parts):
+        col_lower = col.lower().strip()
+        for rank, names in enumerate(_SAMPLE_HEADER_RANKS):
+            if col_lower in names:
+                if best is None or rank < best[0]:
+                    best = (rank, i)
+                break
+    return None if best is None else best[1]
+
+
 def _detect_column_mapping(header_parts: list[str]) -> dict[str, int]:
     """
     Detect which columns contain which fields based on header row.
@@ -130,10 +153,13 @@ def _detect_column_mapping(header_parts: list[str]) -> dict[str, int]:
         Dictionary mapping field names to column indices
     """
     mapping = {}
+    sample_id_column = _sample_id_column(header_parts)
+    if sample_id_column is not None:
+        mapping["sample_id"] = sample_id_column
     for i, col in enumerate(header_parts):
         col_lower = col.lower().strip()
-        if col_lower in SAMPLE_HEADERS and "sample_id" not in mapping:
-            mapping["sample_id"] = i
+        if col_lower in SAMPLE_HEADERS:
+            continue
         elif col_lower in TEST_HEADERS and "test_id" not in mapping:
             mapping["test_id"] = i
         elif col_lower in TEST_VERSION_HEADERS and "test_version" not in mapping:
