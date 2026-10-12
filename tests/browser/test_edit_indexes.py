@@ -169,3 +169,160 @@ def test_change_history_loads_when_opened(logged_in_page, base_url, run_id):
     expect(panel).to_be_visible()
     expect(panel).to_contain_text("Created")
     assert len(history_requests) == 1
+
+
+# Dropping straight onto an assigned index replaces it, while editing.
+
+COMBI = "Edit-Indexes-Combi"
+
+
+@pytest.fixture
+def combi_kit(app_ctx):
+    """A combinatorial kit with one i7 and one i5; deleted afterwards."""
+    from seqsetup.services.validation import clear_validation_cache
+
+    kit = IndexKit(
+        name=COMBI, version="1.0", index_mode=IndexMode.COMBINATORIAL,
+        i7_indexes=[Index(name="CI7", sequence="GGTTAACC", index_type=IndexType.I7)],
+        i5_indexes=[Index(name="CI5", sequence="CCAATTGG", index_type=IndexType.I5)],
+    )
+    app_ctx.index_kit_repo.save(kit)
+    clear_validation_cache()
+    yield kit
+    app_ctx.index_kit_repo.delete(kit.name, kit.version)
+    clear_validation_cache()
+
+
+@pytest.fixture
+def half_run_id(app_ctx, kit):
+    """A draft whose first sample has a pair and second has none, so the
+    index list shows without editing; deleted afterwards."""
+    t = datetime(2026, 1, 10, 9, 0, 0)
+    run = SequencingRun(
+        id="edit-indexes-half-run", run_name="Half run",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8), status=RunStatus.DRAFT,
+        created_at=t, updated_at=t,
+    )
+    first = Sample(id=f"{run.id}-s1", sample_id="EI-01", lanes=[1])
+    first.assign_index(kit.index_pairs[0])
+    first.index_kit_name = KIT
+    run.add_sample(first)
+    run.add_sample(Sample(id=f"{run.id}-s2", sample_id="EI-02", lanes=[1]))
+    app_ctx.run_repo.save(run)
+    yield run.id
+    app_ctx.run_repo.collection.delete_one({"_id": run.id})
+
+
+def _pick_kit(page, kit):
+    with page.expect_response(lambda r: "/indexes/kit-content" in r.url and r.status == 200):
+        page.select_option("#index-kit-dropdown", kit.kit_id)
+
+
+def _cell(page, run_id, n, slot):
+    """The assigned-index cell of sample n: i7 first, then i5."""
+    return page.locator(f"#sample-row-{run_id}-s{n} .index-assigned").nth(0 if slot == "i7" else 1)
+
+
+def _watch(page):
+    """Record confirm messages and assign requests; answer each confirm with ``answer``."""
+    seen = {"dialogs": [], "assigns": [], "answer": True}
+    page.on("dialog", lambda d: (seen["dialogs"].append(d.message),
+                                 d.accept() if seen["answer"] else d.dismiss()))
+    page.on("request", lambda r: seen["assigns"].append(r.url) if "assign-index" in r.url else None)
+    return seen
+
+
+@pytest.mark.browser
+def test_a_drop_on_an_index_replaces_it_after_asking(logged_in_page, base_url, app_ctx, kit, run_id):
+    page = logged_in_page
+    _open(page, base_url, run_id)
+    page.get_by_role("button", name="Edit indexes").click()
+    _pick_kit(page, kit)
+    seen = _watch(page)
+
+    chip = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
+    with page.expect_response(lambda r: "/assign-index" in r.url) as resp:
+        chip.drag_to(_cell(page, run_id, 1, "i5"))
+
+    assert resp.value.status == 200
+    assert seen["dialogs"] == ["EI-01 already has an index (EI0). Replace it with the one you dropped?"]
+    sample = _sample(app_ctx, run_id, 1)
+    assert (sample.index1_sequence, sample.index2_sequence) == (I7[2], I5[2])
+    assert _sample(app_ctx, run_id, 2).index1_sequence == I7[1]
+
+
+@pytest.mark.browser
+def test_saying_no_keeps_the_index(logged_in_page, base_url, app_ctx, kit, run_id):
+    page = logged_in_page
+    _open(page, base_url, run_id)
+    page.get_by_role("button", name="Edit indexes").click()
+    _pick_kit(page, kit)
+    seen = _watch(page)
+    seen["answer"] = False
+
+    chip = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
+    chip.drag_to(_cell(page, run_id, 1, "i7"))
+    page.wait_for_timeout(500)
+
+    assert len(seen["dialogs"]) == 1
+    assert seen["assigns"] == []
+    assert _sample(app_ctx, run_id, 1).index1_sequence == I7[0]
+
+
+@pytest.mark.browser
+def test_a_single_index_on_a_pair_says_the_pair_goes(logged_in_page, base_url, app_ctx, combi_kit, run_id):
+    page = logged_in_page
+    _open(page, base_url, run_id)
+    page.get_by_role("button", name="Edit indexes").click()
+    _pick_kit(page, combi_kit)
+    seen = _watch(page)
+    seen["answer"] = False
+
+    chip = page.locator(f'#index-list-container [data-index-id="{COMBI}_i7_CI7"]')
+    chip.drag_to(_cell(page, run_id, 1, "i7"))
+    page.wait_for_timeout(500)
+
+    [message] = seen["dialogs"]
+    assert message.startswith("EI-01 already has an index (EI0). Replace it with the one you dropped?")
+    assert "pair" in message and "i5" in message
+    assert seen["assigns"] == []
+    assert _sample(app_ctx, run_id, 1).index_pair is not None
+
+
+@pytest.mark.browser
+def test_an_index_is_no_drop_target_outside_editing(logged_in_page, base_url, app_ctx, kit, half_run_id):
+    page = logged_in_page
+    _open(page, base_url, half_run_id)
+    _pick_kit(page, kit)
+    seen = _watch(page)
+
+    chip = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
+    chip.drag_to(_cell(page, half_run_id, 1, "i7"))
+    page.wait_for_timeout(500)
+
+    assert seen["dialogs"] == []
+    assert seen["assigns"] == []
+    assert _sample(app_ctx, half_run_id, 1).index1_sequence == I7[0]
+
+
+@pytest.mark.browser
+def test_several_dropped_on_an_index_warn_once_and_fill_down(logged_in_page, base_url, app_ctx, kit, run_id):
+    page = logged_in_page
+    _open(page, base_url, run_id)
+    page.get_by_role("button", name="Edit indexes").click()
+    _pick_kit(page, kit)
+    seen = _watch(page)
+
+    first = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI1"]')
+    last = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
+    first.click()
+    last.click(modifiers=["Shift"])
+    with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
+        first.drag_to(_cell(page, run_id, 1, "i7"))
+
+    assert resp.value.status == 200
+    [message] = seen["dialogs"]
+    assert "This will replace the index on 2 sample(s) that already have one: EI-01, EI-02." in message
+    assert _sample(app_ctx, run_id, 1).index1_sequence == I7[1]
+    assert _sample(app_ctx, run_id, 2).index1_sequence == I7[2]

@@ -207,6 +207,30 @@ class TestClearButtons:
         assert stored.get_sample(sid).index_pair is not None
         assert stored.updated_at == before
 
+    def test_an_assigned_index_is_a_drop_target_while_editing(self, logged_in_client, fresh_app):
+        """While editing, a drop on an index replaces it (app.js asks first)."""
+        _app, ctx, _db = fresh_app
+        run = _make_run(ctx, [_paired("PAIR-1")])
+        page = _page(logged_in_client, run)
+        sid = run.samples[0].id
+        cells = _tag(page, "class=\"index-assigned\"")
+        assert len(cells) == 2
+        for cell, slot in zip(cells, ("i7", "i5")):
+            assert ":class=\"{ 'replace-zone': editingIndexes }\"" in cell
+            assert f'data-sample-id="{sid}"' in cell
+            assert f'data-run-id="{run.id}"' in cell
+            assert f'data-drop-zone-type="{slot}"' in cell
+            assert 'data-sample-name="PAIR-1"' in cell
+            assert 'data-index-name="UDI0001"' in cell
+            assert 'data-has-pair="1"' in cell
+
+    @pytest.mark.parametrize("status", [RunStatus.READY, RunStatus.ARCHIVED])
+    def test_a_locked_index_is_never_a_drop_target(self, logged_in_client, fresh_app, status):
+        _app, ctx, _db = fresh_app
+        page = _page(logged_in_client, _make_run(ctx, [_paired("PAIR-1")], status))
+        assert "replace-zone" not in page
+        assert "data-has-pair" not in page
+
     def test_wizard_rows_keep_their_clear_buttons_always_shown(self, fresh_app):
         from seqsetup.templating import templates
 
@@ -218,6 +242,7 @@ class TestClearButtons:
         buttons = _tag(html, 'class="btn-tiny btn-clear"')
         assert len(buttons) == 2
         assert all("x-show" not in b and "x-cloak" not in b for b in buttons)
+        assert "replace-zone" not in html
 
 
 class TestChangeHistoryFolds:

@@ -2220,6 +2220,17 @@ body {
     flex-wrap: nowrap;
 }
 
+/* While "Edit indexes" is on, an assigned index takes a drop that replaces it. */
+.index-assigned.replace-zone {
+    outline: 1px dashed var(--border);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+.index-assigned.replace-zone.drag-over {
+    outline: 2px dashed var(--primary);
+    background: rgba(14, 116, 144, 0.1);
+}
+
 .index-name-display {
     font-weight: 500;
     font-size: 0.75rem;

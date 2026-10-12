@@ -19,6 +19,12 @@
    and are wired via event delegation in app.js (dragover/dragleave/drop/
    keydown calling handleIndexDrop / assignSelectedIndexToSample). Inline
    on* handlers are blocked by the app CSP, so do NOT add them back.
+
+   On the run page (show_bulk_actions and editable) an assigned index
+   carries the same data attributes and becomes a .replace-zone while
+   editingIndexes (runs/edit.html) is on: a drop there replaces the index
+   after app.js asks (replaceDropConfirmed). Not focusable: Enter on its
+   clear button must clear, not assign.
 #}
 {% set has_index = sample.has_index %}
 {% set has_i7 = sample.index1_sequence is not none %}
@@ -59,7 +65,16 @@
     </td>
     {%- if has_i7 %}
         <td class="index-cell">
-            <div class="index-assigned">
+            <div class="index-assigned"
+                 {%- if show_bulk_actions and editable %}
+                 :class="{ 'replace-zone': editingIndexes }"
+                 data-sample-id="{{ sample.id | e }}"
+                 data-run-id="{{ run_id | e }}"
+                 data-drop-zone-type="i7"
+                 data-sample-name="{{ sample.sample_id | e }}"
+                 data-index-name="{{ (sample.index1_name or '') | e }}"
+                 data-has-pair="{{ '1' if sample.index_pair else '' }}"
+                 {%- endif %}>
                 {% if sample.index1_name %}<span class="index-name-display">{{ sample.index1_name }}</span>{% endif %}
                 {% if sample.index1_well_position %}<span class="index-well-display">{{ sample.index1_well_position }}</span>{% endif %}
                 <span class="assigned-index i7">{{ sample.index1_sequence[:8] }}{{ '...' if sample.index1_sequence | length > 8 else '' }}</span>
@@ -102,7 +117,16 @@
     {%- if show_i5_column %}
         {%- if has_i5 %}
             <td class="index-cell">
-                <div class="index-assigned">
+                <div class="index-assigned"
+                     {%- if show_bulk_actions and editable %}
+                     :class="{ 'replace-zone': editingIndexes }"
+                     data-sample-id="{{ sample.id | e }}"
+                     data-run-id="{{ run_id | e }}"
+                     data-drop-zone-type="i5"
+                     data-sample-name="{{ sample.sample_id | e }}"
+                     data-index-name="{{ (sample.index2_name or '') | e }}"
+                     data-has-pair="{{ '1' if sample.index_pair else '' }}"
+                     {%- endif %}>
                     {% if sample.index2_name %}<span class="index-name-display">{{ sample.index2_name }}</span>{% endif %}
                     {% if sample.index2_well_position %}<span class="index-well-display">{{ sample.index2_well_position }}</span>{% endif %}
                     <span class="assigned-index i5">{{ sample.index2_sequence[:8] }}{{ '...' if sample.index2_sequence | length > 8 else '' }}</span>

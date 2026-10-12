@@ -56,7 +56,7 @@ target of a sample; either way it fills both. A single **i7** or **i5**
 chip (combinatorial or single-index kits) only fills the matching target
 and refuses the other one. Dropping a new index on a sample that already
 has one does nothing -- once a cell holds an index, it is no longer a
-drop target. To change an index, clear it first (see `Changing an
+drop target -- unless you are editing indexes (see `Changing an
 index`_).
 
 You can do the same thing from the keyboard: press **Enter** or
@@ -78,6 +78,16 @@ small **x** on each assigned index:
   **x** and clears on its own.
 
 A cleared cell turns back into a drop target: drop the new index on it.
+
+While editing, you can also drop a new index straight onto the old one.
+SeqSetup first asks, naming the sample and the index it has now, and
+changes nothing if you say no. A pair dropped on either cell replaces
+both indexes. A single i7 or i5 dropped on a sample with a pair replaces
+the whole pair: the sample keeps only the index you dropped, and the
+question says so. Several selected indexes dropped together fill the
+rows from there down, as in `Selecting several indexes in order`_, and
+warn about every sample whose index they would replace.
+
 Select **Done editing indexes** to hide the **x** buttons again. It
 closes the panel too, unless the panel was open for a sample without an
 index. Leaving or reloading the page also ends editing; after a reload
