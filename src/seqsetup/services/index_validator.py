@@ -47,6 +47,7 @@ class IndexValidator:
 
         # Common validations
         cls._validate_kit_metadata(kit, result)
+        cls._validate_index_cycles(kit, result)
 
         # Mode-specific validations
         if kit.index_mode == IndexMode.UNIQUE_DUAL:
@@ -85,6 +86,41 @@ class IndexValidator:
                 f"AdapterRead2 contains invalid characters: '{kit.adapter_read2}'. "
                 "Only A, C, G, T, N are allowed."
             )
+
+    @classmethod
+    def _validate_index_cycles(cls, kit: IndexKit, result: IndexValidationResult) -> None:
+        """A slot's default index cycles must be the length of every index in
+        it. The cycles read decide which bases the demultiplexer compares, so
+        an index must have as many bases as the cycles read for it (spec
+        2026-10-05 group A3, §4): a kit that says otherwise makes Mark Ready
+        refuse every run that uses it, naming each sample instead of the kit.
+        A slot with no indexes is not checked — no sample takes one from it.
+        """
+        for slot, cycles, lengths in (
+            ("i7", kit.default_index1_cycles, cls._index_lengths(kit, 1)),
+            ("i5", kit.default_index2_cycles, cls._index_lengths(kit, 2)),
+        ):
+            if cycles is None or not lengths:
+                continue
+            if lengths != {cycles}:
+                shown = ", ".join(str(n) for n in sorted(lengths))
+                result.add_error(
+                    f"Index kit '{kit.name}': {slot} index cycles is {cycles}, but its "
+                    f"{slot} indexes are {shown} bases long. An index is read over as "
+                    f"many cycles as it has bases, so set it to the index's length or "
+                    f"leave it empty."
+                )
+
+    @staticmethod
+    def _index_lengths(kit: IndexKit, slot: int) -> set[int]:
+        """The lengths of every index in the kit's i7 (slot 1) or i5 (slot 2),
+        wherever they sit: on their own, or in a pair."""
+        indexes = list(kit.i7_indexes if slot == 1 else kit.i5_indexes)
+        for pair in kit.index_pairs:
+            index = pair.index1 if slot == 1 else pair.index2
+            if index is not None:
+                indexes.append(index)
+        return {len(index.sequence) for index in indexes if index.sequence}
 
     @classmethod
     def _validate_unique_dual(cls, kit: IndexKit, result: IndexValidationResult) -> None:

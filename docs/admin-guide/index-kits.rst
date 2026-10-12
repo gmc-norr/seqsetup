@@ -53,7 +53,18 @@ Before a kit is saved, SeqSetup checks, in order:
    valid semantic version; adapter sequences, and every i7/i5 sequence, must
    be DNA (``A``, ``C``, ``G``, ``T``, ``N`` only); every index pair needs a
    name and, in Unique Dual mode, both an i7 and an i5 sequence; a duplicate
-   pair *name* is an error and blocks the upload.
+   pair *name* is an error and blocks the upload. An index cycles value --
+   the kit's i7 or i5 cycles, from the form or from the file -- must equal
+   the length of every index in that slot, or the upload is refused naming
+   the kit, the slot, the value and the lengths (*"Index kit 'Dual kit': i7
+   index cycles is 8, but its i7 indexes are 10 bases long. An index is read
+   over as many cycles as it has bases, so set it to the index's length or
+   leave it empty."*): an index must have as many bases as the cycles read
+   for it, so such a kit would make **Mark Ready** refuse every run that
+   used it (see :doc:`/user-guide/override-cycles`). A slot with no indexes
+   is not checked. The same check runs on a kit synced from GitHub (see
+   :doc:`profiles`), which is skipped, with the reason in the log, rather
+   than stored.
 5. **Name + version clash** -- a kit with the same name and version already
    present is rejected rather than silently overwritten.
 
