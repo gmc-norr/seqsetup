@@ -19,18 +19,20 @@ _PAGE_BOX_JS = """el => {
 }"""
 
 
-def shoot(page: Page, path: Path, target: Locator, region: Locator | None = None,
-          pad: int = 16) -> Path:
-    """Outline ``target``, save a PNG of ``region`` (default ``target``) plus
-    ``pad`` px on each side, then remove the outline.
+def shoot(page: Page, path: Path, target: Locator,
+          region: Locator | list[Locator] | None = None, pad: int = 16) -> Path:
+    """Outline ``target``, save a PNG of ``region`` (default ``target``; a
+    list means the box around all of them) plus ``pad`` px on each side,
+    then remove the outline.
 
     Fails with AssertionError when ``target`` or ``region`` is not visible,
     so a moved or removed control breaks the docs run instead of leaving a
     stale picture behind.
     """
     expect(target).to_be_visible()
-    area = region or target
-    expect(area).to_be_visible()
+    areas = region if isinstance(region, list) else [region or target]
+    for area in areas:
+        expect(area).to_be_visible()
     target.scroll_into_view_if_needed()
     previous = target.evaluate(
         "(el, outline) => { const old = [el.style.outline, el.style.outlineOffset];"
@@ -38,7 +40,12 @@ def shoot(page: Page, path: Path, target: Locator, region: Locator | None = None
         OUTLINE,
     )
     try:
-        box = area.evaluate(_PAGE_BOX_JS)
+        boxes = [area.evaluate(_PAGE_BOX_JS) for area in areas]
+        left = min(b["x"] for b in boxes)
+        top = min(b["y"] for b in boxes)
+        box = {"x": left, "y": top,
+               "width": max(b["x"] + b["width"] for b in boxes) - left,
+               "height": max(b["y"] + b["height"] for b in boxes) - top}
         page_w = page.evaluate("document.documentElement.scrollWidth")
         page_h = page.evaluate("document.documentElement.scrollHeight")
         x = max(0, box["x"] - pad)

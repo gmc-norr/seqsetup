@@ -877,10 +877,11 @@ def test_templates_save_as_template(demo_page, base_url, demo):
     page.goto(f"{base_url}/runs/{demo['draft']}")
     page.get_by_text("More: Save as template · Change history").click()
     fieldset = page.locator("details.more-section form:has(#template-name)")
+    heading = page.locator("details.more-section h3", has_text="Save as template")
     page.fill("#template-name", "Nightly QC Batch")
     snap(page, "templates/save-as-template",
          fieldset.get_by_role("button", name="Save as template"),
-         region=fieldset)
+         region=[heading, fieldset])
     with page.expect_navigation(url=re.compile(r"/templates$")):
         fieldset.get_by_role("button", name="Save as template").click()
 
