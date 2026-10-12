@@ -75,9 +75,10 @@ validated before it is sent, regardless of who is logged in:
   lookup might return a moment later (closes a DNS-rebinding window).
 - Any resolved address that is loopback, link-local, RFC1918 private,
   multicast, reserved, unspecified, CGNAT (100.64.0.0/10), or IETF
-  protocol-assignment space (192.0.0.0/24) is **refused**. This is what
-  stops a LIMS configuration from being used to reach services on
-  SeqSetup's own host or internal network (SSRF).
+  protocol-assignment space (192.0.0.0/24) is **refused**, unless the
+  operator listed the network it is on (see below). This is what stops a
+  LIMS configuration from being used to reach services on SeqSetup's own
+  host or internal network (SSRF).
 - Plain **HTTP is refused** -- only HTTPS is allowed -- because the api-key
   would otherwise travel in clear text.
 - The HTTPS connection verifies the server's TLS certificate (via Python's
@@ -88,13 +89,20 @@ validated before it is sent, regardless of who is logged in:
 Both restrictions can be lifted, but only via environment variables the
 *operator* sets on the server, never from the admin UI:
 
-- ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1`` -- allow a LIMS on a private
-  corporate network.
+- ``SEQSETUP_LIMS_ALLOWED_NETS`` -- a comma-separated list of networks in
+  CIDR form (``10.0.0.0/8, 192.168.10.0/24``) that a LIMS may be on, for a
+  LIMS on a private corporate network. Only the listed networks are opened.
+  Link-local (where cloud instance metadata lives), multicast, unspecified
+  and reserved addresses stay refused however they are listed, and a list
+  that names a network reaching into one of those ranges stops SeqSetup at
+  start.
 - ``SEQSETUP_LIMS_ALLOW_HTTP=1`` -- allow plain HTTP.
 
 Treat each as a deliberate, audited decision for that one deployment --
 production should set neither, and should reach its LIMS over HTTPS on a
-public or explicitly allow-listed address.
+public or explicitly allow-listed address. See
+:doc:`/getting-started/deployment` for the full rule, including the removed
+``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS``, which now stops the start.
 
 Expected API Contract
 ---------------------

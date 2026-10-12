@@ -391,10 +391,36 @@ deployment:
 
 .. code-block:: bash
 
-   SEQSETUP_LIMS_ALLOW_HTTP=1          # LIMS speaks plain HTTP (sends api-key in clear)
-   SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1  # LIMS resolves to a private/RFC1918 address
+   SEQSETUP_LIMS_ALLOW_HTTP=1                 # LIMS speaks plain HTTP (sends api-key in clear)
+   SEQSETUP_LIMS_ALLOWED_NETS=10.0.0.0/8      # the networks the LIMS may be on
 
-Leave both unset in production.
+Leave both unset in production unless the LIMS really is on a private
+network.
+
+``SEQSETUP_LIMS_ALLOWED_NETS`` is a comma-separated list of networks in CIDR
+form, for example ``10.0.0.0/8, 192.168.10.0/24``. After DNS resolution, an
+address is allowed when it is public — as always — or when it lies inside one
+of the listed networks. List only the network the LIMS is actually on: a wide
+entry opens every host on it to a LIMS URL an admin can type.
+
+Four kinds of address stay refused however they are listed: **link-local**
+(``169.254.0.0/16``, ``fe80::/10`` — where a cloud host's instance metadata
+service lives), **multicast**, **unspecified** and **reserved**. A list that
+is not valid CIDR, or that names a network reaching into one of those ranges
+at all (``169.0.0.0/8`` does), stops SeqSetup at start with a message naming
+the entry. Loopback (``127.0.0.1/32``) is not in that group: it is refused
+unless listed, and listing it is how a dev setup reaches a mock LIMS on the
+same host.
+
+.. important::
+
+   ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS`` has been **removed**. It allowed every
+   private address at once, link-local included, so a LIMS URL could be
+   pointed at ``http://169.254.169.254/`` and read the host's own cloud
+   credentials. SeqSetup refuses to start while that variable is set at all,
+   with a message naming ``SEQSETUP_LIMS_ALLOWED_NETS``: replace it with the
+   list of networks the LIMS is on, and unset the old name (remove it from
+   ``.env`` too).
 
 Health Checks
 -------------

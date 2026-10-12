@@ -100,6 +100,117 @@ _EXTRA_BLOCKED_V4 = (
 )
 
 
+class LimsAllowedNetsError(ValueError):
+    """``SEQSETUP_LIMS_ALLOWED_NETS`` cannot be used as written."""
+
+
+# The environment variable that lists the networks a LIMS may live on, and
+# the one it replaced. The old one switched the whole address check off at
+# once -- loopback, every RFC1918 range, CGNAT, and link-local, so a LIMS
+# URL could reach 169.254.169.254 and read a cloud host's own credentials.
+_ALLOWED_NETS_ENV = "SEQSETUP_LIMS_ALLOWED_NETS"
+_REMOVED_ALLOW_PRIVATE_NETS_ENV = "SEQSETUP_LIMS_ALLOW_PRIVATE_NETS"
+
+# Networks that no SEQSETUP_LIMS_ALLOWED_NETS entry can open: the four
+# categories ``_is_never_allowed_address`` asks ``ipaddress`` about, written
+# out as blocks so a listed network can be tested for overlap with them.
+# TestTheRefusedRangesMatchPythonsOwnReading checks the two readings agree.
+_NEVER_ALLOWED_NETS = tuple(ipaddress.ip_network(text) for text in (
+    # link-local -- the host's own link, where cloud instance metadata lives
+    "169.254.0.0/16", "fe80::/10",
+    # multicast
+    "224.0.0.0/4", "ff00::/8",
+    # unspecified
+    "0.0.0.0/32", "::/128",
+    # reserved for future use (IPv4), and IANA's reserved IPv6 blocks
+    "240.0.0.0/4",
+    "::/8", "100::/8", "200::/7", "400::/6", "800::/5", "1000::/4",
+    "4000::/3", "6000::/3", "8000::/3", "a000::/3", "c000::/3", "e000::/4",
+    "f000::/5", "f800::/6", "fe00::/9",
+))
+
+
+def _is_never_allowed_address(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    """True for an address no allow-list entry can make reachable.
+
+    Asked of the resolved address, so this holds whatever the operator
+    listed: a /8 that happens to contain 169.254.169.254 cannot carry it.
+    """
+    return ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+
+
+def _never_allowed_overlap(net):
+    """The never-allowed block ``net`` reaches into, or None.
+
+    Any overlap counts, not only a network wholly inside one: the stricter
+    reading refuses ``169.0.0.0/8`` rather than letting it stand while the
+    address check carries the refusal alone.
+    """
+    for block in _NEVER_ALLOWED_NETS:
+        if net.version == block.version and net.overlaps(block):
+            return block
+    return None
+
+
+def parse_allowed_nets(value: str) -> tuple:
+    """``SEQSETUP_LIMS_ALLOWED_NETS`` as networks. Raises LimsAllowedNetsError.
+
+    A comma-separated list of networks in CIDR form, for example
+    ``10.0.0.0/8, 127.0.0.1/32``. Empty entries are skipped; anything that
+    is not a network (host bits set included) or that reaches into a
+    never-allowed block is refused, so the operator hears about it at
+    start-up and not when the first worklist import fails.
+    """
+    nets = []
+    for piece in value.split(","):
+        text = piece.strip()
+        if not text:
+            continue
+        try:
+            net = ipaddress.ip_network(text)
+        except ValueError as exc:
+            raise LimsAllowedNetsError(
+                f"{_ALLOWED_NETS_ENV} entry {text!r} is not a network in CIDR form "
+                f"({exc}). Write each network as, for example, 10.0.0.0/8 or "
+                f"127.0.0.1/32, separated by commas."
+            ) from exc
+        block = _never_allowed_overlap(net)
+        if block is not None:
+            raise LimsAllowedNetsError(
+                f"{_ALLOWED_NETS_ENV} entry {text!r} overlaps {block}, which SeqSetup "
+                f"never calls a LIMS on: it is link-local (where cloud instance "
+                f"metadata lives), multicast, unspecified or reserved. Remove the "
+                f"entry or list a narrower network."
+            )
+        nets.append(net)
+    return tuple(nets)
+
+
+def check_lims_allowed_nets() -> None:
+    """Stop the start when the LIMS network allow-list cannot be used.
+
+    Called from app.py beside the other start-up checks, so a deployment
+    hears about a mistyped list before it serves a request. The removed
+    variable stops the start whatever it is set to, including an empty
+    value: an operator who set it meant to allow something, and silently
+    ignoring it would quietly refuse their LIMS instead.
+    """
+    if _REMOVED_ALLOW_PRIVATE_NETS_ENV in os.environ:
+        raise RuntimeError(
+            f"{_REMOVED_ALLOW_PRIVATE_NETS_ENV} is no longer used: it allowed every "
+            f"private address at once, link-local included. List the networks your "
+            f"LIMS is on in {_ALLOWED_NETS_ENV} instead, as comma-separated CIDR "
+            f"(for example {_ALLOWED_NETS_ENV}=10.0.0.0/8), and unset "
+            f"{_REMOVED_ALLOW_PRIVATE_NETS_ENV}."
+        )
+    try:
+        parse_allowed_nets(os.environ.get(_ALLOWED_NETS_ENV, ""))
+    except LimsAllowedNetsError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
 def _is_private_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True if ``ip`` is loopback, link-local, private, multicast, reserved,
     unspecified, or in one of the extra-blocked ranges (CGNAT, IETF protocol
@@ -172,10 +283,12 @@ def _validate_url(
     2. Address: the hostname must resolve to public addresses only.
        Loopback, link-local, RFC1918 private, multicast, reserved,
        unspecified, CGNAT, and IETF protocol-assignment ranges are refused
-       after DNS resolution. Operators whose LIMS lives on a private
-       corporate network opt in via ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1``
-       — a deliberate per-deployment decision that disables only the
-       private-range check, not the pinning that follows.
+       after DNS resolution. An operator whose LIMS lives on one of those
+       networks lists it in ``SEQSETUP_LIMS_ALLOWED_NETS`` (comma-separated
+       CIDR) — a deliberate per-deployment decision that opens the listed
+       networks and nothing else, not the pinning that follows. A
+       link-local, multicast, unspecified or reserved address stays refused
+       however it is listed (``_is_never_allowed_address``).
     """
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
@@ -197,16 +310,31 @@ def _validate_url(
     if not resolved:
         raise LimsUrlValidationError(f"Hostname {hostname!r} resolved to no addresses")
 
-    allow_private = os.environ.get("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", "").lower() in ("1", "true", "yes")
-    if not allow_private:
-        for ip in resolved:
-            if _is_private_address(ip):
-                raise LimsUrlValidationError(
-                    f"Refusing to call LIMS at {hostname!r} ({ip}): address is "
-                    f"loopback/private/link-local/CGNAT. SSRF is blocked by policy. "
-                    f"For dev/test against a mock LIMS or a corporate-network LIMS, "
-                    f"set SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1."
-                )
+    try:
+        allowed_nets = parse_allowed_nets(os.environ.get(_ALLOWED_NETS_ENV, ""))
+    except LimsAllowedNetsError as exc:
+        # check_lims_allowed_nets() stops the start on this, so reaching it
+        # here means the value changed under a running process. Fail closed.
+        raise LimsUrlValidationError(str(exc)) from exc
+    for ip in resolved:
+        if not _is_private_address(ip):
+            continue
+        if _is_never_allowed_address(ip):
+            raise LimsUrlValidationError(
+                f"Refusing to call LIMS at {hostname!r} ({ip}): address is "
+                f"loopback/private/link-local/CGNAT — link-local, multicast, "
+                f"unspecified and reserved addresses are refused whatever "
+                f"{_ALLOWED_NETS_ENV} lists, because they point at the host's own "
+                f"link (cloud instance metadata) rather than at a LIMS."
+            )
+        if not any(ip in net for net in allowed_nets):
+            raise LimsUrlValidationError(
+                f"Refusing to call LIMS at {hostname!r} ({ip}): address is "
+                f"loopback/private/link-local/CGNAT. SSRF is blocked by policy. "
+                f"For a corporate-network LIMS, or a mock LIMS in dev, list the "
+                f"network it is on in {_ALLOWED_NETS_ENV} (comma-separated CIDR, "
+                f"for example {_ALLOWED_NETS_ENV}=10.0.0.0/8)."
+            )
 
     return resolved
 

@@ -78,7 +78,7 @@ a model or service layer where it cannot be forgotten.
 
 ### External API safety
 - The LIMS API client (`services/sample_api.py`) uses SSL certificate verification via `ssl.create_default_context()`.
-- **URLs are validated before fetching.** Hostnames are DNS-resolved and any resolved IP that is loopback, link-local, RFC1918 private, multicast, reserved, or unspecified is refused — this blocks SSRF pivots into the host's own networks. Operators whose LIMS lives on a private corporate network must explicitly opt in via `SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1`; this is a deliberate, audited decision per deployment, not a default. Plain HTTP is similarly gated by `SEQSETUP_LIMS_ALLOW_HTTP=1`; production uses HTTPS exclusively so the api-key is not sent in clear.
+- **URLs are validated before fetching.** Hostnames are DNS-resolved and any resolved IP that is loopback, link-local, RFC1918 private, multicast, reserved, or unspecified is refused — this blocks SSRF pivots into the host's own networks. An operator whose LIMS lives on a private corporate network lists the networks it may be on in `SEQSETUP_LIMS_ALLOWED_NETS` (comma-separated CIDR); an address is allowed when it is public or lies inside a listed network. Link-local (`169.254.0.0/16`, `fe80::/10` — cloud instance metadata), multicast, unspecified and reserved addresses stay refused however they are listed, and a list that is not valid CIDR or that overlaps one of those ranges at all stops start-up (`check_lims_allowed_nets` in `services/sample_api.py`, called from `app.py`). The removed `SEQSETUP_LIMS_ALLOW_PRIVATE_NETS` stops start-up while it is set at all. Plain HTTP is separately gated by `SEQSETUP_LIMS_ALLOW_HTTP=1`; production uses HTTPS exclusively so the api-key is not sent in clear.
 - API responses are size-limited (10 MB) to prevent memory exhaustion.
 
 ## Conventions
@@ -208,8 +208,8 @@ To point the app at the mock LIMS in dev, set both opt-ins (production must
 not set either):
 
 ```bash
-export SEQSETUP_LIMS_ALLOW_HTTP=1            # mock LIMS speaks plain HTTP
-export SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1    # mock LIMS lives on localhost
+export SEQSETUP_LIMS_ALLOW_HTTP=1                     # mock LIMS speaks plain HTTP
+export SEQSETUP_LIMS_ALLOWED_NETS=127.0.0.1/32        # mock LIMS lives on localhost
 ```
 
 ## Run Status State Machine

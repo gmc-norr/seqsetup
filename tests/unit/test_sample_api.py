@@ -251,28 +251,28 @@ class TestValidateUrl:
 
     def test_blocks_loopback_v4(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["127.0.0.1"])
         with pytest.raises(SampleApiError, match="loopback"):
             _validate_url("https://attacker.example/api")
 
     def test_blocks_loopback_v6(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["::1"])
         with pytest.raises(SampleApiError, match="loopback"):
             _validate_url("https://attacker.example/api")
 
     def test_blocks_rfc1918(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["10.0.0.5"])
         with pytest.raises(SampleApiError, match="loopback/private"):
             _validate_url("https://internal.corp/api")
 
     def test_blocks_link_local(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["169.254.169.254"])
         with pytest.raises(SampleApiError, match="loopback/private"):
             # The AWS instance metadata service IP.
@@ -280,7 +280,7 @@ class TestValidateUrl:
 
     def test_blocks_cgnat(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["100.64.0.10"])
         with pytest.raises(SampleApiError, match="loopback/private"):
             _validate_url("https://cgnat-neighbor.example/")
@@ -290,7 +290,7 @@ class TestValidateUrl:
         request — otherwise an attacker could serve a mixed answer and
         rely on the OS to pick the private one at connect time."""
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["1.2.3.4", "10.0.0.5"])
         with pytest.raises(SampleApiError, match="loopback/private"):
             _validate_url("https://mixed.example/")
@@ -298,24 +298,24 @@ class TestValidateUrl:
     def test_allows_public_ip(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url
         import ipaddress
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["8.8.8.8"])
         ips = _validate_url("https://lims.example.com/api")
         # Returns the resolved IPs so the caller can pin its connection.
         assert ipaddress.IPv4Address("8.8.8.8") in ips
 
-    def test_private_allowed_when_env_opt_in(self, monkeypatch):
+    def test_private_allowed_when_its_network_is_listed(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url
-        monkeypatch.setenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", "1")
+        monkeypatch.setenv("SEQSETUP_LIMS_ALLOWED_NETS", "127.0.0.1/32")
         self._stub_resolve(monkeypatch, ["127.0.0.1"])
-        # No exception; private IP is permitted with explicit opt-in.
+        # No exception; the address is inside a listed network.
         ips = _validate_url("https://mock-lims.local/")
         assert len(ips) == 1
 
     def test_rejects_unresolvable_hostname(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
         from seqsetup.services import sample_api as mod
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
 
         def raise_oserror(*args, **kwargs):
             raise OSError("Name or service not known")
@@ -327,7 +327,7 @@ class TestValidateUrl:
     def test_rejects_http_without_opt_in(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
         monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_HTTP", raising=False)
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["8.8.8.8"])
         with pytest.raises(SampleApiError, match="HTTP"):
             _validate_url("http://lims.example.com/api")
