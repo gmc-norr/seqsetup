@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import quote
 
+from ..utils.names import is_dot_only
+
 
 # Env var that overrides the stored api_key at use time. Setting this in
 # production keeps the actual secret out of the MongoDB document.
@@ -13,8 +15,12 @@ _API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
 
 
 # Worklist IDs are operator-supplied (pasted from a LIMS UI, etc.) and
-# end up appended to the LIMS URL. Restrict to characters that can't
-# escape the path segment: letters, digits, '_', '-', '.', '~'.
+# end up appended to the LIMS URL. The alphabet is letters, digits, '_',
+# '-', '.' and '~'. None of those ends the path segment, but '.' and '..'
+# ARE path segments: "{base}/worksheets/.." is a request for "{base}/" to
+# any server or proxy that normalises dot segments, sent with the LIMS
+# api-key, and whatever JSON came back was previewed or imported as samples.
+# So a value made only of dots is refused too (security review 2026-10).
 _VALID_WORKLIST_ID_RE = re.compile(r"^[A-Za-z0-9._~\-]+$")
 
 
@@ -34,6 +40,11 @@ def validate_worklist_id(worklist_id: str) -> None:
         raise InvalidWorklistIdError(
             f"worklist_id {worklist_id!r} contains unsafe characters. "
             f"Allowed: letters, digits, '.', '_', '-', '~'."
+        )
+    if is_dot_only(worklist_id):
+        raise InvalidWorklistIdError(
+            f"worklist_id {worklist_id!r} cannot be made only of dots: a dot segment "
+            f"asks the LIMS for a path of its own, not for a worksheet."
         )
 
 
@@ -100,7 +111,9 @@ class SampleApiConfig:
 
         Validates worklist_id and URL-quotes it before inclusion to prevent
         operator-supplied input from injecting path segments or query
-        parameters into the LIMS request.
+        parameters into the LIMS request. ``quote`` leaves a dot alone, so it
+        is ``validate_worklist_id`` -- not the quoting -- that keeps an ID of
+        dots from climbing out of /worksheets/.
         """
         validate_worklist_id(worklist_id)
         base = self.base_url.rstrip("/")

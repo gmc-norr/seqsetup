@@ -14,7 +14,11 @@ Creating a user
 Fill in the **Create New User** form:
 
 1. **Username** -- letters, digits, ``.``, ``_``, ``@`` and ``-`` only, up to
-   64 characters. It cannot be changed later; create a new account instead.
+   64 characters, and not made only of dots (``.``, ``..``): the username is
+   also its place in the URL of its own edit and delete links, which no
+   browser will send for a name of dots, so such an account could never be
+   removed, demoted or given a new password. It cannot be changed later;
+   create a new account instead.
 2. **Display Name** -- shown throughout the app in place of the username.
 3. **Email** -- optional.
 4. **Role** -- **Standard** or **Admin**.

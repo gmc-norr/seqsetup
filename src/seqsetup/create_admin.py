@@ -11,8 +11,14 @@ import getpass
 import re
 import sys
 
-from .models.local_user import USERNAME_PATTERN, LocalUser, WeakPasswordError
+from .models.local_user import (
+    DOT_ONLY_USERNAME,
+    USERNAME_PATTERN,
+    LocalUser,
+    WeakPasswordError,
+)
 from .models.user import UserRole
+from .utils.names import is_dot_only
 
 _NOT_YET = ("Directory sign-in is on and local fallback is off, so this admin cannot sign "
             "in yet. Run 'pixi run use-local-sign-in' first, or turn on local fallback.")
@@ -38,6 +44,9 @@ def main(ask=input, ask_secret=getpass.getpass, get_db=None, say=print) -> int:
     username = ask("Username: ").strip()
     if not re.match(USERNAME_PATTERN, username):
         say("A username is 1-64 letters, digits, '.', '_', '@' or '-'. Nothing was changed.")
+        return 1
+    if is_dot_only(username):
+        say(f"{DOT_ONLY_USERNAME} Nothing was changed.")
         return 1
     try:
         taken = users.exists(username)

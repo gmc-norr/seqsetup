@@ -9,6 +9,7 @@ import bcrypt
 
 from .user import User, UserRole
 from ..utils.clock import utcnow
+from ..utils.names import is_dot_only
 
 
 # Pinned bcrypt work factor. Raise deliberately after a clinical-impact review;
@@ -28,6 +29,12 @@ MAX_USERNAME_LENGTH = 64
 # The username rule for Admin → Users and create-admin: it appears in URLs
 # and HTML ids, so only this alphabet, and at most MAX_USERNAME_LENGTH.
 USERNAME_PATTERN = r"^[A-Za-z0-9._@\-]{1,64}$"
+
+# The alphabet above admits "." and "..", which a URL path segment cannot
+# carry, so such an account could be created but never removed, demoted or
+# reset (see utils/names.py). LocalUser refuses it; Admin → Users and
+# create-admin say this.
+DOT_ONLY_USERNAME = "A username cannot be made only of dots."
 
 # Well-known weak/default passwords. Not exhaustive — defends against the
 # most obvious clinical-deployment footguns (default admin/admin123,
@@ -97,6 +104,10 @@ class LocalUser:
     session_stamp: str = field(default_factory=_new_session_stamp)
 
     def __setattr__(self, name, value):
+        # Here and not only in __post_init__, so a direct attribute write
+        # from a route handler cannot step around the rule.
+        if name == "username" and is_dot_only(value):
+            raise ValueError(DOT_ONLY_USERNAME)
         # Only after construction (session_stamp exists) and only on a real
         # role change: logins made under the old role must stop working.
         if (name == "role" and "session_stamp" in self.__dict__

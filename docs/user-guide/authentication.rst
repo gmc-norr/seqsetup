@@ -23,6 +23,9 @@ A wrong username or password redisplays this same page with the message
 have access to SeqSetup."*; the fields are not pre-filled. Repeated failed attempts from the
 same address, or against the same username, are rate-limited and rejected
 with "Too many login attempts. Try again later." until the limit resets.
+The address is counted first, and an attempt its limit has already refused
+is not counted against the username it typed -- so a flood from one address
+no longer uses up the allowance of every name it tries.
 
 Authentication is checked in this order:
 

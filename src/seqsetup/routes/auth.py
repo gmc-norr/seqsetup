@@ -118,8 +118,18 @@ def make_router(auth_service) -> APIRouter:
         # per-username cap.
         limiter = get_login_limiter()
         ip = client_identity(request)
+        user_key = f"login-user:{actor.lower()}"
         ok_ip, retry_ip = limiter.allow(f"login-ip:{ip}")
-        ok_user, retry_user = limiter.allow(f"login-user:{actor.lower()}")
+        if ok_ip:
+            ok_user, retry_user = limiter.allow(user_key)
+        else:
+            # The per-IP cap has already refused this request, so it must
+            # not touch the bucket named after the username it carries: one
+            # address posting a new name each time used to add a key per
+            # request, and no key was ever removed. retry_after reads the
+            # wait that allow would have reported without counting
+            # anything, so the header below keeps its value.
+            ok_user, retry_user = False, limiter.retry_after(user_key)
         if not (ok_ip and ok_user):
             retry = max(retry_ip, retry_user)
             audit(

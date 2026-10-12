@@ -419,7 +419,7 @@ def _worksheet_id(item: dict, config: SampleApiConfig) -> str:
         raise ValueError(
             f"A worksheet in the LIMS list has the ID {shown_value(text)!r}, which SeqSetup cannot "
             f"ask the LIMS for as it was sent: an ID is at most 128 letters, digits, '.', '_', '-' "
-            f"or '~', with no spaces."
+            f"or '~', with no spaces, and not made only of dots."
         )
     return text
 

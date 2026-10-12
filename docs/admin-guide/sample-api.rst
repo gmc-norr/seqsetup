@@ -121,8 +121,8 @@ The worksheet ID is the **Worksheet ID field** if you mapped one, else
 ``worksheet_id``; when that is absent, ``null`` or blank, it is ``id``. It
 must be text or a whole number, under one name, and SeqSetup asks for the
 worksheet by that ID exactly as sent, so it must also be at most 128
-letters, digits, ``.``, ``_``, ``-`` or ``~``, with no spaces. A worksheet
-is left out of the list when:
+letters, digits, ``.``, ``_``, ``-`` or ``~``, with no spaces, and not made
+only of dots. A worksheet is left out of the list when:
 
 - its ID is a number with a decimal point (JSON reads ``25.10`` as
   ``25.1``, which would fetch another worksheet), ``true``, ``false``, a
@@ -130,6 +130,9 @@ is left out of the list when:
 - its ID has spaces or line breaks around or in it (``"W2 "`` was shown
   as ``W2`` and fetched worksheet ``W2``), another sign, or more than 128
   characters;
+- its ID is made only of dots (``.``, ``..``): SeqSetup would ask for
+  ``{base_url}/worksheets/..``, which any server or proxy that tidies dot
+  segments answers for ``{base_url}/`` instead;
 - its entry has two spellings of one of those names (``Worksheet_ID`` and
   ``WORKSHEET_ID``);
 - another worksheet in the list has the same ID (``"7"`` and ``7`` count as
@@ -149,8 +152,10 @@ Get Worklist Samples
 
 Returns a JSON array of sample objects for the specified worklist. The
 worklist ID is restricted to letters, digits, ``.``, ``_``, ``-`` and ``~``
-before it is placed in the URL, so it cannot inject an extra path segment or
-query string.
+before it is placed in the URL, so it cannot add a query string or a
+separator of its own, and it must not be made only of dots -- ``.`` and
+``..`` are path segments, so ``/worksheets/..`` would be a request for the
+path above the worksheets, sent with the api-key.
 
 **Example response:**
 

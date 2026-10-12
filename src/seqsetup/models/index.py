@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from ..utils.names import is_dot_only
+
 # Anchor with \Z (not $): in Python $ also matches just before a trailing
 # newline, so "ACGT\n" would wrongly pass and leave a newline in the sequence
 # that later splits a Sample Sheet row. \Z matches only the true end of string.
@@ -218,6 +220,12 @@ class IndexKit:
             "name", "version", "description", "comments", "created_by", "source",
         ) and isinstance(value, str):
             value = value[:256]
+            # The name and the version are the kit's URL on the detail,
+            # download and delete routes, and a value made only of dots
+            # cannot be carried there (see utils/names.py), so a kit named
+            # that way could be made but never removed.
+            if name in ("name", "version") and is_dot_only(value):
+                raise ValueError(f"An index kit {name} cannot be made only of dots.")
         object.__setattr__(self, name, value)
 
     @property
