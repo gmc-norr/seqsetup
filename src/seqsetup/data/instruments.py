@@ -262,11 +262,29 @@ def load_checked_instrument_file(path: Path) -> dict:
     return data
 
 
+# The instruments file that was read, so the start-up line names the file in
+# use instead of resolving the path a second time.
+_loaded_config_path: Optional[Path] = None
+
+
+def log_instruments_file() -> None:
+    """Log the instruments file that was read, at INFO.
+
+    ``app.py`` calls this after ``setup_log_capture``: the file is read when
+    this module is imported, which is before the capture handler exists, so
+    the line logged then goes nowhere.
+    """
+    if _loaded_config_path is not None:
+        logger.info("Reading instruments from %s", _loaded_config_path)
+
+
 def _load_config() -> dict:
     """Load instrument configuration from YAML file, checked. The file read
     is logged, so the log of a start says which one it was."""
+    global _loaded_config_path
     path = _find_config_path()
-    logger.info("Reading instruments from %s", path)
+    _loaded_config_path = path
+    log_instruments_file()
     return load_checked_instrument_file(path)
 
 

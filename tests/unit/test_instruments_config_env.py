@@ -43,11 +43,13 @@ def keep_loaded_config():
     saved = (
         instruments_module._config, instruments_module._instruments,
         instruments_module._default_cycles, instruments_module._index_cycle_options,
+        instruments_module._loaded_config_path,
     )
     yield
     (
         instruments_module._config, instruments_module._instruments,
         instruments_module._default_cycles, instruments_module._index_cycle_options,
+        instruments_module._loaded_config_path,
     ) = saved
 
 

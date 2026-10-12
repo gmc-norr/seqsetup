@@ -29,7 +29,7 @@ from starlette.staticfiles import StaticFiles
 from .api.app import NO_TELEMETRY, create_api_app
 from .body_limit import BodyLimitMiddleware
 from .csrf import OriginCheckMiddleware
-from .data.instruments import set_instrument_definition_repo
+from .data.instruments import log_instruments_file, set_instrument_definition_repo
 from .exception_handlers import install as install_exception_handlers
 from .middleware import AuthMiddleware
 from .routes import api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, run_templates, runs, samples, validation, wizard
@@ -156,6 +156,7 @@ set_audit_sink(get_audit_event_repo())  # Keep every audit event; before the sch
 auth_service = init_auth_service()
 init_scheduler()
 setup_log_capture(["seqsetup"])
+log_instruments_file()  # after log capture, so Admin → Logs shows it too
 warn_removed_sign_in_settings()  # after log capture, so Admin → Logs shows it too
 
 # Create shared AppContext for all routes
