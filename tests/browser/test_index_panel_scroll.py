@@ -25,16 +25,14 @@ def _seq(n, salt):
     return "".join(BASES[(n >> (2 * k) ^ salt) & 3] for k in range(8))
 
 
-@pytest.fixture
-def big_kit(app_ctx):
-    """A 96-pair kit, long enough to need a scrollbar; deleted afterwards."""
+def _kit(app_ctx, name):
     from seqsetup.services.validation import clear_validation_cache
 
     kit = IndexKit(
-        name=KIT, version="1.0", index_mode=IndexMode.UNIQUE_DUAL,
+        name=name, version="1.0", index_mode=IndexMode.UNIQUE_DUAL,
         index_pairs=[
             IndexPair(
-                id=f"{KIT}_S{k:03d}", name=f"S{k:03d}",
+                id=f"{name}_S{k:03d}", name=f"S{k:03d}",
                 index1=Index(name=f"S{k:03d}", sequence=_seq(k, 1), index_type=IndexType.I7),
                 index2=Index(name=f"S{k:03d}", sequence=_seq(k, 2), index_type=IndexType.I5),
             )
@@ -43,9 +41,30 @@ def big_kit(app_ctx):
     )
     app_ctx.index_kit_repo.save(kit)
     clear_validation_cache()
-    yield kit
+    return kit
+
+
+def _drop_kit(app_ctx, kit):
+    from seqsetup.services.validation import clear_validation_cache
+
     app_ctx.index_kit_repo.delete(kit.name, kit.version)
     clear_validation_cache()
+
+
+@pytest.fixture
+def big_kit(app_ctx):
+    """A 96-pair kit, long enough to need a scrollbar; deleted afterwards."""
+    kit = _kit(app_ctx, KIT)
+    yield kit
+    _drop_kit(app_ctx, kit)
+
+
+@pytest.fixture
+def other_kit(app_ctx):
+    """A second 96-pair kit to switch to; deleted afterwards."""
+    kit = _kit(app_ctx, "Scroll-Kit-B")
+    yield kit
+    _drop_kit(app_ctx, kit)
 
 
 @pytest.fixture
@@ -97,6 +116,24 @@ def test_the_index_list_has_one_scrollbar(logged_in_page, base_url, big_kit, lon
     page = logged_in_page
     _open(page, base_url, long_run_id, big_kit, width, height)
     assert len(page.evaluate(SCROLLING)) == 1, page.evaluate(SCROLLING)
+
+
+@pytest.mark.browser
+def test_another_kit_opens_at_the_top(logged_in_page, base_url, big_kit, other_kit, long_run_id):
+    """The list area stays while its content is swapped, so it would keep
+    the old kit's scroll position, with the filter box out of view."""
+    page = logged_in_page
+    _open(page, base_url, long_run_id, big_kit, 1600)
+    box = page.locator("#index-list-container")
+    box.evaluate("e => { e.scrollTop = e.scrollHeight; }")
+    assert box.evaluate("e => e.scrollTop") > 500
+
+    with page.expect_response(lambda r: "/indexes/kit-content" in r.url and r.status == 200):
+        page.select_option("#index-kit-dropdown", other_kit.kit_id)
+    page.wait_for_function(
+        "() => !document.querySelector('.htmx-request, .htmx-swapping, .htmx-settling, .htmx-added')")
+    expect(page.locator('#index-list-container [data-index-pair-id="Scroll-Kit-B_S000"]')).to_be_attached()
+    assert box.evaluate("e => e.scrollTop") == 0
 
 
 @pytest.mark.browser

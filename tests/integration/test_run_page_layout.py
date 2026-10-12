@@ -105,6 +105,56 @@ class TestExportOnlyOnceReady:
         assert 'hx-swap-oob="true"' in panel
         assert re.search(r"\shidden\b", panel)
 
+    def test_the_status_change_swaps_export_in_and_out(self, logged_in_client, fresh_app):
+        """Through the real route: Mark Ready swaps the downloads in, back
+        to Draft swaps the hidden placeholder back, both out of band."""
+        from .conftest import disable_repos, mark_ready
+        from .test_group_1c import _pair
+
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run = SequencingRun(
+            id="export-swap", run_name="Export swap run",
+            instrument_platform=InstrumentPlatform.NOVASEQ_6000, flowcell_type="S4",
+            run_cycles=RunCycles(151, 151, 10, 10),
+        )
+        run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
+        ctx.run_repo.save(run)
+        origin = {"Origin": "http://testserver"}
+
+        ready = mark_ready(logged_in_client, run.id, origin)
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.READY
+        [panel] = _tag(ready.text, 'id="export-panel"')
+        assert 'hx-swap-oob="true"' in panel and not re.search(r"\shidden\b", panel)
+        assert "Download Sample Sheet v2" in ready.text
+
+        draft = logged_in_client.post(f"/runs/{run.id}/status/draft", headers=origin)
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+        [panel] = _tag(draft.text, 'id="export-panel"')
+        assert 'hx-swap-oob="true"' in panel and re.search(r"\shidden\b", panel)
+        assert "Download Sample Sheet" not in draft.text
+
+
+def _export_step_href(html):
+    [step] = re.findall(r'<li[^>]*data-step="export".*?</li>', html, re.S)
+    return re.search(r'href="([^"]*)"', step).group(1)
+
+
+class TestExportStepLink:
+    """The step bar's Export step goes where something can be done: Mark
+    Ready on a draft (its Export box is a hidden placeholder), the
+    downloads once Ready."""
+
+    def test_on_a_draft_it_points_to_mark_ready(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        assert _export_step_href(_page(logged_in_client, _run(ctx, "step-draft"))) == "#run-status-bar"
+
+    @pytest.mark.parametrize("status", [RunStatus.READY, RunStatus.ARCHIVED])
+    def test_on_a_locked_run_it_points_to_the_downloads(self, logged_in_client, fresh_app, status):
+        _app, ctx, _db = fresh_app
+        html = _page(logged_in_client, _run(ctx, f"step-{status.value}", status))
+        assert _export_step_href(html) == "#export-panel"
+
 
 @pytest.mark.parametrize("status", [RunStatus.DRAFT, RunStatus.READY, RunStatus.ARCHIVED])
 class TestMoreFold:

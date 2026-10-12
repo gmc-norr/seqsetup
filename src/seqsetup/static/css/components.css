@@ -1979,10 +1979,6 @@ body {
     align-items: start;
 }
 .run-page-sample-panel { min-width: 0; overflow-x: auto; }
-/* The table needs ~850px; beside the 320px panel that only fits on wide
-   screens. Below that the panel sits above the table, so no column is
-   hidden behind a sideways scroll. The full-width chip list flows in
-   columns and stays short, so the table is not pushed far down. */
 /* Wide screens: the panel sticks beside the table while the page scrolls,
    and only its list area scrolls (it had three nested caps: the panel's,
    .index-kits-compact's and the list's, each with its own scrollbar). */
@@ -2015,6 +2011,10 @@ body {
         overflow: visible;
     }
 }
+/* The table needs ~850px; beside the 320px panel that only fits on wide
+   screens. Below that the panel sits above the table, so no column is
+   hidden behind a sideways scroll. The full-width chip list flows in
+   columns and stays short, so the table is not pushed far down. */
 @media (max-width: 1499px) {
     .run-page-with-index-panel { grid-template-columns: 1fr; }
     .run-page-with-index-panel .index-list {

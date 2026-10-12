@@ -140,7 +140,8 @@ class TestStepBar:
         run_id = _run(ctx, "links-run")
         html = logged_in_client.get(f"/runs/{run_id}").text
         bar = html.split('id="run-step-bar"', 1)[1].split("</nav>", 1)[0]
-        for target in ("#run-config-panel", "#samples", "#validate-panel", "#run-status-bar", "#export-panel"):
+        # A draft's Export step points to Mark Ready (test_run_page_layout.py).
+        for target in ("#run-config-panel", "#samples", "#validate-panel", "#run-status-bar"):
             assert f'href="{target}"' in bar
 
 

@@ -70,7 +70,7 @@ behavior -- the same as a sample that has never had lanes set.
    Two samples that share a lane must not share an index -- with nothing
    to tell their reads apart, demultiplexing cannot say which sample a
    read actually came from. SeqSetup does not refuse this while a run is
-   still a Draft: as soon as it happens, the **Check** panel above the
+   still a Draft: as soon as it happens, the **Check** panel below the
    table marks it as an error, and the full report on :doc:`validation`
    names the samples and the lane. A Draft with two same-lane, same-index
    samples saves and stays saved -- it is only actually *refused* at
