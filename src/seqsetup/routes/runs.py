@@ -468,8 +468,24 @@ async def update_bclconvert(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/bclconvert — update BCLConvert settings."""
+    """POST /runs/{run_id}/bclconvert — update BCLConvert settings.
+
+    All or nothing, the way ``update_setup`` is: a submission that leaves any
+    of the three out is refused and nothing is saved. Reading an absent field
+    as its default wrote a value nobody chose into the sheet's
+    [BCLConvert_Settings] section — an empty POST on a run set to (0, 0, true)
+    stored (1, 1, false) (CLAUDE.md, partial updates). ``no_lane_splitting``
+    is a checkbox and HTML omits an unchecked one, so a form that wants it off
+    has to send the value, the way the bulk panels' hidden inputs do.
+    """
     form = await request.form()
+    missing = [key for key in ("barcode_mismatches_index1", "barcode_mismatches_index2",
+                               "no_lane_splitting") if key not in form]
+    if missing:
+        return Response(
+            f"Missing BCL Convert setting(s): {', '.join(missing)}. Nothing was saved.",
+            status_code=400,
+        )
     barcode_mismatches_index1 = max(0, min(_int_field(form, "barcode_mismatches_index1", 1), 2))
     barcode_mismatches_index2 = max(0, min(_int_field(form, "barcode_mismatches_index2", 1), 2))
     no_lane_splitting = _bool_field(form, "no_lane_splitting")

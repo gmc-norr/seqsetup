@@ -319,6 +319,29 @@ meaning: an empty ``lanes`` list still means every lane, an empty
 ``test_id`` still clears the test, and an empty ``override_cycles`` still
 recalculates.
 
+A handler that saves a whole panel at once is all or nothing: it names
+every field it is missing and saves none of them, so a half-finished
+submission never leaves the run in a state nobody asked for.
+``POST /runs/{id}/setup`` (name, description and the four cycle counts) and
+``POST /runs/{id}/bclconvert`` (both barcode-mismatch counts and
+``no_lane_splitting``) both work this way:
+
+.. code-block:: python
+
+   missing = [key for key in ("barcode_mismatches_index1",
+                              "barcode_mismatches_index2",
+                              "no_lane_splitting") if key not in form]
+   if missing:
+       return Response(
+           f"Missing BCL Convert setting(s): {', '.join(missing)}. Nothing was saved.",
+           status_code=400,
+       )
+
+A checkbox needs this treatment most: HTML omits an unchecked box, so an
+absent ``no_lane_splitting`` cannot be told apart from one the user
+switched off. A form that wants it off sends the value explicitly, the way
+the bulk panels' hidden inputs already do.
+
 Adding a New Template
 ~~~~~~~~~~~~~~~~~~~~~~
 
