@@ -215,8 +215,21 @@ def half_run_id(app_ctx, kit):
 
 
 def _pick_kit(page, kit):
+    """Show ``kit`` in the index list and wait until htmx has put it in place:
+    a drag started while the new chips are still being swapped in does not
+    start at all (seen under load: no dragstart event)."""
     with page.expect_response(lambda r: "/indexes/kit-content" in r.url and r.status == 200):
         page.select_option("#index-kit-dropdown", kit.kit_id)
+    page.wait_for_function(
+        "() => !document.querySelector('.htmx-request, .htmx-swapping, .htmx-settling, .htmx-added')")
+
+
+def _wait_for_dialog(page, seen):
+    """A confirm opens during the drop; wait for it rather than a fixed time."""
+    for _ in range(100):
+        if seen["dialogs"]:
+            return
+        page.wait_for_timeout(100)
 
 
 def _cell(page, run_id, n, slot):
@@ -263,6 +276,7 @@ def test_saying_no_keeps_the_index(logged_in_page, base_url, app_ctx, kit, run_i
 
     chip = page.locator(f'#index-list-container [data-index-pair-id="{KIT}_EI2"]')
     chip.drag_to(_cell(page, run_id, 1, "i7"))
+    _wait_for_dialog(page, seen)
     page.wait_for_timeout(500)
 
     assert len(seen["dialogs"]) == 1
@@ -281,6 +295,7 @@ def test_a_single_index_on_a_pair_says_the_pair_goes(logged_in_page, base_url, a
 
     chip = page.locator(f'#index-list-container [data-index-id="{COMBI}_i7_CI7"]')
     chip.drag_to(_cell(page, run_id, 1, "i7"))
+    _wait_for_dialog(page, seen)
     page.wait_for_timeout(500)
 
     [message] = seen["dialogs"]
