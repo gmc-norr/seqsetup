@@ -60,8 +60,11 @@ Before a kit is saved, SeqSetup checks, in order:
    index cycles is 8, but its i7 indexes are 10 bases long. An index is read
    over as many cycles as it has bases, so set it to the index's length or
    leave it empty."*): an index must have as many bases as the cycles read
-   for it, so such a kit would make **Mark Ready** refuse every run that
-   used it (see :doc:`/user-guide/override-cycles`). A slot with no indexes
+   for it. A kit that says *fewer* cycles than its indexes have bases makes
+   **Mark Ready** refuse every run that uses it; one that says *more* is
+   refused the same way unless the run's own index cycles cap the
+   OverrideCycles back to the index length, and then the run passes (see
+   :doc:`/user-guide/override-cycles`). A slot with no indexes
    is not checked. The same check runs on a kit synced from GitHub (see
    :doc:`profiles`), which is skipped, with the reason in the log, rather
    than stored.

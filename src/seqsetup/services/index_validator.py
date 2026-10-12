@@ -92,9 +92,14 @@ class IndexValidator:
         """A slot's default index cycles must be the length of every index in
         it. The cycles read decide which bases the demultiplexer compares, so
         an index must have as many bases as the cycles read for it (spec
-        2026-10-05 group A3, §4): a kit that says otherwise makes Mark Ready
-        refuse every run that uses it, naming each sample instead of the kit.
-        A slot with no indexes is not checked — no sample takes one from it.
+        2026-10-05 group A3, §4). A kit that says FEWER cycles than its
+        indexes have bases makes Mark Ready refuse every run that uses it,
+        naming each sample instead of the kit. One that says MORE is refused
+        the same way except when the run's own index cycles cap the
+        OverrideCycles back to the index length, and then the run passes —
+        measured with 8-base indexes and a kit saying 10: a run reading 8
+        index cycles passes, and runs reading 6, 10 or 12 do not. A slot with
+        no indexes is not checked — no sample takes one from it.
         """
         for slot, cycles, lengths in (
             ("i7", kit.default_index1_cycles, cls._index_lengths(kit, 1)),
