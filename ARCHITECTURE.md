@@ -83,7 +83,7 @@ at all. Do not add a one-off ownership check to a single route.
 2. Load order in `_base.html`: HTMX first, `app.js` next, components, **Alpine LAST**. Component files register `Alpine.data(...)` and Alpine boots after.
 3. Component files are self-contained: `document.addEventListener('alpine:init', () => Alpine.data('foo', () => ({...})))`. No imports, no cross-file deps.
 4. **Authority boundary** (load-bearing rule): Alpine handles UI ephemera only — selected state, drag-over highlights, modal open/closed, filter inputs. The server is the source of truth for every domain fact. Mutations round-trip via HTMX, every time.
-5. HX-Trigger event names: kebab-case, namespaced (`run-archived`, `toast`). The `toast` event's payload `{kind, message}` is consumed by the toast stack in `_app_shell.html`.
+5. HX-Trigger event names: kebab-case, namespaced (`run-archived`, `toast`). The `toast` event's payload `{kind, message}` is consumed by the toast stack in `_base.html`.
 
 ## Alpine patterns
 
@@ -123,7 +123,8 @@ Each form model picks per field. Switching a field clamp→reject is a deliberat
 
 - Unit tests: `tests/unit/`
 - Integration: `tests/integration/` (mongomock + Starlette TestClient)
-- Browser smoke: `tests/browser/` (Playwright; minimal — `pixi run smoke-browser`)
+- Browser: `tests/browser/` (Playwright; `pixi run smoke-browser`) — despite the task
+  name it runs the whole directory, which covers every page, not a smoke subset
 - Every new page gets a smoke test asserting the page renders.
 - Every new form route gets a 422 test asserting Pydantic validation errors render as HTML fragments with `HX-Retarget`/`HX-Reswap` for HTMX clients.
 
