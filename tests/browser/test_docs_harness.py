@@ -26,6 +26,20 @@ def test_shoot_saves_a_padded_crop_of_the_region(page, tmp_path):
 
 
 @pytest.mark.browser
+def test_shoot_crops_around_all_of_several_regions(page, tmp_path):
+    """A heading and its form, without what follows them."""
+    page.set_viewport_size({"width": 800, "height": 600})
+    page.set_content('<div style="margin:100px"><h3 id="head" style="margin:0;height:20px;width:80px">Head</h3>'
+                     '<div id="form" style="margin-top:10px;width:200px;height:30px"><button id="go">Go</button></div>'
+                     '<p style="margin:0;height:300px">after</p></div>')
+
+    out = shoot(page, tmp_path / "two.png", page.locator("#go"),
+                region=[page.locator("#head"), page.locator("#form")], pad=10)
+
+    assert Image.open(out).size == (220, 80)
+
+
+@pytest.mark.browser
 def test_shoot_removes_the_outline_afterwards(page, tmp_path):
     page.set_content(_BOX)
 

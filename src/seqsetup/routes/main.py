@@ -101,7 +101,8 @@ def _run_steps(run, result) -> list[dict]:
         {"key": "ready", "label": "Ready", "href": "#run-status-bar",
          "state": "done" if locked else "todo",
          "detail": run.status.value.capitalize() if locked else "Locks the run"},
-        {"key": "export", "label": "Export", "href": "#export-panel",
+        # A draft's Export box is a hidden placeholder; Mark Ready comes first.
+        {"key": "export", "label": "Export", "href": "#export-panel" if locked else "#run-status-bar",
          "state": "done" if locked else "todo",
          "detail": {"ready": "Available", "archived": "Archived"}.get(run.status.value, "After Ready")},
     ]

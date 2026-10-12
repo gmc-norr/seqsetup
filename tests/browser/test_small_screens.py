@@ -43,8 +43,8 @@ def test_phone_run_page_boxes_stack(logged_in_page, base_url, seeded_ids):
     page.goto(f"{base_url}/runs/{seeded_ids['draft_run_id']}")
     page.wait_for_load_state("networkidle")
 
-    validate, export = _box(page, "#validate-panel"), _box(page, "#export-panel")
-    assert export["y"] >= validate["y"] + validate["height"] - 1
+    section, validate = _box(page, "#sample-section"), _box(page, "#validate-panel")
+    assert validate["y"] >= section["y"] + section["height"] - 1
     assert _no_sideways_page_scroll(page)
 
 

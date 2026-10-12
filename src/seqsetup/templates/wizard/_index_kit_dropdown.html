@@ -1,6 +1,7 @@
 {#
    Wizard <select> for picking an index kit. HTMX-fetches the kit
-   content into #index-list-container on change.
+   content into #index-list-container on change, and scrolls that box
+   back to the top (it may be the one that scrolls).
 
    Inputs:
      index_kits:       list[IndexKit]
@@ -13,7 +14,7 @@
 <select name="selected_kit" id="index-kit-dropdown" class="index-kit-dropdown" aria-label="Index kit"
         hx-get="/indexes/kit-content"
         hx-target="#index-list-container"
-        hx-swap="innerHTML"
+        hx-swap="innerHTML scroll:top"
         hx-trigger="change">
     {% for kit in index_kits %}
     {% if kit.is_combinatorial() %}{% set count = kit.i7_indexes|length + kit.i5_indexes|length %}{% elif kit.is_single() %}{% set count = kit.i7_indexes|length %}{% else %}{% set count = kit.index_pairs|length %}{% endif %}

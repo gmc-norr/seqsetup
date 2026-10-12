@@ -134,6 +134,7 @@ def test_new_run_template_choice(demo_page, base_url, demo):
     # unless one exists. Create one for real, through the run page's own
     # "Save as template" form -- the same way a user would.
     page.goto(f"{base_url}/runs/{demo['draft']}")
+    page.get_by_text("More: Save as template · Change history").click()
     page.fill("#template-name", "Standard WGS Setup")
     with page.expect_navigation(url=re.compile(r"/templates$")):
         page.get_by_role("button", name="Save as template").click()
@@ -840,8 +841,8 @@ def test_ready_back_to_draft(demo_page, base_url, demo):
          region=page.locator("#run-status-bar"))
     # READY->DRAFT clears the pre-generated exports (routes/runs.py:
     # update_status, the elif new_status == RunStatus.DRAFT branch) -- the
-    # panel goes back to the one-line "Downloads open..." message.
-    page.wait_for_selector("#export-panel .export-waiting")
+    # Export box goes back to the hidden, empty placeholder a draft has.
+    page.wait_for_selector("#export-panel[hidden]", state="attached")
 
 
 def test_archive_button(demo_page, base_url, demo):
@@ -870,15 +871,17 @@ def test_templates_save_as_template(demo_page, base_url, demo):
     # Save as template (routes/run_templates.py:103) depends on
     # get_archivable_run, not get_editable_run (routes/run_templates.py:106)
     # -- it works on a run of any status because it only reads the run. The
-    # only UI entry point for this form is this fieldset
-    # (templates/runs/edit.html:44-50); its hidden scaffold_sample_ids input
+    # only UI entry point for this form is the run page's "More" fold
+    # (templates/runs/edit.html); its hidden scaffold_sample_ids input
     # is hard-coded to "[]", so this never captures the run's samples.
     page.goto(f"{base_url}/runs/{demo['draft']}")
-    fieldset = page.locator("fieldset:has(#template-name)")
+    page.get_by_text("More: Save as template · Change history").click()
+    fieldset = page.locator("details.more-section form:has(#template-name)")
+    heading = page.locator("details.more-section h3", has_text="Save as template")
     page.fill("#template-name", "Nightly QC Batch")
     snap(page, "templates/save-as-template",
          fieldset.get_by_role("button", name="Save as template"),
-         region=fieldset)
+         region=[heading, fieldset])
     with page.expect_navigation(url=re.compile(r"/templates$")):
         fieldset.get_by_role("button", name="Save as template").click()
 
@@ -930,9 +933,9 @@ def test_history_change_history(demo_page, base_url, demo):
     # (".border-t", templates/runs/_history_list.html:6), which exists only
     # after that swap -- the pre-load "Loading history..." text would
     # otherwise satisfy a weaker wait and photograph the wrong state.
-    page.get_by_text("Show change history").click()
+    page.get_by_text("More: Save as template · Change history").click()
     page.wait_for_selector(".run-history-panel .border-t")
-    fieldset = page.locator("fieldset:has(.run-history-panel)")
+    fold = page.locator("details.more-section")
     # The times of day differ per run; fixed example times keep the picture
     # the same (newest first, one per entry).
     replace_text(panel, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Z]{3,4}", [
@@ -940,7 +943,7 @@ def test_history_change_history(demo_page, base_url, demo):
         "2026-03-10 10:15 CET", "2026-03-10 10:14 CET", "2026-03-10 10:14 CET",
         "2026-03-10 10:14 CET", "2026-03-10 10:14 CET", "2026-03-10 10:13 CET",
         "2026-03-10 10:12 CET", "2026-03-10 10:12 CET"])
-    snap(page, "history/change-history", panel, region=fieldset)
+    snap(page, "history/change-history", panel, region=fold)
 
 
 # ---------------------------------------------------------------------------

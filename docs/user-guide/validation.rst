@@ -1,10 +1,14 @@
 Validation
 ==========
 
-Every Draft run has a **Check** panel above its Export panel, on the run's
-own page. It re-runs automatically after every change -- add a sample,
+Every run's page has a **Check** panel at the bottom of **Samples and
+indexes**, just below the samples. It re-runs automatically after every
+change -- add a sample,
 assign an index, edit an override -- so it always reflects what is
 currently saved, not what the page looked like when it was first loaded.
+While the page is open the panel never gets shorter, even as errors are
+fixed, so the sample rows above it never move under your mouse; reload
+the page to let it shrink.
 
 The Check panel
 ----------------

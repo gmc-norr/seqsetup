@@ -1358,11 +1358,14 @@ body {
 .paste-section[open] .paste-section-summary { border-bottom: 1px solid var(--border); }
 .paste-section-content { padding: var(--space-4); }
 
-/* The run page's change history folds away like the paste section. */
-.history-section { border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.history-section-summary { padding: var(--space-3) var(--space-4); cursor: pointer; background: var(--surface-sunken); font-weight: var(--fw-medium); font-size: var(--fs-sm); }
-.history-section[open] .history-section-summary { border-bottom: 1px solid var(--border); }
-.history-section-content { padding: var(--space-4); }
+/* The run page's "More" fold (Save as template, Change history) folds away
+   like the paste section. */
+.more-section { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card-bg); margin-top: var(--space-4); }
+.more-section-summary { padding: var(--space-3) var(--space-4); cursor: pointer; background: var(--surface-sunken); font-weight: var(--fw-medium); font-size: var(--fs-sm); }
+.more-section[open] .more-section-summary { border-bottom: 1px solid var(--border); }
+.more-section-content { padding: var(--space-4); }
+.more-section-heading { font-size: var(--fs-sm); font-weight: var(--fw-semibold); margin: 0 0 var(--space-2); }
+.more-section-content form + .more-section-heading { margin-top: var(--space-4); }
 
 .paste-form-content {
     padding: 1rem;
@@ -1976,6 +1979,38 @@ body {
     align-items: start;
 }
 .run-page-sample-panel { min-width: 0; overflow-x: auto; }
+/* Wide screens: the panel sticks beside the table while the page scrolls,
+   and only its list area scrolls (it had three nested caps: the panel's,
+   .index-kits-compact's and the list's, each with its own scrollbar). */
+@media (min-width: 1500px) {
+    .run-page-with-index-panel .wizard-index-panel {
+        position: sticky;
+        top: var(--space-4);
+        max-height: calc(100vh - 2 * var(--space-4));
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .run-page-with-index-panel #index-list-container {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+        overflow-y: auto;
+    }
+    .run-page-with-index-panel #index-list-container .index-list,
+    .run-page-with-index-panel #index-list-container .index-grid {
+        max-height: none;
+        overflow-y: visible;
+    }
+    /* A sticky box sticks to its nearest ancestor that clips overflow.
+       #sample-section (overflow-x) and .main-content (overflow-y) do, yet
+       neither scrolls here: the page does. While the panel shows, the
+       table scrolls sideways in .run-page-sample-panel instead. */
+    #sample-section:has(> .run-page-with-index-panel),
+    .main-content:has(.run-page-with-index-panel) {
+        overflow: visible;
+    }
+}
 /* The table needs ~850px; beside the 320px panel that only fits on wide
    screens. Below that the panel sits above the table, so no column is
    hidden behind a sideways scroll. The full-width chip list flows in

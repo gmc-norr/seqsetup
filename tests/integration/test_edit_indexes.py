@@ -256,7 +256,7 @@ class TestChangeHistoryFolds:
         assert fold.startswith("<details")
         assert not re.search(r"\sopen\b", fold)
         assert 'hx-trigger="toggle once"' in fold
-        assert "Show change history" in page
+        assert "More: Save as template · Change history" in page
         assert "Change history" in page
 
     def test_history_waits_for_the_fold_to_open(self, logged_in_client, fresh_app):

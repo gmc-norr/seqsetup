@@ -76,15 +76,15 @@ class TestEmptyRunCheck:
 
 
 class TestExportBeforeReady:
-    """A draft's Export box is one line, not four dead buttons."""
+    """A draft shows no Export box, not four dead buttons (since 2026-10-12
+    not even the one line it had: Export shows only once Ready)."""
 
-    def test_draft_shows_one_line(self, logged_in_client, fresh_app):
+    def test_draft_shows_no_export(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _run(ctx, "draft-run")
         page = logged_in_client.get(f"/runs/{run_id}").text
-        export = page.split('id="export-panel"', 1)[1].split("</fieldset>", 1)[0]
-        assert "Downloads open when the run is Ready." in export
-        assert "Download Sample Sheet" not in export
+        assert '<div id="export-panel" hidden></div>' in page
+        assert "Download Sample Sheet" not in page
 
     def test_ready_run_keeps_its_buttons(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
