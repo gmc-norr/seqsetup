@@ -48,6 +48,35 @@ class TestTheModelRefusesIt:
             Sample.from_dict({"id": "s1", "sample_id": "0"})
 
 
+class TestTheModelRefusesTheNumberToo:
+    """The rule is the model's, so it must hold for the JSON number 0 as
+    well as for text -- today that holds only because the LIMS boundary
+    turns the number into a string first."""
+
+    def test_the_number_zero_cannot_be_constructed(self):
+        with pytest.raises(ValueError, match="only of zeros"):
+            Sample(sample_id=0)
+
+    def test_the_number_zero_cannot_be_assigned(self):
+        sample = Sample(sample_id="S1")
+
+        with pytest.raises(ValueError, match="only of zeros"):
+            sample.sample_id = 0
+
+        assert sample.sample_id == "S1"
+
+    def test_a_stored_sample_whose_id_is_the_number_zero_is_refused_on_load(self):
+        with pytest.raises(ValueError, match="only of zeros"):
+            Sample.from_dict({"id": "s1", "sample_id": 0})
+
+    def test_another_number_is_left_as_it_is(self):
+        assert Sample(sample_id=100).sample_id == 100
+
+    def test_zeros_with_a_trailing_newline_are_refused(self):
+        with pytest.raises(ValueError, match="only of zeros"):
+            Sample(sample_id="0\n")
+
+
 class TestThePasteParserRefusesTheWholePaste:
     def test_it_names_the_row_and_adds_nothing(self):
         with pytest.raises(ValueError, match="only of zeros") as excinfo:

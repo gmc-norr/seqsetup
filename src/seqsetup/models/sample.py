@@ -60,15 +60,21 @@ ZERO_SAMPLE_ID_RULE = (
     "A sample ID made only of zeros is not a sample ID — a LIMS may use 0 for "
     "an empty well"
 )
-# ``\Z``, not ``$``: in Python ``$`` also matches just before a trailing
-# newline, so a value ending in one would pass (project convention).
-_ZERO_ONLY_RE = re.compile(r"0+\Z")
+# ``$``, not ``\Z``: this pattern names the values that are REFUSED, and in
+# Python ``$`` also matches just before a trailing newline, so ``"0\n"`` is
+# refused with it and would be accepted with ``\Z``. Refusing more is the
+# safe direction here.
+_ZERO_ONLY_RE = re.compile(r"0+$")
 
 
 def is_zero_only(value) -> bool:
-    """True when ``value`` is a string of nothing but the digit 0, of any
-    length."""
-    return isinstance(value, str) and bool(_ZERO_ONLY_RE.match(value))
+    """True when the text of ``value`` is nothing but the digit 0, of any
+    length. Not strings only: a LIMS sends an empty well as the JSON number
+    0, and the rule is the model's, so ``Sample(sample_id=0)`` must be
+    refused without a string boundary in front of it. The value is read as
+    text, not coerced: ``100`` stays the number it was."""
+    text = value if isinstance(value, str) else str(value)
+    return bool(_ZERO_ONLY_RE.match(text))
 
 
 def checked_test_version(value: Any) -> str:
