@@ -13,6 +13,14 @@ each run id it could not read: never silently hidden (CLAUDE.md: never
 silently discard data), logged at WARNING for the administrator who has to
 repair the document, and nothing in the database is touched.
 
+The archive and delete handlers render the same listing after they have
+written, and that is where it matters most: on the old code, archiving a
+good Ready run while one unreadable document was stored STORED the new
+status and wrote the run.status.changed audit row, then raised while
+building the fragment -- so the user saw a 500 and did not know the archive
+had happened. The same for a delete, which cannot be undone. Those two are
+pinned below.
+
 The JSON API is deliberately NOT changed here: ``/api/runs`` still raises on
 such a document rather than handing an external clinical consumer a quietly
 shortened list. Changing what the API returns is a separate decision; the
@@ -39,7 +47,7 @@ GOOD_ID = "good-run"
 BAD_ID = "unreadable-run"
 
 
-def _run(ctx, run_id, name, status=RunStatus.DRAFT, sample_id="PAT-1"):
+def _run(ctx, run_id, name, status=RunStatus.DRAFT, sample_id="PAT-1", with_sample=True):
     run = SequencingRun(
         id=run_id,
         run_name=name,
@@ -48,7 +56,8 @@ def _run(ctx, run_id, name, status=RunStatus.DRAFT, sample_id="PAT-1"):
         run_cycles=RunCycles(151, 151, 10, 10),
         status=status,
     )
-    run.add_sample(Sample(id=f"{run_id}-s1", sample_id=sample_id, lanes=[1]))
+    if with_sample:
+        run.add_sample(Sample(id=f"{run_id}-s1", sample_id=sample_id, lanes=[1]))
     ctx.run_repo.save(run)
     return run
 
@@ -73,6 +82,11 @@ def _bad_and_good(ctx, db, bad_status=RunStatus.DRAFT):
 
 def _raw(db):
     return [bson.encode(doc) for doc in db["runs"].find().sort("_id")]
+
+
+def _raw_one(db, run_id):
+    doc = db["runs"].find_one({"_id": run_id})
+    return bson.encode(doc) if doc is not None else None
 
 
 def _seed_api_token(ctx) -> str:
@@ -172,6 +186,52 @@ class TestUnreadableRunIsRecordedNotHidden:
         assert response.status_code == 200
         assert f'id="run-item-{GOOD_ID}"' in response.text
         assert "could not be read" not in response.text
+
+
+class TestArchiveAndDeleteSurviveAnUnreadableRun:
+    """The two handlers that WRITE and then render the listing.
+
+    They are the highest-consequence entry points: both have already
+    changed the database by the time the fragment is built. On the old
+    code, with one unreadable document stored, the archive stored
+    ``status = archived`` and wrote the ``run.status.changed`` audit row and
+    then raised, so the lab got a 500 and could not tell whether the run
+    had been archived; the delete is worse still, because it cannot be
+    undone. Both now answer 200 and name the unreadable run.
+    """
+
+    def test_archive_answers_200_and_names_the_unreadable_run(
+            self, logged_in_client, fresh_app):
+        _app, ctx, db = fresh_app
+        _run(ctx, GOOD_ID, "Readable run", status=RunStatus.READY)
+        _run(ctx, BAD_ID, "Broken run", sample_id="PAT-2")
+        _make_unreadable(db, BAD_ID)
+        bad_before = _raw_one(db, BAD_ID)
+
+        response = logged_in_client.post(
+            f"/runs/{GOOD_ID}/archive", headers={"Origin": "http://testserver"})
+
+        assert response.status_code == 200
+        assert BAD_ID in response.text
+        assert ctx.run_repo.get_by_id(GOOD_ID).status == RunStatus.ARCHIVED
+        assert _raw_one(db, BAD_ID) == bad_before
+
+    def test_delete_answers_200_and_names_the_unreadable_run(
+            self, logged_in_client, fresh_app):
+        """An empty draft that was never Ready: deletable by any user."""
+        _app, ctx, db = fresh_app
+        _run(ctx, GOOD_ID, "Readable run", with_sample=False)
+        _run(ctx, BAD_ID, "Broken run", sample_id="PAT-2")
+        _make_unreadable(db, BAD_ID)
+        bad_before = _raw_one(db, BAD_ID)
+
+        response = logged_in_client.request(
+            "DELETE", f"/runs/{GOOD_ID}", headers={"Origin": "http://testserver"})
+
+        assert response.status_code == 200
+        assert BAD_ID in response.text
+        assert ctx.run_repo.get_by_id(GOOD_ID) is None
+        assert _raw_one(db, BAD_ID) == bad_before
 
 
 class TestTheJsonApiIsUnchanged:
