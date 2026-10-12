@@ -163,8 +163,10 @@ Configure the application using environment variables:
      - Session encryption key (32+ hex characters)
      - Auto-generated
    * - ``INSTRUMENTS_CONFIG``
-     - Path to instruments YAML config
-     - ``config/instruments.yaml``
+     - Path to the instruments YAML file to read instead of the one SeqSetup
+       ships. Set, it decides; SeqSetup does not start when it names a path
+       that is not a file (see :doc:`/admin-guide/instruments`)
+     - unset: ``config/instruments.yaml``
    * - ``TZ``
      - The time zone SeqSetup shows times in, an IANA name such as
        ``Europe/Stockholm`` (see :ref:`time-zone`)

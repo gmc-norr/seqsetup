@@ -112,7 +112,7 @@ pixi run smoke-browser
 | `SEQSETUP_SESSION_SECRET`   | Signs the session cookie        | Auto-generated in `.sesskey`|
 | `SEQSETUP_SESSION_IDLE_SECONDS` | A login unused this long ends | `1800` (30 minutes)       |
 | `SEQSETUP_SESSION_MAX_AGE_SECONDS` | Every login ends this long after sign-in | `28800` (8 hours) |
-| `INSTRUMENTS_CONFIG`        | Path to instruments YAML config | `config/instruments.yaml`   |
+| `INSTRUMENTS_CONFIG`        | Instruments YAML file to read instead of the shipped one; set, it decides, and a path that is not a file stops the start | unset: `config/instruments.yaml` |
 
 Environment variables take precedence over configuration files.
 
