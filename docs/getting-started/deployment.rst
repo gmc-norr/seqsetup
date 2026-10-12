@@ -435,6 +435,33 @@ API tokens made before the update end that much earlier or later. On such a
 server, start from an empty database, or accept these shifts for the old
 data. A server that ran on UTC is not affected.
 
+.. _lims-stored-key-check:
+
+Check for a stored LIMS api-key before updating
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Versions before the one that removed the api-key box on
+**Admin > LIMS Integration** stored the typed key in the settings
+collection. This version never reads, uses or writes that value, and the
+next save of that page removes it — but until someone saves the page, the
+old key is still in the database and in every backup taken from it.
+
+SeqSetup runs no migration for this. Before updating, ask the database
+whether a key is stored. The command below prints a one-line answer and
+never prints the key; ``MONGODB_URI`` is the same connection string the app
+uses:
+
+.. code-block:: bash
+
+   mongosh "$MONGODB_URI" --quiet --eval 'print(db.settings.countDocuments({_id: "sample_api_config", "config.api_key": {$nin: ["", null]}}) ? "a LIMS api-key is stored" : "no LIMS api-key is stored")'
+
+If it says a key is stored: after updating, open
+**Admin > LIMS Integration** (which now says the same thing) and press
+**Save Configuration** to remove it, set the real key in
+``SEQSETUP_LIMS_API_KEY``, and treat the old key as exposed — rotate it in
+the LIMS, and remember that database backups taken before the save still
+contain it.
+
 Troubleshooting
 ---------------
 

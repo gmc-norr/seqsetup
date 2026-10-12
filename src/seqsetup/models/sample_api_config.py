@@ -9,8 +9,10 @@ from urllib.parse import quote
 from ..utils.names import is_dot_only
 
 
-# Env var that overrides the stored api_key at use time. Setting this in
-# production keeps the actual secret out of the MongoDB document.
+# The only source of the LIMS api-key. It used to be an override over a key
+# the admin page stored in the settings document; the secret then sat in every
+# database backup and in the form's round trip, so the stored key is no longer
+# written, read or used.
 _API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
 
 
@@ -53,7 +55,9 @@ class SampleApiConfig:
     """Configuration for external sample API integration.
 
     Singleton configuration stored in the settings collection.
-    Defines the API base URL, authentication key, enabled state, and field mappings.
+    Defines the API base URL, enabled state, and field mappings. The api-key
+    is not part of it: it comes from the server's own environment
+    (``SEQSETUP_LIMS_API_KEY``) and is never stored here.
 
     The base URL is used to derive two endpoints:
     - GET {base_url}/worksheets?detail=true — list available worksheets
@@ -65,19 +69,19 @@ class SampleApiConfig:
     """
 
     base_url: str = ""  # e.g. "https://lims.example.com/api"
-    api_key: str = ""  # Legacy MongoDB storage; production should use SEQSETUP_LIMS_API_KEY
     enabled: bool = False
+    # True when the document this was read from still holds a key an older
+    # SeqSetup stored. The key itself is not kept: only the admin page's
+    # notice needs to know it is there, and saving the page removes it.
+    legacy_api_key_stored: bool = False
 
     def effective_api_key(self) -> str:
-        """Return the api key to use at request time.
+        """The api-key to send, from ``SEQSETUP_LIMS_API_KEY`` and nowhere else.
 
-        Prefers the SEQSETUP_LIMS_API_KEY environment variable; falls back to
-        the stored field for backward compatibility with existing deployments.
-        New deployments should set the env var and leave the stored field empty
-        so the secret never lives in the database backup.
+        Empty when the variable is unset: a key in the settings document is
+        not read, so no deployment keeps sending a secret nobody can see.
         """
-        env_value = os.environ.get(_API_KEY_ENV, "")
-        return env_value or self.api_key
+        return os.environ.get(_API_KEY_ENV, "")
 
     # Field mappings: SeqSetup field name -> API field name
     # Supported SeqSetup fields: worksheet_id, investigator, updated_at, samples
@@ -135,20 +139,25 @@ class SampleApiConfig:
         return self.field_mappings.get(seqsetup_field, seqsetup_field)
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for MongoDB storage."""
+        """Convert to dictionary for MongoDB storage.
+
+        No ``api_key``: the repository replaces the whole document, so saving
+        the settings page removes a key an older version left there.
+        ``legacy_api_key_stored`` is read from the document, never written to
+        it.
+        """
         return {
             "base_url": self.base_url,
-            "api_key": self.api_key,
             "enabled": self.enabled,
             "field_mappings": self.field_mappings,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "SampleApiConfig":
-        """Create from dictionary."""
+        """Create from dictionary. A stored api-key is noted, not kept."""
         return cls(
             base_url=data.get("base_url", ""),
-            api_key=data.get("api_key", ""),
             enabled=data.get("enabled", False),
             field_mappings=data.get("field_mappings", {}),
+            legacy_api_key_stored=bool(data.get("api_key")),
         )

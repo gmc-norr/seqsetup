@@ -38,14 +38,18 @@
                 <p class="text-xs text-slate-500"><code>{base_url}/worksheets/{id}</code> — get samples for a worksheet</p>
             </div>
             <div>
-                <label for="api_key" class="block text-sm font-medium mb-1">API Key</label>
-                <input type="password"
-                       name="api_key" id="api_key"
-                       placeholder="Leave blank to keep existing key"
-                       class="w-full border rounded px-3 py-2">
-                <p class="text-xs text-slate-500 mt-1">
-                    Sent as 'api-key' header.{% if config.api_key %} Key is configured.{% endif %}
+                <p class="block text-sm font-medium mb-1">API Key</p>
+                <p class="text-xs text-slate-500">
+                    Sent as the <code>api-key</code> header. It is set on the server, in the
+                    <code>SEQSETUP_LIMS_API_KEY</code> environment variable, and cannot be set
+                    from this page.
                 </p>
+                {% if config.legacy_api_key_stored %}
+                    <p class="mt-2 bg-amber-100 border border-amber-400 text-amber-900 rounded px-3 py-2 text-sm">
+                        An older version of SeqSetup stored an api-key in the database. It is not
+                        used. Saving this page removes it.
+                    </p>
+                {% endif %}
             </div>
         </fieldset>
 

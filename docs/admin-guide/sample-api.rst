@@ -19,16 +19,21 @@ Configuring the connection
    SeqSetup derives two endpoints from it (see below).
 
 **API Key**
-   An optional key for authentication. If set, SeqSetup sends it as an
-   ``api-key`` header on every request::
+   Not a field on this page. The key comes only from the
+   ``SEQSETUP_LIMS_API_KEY`` environment variable, which the *operator* sets
+   on the server, so the secret never reaches the database or a database
+   backup. When it is set, SeqSetup sends it as an ``api-key`` header on
+   every request::
 
-      api-key: <api_key>
+      api-key: <the value of SEQSETUP_LIMS_API_KEY>
 
-   The field is write-only: it always renders blank, and leaving it blank on
-   save keeps whatever key is already stored. An operator can instead set the
-   ``SEQSETUP_LIMS_API_KEY`` environment variable, which always takes
-   precedence over the stored value and keeps the secret out of the database
-   entirely.
+   When it is unset, requests carry no ``api-key`` header at all.
+
+   An older version of SeqSetup had a key box here and stored what was typed
+   into it. A key left behind by one of those versions is **never used**. The
+   page says it is there, and the next save of this page removes it. Before
+   deploying this version, an operator can check whether a key is still
+   stored (see :ref:`lims-stored-key-check`).
 
 **Enabled**
    Turns the integration on or off. While disabled -- or while **Base URL**
