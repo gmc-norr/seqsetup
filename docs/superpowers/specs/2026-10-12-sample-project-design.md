@@ -46,9 +46,12 @@ writes every application's data section):
   profile's `Data` default when it is empty.
 
 "Non-empty" is the stored string being non-empty — the same test the writer already
-applies to `sample.index1_sequence` and to a sample's own mismatch number. Mark Ready
-already refuses a sample name or project with a line break or any other hidden character,
-so a non-empty value here is ordinary text.
+applies to `sample.index1_sequence`. A sample's own mismatch number is *not* the same
+test: the writer takes it when it `is not None` (the `BarcodeMismatchesIndex1` and
+`BarcodeMismatchesIndex2` branches of the same dispatch), so a sample's own `0` is
+written rather than falling back to the profile's `Data` default — truthiness would have
+dropped it. Mark Ready already refuses a sample name or project with a line break or
+any other hidden character, so a non-empty value here is ordinary text.
 
 The sample's value is written with `_escape_identifier`, as `Sample_ID` is and as the v1
 sheet already writes both of these columns: a name made only of `[A-Za-z0-9_-]` is written
