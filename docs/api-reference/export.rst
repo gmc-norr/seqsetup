@@ -48,6 +48,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the SampleSheet.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 **Response headers**::
@@ -89,6 +91,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the SampleSheet.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 Export JSON Metadata
@@ -108,6 +112,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the JSON export.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 **Response headers**::
@@ -233,6 +239,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the validation report.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 Export Validation Report (PDF)
@@ -252,6 +260,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the validation PDF.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 Differences Between Formats

@@ -587,7 +587,7 @@ class TestRecordsThatCannotBeUsed:
 
     @pytest.mark.parametrize("path", [
         "export/samplesheet-v2", "export/samplesheet-v1", "export/validation-report",
-        "export/validation-pdf",
+        "export/validation-pdf", "export/json",
     ])
     def test_the_live_exports_show_it(self, logged_in_client, fresh_app, path):
         from .test_group_1c import _clean_run
