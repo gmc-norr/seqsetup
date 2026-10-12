@@ -79,6 +79,13 @@ download for each of:
    differently from **Download Sample Sheet v2**, but they are not
    disabled -- all four are enabled here.
 
+Each download is named after the run. A run named in an alphabet other
+than the Latin one -- or with accents -- still downloads: the file keeps
+the run name's own letters, after the same tidying every download name
+gets, with a plain-ASCII name as the fallback for older browsers (and the
+export's own name, such as ``SampleSheet_v2.csv``, when nothing ASCII is
+left of the run's).
+
 The two Sample Sheet buttons additionally require every sample in the run
 to have an index assigned -- if any sample does not, they stay disabled
 even though the run is Ready; the JSON and validation downloads have no

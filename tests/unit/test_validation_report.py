@@ -1,6 +1,7 @@
 """Tests for validation report exporters (JSON and PDF)."""
 
 import json
+import re
 
 import pytest
 
@@ -274,3 +275,82 @@ class TestValidationReportPDF:
             combined_distances=zeros,
         )
         assert ValidationReportPDF._render_heatmap(big) is None
+
+
+# ---------------------------------------------------------------------------
+# Validator messages in the PDF are report text, not reportlab markup
+# ---------------------------------------------------------------------------
+
+# reportlab parses a Paragraph's first argument as its own mini-XML, so a
+# sample id or name echoed by a validator message could either break the PDF
+# (no report, and Mark Ready refuses the run) or be consumed as a tag (report
+# content made invisible). These are the payloads that do each.
+MARKUP_PAYLOADS = [
+    "<b>oops",
+    "</para>",
+    '<onDraw name="x">',
+    '<font color="white">invisible</font>',
+]
+
+# Controls: an ordinary name and a bare ampersand must keep working.
+PLAIN_PAYLOADS = ["PlainName", "A&B"]
+
+
+def pdf_shown_text(pdf: bytes) -> str:
+    """The text drawn in an UNCOMPRESSED PDF, from its string literals.
+
+    Needs no new dependency: the test asks reportlab for uncompressed pages
+    (``rl_config.pageCompression = 0``) and reads the ``(...)`` literals of
+    the content streams, undoing PDF's backslash escapes.
+    """
+    out = []
+    for match in re.finditer(rb"\((?:\\.|[^()\\])*\)", pdf, re.S):
+        literal = match.group(0)[1:-1]
+        literal = re.sub(
+            rb"\\([0-7]{1,3})", lambda m: bytes([int(m.group(1), 8) & 0xFF]), literal
+        )
+        literal = re.sub(rb"\\(.)", rb"\1", literal)
+        out.append(literal.decode("latin-1"))
+    return "".join(out)
+
+
+def message_result(payload: str, severity: ValidationSeverity) -> ValidationResult:
+    """A result whose only message echoes ``payload``, as a validator would."""
+    return ValidationResult(
+        duplicate_sample_ids=[],
+        index_collisions=[],
+        distance_matrices={},
+        configuration_errors=[
+            ConfigurationError(
+                severity=severity,
+                category="lane_out_of_range",
+                message=f"Sample {payload} assigned to lane 9, but flowcell has 8 lanes",
+            )
+        ],
+    )
+
+
+class TestValidationReportPDFMessageMarkup:
+    """A validator message reaches the PDF as the text that was typed."""
+
+    @pytest.fixture(autouse=True)
+    def uncompressed_pages(self, monkeypatch):
+        from reportlab import rl_config
+
+        monkeypatch.setattr(rl_config, "pageCompression", 0)
+
+    @pytest.mark.parametrize("payload", MARKUP_PAYLOADS + PLAIN_PAYLOADS)
+    def test_error_message_is_shown_as_typed(self, basic_run, payload):
+        pdf = ValidationReportPDF.export(
+            basic_run, message_result(payload, ValidationSeverity.ERROR)
+        )
+        assert pdf[:5] == b"%PDF-"
+        assert payload in pdf_shown_text(pdf)
+
+    @pytest.mark.parametrize("payload", MARKUP_PAYLOADS + PLAIN_PAYLOADS)
+    def test_warning_message_is_shown_as_typed(self, basic_run, payload):
+        pdf = ValidationReportPDF.export(
+            basic_run, message_result(payload, ValidationSeverity.WARNING)
+        )
+        assert pdf[:5] == b"%PDF-"
+        assert payload in pdf_shown_text(pdf)

@@ -244,15 +244,18 @@ class ValidationReportPDF:
         all_errors = cls._collect_error_messages(result)
         all_warnings = cls._collect_warning_messages(result)
 
+        # A Paragraph's text is parsed as reportlab's mini-XML, and a message
+        # echoes a sample id or name, so escape it: the report shows exactly
+        # what was typed, and no name can break the PDF or hide a line.
         if all_errors:
             elements.append(Paragraph("Errors", heading_style))
             for msg in all_errors:
-                elements.append(Paragraph(f"&bull; {msg}", small_style))
+                elements.append(Paragraph(f"&bull; {xml_escape(msg)}", small_style))
 
         if all_warnings:
             elements.append(Paragraph("Warnings", heading_style))
             for msg in all_warnings:
-                elements.append(Paragraph(f"&bull; {msg}", small_style))
+                elements.append(Paragraph(f"&bull; {xml_escape(msg)}", small_style))
 
         # Per-lane heatmaps
         if result.distance_matrices:

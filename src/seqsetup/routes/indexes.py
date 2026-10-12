@@ -32,7 +32,12 @@ from ..services.index_validator import IndexValidator
 from ..services.validation import clear_validation_cache
 from ..templating import render
 from .dependencies import get_ctx, require_admin_dep
-from .utils import UploadTooLargeError, get_username, read_upload_capped
+from .utils import (
+    UploadTooLargeError,
+    attachment_disposition,
+    get_username,
+    read_upload_capped,
+)
 
 
 logger = logging.getLogger("seqsetup")
@@ -352,12 +357,19 @@ def download_index_kit(
     kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
     if not kit:
         return Response("Index kit not found", status_code=404)
+    # Before the export: a kit named outside latin-1 used to raise inside
+    # Response(), uncaught, as a raw 500. get_filename lower-cases the name,
+    # turns spaces into _ and / into -, and drops everything that is not
+    # alphanumeric, _ or - (which leaves non-latin-1 letters in);
+    # attachment_disposition is what makes the header encodable.
+    headers = {
+        "Content-Disposition": attachment_disposition(
+            IndexKitYamlExporter.get_filename(kit), "index_kit.yaml"),
+    }
     return Response(
         content=IndexKitYamlExporter.export(kit),
         media_type="application/x-yaml",
-        headers={
-            "Content-Disposition": f'attachment; filename="{IndexKitYamlExporter.get_filename(kit)}"',
-        },
+        headers=headers,
     )
 
 

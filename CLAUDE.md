@@ -45,7 +45,7 @@ a model or service layer where it cannot be forgotten.
 - Clamp all numeric inputs to valid ranges: `max(low, min(high, value))`. Apply at the model layer so re-assignment can't bypass it.
 - Validate DNA sequences against `^[ACGTN]*$` after uppercasing — at the model layer.
 - Use `escape_js_string()` and `escape_html_attr()` from `utils/html.py` when embedding values in HTML or JavaScript. For JS string literals in Alpine/HTMX attributes, the project's canonical pattern is `{{ value | tojson }}` inside a single-quoted attribute (see `templates/admin/instruments.html`).
-- Use `sanitize_filename()` from `routes/utils.py` for Content-Disposition headers.
+- Use `attachment_disposition()` from `routes/utils.py` to build a `Content-Disposition` value — it keeps the `filename` parameter ASCII (Starlette encodes header values as latin-1) and carries the name's own letters in `filename*`. `sanitize_filename()`, from the same module, scrubs the name that goes into it.
 - Use `_escape_csv()` for all user-supplied values in SampleSheet output (BCLConvert, DRAGEN, and Cloud sections). Exception: identifiers (Sample_ID, Sample_Name, Sample_Project, LibraryName, ProjectName, RunName / Experiment Name) go through `_escape_identifier()`, which writes a value made only of `[A-Za-z0-9_-]` exactly — the formula guard's `'` prefix on a leading `-` would change the name — and falls back to `_escape_csv()` for anything else.
 
 ### Run state integrity
@@ -178,7 +178,7 @@ src/seqsetup/
 
 | File | Purpose |
 |------|---------|
-| `routes/utils.py` | `check_status_transition()`, `get_username()`, `sanitize_string()`, `sanitize_filename()` |
+| `routes/utils.py` | `check_status_transition()`, `get_username()`, `sanitize_string()`, `sanitize_filename()` (scrubs a download name), `attachment_disposition()` (builds the `Content-Disposition` value) |
 | `routes/dependencies.py` | `get_ctx`, `get_editable_run`, `get_exportable_run`, `get_archivable_run`, `require_admin_dep`, `saving_run`, `is_htmx_request` |
 | `utils/html.py` | `escape_js_string()`, `escape_html_attr()` — use these for all user data in HTML/JS |
 | `models/sequencing_run.py` | `SequencingRun`, `RunStatus`, `RunCycles` — central data model |
