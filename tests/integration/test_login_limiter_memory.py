@@ -14,6 +14,7 @@ import time
 from collections import deque
 
 import pytest
+from starlette.testclient import TestClient
 
 from seqsetup.rate_limit import get_login_limiter
 
@@ -86,17 +87,43 @@ class TestTheLimiterDoesNotGrowWithTheNamesItIsSent:
         assert refused.status_code == 429
         assert "login-user:never-seen" not in limiter._buckets
 
-    def test_a_refused_request_spends_none_of_the_names_own_budget(self, client):
+    def test_a_refused_request_spends_none_of_the_names_own_budget(
+            self, fresh_app, client, admin_user_seeded):
         """The name a refused request carried must still have its full
-        allowance when it is tried from an address that has some left."""
+        allowance when it is tried from an address that has some left.
+
+        More requests are refused while carrying the name than the name's
+        own cap allows, so had any of them counted, its bucket would be
+        full and the sign-in from the fresh address would be refused too.
+        """
         limiter = get_login_limiter()
         _defaults(limiter)
+        name = admin_user_seeded["username"]
         for n in range(limiter.max_requests):
             _post(client, f"spent-{n}")
-        for _ in range(5):
-            _post(client, "carol")
+        for _ in range(limiter.max_requests + 5):
+            assert _post(client, name).status_code == 429
 
-        assert limiter.retry_after("login-user:carol") == 0
+        app, _ctx, _db = fresh_app
+        elsewhere = TestClient(app, base_url="http://testserver",
+                               client=("198.51.100.7", 44321))
+        signed_in = elsewhere.post(
+            "/login/submit",
+            data={"username": name, "password": admin_user_seeded["password"]},
+            headers=ORIGIN, follow_redirects=False)
+
+        wait = limiter.retry_after(f"login-user:{name}")
+
+        assert signed_in.status_code == 303, (
+            f"the name {limiter.max_requests + 5} refused requests carried "
+            f"could not sign in from an untouched address "
+            f"(status={signed_in.status_code}, wait reported for its own "
+            f"bucket {wait}s)"
+        )
+        assert len(limiter._buckets[f"login-user:{name}"]) == 1, (
+            "only the one attempt the limiter allowed may count against "
+            "the name"
+        )
 
 
 class TestTheRefusalItselfIsUnchanged:
