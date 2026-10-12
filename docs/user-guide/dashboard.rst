@@ -40,6 +40,19 @@ clears it -- so its copy has none either. If the copy cannot be saved, the
 run is not deleted. If someone changes the run at the moment you delete
 it, nothing is deleted and you are asked to reload the page.
 
+A run SeqSetup cannot read
+--------------------------
+
+If a run's stored record holds something this version of SeqSetup cannot
+read -- which takes a change made outside SeqSetup, or a record written by
+an older version -- that one run cannot be listed. The dashboard lists
+every other run as usual and says, in a line above the list, how many runs
+could not be read and which ones, by run id. The same line appears on the
+tabs and in the search results, nothing is changed in the database, and a
+warning naming the run id goes to :doc:`/admin-guide/logs`. Send the run id
+to your administrator: the record has to be repaired before that run can be
+opened again.
+
 Search
 ------
 

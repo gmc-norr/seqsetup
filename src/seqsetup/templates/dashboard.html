@@ -24,6 +24,7 @@
 {% if not runs %}
 <div id="dashboard" class="flex items-center justify-center py-16">
     <div class="text-center">
+        {% include "_dashboard_unreadable.html" %}
         <h2 class="text-2xl font-semibold mb-2">No Runs Yet</h2>
         <p class="text-slate-600 mb-4">Get started by creating your first run.</p>
         <form method="post" action="/runs/new" class="inline-block">
@@ -33,6 +34,7 @@
 </div>
 {% elif search %}
 <div id="dashboard" class="space-y-4">
+    {% include "_dashboard_unreadable.html" %}
     <p class="text-sm text-slate-600">
         {% if search.runs %}{{ search.runs | length }} run{{ '' if search.runs | length == 1 else 's' }} match{{ 'es' if search.runs | length == 1 else '' }}{% else %}No runs match{% endif %}
         &ldquo;{{ search.query }}&rdquo; in Draft, Ready or Archived. Clear the search to see the tabs again.
@@ -54,6 +56,7 @@
         | sort(attribute='updated_at', reverse=True)
         | list %}
 <div id="dashboard" class="space-y-4">
+    {% include "_dashboard_unreadable.html" %}
     <div class="flex gap-2 border-b">
         {% for key, label in [('draft', 'Draft'), ('ready', 'Ready'), ('archived', 'Archived')] %}
         <button class="px-4 py-2 -mb-px border-b-2 {% if key == active_tab %}border-primary font-semibold text-primary{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}"

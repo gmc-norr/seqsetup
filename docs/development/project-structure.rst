@@ -52,6 +52,14 @@ Application Layers
    that is the copy store's business, not a repository's. Which runs may be
    deleted, and by whom, is the route's decision.
 
+   ``RunRepository.list_all_readable()`` is the listing the dashboard uses: it
+   returns the runs whose documents load **and** the ids of the ones that
+   raised, each logged at WARNING, so one document this release cannot read
+   cannot take a whole page down and cannot vanish from it unannounced either.
+   The inherited ``list_all()`` is unchanged — every other repository shares it
+   — and so is ``list_by_status()``, which serves ``/api/runs``, where a
+   quietly shortened list would change what an external consumer receives.
+
 **Services** (``services/``)
    Business logic that operates on models. Services are stateless and typically
    implemented as class methods. Examples: cycle calculation, validation, export,

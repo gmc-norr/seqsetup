@@ -1,5 +1,7 @@
 """Repository for SequencingRun database operations."""
 
+import logging
+
 from ..data.instruments import get_default_cycles
 from ..models.sequencing_run import (
     InstrumentPlatform,
@@ -9,6 +11,9 @@ from ..models.sequencing_run import (
 from .base import BaseRepository, ConflictError
 
 
+logger = logging.getLogger(__name__)
+
+
 class RunRepository(BaseRepository[SequencingRun]):
     """Repository for managing SequencingRun documents in MongoDB."""
 
@@ -16,6 +21,38 @@ class RunRepository(BaseRepository[SequencingRun]):
     MODEL_CLASS = SequencingRun
     # The instrument a new run starts on.
     NEW_RUN_INSTRUMENT = InstrumentPlatform.NOVASEQ_X
+
+    def list_all_readable(self) -> tuple[list[SequencingRun], list[str]]:
+        """Every run whose document loads, and the ids of the ones that do not.
+
+        The inherited ``list_all`` builds every document with no per-document
+        guard, so one document this release cannot read — a whole-number
+        field stored as 1.0, a base no index allows, an analysis type it does
+        not know, all of which only a direct database write or an older
+        release produces — raises for the whole listing. A page that lists
+        runs cannot be reached at all then, not even for the runs that are
+        fine.
+
+        The unreadable ids come back with the runs so the caller can name
+        them: one is never dropped silently (CLAUDE.md: never silently
+        discard data). Each is logged at WARNING with what stopped it, for
+        the administrator who has to repair the document. Nothing is written.
+
+        ``list_all`` and ``list_by_status`` are left exactly as they are:
+        every other repository shares ``list_all``, and ``list_by_status``
+        serves ``/api/runs``, where a quietly shortened list would change
+        what an external clinical consumer receives.
+        """
+        runs: list[SequencingRun] = []
+        unreadable: list[str] = []
+        for doc in self.collection.find():
+            try:
+                runs.append(SequencingRun.from_dict(doc))
+            except Exception as exc:
+                run_id = str(doc.get("_id") or "") or "(a run document with no id)"
+                logger.warning("Run %s could not be read: %s", run_id, exc)
+                unreadable.append(run_id)
+        return runs, unreadable
 
     def list_by_status(self, status: str) -> list[SequencingRun]:
         """Get all runs with a given status."""
