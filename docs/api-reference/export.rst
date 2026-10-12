@@ -214,6 +214,16 @@ when SeqSetup can no longer say what the sheet would write -- a run whose
 instrument has no settings any more, for which no Sample Sheet can be
 written either.
 
+A run marked Ready before these two keys existed keeps the export stored
+for it, which has neither key. The API serves that stored export and
+nothing else, and the download route falls back to generating one live only
+for a run that has none stored at all. Archiving keeps the stored export
+and Archived is terminal, so that shape stays for good; returning the run
+to Draft discards the stored export, and marking the run Ready again writes
+a new one with both keys. A consumer should therefore test that
+``samplesheet_index2`` is present rather than read a missing key as "this
+sample has no i5".
+
 The JSON export includes information not representable in the SampleSheet
 v2 format, such as sample names, projects, descriptions, and free-form
 metadata. It does **not** include a sample's Test ID, its index kit name,
