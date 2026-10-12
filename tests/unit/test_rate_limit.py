@@ -150,6 +150,20 @@ class TestRetryAfterReadsWithoutCounting:
 
         assert limiter.retry_after("alice") == 0
 
+    def test_a_bucket_of_spent_but_expired_attempts_waits_for_nothing(self, monkeypatch):
+        """``allow`` would let alice through again, so the wait is 0: only
+        the timestamps still inside the window may be counted."""
+        import seqsetup.rate_limit as rl
+        clock = [1000.0]
+        monkeypatch.setattr(rl.time, "monotonic", lambda: clock[0])
+        limiter = RateLimiter(max_requests=2, window_seconds=10)
+        limiter.allow("alice")
+        limiter.allow("alice")
+
+        clock[0] += 11
+
+        assert limiter.retry_after("alice") == 0
+
     def test_a_full_bucket_reports_what_allow_reports(self, monkeypatch):
         import seqsetup.rate_limit as rl
         monkeypatch.setattr(rl.time, "monotonic", lambda: 1000.0)
