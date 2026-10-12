@@ -28,10 +28,10 @@ SETUP_FORM = {
 }
 
 
-def _run(ctx):
+def _run(ctx, platform=InstrumentPlatform.NOVASEQ_X, flowcell="10B"):
     run = SequencingRun(
-        id=RUN, run_name="Old name", instrument_platform=InstrumentPlatform.NOVASEQ_X,
-        flowcell_type="10B", run_cycles=RunCycles(151, 151, 8, 8),
+        id=RUN, run_name="Old name", instrument_platform=platform,
+        flowcell_type=flowcell, run_cycles=RunCycles(151, 151, 8, 8),
     )
     run.add_sample(Sample(id="s1", sample_id="PAT1", lanes=[1]))
     ctx.run_repo.save(run)
@@ -215,11 +215,14 @@ class TestThePageSendsTheVersionWithEverySave:
 
     def test_each_control_sends_the_version(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        _run(ctx)
+        # MiSeq i100 Series is the one shipped instrument that lists more than
+        # one i5 workflow, so it is the one whose setup page shows every
+        # control -- the i5 workflow select included.
+        _run(ctx, platform=InstrumentPlatform.MISEQ_I100, flowcell="5M")
 
         page = logged_in_client.get(f"/runs/new/step/1?run_id={RUN}").text
 
-        for route in ("name", "cycles", "instrument", "flowcell", "reagent-kit"):
+        for route in ("name", "cycles", "instrument", "flowcell", "reagent-kit", "i5-workflow"):
             post = f'hx-post="/runs/{RUN}/{route}"'
             assert post in page, post
             start_tag = page.split(post, 1)[1].split(">", 1)[0]
