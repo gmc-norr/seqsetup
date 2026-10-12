@@ -259,8 +259,16 @@ def test_ldap_auth(
     limiter = get_login_limiter()
     ip = client_identity(request)
     actor_user = form.test_username.lower()[:128]
+    user_key = f"ldap-test-user:{actor_user}"
     ok_ip, retry_ip = limiter.allow(f"ldap-test-ip:{ip}")
-    ok_user, retry_user = limiter.allow(f"ldap-test-user:{actor_user}")
+    if ok_ip:
+        ok_user, retry_user = limiter.allow(user_key)
+    else:
+        # Refused by the per-IP cap already: do not let the refused request
+        # name a per-username bucket into existence (the same shape as
+        # /login/submit). retry_after reads what allow would have reported
+        # without counting anything, so the message below keeps its value.
+        ok_user, retry_user = False, limiter.retry_after(user_key)
     if not (ok_ip and ok_user):
         retry = max(retry_ip, retry_user)
         audit(

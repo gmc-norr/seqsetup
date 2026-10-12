@@ -34,13 +34,50 @@ class RateLimiter:
         self.max_requests = max(1, int(max_requests))
         self.window_seconds = max(1, int(window_seconds))
         self._buckets: dict[str, deque] = {}
+        self._swept_at = time.monotonic()
         self._lock = threading.Lock()
+
+    def _sweep(self, now: float, cutoff: float) -> None:
+        """Drop every bucket with no timestamp left inside the window.
+
+        Called under the lock and at most once per window, so the dict can
+        hold only the keys the traffic of a window created (and those the
+        window before it created that this sweep has not reached yet).
+        Nothing used to remove a key, so a caller naming a new identity on
+        every request grew the dict by one key per request for as long as
+        the process lived.
+        """
+        if now - self._swept_at < self.window_seconds:
+            return
+        self._swept_at = now
+        for key in [k for k, stamps in self._buckets.items()
+                    if not stamps or stamps[-1] < cutoff]:
+            del self._buckets[key]
+
+    def retry_after(self, identity: str) -> int:
+        """What ``allow`` would report as retry_after for ``identity``,
+        without counting the request or creating a bucket.
+
+        ``allow`` reports 0 for anything it lets through, an identity it has
+        never seen included, so an unknown identity is 0 here too. A caller
+        that has already refused a request can read the wait this identity
+        would have been given without letting that refused request name a
+        bucket into existence.
+        """
+        now = time.monotonic()
+        cutoff = now - self.window_seconds
+        with self._lock:
+            live = [t for t in self._buckets.get(identity, ()) if t >= cutoff]
+            if len(live) < self.max_requests:
+                return 0
+            return max(1, int(live[0] + self.window_seconds - now) + 1)
 
     def allow(self, identity: str) -> tuple[bool, int]:
         """Return (allowed, retry_after_seconds). retry_after is 0 on allow."""
         now = time.monotonic()
         cutoff = now - self.window_seconds
         with self._lock:
+            self._sweep(now, cutoff)
             timestamps = self._buckets.setdefault(identity, deque())
             # Drop expired entries from the head.
             while timestamps and timestamps[0] < cutoff:
@@ -56,6 +93,7 @@ class RateLimiter:
         """Clear all state (for tests)."""
         with self._lock:
             self._buckets.clear()
+            self._swept_at = time.monotonic()
 
 
 def _int_env(name: str, default: int) -> int:
