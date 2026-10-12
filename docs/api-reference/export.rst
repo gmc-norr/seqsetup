@@ -208,11 +208,20 @@ puts in the cell, taken from the same code that writes the sheet:
   same string otherwise.
 
 A run is in at most one of those two states, so at most one of the two pairs
-differs. Both ``samplesheet_`` values are ``null`` when the sheet's cell
-would be empty (a sample with no i5, a sample with no Override Cycles), and
-when SeqSetup can no longer say what the sheet would write -- a run whose
+differs. ``samplesheet_index2`` is ``null`` for a sample with no i5;
+``samplesheet_override_cycles`` is ``null`` for a sample with neither a typed
+Override Cycles nor an index to calculate one from. Both are ``null`` when
+SeqSetup can no longer say what the sheet would write -- a run whose
 instrument has no settings any more, for which no Sample Sheet can be
 written either.
+
+Neither key depends on which columns the run's ``BCLConvert`` profile
+writes. A profile without an ``OverrideCycles`` column gives a sheet with no
+such cell, and ``samplesheet_override_cycles`` is stated all the same: such
+a sheet is refused unless the sample's Override Cycles are the run's full
+reads (see :doc:`/admin-guide/profiles`), so the key still holds what BCL
+Convert reads for that sample. A sample with an i5 and a profile without an
+``Index2`` column is refused outright.
 
 A run marked Ready before these two keys existed keeps the export stored
 for it, which has neither key. The API serves that stored export and
