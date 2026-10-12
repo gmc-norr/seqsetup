@@ -29,6 +29,22 @@ def _direct_client_address(monkeypatch):
     monkeypatch.delenv("SEQSETUP_TRUST_FORWARDED_FOR", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _cheap_timing_sentinel(monkeypatch):
+    """The sentinel hash an unknown username is compared against, at bcrypt
+    rounds 4 instead of 12.
+
+    These tests are about the limiter's bookkeeping, and some of them post
+    thousands of times. The real comparison still runs; it just costs
+    milliseconds, so a change that stops the limiter refusing cannot make
+    this file take ten minutes to say so.
+    """
+    import bcrypt
+    from seqsetup.services import auth as auth_module
+    monkeypatch.setattr(auth_module, "_DUMMY_BCRYPT_HASH", bcrypt.hashpw(
+        b"seqsetup-timing-sentinel", bcrypt.gensalt(rounds=4)).decode("utf-8"))
+
+
 def _defaults(limiter):
     """Fail loudly if another test left a non-default limiter behind: the
     expected waits below are computed from 20 attempts per 60 seconds."""
