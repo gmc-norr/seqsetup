@@ -69,6 +69,21 @@ class TestCreateAdmin:
             "A username is 1-64 letters, digits, '.', '_', '@' or '-'. Nothing was changed."])
         assert not ctx.local_user_repo.exists("a" * 65)
 
+    @pytest.mark.parametrize("name", [".", "..", "..."])
+    def test_a_name_made_only_of_dots_is_refused(self, fresh_app, name):
+        """It could be created but never removed, demoted or reset through
+        the app (security review 2026-10). create-admin shares the Users
+        page's rules, so it shares this one."""
+        _app, ctx, db = fresh_app
+        assert _run(db, name, "Dots", "") == (1, [
+            "A username cannot be made only of dots. Nothing was changed."])
+        assert not ctx.local_user_repo.exists(name)
+
+    def test_a_name_that_merely_holds_a_dot_still_signs_in(self, client, fresh_app):
+        _app, _ctx, db = fresh_app
+        assert _run(db, "first.last", "First Last", "")[0] == 0
+        assert _login(client, "first.last", STRONG).status_code == 303
+
     def test_a_weak_password_is_refused(self, fresh_app):
         _app, ctx, db = fresh_app
         assert _run(db, "labadmin", "Lab Admin", "", secrets=("admin123", "admin123")) == (1, [

@@ -18,14 +18,19 @@ Admin-only via router-level require_admin_dep. Preserves:
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from pydantic import BaseModel, Field
 from pydantic.functional_validators import BeforeValidator
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
 from ..forms.validators import strip_and_truncate
-from ..models.local_user import USERNAME_PATTERN, LocalUser, WeakPasswordError
+from ..models.local_user import (
+    DOT_ONLY_USERNAME,
+    USERNAME_PATTERN,
+    LocalUser,
+    WeakPasswordError,
+)
 from ..models.user import UserRole
 from ..services import web_sessions
 from ..services.audit_log import audit
@@ -33,6 +38,7 @@ from ..templating import render
 from .dependencies import get_ctx, require_admin_dep
 from .utils import get_username
 from ..utils.clock import utcnow
+from ..utils.names import is_dot_only
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +143,10 @@ def create_user(
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /admin/users/create — create a new local user."""
+    # The form's alphabet admits "." and "..", which no URL path segment can
+    # carry back: a visible 400 here, LocalUser is the backstop.
+    if is_dot_only(form.username):
+        raise HTTPException(status_code=400, detail=DOT_ONLY_USERNAME)
     repo = ctx.local_user_repo
     if repo.exists(form.username):
         return _render_page(request, ctx, error=f"User '{form.username}' already exists.")

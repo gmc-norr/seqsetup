@@ -43,7 +43,12 @@ Before a kit is saved, SeqSetup checks, in order:
    A file that looks binary is rejected outright: index kits must be plain
    text.
 3. **Parsing** -- a file that fails to parse in the selected format is
-   rejected with a generic "check the format and try again" message.
+   rejected with a generic "check the format and try again" message. A kit
+   name or version made only of dots (``.``, ``..``) is refused at this step
+   too, whether it came from the form or from the file: the name and the
+   version are the kit's place in the URL of its own detail, download and
+   delete links, so such a kit would be listed and usable but could never be
+   deleted.
 4. **Field validation** -- the kit name is required; the version must be a
    valid semantic version; adapter sequences, and every i7/i5 sequence, must
    be DNA (``A``, ``C``, ``G``, ``T``, ``N`` only); every index pair needs a
