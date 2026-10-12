@@ -70,3 +70,73 @@ def test_rows_stay_put_when_check_refreshes(logged_in_page, base_url, run_id):
 
     assert page.evaluate(HEIGHT, "validate-panel") != check_height
     assert abs(page.evaluate(TOP, row) - top) <= 1
+
+
+def _spread(count, skip=0):
+    """``count`` 8-base sequences, each at least 4 bases from the others and
+    none starting with GG, so they raise no index error."""
+    picked = []
+    for n in range(4 ** 8):
+        seq = "".join("ACGT"[(n >> (2 * k)) & 3] for k in range(8))
+        if not seq.startswith("GG") and all(sum(a != b for a, b in zip(seq, p)) >= 4 for p in picked):
+            picked.append(seq)
+            if len(picked) == skip + count:
+                break
+    return picked[skip:]
+
+
+@pytest.fixture
+def long_run_id(app_ctx):
+    """A draft with 14 indexed samples, the last in lane 9 (an error on a
+    10B flow cell, which has 8 lanes); deleted afterwards."""
+    t = datetime(2026, 1, 10, 9, 0, 0)
+    run = SequencingRun(
+        id="check-shrink-run", run_name="Check shrink run",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8), status=RunStatus.DRAFT,
+        created_at=t, updated_at=t,
+    )
+    i7s, i5s = _spread(14), _spread(14, skip=14)
+    for n in range(1, 15):
+        sample = Sample(id=f"{run.id}-s{n}", sample_id=f"CS-{n:02d}", lanes=[9 if n == 14 else 1])
+        sample.assign_index(IndexPair(
+            id=f"cs-{n}", name=f"CS{n}",
+            index1=Index(name=f"CS{n}", sequence=i7s[n - 1], index_type=IndexType.I7),
+            index2=Index(name=f"CS{n}", sequence=i5s[n - 1], index_type=IndexType.I5),
+        ))
+        run.add_sample(sample)
+    app_ctx.run_repo.save(run)
+    yield run.id
+    app_ctx.run_repo.collection.delete_one({"_id": run.id})
+
+
+@pytest.mark.browser
+def test_rows_stay_put_when_check_shrinks_at_the_bottom(logged_in_page, base_url, app_ctx, long_run_id):
+    """Scrolled to the very end, a Check that got shorter made the page
+    shorter, and the browser pulled every row down. Check keeps its
+    tallest height while the page is open."""
+    page = logged_in_page
+    page.set_viewport_size({"width": 1280, "height": 1000})
+    page.goto(f"{base_url}/runs/{long_run_id}")
+    page.wait_for_load_state("networkidle")
+    page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+    assert page.evaluate("() => scrollY + innerHeight >= document.documentElement.scrollHeight - 1")
+    row = f"sample-row-{long_run_id}-s14"
+    top = page.evaluate(TOP, row)
+    assert 0 < top < 1000
+    expect(page.locator("#validate-panel")).to_contain_text("lane 9")
+
+    # Fix the lane-9 error behind the page's back, then let Check refresh
+    # exactly as it does after any change made on the page.
+    run = app_ctx.run_repo.get_by_id(long_run_id)
+    run.get_sample(f"{long_run_id}-s14").lanes = [1]
+    run.touch(updated_by="tester")
+    app_ctx.run_repo.save(run)
+    with page.expect_response(lambda r: r.url.endswith(f"/runs/{long_run_id}/validate-panel")):
+        page.evaluate("() => document.body.dispatchEvent(new CustomEvent('htmx:afterRequest',"
+                      " {detail: {successful: true, requestConfig: {verb: 'post'}}}))")
+    page.wait_for_function(
+        "() => !document.querySelector('.htmx-request, .htmx-swapping, .htmx-settling, .htmx-added')")
+
+    expect(page.locator("#validate-panel")).not_to_contain_text("lane 9")
+    assert abs(page.evaluate(TOP, row) - top) <= 1

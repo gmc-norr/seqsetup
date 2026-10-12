@@ -449,6 +449,19 @@ function markSampleErrors() {
 document.addEventListener('DOMContentLoaded', markSampleErrors);
 document.addEventListener('htmx:afterSettle', markSampleErrors);
 
+// Check refreshes itself after every change, and its error list grows or
+// shrinks. Scrolled to the end of the page, a shorter Check makes the page
+// shorter and the browser pulls every row down under the mouse, so a quick
+// drop could land on the wrong sample. Check keeps its tallest height
+// until the page is loaded again.
+document.addEventListener('htmx:beforeSwap', event => {
+    const target = event.detail.target;
+    const panel = target && target.closest && target.closest('#validate-panel');
+    if (panel) {
+        panel.style.minHeight = `${panel.offsetHeight}px`;
+    }
+});
+
 function toggleSelectAllSamples(headerCheckbox) {
     const checkboxes = document.querySelectorAll('.sample-checkbox');
     checkboxes.forEach(cb => {
