@@ -1358,11 +1358,14 @@ body {
 .paste-section[open] .paste-section-summary { border-bottom: 1px solid var(--border); }
 .paste-section-content { padding: var(--space-4); }
 
-/* The run page's change history folds away like the paste section. */
-.history-section { border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.history-section-summary { padding: var(--space-3) var(--space-4); cursor: pointer; background: var(--surface-sunken); font-weight: var(--fw-medium); font-size: var(--fs-sm); }
-.history-section[open] .history-section-summary { border-bottom: 1px solid var(--border); }
-.history-section-content { padding: var(--space-4); }
+/* The run page's "More" fold (Save as template, Change history) folds away
+   like the paste section. */
+.more-section { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card-bg); margin-top: var(--space-4); }
+.more-section-summary { padding: var(--space-3) var(--space-4); cursor: pointer; background: var(--surface-sunken); font-weight: var(--fw-medium); font-size: var(--fs-sm); }
+.more-section[open] .more-section-summary { border-bottom: 1px solid var(--border); }
+.more-section-content { padding: var(--space-4); }
+.more-section-heading { font-size: var(--fs-sm); font-weight: var(--fw-semibold); margin: 0 0 var(--space-2); }
+.more-section-content form + .more-section-heading { margin-top: var(--space-4); }
 
 .paste-form-content {
     padding: 1rem;

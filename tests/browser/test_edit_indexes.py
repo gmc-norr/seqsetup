@@ -164,7 +164,7 @@ def test_change_history_loads_when_opened(logged_in_page, base_url, run_id):
     assert history_requests == []
 
     with page.expect_response(lambda r: r.url.endswith(f"/runs/{run_id}/history")) as resp:
-        page.get_by_text("Show change history").click()
+        page.get_by_text("More: Save as template · Change history").click()
     assert resp.value.status == 200
     expect(panel).to_be_visible()
     expect(panel).to_contain_text("Created")

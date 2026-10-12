@@ -61,7 +61,8 @@ Downloading exports
 ----------------------
 
 Once a run is **Ready** or **Archived**, its Export panel offers a
-download for each of:
+download for each of (a Draft has nothing to download, so its page shows
+no Export panel):
 
 - **Download Sample Sheet v2** -- the CSV consumed by BCLConvert / DRAGEN.
 - **Download Sample Sheet v1** -- the legacy IEM format, only for

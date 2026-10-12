@@ -1,10 +1,10 @@
 Change History
 ==============
 
-Every run's page ends with a **Change history** panel -- a read-only log of
-who changed what on that run, and when. It is available on a run in any
-status. It starts folded away: select **Show change history** to open it,
-and the history loads the first time you do.
+Every run's page ends with a **More** fold that holds the **Change
+history** -- a read-only log of who changed what on that run, and when. It
+is available on a run in any status. Select **More: Save as template ·
+Change history** to open it; the history loads the first time you do.
 
 .. figure:: /_static/screenshots/history/change-history.png
    :alt: The Change history panel at the bottom of a run's page, listing timestamped entries: who made each change and what field or sample it affected.

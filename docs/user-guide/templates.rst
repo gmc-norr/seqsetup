@@ -9,10 +9,11 @@ listed and managed on their own page, **Run Templates** in the sidebar.
 Saving a run as a template
 ---------------------------
 
-Every run's page, at the bottom, has a **Save as template** box:
+At the bottom of every run's page, select **More: Save as template ·
+Change history** to open the **Save as template** box:
 
 .. figure:: /_static/screenshots/templates/save-as-template.png
-   :alt: The Save as template box at the bottom of a run's page, with a name typed in and the Save as template button outlined.
+   :alt: The Save as template box in the More fold at the bottom of a run's page, with a name typed in and the Save as template button outlined.
 
    The **Save as template** button, outlined.
 

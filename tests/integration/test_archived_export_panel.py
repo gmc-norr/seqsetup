@@ -101,15 +101,14 @@ class TestArchivedExportPanelEnabled:
         assert 'aria-disabled="true"' not in panel
         assert "Run must be marked as ready" not in panel
 
-    def test_draft_panel_still_shows_waiting_message(self, logged_in_client, fresh_app):
-        """A Draft run still shows the waiting message and no export links."""
+    def test_draft_shows_no_export_links(self, logged_in_client, fresh_app):
+        """A Draft run shows no Export box and no export links."""
         _app, ctx, _db = fresh_app
         run_id = _make_ready_eligible_run(ctx, "draft-export-run")
 
         response = logged_in_client.get(f"/runs/{run_id}")
         assert response.status_code == 200
         html = response.text
-        panel = html.split('id="export-panel"', 1)[1].split("</fieldset>", 1)[0]
 
-        assert "Downloads open when the run is Ready." in panel
-        assert f'href="/runs/{run_id}/export/samplesheet-v2"' not in panel
+        assert '<div id="export-panel" hidden></div>' in html
+        assert f'href="/runs/{run_id}/export/samplesheet-v2"' not in html

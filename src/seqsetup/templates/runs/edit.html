@@ -3,8 +3,10 @@
 {% set active_route = "/runs/" ~ run.id %}
 
 {% block content %}
-{# Parts follow the work: setup, samples and indexes, check, (ready: the
-   status bar in the header), export. The step bar links to each. #}
+{# Parts follow the work: setup, samples and indexes (Check just above the
+   samples, so its errors show where they are fixed), (ready: the status
+   bar in the header), export once Ready, then a closed "More" fold. The
+   step bar links to each. #}
 <div class="edit-run-layout" id="edit-run-page">
     <div class="run-header">
         <div class="run-header-top">
@@ -30,6 +32,12 @@
        so it survives the section and its rows being swapped. #}
     <fieldset id="samples" class="config-panel samples-display" x-data="{ editingIndexes: false }">
         <legend>Samples and indexes</legend>
+        {# Check refreshes itself (see its header), so it stays outside
+           #sample-section, which sample changes redraw. #}
+        {% with run=run, validation_result=validation_result, sample_errors=sample_errors, error_lines=error_lines, waiting=waiting,
+                fix_test_ids=fix_test_ids, fix_versions=fix_versions, test_profiles=test_profiles %}
+        {% include "runs/_validate_panel.html" %}
+        {% endwith %}
         {% with run=run, index_kits=index_kits, test_profiles=test_profiles,
                 num_lanes=num_lanes, is_editable=is_editable,
                 sample_api_enabled=sample_api_enabled, oob=False %}
@@ -37,40 +45,32 @@
         {% endwith %}
     </fieldset>
 
-    {% with run=run, validation_result=validation_result, sample_errors=sample_errors, error_lines=error_lines, waiting=waiting,
-            fix_test_ids=fix_test_ids, fix_versions=fix_versions, test_profiles=test_profiles %}
-    {% include "runs/_validate_panel.html" %}
-    {% endwith %}
-
     {% with run=run, has_v1=has_v1, oob=False %}
     {% include "runs/_export_panel.html" %}
     {% endwith %}
 
-    <fieldset class="config-panel">
-        <legend>Save as template</legend>
-        <form method="post" action="/runs/{{ run.id }}/save-as-template" class="flex gap-2 items-center">
-            <label for="template-name" class="sr-only">Template name</label>
-            <input type="text" id="template-name" name="name" placeholder="Template name"
-                   class="template-name-input border rounded px-2 py-1 text-sm" required maxlength="256">
-            <input type="hidden" name="scaffold_sample_ids" value="[]">
-            <button type="submit" class="btn btn-secondary btn-small">Save as template</button>
-        </form>
-    </fieldset>
-
-    {# Folded away like "Add Samples"; the history loads the first time it
-       is opened. #}
-    <fieldset class="config-panel">
-        <legend>Change history</legend>
-        <details class="history-section"
-                 hx-get="/runs/{{ run.id }}/history"
-                 hx-trigger="toggle once"
-                 hx-target="find .run-history-panel"
-                 hx-swap="innerHTML">
-            <summary class="history-section-summary">Show change history</summary>
-            <div class="run-history-panel history-section-content" aria-live="polite">
+    {# Rarely needed, so folded away like "Add Samples"; the history loads
+       the first time the fold opens. #}
+    <details class="more-section"
+             hx-get="/runs/{{ run.id }}/history"
+             hx-trigger="toggle once"
+             hx-target="find .run-history-panel"
+             hx-swap="innerHTML">
+        <summary class="more-section-summary">More: Save as template · Change history</summary>
+        <div class="more-section-content">
+            <h3 class="more-section-heading">Save as template</h3>
+            <form method="post" action="/runs/{{ run.id }}/save-as-template" class="flex gap-2 items-center">
+                <label for="template-name" class="sr-only">Template name</label>
+                <input type="text" id="template-name" name="name" placeholder="Template name"
+                       class="template-name-input border rounded px-2 py-1 text-sm" required maxlength="256">
+                <input type="hidden" name="scaffold_sample_ids" value="[]">
+                <button type="submit" class="btn btn-secondary btn-small">Save as template</button>
+            </form>
+            <h3 class="more-section-heading">Change history</h3>
+            <div class="run-history-panel" aria-live="polite">
                 <p class="text-slate-500 text-sm">Loading history…</p>
             </div>
-        </details>
-    </fieldset>
+        </div>
+    </details>
 </div>
 {% endblock %}
