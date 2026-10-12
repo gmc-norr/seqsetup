@@ -209,3 +209,27 @@ class TestTheDeploymentSamplesDoNotSetTheRemovedVariable:
     @pytest.mark.parametrize("name", [".env.example"])
     def test_the_new_variable_is_offered(self, name):
         assert f"{ALLOWED}=" in (self.ROOT / name).read_text()
+
+
+class TestTheAddressIsCheckedToo:
+    """Two layers. The start-up check refuses a list that reaches into a
+    never-allowed range, so the environment cannot produce one; the
+    resolved address is checked as well, so no other way of supplying a
+    network could carry a never-allowed address either."""
+
+    def test_a_never_allowed_address_inside_a_listed_network_is_still_refused(
+            self, monkeypatch):
+        monkeypatch.setattr(mod, "parse_allowed_nets",
+                            lambda value: (ipaddress.ip_network("169.254.0.0/16"),))
+        _stub_resolve(monkeypatch, ["169.254.169.254"])
+
+        with pytest.raises(SampleApiError, match="link-local, multicast"):
+            _validate_url("https://metadata.local/")
+
+    def test_a_listed_network_that_is_allowed_still_works_that_way(self, monkeypatch):
+        """Control: the same bypass with an allowed network lets it through."""
+        monkeypatch.setattr(mod, "parse_allowed_nets",
+                            lambda value: (ipaddress.ip_network("10.0.0.0/8"),))
+        _stub_resolve(monkeypatch, ["10.1.2.3"])
+
+        assert _validate_url("https://lims.corp.example/") != []
