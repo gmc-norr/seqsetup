@@ -309,8 +309,15 @@ async def update_flowcell(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/flowcell — change flowcell; return new reagent kit options."""
+    """POST /runs/{run_id}/flowcell — change flowcell; return new reagent kit options.
+
+    A submission with no ``flowcell_type`` is refused: writing the default ""
+    over the run's flowcell would be a change nobody asked for (CLAUDE.md,
+    partial updates). The select always sends its value.
+    """
     form = await request.form()
+    if "flowcell_type" not in form:
+        return Response("No flowcell was sent. Nothing was saved.", status_code=400)
     flowcell_type = form.get("flowcell_type", "")
 
     reagent_kits = get_reagent_kits_for_flowcell(run.instrument_platform, flowcell_type)
@@ -333,8 +340,16 @@ async def update_reagent_kit(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/reagent-kit — change reagent kit; reset cycles to defaults."""
+    """POST /runs/{run_id}/reagent-kit — change reagent kit; reset cycles to defaults.
+
+    A submission with no ``reagent_cycles`` is refused: the default would be a
+    1-cycle kit, which resets all four cycle counts and recomputes every
+    sample's OverrideCycles — a typed UMI read would be lost (CLAUDE.md,
+    partial updates). The select always sends its value.
+    """
     form = await request.form()
+    if "reagent_cycles" not in form:
+        return Response("No reagent kit was sent. Nothing was saved.", status_code=400)
     reagent_cycles = max(1, min(_int_field(form, "reagent_cycles", 1), 2000))
 
     defaults = get_default_cycles(reagent_cycles)

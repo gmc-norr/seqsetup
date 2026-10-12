@@ -294,6 +294,28 @@ Register the router in ``src/seqsetup/app.py``:
 
    app.include_router(my_feature.router)
 
+A handler that serves one field of a page -- a select that posts on change,
+a hidden input a script fills in -- writes only the fields that were
+submitted, and refuses a submission that leaves its own field out with
+``400`` and a plain message, saving nothing:
+
+.. code-block:: python
+
+   form = await request.form()
+   if "reagent_cycles" not in form:
+       return Response("No reagent kit was sent. Nothing was saved.", status_code=400)
+
+Reading an absent field as its default writes a value nobody chose. The
+reagent-kit route took a missing ``reagent_cycles`` to be a 1-cycle kit,
+which reset all four cycle counts and recomputed every sample's
+OverrideCycles; set-lanes read a missing ``lanes`` as "every lane"; the
+flowcell and set-test-id routes stored an empty value over a real one. The
+pages themselves always send these fields (a select sends its value, and
+the bulk panel's Clear buttons send an empty one), so an absent field is a
+request no page makes. A field that IS sent, empty or not, keeps its
+meaning: an empty ``lanes`` list still means every lane, and an empty
+``test_id`` still clears the test.
+
 Adding a New Template
 ~~~~~~~~~~~~~~~~~~~~~~
 
