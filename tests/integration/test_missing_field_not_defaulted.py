@@ -160,6 +160,22 @@ class TestSetLanesNeedsItsField:
         assert response.status_code == 200
         assert _stored(ctx).get_sample("s1").lanes == [2]
 
+    def test_a_sent_empty_value_is_still_refused_as_malformed_json(
+            self, logged_in_client, fresh_app):
+        """A value that was sent is never treated as absent: an empty lanes
+        field is refused for what it is, the unreadable JSON it was refused
+        as before this check existed."""
+        _app, ctx, _db = fresh_app
+        _run(ctx, lanes=(1,))
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-lanes",
+            data={"sample_ids": json.dumps(["s1"]), "lanes": ""}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert response.text == "Invalid lanes JSON"
+        assert _stored(ctx).get_sample("s1").lanes == [1]
+
     def test_a_sent_empty_lane_list_is_still_stored_as_all_lanes(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         _run(ctx, lanes=(1,))
