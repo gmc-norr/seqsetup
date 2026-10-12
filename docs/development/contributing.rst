@@ -308,13 +308,16 @@ submitted, and refuses a submission that leaves its own field out with
 Reading an absent field as its default writes a value nobody chose. The
 reagent-kit route took a missing ``reagent_cycles`` to be a 1-cycle kit,
 which reset all four cycle counts and recomputed every sample's
-OverrideCycles; set-lanes read a missing ``lanes`` as "every lane"; the
-flowcell and set-test-id routes stored an empty value over a real one. The
-pages themselves always send these fields (a select sends its value, and
-the bulk panel's Clear buttons send an empty one), so an absent field is a
+OverrideCycles; set-override-cycles read a missing ``override_cycles`` as
+the auto path and rewrote every selected sample's OverrideCycles the same
+way; set-lanes read a missing ``lanes`` as "every lane"; the flowcell and
+set-test-id routes stored an empty value over a real one. The pages
+themselves always send these fields (a select sends its value, and the bulk
+panel's Clear and Auto buttons send an empty one), so an absent field is a
 request no page makes. A field that IS sent, empty or not, keeps its
-meaning: an empty ``lanes`` list still means every lane, and an empty
-``test_id`` still clears the test.
+meaning: an empty ``lanes`` list still means every lane, an empty
+``test_id`` still clears the test, and an empty ``override_cycles`` still
+recalculates.
 
 Adding a New Template
 ~~~~~~~~~~~~~~~~~~~~~~

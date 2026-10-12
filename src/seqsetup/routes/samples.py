@@ -1358,10 +1358,20 @@ async def set_override_cycles_bulk(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/samples/set-override-cycles — set override cycles for selected samples."""
+    """POST /runs/{run_id}/samples/set-override-cycles — set override cycles for selected samples.
+
+    A submission with no ``override_cycles`` is refused: the default "" is the
+    auto path, which rewrites every selected sample's OverrideCycles from the
+    run's cycles — a typed UMI read U8Y143;I10;I10;Y151 would come back
+    Y151;I10;I10;Y151 and the UMI bases would be read as Read 1 (CLAUDE.md,
+    partial updates). The panel's hidden input always sends a value, "" among
+    them when Auto is used.
+    """
     run_id = run.id
 
     form = await request.form()
+    if "override_cycles" not in form:
+        return Response("No override cycles were sent. Nothing was saved.", status_code=400)
     sample_ids_json = form.get("sample_ids", "[]")
     override_cycles_str = form.get("override_cycles", "")
 
