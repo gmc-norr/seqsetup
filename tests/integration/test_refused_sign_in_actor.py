@@ -13,7 +13,9 @@ from seqsetup.services.audit_log import UNKNOWN_ACTOR
 
 
 ORIGIN = {"Origin": "http://testserver"}
-TYPED_PASSWORD = "Hunter2-MyRealPassword!"
+# What this stands for: a password typed into the name box by mistake. Spelled
+# so it cannot read as a credential -- this repository is public.
+TYPED_PASSWORD = "a-password-typed-into-the-name-box"
 
 
 def _failures(ctx):

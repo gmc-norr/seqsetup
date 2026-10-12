@@ -174,8 +174,8 @@ class TestWhoTheRowNames:
         _app, ctx, _db = fresh_app
         _spend_the_address(get_login_limiter())
 
-        _post(client, "Hunter2-MyRealPassword!")
+        _post(client, "a-password-typed-into-the-name-box")
 
         (row,) = _rows(ctx)
         assert row.actor.startswith(UNKNOWN_ACTOR)
-        assert "Hunter2" not in row.actor
+        assert "password" not in row.actor
