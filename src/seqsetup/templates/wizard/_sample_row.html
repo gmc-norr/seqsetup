@@ -8,7 +8,9 @@
      show_drop_zones:    bool   — full row with drop zones; False = simple row
      show_i5_column:     bool   — default True
      num_lanes:          int    — informational (not rendered here; bulk panel uses it)
-     show_bulk_actions:  bool   — toggles lanes/override/mismatches cells (drop-zones branch)
+     show_bulk_actions:  bool   — toggles lanes/override/mismatches cells (drop-zones branch);
+                                  True (the run page) shows the clear-index buttons only
+                                  while editingIndexes (runs/edit.html) is on
      context:            str    — passed through to mutation endpoints ("" or "add_step2")
      editable:           bool   — toggles input vs read-only displays; toggles delete button
      show_checkboxes:    bool|None — override; None derives from show_bulk_actions and editable
@@ -61,9 +63,19 @@
                 {% if sample.index1_name %}<span class="index-name-display">{{ sample.index1_name }}</span>{% endif %}
                 {% if sample.index1_well_position %}<span class="index-well-display">{{ sample.index1_well_position }}</span>{% endif %}
                 <span class="assigned-index i7">{{ sample.index1_sequence[:8] }}{{ '...' if sample.index1_sequence | length > 8 else '' }}</span>
-                {%- if not show_bulk_actions %}
+                {#- A pair's i7 and i5 are one assignment: one button clears
+                    both (the route refuses to clear half of a pair). #}
+                {%- if (not show_bulk_actions or editable) and sample.index_pair %}
+                <button type="button" class="btn-tiny btn-clear"
+                        title="Clear index pair"
+                        {%- if show_bulk_actions %} x-show="editingIndexes" x-cloak{% endif %}
+                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/clear-index{{ ctx_param }}"
+                        hx-target="#sample-row-{{ sample.id }}"
+                        hx-swap="outerHTML">x</button>
+                {%- elif not show_bulk_actions or editable %}
                 <button type="button" class="btn-tiny btn-clear"
                         title="Clear i7 index"
+                        {%- if show_bulk_actions %} x-show="editingIndexes" x-cloak{% endif %}
                         hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/clear-index?index_type=i7{% if context %}&context={{ context }}{% endif %}"
                         hx-target="#sample-row-{{ sample.id }}"
                         hx-swap="outerHTML">x</button>
@@ -91,9 +103,10 @@
                     {% if sample.index2_name %}<span class="index-name-display">{{ sample.index2_name }}</span>{% endif %}
                     {% if sample.index2_well_position %}<span class="index-well-display">{{ sample.index2_well_position }}</span>{% endif %}
                     <span class="assigned-index i5">{{ sample.index2_sequence[:8] }}{{ '...' if sample.index2_sequence | length > 8 else '' }}</span>
-                    {%- if not show_bulk_actions %}
+                    {%- if (not show_bulk_actions or editable) and not sample.index_pair %}
                     <button type="button" class="btn-tiny btn-clear"
                             title="Clear i5 index"
+                            {%- if show_bulk_actions %} x-show="editingIndexes" x-cloak{% endif %}
                             hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/clear-index?index_type=i5{% if context %}&context={{ context }}{% endif %}"
                             hx-target="#sample-row-{{ sample.id }}"
                             hx-swap="outerHTML">x</button>

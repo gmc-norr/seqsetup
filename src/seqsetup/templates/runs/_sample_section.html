@@ -6,6 +6,11 @@
      - shows the index-kit side panel (drag sources) when there's at
        least one un-indexed sample, with a "Fill empty samples in
        order…" button that previews into #index-fill-area
+     - with samples, an "Edit indexes" button opens that panel even
+       when every sample has an index, and shows each index's clear
+       button (wizard/_sample_row.html). The open/closed state is
+       editingIndexes on #samples in runs/edit.html, outside this
+       section, so a swap of the section or a row keeps it.
      - shows the sample table with drop zones + bulk-action panel
 
    When the run is locked (READY/ARCHIVED), shows the locked-message
@@ -45,10 +50,16 @@
 
         <div id="add-samples-result"></div>
 
-        {% if has_unindexed %}
+        {% if run.samples %}
+        <div class="flex gap-2 mb-3">
+            <button type="button" class="btn btn-secondary btn-small"
+                    x-show="!editingIndexes" @click="editingIndexes = true">Edit indexes</button>
+            <button type="button" class="btn btn-secondary btn-small"
+                    x-show="editingIndexes" x-cloak @click="editingIndexes = false">Done editing indexes</button>
+        </div>
         <div id="index-fill-area"></div>
-        <div class="run-page-with-index-panel">
-            <aside class="wizard-index-panel">
+        <div {% if has_unindexed %}class="run-page-with-index-panel"{% else %}:class="{ 'run-page-with-index-panel': editingIndexes }"{% endif %}>
+            <aside class="wizard-index-panel"{% if not has_unindexed %} x-show="editingIndexes" x-cloak{% endif %}>
                 <h3>Available Indexes</h3>
                 {% set chosen_kits = index_kits | selectattr('kit_id', 'equalto', chosen_kit_id) | list if chosen_kit_id else [] %}
                 {% set default_kit = chosen_kits[0] if chosen_kits else (index_kits[0] if index_kits else None) %}
@@ -71,7 +82,7 @@
                     {% endwith %}
                 </div>
             </aside>
-            <div class="run-page-sample-panel">
+            <div {% if has_unindexed %}class="run-page-sample-panel"{% else %}:class="{ 'run-page-sample-panel': editingIndexes }"{% endif %}>
                 {% with run=run, show_drop_zones=True, index_kits=index_kits,
                         num_lanes=num_lanes, show_bulk_actions=True, context='',
                         test_profiles=test_profiles, editable=is_editable %}

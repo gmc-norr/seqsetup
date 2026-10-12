@@ -924,12 +924,13 @@ def test_history_change_history(demo_page, base_url, demo):
     page.wait_for_selector("#run-status-bar .status-archived")
 
     panel = page.locator(".run-history-panel")
-    panel.scroll_into_view_if_needed()
-    # hx-trigger="revealed" (templates/runs/edit.html:56-61) swaps this
-    # element's entire innerHTML once the history loads. Wait for a real
-    # entry row (".border-t", templates/runs/_history_list.html:6), which
-    # exists only after that swap -- the pre-load "Loading history..." text
-    # would otherwise satisfy a weaker wait and photograph the wrong state.
+    # The history is folded away; opening the fold (hx-trigger="toggle
+    # once", templates/runs/edit.html) swaps this element's entire
+    # innerHTML once the history loads. Wait for a real entry row
+    # (".border-t", templates/runs/_history_list.html:6), which exists only
+    # after that swap -- the pre-load "Loading history..." text would
+    # otherwise satisfy a weaker wait and photograph the wrong state.
+    page.get_by_text("Show change history").click()
     page.wait_for_selector(".run-history-panel .border-t")
     fieldset = page.locator("fieldset:has(.run-history-panel)")
     # The times of day differ per run; fixed example times keep the picture
