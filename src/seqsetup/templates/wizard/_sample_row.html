@@ -64,10 +64,12 @@
                 {% if sample.index1_well_position %}<span class="index-well-display">{{ sample.index1_well_position }}</span>{% endif %}
                 <span class="assigned-index i7">{{ sample.index1_sequence[:8] }}{{ '...' if sample.index1_sequence | length > 8 else '' }}</span>
                 {#- A pair's i7 and i5 are one assignment: one button clears
-                    both (the route refuses to clear half of a pair). #}
+                    both (the route refuses to clear half of a pair, which
+                    would leave the pair but wipe its kit settings). #}
                 {%- if (not show_bulk_actions or editable) and sample.index_pair %}
                 <button type="button" class="btn-tiny btn-clear"
                         title="Clear index pair"
+                        aria-label="Clear index pair of {{ sample.sample_id | e }}"
                         {%- if show_bulk_actions %} x-show="editingIndexes" x-cloak{% endif %}
                         hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/clear-index{{ ctx_param }}"
                         hx-target="#sample-row-{{ sample.id }}"
@@ -75,6 +77,7 @@
                 {%- elif not show_bulk_actions or editable %}
                 <button type="button" class="btn-tiny btn-clear"
                         title="Clear i7 index"
+                        aria-label="Clear i7 index of {{ sample.sample_id | e }}"
                         {%- if show_bulk_actions %} x-show="editingIndexes" x-cloak{% endif %}
                         hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/clear-index?index_type=i7{% if context %}&context={{ context }}{% endif %}"
                         hx-target="#sample-row-{{ sample.id }}"
@@ -106,6 +109,7 @@
                     {%- if (not show_bulk_actions or editable) and not sample.index_pair %}
                     <button type="button" class="btn-tiny btn-clear"
                             title="Clear i5 index"
+                            aria-label="Clear i5 index of {{ sample.sample_id | e }}"
                             {%- if show_bulk_actions %} x-show="editingIndexes" x-cloak{% endif %}
                             hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/clear-index?index_type=i5{% if context %}&context={{ context }}{% endif %}"
                             hx-target="#sample-row-{{ sample.id }}"

@@ -79,9 +79,10 @@ small **x** on each assigned index:
 
 A cleared cell turns back into a drop target: drop the new index on it.
 Select **Done editing indexes** to hide the **x** buttons again. It
-closes the panel too, unless the panel was already open when the page
-loaded because a sample had no index. Leaving or reloading the page also
-ends editing. A Ready or Archived run has no **Edit indexes** button.
+closes the panel too, unless the panel was open for a sample without an
+index. Leaving or reloading the page also ends editing; after a reload
+the panel shows again whenever a sample has no index. A Ready or
+Archived run has no **Edit indexes** button.
 
 Clearing an index does not always reset the sample's Override Cycles;
 dropping the new index recalculates them (see :doc:`override-cycles`).

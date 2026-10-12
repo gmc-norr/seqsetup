@@ -157,6 +157,30 @@ class TestClearButtons:
         assert _tag(page, 'title="Clear i7 index"') == []
         assert _tag(page, 'title="Clear i5 index"') == []
 
+    def test_a_pair_without_an_i5_has_the_pair_button(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        sample = Sample(sample_id="S1", lanes=[1])
+        sample.assign_index(IndexPair(
+            id="SI01", name="SI01",
+            index1=Index(name="SI01", sequence="GAACTGAG", index_type=IndexType.I7)))
+        run = _make_run(ctx, [sample])
+        page = _page(logged_in_client, run)
+        assert len(_tag(page, 'title="Clear index pair"')) == 1
+        assert _tag(page, 'title="Clear i7 index"') == []
+        assert _tag(page, 'title="Clear i5 index"') == []
+
+    def test_clear_buttons_name_their_sample(self, logged_in_client, fresh_app):
+        """Screen readers read the button's name, not its title; "x" alone
+        does not say which sample or index it clears."""
+        _app, ctx, _db = fresh_app
+        page = _page(logged_in_client, _make_run(ctx, [_paired("PAIR-1"), _indexed("SOLO-1")]))
+        [pair] = _tag(page, 'title="Clear index pair"')
+        [i7] = _tag(page, 'title="Clear i7 index"')
+        [i5] = _tag(page, 'title="Clear i5 index"')
+        assert 'aria-label="Clear index pair of PAIR-1"' in pair
+        assert 'aria-label="Clear i7 index of SOLO-1"' in i7
+        assert 'aria-label="Clear i5 index of SOLO-1"' in i5
+
     def test_clearing_the_pair_empties_both(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run = _make_run(ctx, [_paired("S1")])
