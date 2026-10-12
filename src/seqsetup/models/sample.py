@@ -162,7 +162,7 @@ class Sample:
           - ``barcode_mismatches_index1`` / ``barcode_mismatches_index2``
             whole numbers, clamped to [0, 2] — the values BCL Convert accepts.
           - ``index1_cycles`` / ``index2_cycles`` clamped to >= 1.
-          - ``lanes`` filtered to positive non-bool ints.
+          - ``lanes`` filtered to positive non-bool ints, each kept once.
           - ``override_cycles`` uppercased + rejected if outside the
             override-notation alphabet.
           - ``description`` capped at 4096 chars; ``metadata`` rejected if
@@ -189,10 +189,12 @@ class Sample:
             ) and isinstance(value, str):
                 value = self._normalize_override_pattern(name, value)
             elif name == "lanes" and value:
-                value = [
+                # A lane twice is one lane: the sheet would otherwise carry
+                # the sample's row twice in it. First-seen order is kept.
+                value = list(dict.fromkeys(
                     lane for lane in value
                     if isinstance(lane, int) and not isinstance(lane, bool) and lane > 0
-                ]
+                ))
             elif name == "description" and isinstance(value, str):
                 value = value[:4096]
             elif name == "metadata":

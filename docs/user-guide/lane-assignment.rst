@@ -16,7 +16,9 @@ The Lanes column
 
 The sample table's **Lanes** column shows each sample's current assignment:
 a sorted, comma-separated list of lane numbers (for example ``2,3``), or
-``All`` when no specific lane is set.
+``All`` when no specific lane is set. A sample holds each lane once: a lane
+given twice is stored once, because a sample in one lane twice would get two
+identical rows in that lane in the Sample Sheet.
 
 This column is display only -- there is no field in the row itself to type
 a lane number into. Changing a sample's lanes, even one sample, is a
