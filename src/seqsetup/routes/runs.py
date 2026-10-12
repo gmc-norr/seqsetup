@@ -156,14 +156,6 @@ def _int_field(form, key: str, default: int = 0) -> int:
         return default
 
 
-def _bool_field(form, key: str) -> bool:
-    """Treat presence of an HTML checkbox value as True; HTML omits unchecked boxes."""
-    raw = form.get(key)
-    if raw is None:
-        return False
-    return str(raw).lower() in ("1", "true", "on", "yes")
-
-
 # The run's version, as the setup page carries it: its updated_at. The page
 # sends it with every save it makes; POST /runs/{id}/setup writes the whole
 # form, so it refuses a version that is not the stored one — a tab left open
@@ -505,42 +497,6 @@ async def update_setup(
         run.run_description = run_description
         _set_run_cycles(run, run_cycles)
     return _with_fresh_version(Response(""), form, run)
-
-
-@router.post("/runs/{run_id}/bclconvert", response_class=HTMLResponse)
-async def update_bclconvert(
-    request: Request,
-    run: SequencingRun = Depends(get_editable_run),
-    ctx: AppContext = Depends(get_ctx),
-) -> Response:
-    """POST /runs/{run_id}/bclconvert — update BCLConvert settings.
-
-    All or nothing, the way ``update_setup`` is: a submission that leaves any
-    of the three out is refused and nothing is saved. Reading an absent field
-    as its default wrote a value nobody chose into the sheet's
-    [BCLConvert_Settings] section — an empty POST on a run set to (0, 0, true)
-    stored (1, 1, false) (CLAUDE.md, partial updates). ``no_lane_splitting``
-    is a checkbox and HTML omits an unchecked one, so a form that wants it off
-    has to send the value, the way the bulk panels' hidden inputs do.
-    """
-    form = await request.form()
-    missing = [key for key in ("barcode_mismatches_index1", "barcode_mismatches_index2",
-                               "no_lane_splitting") if key not in form]
-    if missing:
-        return Response(
-            f"Missing BCL Convert setting(s): {', '.join(missing)}. Nothing was saved.",
-            status_code=400,
-        )
-    barcode_mismatches_index1 = max(0, min(_int_field(form, "barcode_mismatches_index1", 1), 2))
-    barcode_mismatches_index2 = max(0, min(_int_field(form, "barcode_mismatches_index2", 1), 2))
-    no_lane_splitting = _bool_field(form, "no_lane_splitting")
-
-    with saving_run(run, ctx, request):
-        run.barcode_mismatches_index1 = barcode_mismatches_index1
-        run.barcode_mismatches_index2 = barcode_mismatches_index2
-        run.no_lane_splitting = no_lane_splitting
-
-    return Response("")
 
 
 # --- update_status: cross-status transitions (uses get_archivable_run) ---

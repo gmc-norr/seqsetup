@@ -5,7 +5,7 @@ serving per-field HTMX inputs MUST check ``field in form`` before writing
 — defaulting missing fields to empty and writing them back silently
 destroys sibling values."
 
-Six handlers used to write a default instead:
+Five handlers used to write a default instead:
 
   - ``POST /runs/{id}/reagent-kit`` without ``reagent_cycles`` took the kit
     to be 1 cycle, reset all four cycle counts to the fallback defaults and
@@ -21,18 +21,17 @@ Six handlers used to write a default instead:
     which means "all lanes", and put the selected samples in every lane.
   - ``POST /runs/{id}/samples/set-test-id`` without ``test_id`` cleared the
     test and its version.
-  - ``POST /runs/{id}/bclconvert`` without its three fields stored
-    ``barcode_mismatches_index1=1``, ``barcode_mismatches_index2=1`` and
-    ``no_lane_splitting=false`` — all three go into the Sample Sheet's
-    [BCLConvert_Settings] section, so an empty POST changed how the run is
-    demultiplexed.
 
-Every page that posts to the first five always sends the field (a select
-sends its value; the bulk panel and the Check panel use hidden inputs that
+A sixth, ``POST /runs/{id}/bclconvert``, had the same fault and was fixed
+the same way; it has since been removed, because no page ever posted to it
+(see tests/integration/test_removed_bclconvert_route.py).
+
+Every page that posts to these five always sends the field (a select sends
+its value; the bulk panel and the Check panel use hidden inputs that
 app.js fills in, including when a Clear or Auto button sends an empty
-value), and no page posts to the sixth at all. An absent field is
-therefore a request no page makes: it is refused with 400 and nothing is
-saved. A field that IS sent, empty or not, behaves as before.
+value). An absent field is therefore a request no page makes: it is
+refused with 400 and nothing is saved. A field that IS sent, empty or not,
+behaves as before.
 """
 
 import json
@@ -62,7 +61,7 @@ def _pair() -> IndexPair:
 
 
 def _run(ctx, override_cycles=None, lanes=(1,), test_id="WGS", test_version="1",
-         index_pair=None, mismatches=(1, 1), no_lane_splitting=False):
+         index_pair=None):
     """A draft run on NovaSeq X / 10B / 300 cycles with one sample."""
     run = SequencingRun(
         id=RUN_ID,
@@ -71,9 +70,6 @@ def _run(ctx, override_cycles=None, lanes=(1,), test_id="WGS", test_version="1",
         flowcell_type="10B",
         reagent_cycles=300,
         run_cycles=RunCycles(151, 151, 10, 10),
-        barcode_mismatches_index1=mismatches[0],
-        barcode_mismatches_index2=mismatches[1],
-        no_lane_splitting=no_lane_splitting,
     )
     run.add_sample(Sample(
         id="s1",
@@ -332,132 +328,3 @@ class TestSetOverrideCyclesNeedsItsField:
 
         assert response.status_code == 200
         assert _stored(ctx).get_sample("s1").override_cycles == UMI_OVERRIDE
-
-
-class TestBclConvertNeedsItsFields:
-    """POST /runs/{id}/bclconvert without all three of its fields saves nothing.
-
-    The sixth site of the same pattern, and the only handler of the six
-    that takes more than one field. It read every absent field as its
-    default and wrote all three: an empty POST on a run set to
-    ``(0, 0, True)`` stored ``(1, 1, False)``, and a POST sending only
-    ``barcode_mismatches_index1=0`` stored ``(0, 1, False)``. All three
-    values are written to the Sample Sheet's [BCLConvert_Settings]
-    section, so that is a change to how the run is demultiplexed, and
-    ``updated_at``/``updated_by`` were bumped as if the user had asked for
-    it.
-
-    It is all or nothing, the way ``POST /runs/{id}/setup`` already is: a
-    submission that leaves any of the three out is refused with 400 and
-    nothing is saved. ``no_lane_splitting`` is a checkbox, and HTML omits
-    an unchecked one, so "absent" cannot be read as "off" without writing
-    a value nobody chose; a form that wants it off has to send it, the way
-    the bulk panels' hidden inputs already do. No page posts to this route
-    at all today.
-    """
-
-    THREE = ("barcode_mismatches_index1", "barcode_mismatches_index2", "no_lane_splitting")
-
-    def _settings(self, ctx):
-        stored = _stored(ctx)
-        return (stored.barcode_mismatches_index1, stored.barcode_mismatches_index2,
-                stored.no_lane_splitting)
-
-    def test_empty_post_is_refused_and_keeps_all_three_settings(
-            self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
-        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
-        before = _stored(ctx).updated_at
-
-        response = logged_in_client.post(f"/runs/{RUN_ID}/bclconvert", data={}, headers=ORIGIN)
-
-        assert response.status_code == 400
-        assert self._settings(ctx) == (0, 0, True)
-        assert _stored(ctx).updated_at == before
-
-    def test_a_post_missing_only_the_second_mismatch_count_keeps_it(
-            self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
-        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
-        before = _stored(ctx).updated_at
-
-        response = logged_in_client.post(
-            f"/runs/{RUN_ID}/bclconvert",
-            data={"barcode_mismatches_index1": "0", "no_lane_splitting": "1"},
-            headers=ORIGIN)
-
-        assert response.status_code == 400
-        assert self._settings(ctx) == (0, 0, True)
-        assert _stored(ctx).updated_at == before
-
-    def test_a_post_missing_only_the_lane_splitting_box_keeps_it(
-            self, logged_in_client, fresh_app):
-        """An unchecked checkbox is omitted by HTML, so this is the case the
-        refusal exists for: reading it as "off" would turn a run's
-        NoLaneSplitting from true to false with nobody asking."""
-        _app, ctx, _db = fresh_app
-        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
-        before = _stored(ctx).updated_at
-
-        response = logged_in_client.post(
-            f"/runs/{RUN_ID}/bclconvert",
-            data={"barcode_mismatches_index1": "0", "barcode_mismatches_index2": "0"},
-            headers=ORIGIN)
-
-        assert response.status_code == 400
-        assert self._settings(ctx) == (0, 0, True)
-        assert _stored(ctx).updated_at == before
-
-    def test_the_refusal_names_the_fields_that_were_left_out(
-            self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
-        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
-
-        response = logged_in_client.post(f"/runs/{RUN_ID}/bclconvert", data={}, headers=ORIGIN)
-
-        assert response.status_code == 400
-        for field in self.THREE:
-            assert field in response.text
-
-    def test_all_three_sent_are_still_stored(self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
-        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
-
-        response = logged_in_client.post(
-            f"/runs/{RUN_ID}/bclconvert",
-            data={"barcode_mismatches_index1": "2", "barcode_mismatches_index2": "1",
-                  "no_lane_splitting": "1"},
-            headers=ORIGIN)
-
-        assert response.status_code == 200
-        assert self._settings(ctx) == (2, 1, True)
-
-    def test_a_sent_lane_splitting_value_of_0_still_means_off(
-            self, logged_in_client, fresh_app):
-        """Today's meaning of a sent value, unchanged: only "1"/"true"/"on"/"yes"
-        is on, so a sent "0" turns NoLaneSplitting off."""
-        _app, ctx, _db = fresh_app
-        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
-
-        response = logged_in_client.post(
-            f"/runs/{RUN_ID}/bclconvert",
-            data={"barcode_mismatches_index1": "1", "barcode_mismatches_index2": "1",
-                  "no_lane_splitting": "0"},
-            headers=ORIGIN)
-
-        assert response.status_code == 200
-        assert self._settings(ctx) == (1, 1, False)
-
-    def test_a_sent_mismatch_count_is_still_clamped_to_2(self, logged_in_client, fresh_app):
-        """Today's clamp, unchanged: BCL Convert accepts 0, 1 or 2."""
-        _app, ctx, _db = fresh_app
-        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
-
-        response = logged_in_client.post(
-            f"/runs/{RUN_ID}/bclconvert",
-            data={"barcode_mismatches_index1": "9", "barcode_mismatches_index2": "-3",
-                  "no_lane_splitting": "1"},
-            headers=ORIGIN)
-
-        assert response.status_code == 200
-        assert self._settings(ctx) == (2, 0, True)
