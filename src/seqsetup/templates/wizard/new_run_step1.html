@@ -34,6 +34,7 @@
         {% include "wizard/_run_metadata.html" %}
 
         <div class="wizard-form" id="run-setup-fields">
+            {% with oob=False %}{% include "wizard/_run_version.html" %}{% endwith %}
             {% include "wizard/_run_name_form.html" %}
             {% with run=run, instruments=instruments,
                     current_flowcells=current_flowcells,

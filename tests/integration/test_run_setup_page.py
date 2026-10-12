@@ -31,6 +31,12 @@ def _make_run(ctx, status=RunStatus.DRAFT):
     return run.id
 
 
+def _version(ctx, run_id):
+    """The version of the run the setup page would show: POST /setup refuses
+    a submission that does not carry it (spec 2026-10-12 batch 1, item 1d)."""
+    return ctx.run_repo.get_by_id(run_id).updated_at.isoformat()
+
+
 def _cycles(ctx, run_id):
     rc = ctx.run_repo.get_by_id(run_id).run_cycles
     return (rc.read1_cycles, rc.read2_cycles, rc.index1_cycles, rc.index2_cycles)
@@ -89,7 +95,9 @@ class TestSaveSetup:
     def test_saves_name_description_and_cycles(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _make_run(ctx)
-        resp = logged_in_client.post(f"/runs/{run_id}/setup", data=self._form(), headers=ORIGIN)
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/setup",
+            data=self._form(run_version=_version(ctx, run_id)), headers=ORIGIN)
         assert resp.status_code == 200
         run = ctx.run_repo.get_by_id(run_id)
         assert run.run_name == "After"
@@ -146,7 +154,8 @@ class TestSameCyclesKeepSampleOverrides:
     def test_setup_with_same_cycles_keeps_override(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = self._run_with_override(ctx)
-        form = {"run_name": "Renamed", "run_description": "", **self.SAME}
+        form = {"run_name": "Renamed", "run_description": "", **self.SAME,
+                "run_version": _version(ctx, run_id)}
         resp = logged_in_client.post(f"/runs/{run_id}/setup", data=form, headers=ORIGIN)
         assert resp.status_code == 200
         assert ctx.run_repo.get_by_id(run_id).run_name == "Renamed"

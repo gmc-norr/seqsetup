@@ -164,6 +164,49 @@ def _bool_field(form, key: str) -> bool:
     return str(raw).lower() in ("1", "true", "on", "yes")
 
 
+# The run's version, as the setup page carries it: its updated_at. The page
+# sends it with every save it makes; POST /runs/{id}/setup writes the whole
+# form, so it refuses a version that is not the stored one — a tab left open
+# wrote its old name and cycles over another window's, and every sample's
+# OverrideCycles with them (review DI-06).
+_SETUP_RUN_CHANGED = (
+    "This run was changed in another window. Reload to see the latest version; "
+    "nothing was saved."
+)
+_SETUP_NO_VERSION = (
+    "This page did not send which version of the run it showed, so nothing was saved. "
+    "Reload the page and try again."
+)
+
+
+def _run_version(run: SequencingRun) -> str:
+    return run.updated_at.isoformat()
+
+
+def _stale_setup_version(form, run: SequencingRun) -> Optional[Response]:
+    """The refusal for a setup form that does not carry the stored run's
+    version: 400 when it carries none, 409 when it carries another."""
+    sent = form.get("run_version")
+    if not isinstance(sent, str) or not sent:
+        return Response(_SETUP_NO_VERSION, status_code=400)
+    if sent != _run_version(run):
+        raise ConflictError(_SETUP_RUN_CHANGED)
+    return None
+
+
+def _with_fresh_version(response: Response, form, run: SequencingRun) -> Response:
+    """``response``, plus the version this save wrote, for the setup page to
+    swap in out of band. Only for a request that carried a version: every
+    other caller gets the answer it got before."""
+    if "run_version" not in form:
+        return response
+    version_html = templates.env.get_template("wizard/_run_version.html").render(
+        run=run, oob=True)
+    body = response.body.decode() if getattr(response, "body", None) else ""
+    return HTMLResponse(body + version_html, status_code=response.status_code,
+                        headers={"Cache-Control": "no-store"})
+
+
 # --- Simple mutation handlers (DRAFT-only via get_editable_run) ---
 
 @router.post("/runs/{run_id}/name", response_class=HTMLResponse)
@@ -186,7 +229,7 @@ async def update_run_name(
             run.run_name = sanitize_string(form.get("run_name", ""), 256)
         if has_description:
             run.run_description = sanitize_string(form.get("run_description", ""), 4096)
-    return Response("")
+    return _with_fresh_version(Response(""), form, run)
 
 
 def _cycle_total_oob(run: SequencingRun) -> dict:
@@ -260,7 +303,7 @@ async def update_instrument(
         if reagent_kits and run.reagent_cycles not in reagent_kits:
             run.reagent_cycles = reagent_kits[0]
 
-    return render(request, "wizard/_flowcell_select.html", {
+    return _with_fresh_version(render(request, "wizard/_flowcell_select.html", {
         "run_id": run.id,
         "current": run.flowcell_type,
         "flowcells": flowcells,
@@ -271,7 +314,7 @@ async def update_instrument(
         "i5_workflows": workflows,
         "i5_workflow": run.i5_workflow,
         **_cycle_total_oob(run),
-    })
+    }), form, run)
 
 
 @router.post("/runs/{run_id}/i5-workflow", response_class=HTMLResponse)
@@ -296,11 +339,11 @@ async def update_i5_workflow(
         ))
     with saving_run(run, ctx, request):
         run.i5_workflow = value
-    return render(request, "wizard/_i5_workflow_select.html", {
+    return _with_fresh_version(render(request, "wizard/_i5_workflow_select.html", {
         "run_id": run.id,
         "i5_workflows": workflows,
         "i5_workflow": run.i5_workflow,
-    })
+    }), form, run)
 
 
 @router.post("/runs/{run_id}/flowcell", response_class=HTMLResponse)
@@ -326,12 +369,12 @@ async def update_flowcell(
         if reagent_kits and run.reagent_cycles not in reagent_kits:
             run.reagent_cycles = reagent_kits[0]
 
-    return render(request, "wizard/_reagent_kit_select.html", {
+    return _with_fresh_version(render(request, "wizard/_reagent_kit_select.html", {
         "run_id": run.id,
         "current": run.reagent_cycles,
         "reagent_kits": reagent_kits,
         **_cycle_total_oob(run),
-    })
+    }), form, run)
 
 
 @router.post("/runs/{run_id}/reagent-kit", response_class=HTMLResponse)
@@ -364,12 +407,12 @@ async def update_reagent_kit(
         CycleCalculator.update_all_sample_override_cycles(run)
 
     index_cycle_options = get_index_cycle_options()
-    return render(request, "wizard/_cycle_config_form.html", {
+    return _with_fresh_version(render(request, "wizard/_cycle_config_form.html", {
         "run": run,
         "cycles": run.run_cycles,
         "index_cycle_options": index_cycle_options,
         "kit_max_cycles": get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles),
-    })
+    }), form, run)
 
 
 _CYCLE_FIELDS = (
@@ -425,12 +468,12 @@ async def update_cycles(
     with saving_run(run, ctx, request):
         _set_run_cycles(run, run_cycles)
 
-    return render(request, "wizard/_cycle_config_form.html", {
+    return _with_fresh_version(render(request, "wizard/_cycle_config_form.html", {
         "run": run,
         "cycles": run.run_cycles,
         "index_cycle_options": get_index_cycle_options(),
         "kit_max_cycles": get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles),
-    })
+    }), form, run)
 
 
 @router.post("/runs/{run_id}/setup", response_class=HTMLResponse)
@@ -448,6 +491,8 @@ async def update_setup(
     missing = [key for key in ("run_name", "run_description") if key not in form]
     if missing:
         return Response(f"Missing field(s): {', '.join(missing)}", status_code=400)
+    if refusal := _stale_setup_version(form, run):
+        return refusal
     try:
         run_cycles = _parse_run_cycles(form)
     except ValueError as exc:
@@ -459,7 +504,7 @@ async def update_setup(
         run.run_name = run_name
         run.run_description = run_description
         _set_run_cycles(run, run_cycles)
-    return Response("")
+    return _with_fresh_version(Response(""), form, run)
 
 
 @router.post("/runs/{run_id}/bclconvert", response_class=HTMLResponse)

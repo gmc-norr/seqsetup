@@ -2,7 +2,9 @@
    Cycle-config fieldset (Read1/Read2/Index1/Index2).
 
    Saves on change: any input's change bubbles to the fieldset, which
-   posts all four counts (hx-include="this"). Only the total is swapped
+   posts all four counts and the version of the run the page showed
+   (hx-include names the fieldset itself: htmx reads "this" only when it is
+   the whole value). Only the total is swapped
    back, so a value being typed in another box is never overwritten. A
    rejected value (400) shows in the error banner and nothing is saved.
 
@@ -15,7 +17,7 @@
 <fieldset class="cycle-config" id="cycle-config"
           hx-post="/runs/{{ run.id }}/cycles"
           hx-trigger="change"
-          hx-include="this"
+          hx-include="#cycle-config, #run-version"
           hx-select=".cycle-total"
           hx-target="find .cycle-total"
           hx-swap="outerHTML">
