@@ -160,7 +160,9 @@ Status Meaning
            "sequence": "GGAACTTG",
            "length": 8
          },
+         "samplesheet_index2": "GGAACTTG",
          "override_cycles": "Y151;I8N2;I8N2;Y151",
+         "samplesheet_override_cycles": "Y151;I8N2;N2I8;Y151",
          "analyses": [],
          "description": "",
          "metadata": {}
@@ -173,6 +175,38 @@ Status Meaning
 own stored value (typed by hand or not), otherwise the calculated one -- or
 ``null`` when the samples' values differ. Each sample's own
 ``override_cycles`` is always given.
+
+As typed, and as in the sheet
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two of a sample's values are given twice, because the Sample Sheet does not
+always write them the way they were typed. Which instrument the run is on,
+and which of its i5 workflows, decides that (see :doc:`/admin-guide/instruments`).
+
+**As typed** -- the index as the kit lists it, and the Override Cycles in
+reading order (the index first):
+
+- ``index1.sequence`` and ``index2.sequence``
+- ``override_cycles``, and the run-level ``global_override_cycles``
+
+**As in the Sample Sheet v2** -- exactly the characters that run's sheet
+puts in the cell, taken from the same code that writes the sheet:
+
+- ``samplesheet_index2`` -- the sheet's ``Index2`` cell. It is the reverse
+  complement of ``index2.sequence`` for a run whose workflow reads the i5
+  reversed and whose RunInfo.xml does not mark that; the same sequence
+  otherwise.
+- ``samplesheet_override_cycles`` -- the sheet's ``OverrideCycles`` cell.
+  Its Index 2 part is reversed (``I8N2`` becomes ``N2I8``) for a run whose
+  workflow reads the i5 reversed and whose RunInfo.xml *does* mark that; the
+  same string otherwise.
+
+A run is in at most one of those two states, so at most one of the two pairs
+differs. Both ``samplesheet_`` values are ``null`` when the sheet's cell
+would be empty (a sample with no i5, a sample with no Override Cycles), and
+when SeqSetup can no longer say what the sheet would write -- a run whose
+instrument has no settings any more, for which no Sample Sheet can be
+written either.
 
 The JSON export includes information not representable in the SampleSheet
 v2 format, such as sample names, projects, descriptions, and free-form

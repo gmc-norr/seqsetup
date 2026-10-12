@@ -3,8 +3,10 @@
 import json
 from typing import Any
 
+from ..data.instruments import NoI5Direction
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
+from .sheet_plan import sheet_index2, sheet_override_cycles
 
 
 class JSONExporter:
@@ -64,6 +66,18 @@ class JSONExporter:
         i1_seq = sample.index1_sequence
         i2_seq = sample.index2_sequence
 
+        # What the v2 Sample Sheet writes for this sample, read from the one
+        # place that decides it (spec 2026-10-12 batch 2, 2a) — never derived
+        # again here, or the two exports of one run could disagree. Both are
+        # null when the sheet's cell would be empty, and when SeqSetup cannot
+        # say what the sheet would write because the run has no i5 direction:
+        # no Sample Sheet can be written for such a run either.
+        try:
+            i2_in_sheet = sheet_index2(sample, run) or None
+            override_in_sheet = sheet_override_cycles(sample, run)
+        except NoI5Direction:
+            i2_in_sheet = override_in_sheet = None
+
         return {
             "id": sample.id,
             "sample_id": sample.sample_id,
@@ -88,7 +102,9 @@ class JSONExporter:
                 if i2_seq is not None
                 else None
             ),
+            "samplesheet_index2": i2_in_sheet,
             "override_cycles": override,
+            "samplesheet_override_cycles": override_in_sheet,
             "analyses": sample.analyses,
             "description": sample.description,
             "metadata": sample.metadata,

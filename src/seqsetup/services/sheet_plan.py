@@ -160,6 +160,37 @@ def _override_cycles(sample: Sample, run: SequencingRun) -> Optional[str]:
     return None
 
 
+def sheet_index2(sample: Sample, run: Optional[SequencingRun]) -> str:
+    """The i5 the v2 sheet's Index2 cell holds for ``sample``: the stored i5,
+    reverse-complemented for a run whose workflow reads it reversed and whose
+    RunInfo.xml does not mark that. "" when the sample has no i5 (spec
+    2026-10-12 batch 2, 2a).
+
+    The v2 writer and the JSON export both read it here, so the two exports of
+    one run cannot state different i5s."""
+    from .samplesheet_v2_exporter import SampleSheetV2Exporter
+
+    return SampleSheetV2Exporter._resolve_i5(sample, run)
+
+
+def sheet_override_cycles(sample: Sample, run: Optional[SequencingRun]) -> Optional[str]:
+    """The OverrideCycles the v2 sheet's cell holds for ``sample``: its own
+    value, else the one calculated from the run's cycles, with the Index 2 part
+    reversed for a run whose RunInfo.xml marks a reversed i5 read. None when
+    the cell would be empty (spec 2026-10-12 batch 2, 2a).
+
+    The v2 writer and the JSON export both read it here, so the two exports of
+    one run cannot state different OverrideCycles."""
+    from .samplesheet_v2_exporter import SampleSheetV2Exporter
+
+    if run is None:
+        return sample.override_cycles or None
+    cycles = _override_cycles(sample, run)
+    if not cycles:
+        return None
+    return SampleSheetV2Exporter._adjust_override_cycles_for_instrument(cycles, run)
+
+
 class _Grouped:
     """Problems that name samples, grouped by their text before the IDs."""
 

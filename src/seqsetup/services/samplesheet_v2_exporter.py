@@ -19,6 +19,8 @@ from .sheet_plan import (
     SheetPlanProblem,
     data_columns,
     plan_sheet,
+    sheet_index2,
+    sheet_override_cycles,
 )
 from .sheet_text import (
     MISMATCH_COLUMNS,
@@ -649,7 +651,7 @@ class SampleSheetV2Exporter:
                     row.append(cls._escape_csv(sample.index1_sequence or ""))
                 elif col == "Index2":
                     # i5 sequence in sample-sheet orientation.
-                    row.append(cls._escape_csv(cls._resolve_i5(sample, run)))
+                    row.append(cls._escape_csv(sheet_index2(sample, run)))
                 elif col == "BarcodeMismatchesIndex1":
                     # A number for an index the sample does not have must be
                     # blank or na (spec 2026-10-10 later list slice 1, §3).
@@ -667,16 +669,12 @@ class SampleSheetV2Exporter:
                         else cls._profile_mismatch_cell(own.data.get(field, ""), col)
                     )
                 elif col == "OverrideCycles":
-                    # Use sample's override cycles, or calculate from index lengths.
-                    # has_index (not index_pair) so combinatorial/single-index
-                    # samples also get a computed value, not a blank cell — this
-                    # is the production (profile-driven) export path.
-                    oc = sample.override_cycles
-                    if not oc and sample.has_index and run and run.run_cycles:
-                        oc = CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
-                    if oc and run:
-                        oc = cls._adjust_override_cycles_for_instrument(oc, run)
-                    row.append(cls._escape_csv(oc or ""))
+                    # The sample's own value, or one calculated from the index
+                    # lengths, with the Index 2 part written the way the run's
+                    # instrument needs. sheet_override_cycles is the one place
+                    # that decides it, so the JSON export cannot state another
+                    # value for the same sample (spec 2026-10-12 batch 2, 2a).
+                    row.append(cls._escape_csv(sheet_override_cycles(sample, run) or ""))
                 else:
                     # Use default value from profile data
                     row.append(cls._escape_config_cell(own.data.get(field, "")))
