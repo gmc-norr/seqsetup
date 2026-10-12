@@ -46,7 +46,7 @@ from .security_headers import SecurityHeadersMiddleware, https_only_from_env, se
 from .services.log_capture import setup_log_capture
 from .services.sample_api import check_lims_allowed_nets
 from .services import web_sessions
-from .services.audit_log import set_audit_sink
+from .services.audit_log import set_actor_fingerprint_secret, set_audit_sink
 from .startup import (
     get_app_context,
     get_audit_event_repo,
@@ -78,6 +78,12 @@ check_lims_allowed_nets()
 
 # Resolve session secret
 _SESSION_SECRET = resolve_session_secret()
+
+# A refused sign-in whose typed name SeqSetup cannot place is recorded as a
+# marker plus a keyed fingerprint of what was typed; the key comes from the
+# session secret, so it is stable for this deployment and useless elsewhere
+# (services/audit_log.py).
+set_actor_fingerprint_secret(_SESSION_SECRET)
 
 # Initialize repositories
 init_repos()

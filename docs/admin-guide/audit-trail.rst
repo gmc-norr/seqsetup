@@ -45,7 +45,10 @@ What is recorded
 The event name says what happened. The main groups are:
 
 - **Signing in** -- ``login.success``, ``login.failure``,
-  ``login.rate_limited``, ``logout``.
+  ``login.rate_limited``, ``logout``. For the two refusals, **Who** holds
+  the typed name only when it names an account SeqSetup knows; otherwise it
+  reads ``(unknown name)`` and a few hex characters (see
+  :ref:`refused-sign-in-names`).
 - **Users and access** -- ``user.created``, ``user.updated``,
   ``user.deleted``, ``api_token.created``, ``api_token.revoked``,
   ``auth.method.changed``, ``auth.ldap_config.updated``, and
@@ -70,6 +73,34 @@ The event name says what happened. The main groups are:
 
 Secrets are never stored: a password or token inside a web address is
 removed, and a field named like a password or API key is shown as ``***``.
+
+.. _refused-sign-in-names:
+
+The name in a refused sign-in
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For ``login.failure`` and ``login.rate_limited``, **Who** holds what was
+typed into the name box **only when it names an account SeqSetup knows** --
+a local account on :doc:`local-users`, matched exactly. Anything else is
+recorded as::
+
+   (unknown name) 3f9a1c08
+
+People type their password into the name box; without this, that password
+would sit in a record nothing can delete, shown to every admin. The hex
+part is a fingerprint of what was typed, so repeated attempts with the same
+text group together and you can still see that one source keeps trying one
+name. It is computed with a secret key of this deployment's own (derived
+from ``SEQSETUP_SESSION_SECRET``), so the text cannot be read back from it,
+and cannot be found by trying candidates. Two deployments give different
+fingerprints for the same text, and changing the session secret changes
+every later fingerprint.
+
+A directory (LDAP / Active Directory) name is recorded the same way when
+that person has never signed in: SeqSetup keeps no list of directory users,
+and it does not ask the directory about a name that was refused -- a
+mistyped password must not be sent anywhere. Once the sign-in succeeds,
+``login.success`` holds the name the directory confirmed.
 
 .. note::
    If the database cannot be reached when something happens, the action

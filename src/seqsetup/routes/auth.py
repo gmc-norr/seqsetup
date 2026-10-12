@@ -23,7 +23,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from .. import startup
 from ..forms.validators import strip_and_truncate
 from ..rate_limit import client_identity, get_login_limiter
-from ..services.audit_log import audit
+from ..services.audit_log import audit, unknown_actor
 from ..services import web_sessions
 from ..services.auth import SIGN_IN_FAILED, AuthenticationError
 from ..templating import render
@@ -50,6 +50,35 @@ class LoginForm(BaseModel):
     """
     username: Annotated[str, BeforeValidator(strip_and_truncate(512))]
     password: str = Field(min_length=1, max_length=512)
+
+
+def _audit_actor(typed: str) -> str:
+    """The name the audit trail keeps for a refused sign-in.
+
+    Only a name SeqSetup knows is stored as typed; anything else becomes a
+    marker and a keyed fingerprint (``unknown_actor``). A password typed
+    into the name box was otherwise kept for good and shown on
+    Admin > Audit to every admin.
+
+    What it can know is its local accounts. SeqSetup keeps no record of
+    directory users -- there is no collection of them, and ``web_sessions``
+    lists live logins only and is emptied as they end -- so a directory
+    name reaches the trail as a fingerprint until that person signs in:
+    ``login.success`` stores the name the directory confirmed. Asking the
+    directory about the typed string would send it somewhere, which is
+    exactly what must not happen to a mistyped password.
+
+    The name is matched exactly, the way ``AuthService`` matches an account.
+    A lookup that fails (the database is down) counts as not known: the
+    typed text is never stored on a guess.
+    """
+    try:
+        if typed and startup.get_local_user_repo().exists(typed):
+            return typed
+    except Exception:
+        logger.warning("Could not tell whether a refused sign-in named an account",
+                       exc_info=True)
+    return unknown_actor(typed)
 
 
 def _login_user(sess, user, sessions, now, policy) -> None:
@@ -107,9 +136,10 @@ def make_router(auth_service) -> APIRouter:
         password = form.password
         sess = request.session
 
-        # Truncate username for audit logging — protect against multi-MB
-        # values landing in the audit stream from an automated probe.
-        # (Pydantic already clamped to 64, but be defensive.)
+        # Truncate the typed name before it is used anywhere — protect
+        # against multi-MB values from an automated probe. This is the
+        # typed text, which names the per-name rate-limit bucket; what
+        # reaches the audit trail goes through _audit_actor first.
         actor = (username or "")[:128]
 
         # Rate-limit per IP and per username independently. A credential-
@@ -134,7 +164,7 @@ def make_router(auth_service) -> APIRouter:
             retry = max(retry_ip, retry_user)
             audit(
                 "login.rate_limited",
-                actor=actor,
+                actor=_audit_actor(actor),
                 outcome="denied",
                 ip=ip,
                 retry_after=retry,
@@ -157,7 +187,7 @@ def make_router(auth_service) -> APIRouter:
             details = {"reason": e.reason}
             if e.local_tried:
                 details["local_tried"] = True
-            audit("login.failure", actor=actor, outcome="failure", **details)
+            audit("login.failure", actor=_audit_actor(actor), outcome="failure", **details)
             return render(
                 request,
                 "login.html",
