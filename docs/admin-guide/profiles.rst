@@ -97,6 +97,15 @@ file -- a sample could get either -- naming them in the log::
 
    Test profiles refused: WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. A test and version may be in one file only.
 
+It also refuses **every** file of two tests whose ``TestType`` differs only
+in letter case. A ``TestType`` is matched exactly, so ``Wgs`` and ``WGS``
+are two different tests with their own application profiles, while every
+page and the Sample Sheet show what a reader takes for one test::
+
+   Test profiles refused: WGS in WGS.yaml and Wgs in Wgs.yaml differ only in capitals. Two tests may not differ only in capitals.
+
+Pick one spelling for the test and use it in every file of it.
+
 **Any refused test file stops every test profile change**: one that breaks
 these rules, cannot be read as YAML, is empty, or sits in a sub-folder that
 cannot be listed. The sync then stores no test profile, keeps the ones

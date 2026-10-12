@@ -216,6 +216,7 @@ class GitHubSyncService:
                 refused=refused_tests,
             )
             self._refuse_repeated_test_versions(test_profiles, refused_tests)
+            self._refuse_tests_differing_only_in_capitals(test_profiles, refused_tests)
             logger.info(f"Fetched {len(test_profiles)} test profiles")
 
             # Fetch instruments if enabled and repo available. Any refused
@@ -773,6 +774,29 @@ class GitHubSyncService:
                     f"Test profiles refused: {where}. A test and version may be in one file only."
                 )
                 refused.append(where)
+
+    @staticmethod
+    def _refuse_tests_differing_only_in_capitals(test_profiles: list[TestProfile],
+                                                 refused: list[str]) -> None:
+        """Two tests whose TestType differs only in letter case are logged and
+        added to ``refused``. A test is matched by its TestType exactly, so
+        ``Wgs`` and ``WGS`` are two tests with their own application profiles,
+        while every page and the Sample Sheet show what a reader takes for one
+        test (spec 2026-10-07 group A4, what it did not cover)."""
+        files: dict[str, dict[str, list[str]]] = {}
+        for profile in test_profiles:
+            spellings = files.setdefault(profile.test_type.lower(), {})
+            spellings.setdefault(profile.test_type, []).append(profile.source_file)
+        for spellings in files.values():
+            if len(spellings) < 2:
+                continue
+            parts = [f"{test} in {', '.join(sorted(names))}"
+                     for test, names in sorted(spellings.items())]
+            where = f"{', '.join(parts[:-1])} and {parts[-1]} differ only in capitals"
+            logger.warning(
+                f"Test profiles refused: {where}. Two tests may not differ only in capitals."
+            )
+            refused.append(where)
 
     def _fetch_index_kits(
         self,
