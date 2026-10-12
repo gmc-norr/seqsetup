@@ -1,0 +1,13 @@
+{#
+   One plain line naming the run documents the dashboard could not read, so
+   a run is never missing from the list without saying so (CLAUDE.md: never
+   silently discard data). Each is logged at WARNING too, for the
+   administrator who has to repair the document; nothing is changed.
+
+   Inputs:
+     unreadable_run_ids: list[str] | None — run ids whose document raised
+#}
+{% if unreadable_run_ids %}
+{% set unreadable_count = unreadable_run_ids | length %}
+<p class="warning-message">{{ unreadable_count }} run{{ '' if unreadable_count == 1 else 's' }} could not be read and {{ 'is' if unreadable_count == 1 else 'are' }} not listed: {{ unreadable_run_ids | join(', ') }}. Nothing was changed. Ask an administrator to look at the run document{{ '' if unreadable_count == 1 else 's' }}.</p>
+{% endif %}

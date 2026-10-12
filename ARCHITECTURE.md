@@ -17,7 +17,7 @@ Look at these first when adding new code in their category:
 | Page with HTMX swap fragments | `src/seqsetup/routes/dashboard.py` + `src/seqsetup/templates/dashboard.html` |
 | Admin form with Pydantic + router-level admin guard | `src/seqsetup/routes/local_users.py` + `src/seqsetup/templates/admin/local_users.html` |
 | Run-editing handler (load + check + mutate + save) | `src/seqsetup/routes/runs.py:update_run_name` |
-| Alpine multi-select with bulk HTMX action | `src/seqsetup/templates/runs/edit.html` (sample-table section) |
+| Multi-select with a bulk HTMX action | `src/seqsetup/templates/wizard/_sample_table.html` + `wizard/_bulk_lane_panel.html` + `src/seqsetup/static/js/app.js` (checkboxes, hidden forms, `data-action` delegation — not Alpine) |
 
 ## Routing rules
 
@@ -83,15 +83,19 @@ at all. Do not add a one-off ownership check to a single route.
 2. Load order in `_base.html`: HTMX first, `app.js` next, components, **Alpine LAST**. Component files register `Alpine.data(...)` and Alpine boots after.
 3. Component files are self-contained: `document.addEventListener('alpine:init', () => Alpine.data('foo', () => ({...})))`. No imports, no cross-file deps.
 4. **Authority boundary** (load-bearing rule): Alpine handles UI ephemera only — selected state, drag-over highlights, modal open/closed, filter inputs. The server is the source of truth for every domain fact. Mutations round-trip via HTMX, every time.
-5. HX-Trigger event names: kebab-case, namespaced (`run-archived`, `toast`). The `toast` event's payload `{kind, message}` is consumed by the toast stack in `_app_shell.html`.
+5. HX-Trigger event names: kebab-case, namespaced (`run-archived`, `toast`). The `toast` event's payload `{kind, message}` is consumed by the toast stack in `_base.html`.
 
-## Alpine patterns (canonical)
+## Alpine patterns
 
-See `src/seqsetup/static/js/components/` for working examples.
+The three component files in `src/seqsetup/static/js/components/` are all
+registered and loaded by `_base.html`, but only one is instantiated by a
+template. Check with
+`grep -rn "toastStack\|indexDragZone\|sampleMultiSelect" src/seqsetup/templates/`
+before copying one as a pattern.
 
-- **toast_stack** — listens on `@toast.window`, renders a stack.
-- **index_drag_zone** — drag-and-drop with server-side validation on drop.
-- **sample_multi_select** — Set-based selection; bulk action posts via HTMX with `JSON.stringify(...)` in `hx-vals`. Server uses the `json_list` validator to decode.
+- **toast_stack** — listens on `@toast.window`, renders a stack. **In use**: `_base.html` has `x-data="toastStack()"`.
+- **index_drag_zone** — drag-and-drop with server-side validation on drop. **No template instantiates it**: the drag-and-drop that ships is document-level `dragstart`/`dragover`/`drop` delegation in `static/js/app.js`, with `draggable` attributes on the wizard's index templates.
+- **sample_multi_select** — Set-based selection. **No template instantiates it** — its own file header says so; the sample table selects with plain checkboxes and `app.js`. Its `asJson()` is written for `hx-vals` or a hidden field, but no route decodes with the `json_list` validator in `forms/validators.py` (nothing outside its unit test uses that validator): the bulk handlers parse `sample_ids` with `_parse_sample_ids` in `routes/samples.py`.
 
 ## Form-validation reject-vs-clamp policy
 
@@ -119,7 +123,8 @@ Each form model picks per field. Switching a field clamp→reject is a deliberat
 
 - Unit tests: `tests/unit/`
 - Integration: `tests/integration/` (mongomock + Starlette TestClient)
-- Browser smoke: `tests/browser/` (Playwright; minimal — `pixi run smoke-browser`)
+- Browser: `tests/browser/` (Playwright; `pixi run smoke-browser`) — despite the task
+  name it runs the whole directory, which covers every page, not a smoke subset
 - Every new page gets a smoke test asserting the page renders.
 - Every new form route gets a 422 test asserting Pydantic validation errors render as HTML fragments with `HX-Retarget`/`HX-Reswap` for HTMX clients.
 

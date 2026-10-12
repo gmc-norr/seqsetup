@@ -1,0 +1,463 @@
+"""A per-field route that is not sent its field writes nothing.
+
+CLAUDE.md: "Partial updates update only what was submitted. Handlers
+serving per-field HTMX inputs MUST check ``field in form`` before writing
+— defaulting missing fields to empty and writing them back silently
+destroys sibling values."
+
+Six handlers used to write a default instead:
+
+  - ``POST /runs/{id}/reagent-kit`` without ``reagent_cycles`` took the kit
+    to be 1 cycle, reset all four cycle counts to the fallback defaults and
+    recomputed EVERY sample's OverrideCycles — a typed UMI read
+    ``U8Y143;I10;I10;Y151`` came back as ``Y151;I10;I10;Y151``, so the UMI
+    bases would be read as Read 1. A clinical data change.
+  - ``POST /runs/{id}/samples/set-override-cycles`` without
+    ``override_cycles`` read it as the auto path and rewrote every selected
+    sample's OverrideCycles from the run's cycles — the same typed UMI read
+    lost the same way.
+  - ``POST /runs/{id}/flowcell`` without ``flowcell_type`` stored "".
+  - ``POST /runs/{id}/samples/set-lanes`` without ``lanes`` read it as "[]",
+    which means "all lanes", and put the selected samples in every lane.
+  - ``POST /runs/{id}/samples/set-test-id`` without ``test_id`` cleared the
+    test and its version.
+  - ``POST /runs/{id}/bclconvert`` without its three fields stored
+    ``barcode_mismatches_index1=1``, ``barcode_mismatches_index2=1`` and
+    ``no_lane_splitting=false`` — all three go into the Sample Sheet's
+    [BCLConvert_Settings] section, so an empty POST changed how the run is
+    demultiplexed.
+
+Every page that posts to the first five always sends the field (a select
+sends its value; the bulk panel and the Check panel use hidden inputs that
+app.js fills in, including when a Clear or Auto button sends an empty
+value), and no page posts to the sixth at all. An absent field is
+therefore a request no page makes: it is refused with 400 and nothing is
+saved. A field that IS sent, empty or not, behaves as before.
+"""
+
+import json
+
+from seqsetup.models.index import Index, IndexPair, IndexType
+from seqsetup.models.sample import Sample
+from seqsetup.models.sequencing_run import (
+    InstrumentPlatform,
+    RunCycles,
+    SequencingRun,
+)
+
+ORIGIN = {"Origin": "http://testserver"}
+RUN_ID = "mf-run"
+UMI_OVERRIDE = "U8Y143;I10;I10;Y151"
+# What the auto path computes for a 10 bp / 10 bp pair on 151/151/10/10:
+# the same reads, with the UMI segment gone.
+AUTO_OVERRIDE = "Y151;I10;I10;Y151"
+
+
+def _pair() -> IndexPair:
+    return IndexPair(
+        id="p1", name="p1",
+        index1=Index(name="p1-i7", sequence="CCCCCCCCCC", index_type=IndexType.I7),
+        index2=Index(name="p1-i5", sequence="GGGGGGGGGG", index_type=IndexType.I5),
+    )
+
+
+def _run(ctx, override_cycles=None, lanes=(1,), test_id="WGS", test_version="1",
+         index_pair=None, mismatches=(1, 1), no_lane_splitting=False):
+    """A draft run on NovaSeq X / 10B / 300 cycles with one sample."""
+    run = SequencingRun(
+        id=RUN_ID,
+        run_name="Missing field run",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X,
+        flowcell_type="10B",
+        reagent_cycles=300,
+        run_cycles=RunCycles(151, 151, 10, 10),
+        barcode_mismatches_index1=mismatches[0],
+        barcode_mismatches_index2=mismatches[1],
+        no_lane_splitting=no_lane_splitting,
+    )
+    run.add_sample(Sample(
+        id="s1",
+        sample_id="PAT-1",
+        lanes=list(lanes),
+        test_id=test_id,
+        test_version=test_version,
+        override_cycles=override_cycles,
+        index_pair=index_pair,
+    ))
+    ctx.run_repo.save(run)
+    return run
+
+
+def _stored(ctx):
+    return ctx.run_repo.get_by_id(RUN_ID)
+
+
+class TestReagentKitNeedsItsField:
+    """POST /runs/{id}/reagent-kit without reagent_cycles saves nothing."""
+
+    def test_empty_post_is_refused_and_keeps_the_kit(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+
+        response = logged_in_client.post(f"/runs/{RUN_ID}/reagent-kit", data={}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        stored = _stored(ctx)
+        assert stored.reagent_cycles == 300
+        assert (stored.run_cycles.read1_cycles, stored.run_cycles.index1_cycles) == (151, 10)
+
+    def test_typed_override_cycles_survive_an_empty_post(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, override_cycles=UMI_OVERRIDE)
+
+        response = logged_in_client.post(f"/runs/{RUN_ID}/reagent-kit", data={}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert _stored(ctx).get_sample("s1").override_cycles == UMI_OVERRIDE
+
+    def test_a_sent_kit_is_still_saved_and_resets_the_cycles(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, override_cycles=UMI_OVERRIDE)
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/reagent-kit", data={"reagent_cycles": "200"}, headers=ORIGIN)
+
+        assert response.status_code == 200
+        stored = _stored(ctx)
+        assert stored.reagent_cycles == 200
+        assert stored.get_sample("s1").override_cycles != UMI_OVERRIDE
+
+
+class TestFlowcellNeedsItsField:
+    """POST /runs/{id}/flowcell without flowcell_type saves nothing."""
+
+    def test_empty_post_is_refused_and_keeps_the_flowcell(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+
+        response = logged_in_client.post(f"/runs/{RUN_ID}/flowcell", data={}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert _stored(ctx).flowcell_type == "10B"
+
+    def test_a_sent_flowcell_is_still_saved(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/flowcell", data={"flowcell_type": "25B"}, headers=ORIGIN)
+
+        assert response.status_code == 200
+        assert _stored(ctx).flowcell_type == "25B"
+
+
+class TestSetLanesNeedsItsField:
+    """POST /runs/{id}/samples/set-lanes without lanes saves nothing."""
+
+    def test_post_with_the_samples_but_no_lanes_is_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, lanes=(1,))
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-lanes",
+            data={"sample_ids": json.dumps(["s1"])}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert _stored(ctx).get_sample("s1").lanes == [1]
+
+    def test_empty_post_is_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, lanes=(1,))
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-lanes", data={}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert _stored(ctx).get_sample("s1").lanes == [1]
+
+    def test_sent_lanes_are_still_set(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, lanes=(1,))
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-lanes",
+            data={"sample_ids": json.dumps(["s1"]), "lanes": json.dumps([2])},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        assert _stored(ctx).get_sample("s1").lanes == [2]
+
+    def test_a_sent_empty_value_is_still_refused_as_malformed_json(
+            self, logged_in_client, fresh_app):
+        """A value that was sent is never treated as absent: an empty lanes
+        field is refused for what it is, the unreadable JSON it was refused
+        as before this check existed."""
+        _app, ctx, _db = fresh_app
+        _run(ctx, lanes=(1,))
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-lanes",
+            data={"sample_ids": json.dumps(["s1"]), "lanes": ""}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert response.text == "Invalid lanes JSON"
+        assert _stored(ctx).get_sample("s1").lanes == [1]
+
+    def test_a_sent_empty_lane_list_is_still_stored_as_all_lanes(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, lanes=(1,))
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-lanes",
+            data={"sample_ids": json.dumps(["s1"]), "lanes": json.dumps([])},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        assert _stored(ctx).get_sample("s1").lanes == []
+
+
+class TestSetTestIdNeedsItsField:
+    """POST /runs/{id}/samples/set-test-id without test_id saves nothing."""
+
+    def test_post_with_the_samples_but_no_test_id_is_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, test_id="WGS", test_version="1")
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-test-id",
+            data={"sample_ids": json.dumps(["s1"])}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        sample = _stored(ctx).get_sample("s1")
+        assert (sample.test_id, sample.test_version) == ("WGS", "1")
+
+    def test_empty_post_is_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, test_id="WGS", test_version="1")
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-test-id", data={}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        sample = _stored(ctx).get_sample("s1")
+        assert (sample.test_id, sample.test_version) == ("WGS", "1")
+
+    def test_a_sent_test_is_still_set(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, test_id="", test_version="")
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-test-id",
+            data={"sample_ids": json.dumps(["s1"]), "test_id": "WGS", "test_version": "2"},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        sample = _stored(ctx).get_sample("s1")
+        assert (sample.test_id, sample.test_version) == ("WGS", "2")
+
+    def test_a_sent_empty_test_still_clears_the_test(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, test_id="WGS", test_version="1")
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-test-id",
+            data={"sample_ids": json.dumps(["s1"]), "test_id": "", "test_version": ""},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        sample = _stored(ctx).get_sample("s1")
+        assert (sample.test_id, sample.test_version) == ("", "")
+
+
+class TestSetOverrideCyclesNeedsItsField:
+    """POST /runs/{id}/samples/set-override-cycles without override_cycles saves nothing.
+
+    The fifth site of the same pattern. An absent ``override_cycles`` read as
+    "" became ``None``, which is the auto/recalculate path: every selected
+    sample's OverrideCycles was rewritten from the run's cycles, so a typed
+    UMI read ``U8Y143;I10;I10;Y151`` came back ``Y151;I10;I10;Y151`` and the
+    UMI bases would be read as Read 1 — the reagent kit's data loss again.
+
+    The bulk panel's hidden input always sends the field, "" among them when
+    "Auto" is used, so a presence check cannot reach the auto path.
+    """
+
+    def test_post_with_the_samples_but_no_override_cycles_is_refused(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, override_cycles=UMI_OVERRIDE, index_pair=_pair())
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-override-cycles",
+            data={"sample_ids": json.dumps(["s1"])}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert _stored(ctx).get_sample("s1").override_cycles == UMI_OVERRIDE
+
+    def test_empty_post_is_refused(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, override_cycles=UMI_OVERRIDE, index_pair=_pair())
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-override-cycles", data={}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert _stored(ctx).get_sample("s1").override_cycles == UMI_OVERRIDE
+
+    def test_a_sent_empty_value_still_recalculates(self, logged_in_client, fresh_app):
+        """The auto path, unchanged: green before and after the refusal.
+
+        This is the regression pin for "sent empty is not absent" — the
+        panel's Auto button sends "" and must still recompute.
+        """
+        _app, ctx, _db = fresh_app
+        _run(ctx, override_cycles=UMI_OVERRIDE, index_pair=_pair())
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-override-cycles",
+            data={"sample_ids": json.dumps(["s1"]), "override_cycles": ""},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        assert _stored(ctx).get_sample("s1").override_cycles == AUTO_OVERRIDE
+
+    def test_a_sent_value_is_still_stored(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, index_pair=_pair())
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/samples/set-override-cycles",
+            data={"sample_ids": json.dumps(["s1"]), "override_cycles": UMI_OVERRIDE},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        assert _stored(ctx).get_sample("s1").override_cycles == UMI_OVERRIDE
+
+
+class TestBclConvertNeedsItsFields:
+    """POST /runs/{id}/bclconvert without all three of its fields saves nothing.
+
+    The sixth site of the same pattern, and the only handler of the six
+    that takes more than one field. It read every absent field as its
+    default and wrote all three: an empty POST on a run set to
+    ``(0, 0, True)`` stored ``(1, 1, False)``, and a POST sending only
+    ``barcode_mismatches_index1=0`` stored ``(0, 1, False)``. All three
+    values are written to the Sample Sheet's [BCLConvert_Settings]
+    section, so that is a change to how the run is demultiplexed, and
+    ``updated_at``/``updated_by`` were bumped as if the user had asked for
+    it.
+
+    It is all or nothing, the way ``POST /runs/{id}/setup`` already is: a
+    submission that leaves any of the three out is refused with 400 and
+    nothing is saved. ``no_lane_splitting`` is a checkbox, and HTML omits
+    an unchecked one, so "absent" cannot be read as "off" without writing
+    a value nobody chose; a form that wants it off has to send it, the way
+    the bulk panels' hidden inputs already do. No page posts to this route
+    at all today.
+    """
+
+    THREE = ("barcode_mismatches_index1", "barcode_mismatches_index2", "no_lane_splitting")
+
+    def _settings(self, ctx):
+        stored = _stored(ctx)
+        return (stored.barcode_mismatches_index1, stored.barcode_mismatches_index2,
+                stored.no_lane_splitting)
+
+    def test_empty_post_is_refused_and_keeps_all_three_settings(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
+        before = _stored(ctx).updated_at
+
+        response = logged_in_client.post(f"/runs/{RUN_ID}/bclconvert", data={}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert self._settings(ctx) == (0, 0, True)
+        assert _stored(ctx).updated_at == before
+
+    def test_a_post_missing_only_the_second_mismatch_count_keeps_it(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
+        before = _stored(ctx).updated_at
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/bclconvert",
+            data={"barcode_mismatches_index1": "0", "no_lane_splitting": "1"},
+            headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert self._settings(ctx) == (0, 0, True)
+        assert _stored(ctx).updated_at == before
+
+    def test_a_post_missing_only_the_lane_splitting_box_keeps_it(
+            self, logged_in_client, fresh_app):
+        """An unchecked checkbox is omitted by HTML, so this is the case the
+        refusal exists for: reading it as "off" would turn a run's
+        NoLaneSplitting from true to false with nobody asking."""
+        _app, ctx, _db = fresh_app
+        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
+        before = _stored(ctx).updated_at
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/bclconvert",
+            data={"barcode_mismatches_index1": "0", "barcode_mismatches_index2": "0"},
+            headers=ORIGIN)
+
+        assert response.status_code == 400
+        assert self._settings(ctx) == (0, 0, True)
+        assert _stored(ctx).updated_at == before
+
+    def test_the_refusal_names_the_fields_that_were_left_out(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
+
+        response = logged_in_client.post(f"/runs/{RUN_ID}/bclconvert", data={}, headers=ORIGIN)
+
+        assert response.status_code == 400
+        for field in self.THREE:
+            assert field in response.text
+
+    def test_all_three_sent_are_still_stored(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/bclconvert",
+            data={"barcode_mismatches_index1": "2", "barcode_mismatches_index2": "1",
+                  "no_lane_splitting": "1"},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        assert self._settings(ctx) == (2, 1, True)
+
+    def test_a_sent_lane_splitting_value_of_0_still_means_off(
+            self, logged_in_client, fresh_app):
+        """Today's meaning of a sent value, unchanged: only "1"/"true"/"on"/"yes"
+        is on, so a sent "0" turns NoLaneSplitting off."""
+        _app, ctx, _db = fresh_app
+        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/bclconvert",
+            data={"barcode_mismatches_index1": "1", "barcode_mismatches_index2": "1",
+                  "no_lane_splitting": "0"},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        assert self._settings(ctx) == (1, 1, False)
+
+    def test_a_sent_mismatch_count_is_still_clamped_to_2(self, logged_in_client, fresh_app):
+        """Today's clamp, unchanged: BCL Convert accepts 0, 1 or 2."""
+        _app, ctx, _db = fresh_app
+        _run(ctx, mismatches=(0, 0), no_lane_splitting=True)
+
+        response = logged_in_client.post(
+            f"/runs/{RUN_ID}/bclconvert",
+            data={"barcode_mismatches_index1": "9", "barcode_mismatches_index2": "-3",
+                  "no_lane_splitting": "1"},
+            headers=ORIGIN)
+
+        assert response.status_code == 200
+        assert self._settings(ctx) == (2, 0, True)

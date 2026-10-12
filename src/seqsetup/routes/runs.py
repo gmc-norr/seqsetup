@@ -309,8 +309,15 @@ async def update_flowcell(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/flowcell — change flowcell; return new reagent kit options."""
+    """POST /runs/{run_id}/flowcell — change flowcell; return new reagent kit options.
+
+    A submission with no ``flowcell_type`` is refused: writing the default ""
+    over the run's flowcell would be a change nobody asked for (CLAUDE.md,
+    partial updates). The select always sends its value.
+    """
     form = await request.form()
+    if "flowcell_type" not in form:
+        return Response("No flowcell was sent. Nothing was saved.", status_code=400)
     flowcell_type = form.get("flowcell_type", "")
 
     reagent_kits = get_reagent_kits_for_flowcell(run.instrument_platform, flowcell_type)
@@ -333,8 +340,16 @@ async def update_reagent_kit(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/reagent-kit — change reagent kit; reset cycles to defaults."""
+    """POST /runs/{run_id}/reagent-kit — change reagent kit; reset cycles to defaults.
+
+    A submission with no ``reagent_cycles`` is refused: the default would be a
+    1-cycle kit, which resets all four cycle counts and recomputes every
+    sample's OverrideCycles — a typed UMI read would be lost (CLAUDE.md,
+    partial updates). The select always sends its value.
+    """
     form = await request.form()
+    if "reagent_cycles" not in form:
+        return Response("No reagent kit was sent. Nothing was saved.", status_code=400)
     reagent_cycles = max(1, min(_int_field(form, "reagent_cycles", 1), 2000))
 
     defaults = get_default_cycles(reagent_cycles)
@@ -453,8 +468,24 @@ async def update_bclconvert(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/bclconvert — update BCLConvert settings."""
+    """POST /runs/{run_id}/bclconvert — update BCLConvert settings.
+
+    All or nothing, the way ``update_setup`` is: a submission that leaves any
+    of the three out is refused and nothing is saved. Reading an absent field
+    as its default wrote a value nobody chose into the sheet's
+    [BCLConvert_Settings] section — an empty POST on a run set to (0, 0, true)
+    stored (1, 1, false) (CLAUDE.md, partial updates). ``no_lane_splitting``
+    is a checkbox and HTML omits an unchecked one, so a form that wants it off
+    has to send the value, the way the bulk panels' hidden inputs do.
+    """
     form = await request.form()
+    missing = [key for key in ("barcode_mismatches_index1", "barcode_mismatches_index2",
+                               "no_lane_splitting") if key not in form]
+    if missing:
+        return Response(
+            f"Missing BCL Convert setting(s): {', '.join(missing)}. Nothing was saved.",
+            status_code=400,
+        )
     barcode_mismatches_index1 = max(0, min(_int_field(form, "barcode_mismatches_index1", 1), 2))
     barcode_mismatches_index2 = max(0, min(_int_field(form, "barcode_mismatches_index2", 1), 2))
     no_lane_splitting = _bool_field(form, "no_lane_splitting")

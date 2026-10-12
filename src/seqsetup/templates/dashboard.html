@@ -21,9 +21,15 @@
    lives inside this block, so block_name="dashboard_content" renders
    exactly what hx-target="#dashboard" hx-swap="outerHTML" replaces. #}
 {% block dashboard_content %}
-{% if not runs %}
+{# "No Runs Yet" only when there is genuinely nothing: a run whose document
+   could not be read is still a run, and the notice above the list says so,
+   so the empty-state heading and its "+ New Run" button would contradict
+   it. With no readable runs but an unreadable one, the tabs render with
+   their zero counts and the notice names the run. #}
+{% if not runs and not unreadable_run_ids %}
 <div id="dashboard" class="flex items-center justify-center py-16">
     <div class="text-center">
+        {% include "_dashboard_unreadable.html" %}
         <h2 class="text-2xl font-semibold mb-2">No Runs Yet</h2>
         <p class="text-slate-600 mb-4">Get started by creating your first run.</p>
         <form method="post" action="/runs/new" class="inline-block">
@@ -33,6 +39,7 @@
 </div>
 {% elif search %}
 <div id="dashboard" class="space-y-4">
+    {% include "_dashboard_unreadable.html" %}
     <p class="text-sm text-slate-600">
         {% if search.runs %}{{ search.runs | length }} run{{ '' if search.runs | length == 1 else 's' }} match{{ 'es' if search.runs | length == 1 else '' }}{% else %}No runs match{% endif %}
         &ldquo;{{ search.query }}&rdquo; in Draft, Ready or Archived. Clear the search to see the tabs again.
@@ -54,6 +61,7 @@
         | sort(attribute='updated_at', reverse=True)
         | list %}
 <div id="dashboard" class="space-y-4">
+    {% include "_dashboard_unreadable.html" %}
     <div class="flex gap-2 border-b">
         {% for key, label in [('draft', 'Draft'), ('ready', 'Ready'), ('archived', 'Archived')] %}
         <button class="px-4 py-2 -mb-px border-b-2 {% if key == active_tab %}border-primary font-semibold text-primary{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}"

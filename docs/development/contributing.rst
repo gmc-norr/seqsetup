@@ -294,6 +294,54 @@ Register the router in ``src/seqsetup/app.py``:
 
    app.include_router(my_feature.router)
 
+A handler that serves one field of a page -- a select that posts on change,
+a hidden input a script fills in -- writes only the fields that were
+submitted, and refuses a submission that leaves its own field out with
+``400`` and a plain message, saving nothing:
+
+.. code-block:: python
+
+   form = await request.form()
+   if "reagent_cycles" not in form:
+       return Response("No reagent kit was sent. Nothing was saved.", status_code=400)
+
+Reading an absent field as its default writes a value nobody chose. The
+reagent-kit route took a missing ``reagent_cycles`` to be a 1-cycle kit,
+which reset all four cycle counts and recomputed every sample's
+OverrideCycles; set-override-cycles read a missing ``override_cycles`` as
+the auto path and rewrote every selected sample's OverrideCycles the same
+way; set-lanes read a missing ``lanes`` as "every lane"; the flowcell and
+set-test-id routes stored an empty value over a real one. The pages
+themselves always send these fields (a select sends its value, and the bulk
+panel's Clear and Auto buttons send an empty one), so an absent field is a
+request no page makes. A field that IS sent, empty or not, keeps its
+meaning: an empty ``lanes`` list still means every lane, an empty
+``test_id`` still clears the test, and an empty ``override_cycles`` still
+recalculates.
+
+A handler that saves a whole panel at once is all or nothing: it names
+every field it is missing and saves none of them, so a half-finished
+submission never leaves the run in a state nobody asked for.
+``POST /runs/{id}/setup`` (name, description and the four cycle counts) and
+``POST /runs/{id}/bclconvert`` (both barcode-mismatch counts and
+``no_lane_splitting``) both work this way:
+
+.. code-block:: python
+
+   missing = [key for key in ("barcode_mismatches_index1",
+                              "barcode_mismatches_index2",
+                              "no_lane_splitting") if key not in form]
+   if missing:
+       return Response(
+           f"Missing BCL Convert setting(s): {', '.join(missing)}. Nothing was saved.",
+           status_code=400,
+       )
+
+A checkbox needs this treatment most: HTML omits an unchecked box, so an
+absent ``no_lane_splitting`` cannot be told apart from one the user
+switched off. A form that wants it off sends the value explicitly, the way
+the bulk panels' hidden inputs already do.
+
 Adding a New Template
 ~~~~~~~~~~~~~~~~~~~~~~
 

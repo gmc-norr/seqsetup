@@ -44,10 +44,11 @@ def dashboard(
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET / — full dashboard page (default tab: draft)."""
+    runs, unreadable = ctx.run_repo.list_all_readable()
     return render(
         request,
         "dashboard.html",
-        {"runs": ctx.run_repo.list_all(), "active_tab": "draft"},
+        {"runs": runs, "unreadable_run_ids": unreadable, "active_tab": "draft"},
     )
 
 
@@ -60,10 +61,11 @@ def dashboard_tab(
     """GET /dashboard/tab/{tab} — HTMX fragment swap for tab buttons."""
     if tab not in _VALID_TABS:
         tab = "draft"
+    runs, unreadable = ctx.run_repo.list_all_readable()
     return render(
         request,
         "dashboard.html",
-        {"runs": ctx.run_repo.list_all(), "active_tab": tab},
+        {"runs": runs, "unreadable_run_ids": unreadable, "active_tab": tab},
         block_name="dashboard_content",
     )
 
@@ -92,7 +94,7 @@ def dashboard_search(
     """GET /dashboard/search?q= — runs whose name or a sample ID contains q,
     in every status. Read-only. An empty query gives back the tabs."""
     query = sanitize_string(q, 256)
-    runs = ctx.run_repo.list_all()
+    runs, unreadable = ctx.run_repo.list_all_readable()
     search = None
     if query:
         found, matched = _search_runs(runs, query)
@@ -100,7 +102,8 @@ def dashboard_search(
     return render(
         request,
         "dashboard.html",
-        {"runs": runs, "active_tab": "draft", "search": search},
+        {"runs": runs, "unreadable_run_ids": unreadable, "active_tab": "draft",
+         "search": search},
         block_name="dashboard_content",
     )
 
@@ -135,10 +138,11 @@ def archive_run(
         target=run.id,
         from_status=previous_status,
     )
+    runs, unreadable = ctx.run_repo.list_all_readable()
     return render(
         request,
         "dashboard.html",
-        {"runs": ctx.run_repo.list_all(), "active_tab": previous_tab},
+        {"runs": runs, "unreadable_run_ids": unreadable, "active_tab": previous_tab},
         block_name="dashboard_content",
     )
 
@@ -220,10 +224,11 @@ def delete_run(
         kept_copy=copy is not None,
         **copy_detail,
     )
+    runs, unreadable = ctx.run_repo.list_all_readable()
     return render(
         request,
         "dashboard.html",
-        {"runs": ctx.run_repo.list_all(), "active_tab": previous_status},
+        {"runs": runs, "unreadable_run_ids": unreadable, "active_tab": previous_status},
         block_name="dashboard_content",
     )
 
