@@ -1168,13 +1168,17 @@ def test_admin_logs(demo_page, base_url, demo):
     # be showing. It does not: both fields reset to "All Levels" / empty, and
     # BOTH planted entries are now visible -- proof Refresh reloads
     # unfiltered, not "with the same filters still applied".
+    # The log also holds INFO lines since the night run's batch 1 (the
+    # instruments file at start-up, sync progress), so the check is that both
+    # planted entries show, not how many rows there are in all.
     level_value = page.locator("#level").input_value()
     search_value = page.locator("#search").input_value()
-    refreshed_rows = page.locator("#logs-page tbody tr").count()
-    assert (level_value, search_value, refreshed_rows) == ("", "", 2), (
+    rows = page.locator("#logs-page tbody tr")
+    planted = [rows.filter(has_text=path).count() for path in (probe_path, other_probe_path)]
+    assert (level_value, search_value, planted) == ("", "", [1, 1]), (
         "Refresh was expected to reset both filters and reload unfiltered, "
         f"showing both planted entries, but got level={level_value!r} "
-        f"search={search_value!r} rows={refreshed_rows}"
+        f"search={search_value!r} planted rows={planted} of {rows.count()}"
     )
 
 
