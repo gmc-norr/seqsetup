@@ -263,6 +263,9 @@ async def update_instrument(
     mistyped enum and the change would not take.
     """
     form = await request.form()
+    # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
+    if refusal := _stale_setup_version(form, run):
+        return refusal
     instrument_platform = form.get("instrument_platform", "")
 
     matched = None
@@ -331,6 +334,9 @@ async def update_i5_workflow(
     2026-10-04 group A2, §3). Only a name the instrument lists is saved, as
     sent; anything else is refused and nothing is written."""
     form = await request.form()
+    # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
+    if refusal := _stale_setup_version(form, run):
+        return refusal
     value = form.get("i5_workflow")
     if not isinstance(value, str):
         raise HTTPException(status_code=400, detail="No i5 workflow was sent. Nothing was saved.")
@@ -363,6 +369,9 @@ async def update_flowcell(
     partial updates). The select always sends its value.
     """
     form = await request.form()
+    # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
+    if refusal := _stale_setup_version(form, run):
+        return refusal
     if "flowcell_type" not in form:
         return Response("No flowcell was sent. Nothing was saved.", status_code=400)
     flowcell_type = form.get("flowcell_type", "")
@@ -395,6 +404,9 @@ async def update_reagent_kit(
     partial updates). The select always sends its value.
     """
     form = await request.form()
+    # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
+    if refusal := _stale_setup_version(form, run):
+        return refusal
     if "reagent_cycles" not in form:
         return Response("No reagent kit was sent. Nothing was saved.", status_code=400)
     reagent_cycles = max(1, min(_int_field(form, "reagent_cycles", 1), 2000))
@@ -464,6 +476,9 @@ async def update_cycles(
     nothing is saved. Returns the re-rendered cycle form (new total).
     """
     form = await request.form()
+    # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
+    if refusal := _stale_setup_version(form, run):
+        return refusal
     try:
         run_cycles = _parse_run_cycles(form)
     except ValueError as exc:

@@ -16,6 +16,8 @@ import pytest
 
 from seqsetup.models.sequencing_run import RunCycles, RunStatus
 
+from .conftest import run_version
+
 ORIGIN = {"Origin": "http://testserver"}
 CYCLES = {"read1_cycles": "101", "read2_cycles": "0", "index1_cycles": "8", "index2_cycles": "8"}
 
@@ -48,21 +50,21 @@ class TestUpdateCycles:
     def test_saves_all_four_values(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _make_run(ctx)
-        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data=CYCLES, headers=ORIGIN)
+        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data={**CYCLES, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
         assert resp.status_code == 200
         assert _cycles(ctx, run_id) == (101, 0, 8, 8)
 
     def test_response_shows_new_total(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _make_run(ctx)
-        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data=CYCLES, headers=ORIGIN)
+        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data={**CYCLES, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
         assert "Total: 117 cycles" in resp.text
 
     def test_missing_field_rejected_and_nothing_saved(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _make_run(ctx)
         resp = logged_in_client.post(
-            f"/runs/{run_id}/cycles", data={"read1_cycles": "101"}, headers=ORIGIN)
+            f"/runs/{run_id}/cycles", data={**{"read1_cycles": "101"}, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
         assert resp.status_code == 400
         assert "Read 2" in resp.text
         assert _cycles(ctx, run_id) == (151, 151, 10, 10)
@@ -72,7 +74,7 @@ class TestUpdateCycles:
         _app, ctx, _db = fresh_app
         run_id = _make_run(ctx)
         resp = logged_in_client.post(
-            f"/runs/{run_id}/cycles", data={**CYCLES, "read1_cycles": value}, headers=ORIGIN)
+            f"/runs/{run_id}/cycles", data={**{**CYCLES, "read1_cycles": value}, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
         assert resp.status_code == 400
         assert "Read 1" in resp.text
         assert _cycles(ctx, run_id) == (151, 151, 10, 10)
@@ -80,7 +82,7 @@ class TestUpdateCycles:
     def test_ready_run_refused(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _make_run(ctx, RunStatus.READY)
-        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data=CYCLES, headers=ORIGIN)
+        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data={**CYCLES, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
         assert resp.status_code == 403
         assert _cycles(ctx, run_id) == (151, 151, 10, 10)
 
@@ -164,14 +166,14 @@ class TestSameCyclesKeepSampleOverrides:
     def test_cycles_with_same_values_keeps_override(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = self._run_with_override(ctx)
-        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data=self.SAME, headers=ORIGIN)
+        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data={**self.SAME, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
         assert resp.status_code == 200
         assert self._override(ctx, run_id) == "Y151;I10;I10;Y151"
 
     def test_changed_cycles_still_recompute(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = self._run_with_override(ctx)
-        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data=CYCLES, headers=ORIGIN)
+        resp = logged_in_client.post(f"/runs/{run_id}/cycles", data={**CYCLES, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
         assert resp.status_code == 200
         # An un-indexed sample has no computed override.
         assert self._override(ctx, run_id) is None

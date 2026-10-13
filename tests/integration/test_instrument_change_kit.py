@@ -16,6 +16,8 @@ first flowcell ("SP") offers ``[100, 200, 300, 500]``, which does include
 
 from seqsetup.models.sequencing_run import InstrumentPlatform
 
+from .conftest import run_version
+
 ORIGIN = {"Origin": "http://testserver"}
 GAIIX = "GAIIx"
 NOVASEQ_6000 = "NovaSeq 6000"
@@ -35,7 +37,7 @@ class TestInstrumentChangeReplacesUnofferedKit:
         run_id = _new_run(logged_in_client)
 
         r = logged_in_client.post(
-            f"/runs/{run_id}/instrument", data={"instrument_platform": GAIIX}, headers=ORIGIN)
+            f"/runs/{run_id}/instrument", data={**{"instrument_platform": GAIIX}, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
 
         assert r.status_code == 200
         run = ctx.run_repo.get_by_id(run_id)
@@ -49,7 +51,7 @@ class TestInstrumentChangeReplacesUnofferedKit:
         run_id = _new_run(logged_in_client)
 
         r = logged_in_client.post(
-            f"/runs/{run_id}/instrument", data={"instrument_platform": GAIIX}, headers=ORIGIN)
+            f"/runs/{run_id}/instrument", data={**{"instrument_platform": GAIIX}, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
 
         text = r.text
         assert 'id="reagent-kit-select"' in text
@@ -67,7 +69,7 @@ class TestInstrumentChangeReplacesUnofferedKit:
         run_id = _new_run(logged_in_client)
 
         r = logged_in_client.post(
-            f"/runs/{run_id}/instrument", data={"instrument_platform": GAIIX}, headers=ORIGIN)
+            f"/runs/{run_id}/instrument", data={**{"instrument_platform": GAIIX}, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
 
         assert 'id="cycle-total" hx-swap-oob="true"' in r.text
         # run_cycles are untouched by the instrument change (322 total),
@@ -84,7 +86,7 @@ class TestInstrumentChangeKeepsOfferedKit:
         run_id = _new_run(logged_in_client)
 
         r = logged_in_client.post(
-            f"/runs/{run_id}/instrument", data={"instrument_platform": NOVASEQ_6000}, headers=ORIGIN)
+            f"/runs/{run_id}/instrument", data={**{"instrument_platform": NOVASEQ_6000}, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
 
         assert r.status_code == 200
         run = ctx.run_repo.get_by_id(run_id)

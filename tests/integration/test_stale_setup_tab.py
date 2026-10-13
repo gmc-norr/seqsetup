@@ -172,7 +172,9 @@ class TestThePagesOwnSavesKeepItFresh:
         assert 'hx-swap-oob' in resp.text
         assert _version(ctx) in resp.text
 
-    @pytest.mark.parametrize("route,fields", PAGE_SAVES, ids=[r for r, _f in PAGE_SAVES])
+    # Only the name save still takes a request without a version: the other
+    # five refuse it (TestEveryPerFieldSaveChecksTheVersion, the night run's Q2).
+    @pytest.mark.parametrize("route,fields", PAGE_SAVES[:1], ids=[r for r, _f in PAGE_SAVES[:1]])
     def test_a_request_without_a_version_gets_no_version_back(
             self, logged_in_client, fresh_app, route, fields):
         _app, ctx, _db = fresh_app
@@ -237,3 +239,69 @@ class TestThePageSendsTheVersionWithEverySave:
         included = page.split('id="run-setup-fields"', 1)[1].split('id="wizard-nav-step-', 1)[0]
         assert 'id="run-version"' in included
         assert 'hx-include="#run-setup-fields"' in page
+
+
+def _per_field_saves():
+    """Each per-field save the setup page makes, with a valid form for the
+    NovaSeq X 10B run ``_run`` stores."""
+    from seqsetup.data.instruments import get_reagent_kits_for_flowcell
+    kit = get_reagent_kits_for_flowcell(InstrumentPlatform.NOVASEQ_X, "10B")[0]
+    return [
+        ("instrument", {"instrument_platform": "NovaSeq X Series"}),
+        ("i5-workflow", {"i5_workflow": "Standard"}),
+        ("flowcell", {"flowcell_type": "10B"}),
+        ("reagent-kit", {"reagent_cycles": str(kit)}),
+        ("cycles", {"read1_cycles": "151", "read2_cycles": "151",
+                    "index1_cycles": "8", "index2_cycles": "8"}),
+    ]
+
+
+SAVES = ["instrument", "i5-workflow", "flowcell", "reagent-kit", "cycles"]
+
+
+class TestEveryPerFieldSaveChecksTheVersion:
+    """The night run's Q2, answered 2026-10-13: all six setup saves refuse a
+    stale tab, not only "Continue" -- the cycles save rewrites every
+    sample's OverrideCycles."""
+
+    @pytest.mark.parametrize("route", SAVES)
+    def test_an_old_version_is_409_and_nothing_is_saved(self, logged_in_client, fresh_app, route):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        stale = _version(ctx)
+        _another_window_changes_it(ctx)
+        before = _stored(ctx).to_dict()
+
+        form = dict(_per_field_saves())[route]
+        resp = logged_in_client.post(f"/runs/{RUN}/{route}", data={**form, "run_version": stale},
+                                     headers=ORIGIN)
+
+        assert resp.status_code == 409
+        assert CHANGED in resp.text
+        assert _stored(ctx).to_dict() == before
+        assert _stored(ctx).samples[0].override_cycles == "Y151;U8I10;I10;Y151"
+
+    @pytest.mark.parametrize("route", SAVES)
+    def test_no_version_is_400_and_nothing_is_saved(self, logged_in_client, fresh_app, route):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        before = _stored(ctx).to_dict()
+
+        form = dict(_per_field_saves())[route]
+        resp = logged_in_client.post(f"/runs/{RUN}/{route}", data=form, headers=ORIGIN)
+
+        assert resp.status_code == 400
+        assert "did not send which version of the run it showed" in resp.text
+        assert _stored(ctx).to_dict() == before
+
+    @pytest.mark.parametrize("route", SAVES)
+    def test_the_current_version_saves_and_hands_back_the_new_one(self, logged_in_client, fresh_app, route):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        form = dict(_per_field_saves())[route]
+
+        resp = logged_in_client.post(f"/runs/{RUN}/{route}", data={**form, "run_version": _version(ctx)},
+                                     headers=ORIGIN)
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert _version(ctx) in resp.text

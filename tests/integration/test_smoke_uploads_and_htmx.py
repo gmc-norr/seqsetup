@@ -9,6 +9,8 @@ import re
 
 import pytest
 
+from .conftest import page_run_version
+
 
 def _origin() -> dict:
     return {"Origin": "http://testserver"}
@@ -90,7 +92,8 @@ class TestHtmxResponseHeaders:
         # Update instrument — response should be a fragment ready for hx-swap.
         response = logged_in_client.post(
             f"/runs/{run_id}/instrument",
-            data={"instrument_platform": "MiSeq i100 Series"},
+            data={"instrument_platform": "MiSeq i100 Series",
+                  "run_version": page_run_version(logged_in_client, run_id)},
             headers={**_origin(), "HX-Request": "true"},
         )
         assert response.status_code == 200
@@ -111,7 +114,8 @@ class TestHtmxResponseHeaders:
 
         response = logged_in_client.post(
             f"/runs/{run_id}/instrument",
-            data={"instrument_platform": "Imaginary Sequencer 9000"},
+            data={"instrument_platform": "Imaginary Sequencer 9000",
+                  "run_version": page_run_version(logged_in_client, run_id)},
             headers=_origin(),
         )
         assert response.status_code == 400

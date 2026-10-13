@@ -9,7 +9,7 @@ import pytest
 
 from seqsetup.models.sequencing_run import RunStatus
 
-from .conftest import mark_ready
+from .conftest import mark_ready, page_run_version
 from .test_smoke_validation import _make_ready_eligible_run
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -38,7 +38,8 @@ def _post_cycles(client, run_id, read1, read2, index1=10, index2=10):
     return client.post(
         f"/runs/{run_id}/cycles",
         data={"read1_cycles": read1, "read2_cycles": read2,
-              "index1_cycles": index1, "index2_cycles": index2},
+              "index1_cycles": index1, "index2_cycles": index2,
+              "run_version": page_run_version(client, run_id)},
         headers=ORIGIN,
     )
 
@@ -71,7 +72,8 @@ class TestSetupPageTotal:
         kit_limit(NOVASEQ_X, {200: 238, 300: 338})
         run_id = _new_run(logged_in_client)
         r = logged_in_client.post(
-            f"/runs/{run_id}/reagent-kit", data={"reagent_cycles": "200"}, headers=ORIGIN)
+            f"/runs/{run_id}/reagent-kit", data={"reagent_cycles": "200", "run_version": page_run_version(logged_in_client, run_id)},
+            headers=ORIGIN)
         assert "/ 238 max (200-cycle kit)" in r.text
 
 
@@ -83,7 +85,9 @@ class TestTotalRefreshesWithInstrumentAndFlowcell:
         kit_limit(NEXTSEQ, {300: 340})
         run_id = _new_run(logged_in_client)
         r = logged_in_client.post(
-            f"/runs/{run_id}/instrument", data={"instrument_platform": NEXTSEQ}, headers=ORIGIN)
+            f"/runs/{run_id}/instrument", data={"instrument_platform": NEXTSEQ,
+                                                 "run_version": page_run_version(logged_in_client, run_id)},
+            headers=ORIGIN)
         assert r.status_code == 200
         assert 'id="cycle-total" hx-swap-oob="true"' in r.text
         assert "Total: 322 / 340 max (300-cycle kit)" in r.text
@@ -92,7 +96,8 @@ class TestTotalRefreshesWithInstrumentAndFlowcell:
         kit_limit(NOVASEQ_X, {300: 338})
         run_id = _new_run(logged_in_client)
         r = logged_in_client.post(
-            f"/runs/{run_id}/flowcell", data={"flowcell_type": "25B"}, headers=ORIGIN)
+            f"/runs/{run_id}/flowcell", data={"flowcell_type": "25B", "run_version": page_run_version(logged_in_client, run_id)},
+            headers=ORIGIN)
         assert r.status_code == 200
         assert 'id="cycle-total" hx-swap-oob="true"' in r.text
         assert "Total: 322 / 338 max (300-cycle kit)" in r.text

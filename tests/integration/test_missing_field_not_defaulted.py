@@ -44,6 +44,8 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
+from .conftest import run_version
+
 ORIGIN = {"Origin": "http://testserver"}
 RUN_ID = "mf-run"
 UMI_OVERRIDE = "U8Y143;I10;I10;Y151"
@@ -95,7 +97,7 @@ class TestReagentKitNeedsItsField:
         _app, ctx, _db = fresh_app
         _run(ctx)
 
-        response = logged_in_client.post(f"/runs/{RUN_ID}/reagent-kit", data={}, headers=ORIGIN)
+        response = logged_in_client.post(f"/runs/{RUN_ID}/reagent-kit", data={**{}, "run_version": run_version(ctx, RUN_ID)}, headers=ORIGIN)
 
         assert response.status_code == 400
         stored = _stored(ctx)
@@ -106,7 +108,7 @@ class TestReagentKitNeedsItsField:
         _app, ctx, _db = fresh_app
         _run(ctx, override_cycles=UMI_OVERRIDE)
 
-        response = logged_in_client.post(f"/runs/{RUN_ID}/reagent-kit", data={}, headers=ORIGIN)
+        response = logged_in_client.post(f"/runs/{RUN_ID}/reagent-kit", data={**{}, "run_version": run_version(ctx, RUN_ID)}, headers=ORIGIN)
 
         assert response.status_code == 400
         assert _stored(ctx).get_sample("s1").override_cycles == UMI_OVERRIDE
@@ -116,7 +118,7 @@ class TestReagentKitNeedsItsField:
         _run(ctx, override_cycles=UMI_OVERRIDE)
 
         response = logged_in_client.post(
-            f"/runs/{RUN_ID}/reagent-kit", data={"reagent_cycles": "200"}, headers=ORIGIN)
+            f"/runs/{RUN_ID}/reagent-kit", data={**{"reagent_cycles": "200"}, "run_version": run_version(ctx, RUN_ID)}, headers=ORIGIN)
 
         assert response.status_code == 200
         stored = _stored(ctx)
@@ -131,7 +133,7 @@ class TestFlowcellNeedsItsField:
         _app, ctx, _db = fresh_app
         _run(ctx)
 
-        response = logged_in_client.post(f"/runs/{RUN_ID}/flowcell", data={}, headers=ORIGIN)
+        response = logged_in_client.post(f"/runs/{RUN_ID}/flowcell", data={**{}, "run_version": run_version(ctx, RUN_ID)}, headers=ORIGIN)
 
         assert response.status_code == 400
         assert _stored(ctx).flowcell_type == "10B"
@@ -141,7 +143,7 @@ class TestFlowcellNeedsItsField:
         _run(ctx)
 
         response = logged_in_client.post(
-            f"/runs/{RUN_ID}/flowcell", data={"flowcell_type": "25B"}, headers=ORIGIN)
+            f"/runs/{RUN_ID}/flowcell", data={**{"flowcell_type": "25B"}, "run_version": run_version(ctx, RUN_ID)}, headers=ORIGIN)
 
         assert response.status_code == 200
         assert _stored(ctx).flowcell_type == "25B"

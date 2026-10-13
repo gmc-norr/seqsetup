@@ -14,7 +14,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
-from .conftest import disable_repos
+from .conftest import disable_repos, run_version
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -272,7 +272,7 @@ class TestDisabledInstrument:
         before = ctx.run_repo.get_by_id(run.id).updated_at
 
         resp = logged_in_client.post(
-            f"/runs/{run.id}/instrument", data={"instrument_platform": NOVASEQ_X}, headers=ORIGIN,
+            f"/runs/{run.id}/instrument", data={**{"instrument_platform": NOVASEQ_X}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN,
         )
 
         assert resp.status_code == 400
@@ -287,7 +287,7 @@ class TestDisabledInstrument:
         run = _clean_run(ctx, "f27-choose-ok")
 
         resp = logged_in_client.post(
-            f"/runs/{run.id}/instrument", data={"instrument_platform": MISEQ_I100}, headers=ORIGIN,
+            f"/runs/{run.id}/instrument", data={**{"instrument_platform": MISEQ_I100}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN,
         )
 
         assert resp.status_code == 200
