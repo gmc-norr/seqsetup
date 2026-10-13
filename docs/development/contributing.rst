@@ -665,7 +665,9 @@ minimal:
   open/closed); the server stays the source of truth for domain data
 - Document functions with comments
 - HTMX and Alpine are vendored in ``static/js/vendor/``, not installed via
-  a package manager
+  a package manager. Everything in that folder is served to the browser;
+  axe-core, which only the accessibility tests inject, is vendored in
+  ``tests/browser/vendor/`` instead
 
 Updating Libraries
 ~~~~~~~~~~~~~~~~~~
