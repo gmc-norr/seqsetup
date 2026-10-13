@@ -31,6 +31,7 @@ router = APIRouter(tags=["served-runs"])
 
 _STATUSES = ("ready", "archived")
 _NOT_SERVED = "Run not available via API. Only ready or archived runs can be accessed."
+_BAD_STATUS = "Invalid status. Only 'ready' and 'archived' are allowed via API."
 
 
 @dataclass
@@ -40,6 +41,7 @@ class ServedFile:
     label: str
     text: Optional[str] = None       # a text file's stored content
     pdf_size: Optional[int] = None   # the stored PDF's size in bytes
+    pdf_size_text: str = ""          # the same, written for reading ("1,033")
     missing: str = ""                # the API's 404 detail when nothing is stored
 
 
@@ -61,6 +63,7 @@ def _served_files(run) -> list[ServedFile]:
         ServedFile("validation-report", "Validation report (JSON)", text=run.generated_validation_json,
                    missing="" if run.generated_validation_json else "Validation report not yet generated"),
         ServedFile("validation-pdf", "Validation report (PDF)", pdf_size=len(pdf) if pdf else None,
+                   pdf_size_text=f"{len(pdf):,}" if pdf else "",
                    missing="" if pdf else "Validation PDF not yet generated"),
     ]
 
@@ -68,7 +71,7 @@ def _served_files(run) -> list[ServedFile]:
 @router.get("/served-runs", response_class=HTMLResponse)
 def served_runs(request: Request, status: str = "ready", ctx: AppContext = Depends(get_ctx)) -> Response:
     if status not in _STATUSES:
-        raise HTTPException(status_code=400, detail="Only Ready and Archived runs are served by the API.")
+        raise HTTPException(status_code=400, detail=_BAD_STATUS)
     runs = ctx.run_repo.list_by_status(status)
     # The API's order: newest change first (api/app.py list_runs).
     runs.sort(key=lambda r: r.updated_at or r.created_at, reverse=True)
@@ -87,4 +90,5 @@ def served_run(request: Request, run_id: str, ctx: AppContext = Depends(get_ctx)
         "run": run,
         "files": _served_files(run) if served else [],
         "not_served": "" if served else _NOT_SERVED,
+        "back_status": "archived" if run.status == RunStatus.ARCHIVED else "ready",
     })

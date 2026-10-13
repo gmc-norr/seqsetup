@@ -102,8 +102,12 @@ class TestTheList:
             assert "draft-1" not in page and "Hidden draft" not in page
 
     @pytest.mark.parametrize("status", ["draft", "all", ""])
-    def test_another_status_is_refused_like_the_api(self, logged_in_client, status):
-        assert logged_in_client.get(f"/served-runs?status={status}").status_code == 400
+    def test_another_status_is_refused_like_the_api(self, logged_in_client, client, fresh_app, status):
+        _app, ctx, _db = fresh_app
+        api = client.get(f"/api/runs?status={status}", headers={"Authorization": f"Bearer {_token(ctx)}"})
+        page = logged_in_client.get(f"/served-runs?status={status}")
+        assert api.status_code == page.status_code == 400
+        assert api.json()["detail"] in html.unescape(page.text)
 
     def test_it_names_the_api_address(self, logged_in_client):
         assert "GET /api/runs?status=archived" in logged_in_client.get("/served-runs?status=archived").text
@@ -168,9 +172,11 @@ class TestOneRunsFiles:
         assert "<script>alert(1)</script>" not in page
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
 
-    def test_a_missing_file_shows_the_api_answer(self, logged_in_client, client, fresh_app):
+    @pytest.mark.parametrize("withheld", ["the test's profile has no v1 settings", ""])
+    def test_a_missing_file_shows_the_api_answer(self, logged_in_client, client, fresh_app, withheld):
+        """With and without a reason Mark Ready stored for making no v1 sheet."""
         _app, ctx, _db = fresh_app
-        run_id = _run(ctx, "bare", samplesheet_v1_withheld="the test's profile has no v1 settings")
+        run_id = _run(ctx, "bare", samplesheet_v1_withheld=withheld)
         token = _token(ctx)
         page = logged_in_client.get(f"/served-runs/{run_id}").text
 

@@ -1,7 +1,9 @@
-"""A stored file's long line scrolls inside its box, not the whole page.
+"""What the API serves, on a narrow screen: wide content scrolls inside
+its box, not the whole page.
 
 A Sample Sheet or JSON line can be far wider than a phone, or than a
-laptop's window; the page itself must not scroll sideways.
+laptop's window, and so can the list's columns; the page itself must not
+scroll sideways.
 """
 
 from datetime import datetime
@@ -29,6 +31,18 @@ def run_id(app_ctx):
     app_ctx.run_repo.save(run)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
+
+
+@pytest.mark.browser
+def test_the_list_fits_a_phone(logged_in_page, base_url, run_id):
+    """The list's columns are wider than a phone: the table scrolls in its
+    box, not the page."""
+    page = logged_in_page
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(f"{base_url}/served-runs")
+    page.wait_for_load_state("networkidle")
+    assert page.locator(f"#served-run-{run_id}").is_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 @pytest.mark.browser

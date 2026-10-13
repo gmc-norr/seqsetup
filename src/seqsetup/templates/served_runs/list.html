@@ -15,7 +15,8 @@
     <h1 class="text-xl font-semibold mb-1">What the API serves</h1>
     <p class="text-sm text-slate-600">
       The runs a program with an API token can read: Ready or Archived, never a Draft,
-      newest change first. The same list as <code>GET /api/runs?status={{ status }}</code>.
+      newest change first. The same runs as <code>GET /api/runs?status={{ status }}</code>, which
+      hands them out a page at a time.
     </p>
   </div>
 
@@ -30,6 +31,9 @@
   {% if not runs %}
     <p class="text-slate-500">No {{ status }} runs.</p>
   {% else %}
+  {# Its columns are wider than a phone: the table scrolls in its box.
+     "relative" keeps the hidden "Files" header label inside the box too. #}
+  <div class="relative overflow-x-auto">
   <table class="w-full border-collapse text-sm">
     <thead>
       <tr class="bg-slate-100">
@@ -54,6 +58,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

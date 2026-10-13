@@ -101,7 +101,8 @@ serves** in the sidebar, or **See what the API serves for this run** in a
 Ready or Archived run's Export panel.
 
 The first page lists the runs the API lists -- Ready, or Archived, never a
-Draft -- newest change first, as ``GET /api/runs`` gives them:
+Draft -- newest change first, as ``GET /api/runs`` gives them (the API hands
+them out a page at a time; this page shows them all):
 
 .. figure:: /_static/screenshots/export/served-runs.png
    :alt: The "What the API serves" page: Ready and Archived tabs above a table of Ready runs, with a See files link outlined.
@@ -120,9 +121,9 @@ not serve it.
 
    One run's Sample Sheet v2 as the API serves it, its address outlined.
 
-Anyone signed in can open these pages; they show only what the Export
-panel's downloads already give. Opening a run's page is recorded in the
-audit trail as ``export.viewed``.
+Anyone signed in can open these pages, as anyone signed in can download
+a Ready run's files. Opening a Ready or Archived run's page is recorded in
+the audit trail as ``export.viewed``.
 
 Sample Sheet v2 format
 -------------------------
