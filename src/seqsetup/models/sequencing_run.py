@@ -210,6 +210,11 @@ class SequencingRun:
     # each test and version text: {"test", "asked", "version", "file"}
     # (spec 2026-10-07 group A4, §3). Stored and cleared with the exports.
     test_versions_used: list[dict] = field(default_factory=list)
+    # Each stored sheet's target instrument and software, from
+    # services/sheet_target.py: {"samplesheet_v2": {...}, "samplesheet_v1":
+    # {...} or None}; {} when not recorded (the user's request, 2026-10-13).
+    # Stored and cleared with the exports.
+    sheet_targets: dict = field(default_factory=dict)
 
     # True once the run has been Ready (or Archived). Kept by __setattr__ and
     # never cleared: it decides who may delete an emptied draft and whether a
@@ -378,6 +383,7 @@ class SequencingRun:
             "generated_samplesheet_v1": self.generated_samplesheet_v1,
             "samplesheet_v1_withheld": self.samplesheet_v1_withheld,
             "test_versions_used": [dict(used) for used in self.test_versions_used],
+            "sheet_targets": {k: dict(v) if v else v for k, v in self.sheet_targets.items()},
             "generated_json": self.generated_json,
             "generated_validation_json": self.generated_validation_json,
             "generated_validation_pdf": (
@@ -466,6 +472,7 @@ class SequencingRun:
             generated_samplesheet_v1=data.get("generated_samplesheet_v1"),
             samplesheet_v1_withheld=data.get("samplesheet_v1_withheld") or "",
             test_versions_used=list(data.get("test_versions_used") or []),
+            sheet_targets=dict(data.get("sheet_targets") or {}),
             generated_json=data.get("generated_json"),
             generated_validation_json=data.get("generated_validation_json"),
             generated_validation_pdf=(

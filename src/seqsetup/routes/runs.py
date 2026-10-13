@@ -33,6 +33,7 @@ from ..data.instruments import (
     is_instrument_enabled_by_name,
     no_settings_reason,
     reading_synced_records,
+    run_i5_direction,
     SyncedInstrumentsUnusable,
 )
 from ..models.instrument_definition import InstrumentRecordError
@@ -44,6 +45,7 @@ from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.sheet_plan import SheetPlanChanged, SheetPlanProblem
+from ..services.sheet_target import sheet_targets
 from ..services.validation import ValidationService, clear_validation_cache
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
 from ..services.validation_summary import error_messages
@@ -70,6 +72,7 @@ _FINGERPRINT_IGNORED_KEYS = (
     "generated_validation_json",
     "generated_validation_pdf",
     "samplesheet_v1_withheld",
+    "sheet_targets",
 )
 
 
@@ -79,8 +82,10 @@ def _pregenerate_exports(
     """Generate all run exports against the current state snapshot.
 
     Returns ``(samplesheet_v2, samplesheet_v1, json_export, validation_json,
-    validation_pdf)``. The v1 entry is ``None`` for platforms that don't
-    support the legacy IEM format. Raises on any export failure so the
+    validation_pdf, i5_direction)``. The v1 entry is ``None`` for platforms
+    that don't support the legacy IEM format. ``i5_direction`` is read right
+    after the sheets are written, for their targets (services/sheet_target.py).
+    Raises on any export failure so the
     caller can refuse the status transition without persisting half-mutated
     state — the responsibility for converting that to a 500 lives at the
     handler boundary, not here.
@@ -102,6 +107,7 @@ def _pregenerate_exports(
     ss_v1 = None
     if SampleSheetV1Exporter.supports(run.instrument_platform):
         ss_v1 = SampleSheetV1Exporter.export(run)
+    i5_direction = run_i5_direction(run)
 
     result = ValidationService.validate_run(
         run,
@@ -113,7 +119,7 @@ def _pregenerate_exports(
         raise SheetPlanChanged()
     val_json = ValidationReportJSON.export(run, result)
     val_pdf = ValidationReportPDF.export(run, result)
-    return ss_v2, ss_v1, json_export, val_json, val_pdf
+    return ss_v2, ss_v1, json_export, val_json, val_pdf, i5_direction
 
 
 def _export_input_fingerprint(run: SequencingRun) -> str:
@@ -617,10 +623,11 @@ async def update_status(
     new_ss_v1 = None
     new_val_json = None
     new_val_pdf = None
+    new_i5_direction = None
     if new_status == RunStatus.READY:
         try:
             with _denied_if_instruments_unusable(request, run, new_status):
-                new_ss_v2, new_ss_v1, new_json, new_val_json, new_val_pdf = (
+                new_ss_v2, new_ss_v1, new_json, new_val_json, new_val_pdf, new_i5_direction = (
                     _pregenerate_exports(
                         run, ctx,
                         plan_fingerprint=validation_result.sheet_plan_fingerprint or None,
@@ -729,6 +736,11 @@ async def update_status(
                 run.generated_samplesheet_v1 = new_ss_v1
             run.generated_validation_json = new_val_json
             run.generated_validation_pdf = new_val_pdf
+            # Of the sheets just stored (the user's request, 2026-10-13).
+            run.sheet_targets = sheet_targets(
+                run.instrument_platform.value, new_i5_direction,
+                run.generated_samplesheet_v2, run.generated_samplesheet_v1,
+            )
         elif new_status == RunStatus.DRAFT:
             # READY→DRAFT puts the run back into the editable pool. Clear
             # pre-generated exports so a subsequent re-promotion never
@@ -740,6 +752,7 @@ async def update_status(
             run.generated_samplesheet_v1 = None
             run.samplesheet_v1_withheld = ""
             run.test_versions_used = []
+            run.sheet_targets = {}
             run.generated_json = None
             run.generated_validation_json = None
             run.generated_validation_pdf = None
