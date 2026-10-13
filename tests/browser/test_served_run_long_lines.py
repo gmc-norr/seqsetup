@@ -58,8 +58,11 @@ def test_a_long_line_scrolls_in_its_box(logged_in_page, base_url, run_id, width)
 
     box = page.locator("#served-samplesheet-v2 .served-content")
     assert LONG_LINE in box.inner_text()
-    # The target box, with the longest i5 workflow name, wraps instead.
-    assert page.locator("#served-samplesheet-v2 .served-target").is_visible()
+    # The target box, with the longest i5 workflow name, wraps instead: none
+    # of it runs past the box, where it would be cut off.
+    target = page.locator("#served-samplesheet-v2 .served-target")
+    assert target.is_visible()
+    assert target.evaluate("e => e.scrollWidth <= e.clientWidth")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert box.evaluate("e => e.scrollWidth > e.clientWidth")
     assert box.evaluate("e => getComputedStyle(e).overflowX") in ("auto", "scroll")
