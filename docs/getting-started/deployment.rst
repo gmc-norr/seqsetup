@@ -108,6 +108,13 @@ the application on port 5001. It installs the default Pixi environment only,
 so the test, browser and docs tools (pytest, pytest-playwright, mongomock,
 httpx2, sphinx, furo) are not in it.
 
+Both base images are pinned by digest, not by a moving tag: the ``Dockerfile``
+builds on ``ghcr.io/prefix-dev/pixi`` at the version that writes
+``pixi.lock``, and ``docker-compose.yml`` runs a fixed ``mongo:7`` build. Two
+builds of one commit therefore give the same image. To bump either,
+``docker buildx imagetools inspect <image>:<tag>`` prints the new digest; put
+the tag and the digest in the file together.
+
 Connecting to External MongoDB
 ------------------------------
 

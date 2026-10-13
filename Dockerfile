@@ -1,4 +1,11 @@
-FROM ghcr.io/prefix-dev/pixi:latest AS build
+# Pinned by digest, and to the pixi version that writes pixi.lock here
+# (`pixi --version` -> 0.63.2), so the image reads the lock with the same pixi
+# that wrote it. `latest` was a moving tag: two builds of this same commit
+# could install the lock with different pixi versions, months apart. To bump,
+# change the tag and the digest together --
+# `docker buildx imagetools inspect ghcr.io/prefix-dev/pixi:<version>` prints
+# the digest -- and keep it in step with the local pixi.
+FROM ghcr.io/prefix-dev/pixi:0.63.2@sha256:034c9032401f39bbc65d4cb533ac4f834df9d994085558cec75ed800e76a9424 AS build
 
 WORKDIR /app
 
