@@ -421,3 +421,35 @@ class TestTheHeartbeatsMessage:
 
         assert message.startswith("Test Operator is editing this run now (since ")
         assert message.endswith("). Reload the page: your changes are no longer saved.")
+
+
+class TestStartingFromATemplate:
+    """"Start from a template" deletes the blank run the New Run page made,
+    but not while someone else is editing it; the new run is its maker's."""
+
+    def _template(self, client, ctx):
+        from .test_new_run_from_template_choice import _make_template
+        return _make_template(client, ctx, "Lock tmpl")
+
+    def test_the_blank_run_is_kept_while_someone_else_edits_it(self, two):
+        from .test_new_run_from_template_choice import _choose, _new_blank_run
+        ctx, admin, op = two
+        template_id = self._template(admin, ctx)
+        blank = _new_blank_run(admin)
+        op.post(f"/runs/{blank}/edit-lock/take-over", headers=ORIGIN)
+
+        resp = _choose(admin, template_id, blank)
+
+        assert resp.status_code == 303
+        assert ctx.run_repo.get_by_id(blank) is not None and _holder(ctx, blank) == OPERATOR
+        new_id = resp.headers["location"].rsplit("/", 1)[1]
+        assert _holder(ctx, new_id) == ADMIN
+
+    def test_your_own_blank_run_goes_with_its_lock(self, two):
+        from .test_new_run_from_template_choice import _choose, _new_blank_run
+        ctx, admin, _op = two
+        template_id = self._template(admin, ctx)
+        blank = _new_blank_run(admin)
+
+        assert _choose(admin, template_id, blank).status_code == 303
+        assert ctx.run_repo.get_by_id(blank) is None and _holder(ctx, blank) is None
