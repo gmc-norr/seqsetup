@@ -14,6 +14,7 @@ from playwright.sync_api import expect
 
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 # Drag the first `n` chips (as one multi-select) onto the i7 drop zone of `rowSel`.
 _MULTI_DROP = """([n, rowSel]) => {
@@ -41,6 +42,7 @@ def empty_rows_run_id(app_ctx):
     for n in (1, 2, 3):
         run.add_sample(Sample(id=f"{run.id}-s{n}", sample_id=f"EMPTY-0{n}", lanes=[1]))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 
@@ -88,6 +90,7 @@ def test_filling_over_an_indexed_sample_asks(logged_in_page, base_url, empty_row
     kit = app_ctx.index_kit_repo.list_all()[0]
     run.samples[1].assign_index(kit.index_pairs[0])
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
 
     _open(page, base_url, empty_rows_run_id)
     dialogs, posts = _watch(page)
@@ -141,6 +144,7 @@ def test_a_drop_after_the_run_changed_is_refused_and_says_why(logged_in_page, ba
     run = app_ctx.run_repo.get_by_id(empty_rows_run_id)
     run.remove_sample(f"{empty_rows_run_id}-s2")
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
 
     with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
         page.evaluate(_MULTI_DROP, [2, f"#sample-row-{empty_rows_run_id}-s1"])
@@ -186,6 +190,7 @@ def test_a_drop_onto_an_index_set_in_another_tab_is_refused(
     run.get_sample(f"{empty_rows_run_id}-s2").assign_index1(
         Index(name="other", sequence="GGGGCCCCAA", index_type=IndexType.I7))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
 
     with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
         page.evaluate(_MULTI_DROP, [2, f"#sample-row-{empty_rows_run_id}-s1"])
@@ -210,6 +215,7 @@ def test_a_drop_over_an_index_this_page_shows_goes_ahead(
     kit = app_ctx.index_kit_repo.list_all()[0]
     run.samples[1].assign_index(kit.index_pairs[0])
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     _open(page, base_url, empty_rows_run_id)
     dialogs = []
     page.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))

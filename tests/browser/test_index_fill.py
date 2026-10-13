@@ -15,6 +15,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
 from .conftest import SCREENSHOT_KIT_NAME
+from .conftest import hold_edit_lock
 
 
 @pytest.fixture
@@ -30,6 +31,7 @@ def fill_run_id(app_ctx):
     for n in (1, 2, 3):
         run.add_sample(Sample(id=f"{run.id}-s{n}", sample_id=f"FILL-0{n}", lanes=[1]))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 

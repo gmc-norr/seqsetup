@@ -10,6 +10,7 @@ from playwright.sync_api import expect
 from seqsetup.models.sample_api_config import SampleApiConfig
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services import sample_api as sample_api_module
+from .conftest import hold_edit_lock
 
 GOOD = [{"sample_id": "LIMS-01", "test_id": ""}, {"sample_id": "LIMS-02", "test_id": ""}]
 REPEATED = [{"sample_id": "LIMS-01", "test_id": ""}, {"sample_id": "LIMS-01", "test_id": ""}]
@@ -49,6 +50,7 @@ def _set_status(app_ctx, run_id, status):
     run = app_ctx.run_repo.get_by_id(run_id)
     run.status = status
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
 
 
 @pytest.mark.browser

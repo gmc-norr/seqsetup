@@ -9,6 +9,7 @@ and a version that is no longer the stored one is refused.
 
 import pytest
 from playwright.sync_api import expect
+from .conftest import hold_edit_lock
 
 
 @pytest.mark.browser
@@ -36,6 +37,7 @@ def test_a_save_refreshes_the_version_and_a_stale_one_is_refused(
         run.run_name = "Other window"
         run.touch(updated_by="other-window")
         app_ctx.run_repo.save(run)
+        hold_edit_lock(app_ctx, run.id)
 
         with page.expect_response(lambda r: r.url.endswith("/setup") and r.status == 409):
             page.click("text=Continue to Run")

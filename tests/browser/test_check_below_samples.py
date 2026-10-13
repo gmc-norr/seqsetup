@@ -14,6 +14,7 @@ from playwright.sync_api import expect
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 I7 = ["ATTACTCG", "TCCGGAGA"]
 I5 = ["TATAGCCT", "ATAGAGGC"]
@@ -38,6 +39,7 @@ def run_id(app_ctx):
         ))
         run.add_sample(sample)
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 
@@ -106,6 +108,7 @@ def long_run_id(app_ctx):
         ))
         run.add_sample(sample)
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 
@@ -132,6 +135,7 @@ def test_rows_stay_put_when_check_shrinks_at_the_bottom(logged_in_page, base_url
     run.get_sample(f"{long_run_id}-s14").lanes = [1]
     run.touch(updated_by="tester")
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     with page.expect_response(lambda r: r.url.endswith(f"/runs/{long_run_id}/validate-panel")):
         page.evaluate("() => document.body.dispatchEvent(new CustomEvent('htmx:afterRequest',"
                       " {detail: {successful: true, requestConfig: {verb: 'post'}}}))")

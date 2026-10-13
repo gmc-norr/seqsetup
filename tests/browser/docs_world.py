@@ -13,7 +13,8 @@ from seqsetup.models.local_user import LocalUser
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
-from seqsetup.models.user import UserRole
+from seqsetup.models.user import User, UserRole
+from seqsetup.services import edit_locks
 
 DEMO_ADMIN = {"username": "dana.demo", "password": "Demo-Docs-2026!", "display_name": "Dana Demo"}
 DEMO_STAFF = {"username": "sam.staff", "password": "Demo-Staff-2026!", "display_name": "Sam Staff"}
@@ -129,4 +130,10 @@ def seed_demo(ctx) -> dict[str, str]:
         _sample(ids["ready"], n, _pair(n)) for n in range(1, 5)]))
     ctx.run_repo.save(_run(ids["archived"], "DEMO-RUN-04", RunStatus.ARCHIVED, samples=[
         _sample(ids["archived"], n, _pair(n)) for n in range(5, 9)]))
+    # Dana edits the drafts, as she would after making them: the pictures
+    # show the editor's view (one person edits a Draft at a time).
+    dana = User(username=DEMO_ADMIN["username"], display_name=DEMO_ADMIN["display_name"],
+                role=UserRole.ADMIN)
+    for key in ("draft", "problem", "fill"):
+        edit_locks.grant(ctx.edit_lock_repo, ids[key], dana)
     return ids

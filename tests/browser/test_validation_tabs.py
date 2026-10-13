@@ -13,6 +13,7 @@ import pytest
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
+from .conftest import hold_edit_lock
 
 TABS = [
     ("Heatmaps", ".heatmaps-tab-content"),
@@ -35,6 +36,7 @@ def run_id(app_ctx):
                          index2=Index(name=f"i5-{n}", sequence=i5, index_type=IndexType.I5))
         run.add_sample(Sample(id=f"{run.id}-s{n}", sample_id=f"S{n}", lanes=[1], index_pair=pair))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 

@@ -4,6 +4,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .test_paste_preview import _open_paste, _preview
+from .conftest import hold_edit_lock
 
 
 @pytest.mark.browser
@@ -27,6 +28,7 @@ def _set_samples(app_ctx, run_id, test, version):
     for sample in run.samples:
         sample.test_id, sample.test_version = test, version
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
 
 
 def _tests(app_ctx, run_id):

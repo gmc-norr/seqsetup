@@ -16,6 +16,7 @@ from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexTy
 from seqsetup.models.run_history import RunHistoryEntry
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 KIT = "Edit-Indexes-Kit"
 I7 = ["ACGTACGT", "CAGTCAGT", "TGCATGCA"]
@@ -61,6 +62,7 @@ def run_id(app_ctx, kit):
         sample.index_kit_name = KIT
         run.add_sample(sample)
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     app_ctx.run_history_repo.append(RunHistoryEntry(
         run_id=run.id, timestamp=t, actor="alice", kind="created"))
     yield run.id
@@ -209,6 +211,7 @@ def half_run_id(app_ctx, kit):
     run.add_sample(first)
     run.add_sample(Sample(id=f"{run.id}-s2", sample_id="EI-02", lanes=[1]))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 

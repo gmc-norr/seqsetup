@@ -12,6 +12,7 @@ import pytest
 
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 LONG_LINE = "Sample_ID," + ",".join(f"Column{n}" for n in range(120))
 
@@ -32,6 +33,7 @@ def run_id(app_ctx):
     )
     run.add_sample(Sample(id=f"{run.id}-s1", sample_id="S1", lanes=[1]))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 
