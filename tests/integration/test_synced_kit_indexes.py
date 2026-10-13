@@ -260,9 +260,11 @@ class TestAnUploadedKitIsNotOverwritten:
     """Review P2-2 (2026-10-13): a kit file whose name and version are a kit
     uploaded through SeqSetup replaced the uploaded kit -- its index
     sequences too -- while the sync said it succeeded, though the guide
-    promises uploaded kits are kept. It is refused and named instead."""
+    promises uploaded kits are kept. It is refused and named instead, in a
+    sub-folder too."""
 
-    def test_the_uploaded_kit_stays_and_the_file_is_named(self, fresh_app, monkeypatch):
+    @pytest.mark.parametrize("folder", ["", "vendor/"])
+    def test_the_uploaded_kit_stays_and_the_file_is_named(self, fresh_app, monkeypatch, folder):
         from seqsetup.models.index import Index, IndexKit, IndexPair, IndexType
         _app, ctx, _db = fresh_app
         ctx.index_kit_repo.save(IndexKit(
@@ -271,11 +273,11 @@ class TestAnUploadedKitIsNotOverwritten:
                                    index1=Index(name="u-i7", sequence="ATTACTCG", index_type=IndexType.I7),
                                    index2=Index(name="u-i5", sequence="GGGGGGGG", index_type=IndexType.I5))]))
 
-        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML,
-                                                                 "lab.yaml": GOOD_LAB_KIT})
+        files = {"dual.yaml": GOOD_KIT_YAML} if not folder else {folder.strip("/"): {"dual.yaml": GOOD_KIT_YAML}}
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {**files, "lab.yaml": GOOD_LAB_KIT})
 
         assert ok is False
-        assert ("index_kits/dual.yaml (Dual Kit 2.1.0): a kit of this name and version was "
+        assert (f"index_kits/{folder}dual.yaml (Dual Kit 2.1.0): a kit of this name and version was "
                 "uploaded through SeqSetup, and the uploaded one is kept") in message
         (kit,) = [k for k in ctx.index_kit_repo.list_all() if k.name == "Dual Kit"]
         assert kit.source == "user" and kit.index_pairs[0].index2.sequence == "GGGGGGGG"
