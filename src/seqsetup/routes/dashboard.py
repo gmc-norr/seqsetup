@@ -16,6 +16,7 @@ from ..models.deleted_run import DeletedRun
 from ..models.sequencing_run import RunStatus, SequencingRun
 from ..models.user import UserRole
 from ..repositories.base import ConflictError
+from ..services import edit_locks
 from ..services.audit_log import audit
 from ..templating import render
 from .dependencies import get_archivable_run, get_ctx, saving_run
@@ -172,6 +173,10 @@ def delete_run(
             return Response("A draft run with samples cannot be deleted.", status_code=403)
         if run.was_ready and not is_admin:
             return Response(_ONCE_READY_REFUSAL, status_code=403)
+        editing = edit_locks.state(ctx.edit_lock_repo, run.id, get_username(request))
+        if editing.someone_else:
+            raise ConflictError(
+                f"{editing.lock.display_name} is editing this run, so it was not deleted.")
     elif run.status == RunStatus.ARCHIVED:
         if not is_admin:
             return Response("Only an admin can delete an archived run.", status_code=403)
@@ -205,6 +210,7 @@ def delete_run(
               reason="run_changed", **copy_detail)
         raise ConflictError(_RUN_CHANGED)
 
+    edit_locks.release(ctx.edit_lock_repo, run.id)
     if copy is not None:
         try:
             confirmed = ctx.deleted_run_repo.mark_completed(copy.copy_id, utcnow())

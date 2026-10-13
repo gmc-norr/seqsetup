@@ -14,6 +14,7 @@ from ..context import AppContext
 from ..models.run_template import RunTemplate
 from ..models.sample import Sample
 from ..models.sequencing_run import RunCycles, RunStatus
+from ..services import edit_locks
 from ..services.audit_log import audit
 from ..services.run_history import record_run_created_safe
 from ..services.run_builder import build_draft_run, RunInstantiationError, _filter_analyses
@@ -30,6 +31,13 @@ def _bool_field(form, key: str) -> bool:
     if raw is None:
         return False
     return str(raw).lower() in ("1", "true", "on", "yes")
+
+
+def _give_to_maker(ctx: AppContext, run, request: Request) -> None:
+    """A new run's maker edits it first: one person edits a Draft at a time."""
+    user = request.scope.get("auth")
+    if user:
+        edit_locks.grant(ctx.edit_lock_repo, run.id, user)
 
 
 @router.post("/runs/{run_id}/duplicate", response_class=Response)
@@ -62,6 +70,7 @@ async def duplicate_run(
         return Response(str(exc), status_code=400)
 
     ctx.run_repo.save(new_run)
+    _give_to_maker(ctx, new_run, request)
     record_run_created_safe(ctx, new_run, get_username(request),
                             source="clone", ref=run.id)
     audit(
@@ -218,6 +227,7 @@ def _run_from_template(template_id: str, request: Request, ctx: AppContext) -> R
         return Response(str(exc), status_code=400)
 
     ctx.run_repo.save(new_run)
+    _give_to_maker(ctx, new_run, request)
     record_run_created_safe(ctx, new_run, get_username(request),
                             source="template", ref=template_id)
     audit(
@@ -256,8 +266,10 @@ async def new_run_from_chosen_template(
 
     blank = ctx.run_repo.get_by_id(sanitize_string(form.get("discard_run_id", ""), 256))
     if (blank is not None and blank.status == RunStatus.DRAFT and not blank.samples
-            and not blank.was_ready):
+            and not blank.was_ready
+            and not edit_locks.state(ctx.edit_lock_repo, blank.id, get_username(request)).someone_else):
         if ctx.run_repo.delete_if_unchanged(blank):
+            edit_locks.release(ctx.edit_lock_repo, blank.id)
             audit(
                 "run.deleted",
                 actor=get_username(request),

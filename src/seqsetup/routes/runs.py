@@ -52,7 +52,8 @@ from ..services.validation_report import ValidationReportJSON, ValidationReportP
 from ..services.validation_summary import error_messages
 from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
-from .dependencies import get_archivable_run, get_ctx, get_editable_run, saving_run
+from ..services import edit_locks
+from .dependencies import get_archivable_run, get_ctx, get_editable_run, require_edit_lock, saving_run
 from .utils import check_status_transition, get_username, sanitize_string, selected_kit_id
 
 
@@ -587,6 +588,9 @@ async def update_status(
 
     if err := check_status_transition(run.status, new_status):
         return err
+    if new_status == RunStatus.READY:
+        # Only the person editing the Draft marks it Ready.
+        require_edit_lock(run, ctx, request)
 
     color_balance_lanes: list[int] = []
     if new_status == RunStatus.READY:
@@ -820,6 +824,13 @@ async def update_status(
             run.generated_json = None
             run.generated_validation_json = None
             run.generated_validation_pdf = None
+    if new_status == RunStatus.READY:
+        edit_locks.release(ctx.edit_lock_repo, run.id)
+    elif new_status == RunStatus.DRAFT:
+        # Whoever sends it back to Draft edits it first.
+        user = request.scope.get("auth")
+        if user:
+            edit_locks.grant(ctx.edit_lock_repo, run.id, user)
 
     audit(
         "run.status.changed",

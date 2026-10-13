@@ -22,6 +22,7 @@ from ..models.sequencing_run import RunCycles, RunStatus
 from ..startup import get_instrument_config_repo
 from ..templating import render
 from ..services.run_history import record_run_created_safe
+from ..services import edit_locks
 from .dependencies import get_ctx
 
 
@@ -41,6 +42,9 @@ def wizard_new(
         actor, i5_workflow=standard_i5_workflow(ctx.run_repo.NEW_RUN_INSTRUMENT.value)
     )
     record_run_created_safe(ctx, run, actor, source="blank")
+    # Its maker edits it first: one person edits a Draft at a time.
+    if user:
+        edit_locks.grant(ctx.edit_lock_repo, run.id, user)
     # new=1: this page just made the run, so its Cancel deletes it.
     return RedirectResponse(f"/runs/new/step/1?new=1&run_id={run.id}", status_code=303)
 

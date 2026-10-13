@@ -32,7 +32,7 @@ from .csrf import OriginCheckMiddleware
 from .data.instruments import log_instruments_file, set_instrument_definition_repo
 from .exception_handlers import install as install_exception_handlers
 from .middleware import AuthMiddleware
-from .routes import api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, run_templates, runs, samples, served_runs, validation, wizard
+from .routes import api_tokens, auth, dashboard, edit_lock, export, indexes, local_users, main, profiles, run_templates, runs, samples, served_runs, validation, wizard
 from .routes.admin import (
     audit as admin_audit,
     authentication as admin_authentication,
@@ -203,6 +203,7 @@ app.include_router(wizard.router)
 app.include_router(samples.router)
 app.include_router(run_templates.router)
 app.include_router(runs.router)
+app.include_router(edit_lock.router)
 app.include_router(export.router)
 app.include_router(served_runs.router)
 app.include_router(validation.router)
