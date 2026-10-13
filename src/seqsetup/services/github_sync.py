@@ -237,8 +237,12 @@ class GitHubSyncService:
                 refused_instruments += self._duplicate_instruments(instruments)
                 logger.info(f"Fetched {len(instruments)} instrument definitions")
 
-            # Fetch index kits if enabled and repo available
+            # Fetch index kits if enabled and repo available. A refused kit
+            # file is named in the message and the kit stored before from it
+            # stays (the night run's Q3, answered 2026-10-13).
             index_kits = []
+            refused_kits: list[dict] = []
+            kept_kits: list[IndexKit] = []
             if config.sync_index_kits_enabled and self.index_kit_repo:
                 index_kits = self._fetch_index_kits(
                     owner,
@@ -246,8 +250,11 @@ class GitHubSyncService:
                     config.github_branch,
                     config.index_kits_path,
                     strict=True,
+                    refused=refused_kits,
                 )
                 logger.info(f"Fetched {len(index_kits)} index kits")
+                if refused_kits:
+                    kept_kits = self._synced_kits_to_keep(index_kits, refused_kits)
 
             # Guard against accidental data loss on partial/failed fetches.
             # If we already have synced data, never replace it with an empty fetch result.
@@ -279,7 +286,8 @@ class GitHubSyncService:
                     {"source": "github"}
                 )
                 self._guard_against_destructive_replace(
-                    existing_synced_index_kits, len(index_kits), "synced index kits"
+                    existing_synced_index_kits, len(index_kits) + len(kept_kits),
+                    "synced index kits"
                 )
 
             # Save to database (replace all)
@@ -314,7 +322,7 @@ class GitHubSyncService:
 
             # For index kits, only delete synced ones (preserve user-uploaded)
             if config.sync_index_kits_enabled and self.index_kit_repo:
-                self.index_kit_repo.delete_synced()
+                self.index_kit_repo.delete_synced_except([kit.kit_id for kit in kept_kits])
                 self.index_kit_repo.bulk_save(index_kits)
 
             # Drop the in-memory instrument definitions so every caller of
@@ -336,7 +344,7 @@ class GitHubSyncService:
             instruments_count = len(instruments) if store_instruments else 0
             index_kits_count = len(index_kits)
 
-            if refused_tests or refused_instruments:
+            if refused_tests or refused_instruments or refused_kits:
                 synced = [f"{len(app_profiles)} application profiles"]
                 if not refused_tests:
                     synced.append(f"{len(test_profiles)} test profiles")
@@ -361,6 +369,19 @@ class GitHubSyncService:
                         "Instrument files were refused, so no instrument settings were stored "
                         "and the stored ones are kept: " + "; ".join(refused_instruments) + "."
                     )
+                if refused_kits:
+                    refusals.append(
+                        "Index kit files were refused, so they were not stored: "
+                        + "; ".join(f"{r['path']} ({r['kit']}): {r['reason']}" if r["kit"]
+                                    else f"{r['path']}: {r['reason']}" for r in refused_kits)
+                        + "."
+                    )
+                    if kept_kits:
+                        refusals.append(
+                            "Kept the stored index kits "
+                            + ", ".join(sorted(f"{kit.name} {kit.version}" for kit in kept_kits))
+                            + " until the file is fixed."
+                        )
                 message = " ".join(refusals) + f" Synced {', '.join(synced)}."
                 self.config_repo.update_sync_status(
                     "error", message, count, instruments_count, index_kits_count,
@@ -792,6 +813,18 @@ class GitHubSyncService:
                   for profile in self.test_profile_repo.list_all()}
         return [f"{test} {version}" for test, version in sorted(stored - read)]
 
+    def _synced_kits_to_keep(self, fetched: list[IndexKit], refused: list[dict]) -> list[IndexKit]:
+        """The stored synced kits a sync with refused kit files keeps: those
+        this sync did not read that carry a refused file's kit name, or -- when
+        a refused file names no kit -- every one it did not read, since any of
+        them could be that file's."""
+        fetched_ids = {kit.kit_id for kit in fetched}
+        not_read = [kit for kit in self.index_kit_repo.list_synced() if kit.kit_id not in fetched_ids]
+        if any(r["name"] is None for r in refused):
+            return not_read
+        names = {r["name"] for r in refused}
+        return [kit for kit in not_read if kit.name in names]
+
     @staticmethod
     def _refuse_repeated_test_versions(test_profiles: list[TestProfile],
                                        refused: list[str],
@@ -849,11 +882,15 @@ class GitHubSyncService:
         branch: str,
         path: str,
         strict: bool = False,
+        refused: Optional[list[dict]] = None,
     ) -> list[IndexKit]:
         """Fetch index kit definitions from GitHub.
 
         Fetches YAML files from the configured path and parses them into IndexKit objects.
-        Only valid index kits (passing IndexValidator) are returned.
+        Only valid index kits (passing IndexValidator) are returned. Each file
+        that is not is added to ``refused`` as {"path", "name", "kit",
+        "reason"}, with name and kit None when the file names no kit (the
+        night run's Q3: the sync names it and keeps the kit stored before).
 
         Args:
             owner: GitHub owner
@@ -881,7 +918,8 @@ class GitHubSyncService:
 
             if item_type == "dir":
                 # Recurse into subdirectory
-                sub_kits = self._fetch_index_kits(owner, repo, branch, item_path)
+                sub_kits = self._fetch_index_kits(owner, repo, branch, item_path,
+                                                  refused=refused)
                 # Subdirectories are best-effort; top-level fetch is strict.
                 index_kits.extend(sub_kits)
 
@@ -906,15 +944,27 @@ class GitHubSyncService:
                                 logger.error(
                                     f"Skipping invalid index kit from {item_path}"
                                 )
+                                if refused is not None:
+                                    refused.append({
+                                        "path": item_path, "name": kit.name,
+                                        "kit": f"{kit.name} {kit.version}",
+                                        "reason": "; ".join(e.rstrip(".") for e in validation.errors),
+                                    })
 
                             # Log warnings
                             for warning in validation.warnings:
                                 logger.warning(
                                     f"Index kit '{kit.name}' ({item_name}): {warning}"
                                 )
+                        elif refused is not None:
+                            refused.append({"path": item_path, "name": None, "kit": None,
+                                            "reason": "could not be read as an index kit"})
 
                     except Exception as e:
                         logger.warning(f"Failed to process index kit {item_path}: {e}")
+                        if refused is not None:
+                            refused.append({"path": item_path, "name": None, "kit": None,
+                                            "reason": str(e).rstrip(".")})
 
         return index_kits
 

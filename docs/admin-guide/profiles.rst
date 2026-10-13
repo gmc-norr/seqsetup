@@ -605,12 +605,20 @@ A sync (manual or scheduled) always does all of the following:
   that it failed and names each refused file, and still syncs the
   profiles and index kits (see :doc:`instruments`). Index kits keep any
   kit uploaded directly through the UI; only previously *synced* kits are
-  replaced.
+  replaced. An index kit file that breaks a rule, or cannot be read, is
+  not stored: the sync reports that it failed, names each such file and
+  why -- *"Index kit files were refused, so they were not stored:
+  index_kits/lab.yaml (Lab Kit 1.0): ..."* -- and keeps the kit stored
+  before from that file until the file is fixed (*"Kept the stored index
+  kits Lab Kit 1.0 until the file is fixed."*). Every other kit file is
+  synced as usual. A file that cannot be read names no kit, so then every
+  stored kit this sync did not read is kept, and named.
 - As a safety net, a sync that would replace an existing, non-empty
   collection with **zero** fetched items is refused rather than applied --
   a misconfigured path or a network blip cannot wipe out reference data
   that was already there. (When an instrument file was refused, no
-  instruments are stored anyway.)
+  instruments are stored anyway; the index kits a refused kit file keeps
+  count as stored.)
 
 .. warning::
    Syncing instruments changes what a **new** run can be set up on -- see

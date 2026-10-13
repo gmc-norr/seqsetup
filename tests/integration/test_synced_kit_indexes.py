@@ -121,5 +121,104 @@ class TestASyncedKitHoldsTheFilesIndexes:
             ctx, monkeypatch,
             {"dual.yaml": GOOD_KIT_YAML, "refused.yaml": REFUSED_KIT_YAML})
 
-        assert (ok, "1 index kits" in message) == (True, True)
+        # The night run's Q3, answered 2026-10-13: the refusal is named, not
+        # passed off as a clean sync (TestARefusedKitIsNamedAndTheOldOneKept).
+        assert ok is False and "1 index kits" in message
+        assert "index_kits/refused.yaml" in message
         assert [kit.name for kit in ctx.index_kit_repo.list_synced()] == ["Dual Kit"]
+
+
+LAB_KIT_YAML = """\
+name: "Lab Kit"
+version: "1.0"
+index_mode: unique_dual
+default_index1_cycles: {cycles}
+index_pairs:
+  - name: "L01"
+    index1:
+      name: "L-i7"
+      sequence: "CGCTCATT"
+    index2:
+      name: "L-i5"
+      sequence: "GTACTGAC"
+"""
+GOOD_LAB_KIT = LAB_KIT_YAML.format(cycles=8)
+# The same kit after an edit that breaks a rule: 12 i7 cycles for 8-base i7s.
+BROKEN_LAB_KIT = LAB_KIT_YAML.format(cycles=12)
+
+
+def _synced(ctx):
+    return sorted(f"{kit.name} {kit.version}" for kit in ctx.index_kit_repo.list_synced())
+
+
+class TestARefusedKitIsNamedAndTheOldOneKept:
+    """The night run's Q3, answered 2026-10-13 ("keep old, say so"): a kit
+    file the sync cannot store is named in the sync's message with why, the
+    kit stored before from it stays until the file is fixed, and everything
+    else still syncs. Before, the kit simply vanished from the index picker
+    while the sync said it succeeded."""
+
+    def test_the_refusal_names_the_file_and_why(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": BROKEN_LAB_KIT})
+
+        assert ok is False
+        assert "Index kit files were refused" in message
+        assert "index_kits/lab.yaml (Lab Kit 1.0)" in message
+        assert "i7 index cycles is 12" in message
+        assert ctx.profile_sync_config_repo.get().last_sync_status == "error"
+
+    def test_the_kit_stored_before_stays(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        ok, _message, _count = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": GOOD_LAB_KIT,
+                                                                  "dual.yaml": GOOD_KIT_YAML})
+        assert ok and _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": BROKEN_LAB_KIT,
+                                                                 "dual.yaml": GOOD_KIT_YAML})
+
+        assert ok is False
+        assert _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
+        (lab,) = [kit for kit in ctx.index_kit_repo.list_synced() if kit.name == "Lab Kit"]
+        assert lab.default_index1_cycles == 8, "the stored kit, not the refused file's"
+        assert "Kept the stored index kits Lab Kit 1.0 until the file is fixed." in message
+
+    def test_only_the_refused_kit_is_kept(self, fresh_app, monkeypatch):
+        """A kit whose file left the repository is still removed."""
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"lab.yaml": GOOD_LAB_KIT, "dual.yaml": GOOD_KIT_YAML})
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": BROKEN_LAB_KIT})
+
+        assert ok is False
+        assert _synced(ctx) == ["Lab Kit 1.0"]
+        assert "Dual Kit" not in message
+
+    def test_every_file_refused_keeps_them_all_and_is_not_an_empty_fetch(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"lab.yaml": GOOD_LAB_KIT})
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": BROKEN_LAB_KIT})
+
+        assert ok is False and "Refusing to replace" not in message
+        assert _synced(ctx) == ["Lab Kit 1.0"]
+
+    def test_an_unreadable_file_keeps_every_stored_kit_it_could_be(self, fresh_app, monkeypatch):
+        """A file that cannot be read names no kit, so every stored kit this
+        sync did not read stays, and the message lists them."""
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"lab.yaml": GOOD_LAB_KIT, "dual.yaml": GOOD_KIT_YAML})
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": "name: [unclosed",
+                                                                 "dual.yaml": GOOD_KIT_YAML})
+
+        assert ok is False
+        assert "index_kits/lab.yaml: could not be read as an index kit" in message
+        assert _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
+        assert "Kept the stored index kits Lab Kit 1.0 until the file is fixed." in message
+
+    def test_a_clean_sync_is_unchanged(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": GOOD_LAB_KIT})
+        assert ok is True and message.startswith("Synced ") and "refused" not in message
