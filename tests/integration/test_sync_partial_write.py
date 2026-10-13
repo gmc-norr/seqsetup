@@ -487,6 +487,19 @@ class TestADisabledInstrumentStaysDisabled:
 
         assert repo.get_by_name("Other").enabled is False
 
+    def test_the_noted_switches_go_once_the_instruments_are_written(self, fresh_app):
+        """Else an instrument the admin switches back on would be switched
+        off again by a later sync while the test profiles are still noted."""
+        from seqsetup.utils.clock import utcnow
+        _app, ctx, _db = fresh_app
+        notes = ctx.profile_sync_config_repo
+        notes.mark_writing(utcnow(), "test profiles")
+        notes.mark_writing(utcnow(), "instrument settings", {"OtherSeq"})
+
+        assert notes.written(["instrument settings"]) == ["test profiles"]
+
+        assert notes.writing_note()["disabled_instruments"] == []
+
 
 class TestTheSchedulerTriesAgainSoon:
     """While Mark Ready is paused, the scheduled sync does not wait its whole
