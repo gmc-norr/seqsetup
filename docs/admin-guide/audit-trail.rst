@@ -52,7 +52,11 @@ The event name says what happened. The main groups are:
 - **Users and access** -- ``user.created``, ``user.updated``,
   ``user.deleted``, ``api_token.created``, ``api_token.revoked``,
   ``auth.method.changed``, ``auth.ldap_config.updated``, and
-  ``api.auth.failure`` for a refused API token.
+  ``api.auth.failure`` for a refused API token. A refused **Test sign-in**
+  on Admin > Authentication (``ldap.test_auth.rate_limited``) keeps the
+  name it was given in ``target_user`` the same way as a refused sign-in:
+  as typed only when it names an account SeqSetup knows, else
+  ``(unknown name)`` and a few hex characters.
 - **Runs and samples** -- ``run.status.changed`` (Mark Ready, back to
   Draft), ``run.status.denied``, ``run.archived``, ``run.deleted``,
   ``run.delete.failed``, ``run.delete.copy_unconfirmed``, ``run.cloned``,
