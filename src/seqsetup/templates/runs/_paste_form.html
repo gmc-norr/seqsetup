@@ -8,12 +8,16 @@
      test_profiles: list[OfferedTest] — one per test
      num_lanes:     int
      paste:         _PasteInput | undefined — refills the form after a preview
+
+   A refilled form posts with ?edited=1: the text it carries may have come
+   from a file of up to 10 MB, and its paste_data field is read with that
+   limit. The form on the page itself keeps the 1 MB of every other field.
 #}
 {% set chosen_lanes = paste.lanes if paste else [1] %}
 {% set chosen_test = paste.default_test if paste else '' %}
 {% set chosen_version = paste.default_version if paste else '' %}
 <form class="paste-form"
-      hx-post="/runs/{{ run.id }}/samples/preview"
+      hx-post="/runs/{{ run.id }}/samples/preview{% if paste %}?edited=1{% endif %}"
       hx-target="#paste-area"
       hx-swap="innerHTML"
       hx-encoding="multipart/form-data">

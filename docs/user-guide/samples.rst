@@ -89,6 +89,10 @@ button below the table (it names how many it will add, e.g. **Add 3
 samples**); going back to **Edit paste** discards nothing you have not
 already added.
 
+A file is read up to 10 MB, and **Edit paste** puts all of it back into the
+box, so pressing **Preview** again reads the same 10 MB. Text you paste or
+type into the box yourself is read up to 1 MB.
+
 .. warning::
    A pasted or imported row that has *any* content but no sample ID does
    not get silently dropped. SeqSetup rejects the **entire** paste and

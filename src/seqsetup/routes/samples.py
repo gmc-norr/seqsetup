@@ -345,7 +345,10 @@ _MAX_PASTE_CHARS = 10 * 1024 * 1024
 # Starlette bounds each form field at 1 MB unless a route asks for more. The
 # preview's Add form sends back the text preview read, which may come from a
 # file of up to 10 MB, and a browser sends each line end of a textarea as CR LF:
-# up to twice the bytes. Preview keeps the 1 MB, as for every other form.
+# up to twice the bytes. The paste box on the page keeps the 1 MB, as for every
+# other form; the box the preview refills ("Edit paste") gets the file
+# branch's 10 MB, or a file over 1 MB could be previewed once and never edited
+# (batch 4, item 4f(iii)).
 _STARLETTE_FIELD_BYTES = 1024 * 1024
 _MAX_ADD_FIELD_BYTES = 2 * _MAX_PASTE_CHARS
 # Caps on the whole request (app.py, body_limit.py): the biggest field plus
@@ -738,13 +741,23 @@ async def preview_paste(
     request: Request,
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
+    edited: bool = False,
 ) -> Response:
     """POST /runs/{run_id}/samples/preview — show what a paste would add.
 
     Saves nothing. Reads with the same parser as /samples/bulk; the preview's
     Add form sends the same text back there, which re-applies every rule.
+
+    ``edited=1`` is the form a preview refilled, which may send back a text
+    that came from a file: its paste_data field takes the file branch's 10 MB.
+    The form on the page sends no such flag and keeps the 1 MB. Both texts
+    then go through the same 10 MB check, and the whole request through the
+    same cap, so this bounds nothing new — it only says which of the two
+    boxes is being read.
     """
-    paste, error = await _read_paste_input(request, run, ctx)
+    paste, error = await _read_paste_input(
+        request, run, ctx,
+        max_field_bytes=_MAX_PASTE_CHARS if edited else _STARLETTE_FIELD_BYTES)
     if paste is None:
         return Response(error, status_code=400)
 
