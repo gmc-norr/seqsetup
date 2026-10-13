@@ -39,6 +39,9 @@ _SYNC_LOCK = threading.Lock()
 
 _PAUSED_IN_STATUS = ("The settings were only partly written, so Mark Ready is paused "
                      "until a sync writes them again.")
+# Starts the message of a sync that finished but could not lift the pause;
+# the scheduler then waits its whole interval (services/scheduler.py).
+STAYS_PAUSED = "Mark Ready stays paused"
 
 # What the "writing" note names. Synced index kits are not noted: a kit never
 # reaches a sheet, because assigning one copies its sequences onto the sample.
@@ -63,10 +66,13 @@ def unfinished_sync_message(since: datetime, collections: list[str]) -> str:
             "otherwise an admin can press Sync now on the Config Sync page.")
 
 
-def paused_page_message(since: datetime, collections: list[str]) -> str:
+def paused_page_message(since: datetime, collections: list[str],
+                        instruments_synced: bool) -> str:
     """The Config Sync page's line while Mark Ready is paused."""
+    then = ("Switch on Also sync instruments, then press Sync now"
+            if _INSTRUMENTS in collections and not instruments_synced else "Press Sync now")
     return (f"Mark Ready is paused: a sync started at {local_time(since)} did not finish "
-            f"writing the {_names(collections)}. Press Sync now to write them again.")
+            f"writing the {_names(collections)}. {then} to write them again.")
 
 
 class InstrumentFileRefused(ValueError):
@@ -365,17 +371,20 @@ class GitHubSyncService:
                 # instrument) rather than ``id`` (regenerated). Only the two
                 # fields are read, so a stored record that cannot be loaded
                 # does not stop the sync that replaces it.
+                switches = self.instrument_definition_repo.enabled_switches()
                 disabled_keys = {
                     samplesheet_name
-                    for samplesheet_name, enabled
-                    in self.instrument_definition_repo.enabled_switches()
+                    for samplesheet_name, enabled in switches
                     if not enabled and samplesheet_name
                 }
                 # A sync that stopped after deleting the records noted their
-                # switches; the note keeps them until the records are written.
+                # switches. A noted switch counts only for an instrument that
+                # sync did not write again: one it wrote carries the admin's
+                # switch, perhaps changed since.
                 note = self.config_repo.writing_note()
                 if note:
-                    disabled_keys |= set(note["disabled_instruments"])
+                    stored = {samplesheet_name for samplesheet_name, _enabled in switches}
+                    disabled_keys |= set(note["disabled_instruments"]) - stored
                 self.config_repo.mark_writing(utcnow(), _INSTRUMENTS, disabled_keys)
                 self.instrument_definition_repo.delete_all()
                 for inst in instruments:
@@ -453,11 +462,16 @@ class GitHubSyncService:
                             + " until the file is fixed."
                         )
                 if still_incomplete:
-                    refusals.append(
-                        f"Mark Ready stays paused: a sync that stopped earlier left the "
+                    stays = (
+                        f"{STAYS_PAUSED}: a sync that stopped earlier left the "
                         f"{_names(still_incomplete)} incomplete, and this sync did not write "
                         "them again."
                     )
+                    if _INSTRUMENTS in still_incomplete and not config.sync_instruments_enabled:
+                        stays += " Switch on Also sync instruments, then sync again."
+                    elif refused_tests or refused_instruments:
+                        stays += " Fix the refused files, then sync again."
+                    refusals.append(stays)
                 message = " ".join(refusals) + f" Synced {', '.join(synced)}."
                 self.config_repo.update_sync_status(
                     "error", message, count, instruments_count, index_kits_count,

@@ -571,7 +571,8 @@ while **Mark Ready** runs is refused the same way: *"The profiles or
 instrument settings changed while the exports were being generated, so the
 Sample Sheet might not match what was checked. The run is still a Draft.
 Mark it Ready again."* So is a Mark Ready during which an index kit was
-uploaded or removed, or an instrument switched on or off.
+uploaded or removed, an instrument switched on or off, or another run's
+Mark Ready refused because the profiles changed under it.
 
 .. _config-sync:
 
@@ -644,10 +645,16 @@ A sync (manual or scheduled) always does all of the following:
   partly written, so Mark Ready is paused until a sync writes them
   again."* Only a sync that writes those records again lifts the pause: a
   sync that refuses the test files, or runs with **Also sync instruments**
-  off, leaves them as they were, and its message says *"Mark Ready stays
-  paused: a sync that stopped earlier left the test profiles incomplete,
-  and this sync did not write them again."* While paused, the scheduled
-  sync tries again every 5 minutes instead of waiting its interval.
+  off, leaves them as they were, and its message says what to do: *"Mark
+  Ready stays paused: a sync that stopped earlier left the test profiles
+  incomplete, and this sync did not write them again. Fix the refused
+  files, then sync again."* (or *"Switch on Also sync instruments, then
+  sync again."*). After a sync that stopped part-way, the scheduled sync
+  tries again every 5 minutes instead of waiting its interval; after one
+  that finished but could not lift the pause, it waits its interval, since
+  another sync would not lift it either. An instrument switched off before
+  a sync stopped stays off; one an admin switches on or off during the
+  pause keeps that switch.
   Synced index kits are not part of the pause: a kit never reaches a
   sheet, because assigning one copies its sequences onto the sample. Runs
   already Ready or Archived keep their exports. One sync runs at a time: a

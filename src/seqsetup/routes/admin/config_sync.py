@@ -88,7 +88,8 @@ def _page_ctx(ctx: AppContext, message: str = "", message_ok: bool = True) -> di
         "test_profiles": test_profiles,
         "last_sync_other_repo": last_sync_other_repo,
         # A sync that stopped part-way pauses Mark Ready (review P2-3).
-        "paused_message": (paused_page_message(paused["since"], paused["collections"])
+        "paused_message": (paused_page_message(paused["since"], paused["collections"],
+                                               config.sync_instruments_enabled)
                            if paused else ""),
         "message": message,
         "message_ok": message_ok,

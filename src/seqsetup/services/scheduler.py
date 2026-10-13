@@ -5,7 +5,7 @@ import threading
 import time
 
 from .audit_log import audit, redact_url
-from .github_sync import GitHubSyncService
+from .github_sync import STAYS_PAUSED, GitHubSyncService
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from ..utils.clock import utcnow
 
@@ -138,8 +138,10 @@ class ProfileSyncScheduler:
         interval_seconds = config.sync_interval_minutes * 60
         # While a sync that stopped part-way keeps Mark Ready paused, try
         # again after a few minutes, not the whole interval (review P2-3,
-        # 2026-10-14).
-        if self.config_repo.writing_since() is not None:
+        # 2026-10-14). Not when the last sync finished and still could not
+        # lift it: another would not either (second review P3-2).
+        if (self.config_repo.writing_since() is not None
+                and STAYS_PAUSED not in (config.last_sync_message or "")):
             interval_seconds = min(interval_seconds, _RETRY_WHILE_PAUSED_SECONDS)
 
         return elapsed.total_seconds() >= interval_seconds

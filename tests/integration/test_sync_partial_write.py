@@ -359,7 +359,7 @@ class TestALaterSyncMustWriteWhatWasLeftIncomplete:
 
         assert ok is False
         assert message.startswith("Test profile files were refused"), message
-        assert _still_paused("test profiles") in message
+        assert _still_paused("test profiles") + " Fix the refused files, then sync again." in message
         _refused_while_paused(logged_in_client, ctx, run.id, "test profiles")
 
     def test_a_test_folder_that_cannot_be_listed_keeps_it(
@@ -390,7 +390,11 @@ class TestALaterSyncMustWriteWhatWasLeftIncomplete:
 
         status = ctx.profile_sync_config_repo.get()
         assert status.last_sync_status == "error"
-        assert _still_paused("instrument settings") in status.last_sync_message
+        assert (_still_paused("instrument settings")
+                + " Switch on Also sync instruments, then sync again.") in status.last_sync_message
+        page = html.unescape(logged_in_client.get("/admin/config-sync").text)
+        assert ("did not finish writing the instrument settings. Switch on Also sync "
+                "instruments, then press Sync now to write them again.") in page
         disable_repos(ctx, "test_profile", "app_profile")
         run_id = _seed_run(ctx, "sync-instruments-off")
         _refused_while_paused(logged_in_client, ctx, run_id, "instrument settings")
@@ -487,6 +491,45 @@ class TestADisabledInstrumentStaysDisabled:
 
         assert repo.get_by_name("Other").enabled is False
 
+    def test_an_instrument_switched_back_on_during_the_pause_stays_on(
+            self, fresh_app, monkeypatch):
+        """A noted switch counts only for an instrument the stopped sync did
+        not write again; one it wrote carries the admin's switch (second
+        review P3-1)."""
+        from seqsetup.models.instrument_definition import InstrumentDefinition
+        from .test_scheduled_sync_instrument_cache import _instrument
+        _app, ctx, _db = fresh_app
+
+        def named(name, samplesheet_name):
+            return InstrumentDefinition(
+                name=name, samplesheet_name=samplesheet_name, version="1.0.0",
+                chemistry_type="2-color",
+                i5_workflows=[{"name": "Standard", "i5_read_orientation": "forward"}],
+                runinfo_marks_i5_reversed=False)
+
+        config = ctx.profile_sync_config_repo.get()
+        config.github_repo_url = "https://github.com/example/config"
+        config.sync_instruments_enabled = True
+        config.sync_index_kits_enabled = False
+        ctx.profile_sync_config_repo.save(config)
+        service = ctx.get_github_sync_service()
+        monkeypatch.setattr(service, "_fetch_profiles_recursive", lambda *a, **k: [])
+        monkeypatch.setattr(service, "_fetch_instruments", lambda *a, **k: (
+            [_instrument("forward"), named("Other", "OtherSeq"), named("Third", "ThirdSeq")], []))
+        assert service.sync()[0]
+        repo = ctx.instrument_definition_repo
+        assert repo.set_enabled_by_name("Other", False)
+        restore = _fail_save(monkeypatch, service.instrument_definition_repo,
+                             when=lambda inst: inst.name == "Third")
+        assert service.sync()[0] is False
+        restore()
+        assert repo.get_by_name("Other").enabled is False
+        assert repo.set_enabled_by_name("Other", True)
+
+        assert service.sync()[0]
+
+        assert repo.get_by_name("Other").enabled is True
+
     def test_the_noted_switches_go_once_the_instruments_are_written(self, fresh_app):
         """Else an instrument the admin switches back on would be switched
         off again by a later sync while the test profiles are still noted."""
@@ -529,6 +572,20 @@ class TestTheSchedulerTriesAgainSoon:
         _app, ctx, _db = fresh_app
         scheduler, config = self._scheduler(ctx, 5)
         assert scheduler._should_sync(config) is False
+
+    def test_not_when_the_last_sync_finished_but_could_not_lift_it(self, fresh_app):
+        """Another sync would not lift it either (instrument sync off, a
+        refused file): retrying every 5 minutes would only spend GitHub's
+        hourly allowance (second review P3-2)."""
+        from seqsetup.utils.clock import utcnow
+        _app, ctx, _db = fresh_app
+        ctx.profile_sync_config_repo.mark_writing(utcnow(), "instrument settings")
+        ctx.profile_sync_config_repo.update_sync_status(
+            "error", _still_paused("instrument settings") + " Synced 1 application profiles.", 1)
+        scheduler, config = self._scheduler(ctx, 5)
+        assert scheduler._should_sync(config) is False
+        scheduler, config = self._scheduler(ctx, 60)
+        assert scheduler._should_sync(config) is True
 
 
 class TestTheConfigSyncPageShowsThePause:

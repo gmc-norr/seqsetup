@@ -67,8 +67,9 @@ The event name says what happened. The main groups are:
   editing, empty when nobody was), ``run.status.denied`` with reason
   ``edit_lock_lost`` (someone took over while Mark Ready wrote the exports),
   ``config_sync_unfinished`` (a config sync had not finished writing; see
-  :ref:`config-sync`) or ``settings_changed_during_export`` (a sync, a kit
-  or an instrument switch changed the settings while Mark Ready ran),
+  :ref:`config-sync`) or ``settings_changed_during_export`` (a sync, a kit,
+  an instrument switch, or another run's Mark Ready refused for changed
+  profiles, came while Mark Ready ran),
   every ``sample.`` change (added, edited,
   deleted, index assigned or cleared, and the bulk actions), and
   ``template.`` changes. ``run.deleted`` says whether a copy was kept
