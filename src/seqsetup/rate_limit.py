@@ -129,12 +129,23 @@ class RefusedRequestCounter:
     refusal of a later window. Every refusal is therefore accounted for in
     exactly one row.
 
-    A count still owed when the process stops is lost. That is the known
-    limit of counting in the process, stated in
-    docs/admin-guide/audit-trail.rst. The sweep below never loses one: it
-    forgets an identity whose window has passed only while it owes
-    nothing.
+    A count still owed when the process stops is lost, and so is one whose
+    identity does not come back within _OWED_RETENTION_WINDOWS: a row's
+    count is therefore at least that many refusals, not exactly that many.
+    Both are the known limits of counting in the process, stated in
+    docs/admin-guide/audit-trail.rst.
     """
+
+    # How many windows an identity that still owes a count is kept for. One
+    # that owes nothing is forgotten after a single window; one that owes
+    # is given a few more, because its count has nowhere to go but its next
+    # row. Keeping it until that row came grew the dict by one key per
+    # identity for the life of the process -- and with the first
+    # X-Forwarded-For hop as the identity, those keys are the client's to
+    # choose. An identity that has not been refused again for three whole
+    # windows will probably never come back, and its count then has nowhere
+    # to go at all.
+    _OWED_RETENTION_WINDOWS = 3
 
     def __init__(self, window_seconds: int):
         self.window_seconds = max(1, int(window_seconds))
@@ -144,17 +155,24 @@ class RefusedRequestCounter:
         self._lock = threading.Lock()
 
     def _sweep(self, now: float) -> None:
-        """Forget identities whose window has passed and owe nothing.
+        """Forget identities whose window has passed: after one window when
+        they owe nothing, after _OWED_RETENTION_WINDOWS when they owe a
+        count.
 
         Called under the lock and at most once per window, like
-        ``RateLimiter._sweep``: without it a flood from many addresses
-        would add a key per address and give none back.
+        ``RateLimiter._sweep``: without it a flood from many addresses adds
+        a key per address and gives none back. An identity that owes was
+        kept for good, so the addresses of a flood that never came back
+        stayed for the life of the process; forgetting one loses its count,
+        which is the known limit above.
         """
         if now - self._swept_at < self.window_seconds:
             return
         self._swept_at = now
+        owed_kept_for = self.window_seconds * self._OWED_RETENTION_WINDOWS
         for identity in [key for key, (started, owed) in self._windows.items()
-                         if owed == 0 and now - started >= self.window_seconds]:
+                         if now - started >= (owed_kept_for if owed
+                                              else self.window_seconds)]:
             del self._windows[identity]
 
     def count_refusal(self, identity: str) -> Refusals:

@@ -205,6 +205,33 @@ class TestWhatTheCarriedCountBelongsTo:
         assert "refused_earlier" in page
 
 
+class TestTheGuideSaysWhatACountCanMiss:
+    """docs/admin-guide/audit-trail.rst, the page a reader of these rows
+    lands on. A row's count is a floor, not a total: the refusals that
+    follow it are carried by that address's next row, and there may never
+    be one. Shaped after
+    ``TestTheProxyExampleReplacesTheForwardedForHeader`` in
+    ``tests/integration/test_proxy_forwarded_for.py``, which reads a doc
+    the same way."""
+
+    def _section(self) -> str:
+        from pathlib import Path
+
+        guide = (Path(__file__).resolve().parents[2] / "docs" / "admin-guide"
+                 / "audit-trail.rst").read_text()
+        return guide.split(".. _rate-limited-rows:", 1)[1].split("Who can do this", 1)[0]
+
+    def test_it_says_the_count_is_at_least_that_many(self):
+        assert "at least" in self._section()
+
+    def test_it_names_every_way_a_count_goes_missing(self):
+        section = self._section()
+
+        for phrase in ("the burst stops", "within three limiter windows",
+                       "SeqSetup is restarted"):
+            assert phrase in section, phrase
+
+
 class TestWhoTheRowNames:
     def test_it_names_the_typed_account_when_seqsetup_knows_it(
             self, client, fresh_app, admin_user_seeded):

@@ -136,12 +136,17 @@ in the window before, under whatever names were tried then. A row that
 carries nothing has no ``refused_earlier``.
 
 .. note::
-   One consequence: if SeqSetup is restarted (or stops) while refusals are
-   still being counted, that part of the count is lost -- the rows already
-   written are not changed, so the totals for that last window are low by
-   however many requests had not yet been carried. The server log on the
-   :doc:`logs` page, and your reverse proxy's own access log, still show
-   every request.
+   A row's count is therefore **at least** that many refusals, not exactly
+   that many: the ones that followed it are on the address's next row, and
+   there may never be one. A count is lost when **the burst stops** and
+   that address is never refused again; when that address is not refused
+   again **within three limiter windows** (its count is then dropped, so
+   the addresses of a flood cannot pile up in memory for the life of the
+   process); and when **SeqSetup is restarted** (or stops) while refusals
+   are still being counted. The rows already written are never changed, so
+   they read low by however many requests had not yet been carried, with
+   nothing on the row to say so. The server log on the :doc:`logs` page,
+   and your reverse proxy's own access log, still show every request.
 
 .. note::
    If the database cannot be reached when something happens, the action

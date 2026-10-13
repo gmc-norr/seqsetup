@@ -123,7 +123,11 @@ class TestWhatCameFromAnEarlierWindow:
 
 class TestWhatItHoldsOnTo:
     """A flood from many addresses must not add a key per address and give
-    none back, the way RateLimiter._sweep already stops it doing."""
+    none back. The sweep used to keep every address that owed a count, so
+    the ones that never came back -- and with the first X-Forwarded-For hop
+    as the identity, a client picks them -- stayed for the life of the
+    process. An address that owes is now kept for a few windows and then
+    forgotten, count and all."""
 
     def test_an_address_that_owes_nothing_is_forgotten(self, counter):
         counter.count_refusal("1.2.3.4")
@@ -134,8 +138,25 @@ class TestWhatItHoldsOnTo:
 
         assert "1.2.3.4" not in counter._windows
 
-    def test_an_address_that_owes_a_count_is_kept(self, counter):
-        """The sweep must not be where a count is lost."""
+    def test_an_address_that_owes_a_count_is_kept_for_a_few_windows(self, counter):
+        """Two windows on, the count is still there to be carried: the
+        sweep must not be where it is lost while the address may still be
+        given a next row."""
+        counter.count_refusal("1.2.3.4")
+        counter.count_refusal("1.2.3.4")           # one owed
+        _age(counter, "1.2.3.4", WINDOW * 2)
+        _sweep_is_due(counter)
+
+        counter.count_refusal("5.6.7.8")
+
+        assert "1.2.3.4" in counter._windows
+        assert counter.count_refusal("1.2.3.4").total == 2
+
+    def test_an_address_that_owes_a_count_is_given_back_in_the_end(self, counter):
+        """Three windows with nothing from that address and the entry goes,
+        the count with it: it has nowhere to go but a next row that is not
+        coming, and keeping it for good is how a flood of addresses that
+        never come back grew the dict for the life of the process."""
         counter.count_refusal("1.2.3.4")
         counter.count_refusal("1.2.3.4")           # one owed
         _age(counter, "1.2.3.4", WINDOW * 3)
@@ -143,8 +164,22 @@ class TestWhatItHoldsOnTo:
 
         counter.count_refusal("5.6.7.8")
 
-        assert "1.2.3.4" in counter._windows
-        assert counter.count_refusal("1.2.3.4").total == 2
+        assert "1.2.3.4" not in counter._windows
+        assert counter.count_refusal("1.2.3.4").total == 1
+
+    def test_a_flood_of_addresses_that_owe_a_count_drains(self, counter):
+        """Two refusals from each of forty addresses, none of them seen
+        again: the dict holds the one address still refusing."""
+        for n in range(40):
+            counter.count_refusal(f"198.51.100.{n}")
+            counter.count_refusal(f"198.51.100.{n}")
+        for identity in list(counter._windows):
+            _age(counter, identity, WINDOW * 3)
+        _sweep_is_due(counter)
+
+        counter.count_refusal("203.0.113.7")
+
+        assert list(counter._windows) == ["203.0.113.7"]
 
     def test_the_sweep_runs_at_most_once_per_window(self, counter):
         """Not due: the stale entry is still there, and nothing walked the
