@@ -255,6 +255,9 @@ def reset_all_limiters() -> None:
         _login_refusal_counter.reset()
 
 
+_MAX_IDENTITY_CHARS = 64
+
+
 def client_identity(req) -> str:
     """Extract a client identity for rate-limit bucketing.
 
@@ -276,7 +279,10 @@ def client_identity(req) -> str:
     if trust_xff:
         xff = req.headers.get("x-forwarded-for", "")
         if xff:
-            return xff.split(",", 1)[0].strip()
+            # The client writes this text and it becomes a key the limiter
+            # keeps; a real address is at most 45 characters, so 64 changes
+            # no real client's bucket (the night run's Q5, 2026-10-13).
+            return xff.split(",", 1)[0].strip()[:_MAX_IDENTITY_CHARS]
     client = getattr(req, "client", None)
     if client and getattr(client, "host", None):
         return client.host

@@ -372,6 +372,9 @@ The Docker Compose recipe sets this to ``1`` already. Turn it off
 (``SEQSETUP_TRUST_FORWARDED_FOR=0`` in ``.env``) if SeqSetup is ever reached
 directly, without the proxy in front of it: then the header is whatever the
 client typed, and the direct TCP address is the only honest identity.
+SeqSetup keeps at most the first 64 characters of the address it reads
+from the header (a real address has 45 at most), so a forged, overlong
+value cannot fill its memory.
 
 .. important::
 
