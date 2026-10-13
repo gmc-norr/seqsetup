@@ -3,8 +3,10 @@
 import json
 import logging
 import ssl
+import threading
 import urllib.request
 import urllib.error
+from datetime import datetime
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
@@ -25,9 +27,27 @@ from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
 from .instrument_validator import validate_instrument_yaml, ValidationResult
 from .validation import clear_validation_cache
+from ..utils.clock import local_time, utcnow
 
 
 logger = logging.getLogger(__name__)
+
+# The scheduler's sync and an admin's Sync now run in one process and could
+# overlap: one sync could clear the "writing" note while the other is still
+# writing. So syncs run one at a time.
+_SYNC_LOCK = threading.Lock()
+
+_PAUSED_IN_STATUS = ("The settings were only partly written, so Mark Ready is paused "
+                     "until a sync finishes.")
+
+
+def unfinished_sync_message(since: datetime) -> str:
+    """Why Mark Ready refuses while a sync's writes have not finished (outside
+    review of 7f858e0, finding 4; the user's choice, 2026-10-14)."""
+    return (f"A configuration sync started at {local_time(since)} has not finished writing "
+            "the profiles and instrument settings, so they may be incomplete. Mark Ready is "
+            "paused until a sync finishes. Try again in a minute; if this stays, an admin "
+            "can press Sync now on the Config Sync page.")
 
 
 class InstrumentFileRefused(ValueError):
@@ -180,7 +200,15 @@ class GitHubSyncService:
         Returns:
             Tuple of (success, message, count)
         """
+        with _SYNC_LOCK:
+            return self._sync()
+
+    def _sync(self) -> Tuple[bool, str, int]:
         config = self.config_repo.get()
+        # True from the "writing" note until every write has finished; a
+        # sync that stops in between leaves the note, and Mark Ready stays
+        # paused until a sync finishes (outside review of 7f858e0, finding 4).
+        writing = False
 
         if not config.github_repo_url:
             return False, "GitHub repository URL not configured", 0
@@ -292,7 +320,10 @@ class GitHubSyncService:
                     "synced index kits"
                 )
 
-            # Save to database (replace all)
+            # Save to database (replace all). The deletes and writes below are
+            # not one step: note that they have started.
+            self.config_repo.mark_writing(utcnow())
+            writing = True
             self.app_profile_repo.delete_all()
             self.app_profile_repo.bulk_save(app_profiles)
 
@@ -341,6 +372,11 @@ class GitHubSyncService:
             # run Ready against the *previous* profile set. Clear the cache so
             # the next validate_run() re-computes against the new content.
             clear_validation_cache()
+
+            # Every write finished, and the caches are cleared: Mark Ready
+            # may go on.
+            self.config_repo.clear_writing()
+            writing = False
 
             count = len(app_profiles) + (0 if refused_tests else len(test_profiles))
             instruments_count = len(instruments) if store_instruments else 0
@@ -413,6 +449,8 @@ class GitHubSyncService:
 
         except GitHubSyncError as e:
             error_msg = str(e)
+            if writing:
+                error_msg += " " + _PAUSED_IN_STATUS
             logger.error(f"Sync failed: {error_msg}")
             self.config_repo.update_sync_status(
                 "error", error_msg, 0, 0, 0,
@@ -422,6 +460,8 @@ class GitHubSyncService:
 
         except Exception as e:
             error_msg = f"Unexpected error: {e}"
+            if writing:
+                error_msg += " " + _PAUSED_IN_STATUS
             logger.exception("Sync failed with unexpected error")
             self.config_repo.update_sync_status(
                 "error", error_msg, 0, 0, 0,

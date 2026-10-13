@@ -624,6 +624,20 @@ A sync (manual or scheduled) always does all of the following:
   that was already there. (When an instrument file was refused, no
   instruments are stored anyway; the index kits a refused kit file keeps
   count as stored.)
+- The stored records are replaced one at a time, so the replacing is not
+  one step. A sync notes when it starts writing and clears the note when
+  every write has finished. While the note is there -- a sync is writing
+  right now, or one stopped part-way, say because the database could not
+  be reached -- **Mark Ready** refuses every run: *"A configuration sync
+  started at ... has not finished writing the profiles and instrument
+  settings, so they may be incomplete. Mark Ready is paused until a sync
+  finishes. Try again in a minute; if this stays, an admin can press Sync
+  now on the Config Sync page."* The message of a sync that stopped
+  part-way ends *"The settings were only partly written, so Mark Ready is
+  paused until a sync finishes."* The next sync that finishes, scheduled
+  or **Sync now**, lifts the pause. Runs already Ready or Archived keep
+  their exports. One sync runs at a time: a **Sync now** pressed during a
+  scheduled sync waits for it to end.
 
 .. warning::
    Syncing instruments changes what a **new** run can be set up on -- see

@@ -1,5 +1,8 @@
 """Repository for profile sync configuration."""
 
+from datetime import datetime
+from typing import Optional
+
 from ..models.profile_sync_config import ProfileSyncConfig
 from .base import SingletonConfigRepository
 from ..utils.clock import utcnow
@@ -13,6 +16,22 @@ class ProfileSyncConfigRepository(SingletonConfigRepository[ProfileSyncConfig]):
 
     CONFIG_ID = "profile_sync_config"
     MODEL_CLASS = ProfileSyncConfig
+    # Its own document, so a save of the settings record cannot drop it.
+    WRITING_ID = "profile_sync_writing"
+
+    def mark_writing(self, since: datetime) -> None:
+        """Note that a sync started writing the synced records at ``since``."""
+        self.collection.replace_one(
+            {"_id": self.WRITING_ID}, {"_id": self.WRITING_ID, "since": since}, upsert=True,
+        )
+
+    def writing_since(self) -> Optional[datetime]:
+        """When the sync whose writes have not finished started them, or None."""
+        doc = self.collection.find_one({"_id": self.WRITING_ID})
+        return doc.get("since") if doc else None
+
+    def clear_writing(self) -> None:
+        self.collection.delete_one({"_id": self.WRITING_ID})
 
     def update_sync_status(
         self,

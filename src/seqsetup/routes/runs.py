@@ -42,6 +42,7 @@ from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, Se
 from ..repositories.base import ConflictError
 from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
+from ..services.github_sync import unfinished_sync_message
 from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
@@ -564,6 +565,26 @@ def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_st
         raise
 
 
+def _refused_while_a_sync_is_writing(
+    request: Request, run: SequencingRun, ctx: AppContext, new_status: RunStatus,
+) -> None:
+    """Mark Ready waits while a config sync's writes have not finished: the
+    profiles and instrument records may be partly written (outside review of
+    7f858e0, finding 4). Nothing has been saved at these points."""
+    since = ctx.profile_sync_config_repo.writing_since()
+    if since is None:
+        return
+    audit(
+        "run.status.denied",
+        actor=get_username(request),
+        target=run.id,
+        outcome="denied",
+        reason="config_sync_unfinished",
+        attempted_status=new_status.value,
+    )
+    raise ConflictError(unfinished_sync_message(since))
+
+
 @router.post("/runs/{run_id}/status/{status}", response_class=HTMLResponse)
 async def update_status(
     request: Request,
@@ -592,6 +613,7 @@ async def update_status(
     if new_status == RunStatus.READY:
         # Only the person editing the Draft marks it Ready.
         require_edit_lock(run, ctx, request)
+        _refused_while_a_sync_is_writing(request, run, ctx, new_status)
 
     color_balance_lanes: list[int] = []
     if new_status == RunStatus.READY:
@@ -805,6 +827,8 @@ async def update_status(
                 attempted_status=new_status.value,
             )
             raise ConflictError(str(e))
+        # A sync may have started writing while the exports were made.
+        _refused_while_a_sync_is_writing(request, run, ctx, new_status)
 
     with saving_run(run, ctx, request):
         run.status = new_status

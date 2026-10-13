@@ -65,7 +65,9 @@ The event name says what happened. The main groups are:
   left the page, else empty), ``run.edit.ended`` (Done editing),
   ``run.edit.taken_over`` (Take over editing; ``from_user`` names who was
   editing, empty when nobody was), ``run.status.denied`` with reason
-  ``edit_lock_lost`` (someone took over while Mark Ready wrote the exports),
+  ``edit_lock_lost`` (someone took over while Mark Ready wrote the exports)
+  or ``config_sync_unfinished`` (a config sync had not finished writing;
+  see :ref:`config-sync`),
   every ``sample.`` change (added, edited,
   deleted, index assigned or cleared, and the bulk actions), and
   ``template.`` changes. ``run.deleted`` says whether a copy was kept
