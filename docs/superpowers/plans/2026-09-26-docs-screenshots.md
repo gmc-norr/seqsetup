@@ -20,10 +20,10 @@
 - All PNGs under `docs/_static/screenshots/` together ≤ 15 MB.
 - Plain language for the user guide: short sentences, numbered steps, one task per section.
 - A behavioral claim ("Mark Ready refuses when…", "only admins can…") is written only after reading the code that does it or seeing it in the screenshot run.
-- The worktree has no Pixi env. Always run with `PY=/home/parlar_ai/dev/seqsetup/.pixi/envs/default/bin/python` and `PYTHONPATH=src`, and `SPHINX=/home/parlar_ai/dev/seqsetup/.pixi/envs/default/bin/sphinx-build`. Never `pixi run` / `pixi install` in the worktree.
+- The worktree has no Pixi env. Always run with `PY=~/dev/seqsetup/.pixi/envs/default/bin/python` and `PYTHONPATH=src`, and `SPHINX=~/dev/seqsetup/.pixi/envs/default/bin/sphinx-build`. Never `pixi run` / `pixi install` in the worktree.
 - Commit trailer, last line exactly: `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`
 
-Commands used throughout (from the worktree root `/home/parlar_ai/dev/seqsetup/.worktrees/docs-guide`):
+Commands used throughout (from the worktree root `~/dev/seqsetup/.worktrees/docs-guide`):
 
 - Screenshots: `SEQSETUP_DOCS_SCREENSHOTS=1 PYTHONPATH=src $PY -m pytest tests/browser/test_docs_screenshots.py -q -p no:cacheprovider`
 - Docs build: `$SPHINX -W --keep-going -q -b html docs /tmp/seqsetup-docs-build` → must print nothing and exit 0.
@@ -35,15 +35,15 @@ Commands used throughout (from the worktree root `/home/parlar_ai/dev/seqsetup/.
 ### Task 0: Spec and plan into the branch
 
 **Files:**
-- Create: `docs/superpowers/specs/2026-09-26-docs-screenshots-design.md` (copy of `/home/parlar_ai/seqsetup-docs-run/spec.md`)
-- Create: `docs/superpowers/plans/2026-09-26-docs-screenshots.md` (copy of `/home/parlar_ai/seqsetup-docs-run/plan.md`)
+- Create: `docs/superpowers/specs/2026-09-26-docs-screenshots-design.md` (copy of `~/seqsetup-docs-run/spec.md`)
+- Create: `docs/superpowers/plans/2026-09-26-docs-screenshots.md` (copy of `~/seqsetup-docs-run/plan.md`)
 
 - [ ] **Step 1: Copy both files**
 
 ```bash
-W=/home/parlar_ai/dev/seqsetup/.worktrees/docs-guide
-cp /home/parlar_ai/seqsetup-docs-run/spec.md $W/docs/superpowers/specs/2026-09-26-docs-screenshots-design.md
-cp /home/parlar_ai/seqsetup-docs-run/plan.md $W/docs/superpowers/plans/2026-09-26-docs-screenshots.md
+W=~/dev/seqsetup/.worktrees/docs-guide
+cp ~/seqsetup-docs-run/spec.md $W/docs/superpowers/specs/2026-09-26-docs-screenshots-design.md
+cp ~/seqsetup-docs-run/plan.md $W/docs/superpowers/plans/2026-09-26-docs-screenshots.md
 ```
 
 - [ ] **Step 2: Commit**
@@ -605,7 +605,7 @@ Check every path, parameter and status code against `src/seqsetup/api/app.py` (a
 
 Each of these tasks follows the same steps. Only the **Pages / Pictures / Read first** list differs.
 
-- [ ] **Step 1: Read first** — the templates and routes listed, and `/home/parlar_ai/seqsetup-audit-run/ROUTES.md` for the route inventory. Write down (STATUS.md) every behavior the page will claim, each with the file:line that does it.
+- [ ] **Step 1: Read first** — the templates and routes listed, and `~/seqsetup-audit-run/ROUTES.md` for the route inventory. Write down (STATUS.md) every behavior the page will claim, each with the file:line that does it.
 - [ ] **Step 2: Add a failing reference** — write the `.rst` skeleton with its `.. figure::` lines (names from the Pictures list). Run `tests/unit/test_docs_images.py` → FAILS listing the missing PNGs.
 - [ ] **Step 3: Add one test function per picture** to `tests/browser/test_docs_screenshots.py`, in the order the reader meets the screens. Pattern:
 

@@ -11,9 +11,9 @@
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-09-27-run-checks-1b-design.md` (commits ace33b3, c00597b).
-- Worktree `/home/parlar_ai/dev/seqsetup/.worktrees/run-checks`, branch `fix/run-checks`, base `101a326`.
-- `PY=/home/parlar_ai/dev/seqsetup/.pixi/envs/default/bin/python`. Tests: `cd <worktree> && PYTHONPATH=src $PY -m pytest <paths> -q -p no:cacheprovider`. Never `pixi run` in a worktree; no `-n`.
-- CSS for browser tests (app.css is gitignored): `/home/parlar_ai/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`.
+- Worktree `~/dev/seqsetup/.worktrees/run-checks`, branch `fix/run-checks`, base `101a326`.
+- `PY=~/dev/seqsetup/.pixi/envs/default/bin/python`. Tests: `cd <worktree> && PYTHONPATH=src $PY -m pytest <paths> -q -p no:cacheprovider`. Never `pixi run` in a worktree; no `-n`.
+- CSS for browser tests (app.css is gitignored): `~/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`.
 - Docs: `$PY -m sphinx -W --keep-going -q -b html docs <scratch dir>`.
 - Clinical: tests first and seen failing; no silent behaviour change; do not touch the main checkout's uncommitted files; never `git stash`/`checkout --`/`reset --hard`/`clean`.
 - UI spelling is "color" (as in the app). Messages in banners are escaped (Jinja autoescape; `exception_handlers._error_fragment`).

@@ -2,7 +2,7 @@
 
 Date: 2026-09-27. Branch `fix/session-revocation` from main `22f6059`.
 Security audit findings N-02, N-03, N-04, N-19
-(`/home/parlar_ai/seqsetup-audit-run/FINDINGS.md`).
+(`~/seqsetup-audit-run/FINDINGS.md`).
 
 ## Problem
 

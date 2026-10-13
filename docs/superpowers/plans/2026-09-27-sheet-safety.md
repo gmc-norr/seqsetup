@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- Worktree: `W=/home/parlar_ai/dev/seqsetup/.worktrees/sheet-safety`, branch `fix/sheet-safety`. Every git command uses `git -C $W`; check `git -C $W branch --show-current` prints `fix/sheet-safety` before each commit.
-- Python: `PY=/home/parlar_ai/dev/seqsetup/.pixi/envs/default/bin/python`. Run tests as `cd $W && PYTHONPATH=src $PY -m pytest <paths> -q -p no:cacheprovider`. Never `pixi run` in the worktree. pytest has no `-n`.
+- Worktree: `W=~/dev/seqsetup/.worktrees/sheet-safety`, branch `fix/sheet-safety`. Every git command uses `git -C $W`; check `git -C $W branch --show-current` prints `fix/sheet-safety` before each commit.
+- Python: `PY=~/dev/seqsetup/.pixi/envs/default/bin/python`. Run tests as `cd $W && PYTHONPATH=src $PY -m pytest <paths> -q -p no:cacheprovider`. Never `pixi run` in the worktree. pytest has no `-n`.
 - Plain name: `[A-Za-z0-9_-]+`, full match. Plain version: `[A-Za-z0-9._-]+`, full match.
 - Hidden character: Unicode category `Cc` (U+0000–U+001F, U+007F–U+009F) plus U+2028 and U+2029.
 - New Mark Ready error category: `hidden_character_in_text`, severity ERROR.
@@ -21,7 +21,7 @@
 - `_escape_csv` keeps today's handling of tab, LF, CR, `,` and `"`; it raises only for the other hidden characters, and its error names character codes only, never the text.
 - No UI change, no screenshots retaken, no data migration.
 - Commit trailer on every commit: `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
-- Do not touch the main checkout `/home/parlar_ai/dev/seqsetup` (the user has uncommitted files there).
+- Do not touch the main checkout `~/dev/seqsetup` (the user has uncommitted files there).
 
 ---
 
@@ -1347,9 +1347,9 @@ For each row: make the edit, run the named test, confirm it FAILS for the stated
 ```bash
 mkdir -p $W/tests/integration/security_proofs
 touch $W/tests/integration/security_proofs/__init__.py
-cp /home/parlar_ai/seqsetup-audit-run/proofs/test_c_config_sync_unescaped_export.py \
-   /home/parlar_ai/seqsetup-audit-run/proofs/test_c_escape_csv_gaps.py \
-   /home/parlar_ai/seqsetup-audit-run/proofs/test_orch_partial_update_run_name.py \
+cp ~/seqsetup-audit-run/proofs/test_c_config_sync_unescaped_export.py \
+   ~/seqsetup-audit-run/proofs/test_c_escape_csv_gaps.py \
+   ~/seqsetup-audit-run/proofs/test_orch_partial_update_run_name.py \
    $W/tests/integration/security_proofs/
 cd $W && PYTHONPATH=src $PY -m pytest tests/integration/security_proofs -q -p no:cacheprovider
 ```

@@ -14,8 +14,8 @@
 
 ## Global Constraints
 
-- Worktree `/home/parlar_ai/dev/seqsetup/.worktrees/audit-trail`, branch `feat/audit-trail-db`, base `2694574`.
-- Run everything from the worktree with `PY=/home/parlar_ai/dev/seqsetup/.pixi/envs/default/bin/python` and `PYTHONPATH=src`. Never `pixi run`/`pixi install` in the worktree.
+- Worktree `~/dev/seqsetup/.worktrees/audit-trail`, branch `feat/audit-trail-db`, base `2694574`.
+- Run everything from the worktree with `PY=~/dev/seqsetup/.pixi/envs/default/bin/python` and `PYTHONPATH=src`. Never `pixi run`/`pixi install` in the worktree.
 - **No commits** until the user says "commit" (CLAUDE.md). Each task ends with its tests green instead.
 - TDD: every test is run and seen failing for the stated reason before the code that makes it pass.
 - `audit()` must never raise into its caller (existing contract).
@@ -1637,7 +1637,7 @@ Expected: `6 passed`.
 ### Final: verify
 
 - [ ] Full server suite: `PYTHONPATH=src $PY -m pytest tests/unit tests/integration -q -p no:cacheprovider` → 1596 + new − 0 removed (the one replaced N-07 test keeps its count). Name every term of the difference; zero ERROR.
-- [ ] Rebuild CSS (`/home/parlar_ai/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`), then the browser suite → `87 passed`.
+- [ ] Rebuild CSS (`~/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`), then the browser suite → `87 passed`.
 - [ ] Break tests, one at a time, restoring from a saved copy and checking with `cmp`:
   1. `_audit_sink` never set in `app.py` → Task 7 recorded/kept tests fail.
   2. `redact_url_secrets` returns its input → redaction tests and the N-21 test fail.
@@ -1645,7 +1645,7 @@ Expected: `6 passed`.
   4. `_not_audit_record` filter not added → the log-viewer tests fail.
   5. target box cut at 256 in the route → the long-target page test fails.
   6. an `update_one` method added to the repository → the insert-only test fails.
-- [ ] Re-run the audit's N-18 / N-21 proofs from `/home/parlar_ai/dev/seqsetup/.worktrees/sec-audit/tests/integration/security_proofs/` (copied in temporarily, removed after) and read each result.
+- [ ] Re-run the audit's N-18 / N-21 proofs from `~/dev/seqsetup/.worktrees/sec-audit/tests/integration/security_proofs/` (copied in temporarily, removed after) and read each result.
 - [ ] Look at the page in a real browser (screenshot), with a few events.
 - [ ] Independent code review of the whole diff (superpowers:requesting-code-review).
 - [ ] `git -C <wt> status` shows only the files in the File Structure table (plus built `app.css`, untracked and ignored).
