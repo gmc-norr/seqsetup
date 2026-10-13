@@ -27,8 +27,13 @@ class TestTwoTestsThatDifferOnlyInCapitals:
         })
 
         assert ok is False
+        # WGS 1.1.0's file is not in this sync, so the refusal names it as
+        # kept without being read (batch 4, item 11);
+        # tests/integration/test_refused_sync_keeps_versions.py.
         assert message == (REFUSED + "WGS in WGS.yaml and Wgs in Wgs.yaml differ only in "
-                           "capitals. Synced 1 application profiles.")
+                           "capitals. Kept test profiles this sync did not read: WGS 1.1.0 "
+                           "-- each is in a refused file or no longer in the repository. "
+                           "Synced 1 application profiles.")
         assert ("Test profiles refused: WGS in WGS.yaml and Wgs in Wgs.yaml differ only in "
                 "capitals. Two tests may not differ only in capitals.") in logged
         assert _stored(ctx) == STORED_BEFORE

@@ -348,6 +348,12 @@ class GitHubSyncService:
                         "Test profile files were refused, so no test profiles were stored "
                         "and the stored ones are kept: " + "; ".join(refused_tests) + "."
                     )
+                    kept = self._kept_test_versions_not_read(test_profiles)
+                    if kept:
+                        refusals.append(
+                            "Kept test profiles this sync did not read: " + ", ".join(kept)
+                            + " -- each is in a refused file or no longer in the repository."
+                        )
                 if refused_instruments:
                     refusals.append(
                         "Instrument files were refused, so no instrument settings were stored "
@@ -764,6 +770,16 @@ class GitHubSyncService:
     ) -> TestProfile:
         """Parse YAML into TestProfile."""
         return TestProfile.from_yaml(yaml_data, filename)
+
+    def _kept_test_versions_not_read(self, test_profiles: list[TestProfile]) -> list[str]:
+        """The stored test versions that are not among ``test_profiles``, as
+        "<test> <version>". A refused test file keeps every stored profile,
+        including a version deleted from the repository on purpose, so the
+        refusal says which ones it kept without reading them."""
+        read = {(profile.test_type, profile.version) for profile in test_profiles}
+        stored = {(profile.test_type, profile.version)
+                  for profile in self.test_profile_repo.list_all()}
+        return [f"{test} {version}" for test, version in sorted(stored - read)]
 
     @staticmethod
     def _refuse_repeated_test_versions(test_profiles: list[TestProfile],

@@ -360,10 +360,15 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         assert ok, message
         ok, message, _logged = _sync_tests(ctx, monkeypatch, {"Wgs_1.3.yaml": _test_yaml("1.3")})
         assert ok is False
+        # This sync read no test profile at all, so all three stored versions
+        # are kept without being read and the message names them (batch 4,
+        # item 11); tests/integration/test_refused_sync_keeps_versions.py.
         assert message == (
             REFUSED + f"{FOLDER}/Wgs_1.3.yaml: Profile validation failed for 'Wgs_1.3.yaml': "
             "Field 'Version' must be three whole numbers joined by dots, each at most 9 digits, "
-            "like 1.0.0: '1.3'. Synced 1 application profiles.")
+            "like 1.0.0: '1.3'. Kept test profiles this sync did not read: RNA 1.0.0, WGS 1.1.0, "
+            "WGS 1.2.0 -- each is in a refused file or no longer in the repository. "
+            "Synced 1 application profiles.")
         assert _stored(ctx) == STORED_BEFORE
 
     def test_a_sync_with_no_refused_file_replaces_them(self, fresh_app, monkeypatch):

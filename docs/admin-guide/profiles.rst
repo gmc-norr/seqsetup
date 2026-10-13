@@ -114,6 +114,18 @@ already stored, still syncs the application profiles, and ends with
 
    Test profile files were refused, so no test profiles were stored and the stored ones are kept: profiles/test_profiles/Wgs_1.3.yaml: is empty. Synced 3 application profiles.
 
+Keeping the stored ones also keeps any version you deleted from the
+repository on purpose, which a sync without a refusal would have removed.
+The message therefore names every stored test and version this sync did
+not read::
+
+   ... Kept test profiles this sync did not read: RNA 1.0.0, WGS 1.2.0 -- each is in a refused file or no longer in the repository. Synced 3 application profiles.
+
+Each one is either in a file this sync refused or no longer in the
+repository at all -- a refused file cannot be read, so SeqSetup cannot tell
+which. Until a sync runs with no refusal, a sample asking for that test can
+still resolve to a version you meant to remove.
+
 Without this, a refused newest file would quietly make ``1`` pick an older
 version. Fix the file and sync again. Removing a file on purpose is not a
 refusal: the next sync stores the files that are left. The **Config Sync**
