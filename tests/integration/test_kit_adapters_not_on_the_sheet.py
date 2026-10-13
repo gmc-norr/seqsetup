@@ -45,3 +45,15 @@ class TestTheKitPageOnAdapters:
 
         assert resp.status_code == 200, resp.text[:200]
         assert SAID_ON_THE_PAGE in resp.text
+
+
+class TestTheUploadFormSaysItToo:
+    """The night run's Q8, answered 2026-10-13: the upload form, where an
+    admin types the adapters, says it under the two adapter boxes."""
+
+    def test_the_note_sits_under_the_adapter_boxes(self, logged_in_client):
+        page = logged_in_client.get("/indexes/import").text
+        boxes = page.index('id="adapter_read2"')
+        note = page.index(SAID_ON_THE_PAGE)
+        overrides = page.index('id="default_index1_override"')
+        assert boxes < note < overrides
