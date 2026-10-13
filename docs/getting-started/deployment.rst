@@ -432,7 +432,13 @@ is not valid CIDR, or that names a network reaching into one of those ranges
 at all (``169.0.0.0/8`` does), stops SeqSetup at start with a message naming
 the entry. Loopback (``127.0.0.1/32``) is not in that group: it is refused
 unless listed, and listing it is how a dev setup reaches a mock LIMS on the
-same host.
+same host. IPv6 loopback is listed as ``::1/128``, which a host whose
+``localhost`` resolves to ``::1`` needs (Fedora/RHEL and macOS defaults, and
+many container images); list it alongside the IPv4 one,
+``SEQSETUP_LIMS_ALLOWED_NETS=127.0.0.1/32,::1/128``. It is allowed even
+though it lies inside the reserved ``::/8`` -- a network wholly inside
+loopback is an entry for loopback and nothing else -- while ``::/8`` itself
+stays refused.
 
 .. important::
 

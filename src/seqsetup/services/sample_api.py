@@ -130,6 +130,17 @@ _NEVER_ALLOWED_NETS = tuple(ipaddress.ip_network(text) for text in (
 ))
 
 
+# Loopback is refused unless it is listed, which means the allow-list must
+# be able to open it -- and ``::1`` lies inside ``::/8``, so the rules
+# above would otherwise refuse the one address there is to list. These are
+# the two loopback networks in full: an entry wholly inside one of them is
+# an entry for loopback and nothing else.
+_LOOPBACK_NETS = (
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+)
+
+
 def _is_never_allowed_address(
     ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
 ) -> bool:
@@ -137,7 +148,15 @@ def _is_never_allowed_address(
 
     Asked of the resolved address, so this holds whatever the operator
     listed: a /8 that happens to contain 169.254.169.254 cannot carry it.
+
+    Loopback is not one of these: it is refused unless the operator listed
+    it, which is how a dev setup reaches a mock LIMS on the same host.
+    Python reads ``::1`` as reserved (it is inside ``::/8``), so without
+    this ``::1`` could not be listed at all and a ``localhost`` that
+    resolves to it was unreachable.
     """
+    if ip.is_loopback:
+        return False
     return ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified
 
 
@@ -147,7 +166,16 @@ def _never_allowed_overlap(net):
     Any overlap counts, not only a network wholly inside one: the stricter
     reading refuses ``169.0.0.0/8`` rather than letting it stand while the
     address check carries the refusal alone.
+
+    A network wholly inside loopback is the exception, for the reason in
+    ``_is_never_allowed_address``: ``::1/128`` may be listed even though it
+    is inside the reserved ``::/8``. ``::/8`` itself may not -- it contains
+    ``::1`` but does not lie inside it, and it carries the unspecified
+    address and the rest of the reserved block with it.
     """
+    if any(net.version == loopback.version and net.subnet_of(loopback)
+           for loopback in _LOOPBACK_NETS):
+        return None
     for block in _NEVER_ALLOWED_NETS:
         if net.version == block.version and net.overlaps(block):
             return block

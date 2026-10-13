@@ -78,7 +78,7 @@ a model or service layer where it cannot be forgotten.
 
 ### External API safety
 - The LIMS API client (`services/sample_api.py`) uses SSL certificate verification via `ssl.create_default_context()`.
-- **URLs are validated before fetching.** Hostnames are DNS-resolved and any resolved IP that is loopback, link-local, RFC1918 private, multicast, reserved, or unspecified is refused — this blocks SSRF pivots into the host's own networks. An operator whose LIMS lives on a private corporate network lists the networks it may be on in `SEQSETUP_LIMS_ALLOWED_NETS` (comma-separated CIDR); an address is allowed when it is public or lies inside a listed network. Link-local (`169.254.0.0/16`, `fe80::/10` — cloud instance metadata), multicast, unspecified and reserved addresses stay refused however they are listed, and a list that is not valid CIDR or that overlaps one of those ranges at all stops start-up (`check_lims_allowed_nets` in `services/sample_api.py`, called from `app.py`). The removed `SEQSETUP_LIMS_ALLOW_PRIVATE_NETS` stops start-up while it is set at all. Plain HTTP is separately gated by `SEQSETUP_LIMS_ALLOW_HTTP=1`; production uses HTTPS exclusively so the api-key is not sent in clear.
+- **URLs are validated before fetching.** Hostnames are DNS-resolved and any resolved IP that is loopback, link-local, RFC1918 private, multicast, reserved, or unspecified is refused — this blocks SSRF pivots into the host's own networks. An operator whose LIMS lives on a private corporate network lists the networks it may be on in `SEQSETUP_LIMS_ALLOWED_NETS` (comma-separated CIDR); an address is allowed when it is public or lies inside a listed network. Link-local (`169.254.0.0/16`, `fe80::/10` — cloud instance metadata), multicast, unspecified and reserved addresses stay refused however they are listed, and a list that is not valid CIDR or that overlaps one of those ranges at all stops start-up (`check_lims_allowed_nets` in `services/sample_api.py`, called from `app.py`). Loopback is the one exception to that overlap rule: a network wholly inside `127.0.0.0/8` or `::1/128` may be listed (Python reads `::1` as reserved, so there is no narrower network to list), and loopback is refused whenever it is not listed. The removed `SEQSETUP_LIMS_ALLOW_PRIVATE_NETS` stops start-up while it is set at all. Plain HTTP is separately gated by `SEQSETUP_LIMS_ALLOW_HTTP=1`; production uses HTTPS exclusively so the api-key is not sent in clear.
 - API responses are size-limited (10 MB) to prevent memory exhaustion.
 
 ## Conventions
@@ -211,6 +211,11 @@ not set either):
 export SEQSETUP_LIMS_ALLOW_HTTP=1                     # mock LIMS speaks plain HTTP
 export SEQSETUP_LIMS_ALLOWED_NETS=127.0.0.1/32        # mock LIMS lives on localhost
 ```
+
+On a host whose `localhost` resolves to `::1` (Fedora/RHEL and macOS
+defaults, and many container images), list IPv6 loopback too —
+`SEQSETUP_LIMS_ALLOWED_NETS=127.0.0.1/32,::1/128` — or write `127.0.0.1`
+in the LIMS URL instead of `localhost`.
 
 ## Run Status State Machine
 

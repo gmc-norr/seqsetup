@@ -95,7 +95,8 @@ Both restrictions can be lifted, but only via environment variables the
   Link-local (where cloud instance metadata lives), multicast, unspecified
   and reserved addresses stay refused however they are listed, and a list
   that names a network reaching into one of those ranges stops SeqSetup at
-  start.
+  start. Loopback is the exception: ``127.0.0.0/8`` and ``::1/128`` may be
+  listed, and loopback is refused whenever they are not.
 - ``SEQSETUP_LIMS_ALLOW_HTTP=1`` -- allow plain HTTP.
 
 Treat each as a deliberate, audited decision for that one deployment --

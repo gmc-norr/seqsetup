@@ -111,6 +111,69 @@ class TestFourKindsOfAddressStayRefused:
             _validate_url("https://metadata.local/")
 
 
+class TestLoopbackIsGatedByTheListForIpv6Too:
+    """"Loopback is allowed only when listed" -- for ``::1`` as well.
+
+    Python reads ``::1`` as reserved, because it lies inside ``::/8``, one
+    of IANA's reserved blocks. So the never-allowed check refused it
+    however it was listed, and the start-up check refused the entry
+    ``::1/128`` itself for overlapping ``::/8``; there is no narrower
+    network to list. A developer on a host whose ``localhost`` resolves to
+    ``::1`` -- the Fedora/RHEL and macOS default, and many container
+    images -- could therefore not reach a mock LIMS at all. Loopback is
+    now the list's to open and only the list's; ``::/8`` and every other
+    reserved block stay refused.
+    """
+
+    def test_ipv6_loopback_is_refused_when_it_is_not_listed(self, monkeypatch):
+        """Refused by the list, which is why listing it can open it: the
+        never-allowed check's own message names what it refuses whatever is
+        listed."""
+        _stub_resolve(monkeypatch, ["::1"])
+        with pytest.raises(SampleApiError, match="SSRF is blocked by policy"):
+            _validate_url("https://localhost/api")
+
+    def test_ipv6_loopback_is_refused_when_another_network_is_listed(self, monkeypatch):
+        monkeypatch.setenv(ALLOWED, "127.0.0.1/32")
+        _stub_resolve(monkeypatch, ["::1"])
+        with pytest.raises(SampleApiError, match="SSRF is blocked by policy"):
+            _validate_url("https://localhost/api")
+
+    def test_a_listed_ipv6_loopback_is_allowed(self, monkeypatch):
+        monkeypatch.setenv(ALLOWED, "127.0.0.1/32,::1/128")
+        _stub_resolve(monkeypatch, ["::1"])
+        assert ipaddress.ip_address("::1") in _validate_url("https://localhost/api")
+
+    def test_listing_it_does_not_stop_the_start(self, monkeypatch):
+        monkeypatch.setenv(ALLOWED, "127.0.0.1/32,::1/128")
+        check_lims_allowed_nets()
+
+    def test_the_entry_is_parsed_as_that_one_host(self):
+        assert parse_allowed_nets("::1/128") == (ipaddress.ip_network("::1/128"),)
+
+    def test_the_whole_ipv4_loopback_network_can_be_listed(self):
+        assert parse_allowed_nets("127.0.0.0/8") == (ipaddress.ip_network("127.0.0.0/8"),)
+
+    @pytest.mark.parametrize("value", ["::/8", "::/0", "::/127", "::/96"])
+    def test_a_network_that_merely_contains_it_is_still_refused(self, value):
+        """``::1/128`` lies wholly inside loopback; these only contain it,
+        along with the unspecified address and the rest of a reserved
+        block."""
+        with pytest.raises(LimsAllowedNetsError, match="never"):
+            parse_allowed_nets(value)
+
+    @pytest.mark.parametrize("ip", ["::1", "127.0.0.1"])
+    def test_the_address_check_leaves_loopback_to_the_list(self, ip):
+        assert not mod._is_never_allowed_address(ipaddress.ip_address(ip))
+
+    @pytest.mark.parametrize("ip,never", [("::ffff:127.0.0.1", False),
+                                          ("::ffff:169.254.169.254", True)])
+    def test_the_ipv4_mapped_addresses_keep_their_verdicts(self, ip, never):
+        """Unchanged: Python reads the first as loopback and the second as
+        link-local."""
+        assert mod._is_never_allowed_address(ipaddress.ip_address(ip)) is never
+
+
 class TestTheListIsCheckedBeforeTheAppStarts:
     def test_a_good_list_is_accepted(self):
         assert parse_allowed_nets("10.0.0.0/8, 127.0.0.1/32") == (
@@ -181,8 +244,10 @@ class TestTheRefusedRangesMatchPythonsOwnReading:
 
     @pytest.mark.parametrize("ip", ["169.254.0.0", "169.254.255.255", "224.0.0.0",
                                     "239.255.255.255", "240.0.0.0", "255.255.255.255",
-                                    "0.0.0.0", "fe80::", "ff02::1", "::", "::1", "100::1"])
+                                    "0.0.0.0", "fe80::", "ff02::1", "::", "100::1"])
     def test_every_never_allowed_address_is_inside_a_block(self, ip):
+        """``::1`` is not here: it is inside ``::/8``, but loopback is the
+        list's to open (TestLoopbackIsGatedByTheListForIpv6Too)."""
         address = ipaddress.ip_address(ip)
         assert mod._is_never_allowed_address(address)
         assert any(address in net for net in mod._NEVER_ALLOWED_NETS
