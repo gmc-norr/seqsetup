@@ -141,20 +141,6 @@ class TestADropThatMatchesTheStoredIndexesGoesAhead:
         assert _indexes(ctx) == [("PAT1", PLAIN_PAIRS[0][0], PLAIN_PAIRS[0][1]),
                                  ("PAT2", PLAIN_PAIRS[1][0], PLAIN_PAIRS[1][1])]
 
-    def test_a_drop_that_sends_no_shown_indexes_is_assigned_as_before(
-            self, logged_in_client, two_empty_rows):
-        """A page from before this check does not send them; it is still
-        refused by the row check when the sample list moved, and otherwise
-        behaves exactly as it did."""
-        ctx, kit = two_empty_rows
-        _assign_behind_the_page(ctx, "s2", "GGGGCCCCAA")
-
-        resp = _drop(logged_in_client, kit, 2, None)
-
-        assert resp.status_code == 200, resp.text[:300]
-        assert _indexes(ctx) == [("PAT1", PLAIN_PAIRS[0][0], PLAIN_PAIRS[0][1]),
-                                 ("PAT2", PLAIN_PAIRS[1][0], PLAIN_PAIRS[1][1])]
-
 
 class TestWhatTheDropSendsMustBeReadable:
     @pytest.mark.parametrize("shown", [
@@ -171,6 +157,22 @@ class TestWhatTheDropSendsMustBeReadable:
         before = _indexes(ctx)
 
         resp = _drop(logged_in_client, kit, 2, shown)
+
+        assert resp.status_code == 400, resp.text[:300]
+        assert resp.text == "This page is out of date. Reload the page and drag again."
+        assert _indexes(ctx) == before
+
+    def test_a_drop_that_sends_no_shown_indexes_is_refused(
+            self, logged_in_client, two_empty_rows):
+        """The field is required. Every page that can drop sends it -- app.js
+        is served at /js/app.js?v=<content hash>, so no browser holds a
+        pre-change script against post-change HTML -- and a request without
+        it would overwrite an index another tab set (batch 4 review fix A)."""
+        ctx, kit = two_empty_rows
+        _assign_behind_the_page(ctx, "s2", "GGGGCCCCAA")
+        before = _indexes(ctx)
+
+        resp = _drop(logged_in_client, kit, 2, None)
 
         assert resp.status_code == 400, resp.text[:300]
         assert resp.text == "This page is out of date. Reload the page and drag again."

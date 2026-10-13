@@ -108,7 +108,15 @@ def _entry_id(kit, slot, k):
     return f"{kit.name}_P{k}" if slot == "pair" else f"{kit.name}_{slot}_A{k}"
 
 
-def _assign(client, route, slot, kit):
+def _shown(ctx, sids):
+    """What the page shows in each of ``sids``: the stored [i7, i5] per row.
+    A multi-index drop must send one per target row (batch 4 review fix A)."""
+    run = _stored(ctx)
+    return [[s.index1_sequence or "", s.index2_sequence or ""]
+            for s in (run.get_sample(sid) for sid in sids)]
+
+
+def _assign(client, ctx, route, slot, kit):
     """Give s1 and s2 the kit's first two indexes through ``route``: "one"
     (drop on one row), "selected" (drop on ticked rows) or "drop" (a
     multi-index drop)."""
@@ -117,6 +125,7 @@ def _assign(client, route, slot, kit):
         resp = client.post(f"/runs/{RUN}/samples/assign-indexes-bulk", data={
             "start_sample_id": "s1", "indexes_json": json.dumps(entries),
             "target_sample_ids": json.dumps(["s1", "s2"]),
+            "target_indexes": json.dumps(_shown(ctx, ["s1", "s2"])),
         }, headers=ORIGIN)
         assert resp.status_code == 200, resp.text[:300]
         return
@@ -147,10 +156,10 @@ class TestANewKitReplacesTheOldKitsSettings:
         umi = _umi_kit(ctx)
         slot, new, override_cycles = _new_kit(ctx, kind)
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "pair", umi)
+        _assign(logged_in_client, ctx, "one", "pair", umi)
         assert [s.override_cycles for s in _stored(ctx).samples] == ["U8Y143;I8N2;I8N2;U8Y143"] * 2
 
-        _assign(logged_in_client, route, slot, new)
+        _assign(logged_in_client, ctx, route, slot, new)
 
         for sample in _stored(ctx).samples:
             assert sample.index_kit_name == new.name
@@ -188,8 +197,8 @@ class TestANewKitReplacesTheOldKitsSettings:
         umi = _umi_kit(ctx)
         slot, new, override_cycles = _new_kit(ctx, kind)
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "pair", umi)
-        _assign(logged_in_client, "drop", slot, new)
+        _assign(logged_in_client, ctx, "one", "pair", umi)
+        _assign(logged_in_client, ctx, "drop", slot, new)
 
         resp = mark_ready(logged_in_client, RUN, ORIGIN)
 
@@ -234,11 +243,11 @@ class TestReplacingOneIndexKeepsTheOthersSettings:
             default_read1_override="U8Y*", default_read2_override="U8Y*",
         )
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "i7", umi)
-        _assign(logged_in_client, "one", "i5", umi)
+        _assign(logged_in_client, ctx, "one", "i7", umi)
+        _assign(logged_in_client, ctx, "one", "i5", umi)
         assert [_settings(s) for s in _stored(ctx).samples] == [(8, 8, "U8Y*", "U8Y*")] * 2
 
-        _assign(logged_in_client, route, side, short)
+        _assign(logged_in_client, ctx, route, side, short)
 
         for sample in _stored(ctx).samples:
             assert _settings(sample) == settings
@@ -265,6 +274,12 @@ def _drop(client, kit, start, count, targets):
     }
     if targets is not None:
         data["target_sample_ids"] = targets if isinstance(targets, str) else json.dumps(targets)
+    # One [i7, i5] per target row, as the page sends it; these rows hold no
+    # index. A drop without the field is refused (batch 4 review fix A), so
+    # only the rows-check cases below leave it out, and they are refused
+    # before it is read.
+    if isinstance(targets, list):
+        data["target_indexes"] = json.dumps([["", ""] for _ in targets])
     return client.post(f"/runs/{RUN}/samples/assign-indexes-bulk", data=data, headers=ORIGIN)
 
 

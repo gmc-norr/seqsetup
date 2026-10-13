@@ -470,30 +470,31 @@ def _parse_sample_ids(raw: str) -> Optional[list[str]]:
     return parsed
 
 
-def _shown_indexes(raw, count: int) -> tuple[Optional[list[list[str]]], bool]:
+def _shown_indexes(raw, count: int) -> Optional[list[list[str]]]:
     """What a multi-index drop says the page showed in each of the ``count``
-    rows it fills: ([i7, i5] per row, True), (None, True) when the page sent
-    nothing, or (None, False) when what it sent cannot be read.
+    rows it fills: [i7, i5] per row, or None when the field is missing, empty
+    or unreadable -- the field is required, so all three are refused.
 
     The sequences are compared with the stored ones before anything is
     assigned, so a row whose index another tab changed is refused instead of
-    overwritten (batch 4, item 16).
+    overwritten (batch 4, item 16). A request without the field would
+    overwrite that index instead, and no real client sends one: app.js is
+    served as /js/app.js?v=<content hash>, so a browser cannot hold a
+    pre-change script against post-change HTML (batch 4 review fix A).
     """
-    if not raw:
-        return None, True
-    if not isinstance(raw, str):
-        return None, False
+    if not raw or not isinstance(raw, str):
+        return None
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        return None, False
+        return None
     if not isinstance(parsed, list) or len(parsed) != count:
-        return None, False
+        return None
     for row in parsed:
         if (not isinstance(row, list) or len(row) != 2
                 or not all(isinstance(cell, str) for cell in row)):
-            return None, False
-    return parsed, True
+            return None
+    return parsed
 
 
 def _find_index(ctx: AppContext, idx_type: str, idx_id: str, kit_id: str):
@@ -1115,18 +1116,17 @@ async def assign_indexes_bulk(
     # whose index another tab has since assigned, replaced or cleared is
     # refused rather than overwritten, and nothing is assigned (batch 4,
     # item 16).
-    shown, readable = _shown_indexes(form.get("target_indexes", ""), len(would_fill))
-    if not readable:
+    shown = _shown_indexes(form.get("target_indexes", ""), len(would_fill))
+    if shown is None:
         return Response("This page is out of date. Reload the page and drag again.", status_code=400)
-    if shown is not None:
-        changed = [sample.sample_id for sample, row in zip(would_fill, shown)
-                   if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
-        if changed:
-            return Response(
-                f"The index on {name_list(changed)} changed since this page was loaded. "
-                "Nothing was assigned. Reload the page and drag again.",
-                status_code=409,
-            )
+    changed = [sample.sample_id for sample, row in zip(would_fill, shown)
+               if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
+    if changed:
+        return Response(
+            f"The index on {name_list(changed)} changed since this page was loaded. "
+            "Nothing was assigned. Reload the page and drag again.",
+            status_code=409,
+        )
     refusal = _kit_swap_refusal([
         (run.samples[start_idx + offset], idx_type, kit)
         for offset, (idx_type, _index, kit) in enumerate(resolved_assignments)
