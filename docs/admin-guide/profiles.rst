@@ -93,9 +93,10 @@ a Ready run.
 The sync refuses a test file whose ``Version`` is not three whole numbers
 (``1.0``, ``1``, ``1.0.0rc1``, ``01.0.0`` and ``v1.0.0`` are all refused),
 and refuses **every** file of a test and version that is in more than one
-file -- a sample could get either -- naming them in the log::
+file -- a sample could get either -- naming each by its path in the
+repository, since two folders of the tree can hold the same file name::
 
-   Test profiles refused: WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. A test and version may be in one file only.
+   Test profiles refused: WGS 1.2.0 is in profiles/test_profiles/Wgs_a.yaml and profiles/test_profiles/archive/Wgs_a.yaml. A test and version may be in one file only.
 
 It also refuses **every** file of two tests whose ``TestType`` differs only
 in letter case. A ``TestType`` is matched exactly, so ``Wgs`` and ``WGS``

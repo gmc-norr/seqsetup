@@ -206,6 +206,7 @@ class GitHubSyncService:
             # make a sample's "1" pick an older version (spec 2026-10-07
             # group A4, §1).
             refused_tests: list[str] = []
+            test_paths: list[str] = []
             test_profiles = self._fetch_profiles_recursive(
                 owner,
                 repo,
@@ -214,8 +215,9 @@ class GitHubSyncService:
                 self._parse_test_profile,
                 strict=True,
                 refused=refused_tests,
+                paths=test_paths,
             )
-            self._refuse_repeated_test_versions(test_profiles, refused_tests)
+            self._refuse_repeated_test_versions(test_profiles, refused_tests, test_paths)
             self._refuse_tests_differing_only_in_capitals(test_profiles, refused_tests)
             logger.info(f"Fetched {len(test_profiles)} test profiles")
 
@@ -510,6 +512,7 @@ class GitHubSyncService:
         parser,
         strict: bool = False,
         refused: Optional[list[str]] = None,
+        paths: Optional[list[str]] = None,
     ) -> list:
         """Fetch YAML files from directory recursively and parse them.
 
@@ -523,6 +526,10 @@ class GitHubSyncService:
                 profile, for any reason, is added as "<path>: <problem>",
                 and a .yaml or .yml ending is read in any case (test
                 profiles, spec 2026-10-07 group A4, §1)
+            paths: when given, each returned profile's path in the repository
+                is appended, in step with the returned list, so a refusal can
+                name a file by its path and not by a base name two folders
+                can share
 
         Returns:
             List of parsed profile objects
@@ -547,7 +554,8 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_profiles = self._fetch_profiles_recursive(
-                    owner, repo, branch, item_path, parser, strict=False, refused=refused
+                    owner, repo, branch, item_path, parser, strict=False, refused=refused,
+                    paths=paths
                 )
                 profiles.extend(sub_profiles)
 
@@ -565,6 +573,8 @@ class GitHubSyncService:
                         if yaml_data:
                             profile = parser(yaml_data, item_name)
                             profiles.append(profile)
+                            if paths is not None:
+                                paths.append(item_path)
                             logger.debug(f"Parsed profile from {item_path}")
                         elif refused is not None:
                             refused.append(f"{item_path}: is empty")
@@ -783,13 +793,18 @@ class GitHubSyncService:
 
     @staticmethod
     def _refuse_repeated_test_versions(test_profiles: list[TestProfile],
-                                       refused: list[str]) -> None:
+                                       refused: list[str],
+                                       paths: Optional[list[str]] = None) -> None:
         """Each test and version that is in more than one file is logged and
         added to ``refused``, since a sample could get any of those files
-        (spec 2026-10-07 group A4, §1)."""
+        (spec 2026-10-07 group A4, §1). ``paths`` are the files' paths in the
+        repository, in step with ``test_profiles``: two folders of the tree
+        can hold the same base name, and "in Wgs.yaml and Wgs.yaml" says
+        nothing about where the second one is."""
+        where_of = paths if paths is not None else [p.source_file for p in test_profiles]
         files: dict[tuple[str, str], list[str]] = {}
-        for profile in test_profiles:
-            files.setdefault((profile.test_type, profile.version), []).append(profile.source_file)
+        for profile, where in zip(test_profiles, where_of):
+            files.setdefault((profile.test_type, profile.version), []).append(where)
         for (test, version), names in files.items():
             if len(names) > 1:
                 names = sorted(names)

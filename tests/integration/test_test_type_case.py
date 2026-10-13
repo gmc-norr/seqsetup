@@ -10,7 +10,8 @@ and the stored ones are kept — group A4's refusal for one test and version in
 two files.
 """
 
-from .test_group_a4 import REFUSED, STORED_BEFORE, TESTS_BEFORE, _stored, _sync_tests, _test_yaml
+from .test_group_a4 import (FOLDER, REFUSED, STORED_BEFORE, TESTS_BEFORE, _stored, _sync_tests,
+                            _test_yaml)
 
 
 class TestTwoTestsThatDifferOnlyInCapitals:
@@ -88,7 +89,10 @@ class TestWhatIsStillAccepted:
         })
 
         assert ok is False
-        assert message == (REFUSED + "WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. "
-                           "Synced 1 application profiles.")
-        assert ("Test profiles refused: WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. "
+        # Each file is named by its path in the repository (batch 4, item
+        # 12); tests/integration/test_repeated_test_file_paths.py.
+        assert message == (REFUSED + f"WGS 1.2.0 is in {FOLDER}/Wgs_a.yaml and "
+                           f"{FOLDER}/Wgs_b.yaml. Synced 1 application profiles.")
+        assert (f"Test profiles refused: WGS 1.2.0 is in {FOLDER}/Wgs_a.yaml and "
+                f"{FOLDER}/Wgs_b.yaml. "
                 "A test and version may be in one file only.") in logged
