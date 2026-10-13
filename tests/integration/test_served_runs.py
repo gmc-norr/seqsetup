@@ -154,6 +154,14 @@ class TestOneRunsFiles:
             else:
                 assert _shown_text(section) == api.text
 
+    def test_a_file_that_starts_with_a_newline_shows_it(self, logged_in_client, fresh_app):
+        """A browser drops one newline right after <pre>'s start tag; the
+        page writes one there so the file's own first newline survives."""
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx, "newline-first", generated_samplesheet_v2="\n[Header]\nFileFormatVersion,2\n")
+        section = _section(logged_in_client.get(f"/served-runs/{run_id}").text, "samplesheet-v2")
+        assert _shown_text(section) == "\n[Header]\nFileFormatVersion,2\n"
+
     def test_markup_in_a_file_is_shown_as_text(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         page = logged_in_client.get(f"/served-runs/{_full(ctx, 'markup')}").text
