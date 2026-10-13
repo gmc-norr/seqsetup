@@ -1,10 +1,32 @@
-"""Every library with a known security advisory is locked at or above the
-version that fixes it (group 3b: N-23, N-24, N-26). pixi.lock is what
-`pixi install --locked` puts into the Docker image, so this reads the lock,
-not the environment the tests run in.
+"""The 13 packages named in FLOORS are locked at or above the version that
+fixes the advisories known for them (group 3b: N-23, N-24, N-26).
 
-Each floor is the first release that fixes every advisory the OSV database
-(api.osv.dev) listed on 2026-10-11 for the version locked before group 3b.
+What this covers: those 13, and nothing else. Each floor is the first release
+that fixes every advisory the OSV database (api.osv.dev) listed on 2026-10-11
+for the version locked before group 3b -- PyPI advisories, which is where
+every floor here comes from except OpenSSL's; that one is from
+openssl-library.org (2026-09-29). Four of the 13 are installed from
+conda-forge (openssl, pillow, pygments, pytest), and for three of those the
+advisory is still the Python project's. It reads pixi.lock, which holds both
+environments, so 5 of the 13 (pygments, pytest, requests, soupsieve, urllib3)
+are checked where they now live, in the dev environment, and are not in the
+Docker image at all.
+
+What this does not cover:
+
+- It looks nothing up. The floors are written by hand, so an advisory
+  published after 2026-10-11 -- against one of these 13 or against any of the
+  other 149 packages in the lock -- passes here until someone adds or raises
+  a floor. This is not a scanner. The "Updating Libraries" steps in
+  docs/development/contributing.rst say to check the locked versions by hand
+  after a `pixi update`.
+- No C library but OpenSSL: zlib-ng, freetype, libpng, libjpeg-turbo,
+  libexpat, libwebp-base, cairo and the rest of conda-forge's C packages have
+  no floor here.
+- Nothing outside the lock -- not the environment the tests run in, and not
+  the Debian packages of the pixi base image the Dockerfile builds on.
+- Not "the newest release": only "at or above the floor".
+
 Raise a floor when a new advisory needs it; never lower one. A package that
 leaves the lock is taken out of FLOORS.
 """
