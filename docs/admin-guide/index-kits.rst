@@ -22,7 +22,9 @@ Select **+ Import Index Kit** and fill in the form:
   blank, SeqSetup takes them from the file itself where the format provides
   them.
 - Adapter sequences and default override-cycle patterns -- optional; see the
-  page's own **Override cycles help** for the notation.
+  page's own **Override cycles help** for the notation. Adapter sequences are
+  stored with the kit and are never written to a Sample Sheet -- see
+  `Viewing a kit`_ below.
 
 .. figure:: /_static/screenshots/admin/index-kit-upload.png
    :alt: The Import Index Kit form with a CSV file selected and the kit name and version filled in, and the Upload Index Kit button outlined.
@@ -95,6 +97,17 @@ Viewing a kit
 Select a kit's name, or **View**, to see its full contents: every index
 pair (or i7/i5 list) with its name and sequence, plus the kit's adapter
 and default-override settings. An empty field shows a dash.
+
+.. warning::
+   **A kit's Adapter R1 and R2 are stored with the kit and are not written
+   to the Sample Sheet.** Nothing that writes a sheet reads them. A sheet's
+   ``AdapterRead1`` and ``AdapterRead2`` cells are filled from the run's
+   application profile (see :doc:`profiles`), so they are written empty
+   when the profile lists the columns and gives no value -- as the shipped
+   ``BCLConvertNextera`` profile does. Filling a kit's adapter boxes
+   therefore changes no sheet and makes BCL Convert trim nothing; the
+   values are a record of what the kit contains, and the kit's
+   **Download YAML** carries them back out. The page says so too.
 
 A kit's name may hold a ``/`` -- Illumina's own ``IDT for Illumina DNA/RNA
 UD Indexes Set A`` does -- and it opens, downloads and deletes like any
