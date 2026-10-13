@@ -87,13 +87,13 @@ class TestComparisonsUseUtc:
         assert token.is_expired()
 
     def test_a_sync_ten_minutes_ago_is_not_due_on_an_hourly_schedule(self):
-        scheduler = ProfileSyncScheduler(MagicMock(), MagicMock())
+        scheduler = ProfileSyncScheduler(MagicMock(), MagicMock(**{"writing_since.return_value": None}))
         config = ProfileSyncConfig(sync_interval_minutes=60,
                                    last_sync_at=_utc_now() - timedelta(minutes=10))
         assert scheduler._should_sync(config) is False
 
     def test_a_sync_two_hours_ago_is_due(self):
-        scheduler = ProfileSyncScheduler(MagicMock(), MagicMock())
+        scheduler = ProfileSyncScheduler(MagicMock(), MagicMock(**{"writing_since.return_value": None}))
         config = ProfileSyncConfig(sync_interval_minutes=60,
                                    last_sync_at=_utc_now() - timedelta(hours=2))
         assert scheduler._should_sync(config) is True

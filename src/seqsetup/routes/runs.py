@@ -48,7 +48,9 @@ from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.sheet_plan import SheetPlanChanged, SheetPlanProblem
 from ..services.sheet_target import sheet_targets
-from ..services.validation import ValidationService, clear_validation_cache
+from ..services.validation import (
+    ValidationService, clear_validation_cache, validation_inputs_version,
+)
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
 from ..services.validation_summary import error_messages
 from ..services.versioned_tests import offered_tests
@@ -571,8 +573,8 @@ def _refused_while_a_sync_is_writing(
     """Mark Ready waits while a config sync's writes have not finished: the
     profiles and instrument records may be partly written (outside review of
     7f858e0, finding 4). Nothing has been saved at these points."""
-    since = ctx.profile_sync_config_repo.writing_since()
-    if since is None:
+    note = ctx.profile_sync_config_repo.writing_note()
+    if note is None:
         return
     audit(
         "run.status.denied",
@@ -582,7 +584,14 @@ def _refused_while_a_sync_is_writing(
         reason="config_sync_unfinished",
         attempted_status=new_status.value,
     )
-    raise ConflictError(unfinished_sync_message(since))
+    raise ConflictError(unfinished_sync_message(note["since"], note["collections"]))
+
+
+_SETTINGS_CHANGED_DURING_EXPORT = (
+    "The profiles or instrument settings changed while the exports were being generated, so "
+    "the Sample Sheet might not match what was checked. The run is still a Draft. Mark it "
+    "Ready again."
+)
 
 
 @router.post("/runs/{run_id}/status/{status}", response_class=HTMLResponse)
@@ -614,6 +623,9 @@ async def update_status(
         # Only the person editing the Draft marks it Ready.
         require_edit_lock(run, ctx, request)
         _refused_while_a_sync_is_writing(request, run, ctx, new_status)
+        # A sync that starts and finishes between the two note checks leaves
+        # no note at either, but bumps this (review P2-1, 2026-10-14).
+        inputs_at_start = validation_inputs_version()
 
     color_balance_lanes: list[int] = []
     if new_status == RunStatus.READY:
@@ -829,6 +841,16 @@ async def update_status(
             raise ConflictError(str(e))
         # A sync may have started writing while the exports were made.
         _refused_while_a_sync_is_writing(request, run, ctx, new_status)
+        if validation_inputs_version() != inputs_at_start:
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="settings_changed_during_export",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(_SETTINGS_CHANGED_DURING_EXPORT)
 
     with saving_run(run, ctx, request):
         run.status = new_status

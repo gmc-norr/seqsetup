@@ -12,6 +12,9 @@ from ..utils.clock import utcnow
 
 logger = logging.getLogger(__name__)
 
+# Not every minute: GitHub limits unauthenticated API calls.
+_RETRY_WHILE_PAUSED_SECONDS = 5 * 60
+
 
 class ProfileSyncScheduler:
     """Background scheduler for periodic profile sync.
@@ -133,6 +136,11 @@ class ProfileSyncScheduler:
 
         elapsed = utcnow() - config.last_sync_at
         interval_seconds = config.sync_interval_minutes * 60
+        # While a sync that stopped part-way keeps Mark Ready paused, try
+        # again after a few minutes, not the whole interval (review P2-3,
+        # 2026-10-14).
+        if self.config_repo.writing_since() is not None:
+            interval_seconds = min(interval_seconds, _RETRY_WHILE_PAUSED_SECONDS)
 
         return elapsed.total_seconds() >= interval_seconds
 

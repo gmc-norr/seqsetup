@@ -566,7 +566,12 @@ If a sync changes a profile while **Mark Ready** is writing the exports,
 **Mark Ready** refuses with *"The profiles changed while the exports were
 being generated, so the Sample Sheet would not match what was checked. The
 run is still a Draft. Mark it Ready again."* The next **Mark Ready** checks
-and writes against the new profiles.
+and writes against the new profiles. A sync that both starts and finishes
+while **Mark Ready** runs is refused the same way: *"The profiles or
+instrument settings changed while the exports were being generated, so the
+Sample Sheet might not match what was checked. The run is still a Draft.
+Mark it Ready again."* So is a Mark Ready during which an index kit was
+uploaded or removed, or an instrument switched on or off.
 
 .. _config-sync:
 
@@ -625,19 +630,28 @@ A sync (manual or scheduled) always does all of the following:
   instruments are stored anyway; the index kits a refused kit file keeps
   count as stored.)
 - The stored records are replaced one at a time, so the replacing is not
-  one step. A sync notes when it starts writing and clears the note when
-  every write has finished. While the note is there -- a sync is writing
-  right now, or one stopped part-way, say because the database could not
-  be reached -- **Mark Ready** refuses every run: *"A configuration sync
-  started at ... has not finished writing the profiles and instrument
-  settings, so they may be incomplete. Mark Ready is paused until a sync
-  finishes. Try again in a minute; if this stays, an admin can press Sync
-  now on the Config Sync page."* The message of a sync that stopped
-  part-way ends *"The settings were only partly written, so Mark Ready is
-  paused until a sync finishes."* The next sync that finishes, scheduled
-  or **Sync now**, lifts the pause. Runs already Ready or Archived keep
-  their exports. One sync runs at a time: a **Sync now** pressed during a
-  scheduled sync waits for it to end.
+  one step. Before a sync deletes the application profiles, the test
+  profiles or the instrument settings, it notes them; it strikes them off
+  when the whole sync has finished. While the note names any -- a sync is
+  writing right now, or one stopped part-way, say because the database
+  could not be reached -- **Mark Ready** refuses every run: *"A
+  configuration sync started at ... did not finish writing the test
+  profiles, so they may be incomplete. Mark Ready is paused until a sync
+  writes them again. If a sync is running now, try again in a minute;
+  otherwise an admin can press Sync now on the Config Sync page."* The
+  **Config Sync** page shows the pause in red. When the database can be
+  reached, the stopped sync's own message ends *"The settings were only
+  partly written, so Mark Ready is paused until a sync writes them
+  again."* Only a sync that writes those records again lifts the pause: a
+  sync that refuses the test files, or runs with **Also sync instruments**
+  off, leaves them as they were, and its message says *"Mark Ready stays
+  paused: a sync that stopped earlier left the test profiles incomplete,
+  and this sync did not write them again."* While paused, the scheduled
+  sync tries again every 5 minutes instead of waiting its interval.
+  Synced index kits are not part of the pause: a kit never reaches a
+  sheet, because assigning one copies its sequences onto the sample. Runs
+  already Ready or Archived keep their exports. One sync runs at a time: a
+  **Sync now** pressed during a scheduled sync waits for it to end.
 
 .. warning::
    Syncing instruments changes what a **new** run can be set up on -- see
