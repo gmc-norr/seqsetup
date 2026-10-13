@@ -124,6 +124,17 @@ follow in the same window are counted, and their count is carried by that
 address's **next** row. Nothing rewrites a row that has gone out: the
 trail is insert-only.
 
+A row that carries a count from an earlier window says how much of
+``refused`` that was, as ``refused_earlier``::
+
+   ip: 198.51.100.7   retry_after: 43   refused: 12   refused_earlier: 11
+
+The carried number belongs to the **address**, not to the name in the
+**Who** column: only the row's own refusal -- one of the twelve above --
+was typed with that name, and the other eleven were typed at that address
+in the window before, under whatever names were tried then. A row that
+carries nothing has no ``refused_earlier``.
+
 .. note::
    One consequence: if SeqSetup is restarted (or stops) while refusals are
    still being counted, that part of the count is lost -- the rows already

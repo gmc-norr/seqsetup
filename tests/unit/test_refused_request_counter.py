@@ -35,16 +35,16 @@ def _sweep_is_due(counter):
 
 class TestOneRowPerWindow:
     def test_the_first_refusal_asks_for_a_row_of_one(self, counter):
-        assert counter.count_refusal("1.2.3.4") == 1
+        assert counter.count_refusal("1.2.3.4").total == 1
 
     def test_the_refusals_that_follow_ask_for_none(self, counter):
         counter.count_refusal("1.2.3.4")
-        assert [counter.count_refusal("1.2.3.4") for _ in range(9)] == [0] * 9
+        assert [counter.count_refusal("1.2.3.4").total for _ in range(9)] == [0] * 9
 
     def test_each_address_has_its_own_window(self, counter):
-        assert counter.count_refusal("1.2.3.4") == 1
-        assert counter.count_refusal("5.6.7.8") == 1
-        assert counter.count_refusal("1.2.3.4") == 0
+        assert counter.count_refusal("1.2.3.4").total == 1
+        assert counter.count_refusal("5.6.7.8").total == 1
+        assert counter.count_refusal("1.2.3.4").total == 0
 
 
 class TestTheCountIsCarriedByTheNextRow:
@@ -54,7 +54,7 @@ class TestTheCountIsCarriedByTheNextRow:
             counter.count_refusal("1.2.3.4")       # counted, no row
         _age(counter, "1.2.3.4", WINDOW)
 
-        assert counter.count_refusal("1.2.3.4") == 1 + 9
+        assert counter.count_refusal("1.2.3.4").total == 1 + 9
 
     def test_nothing_is_counted_twice(self, counter):
         counter.count_refusal("1.2.3.4")
@@ -63,16 +63,16 @@ class TestTheCountIsCarriedByTheNextRow:
         _age(counter, "1.2.3.4", WINDOW)
         counter.count_refusal("1.2.3.4")
 
-        assert counter.count_refusal("1.2.3.4") == 0
+        assert counter.count_refusal("1.2.3.4").total == 0
 
     def test_every_refusal_is_accounted_for_exactly_once(self, counter):
         """The sum of the rows asked for equals the refusals that happened."""
         asked = 0
         for round_number in range(5):
             for _ in range(7):
-                asked += counter.count_refusal("1.2.3.4")
+                asked += counter.count_refusal("1.2.3.4").total
             _age(counter, "1.2.3.4", WINDOW)
-        asked += counter.count_refusal("1.2.3.4")
+        asked += counter.count_refusal("1.2.3.4").total
 
         assert asked == 5 * 7 + 1
 
@@ -80,7 +80,45 @@ class TestTheCountIsCarriedByTheNextRow:
         counter.count_refusal("1.2.3.4")
         _age(counter, "1.2.3.4", WINDOW)
 
-        assert counter.count_refusal("1.2.3.4") == 1
+        assert counter.count_refusal("1.2.3.4").total == 1
+
+
+class TestWhatCameFromAnEarlierWindow:
+    """How much of the row's count was refused before this window.
+
+    The row's own refusal was typed with the name on the row; the count it
+    carries was typed with whatever names came before it at that address,
+    in a window that has passed. ``refused_earlier`` keeps the two apart,
+    so no named account is credited with attempts on other names.
+    """
+
+    def test_a_first_row_carries_nothing_from_earlier(self, counter):
+        assert counter.count_refusal("1.2.3.4") == (1, 0)
+
+    def test_the_carried_part_is_reported_on_its_own(self, counter):
+        counter.count_refusal("1.2.3.4")           # row of 1
+        for _ in range(9):
+            counter.count_refusal("1.2.3.4")       # counted, no row
+        _age(counter, "1.2.3.4", WINDOW)
+
+        assert counter.count_refusal("1.2.3.4") == (10, 9)
+
+    def test_the_two_numbers_are_named(self, counter):
+        refusals = counter.count_refusal("1.2.3.4")
+
+        assert (refusals.total, refusals.earlier) == (1, 0)
+
+    def test_a_refusal_that_asks_for_no_row_reports_nothing(self, counter):
+        counter.count_refusal("1.2.3.4")
+
+        assert counter.count_refusal("1.2.3.4") == (0, 0)
+
+    def test_the_earlier_part_is_never_more_than_the_total(self, counter):
+        for _round in range(4):
+            for _ in range(6):
+                refusals = counter.count_refusal("1.2.3.4")
+                assert refusals.earlier <= refusals.total
+            _age(counter, "1.2.3.4", WINDOW)
 
 
 class TestWhatItHoldsOnTo:
@@ -106,7 +144,7 @@ class TestWhatItHoldsOnTo:
         counter.count_refusal("5.6.7.8")
 
         assert "1.2.3.4" in counter._windows
-        assert counter.count_refusal("1.2.3.4") == 2
+        assert counter.count_refusal("1.2.3.4").total == 2
 
     def test_the_sweep_runs_at_most_once_per_window(self, counter):
         """Not due: the stale entry is still there, and nothing walked the
@@ -122,7 +160,7 @@ class TestWhatItHoldsOnTo:
         counter.count_refusal("1.2.3.4")
         counter.reset()
         assert counter._windows == {}
-        assert counter.count_refusal("1.2.3.4") == 1
+        assert counter.count_refusal("1.2.3.4").total == 1
 
 
 class TestItTakesTheLoginLimitersWindow:
@@ -137,4 +175,4 @@ class TestItTakesTheLoginLimitersWindow:
 
         get_login_refusal_counter().count_refusal("1.2.3.4")
         reset_all_limiters()
-        assert get_login_refusal_counter().count_refusal("1.2.3.4") == 1
+        assert get_login_refusal_counter().count_refusal("1.2.3.4").total == 1

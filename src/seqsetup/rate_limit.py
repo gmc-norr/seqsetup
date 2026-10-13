@@ -21,7 +21,7 @@ import os
 import threading
 import time
 from collections import deque
-from typing import Optional
+from typing import NamedTuple, Optional
 
 
 logger = logging.getLogger(__name__)
@@ -96,6 +96,22 @@ class RateLimiter:
             self._swept_at = time.monotonic()
 
 
+class Refusals(NamedTuple):
+    """What one audit row must account for, as ``count_refusal`` reports it.
+
+    ``total`` is every refusal the row stands for, and ``earlier`` how many
+    of those were refused in earlier windows of the same identity. Only the
+    row's own refusal was typed with the name that goes on the row; the
+    carried part belongs to the address, and may have been typed with other
+    names, so the two are reported apart (and written apart) rather than
+    crediting one named account with all of them. ``total`` of 0 means no
+    row.
+    """
+
+    total: int
+    earlier: int
+
+
 class RefusedRequestCounter:
     """How many refusals one identity's next audit row should account for.
 
@@ -141,17 +157,24 @@ class RefusedRequestCounter:
                          if owed == 0 and now - started >= self.window_seconds]:
             del self._windows[identity]
 
-    def count_refusal(self, identity: str) -> int:
-        """Record one refusal; return the count a row must carry, or 0 for none."""
+    def count_refusal(self, identity: str) -> Refusals:
+        """Record one refusal; return what a row must carry, or zeros for none.
+
+        The first refusal of an identity's window asks for a row that
+        accounts for itself plus whatever that identity still owed from a
+        window that has passed; ``Refusals.earlier`` is that owed part, so
+        the row can say how much of its count was refused before this
+        window and under whatever names came then.
+        """
         now = time.monotonic()
         with self._lock:
             self._sweep(now)
             started, owed = self._windows.get(identity, (None, 0))
             if started is None or now - started >= self.window_seconds:
                 self._windows[identity] = (now, 0)
-                return 1 + owed
+                return Refusals(1 + owed, owed)
             self._windows[identity] = (started, owed + 1)
-            return 0
+            return Refusals(0, 0)
 
     def reset(self) -> None:
         """Clear all state (for tests)."""

@@ -165,18 +165,27 @@ def make_router(auth_service) -> APIRouter:
             # At most one row per address per limiter window, carrying how
             # many refusals it accounts for; the refusals in between are
             # counted and carried by this address's next row, because the
-            # audit trail is insert-only (rate_limit.py). 0 means a row has
-            # already gone out for this window -- and then no name is looked
-            # up either, so a flood costs no reads.
-            refused = get_login_refusal_counter().count_refusal(ip)
-            if refused:
+            # audit trail is insert-only (rate_limit.py). A total of 0 means
+            # a row has already gone out for this window -- and then no name
+            # is looked up either, so a flood costs no reads.
+            #
+            # The carried part belongs to the ADDRESS: it was refused in an
+            # earlier window, under whatever names were typed then, not
+            # under the name on this row. It is written as its own detail so
+            # the name on the row is credited with its own refusal only; an
+            # ordinary row, which carries nothing, keeps the shape it had.
+            refusals = get_login_refusal_counter().count_refusal(ip)
+            if refusals.total:
+                carried = ({"refused_earlier": refusals.earlier}
+                           if refusals.earlier else {})
                 audit(
                     "login.rate_limited",
                     actor=_audit_actor(actor),
                     outcome="denied",
                     ip=ip,
                     retry_after=retry,
-                    refused=refused,
+                    refused=refusals.total,
+                    **carried,
                 )
             return PlainTextResponse(
                 "Too many login attempts. Try again later.",

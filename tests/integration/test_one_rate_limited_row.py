@@ -157,6 +157,54 @@ class TestTheCountIsNotLost:
         assert sum(row.details["refused"] for row in _rows(ctx)) == refusals
 
 
+class TestWhatTheCarriedCountBelongsTo:
+    """A count carried from an earlier window was typed with whatever names
+    came before it at that address, so crediting it to the name on the row
+    would show one account with attempts that were made on other names."""
+
+    def _carry_nine_other_names(self, client, limiter, counter):
+        """One refusal for 'alice', nine for other names, then the window
+        passes: the next row carries those nine."""
+        _spend_the_address(limiter)
+        _post(client, "alice")
+        for n in range(9):
+            _post(client, f"name-{n}")
+        started, pending = counter._windows[HERE]
+        counter._windows[HERE] = (started - counter.window_seconds, pending)
+        _spend_the_address(limiter)
+
+    def test_the_row_says_how_much_came_from_earlier(self, client, fresh_app):
+        _app, ctx, _db = fresh_app
+        self._carry_nine_other_names(client, get_login_limiter(),
+                                     get_login_refusal_counter())
+
+        _post(client, "admin-test")
+
+        carried = _rows(ctx)[-1]
+        assert (carried.details["refused"], carried.details["refused_earlier"]) == (10, 9)
+
+    def test_an_ordinary_row_does_not_mention_it(self, client, fresh_app):
+        """Nothing was carried, so the row keeps the shape it had."""
+        _app, ctx, _db = fresh_app
+        _spend_the_address(get_login_limiter())
+
+        _post(client)
+
+        (row,) = _rows(ctx)
+        assert "refused_earlier" not in row.details
+
+    def test_the_audit_page_shows_it(self, logged_in_client, fresh_app):
+        _app, _ctx, _db = fresh_app
+        self._carry_nine_other_names(logged_in_client, get_login_limiter(),
+                                     get_login_refusal_counter())
+        _post(logged_in_client, "admin-test")
+
+        page = logged_in_client.get("/admin/audit",
+                                    params={"event": "login.rate_limited"}).text
+
+        assert "refused_earlier" in page
+
+
 class TestWhoTheRowNames:
     def test_it_names_the_typed_account_when_seqsetup_knows_it(
             self, client, fresh_app, admin_user_seeded):
