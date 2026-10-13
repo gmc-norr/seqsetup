@@ -128,6 +128,15 @@ and the drop would now fill other rows, nothing is assigned and the page
 says *"The sample list changed since this page was loaded. Reload the
 page and drag again."* Reload the page and drag again.
 
+The same holds for the indexes on those rows. The drop sends the i7 and
+i5 each target row was showing, and if any of them has since been
+assigned, replaced or cleared elsewhere, nothing is assigned and the page
+names the samples: *"Nothing was assigned. Reload the page and drag
+again. The index on these samples changed since this page was loaded:
+PAT2."* The confirmation above tells you which indexes **this** page's
+drop would replace; this refusal is for the ones it could not have known
+about.
+
 .. note::
    Ticking sample checkboxes (below) has no effect on a multi-index drag
    -- it always fills consecutive rows starting at the row you drop on,
@@ -225,7 +234,9 @@ When an index is assigned -- by any of the methods above -- the sample
 takes the settings of the kit it came from:
 
 - **Index cycles** -- the number of cycles the kit expects for its i7 and/or i5.
-  They must equal the index's length: **Mark Ready** refuses an index read
+  They must equal the index's length: a kit whose index cycles say otherwise
+  is refused when it is imported or synced (see
+  :doc:`/admin-guide/index-kits`), and **Mark Ready** refuses an index read
   for fewer or more cycles than it has bases (see :doc:`override-cycles`)
 - **Read override patterns** -- pre-defined patterns the kit specifies for its
   data reads (for example ``N2Y*``)
@@ -244,6 +255,12 @@ fit both. Assign both indexes from one kit, or clear the sample's indexes
 first. A pair always replaces both indexes. The patterns are compared as the
 run reads them, so a kit that stores ``Y*`` and one that stores no pattern
 read alike.
+
+The refusal names the kit being assigned as its name and version (*"VerKit
+1"*), because two versions of one kit name can read Read 1 and Read 2
+differently. When one assignment takes indexes from more than one such kit
+-- a multi-index drop can -- the refusal lists each kit with its own read
+patterns and its own samples.
 
 SeqSetup computes the index override pattern (for example ``I8N2``) from the
 index cycles above and the run's cycle configuration, then recalculates

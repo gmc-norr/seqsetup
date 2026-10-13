@@ -67,7 +67,7 @@ at all. Do not add a one-off ownership check to a single route.
 | Pages extend `_app_shell.html` (or `_base.html` for un-shelled pages) | `{% extends "_app_shell.html" %}` |
 | HTMX swap targets are `{% block %}` regions inside the page | `{% block dashboard_content %}…{% endblock %}` |
 | Block names match the swap target's role | `dashboard_content`, `validation_tabs` — not `block1` |
-| Shared partials (≥2 pages) belong under a `templates/partials/` directory with `_` prefix | (none currently — all partials are page-local; add `partials/` if a true cross-page partial appears) |
+| A shared partial (used by ≥2 templates) keeps its `_` prefix, stays beside its main user, and is included by path | `wizard/_test_versions_hint.html` is `{% include "wizard/_test_versions_hint.html" %}`d from `runs/_paste_form.html`, `runs/_validate_panel.html` and `wizard/_bulk_lane_panel.html`. There is no `templates/partials/` directory; do not add one |
 | Page-specific helpers are local includes inside the page directory | `wizard/_flowcell_select.html` |
 | Pages set `page_title` and `active_route` via `{% set %}` | `{% set page_title = "Dashboard" %}` |
 | Templates contain NO Python logic beyond filters/iteration | Route builds `kit_rows: list[dict]` → template loops |

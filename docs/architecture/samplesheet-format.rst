@@ -87,7 +87,11 @@ pin, so the operator's per-run toggles still take effect.
 ``NoLaneSplitting`` true next to a ``Lane`` column is a plan problem:
 DRAGEN 4.3 converts without lane splitting only when the sheet has no Lane
 column. A sample without an i7 or an i5 gets ``na`` in that
-``BarcodeMismatchesIndex`` column.
+``BarcodeMismatchesIndex`` column. A ``Sample_Project`` or ``Sample_Name``
+column -- in any application's section -- holds the sample's own project or
+name, and the profile's ``Data`` default only for a sample that has none;
+every other column the writer does not fill itself gets that default in
+every row.
 
 ``export()`` only takes this profile-driven path when both a
 ``TestProfileRepository`` and an ``ApplicationProfileRepository`` are

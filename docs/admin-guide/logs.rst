@@ -7,8 +7,10 @@ application clears it.
 
 .. note::
    This page shows SeqSetup's **warnings and errors** -- a rejected request,
-   a problem reaching an external server -- not routine activity. Who did
-   what (logins, user and token changes, run changes, exports) is on the
+   a problem reaching an external server -- together with its ``INFO`` lines:
+   which instruments file the start read, each config sync's progress and
+   result, and each fetch from the sample API. It is not a record of who did
+   what: logins, user and token changes, run changes and exports are on the
    :doc:`audit-trail` page instead, which is kept permanently. The one
    exception: if an audit event cannot be saved to the database, it is
    written here as an ``ERROR`` that includes the event, so it is not lost.

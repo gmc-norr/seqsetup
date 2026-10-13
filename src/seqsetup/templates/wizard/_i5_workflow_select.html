@@ -20,6 +20,7 @@
     <label for="i5_workflow">i5 workflow</label>
     <select name="i5_workflow" id="i5_workflow"
             hx-post="/runs/{{ run_id }}/i5-workflow"
+            hx-include="#run-version"
             hx-target="#i5-workflow-config"
             hx-swap="outerHTML">
         {%- for name in names %}

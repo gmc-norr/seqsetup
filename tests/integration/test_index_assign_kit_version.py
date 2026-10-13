@@ -253,11 +253,15 @@ class TestAssignSeveralInOrder:
 
     def _post(self, client, entries):
         # target_sample_ids: the rows the page shows for the drop, one per
-        # entry from s1 on (spec 2026-10-03 group A1, §1).
+        # entry from s1 on (spec 2026-10-03 group A1, §1). target_indexes:
+        # the index each of those rows shows -- none of them holds one --
+        # which the drop must send (batch 4 review fix A).
+        rows = ["s1", "s2"][:len(entries)]
         return client.post(
             f"/runs/{RUN_ID}/samples/assign-indexes-bulk",
             data={"start_sample_id": "s1", "indexes_json": json.dumps(entries),
-                  "target_sample_ids": json.dumps(["s1", "s2"][:len(entries)])},
+                  "target_sample_ids": json.dumps(rows),
+                  "target_indexes": json.dumps([["", ""] for _ in rows])},
             headers=ORIGIN,
         )
 

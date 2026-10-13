@@ -4,6 +4,7 @@ and a list as "['a']" (spec 2026-10-10 later list slice 1, §1)."""
 
 import pytest
 
+from seqsetup.models.sample import ZERO_SAMPLE_ID_RULE
 from seqsetup.models.sample_api_config import SampleApiConfig
 from seqsetup.services.sample_api import parse_api_samples
 
@@ -69,8 +70,13 @@ class TestTextAndWholeNumbersPass:
     def test_zero_is_zero_not_empty(self, name, field):
         assert parse_api_samples([{"sample_id": "S1", name: 0}])[0][field] == "0"
 
-    def test_a_sample_id_of_zero_is_zero(self):
-        assert parse_api_samples([{"sample_id": 0}])[0]["sample_id"] == "0"
+    def test_a_sample_id_of_zero_is_read_as_zero_then_refused(self):
+        # Read as the text "0", not lost as empty: the refusal names the row
+        # as a sample ID of only zeros, not as a row with no sample ID (an
+        # empty well a LIMS calls 0).
+        assert _refused([{"sample_id": 0}]) == (
+            f"LIMS row(s) 1: {ZERO_SAMPLE_ID_RULE}. "
+            f"Fix the upstream record(s) before retrying.")
 
     def test_null_gives_way_to_the_next_name(self):
         [row] = parse_api_samples([{"sample_id": None, "sampleid": "S1"}])

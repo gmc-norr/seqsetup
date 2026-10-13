@@ -120,8 +120,14 @@ test once, with its synced versions.
 JSONExporter
 ------------
 
-Exports complete run metadata as JSON, including information not supported by the
-SampleSheet v2 format (test IDs, detailed metadata, kit information).
+Exports complete run metadata as JSON, including per-sample names,
+projects, descriptions and free-form metadata, which the SampleSheet v2
+format has no place for. Each sample also carries the i5 and the Override
+Cycles twice: as typed (``index2``, ``override_cycles``) and as the v2
+sheet writes them (``samplesheet_index2``,
+``samplesheet_override_cycles``), both read from ``sheet_plan``'s
+``sheet_index2`` / ``sheet_override_cycles`` so the two exports of one run
+cannot disagree. See :doc:`/api-reference/export` for the whole object.
 
 AuthService
 -----------

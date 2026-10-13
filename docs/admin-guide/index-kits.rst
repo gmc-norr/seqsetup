@@ -22,7 +22,9 @@ Select **+ Import Index Kit** and fill in the form:
   blank, SeqSetup takes them from the file itself where the format provides
   them.
 - Adapter sequences and default override-cycle patterns -- optional; see the
-  page's own **Override cycles help** for the notation.
+  page's own **Override cycles help** for the notation. Adapter sequences are
+  stored with the kit and are never written to a Sample Sheet -- see
+  `Viewing a kit`_ below.
 
 .. figure:: /_static/screenshots/admin/index-kit-upload.png
    :alt: The Import Index Kit form with a CSV file selected and the kit name and version filled in, and the Upload Index Kit button outlined.
@@ -53,7 +55,21 @@ Before a kit is saved, SeqSetup checks, in order:
    valid semantic version; adapter sequences, and every i7/i5 sequence, must
    be DNA (``A``, ``C``, ``G``, ``T``, ``N`` only); every index pair needs a
    name and, in Unique Dual mode, both an i7 and an i5 sequence; a duplicate
-   pair *name* is an error and blocks the upload.
+   pair *name* is an error and blocks the upload. An index cycles value --
+   the kit's i7 or i5 cycles, from the form or from the file -- must equal
+   the length of every index in that slot, or the upload is refused naming
+   the kit, the slot, the value and the lengths (*"Index kit 'Dual kit': i7
+   index cycles is 8, but its i7 indexes are 10 bases long. An index is read
+   over as many cycles as it has bases, so set it to the index's length or
+   leave it empty."*): an index must have as many bases as the cycles read
+   for it. A kit that says *fewer* cycles than its indexes have bases makes
+   **Mark Ready** refuse every run that uses it; one that says *more* is
+   refused the same way unless the run's own index cycles cap the
+   OverrideCycles back to the index length, and then the run passes (see
+   :doc:`/user-guide/override-cycles`). A slot with no indexes
+   is not checked. The same check runs on a kit synced from GitHub (see
+   :doc:`profiles`), which is skipped, with the reason in the log, rather
+   than stored.
 5. **Name + version clash** -- a kit with the same name and version already
    present is rejected rather than silently overwritten.
 
@@ -81,6 +97,25 @@ Viewing a kit
 Select a kit's name, or **View**, to see its full contents: every index
 pair (or i7/i5 list) with its name and sequence, plus the kit's adapter
 and default-override settings. An empty field shows a dash.
+
+.. warning::
+   **A kit's Adapter R1 and R2 are stored with the kit and are not written
+   to the Sample Sheet.** Nothing that writes a sheet reads them. A sheet's
+   ``AdapterRead1`` and ``AdapterRead2`` cells are filled from the run's
+   application profile (see :doc:`profiles`), so they are written empty
+   when the profile lists the columns and gives no value -- as the shipped
+   ``BCLConvertNextera`` profile does. Filling a kit's adapter boxes
+   therefore changes no sheet and makes BCL Convert trim nothing; the
+   values are a record of what the kit contains, and the kit's
+   **Download YAML** carries them back out. The page says so too.
+
+A kit's name may hold a ``/`` -- Illumina's own ``IDT for Illumina DNA/RNA
+UD Indexes Set A`` does -- and it opens, downloads and deletes like any
+other: its address reads the version as the last part and the name as
+everything before it. A kit *version* may therefore not hold a ``/``, and
+neither the name nor the version may have a part made only of dots between
+slashes (``a/./b``): the browser rewrites such an address, so the kit could
+be created but never opened or removed.
 
 .. figure:: /_static/screenshots/admin/index-kit-detail.png
    :alt: The index kit detail page, showing the kit's name and version, its adapter and default-override settings, and its Index Pairs table listing each pair's name and its i7 and i5 sequences, with the Delete button outlined at the bottom next to Download YAML.

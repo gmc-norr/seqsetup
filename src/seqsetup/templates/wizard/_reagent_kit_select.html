@@ -10,6 +10,7 @@
 #}
 <select name="reagent_cycles" id="reagent-kit-select"
         hx-post="/runs/{{ run_id }}/reagent-kit"
+        hx-include="#run-version"
         hx-target="#cycle-config"
         hx-swap="outerHTML"{% if kit_select_oob %} hx-swap-oob="true"{% endif %}>
     {% for kit in reagent_kits %}

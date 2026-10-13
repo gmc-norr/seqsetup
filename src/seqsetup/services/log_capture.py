@@ -311,6 +311,12 @@ def setup_log_capture(logger_names: Optional[list[str]] = None) -> LogCaptureHan
         for name in logger_names:
             logger = logging.getLogger(name)
             logger.addHandler(handler)
+            # The handler is at DEBUG and Admin > Logs offers INFO and DEBUG
+            # filters, but a named logger left at NOTSET inherits root's
+            # WARNING, so no INFO record was ever made. Raise it to INFO,
+            # without lowering a level set more verbose than that.
+            if logger.level == logging.NOTSET or logger.level > logging.INFO:
+                logger.setLevel(logging.INFO)
 
     # Always also install the scrubbing filter so stdout / file handlers
     # see the same redacted message the in-memory viewer does. This filter

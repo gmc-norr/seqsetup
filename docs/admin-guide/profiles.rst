@@ -93,9 +93,19 @@ a Ready run.
 The sync refuses a test file whose ``Version`` is not three whole numbers
 (``1.0``, ``1``, ``1.0.0rc1``, ``01.0.0`` and ``v1.0.0`` are all refused),
 and refuses **every** file of a test and version that is in more than one
-file -- a sample could get either -- naming them in the log::
+file -- a sample could get either -- naming each by its path in the
+repository, since two folders of the tree can hold the same file name::
 
-   Test profiles refused: WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. A test and version may be in one file only.
+   Test profiles refused: WGS 1.2.0 is in profiles/test_profiles/Wgs_a.yaml and profiles/test_profiles/archive/Wgs_a.yaml. A test and version may be in one file only.
+
+It also refuses **every** file of two tests whose ``TestType`` differs only
+in letter case. A ``TestType`` is matched exactly, so ``Wgs`` and ``WGS``
+are two different tests with their own application profiles, while every
+page and the Sample Sheet show what a reader takes for one test::
+
+   Test profiles refused: WGS in WGS.yaml and Wgs in Wgs.yaml differ only in capitals. Two tests may not differ only in capitals.
+
+Pick one spelling for the test and use it in every file of it.
 
 **Any refused test file stops every test profile change**: one that breaks
 these rules, cannot be read as YAML, is empty, or sits in a sub-folder that
@@ -104,6 +114,18 @@ already stored, still syncs the application profiles, and ends with
 **error**, naming each file::
 
    Test profile files were refused, so no test profiles were stored and the stored ones are kept: profiles/test_profiles/Wgs_1.3.yaml: is empty. Synced 3 application profiles.
+
+Keeping the stored ones also keeps any version you deleted from the
+repository on purpose, which a sync without a refusal would have removed.
+The message therefore names every stored test and version this sync did
+not read::
+
+   ... Kept test profiles this sync did not read: RNA 1.0.0, WGS 1.2.0 -- each is in a refused file or no longer in the repository. Synced 3 application profiles.
+
+Each one is either in a file this sync refused or no longer in the
+repository at all -- a refused file cannot be read, so SeqSetup cannot tell
+which. Until a sync runs with no refusal, a sample asking for that test can
+still resolve to a version you meant to remove.
 
 Without this, a refused newest file would quietly make ``1`` pick an older
 version. Fix the file and sync again. Removing a file on purpose is not a
@@ -205,9 +227,27 @@ set it. DRAGEN 4.3 converts a run without lane splitting only when the
 sheet has no Lane column, so **Mark Ready** refuses it.
 ``NoLaneSplitting,false`` next to a Lane column is fine.
 
+Columns taken from the sample
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A column SeqSetup does not fill itself gets the profile's ``Data`` default,
+the same text in every row. Two columns are an exception, in **every**
+application's section:
+
+- ``Sample_Project`` holds the sample's own project, and
+- ``Sample_Name`` holds the sample's own name,
+
+whenever the sample has one; the profile's ``Data`` default is written only
+for a sample that has none. BCL Convert writes a sample's FASTQ files into a
+directory named after ``Sample_Project`` and names the files after
+``Sample_Name``, so one project for the whole run would put every patient's
+reads in one directory. The v1 sheet has always written each sample's own
+name and project.
+
 Names are compared ignoring case. SeqSetup fills and reads these names
 itself, in this spelling only: in every profile's ``Settings``,
-``SoftwareVersion``; in the ``BCLConvert`` profile, the columns
+``SoftwareVersion``; in every profile's columns, ``Sample_Project`` and
+``Sample_Name``; in the ``BCLConvert`` profile, the columns
 ``Sample_ID``, ``Lane``, ``Index``, ``Index2``, ``OverrideCycles``,
 ``BarcodeMismatchesIndex1``, ``BarcodeMismatchesIndex2`` and the settings
 ``BarcodeMismatchesIndex1``, ``BarcodeMismatchesIndex2``,
@@ -603,6 +643,20 @@ The page's status panel shows the **Last sync**: when it ran, whether it
 succeeded (``success`` or ``error``) and its message, in red when it
 failed -- for a scheduled sync too, which has no other place to say so. A
 manual sync's result is shown above the panel, in red when it failed.
+
+A sync records which repository and branch it read. When the saved
+**Repository URL** or **Branch** is not the one the last sync read -- the
+moment you save a new one, before you sync it -- the panel says *"The
+repository and branch saved here have not been synced yet"* and names the
+repository and branch the time, status and message below it belong to. It
+says it for a new branch of a repository already synced too: the
+repository has been read, that branch has not. Nothing has been fetched
+from what is saved now until a sync runs, manually or on the schedule.
+Writing the same repository another way is not a change: a trailing slash
+or a ``.git`` suffix is compared as the sync reads it, so re-saving the
+URL that way raises nothing. A status stored by an older SeqSetup carries
+no repository, and the panel then says nothing about it rather than
+claiming the repository is unsynced.
 
 Who can do this
 -------------------

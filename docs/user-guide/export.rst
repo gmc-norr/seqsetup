@@ -261,6 +261,13 @@ including some information the Sample Sheet v2 format has no place for:
 - Sample identifiers, names, and index sequences
 - Override cycles, lane assignments, description, and free-form metadata
   (per sample)
+- Per sample, the i5 and the Override Cycles **as the v2 sheet writes
+  them** (``samplesheet_index2``, ``samplesheet_override_cycles``) next to
+  the same two values **as typed** (``index2``, ``override_cycles``). On
+  some instruments the sheet writes the i5 reverse-complemented, and on
+  others the Index 2 part of the Override Cycles reversed (``I8N2`` becomes
+  ``N2I8``); these keys say which characters the sequencer was actually
+  given. They come from the same code that writes the sheet
 - Instrument configuration (platform, flowcell, run cycles) and the
   run-level BCL Convert settings (barcode mismatch defaults, adapter
   behavior, lane splitting, global override cycles)

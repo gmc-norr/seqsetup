@@ -18,8 +18,10 @@ Environment Variables
      - Database name
      - ``seqsetup``
    * - ``INSTRUMENTS_CONFIG``
-     - Path to instruments YAML config
-     - ``config/instruments.yaml``
+     - Path to the instruments YAML file to read instead of the one SeqSetup
+       ships. Set, it decides; SeqSetup does not start when it names a path
+       that is not a file. The path read is logged at start.
+     - unset: ``config/instruments.yaml``
    * - ``SEQSETUP_SESSION_SECRET``
      - Session encryption secret key (use in production)
      - Auto-generated in ``.sesskey``

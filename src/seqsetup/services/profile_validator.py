@@ -5,6 +5,7 @@ from packaging.version import InvalidVersion, Version
 
 from ..models.sample import shown_value
 from .sheet_plan import (
+    SPELLED_COLUMNS_ANY,
     SPELLED_COLUMNS_BCLCONVERT,
     SPELLED_SETTINGS_ANY,
     SPELLED_SETTINGS_BCLCONVERT,
@@ -425,6 +426,7 @@ def _name_problems(app_name, settings, data, data_fields, translate) -> list[str
 
     keys = [str(key) for key in (settings or {})]
     spelled = [(key, SPELLED_SETTINGS_ANY) for key in keys]
+    spelled += [(column, SPELLED_COLUMNS_ANY) for _, column in columns]
     if app_name == "BCLConvert":
         column_lower = {column.lower() for _, column in columns}
         for key in keys:

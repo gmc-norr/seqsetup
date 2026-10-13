@@ -14,6 +14,7 @@
         <label for="instrument_platform">Platform</label>
         <select name="instrument_platform" id="instrument_platform"
                 hx-post="/runs/{{ run.id }}/instrument"
+                hx-include="#run-version"
                 hx-target="#flowcell-select"
                 hx-swap="outerHTML">
             {% for inst in instruments %}

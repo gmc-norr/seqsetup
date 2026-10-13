@@ -19,6 +19,7 @@ from .test_group_a1 import (
     _pair_kit,
     _run,
     _settings,
+    _shown,
     _stored,
 )
 
@@ -28,7 +29,7 @@ UMI = {"default_index1_cycles": 8, "default_index2_cycles": 8,
        "default_read1_override": "U8Y*", "default_read2_override": "U8Y*"}
 
 
-def _swap(client, route, slot, kit, sids=("s1", "s2")):
+def _swap(client, ctx, route, slot, kit, sids=("s1", "s2")):
     """Give ``sids`` the kit's first indexes in ``slot`` through ``route``,
     in one request; the response."""
     if route == "drop":
@@ -37,6 +38,7 @@ def _swap(client, route, slot, kit, sids=("s1", "s2")):
         return client.post(f"/runs/{RUN}/samples/assign-indexes-bulk", data={
             "start_sample_id": sids[0], "indexes_json": json.dumps(entries),
             "target_sample_ids": json.dumps(list(sids)),
+            "target_indexes": json.dumps(_shown(ctx, sids)),
         }, headers=ORIGIN)
     data = {"kit_id": kit.kit_id, "index_id": _entry_id(kit, slot, 0), "index_type": slot}
     if route == "one":
@@ -49,6 +51,8 @@ def _swap(client, route, slot, kit, sids=("s1", "s2")):
 
 
 def _refusal(kit, r1, r2, ids):
+    """``kit`` is "name version": every clashing kit is shown with its own
+    version (batch 4, item Q14); _combo_kit saves version "1"."""
     return (f"These samples keep an index from a kit that reads Read 1 and Read 2 differently "
             f"from {kit} (Read 1 {r1}, Read 2 {r2}). Assign both indexes from one kit, or clear "
             f"these samples' indexes first: {ids}.")
@@ -71,16 +75,16 @@ class TestAKitSwapWithOtherReadPatternsIsRefused:
         umi = _combo_kit(ctx, "UmiCombo", COMBO_A_I7, COMBO_A_I5, **UMI)
         plain = _combo_kit(ctx, "PlainCombo", COMBO_B_I7, COMBO_B_I5)
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "i7", umi)
-        _assign(logged_in_client, "one", "i5", umi)
+        _assign(logged_in_client, ctx, "one", "i7", umi)
+        _assign(logged_in_client, ctx, "one", "i5", umi)
         before = _indexes(ctx)
         sids = ("s1",) if route == "one" else ("s1", "s2")
 
-        resp = _swap(logged_in_client, route, slot, plain, sids)
+        resp = _swap(logged_in_client, ctx, route, slot, plain, sids)
 
         assert resp.status_code == 400
         ids = "PAT1" if route == "one" else "PAT1, PAT2"
-        assert resp.text == _refusal("PlainCombo", "plain", "plain", ids)
+        assert resp.text == _refusal("PlainCombo 1", "plain", "plain", ids)
         assert _indexes(ctx) == before
 
     def test_a_umi_index_onto_a_plain_kits_index_is_refused(self, logged_in_client, fresh_app):
@@ -92,13 +96,13 @@ class TestAKitSwapWithOtherReadPatternsIsRefused:
                          default_read2_override="Y*")
         plain = _combo_kit(ctx, "PlainCombo", COMBO_B_I7, COMBO_B_I5)
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "i7", plain)
+        _assign(logged_in_client, ctx, "one", "i7", plain)
         before = _indexes(ctx)
 
-        resp = _swap(logged_in_client, "selected", "i5", umi)
+        resp = _swap(logged_in_client, ctx, "selected", "i5", umi)
 
         assert resp.status_code == 400
-        assert resp.text == _refusal("UmiCombo", "U8Y*", "plain", "PAT1, PAT2")
+        assert resp.text == _refusal("UmiCombo 1", "U8Y*", "plain", "PAT1, PAT2")
         assert _indexes(ctx) == before
 
     def test_a_drop_is_refused_whole(self, logged_in_client, fresh_app):
@@ -113,10 +117,10 @@ class TestAKitSwapWithOtherReadPatternsIsRefused:
         assert resp.status_code == 200, resp.text[:300]
         before = _indexes(ctx)
 
-        resp = _swap(logged_in_client, "drop", "i5", plain)
+        resp = _swap(logged_in_client, ctx, "drop", "i5", plain)
 
         assert resp.status_code == 400
-        assert resp.text == _refusal("PlainCombo", "plain", "plain", "PAT2")
+        assert resp.text == _refusal("PlainCombo 1", "plain", "plain", "PAT2")
         assert _indexes(ctx) == before
 
 
@@ -139,10 +143,10 @@ class TestOtherSwapsWorkAsToday:
         a = _combo_kit(ctx, "KitA", COMBO_A_I7, COMBO_A_I5, **first)
         b = _combo_kit(ctx, "KitB", COMBO_B_I7, COMBO_B_I5, **second)
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "i7", a)
-        _assign(logged_in_client, "one", "i5", a)
+        _assign(logged_in_client, ctx, "one", "i7", a)
+        _assign(logged_in_client, ctx, "one", "i5", a)
 
-        _assign(logged_in_client, route, "i5", b)
+        _assign(logged_in_client, ctx, route, "i5", b)
 
         assert [s.index2_sequence for s in _stored(ctx).samples] == COMBO_B_I5
 
@@ -154,10 +158,10 @@ class TestOtherSwapsWorkAsToday:
                            default_index2_cycles=7, default_read1_override="U8Y*",
                            default_read2_override="U8Y*")
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "i7", umi)
-        _assign(logged_in_client, "one", "i5", umi)
+        _assign(logged_in_client, ctx, "one", "i7", umi)
+        _assign(logged_in_client, ctx, "one", "i5", umi)
 
-        _assign(logged_in_client, route, "i5", other)
+        _assign(logged_in_client, ctx, route, "i5", other)
 
         samples = _stored(ctx).samples
         assert [s.index2_sequence for s in samples] == COMBO_B_I5
@@ -169,10 +173,10 @@ class TestOtherSwapsWorkAsToday:
         umi = _combo_kit(ctx, "UmiCombo", COMBO_A_I7, COMBO_A_I5, **UMI)
         plain = _pair_kit(ctx, "PlainKit", PLAIN_PAIRS)
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "i7", umi)
-        _assign(logged_in_client, "one", "i5", umi)
+        _assign(logged_in_client, ctx, "one", "i7", umi)
+        _assign(logged_in_client, ctx, "one", "i5", umi)
 
-        _assign(logged_in_client, route, "pair", plain)
+        _assign(logged_in_client, ctx, route, "pair", plain)
 
         assert [_settings(s) for s in _stored(ctx).samples] == [(None, None, None, None)] * 2
 
@@ -185,9 +189,9 @@ class TestOtherSwapsWorkAsToday:
         umi = _combo_kit(ctx, "UmiCombo", COMBO_A_I7, COMBO_A_I5, **UMI)
         plain = _combo_kit(ctx, "PlainCombo", COMBO_B_I7, COMBO_B_I5)
         _run(ctx, ["PAT1", "PAT2"])
-        _assign(logged_in_client, "one", "i7", umi)
+        _assign(logged_in_client, ctx, "one", "i7", umi)
 
-        _assign(logged_in_client, route, "i7", plain)
+        _assign(logged_in_client, ctx, route, "i7", plain)
 
         assert [_settings(s) for s in _stored(ctx).samples] == [(None, None, None, None)] * 2
 

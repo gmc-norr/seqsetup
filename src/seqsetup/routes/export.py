@@ -157,6 +157,10 @@ def export_json(
             format="json",
         )
         return Response(content=content, media_type="application/json", headers=headers)
+    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+        # Shown with what to do, not as a failed export (spec 2026-10-04
+        # group A2, §5).
+        raise
     except Exception:
         logger.exception("Failed to generate JSON export")
         return Response(

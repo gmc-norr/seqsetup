@@ -70,15 +70,15 @@ a model or service layer where it cannot be forgotten.
 - **One clock.** Store every time with `utcnow()` (naive, meaning UTC) from `utils/clock.py`; show it with `{{ value | localtime }}` in templates, or `local_time()` / `local_date()` in Python, which convert to the `TZ` zone and add its name. Never read the local clock (`datetime.now()`) or format a stored time with `strftime` in a template — `tests/unit/test_one_clock.py` fails on both.
 - Validation services are **read-only** — they must never mutate run state.
 - Repositories contain **no business logic** — they are thin data access layers.
-- Models are **self-validating on every assignment, not just construction**, for any non-trivial invariant they declare. `Sample.__setattr__` enforces `barcode_mismatches_*` (clamp 0–2, the values BCL Convert accepts), `index*_cycles` (clamp >=1), `lanes` (filter positive ints), `override_cycles` (regex), free-form string identifiers (256-char cap), and `description` (4096). `SequencingRun.__setattr__` clamps `run_name` (256, no CR/LF), `run_description` (4096), and `barcode_mismatches_*`. When adding a model field whose validity is anything more than "any string of any length", enforce it in `__setattr__` (or a property setter) so the rule survives direct attribute writes from route handlers — `__post_init__` alone is insufficient. Routes still call `sanitize_string` at the boundary for trim semantics and visible 400s on oversize input; the model is the load-bearing backstop.
+- Models are **self-validating on every assignment, not just construction**, for any non-trivial invariant they declare. `Sample.__setattr__` enforces `barcode_mismatches_*` (clamp 0–2, the values BCL Convert accepts), `index*_cycles` (clamp >=1), `lanes` (filter to positive non-bool ints, each kept once, in first-seen order — a lane twice would put the sample's row in the sheet twice), `sample_id` (refused when its text is made only of zeros, whether it arrives as a string or as the JSON number `0` — a LIMS may use 0 for an empty well), `override_cycles` (regex), free-form string identifiers (256-char cap), and `description` (4096). `SequencingRun.__setattr__` clamps `run_name` (256, no CR/LF), `run_description` (4096), and `barcode_mismatches_*`. When adding a model field whose validity is anything more than "any string of any length", enforce it in `__setattr__` (or a property setter) so the rule survives direct attribute writes from route handlers — `__post_init__` alone is insufficient. Routes still call `sanitize_string` at the boundary for trim semantics and visible 400s on oversize input; the model is the load-bearing backstop.
 - **Validation cache coherence:** `ValidationService` memoizes results by `(run.id, run.updated_at, _VALIDATION_INPUT_VERSION)` — the version counter is bumped by `clear_validation_cache()`. Any mutation that changes validation *inputs* without bumping `run.updated_at` (GitHub config sync, index-kit save/delete, instrument enable/disable, etc.) MUST call `clear_validation_cache()`. See `services/validation.py` and existing call sites in `services/github_sync.py`, `routes/indexes.py`, `routes/admin/instruments.py`.
 - **Partial updates update only what was submitted.** Handlers serving per-field HTMX inputs (e.g. `update_sample_settings`, `update_sample`) MUST check `field in form` before writing — defaulting missing fields to empty and writing them back silently destroys sibling values.
-- **Never silently discard rows.** Parsers that receive a worklist (`services/sample_parser.parse_pasted_samples`, `services/sample_api.parse_api_samples`) MUST raise `ValueError` listing the source line numbers of any row with content but no `sample_id`. Reject-the-whole-import is the clinical default — silently dropping a row routes that patient's reads into the Undetermined bucket. The bulk-paste route renders the parser's message in a banner; the worklist-import route surfaces it as an error message.
+- **Never silently discard rows.** Parsers that receive a worklist (`services/sample_parser.parse_pasted_samples`, `services/sample_api.parse_api_samples`) MUST raise `ValueError` listing the source line numbers of any row with content but no `sample_id`, and, separately, of any row whose `sample_id` is made only of zeros (`ZERO_SAMPLE_ID_RULE` in `models/sample.py` — a LIMS may use 0 for an empty well). Reject-the-whole-import is the clinical default — silently dropping a row routes that patient's reads into the Undetermined bucket. The bulk-paste route renders the parser's message in a banner; the worklist-import route surfaces it as an error message.
 - Never silently discard data. If input is invalid, reject it (raise `HTTPException(400)` or let model `ValueError` propagate) or clamp it visibly.
 
 ### External API safety
 - The LIMS API client (`services/sample_api.py`) uses SSL certificate verification via `ssl.create_default_context()`.
-- **URLs are validated before fetching.** Hostnames are DNS-resolved and any resolved IP that is loopback, link-local, RFC1918 private, multicast, reserved, or unspecified is refused — this blocks SSRF pivots into the host's own networks. Operators whose LIMS lives on a private corporate network must explicitly opt in via `SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1`; this is a deliberate, audited decision per deployment, not a default. Plain HTTP is similarly gated by `SEQSETUP_LIMS_ALLOW_HTTP=1`; production uses HTTPS exclusively so the api-key is not sent in clear.
+- **URLs are validated before fetching.** Hostnames are DNS-resolved and any resolved IP that is loopback, link-local, RFC1918 private, multicast, reserved, or unspecified is refused — this blocks SSRF pivots into the host's own networks. An operator whose LIMS lives on a private corporate network lists the networks it may be on in `SEQSETUP_LIMS_ALLOWED_NETS` (comma-separated CIDR); an address is allowed when it is public or lies inside a listed network. Link-local (`169.254.0.0/16`, `fe80::/10` — cloud instance metadata), multicast, unspecified and reserved addresses stay refused however they are listed, and a list that is not valid CIDR or that overlaps one of those ranges at all stops start-up (`check_lims_allowed_nets` in `services/sample_api.py`, called from `app.py`). Loopback is the one exception to that overlap rule: a network wholly inside `127.0.0.0/8` or `::1/128` may be listed (Python reads `::1` as reserved, so there is no narrower network to list), and loopback is refused whenever it is not listed. The removed `SEQSETUP_LIMS_ALLOW_PRIVATE_NETS` stops start-up while it is set at all. Plain HTTP is separately gated by `SEQSETUP_LIMS_ALLOW_HTTP=1`; production uses HTTPS exclusively so the api-key is not sent in clear.
 - API responses are size-limited (10 MB) to prevent memory exhaustion.
 
 ## Conventions
@@ -195,7 +195,8 @@ src/seqsetup/
 ## Commands
 
 ```bash
-pixi install          # Install dependencies
+pixi install          # Install the default environment (what the Docker image ships)
+pixi install --all    # ... and the dev environment (pytest, playwright, sphinx, furo)
 pixi run serve        # Run the application (localhost:5001)
 pixi run test         # Run the unit and integration suites (pytest)
 pixi run smoke-browser  # Run the browser suite (Playwright)
@@ -208,9 +209,14 @@ To point the app at the mock LIMS in dev, set both opt-ins (production must
 not set either):
 
 ```bash
-export SEQSETUP_LIMS_ALLOW_HTTP=1            # mock LIMS speaks plain HTTP
-export SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1    # mock LIMS lives on localhost
+export SEQSETUP_LIMS_ALLOW_HTTP=1                     # mock LIMS speaks plain HTTP
+export SEQSETUP_LIMS_ALLOWED_NETS=127.0.0.1/32        # mock LIMS lives on localhost
 ```
+
+On a host whose `localhost` resolves to `::1` (Fedora/RHEL and macOS
+defaults, and many container images), list IPv6 loopback too —
+`SEQSETUP_LIMS_ALLOWED_NETS=127.0.0.1/32,::1/128` — or write `127.0.0.1`
+in the LIMS URL instead of `localhost`.
 
 ## Run Status State Machine
 

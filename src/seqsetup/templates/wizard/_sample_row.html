@@ -44,7 +44,11 @@
 {% else %}
     {% set effective_checkboxes = show_checkboxes %}
 {% endif %}
-<tr id="sample-row-{{ sample.id }}" class="{{ row_class }}">
+{# data-i7 / data-i5: the index this row shows, which a multi-index drop
+   sends back for each row it fills, so the server can refuse a row whose
+   index changed in another tab (routes/samples.py assign-indexes-bulk). #}
+<tr id="sample-row-{{ sample.id }}" class="{{ row_class }}"
+    data-i7="{{ sample.index1_sequence or '' }}" data-i5="{{ sample.index2_sequence or '' }}">
 {%- if effective_checkboxes %}
     <td class="checkbox-cell">
         <input type="checkbox" class="sample-checkbox"

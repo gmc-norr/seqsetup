@@ -19,6 +19,7 @@ from starlette.responses import HTMLResponse, Response
 from ...context import AppContext
 from ...forms.validators import clamp, strip_and_truncate
 from ...services.audit_log import audit
+from ...services.github_sync import GitHubSyncError, GitHubSyncService
 from ...templating import render
 from ..dependencies import get_ctx, require_admin_dep
 from ..utils import get_username
@@ -49,6 +50,21 @@ class ConfigSyncForm(BaseModel):
     sync_interval_minutes: Annotated[int, BeforeValidator(clamp(1, 1440))] = 60
 
 
+def _same_repo(saved: str, synced: str) -> bool:
+    """True when the two URLs name one GitHub repository. The sync normalizes
+    a trailing slash and a ``.git`` suffix away before fetching, so comparing
+    the raw strings raised the alarm about a repository synced an hour ago
+    (batch 4 review fix F). A URL neither parser can read falls back to the
+    comparison as written."""
+    if saved == synced:
+        return True
+    try:
+        return (GitHubSyncService._parse_repo_url(saved)
+                == GitHubSyncService._parse_repo_url(synced))
+    except (GitHubSyncError, ValueError):
+        return False
+
+
 def _page_ctx(ctx: AppContext, message: str = "", message_ok: bool = True) -> dict:
     """Build the template context. Profiles are listed in the page
     sidebar; pre-resolve here so the template stays pure render.
@@ -57,10 +73,19 @@ def _page_ctx(ctx: AppContext, message: str = "", message_ok: bool = True) -> di
     config = ctx.profile_sync_config_repo.get()
     app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
     test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    # True only when the stored status is known to belong to another
+    # repository or branch: a status stored before SeqSetup remembered which
+    # one it read has no repo, and raises no alarm about one.
+    last_sync_other_repo = bool(
+        config.last_sync_repo_url
+        and (not _same_repo(config.github_repo_url, config.last_sync_repo_url)
+             or config.last_sync_branch != config.github_branch)
+    )
     return {
         "config": config,
         "app_profiles": app_profiles,
         "test_profiles": test_profiles,
+        "last_sync_other_repo": last_sync_other_repo,
         "message": message,
         "message_ok": message_ok,
     }

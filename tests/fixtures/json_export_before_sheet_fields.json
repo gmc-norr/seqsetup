@@ -1,0 +1,245 @@
+{
+ "index2-column-reversed": {
+  "id": "json-sheet-run",
+  "run_name": "JSON-sheet",
+  "run_description": "batch 2 item 2a",
+  "instrument": {
+   "platform": "NextSeq 500/550",
+   "flowcell_type": "",
+   "reagent_cycles": 300
+  },
+  "cycles": {
+   "read1_cycles": 151,
+   "read2_cycles": 151,
+   "index1_cycles": 10,
+   "index2_cycles": 10,
+   "total_cycles": 322
+  },
+  "bclconvert_settings": {
+   "barcode_mismatches_index1": 1,
+   "barcode_mismatches_index2": 1,
+   "adapter_behavior": "trim",
+   "global_override_cycles": "Y151;I8N2;I8N2;Y151",
+   "create_fastq_for_index_reads": false,
+   "no_lane_splitting": false
+  },
+  "samples": [
+   {
+    "id": "s1",
+    "sample_id": "S1",
+    "sample_name": "One",
+    "project": "ProjectA",
+    "lanes": [
+     1
+    ],
+    "index1": {
+     "name": "i7",
+     "sequence": "ATTACTCG",
+     "length": 8
+    },
+    "index2": {
+     "name": "i5",
+     "sequence": "TATAGCCT",
+     "length": 8
+    },
+    "override_cycles": "Y151;I8N2;I8N2;Y151",
+    "analyses": [],
+    "description": "a sample",
+    "metadata": {}
+   }
+  ],
+  "analyses": []
+ },
+ "index2-mask-reversed": {
+  "id": "json-sheet-run",
+  "run_name": "JSON-sheet",
+  "run_description": "batch 2 item 2a",
+  "instrument": {
+   "platform": "NovaSeq X Series",
+   "flowcell_type": "",
+   "reagent_cycles": 300
+  },
+  "cycles": {
+   "read1_cycles": 151,
+   "read2_cycles": 151,
+   "index1_cycles": 10,
+   "index2_cycles": 10,
+   "total_cycles": 322
+  },
+  "bclconvert_settings": {
+   "barcode_mismatches_index1": 1,
+   "barcode_mismatches_index2": 1,
+   "adapter_behavior": "trim",
+   "global_override_cycles": "Y151;I8N2;I8N2;Y151",
+   "create_fastq_for_index_reads": false,
+   "no_lane_splitting": false
+  },
+  "samples": [
+   {
+    "id": "s1",
+    "sample_id": "S1",
+    "sample_name": "One",
+    "project": "ProjectA",
+    "lanes": [
+     1
+    ],
+    "index1": {
+     "name": "i7",
+     "sequence": "ATTACTCG",
+     "length": 8
+    },
+    "index2": {
+     "name": "i5",
+     "sequence": "TATAGCCT",
+     "length": 8
+    },
+    "override_cycles": "Y151;I8N2;I8N2;Y151",
+    "analyses": [],
+    "description": "a sample",
+    "metadata": {}
+   }
+  ],
+  "analyses": []
+ },
+ "i5-read-forward": {
+  "id": "json-sheet-run",
+  "run_name": "JSON-sheet",
+  "run_description": "batch 2 item 2a",
+  "instrument": {
+   "platform": "MiSeq",
+   "flowcell_type": "",
+   "reagent_cycles": 300
+  },
+  "cycles": {
+   "read1_cycles": 151,
+   "read2_cycles": 151,
+   "index1_cycles": 10,
+   "index2_cycles": 10,
+   "total_cycles": 322
+  },
+  "bclconvert_settings": {
+   "barcode_mismatches_index1": 1,
+   "barcode_mismatches_index2": 1,
+   "adapter_behavior": "trim",
+   "global_override_cycles": "Y151;I8N2;I8N2;Y151",
+   "create_fastq_for_index_reads": false,
+   "no_lane_splitting": false
+  },
+  "samples": [
+   {
+    "id": "s1",
+    "sample_id": "S1",
+    "sample_name": "One",
+    "project": "ProjectA",
+    "lanes": [
+     1
+    ],
+    "index1": {
+     "name": "i7",
+     "sequence": "ATTACTCG",
+     "length": 8
+    },
+    "index2": {
+     "name": "i5",
+     "sequence": "TATAGCCT",
+     "length": 8
+    },
+    "override_cycles": "Y151;I8N2;I8N2;Y151",
+    "analyses": [],
+    "description": "a sample",
+    "metadata": {}
+   }
+  ],
+  "analyses": []
+ },
+ "no-i5": {
+  "id": "json-sheet-run",
+  "run_name": "JSON-sheet",
+  "run_description": "batch 2 item 2a",
+  "instrument": {
+   "platform": "NextSeq 500/550",
+   "flowcell_type": "",
+   "reagent_cycles": 300
+  },
+  "cycles": {
+   "read1_cycles": 151,
+   "read2_cycles": 151,
+   "index1_cycles": 10,
+   "index2_cycles": 10,
+   "total_cycles": 322
+  },
+  "bclconvert_settings": {
+   "barcode_mismatches_index1": 1,
+   "barcode_mismatches_index2": 1,
+   "adapter_behavior": "trim",
+   "global_override_cycles": "Y151;I8N2;N10;Y151",
+   "create_fastq_for_index_reads": false,
+   "no_lane_splitting": false
+  },
+  "samples": [
+   {
+    "id": "s1",
+    "sample_id": "S1",
+    "sample_name": "One",
+    "project": "ProjectA",
+    "lanes": [
+     1
+    ],
+    "index1": {
+     "name": "i7",
+     "sequence": "ATTACTCG",
+     "length": 8
+    },
+    "index2": null,
+    "override_cycles": "Y151;I8N2;N10;Y151",
+    "analyses": [],
+    "description": "a sample",
+    "metadata": {}
+   }
+  ],
+  "analyses": []
+ },
+ "no-index": {
+  "id": "json-sheet-run",
+  "run_name": "JSON-sheet",
+  "run_description": "batch 2 item 2a",
+  "instrument": {
+   "platform": "NovaSeq X Series",
+   "flowcell_type": "",
+   "reagent_cycles": 300
+  },
+  "cycles": {
+   "read1_cycles": 151,
+   "read2_cycles": 151,
+   "index1_cycles": 10,
+   "index2_cycles": 10,
+   "total_cycles": 322
+  },
+  "bclconvert_settings": {
+   "barcode_mismatches_index1": 1,
+   "barcode_mismatches_index2": 1,
+   "adapter_behavior": "trim",
+   "global_override_cycles": "Y151;N10;N10;Y151",
+   "create_fastq_for_index_reads": false,
+   "no_lane_splitting": false
+  },
+  "samples": [
+   {
+    "id": "s1",
+    "sample_id": "S1",
+    "sample_name": "One",
+    "project": "ProjectA",
+    "lanes": [
+     1
+    ],
+    "index1": null,
+    "index2": null,
+    "override_cycles": null,
+    "analyses": [],
+    "description": "a sample",
+    "metadata": {}
+   }
+  ],
+  "analyses": []
+ }
+}
