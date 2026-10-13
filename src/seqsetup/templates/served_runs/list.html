@@ -1,0 +1,64 @@
+{#
+   What the API serves: the runs GET /api/runs lists, in its order.
+
+   Inputs:
+     runs:   list[SequencingRun] — Ready or Archived, newest change first
+     status: "ready" | "archived"
+#}
+{% extends "_app_shell.html" %}
+{% set page_title = "What the API serves" %}
+{% set active_route = "/served-runs" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-4 space-y-4">
+  <div>
+    <h1 class="text-xl font-semibold mb-1">What the API serves</h1>
+    <p class="text-sm text-slate-600">
+      The runs a program with an API token can read: Ready or Archived, never a Draft,
+      newest change first. The same runs as <code>GET /api/runs?status={{ status }}</code>, which
+      hands them out a page at a time.
+    </p>
+  </div>
+
+  <nav class="flex gap-2 border-b" aria-label="Run status">
+    {% for key, label in [('ready', 'Ready'), ('archived', 'Archived')] %}
+    <a href="/served-runs?status={{ key }}"
+       class="px-4 py-2 -mb-px border-b-2 {% if key == status %}border-primary font-semibold text-primary{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}"
+       {% if key == status %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if not runs %}
+    <p class="text-slate-500">No {{ status }} runs.</p>
+  {% else %}
+  {# Its columns are wider than a phone: the table scrolls in its box.
+     "relative" keeps the hidden "Files" header label inside the box too. #}
+  <div class="relative overflow-x-auto">
+  <table class="w-full border-collapse text-sm">
+    <thead>
+      <tr class="bg-slate-100">
+        <th class="border px-2 py-1 text-left">Run</th>
+        <th class="border px-2 py-1 text-left">Instrument</th>
+        <th class="border px-2 py-1 text-left">Flow cell</th>
+        <th class="border px-2 py-1 text-left">Samples</th>
+        <th class="border px-2 py-1 text-left">Last change</th>
+        <th class="border px-2 py-1 text-left"><span class="sr-only">Files</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr id="served-run-{{ run.id }}">
+        <td class="border px-2 py-1">{{ run.run_name or "Untitled run" }}</td>
+        <td class="border px-2 py-1">{{ run.instrument_platform.value }}</td>
+        <td class="border px-2 py-1">{{ run.flowcell_type }}</td>
+        <td class="border px-2 py-1">{{ run.samples | length }}</td>
+        <td class="border px-2 py-1">{{ (run.updated_at or run.created_at) | localtime }}</td>
+        <td class="border px-2 py-1"><a class="text-primary underline" href="/served-runs/{{ run.id }}">See files</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

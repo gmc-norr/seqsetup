@@ -90,8 +90,40 @@ left of the run's).
 The two Sample Sheet buttons additionally require every sample in the run
 to have an index assigned -- if any sample does not, they stay disabled
 even though the run is Ready; the JSON and validation downloads have no
-such requirement. On a Draft run the panel shows a single line, "Downloads
-open when the run is Ready," instead of any buttons.
+such requirement.
+
+What the API serves
+---------------------
+
+A program with an API token (see :doc:`/api-reference/index`) reads the
+same stored files. To see exactly what it gets, select **What the API
+serves** in the sidebar, or **See what the API serves for this run** in a
+Ready or Archived run's Export panel.
+
+The first page lists the runs the API lists -- Ready, or Archived, never a
+Draft -- newest change first, as ``GET /api/runs`` gives them (the API hands
+them out a page at a time; this page shows them all):
+
+.. figure:: /_static/screenshots/export/served-runs.png
+   :alt: The "What the API serves" page: Ready and Archived tabs above a table of Ready runs, with a See files link outlined.
+
+   The runs the API serves, with **See files** outlined.
+
+**See files** opens one run: each address the API answers for it, and
+under it the file exactly as stored when the run was marked Ready.
+Nothing is made anew here. Where nothing is stored, the page shows the
+API's answer instead, such as *"404: No v1 sheet for this run: ..."*. The
+PDF is a download link with its size. A Draft's page says the API does
+not serve it.
+
+.. figure:: /_static/screenshots/export/served-run.png
+   :alt: One run's Sample Sheet v2 as the API serves it: its address, GET /api/runs/<run id>/samplesheet-v2, outlined, above the sheet's text.
+
+   One run's Sample Sheet v2 as the API serves it, its address outlined.
+
+Anyone signed in can open these pages, as anyone signed in can download
+a Ready run's files. Opening a Ready or Archived run's page is recorded in
+the audit trail as ``export.viewed``.
 
 Sample Sheet v2 format
 -------------------------

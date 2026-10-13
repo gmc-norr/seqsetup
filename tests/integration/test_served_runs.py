@@ -1,0 +1,230 @@
+"""What the API serves, shown in the web app (the user's request, 2026-10-13).
+
+/served-runs lists the runs the API lists (Ready, or Archived; never a
+Draft), in the API's order. /served-runs/{id} shows each stored file the
+API hands out for that run, byte for byte, or the answer the API gives
+when it has none. Read-only: it shows stored content, never makes it anew.
+Anyone signed in may look; they can already download these files.
+"""
+
+import html
+import re
+from datetime import datetime
+
+import pytest
+
+from seqsetup.models.api_token import ApiToken
+from seqsetup.models.sample import Sample
+from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+
+SHEET = "[Header]\nFileFormatVersion,2\nRunName,Served <b>&amp; \"run\"</b>\n\n[Reads]\nRead1Cycles,151\n"
+JSON_TEXT = '{\n  "run_name": "<script>alert(1)</script>",\n  "samples": []\n}'
+PDF = b"%PDF-1.4\n" + bytes(range(256)) * 4
+
+RESOURCES = ["samplesheet-v2", "samplesheet-v1", "json", "validation-report", "validation-pdf"]
+
+
+def _token(ctx) -> str:
+    plaintext = ApiToken.generate_token()
+    token_hash, token_prefix = ApiToken.hash_token(plaintext)
+    ctx.api_token_repo.save(ApiToken(name="served", token_hash=token_hash,
+                                     token_prefix=token_prefix, created_by="admin-test"))
+    return plaintext
+
+
+def _run(ctx, run_id, status=RunStatus.READY, updated=datetime(2026, 1, 10, 9, 0), name="Served run",
+         **stored):
+    run = SequencingRun(
+        id=run_id, run_name=name,
+        instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8), status=status,
+        created_at=updated, updated_at=updated, **stored,
+    )
+    run.add_sample(Sample(id=f"{run_id}-s1", sample_id="S1", lanes=[1]))
+    ctx.run_repo.save(run)
+    return run_id
+
+
+def _full(ctx, run_id, **kw):
+    return _run(ctx, run_id, generated_samplesheet_v2=SHEET, generated_samplesheet_v1=SHEET.replace("2", "1"),
+                generated_json=JSON_TEXT, generated_validation_json='{"errors": []}',
+                generated_validation_pdf=PDF, **kw)
+
+
+def _section(page, resource):
+    m = re.search(rf'<section[^>]*id="served-{resource}".*?</section>', page, re.S)
+    assert m, f"no section for {resource}"
+    return m.group(0)
+
+
+def _shown_text(section):
+    """The text a reader sees in the section's <pre>: a browser drops the one
+    newline that follows <pre>'s start tag."""
+    m = re.search(r'<pre class="served-content">(.*?)</pre>', section, re.S)
+    if not m:
+        return None
+    text = html.unescape(m.group(1))
+    return text[1:] if text.startswith("\n") else text
+
+
+class TestTheList:
+    """/served-runs lists what GET /api/runs lists, in the same order."""
+
+    def test_same_runs_in_the_same_order_as_the_api(self, logged_in_client, client, fresh_app):
+        _app, ctx, _db = fresh_app
+        for n, day in ((1, 3), (2, 9), (3, 6)):
+            _run(ctx, f"ready-{n}", updated=datetime(2026, 1, day, 9, 0), name=f"Ready {n}")
+        _run(ctx, "arch-1", status=RunStatus.ARCHIVED, name="Archived 1")
+        _run(ctx, "draft-1", status=RunStatus.DRAFT, name="Draft 1")
+        token = _token(ctx)
+
+        for status in ("ready", "archived"):
+            api = client.get(f"/api/runs?status={status}", headers={"Authorization": f"Bearer {token}"})
+            expected = [item["id"] for item in api.json()["items"]]
+            page = logged_in_client.get(f"/served-runs?status={status}")
+            assert page.status_code == 200
+            shown = re.findall(r'id="served-run-([^"]+)"', page.text)
+            assert shown == expected
+        assert expected == ["arch-1"]
+
+    def test_ready_is_the_default(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, "ready-1")
+        _run(ctx, "arch-1", status=RunStatus.ARCHIVED)
+        shown = re.findall(r'id="served-run-([^"]+)"', logged_in_client.get("/served-runs").text)
+        assert shown == ["ready-1"]
+
+    def test_a_draft_is_never_listed(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, "draft-1", status=RunStatus.DRAFT, name="Hidden draft")
+        for status in ("ready", "archived"):
+            page = logged_in_client.get(f"/served-runs?status={status}").text
+            assert "draft-1" not in page and "Hidden draft" not in page
+
+    @pytest.mark.parametrize("status", ["draft", "all", ""])
+    def test_another_status_is_refused_like_the_api(self, logged_in_client, client, fresh_app, status):
+        _app, ctx, _db = fresh_app
+        api = client.get(f"/api/runs?status={status}", headers={"Authorization": f"Bearer {_token(ctx)}"})
+        page = logged_in_client.get(f"/served-runs?status={status}")
+        assert api.status_code == page.status_code == 400
+        assert api.json()["detail"] in html.unescape(page.text)
+
+    def test_it_names_the_api_address(self, logged_in_client):
+        assert "GET /api/runs?status=archived" in logged_in_client.get("/served-runs?status=archived").text
+
+    def test_each_run_links_to_its_files(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, "ready-1")
+        assert 'href="/served-runs/ready-1"' in logged_in_client.get("/served-runs").text
+
+
+class TestWhoMayLook:
+    def test_signed_out_is_sent_to_sign_in(self, client):
+        resp = client.get("/served-runs", follow_redirects=False)
+        assert resp.status_code in (302, 303, 307) and "/login" in resp.headers["location"]
+        resp = client.get("/served-runs/any", follow_redirects=False)
+        assert resp.status_code in (302, 303, 307) and "/login" in resp.headers["location"]
+
+    def test_a_standard_user_may_look(self, logged_in_standard_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _full(ctx, "ready-1")
+        assert logged_in_standard_client.get("/served-runs").status_code == 200
+        assert logged_in_standard_client.get("/served-runs/ready-1").status_code == 200
+
+    def test_the_sidebar_links_here_for_everyone(self, logged_in_standard_client):
+        assert 'href="/served-runs"' in logged_in_standard_client.get("/").text
+
+
+class TestOneRunsFiles:
+    """/served-runs/{id} shows what each per-run API address answers."""
+
+    @pytest.mark.parametrize("status", [RunStatus.READY, RunStatus.ARCHIVED])
+    def test_every_file_matches_the_api_byte_for_byte(self, logged_in_client, client, fresh_app, status):
+        _app, ctx, _db = fresh_app
+        run_id = _full(ctx, f"full-{status.value}", status=status)
+        token = _token(ctx)
+        page = logged_in_client.get(f"/served-runs/{run_id}")
+        assert page.status_code == 200
+
+        for resource in RESOURCES:
+            api = client.get(f"/api/runs/{run_id}/{resource}", headers={"Authorization": f"Bearer {token}"})
+            assert api.status_code == 200
+            section = _section(page.text, resource)
+            assert f"GET /api/runs/{run_id}/{resource}" in section
+            if resource == "validation-pdf":
+                assert f'href="/runs/{run_id}/export/validation-pdf"' in section
+                assert f"{len(api.content):,} bytes" in section
+                assert _shown_text(section) is None
+            else:
+                assert _shown_text(section) == api.text
+
+    def test_a_file_that_starts_with_a_newline_shows_it(self, logged_in_client, fresh_app):
+        """A browser drops one newline right after <pre>'s start tag; the
+        page writes one there so the file's own first newline survives."""
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx, "newline-first", generated_samplesheet_v2="\n[Header]\nFileFormatVersion,2\n")
+        section = _section(logged_in_client.get(f"/served-runs/{run_id}").text, "samplesheet-v2")
+        assert _shown_text(section) == "\n[Header]\nFileFormatVersion,2\n"
+
+    def test_markup_in_a_file_is_shown_as_text(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        page = logged_in_client.get(f"/served-runs/{_full(ctx, 'markup')}").text
+        assert "<script>alert(1)</script>" not in page
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
+
+    @pytest.mark.parametrize("withheld", ["the test's profile has no v1 settings", ""])
+    def test_a_missing_file_shows_the_api_answer(self, logged_in_client, client, fresh_app, withheld):
+        """With and without a reason Mark Ready stored for making no v1 sheet."""
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx, "bare", samplesheet_v1_withheld=withheld)
+        token = _token(ctx)
+        page = logged_in_client.get(f"/served-runs/{run_id}").text
+
+        for resource in RESOURCES:
+            api = client.get(f"/api/runs/{run_id}/{resource}", headers={"Authorization": f"Bearer {token}"})
+            assert api.status_code == 404
+            section = _section(page, resource)
+            assert f"404: {api.json()['detail']}" in html.unescape(section)
+            assert _shown_text(section) is None
+            assert "/export/" not in section
+
+    def test_a_draft_shows_the_api_answer_and_no_file(self, logged_in_client, client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _full(ctx, "a-draft", status=RunStatus.DRAFT)
+        token = _token(ctx)
+        api = client.get(f"/api/runs/{run_id}/samplesheet-v2", headers={"Authorization": f"Bearer {token}"})
+        assert api.status_code == 403
+
+        page = logged_in_client.get(f"/served-runs/{run_id}")
+        assert page.status_code == 200
+        assert "The API does not serve Drafts" in page.text
+        assert f"403: {api.json()['detail']}" in html.unescape(page.text)
+        assert "FileFormatVersion" not in page.text
+        assert 'id="served-samplesheet-v2"' not in page.text
+
+    def test_an_unknown_run_is_404(self, logged_in_client):
+        assert logged_in_client.get("/served-runs/no-such-run").status_code == 404
+
+    def test_looking_writes_an_audit_row(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _full(ctx, "audited")
+        logged_in_client.get(f"/served-runs/{run_id}")
+        (event,) = ctx.audit_event_repo.search(limit=50, event_prefix="export.viewed")
+        assert event.target == run_id and event.actor
+
+    def test_looking_changes_nothing(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _full(ctx, "unchanged")
+        before = ctx.run_repo.get_by_id(run_id).to_dict()
+        logged_in_client.get(f"/served-runs/{run_id}")
+        assert ctx.run_repo.get_by_id(run_id).to_dict() == before
+
+
+class TestTheRunPageLinksHere:
+    @pytest.mark.parametrize("status", [RunStatus.READY, RunStatus.ARCHIVED])
+    def test_the_export_box_links_to_the_files(self, logged_in_client, fresh_app, status):
+        _app, ctx, _db = fresh_app
+        run_id = _full(ctx, f"linked-{status.value}", status=status)
+        page = logged_in_client.get(f"/runs/{run_id}").text
+        export = page.split('id="export-panel"', 1)[1].split("</fieldset>", 1)[0]
+        assert f'href="/served-runs/{run_id}"' in export
