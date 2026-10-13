@@ -230,7 +230,13 @@ class IndexCollisionValidator:
 
         Thresholds derive from configured barcode_mismatches_*:
         - i7-only: collision iff d_i7 <= 2 * m_i7
-        - i7+i5 combined: collision iff d_combined <= 2 * (m_i7 + m_i5)
+        - i7+i5: collision iff d_i7 <= 2 * m_i7 AND d_i5 <= 2 * m_i5 -- a read
+          can fit both samples only when both indexes are that close. It is
+          the default of DRAGEN's built-in BCL conversion, which the lab
+          runs; standalone bcl-convert 3.10.5+ is stricter (either index).
+          The user's decision, 2026-10-13 (docs/superpowers/specs/
+          2026-10-12-collision-rule-design.md); it replaced the summed rule
+          d_i7 + d_i5 <= 2 * (m_i7 + m_i5).
 
         Where m_i7 (m_i5) is the larger of the two samples' configured
         barcode_mismatches_index1 (index2), falling back to the run-level
@@ -274,11 +280,11 @@ class IndexCollisionValidator:
             if run is not None:
                 m_i7 = cls._effective_mismatches(sample1, sample2, run, 1, mismatches)
                 m_i5 = cls._effective_mismatches(sample1, sample2, run, 2, mismatches)
-                threshold = 2 * (m_i7 + m_i5)
             else:
-                threshold = cls.COMBINED_MIN_DISTANCE - 1  # legacy fallback
+                m_i7 = m_i5 = 1  # legacy fallback: BCL Convert's default
+            i7_threshold, i5_threshold = 2 * m_i7, 2 * m_i5
 
-            if combined_distance <= threshold:
+            if i7_distance <= i7_threshold and i5_distance <= i5_threshold:
                 return IndexCollision(
                     sample1_id=sample1.id,
                     sample1_name=sample1.sample_id or sample1.sample_name or sample1.id,
@@ -289,7 +295,11 @@ class IndexCollisionValidator:
                     sequence1=f"{i7_seq1}+{i5_seq1}",
                     sequence2=f"{i7_seq2}+{i5_seq2}",
                     hamming_distance=combined_distance,
-                    mismatch_threshold=threshold,
+                    mismatch_threshold=i7_threshold + i5_threshold,
+                    i7_distance=i7_distance,
+                    i7_threshold=i7_threshold,
+                    i5_distance=i5_distance,
+                    i5_threshold=i5_threshold,
                 )
         else:
             if run is not None:
@@ -310,6 +320,8 @@ class IndexCollisionValidator:
                     sequence2=i7_seq2,
                     hamming_distance=i7_distance,
                     mismatch_threshold=threshold,
+                    i7_distance=i7_distance,
+                    i7_threshold=threshold,
                 )
 
         return None

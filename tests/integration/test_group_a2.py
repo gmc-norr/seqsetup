@@ -10,6 +10,8 @@ import pytest
 from seqsetup.models.run_template import RunTemplate
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
+from .conftest import run_version
+
 
 ORIGIN = {"Origin": "http://testserver"}
 I100 = InstrumentPlatform.MISEQ_I100
@@ -56,7 +58,7 @@ class TestANewRunGetsTheStandardWorkflow:
                      i5_workflow="Standard")
 
         resp = logged_in_client.post(f"/runs/{run.id}/instrument",
-                                     data={"instrument_platform": I100.value}, headers=ORIGIN)
+                                     data={**{"instrument_platform": I100.value}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN)
 
         assert resp.status_code == 200
         assert ctx.run_repo.get_by_id(run.id).i5_workflow == "Index-first"
@@ -69,7 +71,7 @@ class TestANewRunGetsTheStandardWorkflow:
         run = _draft(ctx, "a2-change-back", i5_workflow="Read-first")
 
         resp = logged_in_client.post(f"/runs/{run.id}/instrument",
-                                     data={"instrument_platform": NOVASEQ_X.value},
+                                     data={**{"instrument_platform": NOVASEQ_X.value}, "run_version": run_version(ctx, run.id)},
                                      headers=ORIGIN)
 
         assert resp.status_code == 200
@@ -88,7 +90,7 @@ class TestPickingAWorkflow:
         run = _draft(ctx, "a2-pick", i5_workflow="Index-first")
 
         resp = logged_in_client.post(f"/runs/{run.id}/i5-workflow",
-                                     data={"i5_workflow": "Read-first"}, headers=ORIGIN)
+                                     data={**{"i5_workflow": "Read-first"}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN)
 
         assert resp.status_code == 200
         assert ctx.run_repo.get_by_id(run.id).i5_workflow == "Read-first"
@@ -101,7 +103,7 @@ class TestPickingAWorkflow:
         before = ctx.run_repo.get_by_id(run.id).updated_at
 
         resp = logged_in_client.post(f"/runs/{run.id}/i5-workflow",
-                                     data={"i5_workflow": value}, headers=ORIGIN)
+                                     data={**{"i5_workflow": value}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN)
 
         assert resp.status_code == 400
         assert (f"{value!r} is not an i5 workflow of MiSeq i100 Series "
@@ -114,7 +116,7 @@ class TestPickingAWorkflow:
         run = _draft(ctx, "a2-pick-none", i5_workflow="Index-first")
         before = ctx.run_repo.get_by_id(run.id).updated_at
 
-        resp = logged_in_client.post(f"/runs/{run.id}/i5-workflow", data={}, headers=ORIGIN)
+        resp = logged_in_client.post(f"/runs/{run.id}/i5-workflow", data={**{}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN)
 
         assert resp.status_code == 400
         assert "No i5 workflow was sent. Nothing was saved." in resp.text
@@ -127,7 +129,7 @@ class TestPickingAWorkflow:
         ctx.run_repo.save(run)
 
         resp = logged_in_client.post(f"/runs/{run.id}/i5-workflow",
-                                     data={"i5_workflow": "Read-first"}, headers=ORIGIN)
+                                     data={**{"i5_workflow": "Read-first"}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN)
 
         assert resp.status_code == 403
         assert ctx.run_repo.get_by_id(run.id).i5_workflow == "Index-first"
@@ -476,7 +478,7 @@ class TestAnInstrumentLeftOutOfTheSync:
         before = ctx.run_repo.get_by_id(run.id).updated_at
 
         resp = logged_in_client.post(f"/runs/{run.id}/instrument",
-                                     data={"instrument_platform": I100.value}, headers=ORIGIN)
+                                     data={**{"instrument_platform": I100.value}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN)
 
         assert resp.status_code == 400
         assert ("MiSeq i100 Series is not among the synced instruments. The run still uses "
@@ -542,7 +544,7 @@ class TestRecordsThatCannotBeUsed:
         _store_old_format_record(ctx)
 
         resp = logged_in_client.post(f"/runs/{run.id}/instrument",
-                                     data={"instrument_platform": I100.value},
+                                     data={**{"instrument_platform": I100.value}, "run_version": run_version(ctx, run.id)},
                                      headers={**ORIGIN, "HX-Request": "true"})
 
         assert resp.status_code == 503
@@ -587,7 +589,7 @@ class TestRecordsThatCannotBeUsed:
 
     @pytest.mark.parametrize("path", [
         "export/samplesheet-v2", "export/samplesheet-v1", "export/validation-report",
-        "export/validation-pdf",
+        "export/validation-pdf", "export/json",
     ])
     def test_the_live_exports_show_it(self, logged_in_client, fresh_app, path):
         from .test_group_1c import _clean_run

@@ -369,6 +369,20 @@ class TestSampleValidation:
         sample = Sample(lanes=["1", 2, None])
         assert sample.lanes == [2]
 
+    def test_lanes_duplicates_removed_on_construction(self):
+        assert Sample(lanes=[1, 1, 2]).lanes == [1, 2]
+
+    def test_lanes_duplicates_removed_on_assignment(self):
+        sample = Sample(lanes=[1])
+        sample.lanes = [2, 1, 2, 1]
+        assert sample.lanes == [2, 1]
+
+    def test_lanes_keep_the_order_they_were_first_seen_in(self):
+        assert Sample(lanes=[3, 1, 3, 2, 1]).lanes == [3, 1, 2]
+
+    def test_lanes_duplicates_in_stored_data_are_removed_on_load(self):
+        assert Sample.from_dict({"id": "s1", "lanes": [1, 1, 2]}).lanes == [1, 2]
+
 
 class TestRunCyclesValidation:
     """Tests for RunCycles non-negative clamping."""
@@ -702,10 +716,11 @@ class TestSampleStringFields:
         sample = Sample(lanes=[3, 1, 2])
         assert sample.lanes == [3, 1, 2]
 
-    def test_lanes_duplicates_preserved(self):
-        """Duplicates are preserved (filtering happens at assignment, not here)."""
+    def test_lanes_duplicates_removed(self):
+        """A lane twice is one lane: the sheet would carry the sample's row
+        twice in that lane."""
         sample = Sample(lanes=[1, 1, 2, 2])
-        assert sample.lanes == [1, 1, 2, 2]
+        assert sample.lanes == [1, 2]
 
     def test_lanes_mixed_types_filtered(self):
         """Non-int types are filtered away."""

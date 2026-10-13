@@ -257,11 +257,23 @@ async def upload_index_kit(
     return Response(content="", status_code=200, headers={"HX-Redirect": "/indexes"})
 
 
-@router.delete("/kits/{name}/{version}", response_class=HTMLResponse)
+def _name_and_version(kit_path: str) -> tuple[str, str]:
+    """A kit's name and version from the part of the path that carries both.
+
+    The version is the LAST segment and may not hold a "/" (models/index.py),
+    so everything before it is the name — which may hold any number of them.
+    The shipped "IDT for Illumina DNA/RNA UD Indexes Set A" answered 404 on
+    its detail page and download, and its Delete missed, while one name per
+    segment was all these routes could read.
+    """
+    name, _, version = kit_path.rpartition("/")
+    return name, version
+
+
+@router.delete("/kits/{kit_path:path}", response_class=HTMLResponse)
 def remove_index_kit(
     request: Request,
-    name: str,
-    version: str,
+    kit_path: str,
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """DELETE /indexes/kits/{name}/{version} — delete a kit.
@@ -269,6 +281,7 @@ def remove_index_kit(
     Per-user permission: admin can delete any kit, others can only
     delete kits they created. URL change in this commit (was POST .../delete).
     """
+    name, version = _name_and_version(kit_path)
     user = request.scope.get("auth")
     if not user:
         raise HTTPException(status_code=403, detail="Authentication required")
@@ -309,14 +322,14 @@ def remove_index_kit(
     )
 
 
-@router.get("/detail/{name}/{version}", response_class=HTMLResponse)
+@router.get("/detail/{kit_path:path}", response_class=HTMLResponse)
 def index_kit_detail(
     request: Request,
-    name: str,
-    version: str,
+    kit_path: str,
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET /indexes/detail/{name}/{version} — single-kit detail page."""
+    name, version = _name_and_version(kit_path)
     user = request.scope.get("auth")
     kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
     if not kit:
@@ -347,13 +360,13 @@ def get_kit_content(
     return render(request, "wizard/_index_kit_panel.html", {"kit": kit})
 
 
-@router.get("/download/{name}/{version}")
+@router.get("/download/{kit_path:path}")
 def download_index_kit(
-    name: str,
-    version: str,
+    kit_path: str,
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET /indexes/download/{name}/{version} — YAML export."""
+    name, version = _name_and_version(kit_path)
     kit = ctx.index_kit_repo.get_by_name_and_version(name, version)
     if not kit:
         return Response("Index kit not found", status_code=404)

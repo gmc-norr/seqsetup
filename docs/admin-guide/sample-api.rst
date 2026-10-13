@@ -19,16 +19,21 @@ Configuring the connection
    SeqSetup derives two endpoints from it (see below).
 
 **API Key**
-   An optional key for authentication. If set, SeqSetup sends it as an
-   ``api-key`` header on every request::
+   Not a field on this page. The key comes only from the
+   ``SEQSETUP_LIMS_API_KEY`` environment variable, which the *operator* sets
+   on the server, so the secret never reaches the database or a database
+   backup. When it is set, SeqSetup sends it as an ``api-key`` header on
+   every request::
 
-      api-key: <api_key>
+      api-key: <the value of SEQSETUP_LIMS_API_KEY>
 
-   The field is write-only: it always renders blank, and leaving it blank on
-   save keeps whatever key is already stored. An operator can instead set the
-   ``SEQSETUP_LIMS_API_KEY`` environment variable, which always takes
-   precedence over the stored value and keeps the secret out of the database
-   entirely.
+   When it is unset, requests carry no ``api-key`` header at all.
+
+   An older version of SeqSetup had a key box here and stored what was typed
+   into it. A key left behind by one of those versions is **never used**. The
+   page says it is there, and the next save of this page removes it. Before
+   deploying this version, an operator can check whether a key is still
+   stored (see :ref:`lims-stored-key-check`).
 
 **Enabled**
    Turns the integration on or off. While disabled -- or while **Base URL**
@@ -70,9 +75,10 @@ validated before it is sent, regardless of who is logged in:
   lookup might return a moment later (closes a DNS-rebinding window).
 - Any resolved address that is loopback, link-local, RFC1918 private,
   multicast, reserved, unspecified, CGNAT (100.64.0.0/10), or IETF
-  protocol-assignment space (192.0.0.0/24) is **refused**. This is what
-  stops a LIMS configuration from being used to reach services on
-  SeqSetup's own host or internal network (SSRF).
+  protocol-assignment space (192.0.0.0/24) is **refused**, unless the
+  operator listed the network it is on (see below). This is what stops a
+  LIMS configuration from being used to reach services on SeqSetup's own
+  host or internal network (SSRF).
 - Plain **HTTP is refused** -- only HTTPS is allowed -- because the api-key
   would otherwise travel in clear text.
 - The HTTPS connection verifies the server's TLS certificate (via Python's
@@ -83,13 +89,21 @@ validated before it is sent, regardless of who is logged in:
 Both restrictions can be lifted, but only via environment variables the
 *operator* sets on the server, never from the admin UI:
 
-- ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1`` -- allow a LIMS on a private
-  corporate network.
+- ``SEQSETUP_LIMS_ALLOWED_NETS`` -- a comma-separated list of networks in
+  CIDR form (``10.0.0.0/8, 192.168.10.0/24``) that a LIMS may be on, for a
+  LIMS on a private corporate network. Only the listed networks are opened.
+  Link-local (where cloud instance metadata lives), multicast, unspecified
+  and reserved addresses stay refused however they are listed, and a list
+  that names a network reaching into one of those ranges stops SeqSetup at
+  start. Loopback is the exception: ``127.0.0.0/8`` and ``::1/128`` may be
+  listed, and loopback is refused whenever they are not.
 - ``SEQSETUP_LIMS_ALLOW_HTTP=1`` -- allow plain HTTP.
 
 Treat each as a deliberate, audited decision for that one deployment --
 production should set neither, and should reach its LIMS over HTTPS on a
-public or explicitly allow-listed address.
+public or explicitly allow-listed address. See
+:doc:`/getting-started/deployment` for the full rule, including the removed
+``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS``, which now stops the start.
 
 Expected API Contract
 ---------------------

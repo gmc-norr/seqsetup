@@ -223,9 +223,18 @@ class IndexKit:
             # The name and the version are the kit's URL on the detail,
             # download and delete routes, and a value made only of dots
             # cannot be carried there (see utils/names.py), so a kit named
-            # that way could be made but never removed.
-            if name in ("name", "version") and is_dot_only(value):
+            # that way could be made but never removed. The name may hold a
+            # "/" — the shipped "IDT for Illumina DNA/RNA UD Indexes Set A"
+            # does, and those routes read the version as the last path
+            # segment — so every part between slashes follows that rule.
+            if name in ("name", "version") and any(
+                is_dot_only(part) for part in value.split("/")
+            ):
                 raise ValueError(f"An index kit {name} cannot be made only of dots.")
+            # The version is the last path segment, so a version with a "/"
+            # in it would make a kit no route could find.
+            if name == "version" and "/" in value:
+                raise ValueError("An index kit version cannot hold a '/'.")
         object.__setattr__(self, name, value)
 
     @property

@@ -52,6 +52,31 @@ def shown_value(text: str) -> str:
     return text if len(text) <= 40 else text[:40] + "…"
 
 
+# A LIMS may use 0 for an empty well, and JSON sends that as the number 0, so
+# a worklist row for a well with nothing in it looks like a sample called "0".
+# Stored, it names a patient sample 0 in the Sample Sheet, or hides a real
+# sample behind a duplicate ID. No real sample ID is only zeros.
+ZERO_SAMPLE_ID_RULE = (
+    "A sample ID made only of zeros is not a sample ID — a LIMS may use 0 for "
+    "an empty well"
+)
+# ``$``, not ``\Z``: this pattern names the values that are REFUSED, and in
+# Python ``$`` also matches just before a trailing newline, so ``"0\n"`` is
+# refused with it and would be accepted with ``\Z``. Refusing more is the
+# safe direction here.
+_ZERO_ONLY_RE = re.compile(r"0+$")
+
+
+def is_zero_only(value) -> bool:
+    """True when the text of ``value`` is nothing but the digit 0, of any
+    length. Not strings only: a LIMS sends an empty well as the JSON number
+    0, and the rule is the model's, so ``Sample(sample_id=0)`` must be
+    refused without a string boundary in front of it. The value is read as
+    text, not coerced: ``100`` stays the number it was."""
+    text = value if isinstance(value, str) else str(value)
+    return bool(_ZERO_ONLY_RE.match(text))
+
+
 def checked_test_version(value: Any) -> str:
     """The stripped text of a test version; ValueError with the rule for
     anything else. Never shortened: a cut could make a bad value good."""
@@ -143,7 +168,7 @@ class Sample:
           - ``barcode_mismatches_index1`` / ``barcode_mismatches_index2``
             whole numbers, clamped to [0, 2] — the values BCL Convert accepts.
           - ``index1_cycles`` / ``index2_cycles`` clamped to >= 1.
-          - ``lanes`` filtered to positive non-bool ints.
+          - ``lanes`` filtered to positive non-bool ints, each kept once.
           - ``override_cycles`` uppercased + rejected if outside the
             override-notation alphabet.
           - ``description`` capped at 4096 chars; ``metadata`` rejected if
@@ -151,11 +176,14 @@ class Sample:
             balloon the document).
           - Free-form string identifiers capped at 256.
           - ``test_version`` text that follows TEST_VERSION_RULE, never cut.
+          - ``sample_id`` rejected when it is made only of zeros.
         """
         if name == "test_version":
             value = checked_test_version(value)
         elif value is not None:
-            if name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
+            if name == "sample_id" and is_zero_only(value):
+                raise ValueError(f"{ZERO_SAMPLE_ID_RULE}: {shown_value(repr(value))}")
+            elif name in ("barcode_mismatches_index1", "barcode_mismatches_index2"):
                 value = checked_mismatches(name, value)
             elif name in ("index1_cycles", "index2_cycles"):
                 value = max(1, value)
@@ -167,10 +195,12 @@ class Sample:
             ) and isinstance(value, str):
                 value = self._normalize_override_pattern(name, value)
             elif name == "lanes" and value:
-                value = [
+                # A lane twice is one lane: the sheet would otherwise carry
+                # the sample's row twice in it. First-seen order is kept.
+                value = list(dict.fromkeys(
                     lane for lane in value
                     if isinstance(lane, int) and not isinstance(lane, bool) and lane > 0
-                ]
+                ))
             elif name == "description" and isinstance(value, str):
                 value = value[:4096]
             elif name == "metadata":

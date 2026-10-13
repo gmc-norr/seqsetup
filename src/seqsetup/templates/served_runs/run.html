@@ -47,6 +47,7 @@
         {% endfor %}
       </dl>
       {% if f.target_note %}<p class="warning-message text-sm">{{ f.target_note }}</p>{% endif %}
+      {% if f.target_rule_note %}<p class="text-sm text-slate-600 mt-1">{{ f.target_rule_note }}</p>{% endif %}
     </div>
     {% elif f.target_missing %}
     <p class="text-sm text-slate-600">Not recorded: this run was marked Ready before SeqSetup saved each sheet's target.</p>

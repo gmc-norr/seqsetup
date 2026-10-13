@@ -206,6 +206,7 @@ class GitHubSyncService:
             # make a sample's "1" pick an older version (spec 2026-10-07
             # group A4, §1).
             refused_tests: list[str] = []
+            test_paths: list[str] = []
             test_profiles = self._fetch_profiles_recursive(
                 owner,
                 repo,
@@ -214,8 +215,10 @@ class GitHubSyncService:
                 self._parse_test_profile,
                 strict=True,
                 refused=refused_tests,
+                paths=test_paths,
             )
-            self._refuse_repeated_test_versions(test_profiles, refused_tests)
+            self._refuse_repeated_test_versions(test_profiles, refused_tests, test_paths)
+            self._refuse_tests_differing_only_in_capitals(test_profiles, refused_tests, test_paths)
             logger.info(f"Fetched {len(test_profiles)} test profiles")
 
             # Fetch instruments if enabled and repo available. Any refused
@@ -234,8 +237,12 @@ class GitHubSyncService:
                 refused_instruments += self._duplicate_instruments(instruments)
                 logger.info(f"Fetched {len(instruments)} instrument definitions")
 
-            # Fetch index kits if enabled and repo available
+            # Fetch index kits if enabled and repo available. A refused kit
+            # file is named in the message and the kit stored before from it
+            # stays (the night run's Q3, answered 2026-10-13).
             index_kits = []
+            refused_kits: list[dict] = []
+            kept_kits: list[IndexKit] = []
             if config.sync_index_kits_enabled and self.index_kit_repo:
                 index_kits = self._fetch_index_kits(
                     owner,
@@ -243,8 +250,13 @@ class GitHubSyncService:
                     config.github_branch,
                     config.index_kits_path,
                     strict=True,
+                    refused=refused_kits,
+                    uploaded_ids=frozenset(
+                        kit.kit_id for kit in self.index_kit_repo.list_user_uploaded()),
                 )
                 logger.info(f"Fetched {len(index_kits)} index kits")
+                if refused_kits:
+                    kept_kits = self._synced_kits_to_keep(index_kits, refused_kits)
 
             # Guard against accidental data loss on partial/failed fetches.
             # If we already have synced data, never replace it with an empty fetch result.
@@ -276,7 +288,8 @@ class GitHubSyncService:
                     {"source": "github"}
                 )
                 self._guard_against_destructive_replace(
-                    existing_synced_index_kits, len(index_kits), "synced index kits"
+                    existing_synced_index_kits, len(index_kits) + len(kept_kits),
+                    "synced index kits"
                 )
 
             # Save to database (replace all)
@@ -311,7 +324,7 @@ class GitHubSyncService:
 
             # For index kits, only delete synced ones (preserve user-uploaded)
             if config.sync_index_kits_enabled and self.index_kit_repo:
-                self.index_kit_repo.delete_synced()
+                self.index_kit_repo.delete_synced_except([kit.kit_id for kit in kept_kits])
                 self.index_kit_repo.bulk_save(index_kits)
 
             # Drop the in-memory instrument definitions so every caller of
@@ -333,7 +346,7 @@ class GitHubSyncService:
             instruments_count = len(instruments) if store_instruments else 0
             index_kits_count = len(index_kits)
 
-            if refused_tests or refused_instruments:
+            if refused_tests or refused_instruments or refused_kits:
                 synced = [f"{len(app_profiles)} application profiles"]
                 if not refused_tests:
                     synced.append(f"{len(test_profiles)} test profiles")
@@ -347,14 +360,34 @@ class GitHubSyncService:
                         "Test profile files were refused, so no test profiles were stored "
                         "and the stored ones are kept: " + "; ".join(refused_tests) + "."
                     )
+                    kept = self._kept_test_versions_not_read(test_profiles)
+                    if kept:
+                        refusals.append(
+                            "Kept test profiles this sync did not read: " + ", ".join(kept)
+                            + " -- each is in a refused file or no longer in the repository."
+                        )
                 if refused_instruments:
                     refusals.append(
                         "Instrument files were refused, so no instrument settings were stored "
                         "and the stored ones are kept: " + "; ".join(refused_instruments) + "."
                     )
+                if refused_kits:
+                    refusals.append(
+                        "Index kit files were refused, so they were not stored: "
+                        + "; ".join(f"{r['path']} ({r['kit']}): {r['reason']}" if r["kit"]
+                                    else f"{r['path']}: {r['reason']}" for r in refused_kits)
+                        + "."
+                    )
+                    if kept_kits:
+                        refusals.append(
+                            "Kept the stored index kits "
+                            + ", ".join(sorted(f"{kit.name} {kit.version}" for kit in kept_kits))
+                            + " until the file is fixed."
+                        )
                 message = " ".join(refusals) + f" Synced {', '.join(synced)}."
                 self.config_repo.update_sync_status(
-                    "error", message, count, instruments_count, index_kits_count
+                    "error", message, count, instruments_count, index_kits_count,
+                    config.github_repo_url, config.github_branch
                 )
                 logger.error(f"Sync refused files: {message}")
                 return False, message, count + instruments_count + index_kits_count
@@ -371,7 +404,8 @@ class GitHubSyncService:
 
             message = f"Synced {', '.join(parts)}"
             self.config_repo.update_sync_status(
-                "success", message, count, instruments_count, index_kits_count
+                "success", message, count, instruments_count, index_kits_count,
+                config.github_repo_url, config.github_branch
             )
 
             logger.info(f"Sync completed: {message}")
@@ -380,16 +414,23 @@ class GitHubSyncService:
         except GitHubSyncError as e:
             error_msg = str(e)
             logger.error(f"Sync failed: {error_msg}")
-            self.config_repo.update_sync_status("error", error_msg, 0, 0, 0)
+            self.config_repo.update_sync_status(
+                "error", error_msg, 0, 0, 0,
+                config.github_repo_url, config.github_branch
+            )
             return False, f"Sync failed: {error_msg}", 0
 
         except Exception as e:
             error_msg = f"Unexpected error: {e}"
             logger.exception("Sync failed with unexpected error")
-            self.config_repo.update_sync_status("error", error_msg, 0, 0, 0)
+            self.config_repo.update_sync_status(
+                "error", error_msg, 0, 0, 0,
+                config.github_repo_url, config.github_branch
+            )
             return False, error_msg, 0
 
-    def _parse_repo_url(self, url: str) -> Tuple[str, str]:
+    @staticmethod
+    def _parse_repo_url(url: str) -> Tuple[str, str]:
         """Parse GitHub URL to extract owner and repo name.
 
         Handles formats like:
@@ -495,6 +536,7 @@ class GitHubSyncService:
         parser,
         strict: bool = False,
         refused: Optional[list[str]] = None,
+        paths: Optional[list[str]] = None,
     ) -> list:
         """Fetch YAML files from directory recursively and parse them.
 
@@ -508,6 +550,10 @@ class GitHubSyncService:
                 profile, for any reason, is added as "<path>: <problem>",
                 and a .yaml or .yml ending is read in any case (test
                 profiles, spec 2026-10-07 group A4, §1)
+            paths: when given, each returned profile's path in the repository
+                is appended, in step with the returned list, so a refusal can
+                name a file by its path and not by a base name two folders
+                can share
 
         Returns:
             List of parsed profile objects
@@ -532,7 +578,8 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_profiles = self._fetch_profiles_recursive(
-                    owner, repo, branch, item_path, parser, strict=False, refused=refused
+                    owner, repo, branch, item_path, parser, strict=False, refused=refused,
+                    paths=paths
                 )
                 profiles.extend(sub_profiles)
 
@@ -550,6 +597,8 @@ class GitHubSyncService:
                         if yaml_data:
                             profile = parser(yaml_data, item_name)
                             profiles.append(profile)
+                            if paths is not None:
+                                paths.append(item_path)
                             logger.debug(f"Parsed profile from {item_path}")
                         elif refused is not None:
                             refused.append(f"{item_path}: is empty")
@@ -756,15 +805,46 @@ class GitHubSyncService:
         """Parse YAML into TestProfile."""
         return TestProfile.from_yaml(yaml_data, filename)
 
+    def _kept_test_versions_not_read(self, test_profiles: list[TestProfile]) -> list[str]:
+        """The stored test versions that are not among ``test_profiles``, as
+        "<test> <version>". A refused test file keeps every stored profile,
+        including a version deleted from the repository on purpose, so the
+        refusal says which ones it kept without reading them."""
+        read = {(profile.test_type, profile.version) for profile in test_profiles}
+        stored = {(profile.test_type, profile.version)
+                  for profile in self.test_profile_repo.list_all()}
+        return [f"{test} {version}" for test, version in sorted(stored - read)]
+
+    def _synced_kits_to_keep(self, fetched: list[IndexKit], refused: list[dict]) -> list[IndexKit]:
+        """The stored synced kits a sync with refused kit files keeps: those
+        this sync did not read that carry a refused file's kit name, or -- when
+        a refused file names no kit -- every one it did not read, since any of
+        them could be that file's."""
+        fetched_ids = {kit.kit_id for kit in fetched}
+        not_read = [kit for kit in self.index_kit_repo.list_synced() if kit.kit_id not in fetched_ids]
+        if any(r["name"] is None for r in refused):
+            return not_read
+        names = {r["name"] for r in refused}
+        return [kit for kit in not_read if kit.name in names]
+
     @staticmethod
     def _refuse_repeated_test_versions(test_profiles: list[TestProfile],
-                                       refused: list[str]) -> None:
+                                       refused: list[str],
+                                       paths: Optional[list[str]] = None) -> None:
         """Each test and version that is in more than one file is logged and
         added to ``refused``, since a sample could get any of those files
-        (spec 2026-10-07 group A4, §1)."""
+        (spec 2026-10-07 group A4, §1). ``paths`` are the files' paths in the
+        repository, in step with ``test_profiles``: two folders of the tree
+        can hold the same base name, and "in Wgs.yaml and Wgs.yaml" says
+        nothing about where the second one is."""
+        where_of = paths if paths is not None else [p.source_file for p in test_profiles]
         files: dict[tuple[str, str], list[str]] = {}
-        for profile in test_profiles:
-            files.setdefault((profile.test_type, profile.version), []).append(profile.source_file)
+        # strict=True: a plain zip stops at the shorter list, so a caller that
+        # appended a profile without its path would drop the trailing profiles
+        # out of this check and sync a test and version from two files
+        # silently. Fail closed instead (batch 4 review fix E).
+        for profile, where in zip(test_profiles, where_of, strict=True):
+            files.setdefault((profile.test_type, profile.version), []).append(where)
         for (test, version), names in files.items():
             if len(names) > 1:
                 names = sorted(names)
@@ -774,6 +854,33 @@ class GitHubSyncService:
                 )
                 refused.append(where)
 
+    @staticmethod
+    def _refuse_tests_differing_only_in_capitals(test_profiles: list[TestProfile],
+                                                 refused: list[str],
+                                                 paths: Optional[list[str]] = None) -> None:
+        """Two tests whose TestType differs only in letter case are logged and
+        added to ``refused``. A test is matched by its TestType exactly, so
+        ``Wgs`` and ``WGS`` are two tests with their own application profiles,
+        while every page and the Sample Sheet show what a reader takes for one
+        test (spec 2026-10-07 group A4, what it did not cover). ``paths`` are
+        the files' paths in the repository, in step with ``test_profiles``, as
+        for ``_refuse_repeated_test_versions`` (the night run's Q7)."""
+        where_of = paths if paths is not None else [p.source_file for p in test_profiles]
+        files: dict[str, dict[str, list[str]]] = {}
+        for profile, where in zip(test_profiles, where_of, strict=True):
+            spellings = files.setdefault(profile.test_type.lower(), {})
+            spellings.setdefault(profile.test_type, []).append(where)
+        for spellings in files.values():
+            if len(spellings) < 2:
+                continue
+            parts = [f"{test} in {', '.join(sorted(names))}"
+                     for test, names in sorted(spellings.items())]
+            where = f"{', '.join(parts[:-1])} and {parts[-1]} differ only in capitals"
+            logger.warning(
+                f"Test profiles refused: {where}. Two tests may not differ only in capitals."
+            )
+            refused.append(where)
+
     def _fetch_index_kits(
         self,
         owner: str,
@@ -781,11 +888,19 @@ class GitHubSyncService:
         branch: str,
         path: str,
         strict: bool = False,
+        refused: Optional[list[dict]] = None,
+        uploaded_ids: frozenset = frozenset(),
     ) -> list[IndexKit]:
         """Fetch index kit definitions from GitHub.
 
         Fetches YAML files from the configured path and parses them into IndexKit objects.
-        Only valid index kits (passing IndexValidator) are returned.
+        Only valid index kits (passing IndexValidator) are returned. Each file
+        that is not is added to ``refused`` as {"path", "name", "kit",
+        "reason"}, with name and kit None when the file names no kit (the
+        night run's Q3: the sync names it and keeps the kit stored before).
+        A kit whose kit_id is in ``uploaded_ids`` -- a kit uploaded through
+        SeqSetup -- is refused the same way, and the uploaded one is kept
+        (review P2-2, 2026-10-13).
 
         Args:
             owner: GitHub owner
@@ -804,6 +919,11 @@ class GitHubSyncService:
             if strict:
                 raise
             logger.warning(f"Could not fetch index kits from {path}: {e}")
+            # Its kits are not read, so the sync names it and keeps every
+            # stored kit it did not read (review P2-1, 2026-10-13).
+            if refused is not None:
+                refused.append({"path": path.strip("/"), "name": None, "kit": None,
+                                "reason": f"could not be listed: {str(e).rstrip('.')}"})
             return index_kits
 
         for item in contents:
@@ -813,11 +933,13 @@ class GitHubSyncService:
 
             if item_type == "dir":
                 # Recurse into subdirectory
-                sub_kits = self._fetch_index_kits(owner, repo, branch, item_path)
+                sub_kits = self._fetch_index_kits(owner, repo, branch, item_path,
+                                                  refused=refused, uploaded_ids=uploaded_ids)
                 # Subdirectories are best-effort; top-level fetch is strict.
                 index_kits.extend(sub_kits)
 
-            elif item_type == "file" and item_name.endswith((".yaml", ".yml")):
+            # Any letter case, as for test profiles (review P3-3, 2026-10-13).
+            elif item_type == "file" and item_name.lower().endswith((".yaml", ".yml")):
                 download_url = item.get("download_url")
                 if download_url:
                     try:
@@ -827,7 +949,20 @@ class GitHubSyncService:
                         if kit:
                             # Validate the kit
                             validation = IndexValidator.validate(kit)
-                            if validation.is_valid:
+                            if validation.is_valid and kit.kit_id in uploaded_ids:
+                                logger.error(
+                                    f"Index kit '{kit.name}' {kit.version} ({item_path}) has the "
+                                    "name and version of a kit uploaded through SeqSetup; "
+                                    "the uploaded one is kept"
+                                )
+                                if refused is not None:
+                                    refused.append({
+                                        "path": item_path, "name": kit.name,
+                                        "kit": f"{kit.name} {kit.version}",
+                                        "reason": "a kit of this name and version was uploaded "
+                                                  "through SeqSetup, and the uploaded one is kept",
+                                    })
+                            elif validation.is_valid:
                                 index_kits.append(kit)
                                 logger.debug(f"Parsed index kit from {item_path}")
                             else:
@@ -838,15 +973,27 @@ class GitHubSyncService:
                                 logger.error(
                                     f"Skipping invalid index kit from {item_path}"
                                 )
+                                if refused is not None:
+                                    refused.append({
+                                        "path": item_path, "name": kit.name,
+                                        "kit": f"{kit.name} {kit.version}",
+                                        "reason": "; ".join(e.rstrip(".") for e in validation.errors),
+                                    })
 
                             # Log warnings
                             for warning in validation.warnings:
                                 logger.warning(
                                     f"Index kit '{kit.name}' ({item_name}): {warning}"
                                 )
+                        elif refused is not None:
+                            refused.append({"path": item_path, "name": None, "kit": None,
+                                            "reason": "could not be read as an index kit"})
 
                     except Exception as e:
                         logger.warning(f"Failed to process index kit {item_path}: {e}")
+                        if refused is not None:
+                            refused.append({"path": item_path, "name": None, "kit": None,
+                                            "reason": str(e).rstrip(".")})
 
         return index_kits
 

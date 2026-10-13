@@ -84,6 +84,17 @@ class IndexKitRepository(BaseRepository[IndexKit]):
         result = self.collection.delete_many({"source": "github"})
         return result.deleted_count
 
+    def delete_synced_except(self, keep_kit_ids: list[str]) -> int:
+        """Delete synced index kits (source == 'github') except those whose
+        kit_id is in ``keep_kit_ids``.
+
+        Returns:
+            Number of kits deleted.
+        """
+        result = self.collection.delete_many(
+            {"source": "github", "_id": {"$nin": list(keep_kit_ids)}})
+        return result.deleted_count
+
     def bulk_save(self, kits: list[IndexKit]) -> int:
         """Save multiple index kits efficiently using bulk write.
 

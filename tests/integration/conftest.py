@@ -252,6 +252,22 @@ def logged_in_standard_client(fresh_app, standard_user_seeded):
     return c
 
 
+def run_version(ctx, run_id: str) -> str:
+    """The stored run's version, as the setup page sends it with each of its
+    saves: every setup save refuses a request without the stored one
+    (routes/runs.py ``_stale_setup_version``; the night run's Q2)."""
+    return ctx.run_repo.get_by_id(run_id).updated_at.isoformat()
+
+
+def page_run_version(client, run_id: str) -> str:
+    """The version the setup page itself carries, read the way a browser
+    gets it: from the page."""
+    page = client.get(f"/runs/new/step/1?run_id={run_id}").text
+    found = re.search(r'name="run_version"\s+value="([^"]+)"', page)
+    assert found, "the setup page carries no run_version"
+    return found.group(1)
+
+
 def mark_ready(client, run_id: str, headers: dict):
     """POST Mark Ready; if the color-balance question comes back, answer it
     the way its form does. Returns the last response. For tests about

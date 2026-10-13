@@ -104,7 +104,16 @@ To build the SeqSetup image separately:
    docker build -t seqsetup .
 
 The image uses the Pixi package manager to install dependencies and runs
-the application on port 5001.
+the application on port 5001. It installs the default Pixi environment only,
+so the test, browser and docs tools (pytest, pytest-playwright, mongomock,
+httpx2, sphinx, furo) are not in it.
+
+Both base images are pinned by digest, not by a moving tag: the ``Dockerfile``
+builds on ``ghcr.io/prefix-dev/pixi`` at the version that writes
+``pixi.lock``, and ``docker-compose.yml`` runs a fixed ``mongo:7`` build. Two
+builds of one commit therefore give the same image. To bump either,
+``docker buildx imagetools inspect <image>:<tag>`` prints the new digest; put
+the tag and the digest in the file together.
 
 Connecting to External MongoDB
 ------------------------------
@@ -163,8 +172,10 @@ Configure the application using environment variables:
      - Session encryption key (32+ hex characters)
      - Auto-generated
    * - ``INSTRUMENTS_CONFIG``
-     - Path to instruments YAML config
-     - ``config/instruments.yaml``
+     - Path to the instruments YAML file to read instead of the one SeqSetup
+       ships. Set, it decides; SeqSetup does not start when it names a path
+       that is not a file (see :doc:`/admin-guide/instruments`)
+     - unset: ``config/instruments.yaml``
    * - ``TZ``
      - The time zone SeqSetup shows times in, an IANA name such as
        ``Europe/Stockholm`` (see :ref:`time-zone`)
@@ -323,7 +334,7 @@ Example nginx configuration:
 
        proxy_set_header Host $host;
        proxy_set_header X-Real-IP $remote_addr;
-       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-For $remote_addr;
        proxy_set_header X-Forwarded-Proto $scheme;
 
        # SeqSetup caps each request body itself: 2 MB, and 21 MB only where
@@ -339,6 +350,31 @@ Example nginx configuration:
            proxy_pass http://127.0.0.1:5001;
        }
    }
+
+``X-Forwarded-For`` is set to ``$remote_addr`` -- the address the proxy
+itself is talking to -- and **not** to nginx's ``$proxy_add_x_forwarded_for``,
+which appends to whatever the client sent. SeqSetup gives each client its own
+sign-in limit by reading the first hop of that header, so a header the client
+can write means a client that can choose which limit it spends: a new value
+each time buys unlimited attempts, and someone else's value spends theirs. If
+your proxy is itself behind another proxy, keep the real client's address in
+the first position, and never let a value the client sent reach it.
+
+Then turn on the variable that makes SeqSetup read it, so each user is
+counted separately instead of every user behind the proxy sharing the
+proxy's own address:
+
+.. code-block:: bash
+
+   SEQSETUP_TRUST_FORWARDED_FOR=1   # only behind a proxy that REPLACES the header
+
+The Docker Compose recipe sets this to ``1`` already. Turn it off
+(``SEQSETUP_TRUST_FORWARDED_FOR=0`` in ``.env``) if SeqSetup is ever reached
+directly, without the proxy in front of it: then the header is whatever the
+client typed, and the direct TCP address is the only honest identity.
+SeqSetup keeps at most the first 64 characters of the address it reads
+from the header (a real address has 45 at most), so a forged, overlong
+value cannot fill its memory.
 
 .. important::
 
@@ -389,10 +425,42 @@ deployment:
 
 .. code-block:: bash
 
-   SEQSETUP_LIMS_ALLOW_HTTP=1          # LIMS speaks plain HTTP (sends api-key in clear)
-   SEQSETUP_LIMS_ALLOW_PRIVATE_NETS=1  # LIMS resolves to a private/RFC1918 address
+   SEQSETUP_LIMS_ALLOW_HTTP=1                 # LIMS speaks plain HTTP (sends api-key in clear)
+   SEQSETUP_LIMS_ALLOWED_NETS=10.0.0.0/8      # the networks the LIMS may be on
 
-Leave both unset in production.
+Leave both unset in production unless the LIMS really is on a private
+network.
+
+``SEQSETUP_LIMS_ALLOWED_NETS`` is a comma-separated list of networks in CIDR
+form, for example ``10.0.0.0/8, 192.168.10.0/24``. After DNS resolution, an
+address is allowed when it is public — as always — or when it lies inside one
+of the listed networks. List only the network the LIMS is actually on: a wide
+entry opens every host on it to a LIMS URL an admin can type.
+
+Four kinds of address stay refused however they are listed: **link-local**
+(``169.254.0.0/16``, ``fe80::/10`` — where a cloud host's instance metadata
+service lives), **multicast**, **unspecified** and **reserved**. A list that
+is not valid CIDR, or that names a network reaching into one of those ranges
+at all (``169.0.0.0/8`` does), stops SeqSetup at start with a message naming
+the entry. Loopback (``127.0.0.1/32``) is not in that group: it is refused
+unless listed, and listing it is how a dev setup reaches a mock LIMS on the
+same host. IPv6 loopback is listed as ``::1/128``, which a host whose
+``localhost`` resolves to ``::1`` needs (Fedora/RHEL and macOS defaults, and
+many container images); list it alongside the IPv4 one,
+``SEQSETUP_LIMS_ALLOWED_NETS=127.0.0.1/32,::1/128``. It is allowed even
+though it lies inside the reserved ``::/8`` -- a network wholly inside
+loopback is an entry for loopback and nothing else -- while ``::/8`` itself
+stays refused.
+
+.. important::
+
+   ``SEQSETUP_LIMS_ALLOW_PRIVATE_NETS`` has been **removed**. It allowed every
+   private address at once, link-local included, so a LIMS URL could be
+   pointed at ``http://169.254.169.254/`` and read the host's own cloud
+   credentials. SeqSetup refuses to start while that variable is set at all,
+   with a message naming ``SEQSETUP_LIMS_ALLOWED_NETS``: replace it with the
+   list of networks the LIMS is on, and unset the old name (remove it from
+   ``.env`` too).
 
 Health Checks
 -------------
@@ -432,6 +500,33 @@ lists that sort by time can put old and new entries in the wrong order, and
 API tokens made before the update end that much earlier or later. On such a
 server, start from an empty database, or accept these shifts for the old
 data. A server that ran on UTC is not affected.
+
+.. _lims-stored-key-check:
+
+Check for a stored LIMS api-key before updating
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Versions before the one that removed the api-key box on
+**Admin > LIMS Integration** stored the typed key in the settings
+collection. This version never reads, uses or writes that value, and the
+next save of that page removes it — but until someone saves the page, the
+old key is still in the database and in every backup taken from it.
+
+SeqSetup runs no migration for this. Before updating, ask the database
+whether a key is stored. The command below prints a one-line answer and
+never prints the key; ``MONGODB_URI`` is the same connection string the app
+uses:
+
+.. code-block:: bash
+
+   mongosh "$MONGODB_URI" --quiet --eval 'print(db.settings.countDocuments({_id: "sample_api_config", "config.api_key": {$nin: ["", null]}}) ? "a LIMS api-key is stored" : "no LIMS api-key is stored")'
+
+If it says a key is stored: after updating, open
+**Admin > LIMS Integration** (which now says the same thing) and press
+**Save Configuration** to remove it, set the real key in
+``SEQSETUP_LIMS_API_KEY``, and treat the old key as exposed — rotate it in
+the LIMS, and remember that database backups taken before the save still
+contain it.
 
 Troubleshooting
 ---------------

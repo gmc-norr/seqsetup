@@ -243,3 +243,47 @@ class TestReadPastedSamples:
     def test_blank_input(self):
         read = read_pasted_samples("   ")
         assert (read.samples, read.header_found, read.columns_used, read.columns_unused) == ([], False, [], [])
+
+
+class TestSampleIdColumnRanking:
+    """A paste with more than one sample-ID-ish column: the real Sample ID
+    column wins, however far right it sits. Taking the leftmost one stored a
+    patient name as the Sample ID and dropped the lab's own ID."""
+
+    def test_sample_id_beats_sample_name_on_its_left(self):
+        read = read_pasted_samples(
+            "Sample_Name\tSample_ID\tIndex\tIndex2\nJSmith\tLAB-001\tACGTACGT\tTTGGCCAA\n")
+        assert read.samples[0].sample_id == "LAB-001"
+        assert ("Sample_ID", "Sample ID") in read.columns_used
+        assert read.columns_unused == ["Sample_Name"]
+
+    def test_exact_sample_id_beats_sample(self):
+        read = read_pasted_samples("Sample\tSample_ID\nJSmith\tLAB-001\n")
+        assert read.samples[0].sample_id == "LAB-001"
+
+    def test_exact_sample_id_beats_id(self):
+        read = read_pasted_samples("ID\tsample id\n7\tLAB-001\n")
+        assert read.samples[0].sample_id == "LAB-001"
+
+    def test_sample_beats_name(self):
+        read = read_pasted_samples("Name\tSample\nJSmith\tLAB-001\n")
+        assert read.samples[0].sample_id == "LAB-001"
+
+    def test_id_beats_sample_name(self):
+        read = read_pasted_samples("Sample_Name\tID\nJSmith\tLAB-001\n")
+        assert read.samples[0].sample_id == "LAB-001"
+
+    def test_only_sample_name_is_still_the_sample_id(self):
+        read = read_pasted_samples("Sample_Name\tTest_ID\nJSmith\tWGS\n")
+        assert read.samples[0].sample_id == "JSmith"
+        assert read.columns_used == [("Sample_Name", "Sample ID"), ("Test_ID", "Test")]
+
+    def test_two_columns_of_the_same_rank_take_the_leftmost(self):
+        assert read_pasted_samples("ID\tSample\n7\tLAB-001\n").samples[0].sample_id == "7"
+        assert read_pasted_samples("Sample\tID\nLAB-001\t7\n").samples[0].sample_id == "LAB-001"
+
+    def test_the_losing_column_is_not_read_as_another_field(self):
+        read = read_pasted_samples("Name\tSample_ID\tTest_ID\nJSmith\tLAB-001\tWGS\n")
+        assert read.samples[0].sample_id == "LAB-001"
+        assert read.samples[0].test_id == "WGS"
+        assert read.columns_unused == ["Name"]

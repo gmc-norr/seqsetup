@@ -45,11 +45,18 @@ What is recorded
 The event name says what happened. The main groups are:
 
 - **Signing in** -- ``login.success``, ``login.failure``,
-  ``login.rate_limited``, ``logout``.
+  ``login.rate_limited``, ``logout``. For the two refusals, **Who** holds
+  the typed name only when it names an account SeqSetup knows; otherwise it
+  reads ``(unknown name)`` and a few hex characters (see
+  :ref:`refused-sign-in-names`).
 - **Users and access** -- ``user.created``, ``user.updated``,
   ``user.deleted``, ``api_token.created``, ``api_token.revoked``,
   ``auth.method.changed``, ``auth.ldap_config.updated``, and
-  ``api.auth.failure`` for a refused API token.
+  ``api.auth.failure`` for a refused API token. A refused **Test sign-in**
+  on Admin > Authentication (``ldap.test_auth.rate_limited``) keeps the
+  name it was given in ``target_user`` the same way as a refused sign-in:
+  as typed only when it names an account SeqSetup knows, else
+  ``(unknown name)`` and a few hex characters.
 - **Runs and samples** -- ``run.status.changed`` (Mark Ready, back to
   Draft), ``run.status.denied``, ``run.archived``, ``run.deleted``,
   ``run.delete.failed``, ``run.delete.copy_unconfirmed``, ``run.cloned``,
@@ -71,6 +78,80 @@ The event name says what happened. The main groups are:
 
 Secrets are never stored: a password or token inside a web address is
 removed, and a field named like a password or API key is shown as ``***``.
+
+.. _refused-sign-in-names:
+
+The name in a refused sign-in
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For ``login.failure`` and ``login.rate_limited``, **Who** holds what was
+typed into the name box **only when it names an account SeqSetup knows** --
+a local account on :doc:`local-users`, matched exactly. Anything else is
+recorded as::
+
+   (unknown name) 3f9a1c08
+
+People type their password into the name box; without this, that password
+would sit in a record nothing can delete, shown to every admin. The hex
+part is a fingerprint of what was typed, so repeated attempts with the same
+text group together and you can still see that one source keeps trying one
+name. It is computed with a secret key of this deployment's own (derived
+from ``SEQSETUP_SESSION_SECRET``), so the text cannot be read back from it,
+and cannot be found by trying candidates. Two deployments give different
+fingerprints for the same text, and changing the session secret changes
+every later fingerprint.
+
+A directory (LDAP / Active Directory) name is recorded the same way when
+that person has never signed in: SeqSetup keeps no list of directory users,
+and it does not ask the directory about a name that was refused -- a
+mistyped password must not be sent anywhere. Once the sign-in succeeds,
+``login.success`` holds the name the directory confirmed.
+
+.. _rate-limited-rows:
+
+How many refusals one ``login.rate_limited`` row stands for
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Repeated sign-in attempts from one address, or for one name, are refused
+once they pass the limit (see :doc:`/user-guide/authentication`).
+**At most one ``login.rate_limited`` row is written per address per limiter
+window**, and its details say how many refused requests it stands for::
+
+   ip: 198.51.100.7   retry_after: 43   refused: 12
+
+Without this, a flood of a few thousand refusals wrote a few thousand rows
+that all said the same thing, and this page -- which shows 100 at a time --
+could show nothing else for a long while.
+
+The count is built like this: the first refusal from an address writes its
+row at once, so you see the attack while it is happening; the refusals that
+follow in the same window are counted, and their count is carried by that
+address's **next** row. Nothing rewrites a row that has gone out: the
+trail is insert-only.
+
+A row that carries a count from an earlier window says how much of
+``refused`` that was, as ``refused_earlier``::
+
+   ip: 198.51.100.7   retry_after: 43   refused: 12   refused_earlier: 11
+
+The carried number belongs to the **address**, not to the name in the
+**Who** column: only the row's own refusal -- one of the twelve above --
+was typed with that name, and the other eleven were typed at that address
+in the window before, under whatever names were tried then. A row that
+carries nothing has no ``refused_earlier``.
+
+.. note::
+   A row's count is therefore **at least** that many refusals, not exactly
+   that many: the ones that followed it are on the address's next row, and
+   there may never be one. A count is lost when **the burst stops** and
+   that address is never refused again; when that address is not refused
+   again **within three limiter windows** (its count is then dropped, so
+   the addresses of a flood cannot pile up in memory for the life of the
+   process); and when **SeqSetup is restarted** (or stops) while refusals
+   are still being counted. The rows already written are never changed, so
+   they read low by however many requests had not yet been carried, with
+   nothing on the row to say so. The server log on the :doc:`logs` page,
+   and your reverse proxy's own access log, still show every request.
 
 .. note::
    If the database cannot be reached when something happens, the action

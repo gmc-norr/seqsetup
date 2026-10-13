@@ -57,15 +57,16 @@ class TestCheckConnection:
     """Tests for check_connection()."""
 
     def test_empty_base_url(self):
-        config = SampleApiConfig(base_url="", api_key="key", enabled=False)
+        config = SampleApiConfig(base_url="", enabled=False)
         success, msg = check_connection(config)
         assert success is False
         assert "not configured" in msg
 
     @patch("seqsetup.services.sample_api._api_get")
-    def test_successful_connection(self, mock_get):
+    def test_successful_connection(self, mock_get, monkeypatch):
         mock_get.return_value = [{"id": "1", "name": "WL1"}]
-        config = SampleApiConfig(base_url="https://example.com/api", api_key="key")
+        monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", "key")
+        config = SampleApiConfig(base_url="https://example.com/api")
         success, msg = check_connection(config)
         assert success is True
         assert "1 worksheets" in msg
@@ -74,7 +75,7 @@ class TestCheckConnection:
     @patch("seqsetup.services.sample_api._api_get")
     def test_successful_connection_empty_list(self, mock_get):
         mock_get.return_value = []
-        config = SampleApiConfig(base_url="https://example.com/api", api_key="key")
+        config = SampleApiConfig(base_url="https://example.com/api")
         success, msg = check_connection(config)
         assert success is True
         assert "0 worksheets" in msg
@@ -82,7 +83,7 @@ class TestCheckConnection:
     @patch("seqsetup.services.sample_api._api_get")
     def test_non_list_response(self, mock_get):
         mock_get.return_value = {"error": "not a list"}
-        config = SampleApiConfig(base_url="https://example.com/api", api_key="key")
+        config = SampleApiConfig(base_url="https://example.com/api")
         success, msg = check_connection(config)
         assert success is False
         assert "not a valid format" in msg
@@ -90,7 +91,7 @@ class TestCheckConnection:
     @patch("seqsetup.services.sample_api._api_get")
     def test_network_error(self, mock_get):
         mock_get.side_effect = SampleApiError("Network error: Connection refused")
-        config = SampleApiConfig(base_url="https://example.com/api", api_key="key")
+        config = SampleApiConfig(base_url="https://example.com/api")
         success, msg = check_connection(config)
         assert success is False
         assert "Connection refused" in msg
@@ -98,7 +99,7 @@ class TestCheckConnection:
     @patch("seqsetup.services.sample_api._api_get")
     def test_http_error(self, mock_get):
         mock_get.side_effect = SampleApiError("API error: 401 Unauthorized")
-        config = SampleApiConfig(base_url="https://example.com/api", api_key="bad")
+        config = SampleApiConfig(base_url="https://example.com/api")
         success, msg = check_connection(config)
         assert success is False
         assert "401" in msg
@@ -106,7 +107,7 @@ class TestCheckConnection:
     @patch("seqsetup.services.sample_api._api_get")
     def test_unexpected_error(self, mock_get):
         mock_get.side_effect = RuntimeError("something broke")
-        config = SampleApiConfig(base_url="https://example.com/api", api_key="key")
+        config = SampleApiConfig(base_url="https://example.com/api")
         success, msg = check_connection(config)
         assert success is False
         assert "something broke" in msg
@@ -121,23 +122,27 @@ class TestCheckConnection:
 
 
 class TestEffectiveApiKey:
-    """The api_key the service uses must prefer the env var over the stored
-    field so production deployments can keep the secret out of MongoDB."""
+    """The api_key the service uses comes from the env var and nowhere else,
+    so the secret never lives in the database (see
+    tests/unit/test_lims_api_key_env_only.py for the whole rule)."""
 
-    def test_env_var_overrides_stored_key(self, monkeypatch):
+    def test_the_env_var_is_the_key_even_with_one_stored(self, monkeypatch):
         monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", "env-secret")
-        config = SampleApiConfig(base_url="https://x", api_key="stored-secret")
+        config = SampleApiConfig.from_dict({"base_url": "https://x",
+                                            "api_key": "stored-secret"})
         assert config.effective_api_key() == "env-secret"
 
-    def test_falls_back_to_stored_when_env_absent(self, monkeypatch):
+    def test_no_fall_back_to_a_stored_key_when_the_env_is_absent(self, monkeypatch):
         monkeypatch.delenv("SEQSETUP_LIMS_API_KEY", raising=False)
-        config = SampleApiConfig(base_url="https://x", api_key="stored-secret")
-        assert config.effective_api_key() == "stored-secret"
+        config = SampleApiConfig.from_dict({"base_url": "https://x",
+                                            "api_key": "stored-secret"})
+        assert config.effective_api_key() == ""
 
-    def test_empty_env_value_treated_as_unset(self, monkeypatch):
+    def test_an_empty_env_value_means_no_key(self, monkeypatch):
         monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", "")
-        config = SampleApiConfig(base_url="https://x", api_key="stored-secret")
-        assert config.effective_api_key() == "stored-secret"
+        config = SampleApiConfig.from_dict({"base_url": "https://x",
+                                            "api_key": "stored-secret"})
+        assert config.effective_api_key() == ""
 
     def test_returns_empty_when_neither_set(self, monkeypatch):
         monkeypatch.delenv("SEQSETUP_LIMS_API_KEY", raising=False)
@@ -146,14 +151,13 @@ class TestEffectiveApiKey:
 
     @patch("seqsetup.services.sample_api._api_get")
     def test_request_uses_effective_key_not_raw_field(self, mock_get, monkeypatch):
-        """The HTTP request must carry the env value, not the stored placeholder."""
+        """The HTTP request must carry the env value."""
         from seqsetup.services.sample_api import fetch_worklists
 
         monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", "env-secret")
         mock_get.return_value = []
         config = SampleApiConfig(
             base_url="https://example.com/api",
-            api_key="stored-secret",
             enabled=True,
         )
         fetch_worklists(config)
@@ -247,28 +251,28 @@ class TestValidateUrl:
 
     def test_blocks_loopback_v4(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["127.0.0.1"])
         with pytest.raises(SampleApiError, match="loopback"):
             _validate_url("https://attacker.example/api")
 
     def test_blocks_loopback_v6(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["::1"])
         with pytest.raises(SampleApiError, match="loopback"):
             _validate_url("https://attacker.example/api")
 
     def test_blocks_rfc1918(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["10.0.0.5"])
         with pytest.raises(SampleApiError, match="loopback/private"):
             _validate_url("https://internal.corp/api")
 
     def test_blocks_link_local(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["169.254.169.254"])
         with pytest.raises(SampleApiError, match="loopback/private"):
             # The AWS instance metadata service IP.
@@ -276,7 +280,7 @@ class TestValidateUrl:
 
     def test_blocks_cgnat(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["100.64.0.10"])
         with pytest.raises(SampleApiError, match="loopback/private"):
             _validate_url("https://cgnat-neighbor.example/")
@@ -286,7 +290,7 @@ class TestValidateUrl:
         request — otherwise an attacker could serve a mixed answer and
         rely on the OS to pick the private one at connect time."""
         from seqsetup.services.sample_api import _validate_url, SampleApiError
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["1.2.3.4", "10.0.0.5"])
         with pytest.raises(SampleApiError, match="loopback/private"):
             _validate_url("https://mixed.example/")
@@ -294,24 +298,24 @@ class TestValidateUrl:
     def test_allows_public_ip(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url
         import ipaddress
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["8.8.8.8"])
         ips = _validate_url("https://lims.example.com/api")
         # Returns the resolved IPs so the caller can pin its connection.
         assert ipaddress.IPv4Address("8.8.8.8") in ips
 
-    def test_private_allowed_when_env_opt_in(self, monkeypatch):
+    def test_private_allowed_when_its_network_is_listed(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url
-        monkeypatch.setenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", "1")
+        monkeypatch.setenv("SEQSETUP_LIMS_ALLOWED_NETS", "127.0.0.1/32")
         self._stub_resolve(monkeypatch, ["127.0.0.1"])
-        # No exception; private IP is permitted with explicit opt-in.
+        # No exception; the address is inside a listed network.
         ips = _validate_url("https://mock-lims.local/")
         assert len(ips) == 1
 
     def test_rejects_unresolvable_hostname(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
         from seqsetup.services import sample_api as mod
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
 
         def raise_oserror(*args, **kwargs):
             raise OSError("Name or service not known")
@@ -323,7 +327,7 @@ class TestValidateUrl:
     def test_rejects_http_without_opt_in(self, monkeypatch):
         from seqsetup.services.sample_api import _validate_url, SampleApiError
         monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_HTTP", raising=False)
-        monkeypatch.delenv("SEQSETUP_LIMS_ALLOW_PRIVATE_NETS", raising=False)
+        monkeypatch.delenv("SEQSETUP_LIMS_ALLOWED_NETS", raising=False)
         self._stub_resolve(monkeypatch, ["8.8.8.8"])
         with pytest.raises(SampleApiError, match="HTTP"):
             _validate_url("http://lims.example.com/api")

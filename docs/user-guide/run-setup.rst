@@ -127,3 +127,17 @@ Opening an existing run's setup again shows **Run Setup** instead of
 **New Run Configuration**, with **Back to Run** in place of **Continue to
 Run**, and no template chooser -- but only while it is still a Draft. A
 Ready or Archived run's setup cannot be changed.
+
+.. warning::
+   This page carries the version of the run it showed. If the run changed
+   in another window or on another computer since this page was opened,
+   every save it makes -- **Continue to Run** / **Back to Run**, which saves
+   the whole form, and the instrument, i5 workflow, flow cell, reagent kit
+   and cycle saves -- is refused with *"This run was changed in another
+   window. Reload to see the latest version; nothing was saved."* and
+   nothing is written -- otherwise this page's older values would silently
+   replace the other window's, and with the cycles every sample's Override
+   Cycles. Reload the
+   page to see where the run stands, then make your change again. Each save
+   this page makes itself keeps its version current, so your own edits never
+   cause this.

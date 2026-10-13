@@ -18,6 +18,7 @@
 #}
 <select name="flowcell_type" id="flowcell-select"
         hx-post="/runs/{{ run_id }}/flowcell"
+        hx-include="#run-version"
         hx-target="#reagent-kit-select"
         hx-swap="outerHTML">
     {% for fc, info in flowcells.items() %}

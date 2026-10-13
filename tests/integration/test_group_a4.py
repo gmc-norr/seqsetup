@@ -219,9 +219,12 @@ class TestTheSyncRefusesATestVersionInTwoFiles:
             "Wgs_new.yaml": _test_yaml("1.3.0"), "Rna.yaml": _test_yaml("1.2.0", "RNA"),
         })
         assert ok is False
-        assert message == (REFUSED + "WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. "
-                           "Synced 1 application profiles.")
-        assert ("Test profiles refused: WGS 1.2.0 is in Wgs_a.yaml and Wgs_b.yaml. "
+        # Each file is named by its path in the repository (batch 4, item
+        # 12); tests/integration/test_repeated_test_file_paths.py.
+        assert message == (REFUSED + f"WGS 1.2.0 is in {FOLDER}/Wgs_a.yaml and "
+                           f"{FOLDER}/Wgs_b.yaml. Synced 1 application profiles.")
+        assert (f"Test profiles refused: WGS 1.2.0 is in {FOLDER}/Wgs_a.yaml and "
+                f"{FOLDER}/Wgs_b.yaml. "
                 "A test and version may be in one file only.") in logged
 
     def test_three_files_are_named(self, fresh_app, monkeypatch):
@@ -231,10 +234,10 @@ class TestTheSyncRefusesATestVersionInTwoFiles:
             "B.yaml": _test_yaml("2.0.0"), "Rna.yaml": _test_yaml("1.0.0", "RNA"),
         })
         assert ok is False
-        assert message == (REFUSED + "WGS 2.0.0 is in A.yaml, B.yaml and C.yaml. "
-                           "Synced 1 application profiles.")
-        assert ("Test profiles refused: WGS 2.0.0 is in A.yaml, B.yaml and C.yaml. "
-                "A test and version may be in one file only.") in logged
+        assert message == (REFUSED + f"WGS 2.0.0 is in {FOLDER}/A.yaml, {FOLDER}/B.yaml and "
+                           f"{FOLDER}/C.yaml. Synced 1 application profiles.")
+        assert (f"Test profiles refused: WGS 2.0.0 is in {FOLDER}/A.yaml, {FOLDER}/B.yaml and "
+                f"{FOLDER}/C.yaml. A test and version may be in one file only.") in logged
 
     def test_the_same_version_of_two_tests_is_not_a_repeat(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -267,8 +270,8 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         # The newest file repeated: without the rule, 1 would give 1.1.0.
         _app, ctx, _db = fresh_app
         message, _logged = self._sync_again(ctx, monkeypatch, {"Wgs_1.3.yaml": _test_yaml("1.2.0")})
-        assert message == (REFUSED + "WGS 1.2.0 is in Wgs_1.2.yaml and Wgs_1.3.yaml. "
-                           "Synced 1 application profiles.")
+        assert message == (REFUSED + f"WGS 1.2.0 is in {FOLDER}/Wgs_1.2.yaml and "
+                           f"{FOLDER}/Wgs_1.3.yaml. Synced 1 application profiles.")
 
     def test_a_version_that_is_not_three_numbers(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -360,10 +363,15 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         assert ok, message
         ok, message, _logged = _sync_tests(ctx, monkeypatch, {"Wgs_1.3.yaml": _test_yaml("1.3")})
         assert ok is False
+        # This sync read no test profile at all, so all three stored versions
+        # are kept without being read and the message names them (batch 4,
+        # item 11); tests/integration/test_refused_sync_keeps_versions.py.
         assert message == (
             REFUSED + f"{FOLDER}/Wgs_1.3.yaml: Profile validation failed for 'Wgs_1.3.yaml': "
             "Field 'Version' must be three whole numbers joined by dots, each at most 9 digits, "
-            "like 1.0.0: '1.3'. Synced 1 application profiles.")
+            "like 1.0.0: '1.3'. Kept test profiles this sync did not read: RNA 1.0.0, WGS 1.1.0, "
+            "WGS 1.2.0 -- each is in a refused file or no longer in the repository. "
+            "Synced 1 application profiles.")
         assert _stored(ctx) == STORED_BEFORE
 
     def test_a_sync_with_no_refused_file_replaces_them(self, fresh_app, monkeypatch):

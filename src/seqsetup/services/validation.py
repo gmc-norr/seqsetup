@@ -1125,11 +1125,18 @@ class ValidationService:
             if len(indexed) < 2:
                 continue
 
-            # Find minimum i7 distance in this lane
+            # Find minimum i7 distance in this lane, over single-index pairs
+            # only: a pair where both samples have an i5 collides only when
+            # both indexes are close, which the collision check decides (the
+            # user's decision, 2026-10-13) -- samples that share an i7 on
+            # purpose, as on a combinatorial plate, are fine.
             min_i7_dist = None
             for i in range(len(indexed)):
                 for j in range(i + 1, len(indexed)):
                     s1, s2 = indexed[i], indexed[j]
+                    if (effective_index_sequence(s1, 2, run)
+                            and effective_index_sequence(s2, 2, run)):
+                        continue
                     if s1.index1_sequence and s2.index1_sequence:
                         # Distance over the cycles actually read, not the
                         # full stored sequence (see _check_sample_pair_collision).

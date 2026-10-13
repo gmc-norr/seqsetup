@@ -322,25 +322,19 @@ recalculates.
 A handler that saves a whole panel at once is all or nothing: it names
 every field it is missing and saves none of them, so a half-finished
 submission never leaves the run in a state nobody asked for.
-``POST /runs/{id}/setup`` (name, description and the four cycle counts) and
-``POST /runs/{id}/bclconvert`` (both barcode-mismatch counts and
-``no_lane_splitting``) both work this way:
+``POST /runs/{id}/setup`` (name, description and the four cycle counts)
+works this way:
 
 .. code-block:: python
 
-   missing = [key for key in ("barcode_mismatches_index1",
-                              "barcode_mismatches_index2",
-                              "no_lane_splitting") if key not in form]
+   missing = [key for key in ("run_name", "run_description") if key not in form]
    if missing:
-       return Response(
-           f"Missing BCL Convert setting(s): {', '.join(missing)}. Nothing was saved.",
-           status_code=400,
-       )
+       return Response(f"Missing field(s): {', '.join(missing)}", status_code=400)
 
 A checkbox needs this treatment most: HTML omits an unchecked box, so an
-absent ``no_lane_splitting`` cannot be told apart from one the user
-switched off. A form that wants it off sends the value explicitly, the way
-the bulk panels' hidden inputs already do.
+absent checkbox cannot be told apart from one the user switched off. A
+form that wants it off sends the value explicitly, the way the bulk
+panels' hidden inputs already do.
 
 Adding a New Template
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -671,7 +665,9 @@ minimal:
   open/closed); the server stays the source of truth for domain data
 - Document functions with comments
 - HTMX and Alpine are vendored in ``static/js/vendor/``, not installed via
-  a package manager
+  a package manager. Everything in that folder is served to the browser;
+  axe-core, which only the accessibility tests inject, is vendored in
+  ``tests/browser/vendor/`` instead
 
 Updating Libraries
 ~~~~~~~~~~~~~~~~~~

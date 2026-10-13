@@ -49,6 +49,7 @@ from ...services.audit_log import audit
 from ...services.ldap import LDAPError, LDAPService, SignInRefused
 from ...templating import render
 from ..dependencies import get_ctx, require_admin_dep
+from ..auth import _audit_actor
 from ..utils import get_username
 
 
@@ -276,7 +277,9 @@ def test_ldap_auth(
             actor=get_username(request),
             outcome="denied",
             ip=ip,
-            target_user=actor_user,
+            # Only a name SeqSetup knows is kept as typed, as on a refused
+            # sign-in (the night run's Q4, answered 2026-10-13).
+            target_user=_audit_actor(actor_user),
             retry_after=retry,
         )
         return _test_result(request, False, f"Too many test attempts. Retry after {retry}s.")

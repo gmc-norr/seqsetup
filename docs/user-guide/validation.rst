@@ -61,10 +61,22 @@ Errors and warnings
 --------------------
 
 The validation page's **Issues** tab lists every error first, then every
-warning. Two samples in the same lane with the same (or too similar) an
-index are reported here as a collision; a sample with no test assigned is
-reported as a missing-test error, and one with a test but no version as a
+warning. Two samples in the same lane whose indexes are too similar are
+reported here as a collision; a sample with no test assigned is reported
+as a missing-test error, and one with a test but no version as a
 missing-version error; and so on.
+
+Two dual-index samples collide only when **both** their i7s and their i5s
+are too similar: each index within twice the barcode mismatch number the
+Sample Sheet gives it (with the default of 1, two bases apart or fewer).
+Only then can one read fit both samples. Samples that share an i7 but
+whose i5s are far enough apart -- as on a combinatorial plate -- do not
+collide, and the other way round. A pair where a sample has no i5 is
+checked on the i7 alone. The Issues tab shows both distances. This is the
+rule of DRAGEN's built-in BCL conversion, which by default stops only
+when both indexes collide; standalone ``bcl-convert`` 3.10.5 and later is
+stricter -- it stops when either index is too similar -- so convert these
+runs with DRAGEN.
 
 .. figure:: /_static/screenshots/check/validation-issues.png
    :alt: The validation page's Issues tab, listing index collision and other errors in red.
@@ -166,7 +178,9 @@ The **Heatmaps** tab shows, for each lane, the pairwise Hamming distance
 between every pair of samples' indexes -- lower numbers (closer to red)
 mean a higher risk that a sequencing error could make one sample's index
 misread as another's. Separate views are available for i7 only, i5 only,
-and the two combined.
+and the two combined. The combined view adds the two distances; whether a
+pair collides depends on each index on its own (see `Errors and
+warnings`_).
 
 .. figure:: /_static/screenshots/check/heatmaps.png
    :alt: The Heatmaps tab, with the i7/i5/combined selector and the colour legend around a 5-sample lane table, outlined, whose cells run from dark red for the closest pair to near-white for the farthest; each sample's row against itself is a plain dash, not colour-coded.

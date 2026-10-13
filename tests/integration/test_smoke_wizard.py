@@ -9,6 +9,8 @@ Covers the core HTMX flows that build up a run from blank to ready:
 
 import pytest
 
+from .conftest import run_version
+
 
 def _origin() -> dict:
     """Same-origin POST header for the CSRF middleware."""
@@ -85,7 +87,7 @@ class TestRunEditing:
 
         response = logged_in_client.post(
             f"/runs/{run_id}/instrument",
-            data={"instrument_platform": "MiSeq i100 Series"},
+            data={**{"instrument_platform": "MiSeq i100 Series"}, "run_version": run_version(ctx, run_id)},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -515,7 +517,7 @@ class TestBulkHandlersReachRoutes:
         # lanes=[1], so setting to [1, 2] verifies the bulk handler ran.
         logged_in_client.post(
             f"/runs/{run_id}/flowcell",
-            data={"flowcell_type": "25B"},
+            data={**{"flowcell_type": "25B"}, "run_version": run_version(ctx, run_id)},
             headers=_origin(),
         )
         import json

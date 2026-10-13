@@ -48,6 +48,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the SampleSheet.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 **Response headers**::
@@ -89,6 +91,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the SampleSheet.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 Export JSON Metadata
@@ -108,6 +112,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the JSON export.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 **Response headers**::
@@ -160,7 +166,9 @@ Status Meaning
            "sequence": "GGAACTTG",
            "length": 8
          },
+         "samplesheet_index2": "GGAACTTG",
          "override_cycles": "Y151;I8N2;I8N2;Y151",
+         "samplesheet_override_cycles": "Y151;I8N2;N2I8;Y151",
          "analyses": [],
          "description": "",
          "metadata": {}
@@ -173,6 +181,57 @@ Status Meaning
 own stored value (typed by hand or not), otherwise the calculated one -- or
 ``null`` when the samples' values differ. Each sample's own
 ``override_cycles`` is always given.
+
+As typed, and as in the sheet
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two of a sample's values are given twice, because the Sample Sheet does not
+always write them the way they were typed. Which instrument the run is on,
+and which of its i5 workflows, decides that (see :doc:`/admin-guide/instruments`).
+
+**As typed** -- the index as the kit lists it, and the Override Cycles in
+reading order (the index first):
+
+- ``index1.sequence`` and ``index2.sequence``
+- ``override_cycles``, and the run-level ``global_override_cycles``
+
+**As in the Sample Sheet v2** -- exactly the characters that run's sheet
+puts in the cell, taken from the same code that writes the sheet:
+
+- ``samplesheet_index2`` -- the sheet's ``Index2`` cell. It is the reverse
+  complement of ``index2.sequence`` for a run whose workflow reads the i5
+  reversed and whose RunInfo.xml does not mark that; the same sequence
+  otherwise.
+- ``samplesheet_override_cycles`` -- the sheet's ``OverrideCycles`` cell.
+  Its Index 2 part is reversed (``I8N2`` becomes ``N2I8``) for a run whose
+  workflow reads the i5 reversed and whose RunInfo.xml *does* mark that; the
+  same string otherwise.
+
+A run is in at most one of those two states, so at most one of the two pairs
+differs. ``samplesheet_index2`` is ``null`` for a sample with no i5;
+``samplesheet_override_cycles`` is ``null`` for a sample with neither a typed
+Override Cycles nor an index to calculate one from. Both are ``null`` when
+SeqSetup can no longer say what the sheet would write -- a run whose
+instrument has no settings any more, for which no Sample Sheet can be
+written either.
+
+Neither key depends on which columns the run's ``BCLConvert`` profile
+writes. A profile without an ``OverrideCycles`` column gives a sheet with no
+such cell, and ``samplesheet_override_cycles`` is stated all the same: such
+a sheet is refused unless the sample's Override Cycles are the run's full
+reads (see :doc:`/admin-guide/profiles`), so the key still holds what BCL
+Convert reads for that sample. A sample with an i5 and a profile without an
+``Index2`` column is refused outright.
+
+A run marked Ready before these two keys existed keeps the export stored
+for it, which has neither key. The API serves that stored export and
+nothing else, and the download route falls back to generating one live only
+for a run that has none stored at all. Archiving keeps the stored export
+and Archived is terminal, so that shape stays for good; returning the run
+to Draft discards the stored export, and marking the run Ready again writes
+a new one with both keys. A consumer should therefore test that
+``samplesheet_index2`` is present rather than read a missing key as "this
+sample has no i5".
 
 The JSON export includes information not representable in the SampleSheet
 v2 format, such as sample names, projects, descriptions, and free-form
@@ -199,6 +258,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the validation report.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 Export Validation Report (PDF)
@@ -218,6 +279,8 @@ Status Meaning
        archived runs).
 404    Run not found.
 500    Error generating the validation PDF.
+503    The synced instrument settings cannot be used; the
+       message names the config sync to run.
 ====== ============================================================
 
 Differences Between Formats

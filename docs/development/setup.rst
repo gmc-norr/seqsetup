@@ -35,11 +35,20 @@ Runtime dependencies are defined in ``pixi.toml``:
 - **packaging** -- Version parsing (PEP 440)
 - **python-multipart** -- File upload handling
 
-Development dependencies:
+Development dependencies live in the ``dev`` feature and environment, not in
+the default one the Dockerfile installs (``pixi install --locked --environment
+default``), so none of them is in the image that runs in the lab:
 
 - **pytest** -- Test framework
+- **pytest-playwright** -- Browser tests
+- **mongomock** -- In-memory MongoDB for tests
+- **httpx2** -- The test client Starlette's ``TestClient`` uses
 - **sphinx** -- Documentation generator
 - **furo** -- Documentation theme
+
+``pixi install`` installs the default environment alone; ``pixi install --all``
+adds the ``dev`` one, and a task that needs it (``pixi run test``,
+``pixi run docs``, ``pixi run smoke-browser``) installs it on its own.
 
 Running Tests
 -------------

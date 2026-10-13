@@ -29,7 +29,7 @@ from starlette.staticfiles import StaticFiles
 from .api.app import NO_TELEMETRY, create_api_app
 from .body_limit import BodyLimitMiddleware
 from .csrf import OriginCheckMiddleware
-from .data.instruments import set_instrument_definition_repo
+from .data.instruments import log_instruments_file, set_instrument_definition_repo
 from .exception_handlers import install as install_exception_handlers
 from .middleware import AuthMiddleware
 from .routes import api_tokens, auth, dashboard, export, indexes, local_users, main, profiles, run_templates, runs, samples, served_runs, validation, wizard
@@ -44,8 +44,9 @@ from .routes.admin import (
 )
 from .security_headers import SecurityHeadersMiddleware, https_only_from_env, server_error_handler
 from .services.log_capture import setup_log_capture
+from .services.sample_api import check_lims_allowed_nets
 from .services import web_sessions
-from .services.audit_log import set_audit_sink
+from .services.audit_log import set_actor_fingerprint_secret, set_audit_sink
 from .startup import (
     get_app_context,
     get_audit_event_repo,
@@ -70,8 +71,19 @@ check_display_zone()
 # not know stops the start here, before anything connects (security_headers.py).
 _SESS_HTTPS_ONLY = https_only_from_env()
 
+# A SEQSETUP_LIMS_ALLOWED_NETS that is not CIDR, or that reaches into a network
+# no LIMS may be called on, stops the start; so does the removed
+# SEQSETUP_LIMS_ALLOW_PRIVATE_NETS (services/sample_api.py).
+check_lims_allowed_nets()
+
 # Resolve session secret
 _SESSION_SECRET = resolve_session_secret()
+
+# A refused sign-in whose typed name SeqSetup cannot place is recorded as a
+# marker plus a keyed fingerprint of what was typed; the key comes from the
+# session secret, so it is stable for this deployment and useless elsewhere
+# (services/audit_log.py).
+set_actor_fingerprint_secret(_SESSION_SECRET)
 
 # Initialize repositories
 init_repos()
@@ -156,6 +168,7 @@ set_audit_sink(get_audit_event_repo())  # Keep every audit event; before the sch
 auth_service = init_auth_service()
 init_scheduler()
 setup_log_capture(["seqsetup"])
+log_instruments_file()  # after log capture, so Admin → Logs shows it too
 warn_removed_sign_in_settings()  # after log capture, so Admin → Logs shows it too
 
 # Create shared AppContext for all routes

@@ -4,8 +4,14 @@ GET  /admin/sample-api          — full page
 POST /admin/settings/sample-api — save config; HTMX fragment swap
                                    into #sample-api-config-form
 
+The page has no api-key box: the key comes only from the server's
+SEQSETUP_LIMS_API_KEY (models/sample_api_config.py). A key an older version
+stored in the settings document is named on the page and removed by the next
+save, because ``SampleApiConfig.to_dict`` no longer writes one and the
+repository replaces the whole document.
+
 Save flow:
-  1. Pydantic clamps every text field; api_key empty → keep existing.
+  1. Pydantic clamps every text field.
   2. If enabled + base_url present, ping check_connection().
   3. On connection failure, force enabled=False, save, audit
      outcome="failure" + reason="connection_failed", and re-render
@@ -42,15 +48,13 @@ router = APIRouter(
 class SampleApiForm(BaseModel):
     """LIMS sample-API configuration form.
 
-    All text fields CLAMP (strip + truncate). The api_key behaves like
-    a "leave blank to keep existing" field — empty string is preserved
-    and the handler swaps in the existing stored key.
+    All text fields CLAMP (strip + truncate). There is no api-key field:
+    the page cannot set one, so nothing it posts can reach the database.
 
     enabled is a checkbox; absent = unchecked = False. Pydantic lax
     coercion handles the "on" string browsers send when checked.
     """
     base_url: Annotated[str, BeforeValidator(strip_and_truncate(1024))] = ""
-    api_key: Annotated[str, BeforeValidator(strip_and_truncate(512))] = ""
     enabled: bool = False
     field_worksheet_id: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
     field_investigator: Annotated[str, BeforeValidator(strip_and_truncate(256))] = ""
@@ -96,10 +100,8 @@ def update_sample_api_config(
     if ctx.sample_api_config_repo is None:
         return Response("LIMS sample-API repo not configured", status_code=404)
 
-    existing = ctx.sample_api_config_repo.get()
     config = SampleApiConfig(
         base_url=form.base_url,
-        api_key=form.api_key if form.api_key else existing.api_key,
         enabled=form.enabled,
         field_mappings=form.field_mappings(),
     )

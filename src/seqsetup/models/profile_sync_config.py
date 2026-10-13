@@ -33,6 +33,12 @@ class ProfileSyncConfig:
     last_sync_message: str = ""
     last_sync_count: int = 0  # Number of profiles synced
 
+    # The repository and branch the last sync actually read, so the status
+    # above is never shown under a repository it did not come from. Empty
+    # means a status stored before SeqSetup remembered this.
+    last_sync_repo_url: str = ""
+    last_sync_branch: str = ""
+
     # Instrument sync status (tracked separately)
     last_instruments_sync_count: int = 0
 
@@ -56,6 +62,8 @@ class ProfileSyncConfig:
             "last_sync_status": self.last_sync_status,
             "last_sync_message": self.last_sync_message,
             "last_sync_count": self.last_sync_count,
+            "last_sync_repo_url": self.last_sync_repo_url,
+            "last_sync_branch": self.last_sync_branch,
             "last_instruments_sync_count": self.last_instruments_sync_count,
             "last_index_kits_sync_count": self.last_index_kits_sync_count,
         }
@@ -82,6 +90,8 @@ class ProfileSyncConfig:
             last_sync_status=data.get("last_sync_status", ""),
             last_sync_message=data.get("last_sync_message", ""),
             last_sync_count=data.get("last_sync_count", 0),
+            last_sync_repo_url=data.get("last_sync_repo_url", ""),
+            last_sync_branch=data.get("last_sync_branch", ""),
             last_instruments_sync_count=data.get("last_instruments_sync_count", 0),
             last_index_kits_sync_count=data.get("last_index_kits_sync_count", 0),
         )

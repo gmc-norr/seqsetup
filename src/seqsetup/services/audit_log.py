@@ -18,11 +18,13 @@ Event naming convention: ``"<area>.<verb>"`` — e.g., ``"login.success"``,
 ``"login.failure"``, ``"run.status.changed"``, ``"validation.approved"``.
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urlsplit
 
 import pymongo
@@ -44,6 +46,52 @@ AUDIT_WRITE_TIMEOUT_S = 2.0
 # Where audit() also stores each event (an AuditEventRepository). Set at
 # startup by set_audit_sink; None means events are only logged.
 _audit_sink = None
+
+
+# What goes in ``actor`` when a refused sign-in's typed name is not a name
+# SeqSetup knows -- the typed text itself is never stored, because a password
+# typed into the name box would be kept for good and shown on Admin > Audit.
+UNKNOWN_ACTOR = "(unknown name)"
+# Domain separation: the fingerprint key is derived from the session secret,
+# never the secret itself, so a fingerprint tells nothing about cookies.
+_FINGERPRINT_CONTEXT = b"seqsetup audit actor fingerprint v1"
+# Enough hex to group repeats of one typed name; far too few to confirm a
+# guess even for someone who later learns the key.
+_FINGERPRINT_HEX_CHARS = 8
+# Set once at start-up from the session secret (app.py). Never logged, never
+# put in an event, never handed back out.
+_fingerprint_key: Optional[bytes] = None
+
+
+def set_actor_fingerprint_secret(secret: str) -> None:
+    """Derive the key ``unknown_actor`` fingerprints with. Empty clears it."""
+    global _fingerprint_key
+    _fingerprint_key = hmac.new(
+        secret.encode("utf-8"), _FINGERPRINT_CONTEXT, hashlib.sha256
+    ).digest() if secret else None
+
+
+def unknown_actor(typed: str) -> str:
+    """``actor`` for a refused sign-in whose typed name SeqSetup cannot place.
+
+    A fixed marker and a few hex characters of an HMAC of what was typed,
+    under the key derived from the session secret. Keyed, not a bare hash:
+    a bare hash of a short name, or of a password from a published list, is
+    matched by hashing candidates, which would turn the audit trail into a
+    cracking target. The same typed text gives the same fingerprint for as
+    long as the deployment keeps its session secret, so repeated attempts
+    group together; another deployment's trail cannot be compared with this
+    one's.
+
+    Without a key -- a process that never called
+    ``set_actor_fingerprint_secret`` -- only the marker is stored: an
+    unkeyed value is exactly what must not be written.
+    """
+    key = _fingerprint_key
+    if key is None:
+        return UNKNOWN_ACTOR
+    digest = hmac.new(key, typed.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{UNKNOWN_ACTOR} {digest[:_FINGERPRINT_HEX_CHARS]}"
 
 
 def set_audit_sink(sink) -> None:

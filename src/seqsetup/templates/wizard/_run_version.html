@@ -1,0 +1,18 @@
+{#
+   The version of the run the setup page shows: its updated_at. The page's
+   saves send it back, and every setup save (POST /runs/{id}/setup, which
+   writes the whole form, and the instrument, i5 workflow, flow cell,
+   reagent kit and cycles saves) refuses a version that is no longer the
+   stored one, so a tab left open cannot write its old values over what
+   another window changed (every sample's OverrideCycles goes with the
+   cycles).
+
+   Each of the page's own saves answers with the version it just wrote, out
+   of band, so only another window's change leaves this stale.
+
+   Inputs:
+     run: SequencingRun
+     oob: bool — swap this input in out of band
+#}
+<input type="hidden" id="run-version" name="run_version"
+       value="{{ run.updated_at.isoformat() }}"{% if oob %} hx-swap-oob="true"{% endif %}>

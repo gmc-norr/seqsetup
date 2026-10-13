@@ -1,9 +1,10 @@
 """Accessibility gate — WCAG 2.1 AA certification.
 
-axe.min.js is vendored at src/seqsetup/static/js/vendor/axe.min.js and injected
-via ``page.evaluate()`` which runs through CDP and is NOT subject to page CSP.
-The app's CSP is ``script-src 'self' 'unsafe-eval'`` so a CDN <script> would be
-blocked, but CDP-side evaluation is exempt.
+axe.min.js is vendored at tests/browser/vendor/axe.min.js -- outside the folder
+the app serves, since no page loads it -- and injected via ``page.evaluate()``
+which runs through CDP and is NOT subject to page CSP. The app's CSP is
+``script-src 'self' 'unsafe-eval'`` so a CDN <script> would be blocked, but
+CDP-side evaluation is exempt.
 
 Phase 4.2 gate (Task 4.2):
   - Zero serious/critical axe violations on dashboard, run-editor, and validation.
@@ -16,7 +17,7 @@ import math
 import pytest
 from pathlib import Path
 
-AXE = (Path(__file__).parents[2] / "src/seqsetup/static/js/vendor/axe.min.js").read_text()
+AXE = (Path(__file__).parent / "vendor" / "axe.min.js").read_text()
 
 
 # ---------------------------------------------------------------------------

@@ -2,13 +2,24 @@ Instrument Configuration
 ========================
 
 SeqSetup ships a built-in list of Illumina instruments and their flowcells in
-``config/instruments.yaml`` -- read once at startup, and requiring a restart
-(or the ``INSTRUMENTS_CONFIG`` environment variable, to point at a different
-file) to change. This shipped list cannot be edited or individually disabled
-from the UI.
+``config/instruments.yaml`` -- read once at startup, so changing it needs a
+restart. This shipped list cannot be edited or individually disabled from the
+UI.
 
-SeqSetup checks this file at every start, the same way a config sync checks
-synced instruments. If an instrument in it has a mistake -- say
+To use your own file instead, set the ``INSTRUMENTS_CONFIG`` environment
+variable to its path. When that variable is set to anything, it decides which
+file is read: the shipped file is not read at all, and not used as a
+fallback. If it names a path that is not a file, SeqSetup does not start, and
+the error names the path: *"INSTRUMENTS_CONFIG names /srv/seqsetup/ours.yaml,
+which is not a file, so SeqSetup will not start. Point it at the instruments
+file, or leave it unset to use the file SeqSetup ships."* -- reading the
+shipped file in its place would use i5 facts nobody chose, and those decide
+the i5 direction in every Sample Sheet. With the variable unset (or set to
+nothing), the shipped file is read, as before. Either way the log line
+*"Reading instruments from <path>"* at the start says which file it was.
+
+SeqSetup checks the file it reads at every start, the same way a config sync
+checks synced instruments. If an instrument in it has a mistake -- say
 ``i5_read_orientation: forwards`` in one of its ``i5_workflows`` -- or the
 file cannot be read, SeqSetup does not start, and the error names the file,
 each instrument and each problem: *"instruments.yaml has errors, so

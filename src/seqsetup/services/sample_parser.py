@@ -4,8 +4,14 @@ import csv
 import io
 import re
 from dataclasses import dataclass
+from typing import Optional
 
-from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE
+from ..models.sample import (
+    TEST_VERSION_RE,
+    TEST_VERSION_RULE,
+    ZERO_SAMPLE_ID_RULE,
+    is_zero_only,
+)
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
 # DNA sequence validation pattern (compiled once at module level).
@@ -35,10 +41,17 @@ class ParsedSample:
 
 
 # Common header names (case-insensitive)
-SAMPLE_HEADERS = {
-    "sample_id", "sampleid", "sample", "sample id",
-    "sample-id", "id", "name", "sample_name", "samplename",
-}
+# A paste may carry more than one sample-ID-ish column. They are ranked, not
+# taken by position: a column that names the sample ID itself wins over
+# "sample"/"id", which win over "name"/"sample_name" — the order the LIMS
+# importer already reads the same aliases in (services/sample_api.py). Two
+# columns of the same rank: the leftmost wins, as before.
+_SAMPLE_HEADER_RANKS = (
+    {"sample_id", "sampleid", "sample id", "sample-id"},
+    {"sample", "id"},
+    {"name", "sample_name", "samplename"},
+)
+SAMPLE_HEADERS = {name for rank in _SAMPLE_HEADER_RANKS for name in rank}
 TEST_HEADERS = {
     "test_id", "testid", "test", "test id", "test-id",
     "test_type", "testtype", "test type", "assay", "application",
@@ -119,6 +132,21 @@ def _describe_columns(
     return used, unused
 
 
+def _sample_id_column(header_parts: list[str]) -> Optional[int]:
+    """Which column holds the sample ID: the best-ranked sample header, and
+    among equals the leftmost. A paste headed Sample_Name, Sample_ID stored
+    the name as the sample ID and dropped the lab's own ID."""
+    best: Optional[tuple[int, int]] = None
+    for i, col in enumerate(header_parts):
+        col_lower = col.lower().strip()
+        for rank, names in enumerate(_SAMPLE_HEADER_RANKS):
+            if col_lower in names:
+                if best is None or rank < best[0]:
+                    best = (rank, i)
+                break
+    return None if best is None else best[1]
+
+
 def _detect_column_mapping(header_parts: list[str]) -> dict[str, int]:
     """
     Detect which columns contain which fields based on header row.
@@ -130,10 +158,13 @@ def _detect_column_mapping(header_parts: list[str]) -> dict[str, int]:
         Dictionary mapping field names to column indices
     """
     mapping = {}
+    sample_id_column = _sample_id_column(header_parts)
+    if sample_id_column is not None:
+        mapping["sample_id"] = sample_id_column
     for i, col in enumerate(header_parts):
         col_lower = col.lower().strip()
-        if col_lower in SAMPLE_HEADERS and "sample_id" not in mapping:
-            mapping["sample_id"] = i
+        if col_lower in SAMPLE_HEADERS:
+            continue
         elif col_lower in TEST_HEADERS and "test_id" not in mapping:
             mapping["test_id"] = i
         elif col_lower in TEST_VERSION_HEADERS and "test_version" not in mapping:
@@ -290,6 +321,7 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     # smell — a 96-sample worklist missing one row would silently produce a
     # 95-sample run with no indication anything was lost.
     rows_missing_sample_id: list[int] = []
+    rows_zero_sample_id: list[int] = []
     rows_bad_version: list[int] = []
 
     for i, (source_line, parts) in enumerate(rows):
@@ -346,6 +378,12 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             rows_missing_sample_id.append(source_line)
             continue
 
+        if is_zero_only(sample_id):
+            # The model refuses it, so the whole paste is refused here —
+            # naming its rows, like a row with no sample ID at all.
+            rows_zero_sample_id.append(source_line)
+            continue
+
         # A version is at most 29 characters, so a cell cut to _MAX_CELL_LEN
         # is still refused: no cut makes a version good (spec 2026-10-07
         # group A4, §2).
@@ -400,6 +438,12 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
         raise ValueError(
             f"Row(s) {rows_str}: sample_id is required. "
             f"Either supply a sample_id or remove the row entirely."
+        )
+    if rows_zero_sample_id:
+        rows_str = ", ".join(str(n) for n in rows_zero_sample_id)
+        raise ValueError(
+            f"Row(s) {rows_str}: {ZERO_SAMPLE_ID_RULE}. "
+            f"Give the sample its real ID or remove the row entirely."
         )
     if rows_bad_version:
         rows_str = ", ".join(str(n) for n in rows_bad_version)

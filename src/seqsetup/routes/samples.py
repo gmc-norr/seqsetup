@@ -15,7 +15,14 @@ from starlette.responses import HTMLResponse, Response
 from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
-from ..models.sample import TEST_VERSION_RE, TEST_VERSION_RULE, Sample, shown_value
+from ..models.sample import (
+    TEST_VERSION_RE,
+    TEST_VERSION_RULE,
+    ZERO_SAMPLE_ID_RULE,
+    Sample,
+    is_zero_only,
+    shown_value,
+)
 from ..models import sequencing_run as sequencing_run_module
 from ..models.sequencing_run import RunCycles, SequencingRun
 from ..services.audit_log import audit
@@ -269,16 +276,31 @@ def _kit_swap_refusal(planned, run_cycles) -> Optional[Response]:
         if kept is not None and own != new:
             shown = (_plain_pattern(kit.default_read1_override) or "plain",
                      _plain_pattern(kit.default_read2_override) or "plain")
-            clashes.setdefault(kit.name, (shown, []))[1].append(sample.sample_id)
+            # By kit_id, not by name: two versions of one kit name read Read
+            # 1 and Read 2 their own way, and grouping by name put every
+            # version's samples under the first version's patterns (batch 4,
+            # item Q14). Each kit is shown as "name version".
+            clashes.setdefault(
+                kit.kit_id, (f"{kit.name} {kit.version}", shown, [])
+            )[2].append(sample.sample_id)
     if not clashes:
         return None
-    name, ((r1, r2), ids) = next(iter(clashes.items()))
     # What to do comes before the IDs: the page's error banner shows the
     # first 300 characters.
+    if len(clashes) == 1:
+        ((name, (r1, r2), ids),) = clashes.values()
+        return Response(
+            f"These samples keep an index from a kit that reads Read 1 and Read 2 differently "
+            f"from {name} (Read 1 {r1}, Read 2 {r2}). Assign both indexes from one kit, or clear "
+            f"these samples' indexes first: {name_list(ids)}.",
+            status_code=400,
+        )
+    groups = "; ".join(f"{name} (Read 1 {r1}, Read 2 {r2}): {name_list(ids)}"
+                       for name, (r1, r2), ids in clashes.values())
     return Response(
         f"These samples keep an index from a kit that reads Read 1 and Read 2 differently "
-        f"from {name} (Read 1 {r1}, Read 2 {r2}). Assign both indexes from one kit, or clear "
-        f"these samples' indexes first: {name_list(ids)}.",
+        f"from the kit being assigned. Assign both indexes from one kit, or clear these "
+        f"samples' indexes first: {groups}.",
         status_code=400,
     )
 
@@ -323,7 +345,10 @@ _MAX_PASTE_CHARS = 10 * 1024 * 1024
 # Starlette bounds each form field at 1 MB unless a route asks for more. The
 # preview's Add form sends back the text preview read, which may come from a
 # file of up to 10 MB, and a browser sends each line end of a textarea as CR LF:
-# up to twice the bytes. Preview keeps the 1 MB, as for every other form.
+# up to twice the bytes. The paste box on the page keeps the 1 MB, as for every
+# other form; the box the preview refills ("Edit paste") gets the file
+# branch's 10 MB, or a file over 1 MB could be previewed once and never edited
+# (batch 4, item 4f(iii)).
 _STARLETTE_FIELD_BYTES = 1024 * 1024
 _MAX_ADD_FIELD_BYTES = 2 * _MAX_PASTE_CHARS
 # Caps on the whole request (app.py, body_limit.py): the biggest field plus
@@ -445,6 +470,33 @@ def _parse_sample_ids(raw: str) -> Optional[list[str]]:
     return parsed
 
 
+def _shown_indexes(raw, count: int) -> Optional[list[list[str]]]:
+    """What a multi-index drop says the page showed in each of the ``count``
+    rows it fills: [i7, i5] per row, or None when the field is missing, empty
+    or unreadable -- the field is required, so all three are refused.
+
+    The sequences are compared with the stored ones before anything is
+    assigned, so a row whose index another tab changed is refused instead of
+    overwritten (batch 4, item 16). A request without the field would
+    overwrite that index instead, and no real client sends one: app.js is
+    served as /js/app.js?v=<content hash>, so a browser cannot hold a
+    pre-change script against post-change HTML (batch 4 review fix A).
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list) or len(parsed) != count:
+        return None
+    for row in parsed:
+        if (not isinstance(row, list) or len(row) != 2
+                or not all(isinstance(cell, str) for cell in row)):
+            return None
+    return parsed
+
+
 def _find_index(ctx: AppContext, idx_type: str, idx_id: str, kit_id: str):
     """(index pair or index, kit, None), or (None, None, error Response).
 
@@ -500,6 +552,8 @@ async def add_sample(
     if not sample_id or not sample_id.strip():
         return Response("sample_id is required", status_code=400)
     sample_id = sanitize_string(sample_id, 256)
+    if is_zero_only(sample_id):
+        return Response(f"{ZERO_SAMPLE_ID_RULE}.", status_code=400)
     sample_name = sanitize_string(sample_name, 256)
     project = sanitize_string(project, 256)
     test_id = sanitize_string(test_id, 256)
@@ -688,13 +742,23 @@ async def preview_paste(
     request: Request,
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
+    edited: bool = False,
 ) -> Response:
     """POST /runs/{run_id}/samples/preview — show what a paste would add.
 
     Saves nothing. Reads with the same parser as /samples/bulk; the preview's
     Add form sends the same text back there, which re-applies every rule.
+
+    ``edited=1`` is the form a preview refilled, which may send back a text
+    that came from a file: its paste_data field takes the file branch's 10 MB.
+    The form on the page sends no such flag and keeps the 1 MB. Both texts
+    then go through the same 10 MB check, and the whole request through the
+    same cap, so this bounds nothing new — it only says which of the two
+    boxes is being read.
     """
-    paste, error = await _read_paste_input(request, run, ctx)
+    paste, error = await _read_paste_input(
+        request, run, ctx,
+        max_field_bytes=_MAX_PASTE_CHARS if edited else _STARLETTE_FIELD_BYTES)
     if paste is None:
         return Response(error, status_code=400)
 
@@ -1042,10 +1106,28 @@ async def assign_indexes_bulk(
     target_ids = _parse_sample_ids(form.get("target_sample_ids", ""))
     if target_ids is None:
         return Response("This page is out of date. Reload the page and drag again.", status_code=400)
-    would_fill = [s.id for s in run.samples[start_idx:start_idx + len(resolved_assignments)]]
-    if would_fill != target_ids:
+    would_fill = run.samples[start_idx:start_idx + len(resolved_assignments)]
+    if [s.id for s in would_fill] != target_ids:
         return Response(
             "The sample list changed since this page was loaded. Reload the page and drag again.",
+            status_code=409,
+        )
+    # The page also names the index it showed in each of those rows. A row
+    # whose index another tab has since assigned, replaced or cleared is
+    # refused rather than overwritten, and nothing is assigned (batch 4,
+    # item 16).
+    shown = _shown_indexes(form.get("target_indexes", ""), len(would_fill))
+    if shown is None:
+        return Response("This page is out of date. Reload the page and drag again.", status_code=400)
+    changed = [sample.sample_id for sample, row in zip(would_fill, shown, strict=True)
+               if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
+    if changed:
+        # What to do comes before the IDs: the page's error banner shows the
+        # first 300 characters, and ten 25-character LIMS sample IDs are 268
+        # of them (batch 4 review fix B).
+        return Response(
+            "Nothing was assigned. Reload the page and drag again. The index on these "
+            f"samples changed since this page was loaded: {name_list(changed)}.",
             status_code=409,
         )
     refusal = _kit_swap_refusal([
@@ -1610,6 +1692,8 @@ async def update_sample(
         if not raw or not raw.strip():
             return Response("sample_id is required", status_code=400)
         sample_id_field = sanitize_string(raw, 256)
+        if is_zero_only(sample_id_field):
+            return Response(f"{ZERO_SAMPLE_ID_RULE}.", status_code=400)
 
     sample_name = sanitize_string(form.get("sample_name", ""), 256) if has_sample_name else None
     project = sanitize_string(form.get("project", ""), 256) if has_project else None

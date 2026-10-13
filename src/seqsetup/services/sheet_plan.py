@@ -1,8 +1,11 @@
 """The plan of a run's v2 Sample Sheet application sections (spec 2026-10-05
 group A3, §1): which samples go in which section, from which profile, the
 mismatch numbers the sheet gives BCL Convert, and every reason the sheet
-cannot be written. Mark Ready's checks and the v2 writer both use it, so they
-cannot disagree about which samples go where."""
+cannot be written. Mark Ready's checks and the v2 writer both read the plan,
+so they cannot disagree about which samples go where. The module also decides
+what the sheet writes for one sample (sheet_index2, sheet_override_cycles),
+which the v2 writer and the JSON export both read, so the two exports of one
+run cannot state different values (spec 2026-10-12 batch 2, 2a)."""
 
 import hashlib
 import json
@@ -22,6 +25,10 @@ BCLCONVERT = "BCLConvert"
 # Names SeqSetup fills or reads itself, in the one spelling it uses. Another
 # spelling of one of them is refused (spec §1 problem 7).
 SPELLED_SETTINGS_ANY = ("SoftwareVersion",)
+# Columns the writer fills from the sample in every application's section
+# (spec 2026-10-12 batch 2, 2b): another spelling would get the profile's Data
+# default in every row instead of each sample's own value.
+SPELLED_COLUMNS_ANY = ("Sample_Project", "Sample_Name")
 SPELLED_COLUMNS_BCLCONVERT = (
     "Sample_ID", "Lane", "Index", "Index2", "OverrideCycles",
     "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2",
@@ -158,6 +165,37 @@ def _override_cycles(sample: Sample, run: SequencingRun) -> Optional[str]:
     if sample.has_index and run.run_cycles:
         return CycleCalculator.calculate_override_cycles(sample, run.run_cycles)
     return None
+
+
+def sheet_index2(sample: Sample, run: Optional[SequencingRun]) -> str:
+    """The i5 the v2 sheet's Index2 cell holds for ``sample``: the stored i5,
+    reverse-complemented for a run whose workflow reads it reversed and whose
+    RunInfo.xml does not mark that. "" when the sample has no i5 (spec
+    2026-10-12 batch 2, 2a).
+
+    The v2 writer and the JSON export both read it here, so the two exports of
+    one run cannot state different i5s."""
+    from .samplesheet_v2_exporter import SampleSheetV2Exporter
+
+    return SampleSheetV2Exporter._resolve_i5(sample, run)
+
+
+def sheet_override_cycles(sample: Sample, run: Optional[SequencingRun]) -> Optional[str]:
+    """The OverrideCycles the v2 sheet's cell holds for ``sample``: its own
+    value, else the one calculated from the run's cycles, with the Index 2 part
+    reversed for a run whose RunInfo.xml marks a reversed i5 read. None when
+    the cell would be empty (spec 2026-10-12 batch 2, 2a).
+
+    The v2 writer and the JSON export both read it here, so the two exports of
+    one run cannot state different OverrideCycles."""
+    from .samplesheet_v2_exporter import SampleSheetV2Exporter
+
+    if run is None:
+        return sample.override_cycles or None
+    cycles = _override_cycles(sample, run)
+    if not cycles:
+        return None
+    return SampleSheetV2Exporter._adjust_override_cycles_for_instrument(cycles, run)
 
 
 class _Grouped:
@@ -302,6 +340,7 @@ def plan_sheet(
 
         # Problem 7: another spelling of a name SeqSetup fills or reads.
         spelled = [("Settings", str(key), SPELLED_SETTINGS_ANY) for key in profile.settings]
+        spelled += [("its columns", str(column), SPELLED_COLUMNS_ANY) for _, column in columns]
         if is_bclconvert:
             spelled += [("Settings", str(key), SPELLED_SETTINGS_BCLCONVERT)
                         for key in profile.settings]

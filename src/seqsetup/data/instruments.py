@@ -165,9 +165,33 @@ def has_synced_instruments() -> bool:
     return bool(_get_synced_instruments())
 
 
+# The instruments file INSTRUMENTS_CONFIG names does not exist, so SeqSetup
+# does not start: falling back to the shipped file would read i5 facts the
+# operator did not choose, and those decide the i5 direction in every Sample
+# Sheet (batch 1, item 1e).
+_MISSING_ENV_FILE = (
+    "INSTRUMENTS_CONFIG names {path}, which is not a file, so SeqSetup will "
+    "not start. Point it at the instruments file, or leave it unset to use "
+    "the file SeqSetup ships."
+)
+
+
 # Find config file path relative to project root
 def _find_config_path() -> Path:
-    """Find the instruments.yaml config file."""
+    """Find the instruments.yaml config file.
+
+    INSTRUMENTS_CONFIG decides, when it is set to anything: the README and
+    three documentation pages say the variable wins, and it was read last —
+    after ``config/instruments.yaml``, which always exists — so it never
+    decided anything.
+    """
+    env_config = os.environ.get("INSTRUMENTS_CONFIG", "").strip()
+    if env_config:
+        env_path = Path(env_config)
+        if not env_path.is_file():
+            raise InstrumentConfigError(_MISSING_ENV_FILE.format(path=env_path))
+        return env_path
+
     # Try relative to this file's location (src/seqsetup/data/)
     module_dir = Path(__file__).parent
 
@@ -182,13 +206,6 @@ def _find_config_path() -> Path:
     cwd_config = Path.cwd() / "config" / "instruments.yaml"
     if cwd_config.exists():
         return cwd_config
-
-    # Fallback: check environment variable
-    env_config = os.environ.get("INSTRUMENTS_CONFIG")
-    if env_config:
-        env_path = Path(env_config)
-        if env_path.exists():
-            return env_path
 
     raise FileNotFoundError(
         f"Could not find instruments.yaml config file. "
@@ -245,9 +262,30 @@ def load_checked_instrument_file(path: Path) -> dict:
     return data
 
 
+# The instruments file that was read, so the start-up line names the file in
+# use instead of resolving the path a second time.
+_loaded_config_path: Optional[Path] = None
+
+
+def log_instruments_file() -> None:
+    """Log the instruments file that was read, at INFO.
+
+    ``app.py`` calls this after ``setup_log_capture``: the file is read when
+    this module is imported, which is before the capture handler exists, so
+    the line logged then goes nowhere.
+    """
+    if _loaded_config_path is not None:
+        logger.info("Reading instruments from %s", _loaded_config_path)
+
+
 def _load_config() -> dict:
-    """Load instrument configuration from YAML file, checked."""
-    return load_checked_instrument_file(_find_config_path())
+    """Load instrument configuration from YAML file, checked. The file read
+    is logged, so the log of a start says which one it was."""
+    global _loaded_config_path
+    path = _find_config_path()
+    _loaded_config_path = path
+    log_instruments_file()
+    return load_checked_instrument_file(path)
 
 
 # Load configuration at module import time
