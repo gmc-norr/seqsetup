@@ -6,6 +6,8 @@ came back and their names, so the sequences a sample is demultiplexed by could
 have been dropped or swapped without a test going red.
 """
 
+import pytest
+
 from seqsetup.models.index import IndexMode
 from seqsetup.services.github_sync import GitHubSyncError
 
@@ -67,12 +69,18 @@ def _sync_with_kits(ctx, monkeypatch, kit_files: dict):
     texts = {}
 
     def listing(owner, repo, branch, path):
+        """A dict value is a sub-folder; None is a sub-folder that cannot
+        be listed."""
         path = path.strip("/")
-        if path not in folders:
-            raise GitHubSyncError(f"GitHub API error: 404 Not Found ({path})")
+        if path not in folders or folders[path] is None:
+            raise GitHubSyncError(f"GitHub API error: 403 Forbidden ({path})")
         entries = []
         for name, value in folders[path].items():
             item_path = f"{path}/{name}"
+            if value is None or isinstance(value, dict):
+                folders[item_path] = value
+                entries.append({"type": "dir", "name": name, "path": item_path})
+                continue
             url = f"https://raw.githubusercontent.com/example/config/main/{item_path}"
             texts[url] = value
             entries.append({"type": "file", "name": name, "path": item_path,
@@ -222,3 +230,53 @@ class TestARefusedKitIsNamedAndTheOldOneKept:
         _app, ctx, _db = fresh_app
         ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": GOOD_LAB_KIT})
         assert ok is True and message.startswith("Synced ") and "refused" not in message
+
+
+class TestNoKitVanishesWithoutBeingNamed:
+    """Review P2-1 and P3-3 (2026-10-13), the same promise as the night run's
+    Q3: a kit sub-folder that cannot be listed, or a kit file whose name ends
+    in capitals, used to drop its kits while the sync said it succeeded."""
+
+    def test_a_sub_folder_that_cannot_be_listed_keeps_its_kits(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML, "lab": {"lab.yaml": GOOD_LAB_KIT}})
+        assert _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML, "lab": None})
+
+        assert ok is False
+        assert "index_kits/lab: could not be listed" in message
+        assert _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
+
+    @pytest.mark.parametrize("name", ["lab.YAML", "lab.Yml"])
+    def test_a_kit_file_ending_in_capitals_is_read(self, fresh_app, monkeypatch, name):
+        _app, ctx, _db = fresh_app
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {name: GOOD_LAB_KIT})
+        assert ok is True, message
+        assert _synced(ctx) == ["Lab Kit 1.0"]
+
+
+class TestAnUploadedKitIsNotOverwritten:
+    """Review P2-2 (2026-10-13): a kit file whose name and version are a kit
+    uploaded through SeqSetup replaced the uploaded kit -- its index
+    sequences too -- while the sync said it succeeded, though the guide
+    promises uploaded kits are kept. It is refused and named instead."""
+
+    def test_the_uploaded_kit_stays_and_the_file_is_named(self, fresh_app, monkeypatch):
+        from seqsetup.models.index import Index, IndexKit, IndexPair, IndexType
+        _app, ctx, _db = fresh_app
+        ctx.index_kit_repo.save(IndexKit(
+            name="Dual Kit", version="2.1.0", index_mode=IndexMode.UNIQUE_DUAL, source="user",
+            index_pairs=[IndexPair(id="u1", name="U1",
+                                   index1=Index(name="u-i7", sequence="ATTACTCG", index_type=IndexType.I7),
+                                   index2=Index(name="u-i5", sequence="GGGGGGGG", index_type=IndexType.I5))]))
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML,
+                                                                 "lab.yaml": GOOD_LAB_KIT})
+
+        assert ok is False
+        assert ("index_kits/dual.yaml (Dual Kit 2.1.0): a kit of this name and version was "
+                "uploaded through SeqSetup, and the uploaded one is kept") in message
+        (kit,) = [k for k in ctx.index_kit_repo.list_all() if k.name == "Dual Kit"]
+        assert kit.source == "user" and kit.index_pairs[0].index2.sequence == "GGGGGGGG"
+        assert _synced(ctx) == ["Lab Kit 1.0"]

@@ -251,6 +251,8 @@ class GitHubSyncService:
                     config.index_kits_path,
                     strict=True,
                     refused=refused_kits,
+                    uploaded_ids=frozenset(
+                        kit.kit_id for kit in self.index_kit_repo.list_user_uploaded()),
                 )
                 logger.info(f"Fetched {len(index_kits)} index kits")
                 if refused_kits:
@@ -887,6 +889,7 @@ class GitHubSyncService:
         path: str,
         strict: bool = False,
         refused: Optional[list[dict]] = None,
+        uploaded_ids: frozenset = frozenset(),
     ) -> list[IndexKit]:
         """Fetch index kit definitions from GitHub.
 
@@ -895,6 +898,9 @@ class GitHubSyncService:
         that is not is added to ``refused`` as {"path", "name", "kit",
         "reason"}, with name and kit None when the file names no kit (the
         night run's Q3: the sync names it and keeps the kit stored before).
+        A kit whose kit_id is in ``uploaded_ids`` -- a kit uploaded through
+        SeqSetup -- is refused the same way, and the uploaded one is kept
+        (review P2-2, 2026-10-13).
 
         Args:
             owner: GitHub owner
@@ -913,6 +919,11 @@ class GitHubSyncService:
             if strict:
                 raise
             logger.warning(f"Could not fetch index kits from {path}: {e}")
+            # Its kits are not read, so the sync names it and keeps every
+            # stored kit it did not read (review P2-1, 2026-10-13).
+            if refused is not None:
+                refused.append({"path": path.strip("/"), "name": None, "kit": None,
+                                "reason": f"could not be listed: {str(e).rstrip('.')}"})
             return index_kits
 
         for item in contents:
@@ -923,11 +934,12 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_kits = self._fetch_index_kits(owner, repo, branch, item_path,
-                                                  refused=refused)
+                                                  refused=refused, uploaded_ids=uploaded_ids)
                 # Subdirectories are best-effort; top-level fetch is strict.
                 index_kits.extend(sub_kits)
 
-            elif item_type == "file" and item_name.endswith((".yaml", ".yml")):
+            # Any letter case, as for test profiles (review P3-3, 2026-10-13).
+            elif item_type == "file" and item_name.lower().endswith((".yaml", ".yml")):
                 download_url = item.get("download_url")
                 if download_url:
                     try:
@@ -937,7 +949,20 @@ class GitHubSyncService:
                         if kit:
                             # Validate the kit
                             validation = IndexValidator.validate(kit)
-                            if validation.is_valid:
+                            if validation.is_valid and kit.kit_id in uploaded_ids:
+                                logger.error(
+                                    f"Index kit '{kit.name}' {kit.version} ({item_path}) has the "
+                                    "name and version of a kit uploaded through SeqSetup; "
+                                    "the uploaded one is kept"
+                                )
+                                if refused is not None:
+                                    refused.append({
+                                        "path": item_path, "name": kit.name,
+                                        "kit": f"{kit.name} {kit.version}",
+                                        "reason": "a kit of this name and version was uploaded "
+                                                  "through SeqSetup, and the uploaded one is kept",
+                                    })
+                            elif validation.is_valid:
                                 index_kits.append(kit)
                                 logger.debug(f"Parsed index kit from {item_path}")
                             else:
