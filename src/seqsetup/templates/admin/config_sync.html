@@ -25,6 +25,7 @@
         <div><strong>Interval:</strong> every {{ config.sync_interval_minutes }} minutes</div>
         <div id="last-sync"{% if config.last_sync_status == "error" %} class="bg-red-100 border border-red-400 text-red-800 rounded px-3 py-2"{% endif %}>
             <div><strong>Last sync:</strong> {{ config.last_sync_at | localtime if config.last_sync_at else "—" }}{% if config.last_sync_status %} ({{ config.last_sync_status }}){% endif %}</div>
+            {% if last_sync_other_repo %}<div><strong>This repository has not been synced yet.</strong> The last sync read {{ config.last_sync_repo_url }} ({{ config.last_sync_branch }}).</div>{% endif %}
             {% if config.last_sync_message %}<div>{{ config.last_sync_message }}</div>{% endif %}
         </div>
     </div>

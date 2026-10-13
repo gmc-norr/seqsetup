@@ -631,6 +631,15 @@ succeeded (``success`` or ``error``) and its message, in red when it
 failed -- for a scheduled sync too, which has no other place to say so. A
 manual sync's result is shown above the panel, in red when it failed.
 
+A sync records which repository and branch it read. When the saved
+**Repository URL** or **Branch** is not the one the last sync read -- the
+moment you save a new one, before you sync it -- the panel says *"This
+repository has not been synced yet"* and names the repository the time,
+status and message below it belong to. Nothing has been fetched from the
+new repository until a sync runs, manually or on the schedule. A status
+stored by an older SeqSetup carries no repository, and the panel then says
+nothing about it rather than claiming the repository is unsynced.
+
 Who can do this
 -------------------
 

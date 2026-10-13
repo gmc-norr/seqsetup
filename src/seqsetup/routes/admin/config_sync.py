@@ -57,10 +57,19 @@ def _page_ctx(ctx: AppContext, message: str = "", message_ok: bool = True) -> di
     config = ctx.profile_sync_config_repo.get()
     app_profiles = ctx.app_profile_repo.list_all() if ctx.app_profile_repo else []
     test_profiles = ctx.test_profile_repo.list_all() if ctx.test_profile_repo else []
+    # True only when the stored status is known to belong to another
+    # repository or branch: a status stored before SeqSetup remembered which
+    # one it read has no repo, and raises no alarm about one.
+    last_sync_other_repo = bool(
+        config.last_sync_repo_url
+        and (config.last_sync_repo_url != config.github_repo_url
+             or config.last_sync_branch != config.github_branch)
+    )
     return {
         "config": config,
         "app_profiles": app_profiles,
         "test_profiles": test_profiles,
+        "last_sync_other_repo": last_sync_other_repo,
         "message": message,
         "message_ok": message_ok,
     }

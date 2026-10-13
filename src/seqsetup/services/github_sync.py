@@ -355,7 +355,8 @@ class GitHubSyncService:
                     )
                 message = " ".join(refusals) + f" Synced {', '.join(synced)}."
                 self.config_repo.update_sync_status(
-                    "error", message, count, instruments_count, index_kits_count
+                    "error", message, count, instruments_count, index_kits_count,
+                    config.github_repo_url, config.github_branch
                 )
                 logger.error(f"Sync refused files: {message}")
                 return False, message, count + instruments_count + index_kits_count
@@ -372,7 +373,8 @@ class GitHubSyncService:
 
             message = f"Synced {', '.join(parts)}"
             self.config_repo.update_sync_status(
-                "success", message, count, instruments_count, index_kits_count
+                "success", message, count, instruments_count, index_kits_count,
+                config.github_repo_url, config.github_branch
             )
 
             logger.info(f"Sync completed: {message}")
@@ -381,13 +383,19 @@ class GitHubSyncService:
         except GitHubSyncError as e:
             error_msg = str(e)
             logger.error(f"Sync failed: {error_msg}")
-            self.config_repo.update_sync_status("error", error_msg, 0, 0, 0)
+            self.config_repo.update_sync_status(
+                "error", error_msg, 0, 0, 0,
+                config.github_repo_url, config.github_branch
+            )
             return False, f"Sync failed: {error_msg}", 0
 
         except Exception as e:
             error_msg = f"Unexpected error: {e}"
             logger.exception("Sync failed with unexpected error")
-            self.config_repo.update_sync_status("error", error_msg, 0, 0, 0)
+            self.config_repo.update_sync_status(
+                "error", error_msg, 0, 0, 0,
+                config.github_repo_url, config.github_branch
+            )
             return False, error_msg, 0
 
     def _parse_repo_url(self, url: str) -> Tuple[str, str]:

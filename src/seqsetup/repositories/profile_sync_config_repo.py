@@ -21,8 +21,14 @@ class ProfileSyncConfigRepository(SingletonConfigRepository[ProfileSyncConfig]):
         count: int,
         instruments_count: int = 0,
         index_kits_count: int = 0,
+        repo_url: str = "",
+        branch: str = "",
     ) -> None:
-        """Update sync status after a sync operation."""
+        """Update sync status after a sync operation.
+
+        ``repo_url`` and ``branch`` are the ones the sync read, stored with
+        the status so no page can show it under another repository.
+        """
         config = self.get()
         config.last_sync_at = utcnow()
         config.last_sync_status = status
@@ -30,4 +36,6 @@ class ProfileSyncConfigRepository(SingletonConfigRepository[ProfileSyncConfig]):
         config.last_sync_count = count
         config.last_instruments_sync_count = instruments_count
         config.last_index_kits_sync_count = index_kits_count
+        config.last_sync_repo_url = repo_url
+        config.last_sync_branch = branch
         self.save(config)
