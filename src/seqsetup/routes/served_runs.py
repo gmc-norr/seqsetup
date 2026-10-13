@@ -35,6 +35,10 @@ router = APIRouter(tags=["served-runs"])
 _STATUSES = ("ready", "archived")
 _NOT_SERVED = "Run not available via API. Only ready or archived runs can be accessed."
 _BAD_STATUS = "Invalid status. Only 'ready' and 'archived' are allowed via API."
+# The collision check follows DRAGEN's built-in BCL conversion (the user's
+# decision, 2026-10-13; services/index_collision_validator.py).
+_DRAGEN_RULE_NOTE = ("Index collisions were checked as DRAGEN's built-in BCL conversion checks them: "
+                     "standalone bcl-convert 3.10.5 or later is stricter and may stop.")
 _RUNINFO_NOTE = ('This sheet relies on BCL Convert acting on the IsReverseComplement="Y" mark '
                  "that RunInfo.xml puts on the i5 read.")
 
@@ -51,6 +55,7 @@ class ServedFile:
     download: str = ""               # the stored file's download address
     target: list[tuple[str, str]] = field(default_factory=list)  # a sheet's target, as (label, value) rows
     target_note: str = ""            # what the sheet relies on BCL Convert to do
+    target_rule_note: str = ""       # the converter whose collision rule was checked
     target_missing: bool = False     # a stored sheet whose target was never saved
 
 
@@ -77,6 +82,7 @@ def _with_target(f: ServedFile, run) -> ServedFile:
         return f
     f.target = _target_rows(target)
     f.target_note = _RUNINFO_NOTE if target["needs_runinfo_reverse_mark"] else ""
+    f.target_rule_note = _DRAGEN_RULE_NOTE if target["software"] == "BCL Convert" else ""
     return f
 
 

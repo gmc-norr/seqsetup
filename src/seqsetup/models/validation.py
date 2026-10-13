@@ -237,17 +237,29 @@ class IndexCollision:
     index_type: str  # "i7" or "i5"
     sequence1: str
     sequence2: str
-    hamming_distance: int
-    mismatch_threshold: int
+    hamming_distance: int  # an "i7+i5" pair: the two distances summed
+    mismatch_threshold: int  # an "i7+i5" pair: the two limits summed
+    # Each index's own distance and limit; an "i7+i5" pair clashes only when
+    # both distances are within their limits (the user's decision,
+    # 2026-10-13). None for the i5 of an "i7" (single-index) pair.
+    i7_distance: Optional[int] = None
+    i7_threshold: Optional[int] = None
+    i5_distance: Optional[int] = None
+    i5_threshold: Optional[int] = None
 
     @property
     def collision_description(self) -> str:
         """Human-readable description of the collision."""
+        if self.i5_distance is not None:
+            rule = (f"i7 distance {self.i7_distance} <= {self.i7_threshold} and "
+                    f"i5 distance {self.i5_distance} <= {self.i5_threshold}")
+        else:
+            rule = f"distance {self.hamming_distance} <= threshold {self.mismatch_threshold}"
         return (
             f"{self.index_type} collision in lane {self.lane}: "
             f"{self.sample1_name} ({self.sequence1}) vs "
             f"{self.sample2_name} ({self.sequence2}) - "
-            f"distance {self.hamming_distance} <= threshold {self.mismatch_threshold}"
+            f"{rule}"
         )
 
 

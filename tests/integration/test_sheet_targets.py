@@ -304,3 +304,26 @@ class TestTheProfilePath:
         section = _section(logged_in_client.get(f"/served-runs/{run.id}").text, "samplesheet-v2")
         assert _target_box(section)["i5 column"] == "None: no sample has an i5"
         assert RUNINFO_NOTE not in html.unescape(section)
+
+
+DRAGEN_NOTE = ("Index collisions were checked as DRAGEN's built-in BCL conversion checks them: "
+               "standalone bcl-convert 3.10.5 or later is stricter and may stop.")
+
+
+class TestTheV2TargetNamesTheCollisionRule:
+    """The collision check follows DRAGEN's built-in BCL conversion (the
+    user's decision on Q1, 2026-10-13): the v2 sheet's target says so."""
+
+    def test_the_v2_box_says_it_and_the_v1_box_does_not(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _ready(logged_in_client, ctx, "rule-note", InstrumentPlatform.NOVASEQ_6000, "S4", "v1.0 reagents")
+        page = logged_in_client.get("/served-runs/rule-note").text
+        v2 = re.search(r'<div class="served-target">(.*?)</div>', _section(page, "samplesheet-v2"), re.S)
+        v1 = re.search(r'<div class="served-target">(.*?)</div>', _section(page, "samplesheet-v1"), re.S)
+        assert DRAGEN_NOTE in html.unescape(v2.group(1))
+        assert DRAGEN_NOTE not in html.unescape(v1.group(1))
+
+    def test_an_older_run_has_no_box_and_no_note(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        page = logged_in_client.get(f"/served-runs/{_full(ctx, 'older-note')}").text
+        assert DRAGEN_NOTE not in html.unescape(page)

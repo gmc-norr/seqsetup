@@ -12,6 +12,10 @@
         <code class="sequence">{{ collision.sequence1 }}</code>
         <span class="collision-sep"> / </span>
         <code class="sequence">{{ collision.sequence2 }}</code>
+        {% if collision.i5_distance is not none %}
+        <span class="collision-distance"> (i7 distance: {{ collision.i7_distance }}, i5 distance: {{ collision.i5_distance }})</span>
+        {% else %}
         <span class="collision-distance"> (distance: {{ collision.hamming_distance }})</span>
+        {% endif %}
     </div>
 </div>

@@ -3,9 +3,20 @@
 Date: 2026-10-12. Base: main `d91b652`. Branch `fix/identity-checks` (night run, batch 1,
 item 1c). Decision: the user. Source: open item S-6 / question Q1.
 
-**Status: SPEC ONLY. No code was written for this item, and none should be written from
-this spec without the decision in "NOT BUILT IN THIS RUN — AND WHY" being revisited.**
-Today's behaviour is unchanged by the commit that carries this file.
+**Status: DECIDED and BUILT (2026-10-13).** The night run wrote this as a spec only and
+asked (its Q1). The user revisited the decision with the evidence below and chose the AND
+rule ("both close") for every run, not only for DRAGEN-converted ones: the guide
+(`docs/user-guide/validation.rst`) and the v2 sheet's target box on API Exports say that the
+collision check follows DRAGEN's built-in BCL conversion and that standalone bcl-convert
+3.10.5+ is stricter. The user also confirmed that combinatorial plates must stay allowed
+(the AND rule gives 0 alarms on the measured plate). Built as in "What would change in the
+app" items 1, 2, 3, 5, 6 and 7: an `IndexCollision` carries both distances and both limits,
+and the report's older `hamming_distance` / `mismatch_threshold` keep their summed meaning.
+Item 4 (the heatmaps) only gained a sentence in the guide; the combined view stays.
+
+The original status, kept for the record: SPEC ONLY. No code was written for this item, and
+none should be written from this spec without the decision in "NOT BUILT IN THIS RUN — AND
+WHY" being revisited.
 
 ## The rule as decided
 

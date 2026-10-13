@@ -138,7 +138,10 @@ When the sheet relies on BCL Convert acting on the
 ``IsReverseComplement="Y"`` mark that ``RunInfo.xml`` puts on the i5 read
 -- with the shipped instruments, a NovaSeq X, NextSeq 1000/2000 or MiSeq
 i100 read-first run -- the box says so: the sheet is right only for a BCL
-Convert that acts on the mark. Mark Ready saves the target with the
+Convert that acts on the mark. The v2 sheet's box also says that its
+index collisions were checked as DRAGEN's built-in BCL conversion checks
+them -- standalone ``bcl-convert`` 3.10.5 or later is stricter (see
+:doc:`validation`). Mark Ready saves the target with the
 sheets; it is not worked out again later, so a change to an instrument's
 settings afterwards does not change it. If a sync changes the instrument's
 i5 settings while **Mark Ready** is writing the exports, **Mark Ready**

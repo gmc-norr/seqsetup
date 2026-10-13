@@ -89,6 +89,10 @@ class ValidationReportJSON:
                         "sequence2": c.sequence2,
                         "hamming_distance": c.hamming_distance,
                         "mismatch_threshold": c.mismatch_threshold,
+                        "i7_distance": c.i7_distance,
+                        "i7_threshold": c.i7_threshold,
+                        "i5_distance": c.i5_distance,
+                        "i5_threshold": c.i5_threshold,
                     }
                     for c in result.index_collisions
                 ],
