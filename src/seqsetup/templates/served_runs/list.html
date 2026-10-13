@@ -1,18 +1,18 @@
 {#
-   What the API serves: the runs GET /api/runs lists, in its order.
+   API Exports: the runs GET /api/runs lists, in its order.
 
    Inputs:
      runs:   list[SequencingRun] — Ready or Archived, newest change first
      status: "ready" | "archived"
 #}
 {% extends "_app_shell.html" %}
-{% set page_title = "What the API serves" %}
+{% set page_title = "API Exports" %}
 {% set active_route = "/served-runs" %}
 
 {% block content %}
 <div class="max-w-5xl mx-auto p-4 space-y-4">
   <div>
-    <h1 class="text-xl font-semibold mb-1">What the API serves</h1>
+    <h1 class="text-xl font-semibold mb-1">API Exports</h1>
     <p class="text-sm text-slate-600">
       The runs a program with an API token can read: Ready or Archived, never a Draft,
       newest change first. The same runs as <code>GET /api/runs?status={{ status }}</code>, which

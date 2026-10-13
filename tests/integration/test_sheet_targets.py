@@ -1,7 +1,11 @@
 """Mark Ready saves each sheet's target instrument and software with the
-sheets, and the API's run list hands it out (the user's request,
-2026-10-13). The target must say what the stored sheet really does: each
-test reads the i5 the sheet wrote and compares."""
+sheets, the API's run list hands it out, and the API Exports page shows it
+above each sheet (the user's request, 2026-10-13). The target must say what
+the stored sheet really does: each test reads the i5 the sheet wrote and
+compares."""
+
+import html
+import re
 
 import pytest
 
@@ -10,7 +14,7 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunSta
 
 from .conftest import disable_repos, mark_ready
 from .test_group_1c import _pair
-from .test_served_runs import _run, _token
+from .test_served_runs import _full, _run, _section, _token
 
 ORIGIN = {"Origin": "http://testserver"}
 I5 = "TATAGCCT"
@@ -147,3 +151,67 @@ class TestTheApiHandsThemOut:
         schema = client.get("/api/openapi.json", headers={"Authorization": f"Bearer {_token(ctx)}"}).json()
         summary = schema["components"]["schemas"]["RunSummary"]["properties"]["target"]
         assert "Mark Ready" in str(summary)
+
+
+RUNINFO_NOTE = ('This sheet relies on BCL Convert acting on the IsReverseComplement="Y" mark '
+                "that RunInfo.xml puts on the i5 read.")
+NOT_RECORDED = "Not recorded: this run was marked Ready before SeqSetup saved each sheet's target."
+
+
+def _target_box(section):
+    """The section's target rows as {label: value}, or None when it has no box."""
+    m = re.search(r'<div class="served-target">(.*?)</div>', section, re.S)
+    if not m:
+        return None
+    assert "<h3" in m.group(1) and "Target instrument and software" in m.group(1)
+    return {html.unescape(k): html.unescape(v)
+            for k, v in re.findall(r"<dt>(.*?)</dt>\s*<dd>(.*?)</dd>", m.group(1), re.S)}
+
+
+class TestTheApiExportsPageShowsThem:
+    """Above each stored sheet, never above the other files."""
+
+    def test_each_sheet_shows_its_target(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _ready(logged_in_client, ctx, "shown", InstrumentPlatform.NOVASEQ_6000, "S4", "v1.5 reagents")
+        page = logged_in_client.get("/served-runs/shown").text
+
+        assert _target_box(_section(page, "samplesheet-v2")) == {
+            "Instrument": "NovaSeq 6000",
+            "Software": "BCL Convert 4.3.6",
+            "i5 workflow": "v1.5 reagents",
+            "i5 column": "Reverse complement of the index kit's i5",
+        }
+        assert _target_box(_section(page, "samplesheet-v1")) == {
+            "Instrument": "NovaSeq 6000",
+            "Software": "bcl2fastq",
+            "i5 workflow": "v1.5 reagents",
+            "i5 column": "Reverse complement of the index kit's i5",
+        }
+        assert RUNINFO_NOTE not in html.unescape(page)
+        for resource in ("json", "validation-report", "validation-pdf"):
+            section = _section(page, resource)
+            assert _target_box(section) is None and NOT_RECORDED not in html.unescape(section)
+
+    def test_a_sheet_that_relies_on_the_runinfo_mark_says_so(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _ready(logged_in_client, ctx, "marked", InstrumentPlatform.NOVASEQ_X, "10B", "")
+        section = _section(logged_in_client.get("/served-runs/marked").text, "samplesheet-v2")
+        assert _target_box(section)["i5 column"] == "Forward, as the index kit lists it"
+        assert RUNINFO_NOTE in html.unescape(section)
+
+    def test_a_v2_sheet_that_states_no_version(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        target = {"instrument": "NovaSeq 6000", "software": "BCL Convert", "software_version": None,
+                  "i5_workflow": "v1.0 reagents", "index2_column": "forward", "needs_runinfo_reverse_mark": False}
+        run_id = _full(ctx, "no-version", sheet_targets={"samplesheet_v2": target, "samplesheet_v1": None})
+        box = _target_box(_section(logged_in_client.get(f"/served-runs/{run_id}").text, "samplesheet-v2"))
+        assert box["Software"] == "BCL Convert (the sheet states no version)"
+
+    def test_an_older_run_says_not_recorded(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        page = logged_in_client.get(f"/served-runs/{_full(ctx, 'older')}").text
+        for resource in ("samplesheet-v2", "samplesheet-v1"):
+            section = _section(page, resource)
+            assert _target_box(section) is None
+            assert NOT_RECORDED in html.unescape(section), resource

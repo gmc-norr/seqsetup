@@ -1,5 +1,5 @@
 {#
-   What the API serves for one run: each per-run address and its answer.
+   API Exports for one run: each per-run API address and its answer.
 
    Inputs:
      run:        SequencingRun
@@ -12,13 +12,13 @@
    that itself starts with a newline still shows it.
 #}
 {% extends "_app_shell.html" %}
-{% set page_title = "What the API serves: " ~ (run.run_name or "Untitled run") %}
+{% set page_title = "API Exports › " ~ (run.run_name or "Untitled run") %}
 {% set active_route = "/served-runs" %}
 
 {% block content %}
 <div class="max-w-5xl mx-auto p-4 space-y-4">
   <div>
-    <a class="text-sm text-primary underline" href="/served-runs?status={{ back_status }}">&larr; What the API serves</a>
+    <p class="text-sm"><a class="text-primary underline" href="/served-runs?status={{ back_status }}">API Exports</a> ›</p>
     <h1 class="text-xl font-semibold mt-1">{{ run.run_name or "Untitled run" }}</h1>
     <p class="text-sm text-slate-600">
       {{ run.status.value | capitalize }} &middot; <a class="text-primary underline" href="/runs/{{ run.id }}">Open the run</a>
@@ -34,13 +34,27 @@
   </p>
   {% for f in files %}
   <section id="served-{{ f.resource }}" class="config-panel">
-    <h2 class="font-semibold">{{ f.label }}</h2>
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 class="font-semibold">{{ f.label }}</h2>
+      {% if f.download %}<a class="btn btn-secondary btn-small" href="{{ f.download }}">Download</a>{% endif %}
+    </div>
     <p class="text-sm"><code>GET /api/runs/{{ run.id }}/{{ f.resource }}</code></p>
+    {% if f.target %}
+    <div class="served-target">
+      <h3 class="font-semibold text-sm">Target instrument and software</h3>
+      <dl>
+        {% for label, value in f.target %}<dt>{{ label }}</dt><dd>{{ value }}</dd>
+        {% endfor %}
+      </dl>
+      {% if f.target_note %}<p class="warning-message text-sm">{{ f.target_note }}</p>{% endif %}
+    </div>
+    {% elif f.target_missing %}
+    <p class="text-sm text-slate-600">Not recorded: this run was marked Ready before SeqSetup saved each sheet's target.</p>
+    {% endif %}
     {% if f.missing %}
     <p class="text-sm text-slate-600">The API answers <code>404: {{ f.missing }}</code></p>
     {% elif f.pdf_size is not none %}
-    <p class="text-sm">A PDF of {{ f.pdf_size_text }} bytes.
-      <a class="text-primary underline" href="/runs/{{ run.id }}/export/validation-pdf">Download PDF</a></p>
+    <p class="text-sm">A PDF of {{ f.pdf_size_text }} bytes.</p>
     {% else %}
 <pre class="served-content">
 {{ f.text }}</pre>

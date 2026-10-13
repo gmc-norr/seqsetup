@@ -80,46 +80,72 @@ no Export panel):
    differently from **Download Sample Sheet v2**, but they are not
    disabled -- all four are enabled here.
 
-Each download is named after the run. A run named in an alphabet other
-than the Latin one -- or with accents -- still downloads: the file keeps
-the run name's own letters, after the same tidying every download name
-gets, with a plain-ASCII name as the fallback for older browsers (and the
-export's own name, such as ``SampleSheet_v2.csv``, when nothing ASCII is
-left of the run's).
+Each download is named after the run. A Sample Sheet's name also says its
+version and the software that reads it, so the two never share a name:
+``RUN_v2_BCLConvert.csv`` and ``RUN_v1_bcl2fastq.csv``. A run named in an
+alphabet other than the Latin one -- or with accents -- still downloads:
+the file keeps the run name's own letters, after the same tidying every
+download name gets, with a plain-ASCII name as the fallback for older
+browsers (and the export's own name, such as
+``SampleSheet_v2_BCLConvert.csv``, when nothing ASCII is left of the
+run's).
 
 The two Sample Sheet buttons additionally require every sample in the run
 to have an index assigned -- if any sample does not, they stay disabled
 even though the run is Ready; the JSON and validation downloads have no
 such requirement.
 
-What the API serves
----------------------
+API Exports
+-------------
 
 A program with an API token (see :doc:`/api-reference/index`) reads the
-same stored files. To see exactly what it gets, select **What the API
-serves** in the sidebar, or **See what the API serves for this run** in a
-Ready or Archived run's Export panel.
+same stored files. To see exactly what it gets, select **API Exports** in
+the sidebar, or **See this run in API Exports** in a Ready or Archived
+run's Export panel.
 
 The first page lists the runs the API lists -- Ready, or Archived, never a
 Draft -- newest change first, as ``GET /api/runs`` gives them (the API hands
 them out a page at a time; this page shows them all):
 
 .. figure:: /_static/screenshots/export/served-runs.png
-   :alt: The "What the API serves" page: Ready and Archived tabs above a table of Ready runs, with a See files link outlined.
+   :alt: The API Exports page: Ready and Archived tabs above a table of Ready runs, with a See files link outlined.
 
    The runs the API serves, with **See files** outlined.
 
 **See files** opens one run: each address the API answers for it, and
-under it the file exactly as stored when the run was marked Ready.
+under it the file exactly as stored when the run was marked Ready, with
+a **Download** button for it -- the same file the Export panel gives.
 Nothing is made anew here. Where nothing is stored, the page shows the
-API's answer instead, such as *"404: No v1 sheet for this run: ..."*. The
-PDF is a download link with its size. A Draft's page says the API does
-not serve it.
+API's answer instead, such as *"404: No v1 sheet for this run: ..."*, and
+no download. The PDF shows its size. A Draft's page says the API does not
+serve it.
+
+Above each Sample Sheet, **Target instrument and software** says what the
+sheet was written for:
+
+- **Instrument** -- the run's instrument.
+- **Software** -- BCL Convert, with the version the v2 sheet states in
+  its ``[BCLConvert_Settings]``, for the v2 sheet; bcl2fastq for the v1
+  sheet.
+- **i5 workflow** -- the run's i5 workflow (see :doc:`run-setup`).
+- **i5 column** -- the i5 as the index kit lists it, or its reverse
+  complement (see the note on the i5 under `Sample Sheet v2 format`_).
+
+When the sheet relies on BCL Convert acting on the
+``IsReverseComplement="Y"`` mark that ``RunInfo.xml`` puts on the i5 read
+-- with the shipped instruments, a NovaSeq X, NextSeq 1000/2000 or MiSeq
+i100 read-first run -- the box says so: the sheet is right only for a BCL
+Convert that acts on the mark. Mark Ready saves the target with the sheets; it is not worked out
+again later, so a change to an instrument's settings afterwards does not
+change it. **Back to Draft** clears it with the stored files. A run
+marked Ready before SeqSetup saved targets says *"Not recorded"*. The API
+gives the same facts as ``target`` in its run list (see
+:doc:`/api-reference/runs`).
 
 .. figure:: /_static/screenshots/export/served-run.png
-   :alt: One run's Sample Sheet v2 as the API serves it: its address, GET /api/runs/<run id>/samplesheet-v2, outlined, above the sheet's text.
+   :alt: One run's Sample Sheet v2 on the API Exports page: its Download button and address, and the Target instrument and software box outlined above the sheet's text.
 
-   One run's Sample Sheet v2 as the API serves it, its address outlined.
+   One run's Sample Sheet v2 on the API Exports page, its target outlined.
 
 Anyone signed in can open these pages, as anyone signed in can download
 a Ready run's files. Opening a Ready or Archived run's page is recorded in

@@ -63,7 +63,7 @@ The event name says what happened. The main groups are:
   text asked, and the exact version and file the Sample Sheet was written
   with -- kept here after back to Draft clears them from the run.
 - **Exports and the API** -- ``export.downloaded``, ``export.viewed`` (a
-  run's page under **What the API serves**), ``api.run.read``,
+  run's page under **API Exports**), ``api.run.read``,
   ``api.runs.listed``.
 - **Configuration** -- ``config_sync.`` (manual and scheduled syncs),
   ``instrument.toggled``, ``index_kit.upload``, ``index_kit.deleted``,

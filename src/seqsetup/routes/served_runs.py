@@ -1,19 +1,22 @@
-"""What the API serves, shown in the web app.
+"""API Exports: what the API serves, shown in the web app.
 
 GET /served-runs           — the runs GET /api/runs lists: Ready (default) or
                              Archived, never a Draft, in the API's order.
 GET /served-runs/{run_id}  — each stored file a per-run API address hands
-                             out, byte for byte, or the answer the API gives
-                             when it has none.
+                             out, byte for byte, with a download of it, or the
+                             answer the API gives when it has none; above each
+                             sheet, the target instrument and software Mark
+                             Ready saved with it.
 
 Read-only: it shows what Mark Ready stored and never makes a file anew (the
 Export downloads do that for runs made before files were stored; the API
-does not). The not-stored answers repeat api/app.py's;
-tests/integration/test_served_runs.py checks each against the API itself.
-Anyone signed in may look: they can already download these files.
+does not, so a download is offered only for a stored file). The not-stored
+answers repeat api/app.py's; tests/integration/test_served_runs.py checks
+each against the API itself. Anyone signed in may look: they can already
+download these files.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,6 +35,8 @@ router = APIRouter(tags=["served-runs"])
 _STATUSES = ("ready", "archived")
 _NOT_SERVED = "Run not available via API. Only ready or archived runs can be accessed."
 _BAD_STATUS = "Invalid status. Only 'ready' and 'archived' are allowed via API."
+_RUNINFO_NOTE = ('This sheet relies on BCL Convert acting on the IsReverseComplement="Y" mark '
+                 "that RunInfo.xml puts on the i5 read.")
 
 
 @dataclass
@@ -43,6 +48,35 @@ class ServedFile:
     pdf_size: Optional[int] = None   # the stored PDF's size in bytes
     pdf_size_text: str = ""          # the same, written for reading ("1,033")
     missing: str = ""                # the API's 404 detail when nothing is stored
+    download: str = ""               # the stored file's download address
+    target: list[tuple[str, str]] = field(default_factory=list)  # a sheet's target, as (label, value) rows
+    target_note: str = ""            # what the sheet relies on BCL Convert to do
+    target_missing: bool = False     # a stored sheet whose target was never saved
+
+
+def _target_rows(target: dict) -> list[tuple[str, str]]:
+    software = target["software"]
+    if target["software_version"]:
+        software += f" {target['software_version']}"
+    elif software == "BCL Convert":
+        software += " (the sheet states no version)"
+    column = ("Forward, as the index kit lists it" if target["index2_column"] == "forward"
+              else "Reverse complement of the index kit's i5")
+    return [("Instrument", target["instrument"]), ("Software", software),
+            ("i5 workflow", target["i5_workflow"]), ("i5 column", column)]
+
+
+def _with_target(f: ServedFile, run) -> ServedFile:
+    """A stored sheet with the target Mark Ready saved for it."""
+    if f.missing:
+        return f
+    target = (run.sheet_targets or {}).get(f.resource.replace("-", "_"))
+    if not target:
+        f.target_missing = True
+        return f
+    f.target = _target_rows(target)
+    f.target_note = _RUNINFO_NOTE if target["needs_runinfo_reverse_mark"] else ""
+    return f
 
 
 def _served_files(run) -> list[ServedFile]:
@@ -54,10 +88,11 @@ def _served_files(run) -> list[ServedFile]:
     else:
         v1 = ServedFile("samplesheet-v1", "Sample Sheet v1", missing="SampleSheet v1 not available for this run")
     pdf = run.generated_validation_pdf
-    return [
-        ServedFile("samplesheet-v2", "Sample Sheet v2", text=run.generated_samplesheet_v2,
-                   missing="" if run.generated_samplesheet_v2 else "SampleSheet v2 not yet generated"),
-        v1,
+    files = [
+        _with_target(ServedFile("samplesheet-v2", "Sample Sheet v2", text=run.generated_samplesheet_v2,
+                                missing="" if run.generated_samplesheet_v2 else "SampleSheet v2 not yet generated"),
+                     run),
+        _with_target(v1, run),
         ServedFile("json", "JSON", text=run.generated_json,
                    missing="" if run.generated_json else "JSON metadata not yet generated"),
         ServedFile("validation-report", "Validation report (JSON)", text=run.generated_validation_json,
@@ -66,6 +101,10 @@ def _served_files(run) -> list[ServedFile]:
                    pdf_size_text=f"{len(pdf):,}" if pdf else "",
                    missing="" if pdf else "Validation PDF not yet generated"),
     ]
+    for f in files:
+        if not f.missing:
+            f.download = f"/runs/{run.id}/export/{f.resource}"
+    return files
 
 
 @router.get("/served-runs", response_class=HTMLResponse)

@@ -860,7 +860,8 @@ def test_export_served_run(demo_page, base_url, demo):
     found = section.evaluate("(el, id) => el.textContent.split(id).length - 1", run_id)
     assert found >= 2
     replace_text(section, re.escape(run_id), ["demo-run-06"] * found)
-    snap(page, "export/served-run", section.locator("code").first, region=section)
+    assert section.locator(".served-target dd").count() == 4
+    snap(page, "export/served-run", section.locator(".served-target"), region=section)
 
 
 def test_ready_back_to_draft(demo_page, base_url, demo):

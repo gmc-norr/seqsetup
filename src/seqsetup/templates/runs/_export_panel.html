@@ -41,7 +41,7 @@
                {% if not val_pdf_enabled %}aria-disabled="true"{% endif %}
                {% if val_pdf_enabled %}href="/runs/{{ run.id }}/export/validation-pdf"{% endif %}>Download Validation Report (PDF)</a>
         </div>
-        <p class="text-sm mt-2"><a class="text-primary underline" href="/served-runs/{{ run.id }}">See what the API serves for this run</a></p>
+        <p class="text-sm mt-2"><a class="text-primary underline" href="/served-runs/{{ run.id }}">See this run in API Exports</a></p>
         {% if has_v1 and run.samplesheet_v1_withheld %}
         {# Why Mark Ready made no v1 sheet (spec 2026-10-05 group A3, §3). #}
         <p class="export-waiting">No v1 sheet for this run: {{ run.samplesheet_v1_withheld }}.</p>
