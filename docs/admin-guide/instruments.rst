@@ -124,6 +124,12 @@ From these SeqSetup decides, for each run, from the run's workflow:
   is ``true``, because BCL Convert reverses it back, as Illumina's NovaSeq
   X Settings page shows; otherwise as stored.
 
+**Mark Ready** saves, with each run's Sample Sheets, what they were written
+for, this rule included (see :ref:`api-exports`); a later change here does
+not change a Ready run's sheets or that record. A sync that changes an
+instrument's i5 settings while **Mark Ready** is writing a run's exports
+makes it refuse; the run stays a Draft.
+
 For an 8-base i5 on a 10-cycle Index 2 read, with the shipped instruments:
 
 .. list-table::

@@ -123,6 +123,7 @@ def _run_summary(run) -> RunSummary:
         updated_at=as_utc(run.updated_at),
         created_by=run.created_by,
         sample_count=len(run.samples) if run.samples else 0,
+        target=run.sheet_targets or None,
     )
 
 

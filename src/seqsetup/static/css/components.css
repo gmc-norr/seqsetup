@@ -1367,9 +1367,14 @@ body {
 .more-section-heading { font-size: var(--fs-sm); font-weight: var(--fw-semibold); margin: 0 0 var(--space-2); }
 .more-section-content form + .more-section-heading { margin-top: var(--space-4); }
 
-/* What the API serves: a stored file shown as it is. A long line scrolls
+/* API Exports: a stored file shown as it is. A long line scrolls
    sideways inside its box, not the page. */
 .served-content { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-3); margin-top: var(--space-2); overflow-x: auto; font-size: var(--fs-sm); }
+/* A sheet's target instrument and software, label beside value. */
+.served-target { margin-top: var(--space-2); }
+.served-target dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: var(--space-1) 0 0; font-size: var(--fs-sm); }
+.served-target dt { color: var(--text-muted); }
+.served-target dd { margin: 0; overflow-wrap: anywhere; }
 
 .paste-form-content {
     padding: 1rem;

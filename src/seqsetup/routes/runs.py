@@ -30,9 +30,11 @@ from ..data.instruments import (
     get_reagent_kit_max_cycles,
     get_reagent_kits_for_flowcell,
     i5_workflow_names,
+    I5DirectionChanged,
     is_instrument_enabled_by_name,
     no_settings_reason,
     reading_synced_records,
+    run_i5_direction,
     SyncedInstrumentsUnusable,
 )
 from ..models.instrument_definition import InstrumentRecordError
@@ -44,6 +46,7 @@ from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.sheet_plan import SheetPlanChanged, SheetPlanProblem
+from ..services.sheet_target import sheet_targets
 from ..services.validation import ValidationService, clear_validation_cache
 from ..services.validation_report import ValidationReportJSON, ValidationReportPDF
 from ..services.validation_summary import error_messages
@@ -70,6 +73,7 @@ _FINGERPRINT_IGNORED_KEYS = (
     "generated_validation_json",
     "generated_validation_pdf",
     "samplesheet_v1_withheld",
+    "sheet_targets",
 )
 
 
@@ -79,8 +83,13 @@ def _pregenerate_exports(
     """Generate all run exports against the current state snapshot.
 
     Returns ``(samplesheet_v2, samplesheet_v1, json_export, validation_json,
-    validation_pdf)``. The v1 entry is ``None`` for platforms that don't
-    support the legacy IEM format. Raises on any export failure so the
+    validation_pdf, i5_direction)``. The v1 entry is ``None`` for platforms
+    that don't support the legacy IEM format. ``i5_direction`` is the one
+    every export was written with, for the sheets' targets
+    (services/sheet_target.py): the writers each read it again, so it is
+    read before and after them, and ``I5DirectionChanged`` is raised if a
+    sync moved it in between (review, 2026-10-13).
+    Raises on any export failure so the
     caller can refuse the status transition without persisting half-mutated
     state — the responsibility for converting that to a 500 lives at the
     handler boundary, not here.
@@ -90,6 +99,7 @@ def _pregenerate_exports(
     come from a plan with the same one, or ``SheetPlanChanged`` is raised
     (spec 2026-10-05 group A3, §1).
     """
+    i5_direction = run_i5_direction(run)
     ss_v2 = SampleSheetV2Exporter.export(
         run,
         test_profile_repo=ctx.test_profile_repo,
@@ -113,7 +123,9 @@ def _pregenerate_exports(
         raise SheetPlanChanged()
     val_json = ValidationReportJSON.export(run, result)
     val_pdf = ValidationReportPDF.export(run, result)
-    return ss_v2, ss_v1, json_export, val_json, val_pdf
+    if run_i5_direction(run) != i5_direction:
+        raise I5DirectionChanged()
+    return ss_v2, ss_v1, json_export, val_json, val_pdf, i5_direction
 
 
 def _export_input_fingerprint(run: SequencingRun) -> str:
@@ -617,10 +629,11 @@ async def update_status(
     new_ss_v1 = None
     new_val_json = None
     new_val_pdf = None
+    new_i5_direction = None
     if new_status == RunStatus.READY:
         try:
             with _denied_if_instruments_unusable(request, run, new_status):
-                new_ss_v2, new_ss_v1, new_json, new_val_json, new_val_pdf = (
+                new_ss_v2, new_ss_v1, new_json, new_val_json, new_val_pdf, new_i5_direction = (
                     _pregenerate_exports(
                         run, ctx,
                         plan_fingerprint=validation_result.sheet_plan_fingerprint or None,
@@ -640,6 +653,19 @@ async def update_status(
                 target=run.id,
                 outcome="denied",
                 reason="profiles_changed_during_export",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(str(e))
+        except I5DirectionChanged as e:
+            # A sync changed the instrument's i5 settings while the exports
+            # were written (review, 2026-10-13): nothing is stored.
+            clear_validation_cache()
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="i5_settings_changed_during_export",
                 attempted_status=new_status.value,
             )
             raise ConflictError(str(e))
@@ -729,6 +755,12 @@ async def update_status(
                 run.generated_samplesheet_v1 = new_ss_v1
             run.generated_validation_json = new_val_json
             run.generated_validation_pdf = new_val_pdf
+            # Of the sheets just stored (the user's request, 2026-10-13).
+            run.sheet_targets = sheet_targets(
+                run.instrument_platform.value, new_i5_direction,
+                run.generated_samplesheet_v2, run.generated_samplesheet_v1,
+                has_i5=any(s.index2_sequence for s in run.samples),
+            )
         elif new_status == RunStatus.DRAFT:
             # READY→DRAFT puts the run back into the editable pool. Clear
             # pre-generated exports so a subsequent re-promotion never
@@ -740,6 +772,7 @@ async def update_status(
             run.generated_samplesheet_v1 = None
             run.samplesheet_v1_withheld = ""
             run.test_versions_used = []
+            run.sheet_targets = {}
             run.generated_json = None
             run.generated_validation_json = None
             run.generated_validation_pdf = None

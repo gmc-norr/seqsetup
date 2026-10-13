@@ -501,6 +501,20 @@ class NoI5Direction(ValueError):
         self.draft_remedy = draft_remedy
 
 
+class I5DirectionChanged(Exception):
+    """A run's i5 direction moved while Mark Ready wrote its exports: a sync
+    changed the instrument's settings in between, so the sheets, the report
+    and the sheets' targets may each have read a different one (review,
+    2026-10-13). Nothing is stored."""
+
+    def __init__(self):
+        super().__init__(
+            "The instrument's i5 settings changed while the exports were being generated, so "
+            "the Sample Sheets could disagree with each other. The run is still a Draft. "
+            "Mark it Ready again."
+        )
+
+
 @dataclass(frozen=True)
 class I5Direction:
     """How a run's instrument reads the i5, and so what the sheets write

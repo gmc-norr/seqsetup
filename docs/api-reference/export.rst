@@ -17,14 +17,14 @@ Every download names its file after the run, in a
 ``Content-Disposition: attachment`` header. The ``filename`` parameter is
 always plain ASCII: accents are removed (``Příliš`` becomes ``Prilis``),
 any other character outside ASCII is dropped, and if that leaves nothing
-the endpoint's own default is used (``SampleSheet_v2``, ``SampleSheet``,
-``run_metadata``, ``validation_report``). When the run's name is not ASCII,
+the endpoint's own default is used (``SampleSheet``, ``run_metadata``,
+``validation_report``). When the run's name is not ASCII,
 a second parameter carries the name's own letters -- so a Polish, Czech,
 Turkish, Cyrillic or CJK name is not lost -- UTF-8 percent-encoded, after
 the same scrub every download name gets (spaces become ``_``, and
 punctuation other than ``-`` and ``.`` is dropped)::
 
-   Content-Disposition: attachment; filename="Prilis_zlutoucky.csv"; filename*=UTF-8''P%C5%99%C3%ADli%C5%A1_%C5%BElu%C5%A5ou%C4%8Dk%C3%BD.csv
+   Content-Disposition: attachment; filename="Prilis_zlutoucky_v2_BCLConvert.csv"; filename*=UTF-8''P%C5%99%C3%ADli%C5%A1_%C5%BElu%C5%A5ou%C4%8Dk%C3%BD_v2_BCLConvert.csv
 
 Browsers prefer ``filename*`` and so save the file under that name; the
 ASCII ``filename`` is the fallback for clients that do not understand it
@@ -53,7 +53,7 @@ Status Meaning
 **Response headers**::
 
    Content-Type: text/csv
-   Content-Disposition: attachment; filename="Run_2025_001.csv"
+   Content-Disposition: attachment; filename="Run_2025_001_v2_BCLConvert.csv"
 
 The generated SampleSheet v2 contains the following sections:
 

@@ -12,6 +12,36 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class SheetTarget(BaseModel):
+    """The instrument and software one stored Sample Sheet was written for."""
+
+    instrument: str = Field(..., description="The run's instrument (e.g., 'NovaSeq X Series').")
+    software: str = Field(..., description='"BCL Convert" (v2 sheet) or "bcl2fastq" (v1 sheet).')
+    software_version: Optional[str] = Field(
+        None,
+        description="The BCL Convert version the v2 sheet states; null when the sheet states none, "
+                    "and always null for a v1 sheet.",
+    )
+    i5_workflow: str = Field(..., description="The run's i5 workflow.")
+    index2_column: str = Field(
+        ...,
+        description='How the sheet writes each i5: "forward" (each sample\'s i5 as stored), '
+                    '"reverse-complement", or "none" (no sample has an i5).',
+    )
+    needs_runinfo_reverse_mark: bool = Field(
+        ...,
+        description='True when the sheet relies on BCL Convert acting on the IsReverseComplement="Y" '
+                    "mark RunInfo.xml puts on the i5 read.",
+    )
+
+
+class SheetTargets(BaseModel):
+    """Each stored Sample Sheet's target instrument and software."""
+
+    samplesheet_v2: SheetTarget
+    samplesheet_v1: Optional[SheetTarget] = Field(None, description="null when the run has no v1 sheet.")
+
+
 class RunSummary(BaseModel):
     """Minimal run record returned by the list endpoint.
 
@@ -33,6 +63,11 @@ class RunSummary(BaseModel):
     updated_at: Optional[datetime] = Field(None, description="UTC last-modified timestamp.")
     created_by: str = Field("", description="Username of the run creator.")
     sample_count: int = Field(0, ge=0, description="Number of samples in the run.")
+    target: Optional[SheetTargets] = Field(
+        None,
+        description="Each stored Sample Sheet's target instrument and software, saved by Mark Ready "
+                    "with the sheets; null for a run marked Ready before SeqSetup saved it.",
+    )
 
 
 class RunListResponse(BaseModel):

@@ -79,7 +79,18 @@ Status Meaning
          "created_at": "2025-06-15T10:30:00Z",
          "updated_at": "2025-06-15T14:22:00Z",
          "created_by": "jdoe",
-         "sample_count": 96
+         "sample_count": 96,
+         "target": {
+           "samplesheet_v2": {
+             "instrument": "NovaSeq X Series",
+             "software": "BCL Convert",
+             "software_version": "4.3.6",
+             "i5_workflow": "Standard",
+             "index2_column": "forward",
+             "needs_runinfo_reverse_mark": true
+           },
+           "samplesheet_v1": null
+         }
        }
      ],
      "total": 137,
@@ -170,6 +181,46 @@ Each entry in ``items`` is a minimal summary:
    * - ``sample_count``
      - integer
      - Number of samples in the run.
+   * - ``target``
+     - object or null
+     - Each stored Sample Sheet's target instrument and software, saved by
+       Mark Ready with the sheets and never worked out again: a
+       ``samplesheet_v2`` object, and a ``samplesheet_v1`` object or
+       ``null`` when the run has no v1 sheet. ``null`` for a run marked
+       Ready before SeqSetup saved targets.
+
+Each ``target`` object:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 15 55
+
+   * - Field
+     - Type
+     - Description
+   * - ``instrument``
+     - string
+     - The run's instrument.
+   * - ``software``
+     - string
+     - ``BCL Convert`` (v2 sheet) or ``bcl2fastq`` (v1 sheet).
+   * - ``software_version``
+     - string or null
+     - The BCL Convert version the v2 sheet states in its
+       ``[BCLConvert_Settings]``; ``null`` when it states none, and for a
+       v1 sheet.
+   * - ``i5_workflow``
+     - string
+     - The run's i5 workflow.
+   * - ``index2_column``
+     - string
+     - ``forward`` (each sample's i5 as stored), ``reverse-complement``,
+       or ``none`` (no sample has an i5).
+   * - ``needs_runinfo_reverse_mark``
+     - boolean
+     - ``true`` when the sheet relies on BCL Convert acting on the
+       ``IsReverseComplement="Y"`` mark that ``RunInfo.xml`` puts on the i5
+       read (see :doc:`/admin-guide/instruments`).
 
 For full sample / analysis / cycle-configuration data, use ``GET
 /api/runs/{run_id}/json``.

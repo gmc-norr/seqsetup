@@ -1,5 +1,5 @@
-"""What the API serves, on a narrow screen: wide content scrolls inside
-its box, not the whole page.
+"""API Exports, on a narrow screen: wide content scrolls inside its box,
+not the whole page.
 
 A Sample Sheet or JSON line can be far wider than a phone, or than a
 laptop's window, and so can the list's columns; the page itself must not
@@ -26,6 +26,9 @@ def run_id(app_ctx):
         run_cycles=RunCycles(151, 151, 8, 8), status=RunStatus.READY,
         created_at=t, updated_at=t,
         generated_samplesheet_v2=f"[Header]\nFileFormatVersion,2\n\n[BCLConvert_Data]\n{LONG_LINE}\n",
+        sheet_targets={"samplesheet_v1": None, "samplesheet_v2": {
+            "instrument": "NovaSeq X Series", "software": "BCL Convert", "software_version": "4.3.6",
+            "i5_workflow": "W" * 64, "index2_column": "forward", "needs_runinfo_reverse_mark": True}},
     )
     run.add_sample(Sample(id=f"{run.id}-s1", sample_id="S1", lanes=[1]))
     app_ctx.run_repo.save(run)
@@ -55,6 +58,11 @@ def test_a_long_line_scrolls_in_its_box(logged_in_page, base_url, run_id, width)
 
     box = page.locator("#served-samplesheet-v2 .served-content")
     assert LONG_LINE in box.inner_text()
+    # The target box, with the longest i5 workflow name, wraps instead: none
+    # of it runs past the box, where it would be cut off.
+    target = page.locator("#served-samplesheet-v2 .served-target")
+    assert target.is_visible()
+    assert target.evaluate("e => e.scrollWidth <= e.clientWidth")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert box.evaluate("e => e.scrollWidth > e.clientWidth")
     assert box.evaluate("e => getComputedStyle(e).overflowX") in ("auto", "scroll")

@@ -25,10 +25,12 @@ from .test_group_1c import _pair
 
 ORIGIN = {"Origin": "http://testserver"}
 
-# (route, the filename's suffix, the route's default stem)
+# (route, the filename's suffix, the route's default stem). Each sheet's
+# name says its version and the software that reads it, so the two never
+# download under one name (the user's request, 2026-10-13).
 EXPORT_ROUTES = [
-    ("samplesheet-v2", ".csv", "SampleSheet_v2"),
-    ("samplesheet-v1", ".csv", "SampleSheet"),
+    ("samplesheet-v2", "_v2_BCLConvert.csv", "SampleSheet"),
+    ("samplesheet-v1", "_v1_bcl2fastq.csv", "SampleSheet"),
     ("json", ".json", "run_metadata"),
     ("validation-report", "_validation.json", "validation_report"),
     ("validation-pdf", "_validation.pdf", "validation_report"),

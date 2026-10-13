@@ -61,7 +61,9 @@ def export_samplesheet_v2(
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     # Before the try: a header that cannot be built is not a failed export.
-    headers = _attachment_headers(run.run_name, "SampleSheet_v2", ".csv")
+    # The name says the version and the software that reads it (the user's
+    # request, 2026-10-13): the v1 and v2 sheets never share one.
+    headers = _attachment_headers(run.run_name, "SampleSheet", "_v2_BCLConvert.csv")
     try:
         if run.generated_samplesheet_v2:
             content = run.generated_samplesheet_v2
@@ -103,7 +105,7 @@ def export_samplesheet_v1(
             status_code=400,
         )
     # Before the try: a header that cannot be built is not a failed export.
-    headers = _attachment_headers(run.run_name, "SampleSheet", ".csv")
+    headers = _attachment_headers(run.run_name, "SampleSheet", "_v1_bcl2fastq.csv")
     try:
         # Mark Ready stored why it made no v1 sheet (spec 2026-10-05 group
         # A3, §3); a run made before exports were stored gets one on the
