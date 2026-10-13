@@ -101,9 +101,10 @@ repository, since two folders of the tree can hold the same file name::
 It also refuses **every** file of two tests whose ``TestType`` differs only
 in letter case. A ``TestType`` is matched exactly, so ``Wgs`` and ``WGS``
 are two different tests with their own application profiles, while every
-page and the Sample Sheet show what a reader takes for one test::
+page and the Sample Sheet show what a reader takes for one test. It names
+each file by its path too::
 
-   Test profiles refused: WGS in WGS.yaml and Wgs in Wgs.yaml differ only in capitals. Two tests may not differ only in capitals.
+   Test profiles refused: WGS in profiles/test_profiles/WGS.yaml and Wgs in profiles/test_profiles/Wgs.yaml differ only in capitals. Two tests may not differ only in capitals.
 
 Pick one spelling for the test and use it in every file of it.
 

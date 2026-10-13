@@ -31,12 +31,12 @@ class TestTwoTestsThatDifferOnlyInCapitals:
         # WGS 1.1.0's file is not in this sync, so the refusal names it as
         # kept without being read (batch 4, item 11);
         # tests/integration/test_refused_sync_keeps_versions.py.
-        assert message == (REFUSED + "WGS in WGS.yaml and Wgs in Wgs.yaml differ only in "
-                           "capitals. Kept test profiles this sync did not read: WGS 1.1.0 "
+        assert message == (REFUSED + f"WGS in {FOLDER}/WGS.yaml and Wgs in {FOLDER}/Wgs.yaml "
+                           "differ only in capitals. Kept test profiles this sync did not read: WGS 1.1.0 "
                            "-- each is in a refused file or no longer in the repository. "
                            "Synced 1 application profiles.")
-        assert ("Test profiles refused: WGS in WGS.yaml and Wgs in Wgs.yaml differ only in "
-                "capitals. Two tests may not differ only in capitals.") in logged
+        assert (f"Test profiles refused: WGS in {FOLDER}/WGS.yaml and Wgs in {FOLDER}/Wgs.yaml "
+                "differ only in capitals. Two tests may not differ only in capitals.") in logged
         assert _stored(ctx) == STORED_BEFORE
 
     def test_three_spellings_are_all_named(self, fresh_app, monkeypatch):
@@ -48,8 +48,8 @@ class TestTwoTestsThatDifferOnlyInCapitals:
         })
 
         assert ok is False
-        assert message == (REFUSED + "PAN in a.yaml, Pan in b.yaml and pan in c.yaml differ "
-                           "only in capitals. Synced 1 application profiles.")
+        assert message == (REFUSED + f"PAN in {FOLDER}/a.yaml, Pan in {FOLDER}/b.yaml and pan in "
+                           f"{FOLDER}/c.yaml differ only in capitals. Synced 1 application profiles.")
 
     def test_every_file_of_a_spelling_is_named(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -60,8 +60,21 @@ class TestTwoTestsThatDifferOnlyInCapitals:
         })
 
         assert ok is False
-        assert message == (REFUSED + "WGS in new.yaml, old.yaml and Wgs in other.yaml differ "
-                           "only in capitals. Synced 1 application profiles.")
+        assert message == (REFUSED + f"WGS in {FOLDER}/new.yaml, {FOLDER}/old.yaml and Wgs in "
+                           f"{FOLDER}/other.yaml differ only in capitals. Synced 1 application profiles.")
+
+    def test_files_of_one_name_in_two_folders_are_told_apart(self, fresh_app, monkeypatch):
+        """The night run's Q7, answered 2026-10-13: the refusal names each
+        file by its path, as the repeated-test refusal beside it does."""
+        _app, ctx, _db = fresh_app
+        ok, message, _logged = _sync_tests(ctx, monkeypatch, {
+            "Wgs.yaml": _test_yaml("1.2.0", "Wgs"),
+            "archive": {"Wgs.yaml": _test_yaml("1.0.0", "WGS")},
+        })
+
+        assert ok is False
+        assert message == (REFUSED + f"WGS in {FOLDER}/archive/Wgs.yaml and Wgs in "
+                           f"{FOLDER}/Wgs.yaml differ only in capitals. Synced 1 application profiles.")
 
 
 class TestWhatIsStillAccepted:

@@ -218,7 +218,7 @@ class GitHubSyncService:
                 paths=test_paths,
             )
             self._refuse_repeated_test_versions(test_profiles, refused_tests, test_paths)
-            self._refuse_tests_differing_only_in_capitals(test_profiles, refused_tests)
+            self._refuse_tests_differing_only_in_capitals(test_profiles, refused_tests, test_paths)
             logger.info(f"Fetched {len(test_profiles)} test profiles")
 
             # Fetch instruments if enabled and repo available. Any refused
@@ -854,16 +854,20 @@ class GitHubSyncService:
 
     @staticmethod
     def _refuse_tests_differing_only_in_capitals(test_profiles: list[TestProfile],
-                                                 refused: list[str]) -> None:
+                                                 refused: list[str],
+                                                 paths: Optional[list[str]] = None) -> None:
         """Two tests whose TestType differs only in letter case are logged and
         added to ``refused``. A test is matched by its TestType exactly, so
         ``Wgs`` and ``WGS`` are two tests with their own application profiles,
         while every page and the Sample Sheet show what a reader takes for one
-        test (spec 2026-10-07 group A4, what it did not cover)."""
+        test (spec 2026-10-07 group A4, what it did not cover). ``paths`` are
+        the files' paths in the repository, in step with ``test_profiles``, as
+        for ``_refuse_repeated_test_versions`` (the night run's Q7)."""
+        where_of = paths if paths is not None else [p.source_file for p in test_profiles]
         files: dict[str, dict[str, list[str]]] = {}
-        for profile in test_profiles:
+        for profile, where in zip(test_profiles, where_of, strict=True):
             spellings = files.setdefault(profile.test_type.lower(), {})
-            spellings.setdefault(profile.test_type, []).append(profile.source_file)
+            spellings.setdefault(profile.test_type, []).append(where)
         for spellings in files.values():
             if len(spellings) < 2:
                 continue
