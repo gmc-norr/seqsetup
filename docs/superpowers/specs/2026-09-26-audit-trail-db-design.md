@@ -3,7 +3,7 @@
 **Date:** 2026-09-26
 **Status:** Approved design (user chose "B: the database" over server log output)
 **Findings closed:** N-18 (no durable sink), N-21 (URL credentials in audit events).
-Security audit 2026-09, `/home/parlar_ai/seqsetup-audit-run/FINDINGS.md`.
+Security audit 2026-09, `~/seqsetup-audit-run/FINDINGS.md`.
 
 ## Problem
 

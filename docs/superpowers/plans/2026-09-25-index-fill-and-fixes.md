@@ -23,10 +23,10 @@
 - Commit per task on the worktree branch, conventional style (`fix(...)`, `feat(...)`, `chore:`, `test(...)`), a body explaining why, last line exactly:
   `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`
 - Commands, from the worktree root (there is no pixi env in the worktree; never run `pixi install` or `pixi run`):
-  - `PY=/home/parlar_ai/dev/seqsetup/.pixi/envs/default/bin/python`
+  - `PY=~/dev/seqsetup/.pixi/envs/default/bin/python`
   - one file: `PYTHONPATH=src $PY -m pytest <file> -q`
   - server suite: `PYTHONPATH=src $PY -m pytest tests/unit tests/integration -q` (baseline **1428 passed**)
-  - CSS (app.css is untracked; build before browser tests and after CSS edits; never commit it): `/home/parlar_ai/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`
+  - CSS (app.css is untracked; build before browser tests and after CSS edits; never commit it): `~/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`
   - browser suite: `PYTHONPATH=src $PY -m pytest tests/browser -q` (baseline **67 passed**)
 - Test fixtures: integration `fresh_app` → `(app, ctx, db)`, `logged_in_client`; POSTs need `headers={"Origin": "http://testserver"}`. Browser: `logged_in_page`, `base_url`, `app_ctx`, `mutable_run_id`; `SCREENSHOT_KIT_NAME` ("Screenshot-TestKit", 4 unique-dual pairs UDP0001–UDP0004) in `tests/browser/conftest.py`.
 
@@ -35,8 +35,8 @@
 ### Task 0: Put the spec and plan in the branch
 
 **Files:**
-- Create: `docs/superpowers/specs/2026-09-25-index-fill-design.md` (copy of `/home/parlar_ai/seqsetup-fill-run/spec.md`)
-- Create: `docs/superpowers/plans/2026-09-25-index-fill-and-fixes.md` (copy of `/home/parlar_ai/seqsetup-fill-run/plan.md`)
+- Create: `docs/superpowers/specs/2026-09-25-index-fill-design.md` (copy of `~/seqsetup-fill-run/spec.md`)
+- Create: `docs/superpowers/plans/2026-09-25-index-fill-and-fixes.md` (copy of `~/seqsetup-fill-run/plan.md`)
 
 - [ ] Copy both files, commit `docs: plan for fill indexes in order and leftover fixes`.
 
@@ -646,7 +646,7 @@ Also update the template's header comment (Inputs unchanged; mention the fill ar
   3. Click "Assign 3 indexes", wait for the `/index-fill` response (200); the stored samples now carry UDP0002, UDP0003, UDP0004 sequences in order; `#index-fill-preview` is gone.
   4. A separate test: open the preview, click Cancel, `#index-fill-area` is empty and nothing was stored.
 - [ ] **Step 2: styles** in `components.css`, next to the `.paste-*` block, using existing tokens (`--space-*`, `--fs-sm`, `--danger`, `--danger-fg`, `--danger-bg`, `--text-muted`, borders like `.paste-*` use): `.index-fill-start` (margin under the dropdown), `.index-fill-preview` (bordered panel with padding and bottom margin, like the paste preview), `.index-fill-options` (flex, gap, wrap), `.index-fill-problem` (danger colors), `.index-fill-note` (muted), `.index-fill-table` (full width, small font, cells padded), `.index-fill-actions` (flex, gap, align center). Must work at 375 px width: the table may scroll inside the panel (`overflow-x: auto` on a wrapper), the page must not.
-- [ ] **Step 3: rebuild CSS, run the test, then the whole browser suite. Take one screenshot of the preview (full page, 1280 wide) into `/home/parlar_ai/seqsetup-fill-run/shots/` and look at it; record what you saw in STATUS.md. Commit** `feat(ui): style the fill-in-order preview`.
+- [ ] **Step 3: rebuild CSS, run the test, then the whole browser suite. Take one screenshot of the preview (full page, 1280 wide) into `~/seqsetup-fill-run/shots/` and look at it; record what you saw in STATUS.md. Commit** `feat(ui): style the fill-in-order preview`.
 
 ---
 

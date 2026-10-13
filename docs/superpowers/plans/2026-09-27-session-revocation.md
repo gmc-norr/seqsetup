@@ -14,9 +14,9 @@
 
 ## Global Constraints
 
-- Worktree `/home/parlar_ai/dev/seqsetup/.worktrees/sessions`, branch `fix/session-revocation`. Never `pixi run` here.
-- Python: `PY=/home/parlar_ai/dev/seqsetup/.pixi/envs/default/bin/python`, run as `PYTHONPATH=src $PY -m pytest ... -p no:cacheprovider`.
-- CSS for browser tests: `/home/parlar_ai/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`.
+- Worktree `~/dev/seqsetup/.worktrees/sessions`, branch `fix/session-revocation`. Never `pixi run` here.
+- Python: `PY=~/dev/seqsetup/.pixi/envs/default/bin/python`, run as `PYTHONPATH=src $PY -m pytest ... -p no:cacheprovider`.
+- CSS for browser tests: `~/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`.
 - Defaults: `SEQSETUP_SESSION_MAX_AGE_SECONDS` = `28800`, `SEQSETUP_SESSION_IDLE_SECONDS` = `1800`. Clamps: max_age `[300, 86400]`, idle `[60, max_age]`, WARNING on clamp, `ValueError` on non-integer.
 - Datetimes in `web_sessions` are naive UTC; values read back are treated as UTC.
 - HTMX ended-login message, exact text: `Your login has ended, so this was not saved. What you typed is still on this page. Log in again in a new tab, then try again here.` — with "Log in again" a link `<a href="/login" target="_blank" rel="noopener">`.
@@ -1450,7 +1450,7 @@ def test_paste_survives_an_ended_login(logged_in_page, base_url, admin_creds, ap
 
 - [ ] **Step 2: Build CSS and run it** (it must pass with Tasks 1–5 in place; if the 401 banner does not show, the HX-Retarget path in `static/js/app.js` is not being hit — investigate, do not change the test)
 
-Run: `/home/parlar_ai/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify && PYTHONPATH=src $PY -m pytest tests/browser/test_ended_login.py -q -p no:cacheprovider`
+Run: `~/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify && PYTHONPATH=src $PY -m pytest tests/browser/test_ended_login.py -q -p no:cacheprovider`
 Expected: PASS.
 
 - [ ] **Step 3: Docs** — in `docs/getting-started/configuration.rst`, add two rows to the environment-variable table next to `SEQSETUP_SESSION_SECRET`, in the table's existing format:

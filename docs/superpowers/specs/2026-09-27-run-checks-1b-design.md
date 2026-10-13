@@ -1,7 +1,7 @@
 # Run checks (group 1b) — design
 
 Fixes three findings from the 2026-09 documentation run
-(`/home/parlar_ai/seqsetup-docs-run/FINDINGS-DOCS.md`, outside the repo):
+(`~/seqsetup-docs-run/FINDINGS-DOCS.md`, outside the repo):
 
 - **F13** — a color-balance Error never stops Mark Ready, and nothing says so at the moment
   it matters.

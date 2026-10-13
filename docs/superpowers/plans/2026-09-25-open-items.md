@@ -20,10 +20,10 @@
 - One commit per task on the worktree branch, conventional style, a body explaining why, last line exactly:
   `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`
 - Commands, from the worktree root (no env in the worktree; never `pixi install` / `pixi run`):
-  - `PY=/home/parlar_ai/dev/seqsetup/.pixi/envs/default/bin/python`
+  - `PY=~/dev/seqsetup/.pixi/envs/default/bin/python`
   - one file: `PYTHONPATH=src $PY -m pytest <file> -q`
   - server suite: `PYTHONPATH=src $PY -m pytest tests/unit tests/integration -q` (baseline **1489 passed**)
-  - CSS (app.css is untracked; build before browser tests and after CSS edits; never commit it): `/home/parlar_ai/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`
+  - CSS (app.css is untracked; build before browser tests and after CSS edits; never commit it): `~/dev/seqsetup/.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify`
   - browser suite: `PYTHONPATH=src $PY -m pytest tests/browser -q` (baseline **80 passed, 0 warnings**)
 - Fixtures: integration `fresh_app` → `(app, ctx, db)`, `logged_in_client`, POSTs need `headers={"Origin": "http://testserver"}`; `_make_ready_eligible_run(ctx)` in `tests/integration/test_smoke_validation.py` builds a run that can be marked Ready. Browser: `logged_in_page`, `base_url`, `app_ctx`, `mutable_run_id`; `SCREENSHOT_KIT_NAME`, `ARCHIVED_RUN_ID` in `tests/browser/conftest.py`; `tests/browser/test_bulk_lane_panel_swap.py` shows how to tick samples and apply a bulk lane change; `tests/browser/test_index_fill.py` has a `second_kit_id` fixture creating and deleting a second kit.
 - Status transitions in tests go through the real routes: `POST /runs/{id}/status/ready`, then `POST /runs/{id}/status/archived` (this pre-generates and keeps the exports).
@@ -32,7 +32,7 @@
 
 ### Task 0: Put the spec and plan in the branch
 
-- [ ] Copy `/home/parlar_ai/seqsetup-open-run/spec.md` to `docs/superpowers/specs/2026-09-25-open-items-design.md` and `/home/parlar_ai/seqsetup-open-run/plan.md` to `docs/superpowers/plans/2026-09-25-open-items.md`. Commit `docs: plan for the open items`.
+- [ ] Copy `~/seqsetup-open-run/spec.md` to `docs/superpowers/specs/2026-09-25-open-items-design.md` and `~/seqsetup-open-run/plan.md` to `docs/superpowers/plans/2026-09-25-open-items.md`. Commit `docs: plan for the open items`.
 
 ---
 
