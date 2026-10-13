@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from .test_dependency_floors import _locked
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -93,6 +95,15 @@ class TestNumpyIsDeclared:
         requirement = _manifest()["dependencies"].get("numpy")
         assert requirement is not None, "pixi.toml does not declare numpy"
         assert str(requirement).startswith(">="), requirement
+
+    def test_the_floor_is_the_locked_version(self):
+        """The floor is a floor at the LOCKED version, as the decision asks.
+        ">=" alone would let a `pixi update` move numpy and leave the floor
+        behind, with nothing complaining (batch 4 review fix G). _locked()
+        is test_dependency_floors' lock reader; there is one of those."""
+        locked = _locked()["numpy"]
+        assert len(set(locked)) == 1, locked
+        assert _manifest()["dependencies"]["numpy"] == f">={locked[0]}"
 
     def test_the_default_environment_holds_numpy(self):
         assert "numpy" in _environments()["default"]
