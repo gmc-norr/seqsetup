@@ -20,12 +20,14 @@ from playwright.sync_api import expect
 from seqsetup.data.instruments import clear_synced_instruments_cache
 from seqsetup.models.instrument_definition import FlowcellDefinition, InstrumentDefinition
 from seqsetup.models.deleted_run import DeletedRun
+from seqsetup.models.edit_lock import EditLock
 from seqsetup.models.run_history import RunHistoryEntry
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services import database
+from seqsetup.utils.clock import utcnow
 
 from .docs_shots import replace_text, shoot
-from .docs_world import (DEMO_ADMIN, DEMO_KIT_NAME, _pair, _run, _sample, clear, reset_caches,
+from .docs_world import (DEMO_ADMIN, DEMO_KIT_NAME, DEMO_STAFF, _pair, _run, _sample, clear, reset_caches,
                          restore, seed_demo, snapshot)
 
 SHOTS = Path(__file__).resolve().parents[2] / "docs" / "_static" / "screenshots"
@@ -862,6 +864,26 @@ def test_export_served_run(demo_page, base_url, demo):
     replace_text(section, re.escape(run_id), ["demo-run-06"] * found)
     assert section.locator(".served-target dd").count() == 4
     snap(page, "export/served-run", section.locator(".served-target"), region=section)
+
+
+def test_someone_else_is_editing(demo_page, base_url, demo, app_ctx):
+    """The status bar while Sam edits DEMO-RUN-01 with his page open (one
+    person edits a Draft at a time). Dana gets the run back afterwards."""
+    page = demo_page
+    run_id = demo["draft"]
+    app_ctx.edit_lock_repo.replace(EditLock(
+        run_id=run_id, username=DEMO_STAFF["username"], display_name=DEMO_STAFF["display_name"],
+        started_at=datetime(2026, 3, 2, 9, 0, 0), seen_at=utcnow()))
+    try:
+        page.goto(f"{base_url}/runs/{run_id}")
+        bar = page.locator("#run-status-bar")
+        expect(bar).to_contain_text("Sam Staff is editing this run (since 2026-03-02 10:00 CET)")
+        expect(page.locator(".locked-message")).to_have_text("Press Edit run to make changes.")
+        snap(page, "new-run/someone-editing", bar.locator(".run-status-actions"), region=bar)
+    finally:
+        app_ctx.edit_lock_repo.replace(EditLock(
+            run_id=run_id, username=DEMO_ADMIN["username"], display_name=DEMO_ADMIN["display_name"],
+            started_at=utcnow(), seen_at=utcnow()))
 
 
 def test_ready_back_to_draft(demo_page, base_url, demo):

@@ -298,9 +298,12 @@ A Ready run's status bar offers **Return to Draft** instead of **Mark
 Ready**:
 
 .. figure:: /_static/screenshots/ready/back-to-draft.png
-   :alt: The run status bar's status badge, outlined, reading "Draft" again, with the Mark Ready button restored, after returning from Ready.
+   :alt: The run status bar's status badge, outlined, reading "Draft" again, next to "You are editing this run", Done editing and Mark Ready, after returning from Ready.
 
    The status badge just after returning a Ready run to Draft, outlined.
+
+Whoever returns the run to Draft is its editor at once; others see it
+read-only until you press **Done editing** (see :doc:`run-setup`).
 
 .. warning::
    Returning to Draft discards every export that was generated -- the
