@@ -222,6 +222,12 @@ first. A pair always replaces both indexes. The patterns are compared as the
 run reads them, so a kit that stores ``Y*`` and one that stores no pattern
 read alike.
 
+The refusal names the kit being assigned as its name and version (*"VerKit
+1"*), because two versions of one kit name can read Read 1 and Read 2
+differently. When one assignment takes indexes from more than one such kit
+-- a multi-index drop can -- the refusal lists each kit with its own read
+patterns and its own samples.
+
 SeqSetup computes the index override pattern (for example ``I8N2``) from the
 index cycles above and the run's cycle configuration, then recalculates
 Override Cycles from both. Any of it can still be changed by hand afterward

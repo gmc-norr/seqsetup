@@ -49,6 +49,8 @@ def _swap(client, route, slot, kit, sids=("s1", "s2")):
 
 
 def _refusal(kit, r1, r2, ids):
+    """``kit`` is "name version": every clashing kit is shown with its own
+    version (batch 4, item Q14); _combo_kit saves version "1"."""
     return (f"These samples keep an index from a kit that reads Read 1 and Read 2 differently "
             f"from {kit} (Read 1 {r1}, Read 2 {r2}). Assign both indexes from one kit, or clear "
             f"these samples' indexes first: {ids}.")
@@ -80,7 +82,7 @@ class TestAKitSwapWithOtherReadPatternsIsRefused:
 
         assert resp.status_code == 400
         ids = "PAT1" if route == "one" else "PAT1, PAT2"
-        assert resp.text == _refusal("PlainCombo", "plain", "plain", ids)
+        assert resp.text == _refusal("PlainCombo 1", "plain", "plain", ids)
         assert _indexes(ctx) == before
 
     def test_a_umi_index_onto_a_plain_kits_index_is_refused(self, logged_in_client, fresh_app):
@@ -98,7 +100,7 @@ class TestAKitSwapWithOtherReadPatternsIsRefused:
         resp = _swap(logged_in_client, "selected", "i5", umi)
 
         assert resp.status_code == 400
-        assert resp.text == _refusal("UmiCombo", "U8Y*", "plain", "PAT1, PAT2")
+        assert resp.text == _refusal("UmiCombo 1", "U8Y*", "plain", "PAT1, PAT2")
         assert _indexes(ctx) == before
 
     def test_a_drop_is_refused_whole(self, logged_in_client, fresh_app):
@@ -116,7 +118,7 @@ class TestAKitSwapWithOtherReadPatternsIsRefused:
         resp = _swap(logged_in_client, "drop", "i5", plain)
 
         assert resp.status_code == 400
-        assert resp.text == _refusal("PlainCombo", "plain", "plain", "PAT2")
+        assert resp.text == _refusal("PlainCombo 1", "plain", "plain", "PAT2")
         assert _indexes(ctx) == before
 
 

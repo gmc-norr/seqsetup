@@ -276,16 +276,31 @@ def _kit_swap_refusal(planned, run_cycles) -> Optional[Response]:
         if kept is not None and own != new:
             shown = (_plain_pattern(kit.default_read1_override) or "plain",
                      _plain_pattern(kit.default_read2_override) or "plain")
-            clashes.setdefault(kit.name, (shown, []))[1].append(sample.sample_id)
+            # By kit_id, not by name: two versions of one kit name read Read
+            # 1 and Read 2 their own way, and grouping by name put every
+            # version's samples under the first version's patterns (batch 4,
+            # item Q14). Each kit is shown as "name version".
+            clashes.setdefault(
+                kit.kit_id, (f"{kit.name} {kit.version}", shown, [])
+            )[2].append(sample.sample_id)
     if not clashes:
         return None
-    name, ((r1, r2), ids) = next(iter(clashes.items()))
     # What to do comes before the IDs: the page's error banner shows the
     # first 300 characters.
+    if len(clashes) == 1:
+        ((name, (r1, r2), ids),) = clashes.values()
+        return Response(
+            f"These samples keep an index from a kit that reads Read 1 and Read 2 differently "
+            f"from {name} (Read 1 {r1}, Read 2 {r2}). Assign both indexes from one kit, or clear "
+            f"these samples' indexes first: {name_list(ids)}.",
+            status_code=400,
+        )
+    groups = "; ".join(f"{name} (Read 1 {r1}, Read 2 {r2}): {name_list(ids)}"
+                       for name, (r1, r2), ids in clashes.values())
     return Response(
         f"These samples keep an index from a kit that reads Read 1 and Read 2 differently "
-        f"from {name} (Read 1 {r1}, Read 2 {r2}). Assign both indexes from one kit, or clear "
-        f"these samples' indexes first: {name_list(ids)}.",
+        f"from the kit being assigned. Assign both indexes from one kit, or clear these "
+        f"samples' indexes first: {groups}.",
         status_code=400,
     )
 
