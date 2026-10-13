@@ -18,6 +18,7 @@ from seqsetup.models.sequencing_run import (
 from seqsetup.services.scheduler import ProfileSyncScheduler
 
 from .conftest import disable_repos
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -84,6 +85,7 @@ def _seed_run(ctx, run_id: str) -> str:
         ),
     ))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run.id
 
 

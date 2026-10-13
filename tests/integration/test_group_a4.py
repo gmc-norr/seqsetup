@@ -6,6 +6,7 @@ import pytest
 
 from .test_sheet_followups import _SYNC_LOGGER, _Messages, _app_profile_yaml
 from .test_group_a3 import profiles  # noqa: F401 (a fixture: a test A3T, its BCLConvert profile, NovaSeq X)
+from .conftest import hold_edit_lock
 
 
 def _test_yaml(version: str, test: str = "WGS") -> str:
@@ -749,6 +750,7 @@ class TestAFixBoxFromAnOldPage:
         run = ctx.run_repo.get_by_id(run_id)
         run.samples = [s for s in run.samples if s.sample_id != "S4"]
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         r = _set_test(logged_in_client, run_id, ["S2", "S4"], "WGS", "1", only_if="no_version")
         assert r.status_code == 200
         assert _tests_of(ctx, run_id) == {"S1": ("", ""), "S2": ("WGS", "1")}
@@ -951,6 +953,7 @@ def _a3_draft(ctx, run_id, *versions):
                                   index1=Index(name="i7", sequence=i7, index_type=IndexType.I7),
                                   index2=Index(name="i5", sequence=i5, index_type=IndexType.I5))))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run_id
 
 
@@ -1217,6 +1220,7 @@ class TestTheRunPageSaysItsChecksAreLive:
         run = profiles.run_repo.get_by_id(run_id)
         run.test_versions_used = []
         profiles.run_repo.save(run)
+        hold_edit_lock(profiles, run.id)
         page = html.unescape(logged_in_client.get(f"/runs/{run_id}").text)
         assert "validate-panel-content" in page
         assert self.LIVE not in page
@@ -1228,6 +1232,7 @@ class TestTheRunPageSaysItsChecksAreLive:
         run.test_versions_used = [{"test": "A3T", "asked": "1", "version": "1.0.0",
                                    "file": "A3T_1.0.0.yaml"}]
         profiles.run_repo.save(run)
+        hold_edit_lock(profiles, run.id)
         page = html.unescape(logged_in_client.get(f"/runs/{run_id}").text)
         assert "validate-panel-content" in page
         assert self.LIVE not in page

@@ -44,6 +44,12 @@ auth, LIMS, index-kit upload, local users, API tokens) via
 operator team that collaborates on shared runs; it is documented as a hard
 contract in the module docstring of `routes/utils.py` (audit L1).
 
+Who may *edit* a Draft at a given moment is a separate, concurrency
+rule, not ownership: one person edits a Draft at a time (the user's
+decision, 2026-10-13). `get_editable_run` refuses a change from anyone not
+holding the run's edit lock (`services/edit_locks.py`), and anyone may take
+the lock over after a confirmation, so no run belongs to anyone.
+
 This is a security review decision (2026-06-10): the shared-access model was
 reviewed and **kept intentionally**. Introducing per-user run ownership is a
 multi-tenant change that must be coordinated across the whole route surface,
@@ -82,7 +88,7 @@ at all. Do not add a one-off ownership check to a single route.
 1. HTMX, Alpine, custom JS all vendored in `static/js/vendor/` (HTMX + Alpine) or `static/js/components/` (project components).
 2. Load order in `_base.html`: HTMX first, `app.js` next, components, **Alpine LAST**. Component files register `Alpine.data(...)` and Alpine boots after.
 3. Component files are self-contained: `document.addEventListener('alpine:init', () => Alpine.data('foo', () => ({...})))`. No imports, no cross-file deps.
-4. **Authority boundary** (load-bearing rule): Alpine handles UI ephemera only — selected state, drag-over highlights, modal open/closed, filter inputs. The server is the source of truth for every domain fact. Mutations round-trip via HTMX, every time.
+4. **Authority boundary** (load-bearing rule): Alpine handles UI ephemera only — selected state, drag-over highlights, modal open/closed, filter inputs. The server is the source of truth for every domain fact. Mutations round-trip via HTMX, every time. One exception: the edit-lock heartbeat (`components/edit_lock.js`) posts with a plain `fetch`, because the Check panel and the step bar refresh after every non-GET HTMX request, and a heartbeat once a minute must not re-run the checks. It changes no run.
 5. HX-Trigger event names: kebab-case, namespaced (`run-archived`, `toast`). The `toast` event's payload `{kind, message}` is consumed by the toast stack in `_base.html`.
 
 ## Alpine patterns

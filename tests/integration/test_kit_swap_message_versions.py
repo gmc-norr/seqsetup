@@ -15,6 +15,7 @@ import pytest
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexType
 
 from .test_group_a1 import COMBO_A_I5, COMBO_A_I7, COMBO_B_I5, COMBO_B_I7, ORIGIN, RUN, _run, _stored
+from .conftest import hold_edit_lock
 
 UMI = {"default_index1_cycles": 8, "default_index2_cycles": 8,
        "default_read1_override": "U8Y*", "default_read2_override": "U8Y*"}
@@ -42,6 +43,7 @@ def _give_umi_i7(ctx, umi):
         sample.read1_override_pattern = "U8Y*"
         sample.read2_override_pattern = "U8Y*"
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
 
 def _drop_i5s(client, ctx, entries):

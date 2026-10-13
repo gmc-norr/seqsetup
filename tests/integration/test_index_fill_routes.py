@@ -18,6 +18,7 @@ from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexTy
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.index_fill import build_fill_plan
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -81,6 +82,7 @@ def _run(ctx, run_id="fill-run", n_samples=3, status=RunStatus.DRAFT):
     for k in range(1, n_samples + 1):
         run.add_sample(Sample(id=f"s{k}", sample_id=f"S{k}", lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run_id
 
 
@@ -168,6 +170,7 @@ class TestPreviewSkipsUsed:
         run = ctx.run_repo.get_by_id(run_id)
         run.assign_index_pair_to_sample("s1", kit.index_pairs[0])
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         resp = logged_in_client.post(
             f"/runs/{run_id}/index-fill/preview",
@@ -193,6 +196,7 @@ class TestPreviewPartialI5OnlySamples:
             Index(name="x", sequence="GTGTGTGT", index_type=IndexType.I5)
         )
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         resp = logged_in_client.post(
             f"/runs/{run_id}/index-fill/preview",
@@ -431,6 +435,7 @@ class TestApplyStaleSignatureRefused:
         # The run changes after the preview was taken: S1 gets an index by hand.
         run.assign_index_pair_to_sample("s1", kit.index_pairs[4])
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         before = ctx.run_repo.get_by_id(run_id).to_dict()
 
         resp = logged_in_client.post(
@@ -489,6 +494,7 @@ class TestApplyLeavesIndexedSamplesAlone:
         run.assign_index_pair_to_sample("s1", other_kit.index_pairs[0])
         run.get_sample("s1").index_kit_name = other_kit.name
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         run = ctx.run_repo.get_by_id(run_id)
         plan = build_fill_plan(run, kit)

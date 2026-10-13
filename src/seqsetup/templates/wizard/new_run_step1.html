@@ -8,6 +8,7 @@
        before it, so a quick edit followed by Continue never races into an
        edit conflict (409). #}
     <div class="wizard-content" hx-sync="this:queue all">
+        {% include "runs/_edit_lock_beat.html" %}
         {% if is_new %}
         <h2>New Run Configuration</h2>
         <p>Configure the sequencing instrument and cycle settings for this run.</p>

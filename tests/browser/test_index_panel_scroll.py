@@ -15,6 +15,7 @@ from playwright.sync_api import expect
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 KIT = "Scroll-Kit"
 BASES = "ACGT"
@@ -81,6 +82,7 @@ def long_run_id(app_ctx, big_kit):
     for n in range(40):
         run.add_sample(Sample(id=f"{run.id}-s{n}", sample_id=f"SC-{n:02d}", lanes=[1]))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 

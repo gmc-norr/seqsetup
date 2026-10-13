@@ -125,8 +125,9 @@ Finishing setup
 
 Opening an existing run's setup again shows **Run Setup** instead of
 **New Run Configuration**, with **Back to Run** in place of **Continue to
-Run**, and no template chooser -- but only while it is still a Draft. A
-Ready or Archived run's setup cannot be changed.
+Run**, and no template chooser -- but only while it is still a Draft
+and you are the one editing it (see `One person edits a run at a time`_).
+A Ready or Archived run's setup cannot be changed.
 
 .. warning::
    This page carries the version of the run it showed. If the run changed
@@ -141,3 +142,53 @@ Ready or Archived run's setup cannot be changed.
    page to see where the run stands, then make your change again. Each save
    this page makes itself keeps its version current, so your own edits never
    cause this.
+
+One person edits a run at a time
+---------------------------------
+
+Only one person edits a Draft at a time, so two people never add samples,
+indexes or lanes to the same run at once. The status bar at the top of the
+run page says where the run stands:
+
+- **Nobody is editing this run** -- the run is shown read-only, with
+  *"Press Edit run to make changes."* above the samples. Press **Edit run**.
+- **Sam Staff is editing this run (since 2026-03-02 10:00 CET)** -- the
+  run is shown read-only, with *"Sam Staff is editing this run. Only they
+  can change it now."* above the samples. If Sam has left -- gone home
+  with the page open, say -- press
+  **Take over editing**. SeqSetup asks first and names them; once you
+  take over, they can no longer save changes to the run.
+- **You are editing this run** -- the page shows everything you can
+  change: **Edit setup**, adding samples, indexes and lanes, the Check
+  panel's fixes, and **Mark Ready**. Press **Done editing** when you have
+  finished, so that others can edit the run.
+
+.. figure:: /_static/screenshots/new-run/someone-editing.png
+   :alt: The run status bar of a Draft, reading "Sam Staff is editing this run (since 2026-03-02 10:00 CET)" next to a Take over editing button, outlined.
+
+   Someone else is editing the run, outlined.
+
+Making a run -- a new one, a copy, or one from a template -- and **Return
+to Draft** make you its editor at once. **Mark Ready** ends your editing.
+The setup page opens only for the person editing the run; anyone else is
+taken to the run page.
+
+While you edit, your open page tells SeqSetup once a minute that you are
+still there. About three minutes after you close the page -- or your
+computer goes to sleep, or the browser puts the tab to sleep to save
+power -- the run shows as free, and anyone can press **Edit run** without
+being asked; SeqSetup records whose editing they took. Until someone
+does, the run is still yours: come back to it and carry on.
+
+An open edit page does not keep you signed in: if you do nothing for 30
+minutes, your sign-in ends as on any other page (see
+:doc:`authentication`), and the page says so in red.
+
+If someone takes over while your page is open, a red line in the status
+bar says so within a minute -- *"Sam Staff is editing this run now (since
+...). Reload the page: your changes are no longer saved."* -- and anything
+you try to save is refused with a message that names them. Reload the
+page to see their changes.
+
+Every **Edit run**, **Done editing** and **Take over editing** is kept in
+the audit trail (see :doc:`/admin-guide/audit-trail`).

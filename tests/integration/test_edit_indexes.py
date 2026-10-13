@@ -14,6 +14,7 @@ import pytest
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import RunStatus
+from .conftest import hold_edit_lock
 
 
 def _origin() -> dict:
@@ -39,12 +40,14 @@ def _paired(sample_id):
 
 def _make_run(ctx, samples, status=RunStatus.DRAFT):
     run = ctx.run_repo.create_run("tester")
+    hold_edit_lock(ctx, run.id)
     run = ctx.run_repo.get_by_id(run.id)
     run.run_name = "Fold run"
     for sample in samples:
         run.add_sample(sample)
     run.status = status
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run
 
 

@@ -52,7 +52,9 @@ from ..services.validation_report import ValidationReportJSON, ValidationReportP
 from ..services.validation_summary import error_messages
 from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
-from .dependencies import get_archivable_run, get_ctx, get_editable_run, saving_run
+from ..services import edit_locks
+from ..services.edit_locks import EditLockRefused
+from .dependencies import get_archivable_run, get_ctx, get_editable_run, require_edit_lock, saving_run
 from .utils import check_status_transition, get_username, sanitize_string, selected_kit_id
 
 
@@ -587,6 +589,9 @@ async def update_status(
 
     if err := check_status_transition(run.status, new_status):
         return err
+    if new_status == RunStatus.READY:
+        # Only the person editing the Draft marks it Ready.
+        require_edit_lock(run, ctx, request)
 
     color_balance_lanes: list[int] = []
     if new_status == RunStatus.READY:
@@ -785,6 +790,22 @@ async def update_status(
                 "Pick another instrument in Run Setup."
             )
 
+    if new_status == RunStatus.READY:
+        # The exports took seconds: someone may have taken over meanwhile
+        # (review P3-2, 2026-10-13). Only the editor marks the run Ready.
+        try:
+            edit_locks.require(ctx.edit_lock_repo, run.id, get_username(request))
+        except EditLockRefused as e:
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="edit_lock_lost",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(str(e))
+
     with saving_run(run, ctx, request):
         run.status = new_status
         if new_status == RunStatus.READY:
@@ -820,6 +841,13 @@ async def update_status(
             run.generated_json = None
             run.generated_validation_json = None
             run.generated_validation_pdf = None
+    if new_status == RunStatus.READY:
+        edit_locks.release(ctx.edit_lock_repo, run.id)
+    elif new_status == RunStatus.DRAFT:
+        # Whoever sends it back to Draft edits it first.
+        user = request.scope.get("auth")
+        if user:
+            edit_locks.grant(ctx.edit_lock_repo, run.id, user)
 
     audit(
         "run.status.changed",
@@ -836,7 +864,9 @@ async def update_status(
     test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []
     index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-    is_editable = run.status == RunStatus.DRAFT
+    edit_lock = (edit_locks.state(ctx.edit_lock_repo, run.id, get_username(request))
+                 if run.status == RunStatus.DRAFT else None)
+    is_editable = bool(edit_lock and edit_lock.mine)
     has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
     sample_api_cfg = ctx.sample_api_config
     sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
@@ -844,7 +874,7 @@ async def update_status(
     # Out-of-band swaps update the export panel and sample table without a
     # full page reload. HTMX needs the hx-swap-oob attribute on the
     # response fragments themselves.
-    status_html = templates.env.get_template("runs/_run_status_bar.html").render(run=run)
+    status_html = templates.env.get_template("runs/_run_status_bar.html").render(run=run, edit_lock=edit_lock)
     export_html = templates.env.get_template("runs/_export_panel.html").render(run=run, has_v1=has_v1, oob=True)
     section_html = templates.env.get_template("runs/_sample_section.html").render(
         run=run, index_kits=index_kits, test_profiles=test_profiles,

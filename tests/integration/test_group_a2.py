@@ -11,6 +11,7 @@ from seqsetup.models.run_template import RunTemplate
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
 from .conftest import run_version
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -26,6 +27,7 @@ def _draft(ctx, run_id: str, platform=I100, flowcell: str = "5M", reagent: int =
         reagent_cycles=reagent, run_cycles=RunCycles(151, 151, 10, 10), **fields,
     )
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return ctx.run_repo.get_by_id(run_id)
 
 
@@ -127,6 +129,7 @@ class TestPickingAWorkflow:
         run = _draft(ctx, "a2-pick-ready", i5_workflow="Index-first")
         run.status = RunStatus.READY
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         resp = logged_in_client.post(f"/runs/{run.id}/i5-workflow",
                                      data={**{"i5_workflow": "Read-first"}, "run_version": run_version(ctx, run.id)}, headers=ORIGIN)
@@ -269,6 +272,7 @@ def _indexed_draft(ctx, run_id: str, platform=NOVASEQ_X, override: str = "",
                               index2=Index(name="i5", sequence=i5, index_type=IndexType.I5),
                           )))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return ctx.run_repo.get_by_id(run_id)
 
 
@@ -727,6 +731,7 @@ class TestRecordsThatCannotBeUsed:
         run = _clean_run(ctx, "a2-unusable-pregenerated", status=RunStatus.READY)
         run.generated_samplesheet_v2 = "[Header]\nmade before\n"
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         _store_old_format_record(ctx)
 
         resp = logged_in_client.get(f"/runs/{run.id}/export/samplesheet-v2")

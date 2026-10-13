@@ -15,6 +15,7 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunSta
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
 from .conftest import disable_repos, run_version
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -38,6 +39,7 @@ def _mismatch_run(ctx, run_id: str) -> SequencingRun:
         run.add_sample(Sample(sample_id=f"S{n}", lanes=[1],
                               barcode_mismatches_index1=2, barcode_mismatches_index2=2))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return ctx.run_repo.get_by_id(run_id)
 
 
@@ -213,6 +215,7 @@ def _clean_run(ctx, run_id: str, platform=InstrumentPlatform.NOVASEQ_X, flowcell
     )
     run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run
 
 
@@ -420,6 +423,7 @@ class TestSampleIdCell:
                             run_cycles=RunCycles(151, 151, 10, 10))
         run.add_sample(Sample(sample_id=self.LONG_ID, lanes=[1]))
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         page = logged_in_client.get("/runs/f5-page").text
 
@@ -429,6 +433,7 @@ class TestSampleIdCell:
         _app, ctx, _db = fresh_app
         ctx.run_repo.save(SequencingRun(id="f5-add", run_name="R", flowcell_type="10B",
                                         run_cycles=RunCycles(151, 151, 10, 10)))
+        hold_edit_lock(ctx, "f5-add")
 
         resp = logged_in_client.post("/runs/f5-add/samples", data={"sample_id": self.LONG_ID}, headers=ORIGIN)
 

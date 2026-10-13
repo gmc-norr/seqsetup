@@ -15,6 +15,7 @@ import pytest
 
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN = "stale-setup-run"
@@ -35,6 +36,7 @@ def _run(ctx, platform=InstrumentPlatform.NOVASEQ_X, flowcell="10B"):
     )
     run.add_sample(Sample(id="s1", sample_id="PAT1", lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run
 
 
@@ -54,6 +56,7 @@ def _another_window_changes_it(ctx):
     stored.samples[0].override_cycles = "Y151;U8I10;I10;Y151"
     stored.touch(updated_by="tabB")
     ctx.run_repo.save(stored)
+    hold_edit_lock(ctx, stored.id)
 
 
 def _state(run):

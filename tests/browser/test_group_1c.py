@@ -10,6 +10,7 @@ from playwright.sync_api import expect
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 
 LONG_IDS = ("GROUP1C-LONG-SAMPLE-ID-00001-A", "GROUP1C-LONG-SAMPLE-ID-00002-B")
@@ -38,6 +39,7 @@ def group_1c_run_id(app_ctx):
     run.add_sample(Sample(id=f"{run.id}-s2", sample_id=LONG_IDS[1], lanes=[1],
                           barcode_mismatches_index1=2, barcode_mismatches_index2=2))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 

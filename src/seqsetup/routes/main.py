@@ -16,12 +16,14 @@ from ..data.instruments import (
     i5_workflow_names,
 )
 from ..models.sequencing_run import RunCycles, RunStatus
+from ..services import edit_locks
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
 from ..services.versioned_tests import offered_tests
 from ..services.validation_summary import error_messages, errors_by_sample, waiting_for_samples
 from ..templating import render
 from .dependencies import get_ctx
+from .utils import get_username
 
 
 router = APIRouter(tags=["main"])
@@ -40,19 +42,28 @@ def _validate_for_panel(run, ctx: AppContext):
     )
 
 
-def _samples_without_test(run) -> list[str]:
-    """Internal ids of a draft's samples with no test, for Check's
-    "Set test" picker. Empty on a locked run (nothing can be changed)."""
+def _edit_lock(run, ctx: AppContext, request: Request):
+    """The run's edit lock as its viewer sees it (services/edit_locks.py);
+    None off a Draft, which nobody edits."""
     if run.status != RunStatus.DRAFT:
+        return None
+    return edit_locks.state(ctx.edit_lock_repo, run.id, get_username(request))
+
+
+def _samples_without_test(run, editing: bool) -> list[str]:
+    """Internal ids of a draft's samples with no test, for Check's
+    "Set test" picker. Empty unless the viewer is editing the run."""
+    if not editing:
         return []
     return [s.id for s in run.samples if not s.test_id]
 
 
-def _samples_without_version(run) -> list[tuple[str, list[str]]]:
+def _samples_without_version(run, editing: bool) -> list[tuple[str, list[str]]]:
     """(test, internal ids) of a draft's samples that have a test but no
     version, one entry per test in the order first seen, for Check's version
-    boxes (spec 2026-10-07 group A4, §2). Empty on a locked run."""
-    if run.status != RunStatus.DRAFT:
+    boxes (spec 2026-10-07 group A4, §2). Empty unless the viewer is editing
+    the run."""
+    if not editing:
         return []
     by_test: dict[str, list[str]] = {}
     for s in run.samples:
@@ -149,14 +160,16 @@ def validate_panel(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     validation_result = _validate_for_panel(run, ctx)
+    lock = _edit_lock(run, ctx, request)
+    editing = bool(lock and lock.mine)
     return render(request, "runs/_validate_panel.html", {
         "run": run,
         "validation_result": validation_result,
         "sample_errors": errors_by_sample(run, validation_result),
         "error_lines": error_messages(validation_result),
         "waiting": waiting_for_samples(run, validation_result),
-        "fix_test_ids": _samples_without_test(run),
-        "fix_versions": _samples_without_version(run),
+        "fix_test_ids": _samples_without_test(run, editing),
+        "fix_versions": _samples_without_version(run, editing),
         "test_profiles": offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else [],
     })
 
@@ -175,7 +188,9 @@ def edit_run(
     test_profiles = offered_tests(ctx.test_profile_repo.list_all()) if ctx.test_profile_repo else []
     index_kits = ctx.index_kit_repo.list_all() if ctx.index_kit_repo else []
     num_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
-    is_editable = run.status == RunStatus.DRAFT
+    # Only the person holding the Draft's edit lock gets the edit controls.
+    lock = _edit_lock(run, ctx, request)
+    is_editable = bool(lock and lock.mine)
     sample_api_cfg = ctx.sample_api_config
     sample_api_enabled = bool(sample_api_cfg and sample_api_cfg.enabled and sample_api_cfg.base_url)
 
@@ -196,13 +211,14 @@ def edit_run(
         "test_profiles": test_profiles,
         "num_lanes": num_lanes,
         "is_editable": is_editable,
+        "edit_lock": lock,
         "sample_api_enabled": sample_api_enabled,
         "validation_result": validation_result,
         "sample_errors": errors_by_sample(run, validation_result),
         "error_lines": error_messages(validation_result),
         "waiting": waiting_for_samples(run, validation_result),
-        "fix_test_ids": _samples_without_test(run),
-        "fix_versions": _samples_without_version(run),
+        "fix_test_ids": _samples_without_test(run, is_editable),
+        "fix_versions": _samples_without_version(run, is_editable),
         "steps": _run_steps(run, validation_result),
         "has_v1": has_v1,
         "flowcell_desc": flowcell_desc,

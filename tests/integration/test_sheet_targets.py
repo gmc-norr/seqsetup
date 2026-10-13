@@ -16,6 +16,7 @@ from .conftest import disable_repos, mark_ready
 from .test_group_a3 import profiles  # noqa: F401 (fixture)
 from .test_group_1c import _pair
 from .test_served_runs import _full, _run, _section, _token
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 I5 = "TATAGCCT"
@@ -38,6 +39,7 @@ def _ready(logged_in_client, ctx, run_id, instrument, flowcell, workflow):
     )
     run.add_sample(Sample(sample_id="S1", index_pair=_pair("ATTACTCG", I5, "p1"), lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     assert mark_ready(logged_in_client, run_id, ORIGIN).status_code == 200
     stored = ctx.run_repo.get_by_id(run_id)
     assert stored.status == RunStatus.READY, "the run did not reach Ready"
@@ -238,6 +240,7 @@ class TestTheI5RuleMustHoldWhileTheExportsAreWritten:
                             flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
         run.add_sample(Sample(sample_id="S1", index_pair=_pair("ATTACTCG", I5, "p1"), lanes=[1]))
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         config = instruments_module.get_instrument_config
 
@@ -280,6 +283,7 @@ class TestTheProfilePath:
         sample.assign_index2(Index(name="i5", sequence="TATAGCCTGA", index_type=IndexType.I5))
         run.add_sample(sample)
         profiles.run_repo.save(run)
+        hold_edit_lock(profiles, run.id)
 
         resp = mark_ready(logged_in_client, run.id, ORIGIN)
         stored = profiles.run_repo.get_by_id(run.id)

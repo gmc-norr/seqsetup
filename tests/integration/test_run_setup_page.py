@@ -17,6 +17,7 @@ import pytest
 from seqsetup.models.sequencing_run import RunCycles, RunStatus
 
 from .conftest import run_version
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 CYCLES = {"read1_cycles": "101", "read2_cycles": "0", "index1_cycles": "8", "index2_cycles": "8"}
@@ -24,12 +25,14 @@ CYCLES = {"read1_cycles": "101", "read2_cycles": "0", "index1_cycles": "8", "ind
 
 def _make_run(ctx, status=RunStatus.DRAFT):
     run = ctx.run_repo.create_run("tester")
+    hold_edit_lock(ctx, run.id)
     run = ctx.run_repo.get_by_id(run.id)
     run.run_name = "Before"
     run.run_description = "Old description"
     run.run_cycles = RunCycles(151, 151, 10, 10)
     run.status = status
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run.id
 
 
@@ -148,6 +151,7 @@ class TestSameCyclesKeepSampleOverrides:
         run = ctx.run_repo.get_by_id(run_id)
         run.add_sample(Sample(sample_id="S1", override_cycles="Y151;I10;I10;Y151"))
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         return run_id
 
     def _override(self, ctx, run_id):

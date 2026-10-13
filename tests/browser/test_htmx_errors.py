@@ -8,6 +8,7 @@ export failure) left the page unchanged, as if it had worked.
 
 import pytest
 from playwright.sync_api import expect
+from .conftest import hold_edit_lock
 
 
 def _error_toast(page):
@@ -184,6 +185,7 @@ def _add_refused_as_not_a_draft(page, app_ctx, run_id):
         run = app_ctx.run_repo.get_by_id(run_id)
         run.status = status
         app_ctx.run_repo.save(run)
+        hold_edit_lock(app_ctx, run.id)
 
     set_status(RunStatus.READY)
     try:

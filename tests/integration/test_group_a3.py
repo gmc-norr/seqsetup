@@ -6,6 +6,7 @@ import html
 import pytest
 
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -43,6 +44,7 @@ def _indexed_draft(ctx, run_id: str, override: str = "", i7: str = "ATTACTCG",
                               index2=Index(name="i5", sequence=i5, index_type=IndexType.I5),
                           )))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return ctx.run_repo.get_by_id(run_id)
 
 
@@ -385,6 +387,7 @@ def _miseq_draft(ctx, run_id: str, mismatch_index1=1, status=RunStatus.DRAFT, **
                               index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
                           )))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return ctx.run_repo.get_by_id(run_id)
 
 
@@ -515,6 +518,7 @@ def _miseq_profile_draft(ctx, run_id: str, index_cycles=8, i7="ATTACTCG", i5="TA
                               index2=Index(name="i5", sequence=i5, index_type=IndexType.I5),
                           )))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return ctx.run_repo.get_by_id(run_id)
 
 
@@ -556,6 +560,7 @@ class TestTheV1DecisionOnTheProfilePath:
                                    mismatch_index1=1)
         run.samples[0].barcode_mismatches_index2 = 1
         miseq_profiles.run_repo.save(run)
+        hold_edit_lock(miseq_profiles, run.id)
         mark_ready(logged_in_client, run.id, ORIGIN)
         run = miseq_profiles.run_repo.get_by_id(run.id)
         assert run.status == RunStatus.READY and run.samplesheet_v1_withheld == ""
@@ -648,6 +653,7 @@ def _two_sample_draft(ctx, run_id, first, second):
                 index2=Index(name=f"i5-{n}", sequence=i5, index_type=IndexType.I5))
         run.add_sample(sample)
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return ctx.run_repo.get_by_id(run_id)
 
 

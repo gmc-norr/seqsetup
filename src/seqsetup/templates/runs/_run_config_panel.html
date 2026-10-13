@@ -1,7 +1,7 @@
 {#
    Setup summary (step 1), read-only: instrument, flowcell, reagent kit,
    cycles in the order they are read, description, and the run's record.
-   "Edit setup" opens the setup page while the run is a draft.
+   "Edit setup" opens the setup page for the person editing the draft.
 
    Inputs:
      run:           SequencingRun
@@ -9,6 +9,7 @@
      cycles:        RunCycles
      i5_workflows:  list[str] | None — the instrument's i5 workflow names,
                     standard first; None when it has no settings
+     is_editable:   bool — the viewer holds the draft's edit lock
 #}
 {% set created_at_str = run.created_at | localtime if run.created_at else "—" %}
 {% set updated_at_str = run.updated_at | localtime if run.updated_at else "—" %}
@@ -16,7 +17,7 @@
 {% set workflow = run.i5_workflow or (workflow_names[0] if workflow_names else "") %}
 <fieldset id="run-config-panel" class="config-panel run-setup-summary">
     <legend>Setup</legend>
-    {% if run.status.value == 'draft' %}
+    {% if is_editable %}
     <a href="/runs/new/step/1?run_id={{ run.id }}" class="run-setup-edit">Edit setup</a>
     {% endif %}
     <dl class="run-setup-facts">

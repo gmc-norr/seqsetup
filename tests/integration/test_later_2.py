@@ -11,6 +11,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sample_api_config import SampleApiConfig
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services import sample_api as sample_api_module
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN = "l2-run"
@@ -25,6 +26,7 @@ def _run(ctx, sample_ids=()):
     for k, sample_id in enumerate(sample_ids, start=1):
         run.add_sample(Sample(id=f"s{k}", sample_id=sample_id, lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
 
 def _lims_on(ctx, mappings=None):
@@ -373,6 +375,7 @@ class TestThePreviewShowsWhatTheImportWouldAdd:
         run = ctx.run_repo.get_by_id(RUN)
         run.status = RunStatus.READY
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         _lims_on(ctx)
         asked = _worksheet(monkeypatch, [{"sample_id": "P1"}])
         assert _preview(logged_in_client).status_code == 403
@@ -507,6 +510,7 @@ class TestTheWorksheetListNeedsADraft:
         run = ctx.run_repo.get_by_id(RUN)
         run.status = RunStatus.READY
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         _lims_on(ctx)
         asked = self._asked(monkeypatch)
         assert logged_in_client.get(f"/runs/{RUN}/samples/worklists").status_code == 403

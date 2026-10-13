@@ -16,6 +16,7 @@ import pytest
 from seqsetup.models.index import Index, IndexType
 
 from .test_group_a1 import ORIGIN, PLAIN_PAIRS, RUN, _pair_kit, _run, _stored
+from .conftest import hold_edit_lock
 
 ORIGIN = ORIGIN
 
@@ -46,6 +47,7 @@ def _assign_behind_the_page(ctx, sid, i7, i5=""):
     if i5:
         sample.assign_index2(Index(name="other", sequence=i5, index_type=IndexType.I5))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
 
 def _indexes(ctx):
@@ -95,6 +97,7 @@ class TestADropOntoAChangedIndexIsRefused:
         run.get_sample("s2").assign_index2(
             Index(name="other", sequence="TTTTAAAACC", index_type=IndexType.I5))
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         before = _indexes(ctx)
 
         resp = _drop(logged_in_client, kit, 2, EMPTY_TWO)
@@ -111,6 +114,7 @@ class TestADropOntoAChangedIndexIsRefused:
         run = _stored(ctx)
         run.get_sample("s2").clear_index()
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         before = _indexes(ctx)
 
         resp = _drop(logged_in_client, kit, 2, shown)

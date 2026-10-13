@@ -71,6 +71,17 @@ def _free_port() -> int:
 BROWSER_ADMIN = {"username": "browser-admin", "password": "Br0wser-Adm1n!"}
 
 
+def hold_edit_lock(ctx, run_id: str, username: str = BROWSER_ADMIN["username"],
+                   display_name: str = "Browser Admin") -> None:
+    """Give a user the run's edit lock, as pressing Edit run (or making the
+    run) does in the app: only its holder gets a Draft's edit controls
+    (services/edit_locks.py; the user's decision, 2026-10-13)."""
+    from seqsetup.models.user import User
+    from seqsetup.services import edit_locks
+    edit_locks.grant(ctx.edit_lock_repo, run_id, User(
+        username=username, display_name=display_name, role=UserRole.STANDARD))
+
+
 @pytest.fixture(scope="session")
 def app_server(tmp_path_factory):
     """Boot seqsetup.app on a free port for the test session, backed by
@@ -169,6 +180,7 @@ def app_server(tmp_path_factory):
         updated_at=_t_seed,
     )
     ctx.run_repo.save(seed_run)
+    hold_edit_lock(ctx, seed_run.id)
 
     # --- Seed a standard PAIR index kit so the index panel populates. ---
     screenshot_kit = IndexKit(
@@ -289,6 +301,7 @@ def app_server(tmp_path_factory):
         lanes=[1],
     ))
     ctx.run_repo.save(draft_run)
+    hold_edit_lock(ctx, draft_run.id)
 
     # --- Seed a dedicated DRAFT run for the screenshot oracle (never mutated by other tests). ---
     # Visually equivalent to draft_run: 3 indexed + 3 unindexed samples, same kit.
@@ -351,6 +364,7 @@ def app_server(tmp_path_factory):
         lanes=[1],
     ))
     ctx.run_repo.save(oracle_run)
+    hold_edit_lock(ctx, oracle_run.id)
 
     # --- Seed a DRAFT run with index COLLISIONS so the validation heatmap shows dist-0 cells. ---
     # Two samples share the same i7+i5 sequences → Hamming distance 0.
@@ -400,6 +414,7 @@ def app_server(tmp_path_factory):
         lanes=[1],
     ))
     ctx.run_repo.save(collision_run)
+    hold_edit_lock(ctx, collision_run.id)
 
     # --- Seed a READY run (so the Ready dashboard tab is non-empty). ---
     _t_ready = datetime(2026, 1, 10, 11, 0, 0)
@@ -427,6 +442,7 @@ def app_server(tmp_path_factory):
         index_kit_name=SCREENSHOT_KIT_NAME,
     ))
     ctx.run_repo.save(ready_run)
+    hold_edit_lock(ctx, ready_run.id)
 
     # --- Seed an ARCHIVED run (so the Archived dashboard tab is non-empty). ---
     _t_arch = datetime(2026, 1, 10, 12, 0, 0)
@@ -454,6 +470,7 @@ def app_server(tmp_path_factory):
         index_kit_name=SCREENSHOT_KIT_NAME,
     ))
     ctx.run_repo.save(archived_run)
+    hold_edit_lock(ctx, archived_run.id)
 
     # --- Boot the server on a free port ---
     port = _free_port()
@@ -588,5 +605,6 @@ def mutable_run_id(app_ctx):
     ))
 
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run_id
     app_ctx.run_repo.collection.delete_one({"_id": run_id})

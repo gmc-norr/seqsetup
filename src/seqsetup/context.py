@@ -18,6 +18,7 @@ from .repositories.run_history_repo import RunHistoryRepository
 from .repositories.deleted_run_repo import DeletedRunRepository
 from .repositories.audit_event_repo import AuditEventRepository
 from .repositories.web_session_repo import WebSessionRepository
+from .repositories.edit_lock_repo import EditLockRepository
 
 
 @dataclass
@@ -58,6 +59,7 @@ class AppContext:
     deleted_run_repo: Optional[DeletedRunRepository] = None
     audit_event_repo: Optional[AuditEventRepository] = None
     web_session_repo: Optional[WebSessionRepository] = None
+    edit_lock_repo: Optional[EditLockRepository] = None
 
     # Service factories (callables that return service instances)
     get_github_sync_service: Optional[Callable] = None

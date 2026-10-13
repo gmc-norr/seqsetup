@@ -21,6 +21,7 @@ from .repositories.run_history_repo import RunHistoryRepository
 from .repositories.deleted_run_repo import DeletedRunRepository
 from .repositories.audit_event_repo import AuditEventRepository
 from .repositories.web_session_repo import WebSessionRepository
+from .repositories.edit_lock_repo import EditLockRepository
 from .services.auth import AuthService
 from .services.database import init_db
 from .services.github_sync import GitHubSyncService
@@ -121,6 +122,7 @@ _REPO_REGISTRY = {
     "deleted_run": DeletedRunRepository,
     "audit_event": AuditEventRepository,
     "web_session": WebSessionRepository,
+    "edit_lock": EditLockRepository,
 }
 
 # Module-level state
@@ -204,6 +206,9 @@ def get_audit_event_repo() -> AuditEventRepository:
 def get_web_session_repo() -> WebSessionRepository:
     return _get_repo("web_session")
 
+def get_edit_lock_repo() -> EditLockRepository:
+    return _get_repo("edit_lock")
+
 
 def get_app_context() -> AppContext:
     """Create an AppContext with all repositories and service factories."""
@@ -225,6 +230,7 @@ def get_app_context() -> AppContext:
         deleted_run_repo=get_deleted_run_repo(),
         audit_event_repo=get_audit_event_repo(),
         web_session_repo=get_web_session_repo(),
+        edit_lock_repo=get_edit_lock_repo(),
         get_github_sync_service=get_github_sync_service,
     )
 

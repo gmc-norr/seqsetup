@@ -63,7 +63,8 @@ checked against that record, so a login can be ended from the server side.
 A login ends when any of these happens:
 
 - **You leave it unused for 30 minutes.** The next thing you open asks you
-  to sign in again.
+  to sign in again. A run page left open for editing does not count as
+  use (see :doc:`run-setup`).
 - **8 hours have passed since you signed in**, even if you were working the
   whole time.
 - **You sign out.** The sign-out button is in the top-right corner of every

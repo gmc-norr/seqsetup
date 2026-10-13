@@ -9,6 +9,7 @@ page itself keeps the 1 MB every other form field has.
 """
 
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 MB = 1024 * 1024
 ORIGIN = {"Origin": "http://testserver"}
@@ -21,6 +22,7 @@ def _run(ctx, run_id="edit-paste-run"):
         run_cycles=RunCycles(151, 151, 8, 8), status=RunStatus.DRAFT,
     )
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run_id
 
 

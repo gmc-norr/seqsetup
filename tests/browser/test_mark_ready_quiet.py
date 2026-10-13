@@ -14,8 +14,10 @@ from playwright.sync_api import expect
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
-_BUTTON = "#run-status-bar button[type=submit]"
+# Mark Ready's own form: the editor's status bar also has Done editing.
+_BUTTON = "#run-status-bar .status-form button[type=submit]"
 
 
 def _background(page):
@@ -41,6 +43,7 @@ def clean_run_id(app_ctx):
         ),
     ))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     yield run.id
     app_ctx.run_repo.collection.delete_one({"_id": run.id})
 

@@ -17,6 +17,7 @@ from urllib.parse import quote
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -48,6 +49,7 @@ def _draft_run(ctx, run_id="kit-choice-run"):
     for n in (1, 2):
         run.add_sample(Sample(id=f"{run_id}-s{n}", sample_id=f"KC-0{n}", lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run_id, [s.id for s in run.samples]
 
 

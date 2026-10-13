@@ -10,6 +10,7 @@ from seqsetup.models.run_history import RunHistoryEntry
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services import database
+from .conftest import hold_edit_lock
 
 RUN_ID = "group-2a-archived"
 
@@ -25,6 +26,7 @@ def archived_run_id(app_ctx):
     )
     run.add_sample(Sample(id=f"{RUN_ID}-s1", sample_id="G2A-SAMPLE-1", lanes=[1]))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     app_ctx.run_history_repo.append(RunHistoryEntry(
         run_id=RUN_ID, timestamp=t, actor="maker", kind="updated",
         field_changes=[{"field": "run_name", "before": "Old name", "after": "Group 2a archived"}]))

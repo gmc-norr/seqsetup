@@ -15,6 +15,7 @@ from seqsetup.models.test_profile import ApplicationProfileReference, TestProfil
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
 from .conftest import disable_repos, mark_ready
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -41,6 +42,7 @@ def _seed_draft(ctx, run_id: str, test_id: str = "", run_description: str = "Pla
         ),
     ))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run.id
 
 

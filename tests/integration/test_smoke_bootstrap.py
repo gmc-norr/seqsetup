@@ -5,6 +5,8 @@ build the workflow-coverage tests on top of it. If this fails, the fixture
 needs surgery before the other tests are worth writing.
 """
 
+from .conftest import hold_edit_lock
+
 
 def test_app_boots(fresh_app):
     """The fixture returns an app object."""
@@ -389,6 +391,7 @@ def test_validation_page_renders_with_alpine_tabs(logged_in_client, fresh_app):
         created_by="admin",
     )
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
     response = logged_in_client.get(f"/runs/{run.id}/validation")
     assert response.status_code == 200
@@ -483,6 +486,7 @@ def test_edit_run_page_has_paste_section_when_draft(logged_in_client, fresh_app)
         created_by="admin",
     )
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
     response = logged_in_client.get(f"/runs/{run.id}")
     assert response.status_code == 200
@@ -502,6 +506,7 @@ def test_edit_run_page_renders(logged_in_client, fresh_app):
         created_by="admin",
     )
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
     response = logged_in_client.get(f"/runs/{run.id}")
     assert response.status_code == 200
@@ -521,6 +526,7 @@ def test_new_run_wizard_step1_renders(logged_in_client, fresh_app):
         created_by="admin",
     )
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
     response = logged_in_client.get(f"/runs/new/step/1?run_id={run.id}")
     assert response.status_code == 200
@@ -572,6 +578,7 @@ def test_sample_add_emits_audit(logged_in_client, fresh_app, monkeypatch):
         created_by="admin",
     )
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
     response = logged_in_client.post(
         f"/runs/{run.id}/samples",
@@ -606,6 +613,7 @@ def test_sample_delete_emits_audit(logged_in_client, fresh_app, monkeypatch):
     sample = Sample(sample_id="S1", test_id="WGS", lanes=[1])
     run.add_sample(sample)
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
     response = logged_in_client.delete(
         f"/runs/{run.id}/samples/{sample.id}",

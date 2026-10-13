@@ -29,6 +29,7 @@ from typing import Optional
 from jinja2_fragments.fastapi import Jinja2Blocks
 from starlette.requests import Request
 
+from .services import edit_locks
 from .services.versioned_tests import versions_used_text
 from .utils.clock import local_time
 
@@ -94,6 +95,8 @@ templates.env.filters["histval"] = _history_value
 # Every stored time is UTC; pages show it in the display zone with its
 # name: {{ value | localtime }} or {{ value | localtime(seconds=True) }}.
 templates.env.filters["localtime"] = local_time
+# How often an editor's page says "still here" (services/edit_locks.py).
+templates.env.globals["edit_lock_beat_seconds"] = edit_locks.BEAT_SECONDS
 # The test versions a run's checks used (spec 2026-10-07 group A4, §3).
 templates.env.filters["versions_used"] = versions_used_text
 

@@ -7,7 +7,11 @@ Clinical-safety contract (codified per Section 7 of the design spec):
   short-circuit. The HTML-aware ``HTTPException`` handler renders the
   403 as an HTML fragment, not the FastAPI default JSON.
 
-* ``get_editable_run`` loads + checks an editable run. Mutation
+* ``get_editable_run`` loads + checks an editable run, and that the
+  request's user holds its edit lock. ``get_draft_run`` skips the lock
+  check: it is only for the four ``/edit-lock`` routes that take, give
+  back or keep the lock (tests/integration/test_edit_lock.py lists every
+  run-changing route that does not use ``get_editable_run``). Mutation
   handlers then enter the ``saving_run`` context manager to persist;
   reviewers grep ``with saving_run(`` to enumerate every mutation
   handler.
@@ -29,7 +33,10 @@ from fastapi import Depends, HTTPException, Request
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus, SequencingRun
 from ..models.user import UserRole
+from ..repositories.base import ConflictError
+from ..services import edit_locks
 from ..services.audit_log import audit
+from ..services.edit_locks import EditLockRefused
 from ..services.run_history import record_run_updated
 from ..startup import get_app_context
 from .utils import get_username
@@ -77,11 +84,34 @@ def _load_and_check_editable(run_id: str, run_repo) -> SequencingRun:
 
 def get_editable_run(
     run_id: str,
+    request: Request,
     ctx: AppContext = Depends(get_ctx),
 ) -> SequencingRun:
-    """FastAPI dep: load + check the editable run. Mutation handlers
-    then enter ``with saving_run(run, ctx, request):`` to persist."""
+    """FastAPI dep: load + check the editable run, and that the request's
+    user holds its edit lock. Mutation handlers then enter
+    ``with saving_run(run, ctx, request):`` to persist."""
+    run = _load_and_check_editable(run_id, ctx.run_repo)
+    require_edit_lock(run, ctx, request)
+    return run
+
+
+def get_draft_run(
+    run_id: str,
+    ctx: AppContext = Depends(get_ctx),
+) -> SequencingRun:
+    """FastAPI dep: load a Draft run, whoever holds its edit lock -- for the
+    routes that take, give back or keep the lock itself."""
     return _load_and_check_editable(run_id, ctx.run_repo)
+
+
+def require_edit_lock(run: SequencingRun, ctx: AppContext, request: Request) -> None:
+    """Raise 409 unless the request's user holds the run's edit lock: one
+    person edits a Draft at a time (services/edit_locks.py; the user's
+    decision, 2026-10-13)."""
+    try:
+        edit_locks.require(ctx.edit_lock_repo, run.id, get_username(request))
+    except EditLockRefused as e:
+        raise ConflictError(str(e))
 
 
 def get_archivable_run(

@@ -60,7 +60,13 @@ The event name says what happened. The main groups are:
 - **Runs and samples** -- ``run.status.changed`` (Mark Ready, back to
   Draft), ``run.status.denied``, ``run.archived``, ``run.deleted``,
   ``run.delete.failed``, ``run.delete.copy_unconfirmed``, ``run.cloned``,
-  ``run.created_from_template``, every ``sample.`` change (added, edited,
+  ``run.created_from_template``, ``run.edit.started`` (Edit run;
+  ``from_user`` names whose editing it took over when that person had
+  left the page, else empty), ``run.edit.ended`` (Done editing),
+  ``run.edit.taken_over`` (Take over editing; ``from_user`` names who was
+  editing, empty when nobody was), ``run.status.denied`` with reason
+  ``edit_lock_lost`` (someone took over while Mark Ready wrote the exports),
+  every ``sample.`` change (added, edited,
   deleted, index assigned or cleared, and the bulk actions), and
   ``template.`` changes. ``run.deleted`` says whether a copy was kept
   (``kept_copy``) and which one (``copy_id``); ``run.delete.failed`` gives

@@ -15,6 +15,7 @@ from seqsetup.models.sequencing_run import (
 )
 
 from .conftest import disable_repos
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -51,6 +52,7 @@ def _seed_miseq_draft(ctx, run_id: str) -> tuple[str, str]:
     )
     run.add_sample(sample)
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run.id, sample.id
 
 

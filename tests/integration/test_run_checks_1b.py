@@ -7,6 +7,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 
 from .conftest import disable_repos
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -54,6 +55,7 @@ def _seed(ctx, run_id: str, pairs=(("ATTACTCG", "TATAGCCT"),), platform=Instrume
             sample.read1_override_pattern = read1_pattern
         run.add_sample(sample)
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run.id
 
 
@@ -134,6 +136,7 @@ class TestOverrideCyclesRefusedAtSave:
         run = ctx.run_repo.get_by_id(run_id)
         run.samples[1].read1_override_pattern = "Y100"
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         run = ctx.run_repo.get_by_id(run_id)
         before = ([s.override_cycles for s in run.samples], run.updated_at)
 
@@ -175,6 +178,7 @@ class TestReadyMessageSlot:
         run = SequencingRun(id="slot-refused", run_name="R", instrument_platform=InstrumentPlatform.NOVASEQ_X,
                             flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
         ctx.run_repo.save(run)  # no samples: a real refusal
+        hold_edit_lock(ctx, run.id)
 
         resp = logged_in_client.post("/runs/slot-refused/status/ready", headers=ORIGIN)
 
@@ -346,6 +350,7 @@ class TestCycleTotalLine:
         run = ctx.run_repo.get_by_id(run_id)
         run.reagent_cycles = 300
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         page = logged_in_client.get(f"/runs/new/step/1?run_id={run_id}").text
 

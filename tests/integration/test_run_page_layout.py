@@ -17,6 +17,7 @@ import pytest
 
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 
 def _run(ctx, run_id, status=RunStatus.DRAFT):
@@ -27,6 +28,7 @@ def _run(ctx, run_id, status=RunStatus.DRAFT):
     )
     run.add_sample(Sample(id=f"{run_id}-s1", sample_id="L1", lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run_id
 
 
@@ -120,6 +122,7 @@ class TestExportOnlyOnceReady:
         )
         run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         origin = {"Origin": "http://testserver"}
 
         ready = mark_ready(logged_in_client, run.id, origin)

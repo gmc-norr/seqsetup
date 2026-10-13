@@ -18,6 +18,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 from seqsetup.models.sample import Sample
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -39,6 +40,7 @@ def _run(ctx):
     run.add_sample(Sample(id="s1", sample_id="PAT-1", lanes=[1], test_id="WGS",
                           test_version="1"))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run
 
 

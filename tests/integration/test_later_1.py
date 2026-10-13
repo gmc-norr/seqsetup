@@ -261,6 +261,7 @@ def _single_index_draft(ctx, run_id, **fields):
         sample.assign_index1(Index(name=f"i7-{n}", sequence=i7, index_type=IndexType.I7))
         run.add_sample(sample)
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return ctx.run_repo.get_by_id(run_id)
 
 
@@ -315,6 +316,7 @@ class TestMarkReadyRefusesAMismatchSettingWithoutTheIndex:
 # --- spec §3: no lane splitting with a Lane column ---------------------------
 
 from .test_group_a3 import _indexed_draft  # noqa: E402
+from .conftest import hold_edit_lock
 
 
 class TestMarkReadyRefusesNoLaneSplittingWithALaneColumn:
@@ -324,6 +326,7 @@ class TestMarkReadyRefusesNoLaneSplittingWithALaneColumn:
         run = _indexed_draft(profiles, "l1-nls", test_id="A3T")
         run.no_lane_splitting = True
         profiles.run_repo.save(run)
+        hold_edit_lock(profiles, run.id)
 
         resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
 
@@ -347,6 +350,7 @@ class TestMarkReadyRefusesNoLaneSplittingWithALaneColumn:
         run = _indexed_draft(profiles, "l1-nls-page", test_id="A3T")
         run.no_lane_splitting = True
         profiles.run_repo.save(run)
+        hold_edit_lock(profiles, run.id)
 
         page = html.unescape(logged_in_client.get(f"/runs/{run.id}/validation").text)
 

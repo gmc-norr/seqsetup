@@ -9,6 +9,7 @@ from playwright.sync_api import expect
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 
 # See CLEAN_PAIR in tests/integration/test_run_checks_1b.py: i5 GGGGGGGG is
@@ -27,6 +28,7 @@ def _seed(app_ctx, run_id, i7, i5, test_id="WGS", indexed=True):
     run.add_sample(Sample(id=f"{run_id}-s1", sample_id="RM-01", test_id=test_id, index_pair=pair,
                           test_version="1" if test_id else "", lanes=[1]))
     app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
     return run_id
 
 

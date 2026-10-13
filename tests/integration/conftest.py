@@ -252,6 +252,18 @@ def logged_in_standard_client(fresh_app, standard_user_seeded):
     return c
 
 
+def hold_edit_lock(ctx, run_id: str, username: str = "admin-test") -> None:
+    """Give a test user the run's edit lock, as pressing Edit run (or making
+    the run) does in the app: every change to a Draft needs it
+    (services/edit_locks.py; the user's decision, 2026-10-13). The users are
+    the ones the login fixtures above seed."""
+    from seqsetup.models.user import User, UserRole
+    from seqsetup.services import edit_locks
+    names = {"admin-test": "Test Admin", "operator": "Test Operator"}
+    edit_locks.grant(ctx.edit_lock_repo, run_id, User(
+        username=username, display_name=names.get(username, username), role=UserRole.STANDARD))
+
+
 def run_version(ctx, run_id: str) -> str:
     """The stored run's version, as the setup page sends it with each of its
     saves: every setup save refuses a request without the stored one
