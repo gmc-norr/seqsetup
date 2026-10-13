@@ -6,8 +6,12 @@ platforms = ["linux-64"]
 version = "0.2.0"
 # Lock only releases at least two weeks old, so a broken new release has time
 # to be found and pulled before it reaches the lab. Move the date forward when
-# updating the lock (`pixi update`); tests/unit/test_dependency_floors.py checks
-# that every library with a known security advisory is locked at a fixed version.
+# updating the lock (`pixi update`); tests/unit/test_dependency_floors.py holds
+# 13 named packages at a hand-written floor and looks nothing up, so it is not
+# a scanner -- an advisory nobody has added a floor for passes it, and the
+# other 149 packages in the lock are not looked at. Check the locked versions
+# by hand after an update, as docs/development/contributing.rst ("Updating
+# Libraries") says.
 # A security release may justify a later date: 2026-10-04 lets in OpenSSL 3.6.5
 # (conda-forge, 2026-10-04), which fixes 12 advisories in 3.6.4.
 exclude-newer = "2026-10-04"
