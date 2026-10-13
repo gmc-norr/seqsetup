@@ -96,6 +96,15 @@ def why_not(repo, run_id: str) -> str:
             f"{local_time(holder.started_at)}, so nothing was saved. Reload the page.")
 
 
+def lost_message(repo, run_id: str) -> str:
+    """What an open edit page says once its lock has gone."""
+    holder = repo.get(run_id)
+    if holder is None:
+        return "You are no longer editing this run. Reload the page: your changes are no longer saved."
+    return (f"{holder.display_name} is editing this run now (since {local_time(holder.started_at)}). "
+            "Reload the page: your changes are no longer saved.")
+
+
 def beat(repo, run_id: str, username: str, now: Optional[datetime] = None) -> bool:
     """The page's "still here". False when the lock is no longer theirs."""
     return repo.touch(run_id, username, _now(now))

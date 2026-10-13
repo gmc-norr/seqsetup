@@ -19,6 +19,7 @@ import pytest
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN_ID = "kit-version-run"
@@ -70,6 +71,7 @@ def _run(ctx):
     run.add_sample(Sample(id="s1", sample_id="S1", lanes=[1]))
     run.add_sample(Sample(id="s2", sample_id="S2", lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return RUN_ID
 
 

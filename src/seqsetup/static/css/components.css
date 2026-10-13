@@ -1922,7 +1922,23 @@ body {
 
 .run-status-actions {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 0.5rem;
+}
+
+/* Who is editing a draft (runs/_run_status_bar.html), and the red line an
+   editor's page shows once someone has taken over (runs/_edit_lock_beat.html). */
+.edit-lock-note { font-size: var(--fs-sm); color: var(--text-muted); }
+.run-status-bar:has(.edit-lock-lost:not([style*="display: none"])) { flex-wrap: wrap; }
+.edit-lock-lost {
+    flex-basis: 100%;
+    margin: var(--space-2) 0 0;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    background: var(--danger-bg);
+    color: var(--danger-fg);
+    font-weight: var(--fw-bold);
 }
 
 /* Empty state */

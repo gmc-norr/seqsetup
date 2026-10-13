@@ -1,7 +1,7 @@
 {#
    Sample table section for the edit-run page.
 
-   When the run is in DRAFT (is_editable=True):
+   When the viewer is editing the draft (is_editable=True):
      - shows the bulk-paste import section above the table
      - shows the index-kit side panel (drag sources) when there's at
        least one un-indexed sample, with a "Fill empty samples in
@@ -13,8 +13,8 @@
        section, so a swap of the section or a row keeps it.
      - shows the sample table with drop zones + bulk-action panel
 
-   When the run is locked (READY/ARCHIVED), shows the locked-message
-   + a read-only sample table with all columns (no paste, no drop
+   Otherwise (READY/ARCHIVED, or a draft someone else or nobody is
+   editing), shows the locked-message + a read-only sample table with all columns (no paste, no drop
    zones, no bulk actions).
 
    Inputs:
@@ -22,7 +22,7 @@
      index_kits:       list[IndexKit]
      test_profiles:    list[OfferedTest] — one per test; also the paste form's test picker
      num_lanes:        int — also the paste form's lane picker
-     is_editable:      bool — run.status.value == 'draft'
+     is_editable:      bool — a draft whose edit lock the viewer holds
      sample_api_enabled: bool — LIMS-API integration toggle
      oob:              bool (default False) — add hx-swap-oob when True
      chosen_kit_id:    str — kit_id the page's kit dropdown shows, from the
@@ -100,7 +100,7 @@
     {% else %}
         {# Read-only locked view #}
         <div class="add-samples-btn">
-            <p class="locked-message">Run is locked for editing. Return to Draft to make changes.</p>
+            <p class="locked-message">{% if run.status.value == 'draft' %}Press Edit run to make changes.{% else %}Run is locked for editing. Return to Draft to make changes.{% endif %}</p>
         </div>
         {# Full columns (indexes, lanes, settings) so a locked run can be
            checked before loading; editable=False makes every cell

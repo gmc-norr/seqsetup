@@ -80,4 +80,4 @@ def editing_heartbeat(
     """The open edit page's "still here", once a minute. Not audited."""
     if edit_locks.beat(ctx.edit_lock_repo, run.id, get_username(request)):
         return JSONResponse({"editing": True})
-    return JSONResponse({"editing": False, "message": edit_locks.why_not(ctx.edit_lock_repo, run.id)})
+    return JSONResponse({"editing": False, "message": edit_locks.lost_message(ctx.edit_lock_repo, run.id)})

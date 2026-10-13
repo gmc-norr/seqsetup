@@ -18,6 +18,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sample_api_config import SampleApiConfig
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services import sample_api as sample_api_module
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN = "dots-run"
@@ -32,6 +33,7 @@ def _run(ctx, sample_ids=()):
     for k, sample_id in enumerate(sample_ids, start=1):
         run.add_sample(Sample(id=f"s{k}", sample_id=sample_id, lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
 
 def _lims_on(ctx):

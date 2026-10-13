@@ -45,6 +45,7 @@ from seqsetup.models.sequencing_run import (
 )
 
 from .conftest import run_version
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN_ID = "mf-run"
@@ -83,6 +84,7 @@ def _run(ctx, override_cycles=None, lanes=(1,), test_id="WGS", test_version="1",
         index_pair=index_pair,
     ))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run
 
 

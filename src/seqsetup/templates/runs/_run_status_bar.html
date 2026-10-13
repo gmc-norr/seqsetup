@@ -1,6 +1,11 @@
 {#
    Run status bar — HTMX target #run-status-bar.
    Inputs: run
+           edit_lock: LockState | None — a Draft's edit lock as the viewer
+                      sees it (services/edit_locks.py); None off a Draft.
+                      Only its holder gets Done editing and Mark Ready;
+                      anyone else gets Edit run, or Take over editing while
+                      someone else is editing.
 #}
 {% set status_value = run.status.value %}
 {% set label_map = {'draft': ('Draft', 'status-draft'), 'ready': ('Ready', 'status-ready'), 'archived': ('Archived', 'status-archived')} %}
@@ -11,7 +16,25 @@
         <span class="run-status-badge {{ badge_cls }}">{{ label }}</span>
     </div>
     <div class="run-status-actions">
-        {% if status_value == 'draft' %}
+        {% if status_value == 'draft' and not (edit_lock and edit_lock.mine) %}
+            {% if edit_lock and edit_lock.someone_else %}
+            {% set editor = edit_lock.lock.display_name %}
+            <span class="edit-lock-note">{{ editor }} is editing this run (since {{ edit_lock.lock.started_at | localtime }})</span>
+            <form hx-post="/runs/{{ run.id }}/edit-lock/take-over"
+                  hx-confirm="{{ editor }} is editing this run. If you take over, {{ editor }} can no longer save changes to it. Take over editing?">
+                <button type="submit" class="btn btn-secondary btn-small">Take over editing</button>
+            </form>
+            {% else %}
+            <span class="edit-lock-note">Nobody is editing this run</span>
+            <form hx-post="/runs/{{ run.id }}/edit-lock">
+                <button type="submit" class="btn btn-secondary btn-small">Edit run</button>
+            </form>
+            {% endif %}
+        {% elif status_value == 'draft' %}
+            <span class="edit-lock-note">You are editing this run</span>
+            <form hx-delete="/runs/{{ run.id }}/edit-lock">
+                <button type="submit" class="btn btn-secondary btn-small">Done editing</button>
+            </form>
             {# Mark Ready — always clickable in DRAFT. Server-side validation
                check at /runs/{id}/status/ready handles refusal — and the
                color-balance question — with an inline message via the
@@ -43,4 +66,7 @@
             </form>
         {% endif %}
     </div>
+    {% if status_value == 'draft' and edit_lock and edit_lock.mine %}
+    {% include "runs/_edit_lock_beat.html" %}
+    {% endif %}
 </div>

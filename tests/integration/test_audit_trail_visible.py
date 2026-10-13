@@ -21,6 +21,7 @@ from seqsetup.models.sequencing_run import (
 )
 
 from .conftest import disable_repos, mark_ready
+from .conftest import hold_edit_lock
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -83,6 +84,7 @@ class TestAuditEventsAreRecorded:
             ),
         ))
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         mark_ready(logged_in_client, run.id, ORIGIN)
         assert ctx.run_repo.get_by_id(run.id).status.value == "ready"
 

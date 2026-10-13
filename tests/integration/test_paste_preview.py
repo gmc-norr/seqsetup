@@ -11,6 +11,7 @@ import re
 
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -24,6 +25,7 @@ def _run(ctx, run_id="paste-run", *, samples=(), status=RunStatus.DRAFT, flowcel
     for s in samples:
         run.add_sample(s)
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run_id
 
 

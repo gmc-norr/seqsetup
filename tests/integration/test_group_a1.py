@@ -13,6 +13,7 @@ from seqsetup.services import sample_api as sample_api_module
 from seqsetup.services.index_fill import build_fill_plan
 
 from .conftest import disable_repos, mark_ready
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN = "a1-run"
@@ -47,6 +48,7 @@ def _run(ctx, sample_ids, cycles=(151, 151, 10, 10)):
     for k, sample_id in enumerate(sample_ids, start=1):
         run.add_sample(Sample(id=f"s{k}", sample_id=sample_id, lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
 
 def _stored(ctx):
@@ -178,6 +180,7 @@ class TestANewKitReplacesTheOldKitsSettings:
             sample.index1_cycles = sample.index2_cycles = 8
             sample.read1_override_pattern = sample.read2_override_pattern = "U8Y*"
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         plan = build_fill_plan(_stored(ctx), plain)
 
         resp = logged_in_client.post(f"/runs/{RUN}/index-fill", data={
@@ -293,6 +296,7 @@ def _add_behind_the_page(ctx, sid, sample_id):
     run = _stored(ctx)
     run.add_sample(Sample(id=sid, sample_id=sample_id, lanes=[1]))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
 
 
 class TestMultiIndexDropFillsOnlyTheRowsShown:

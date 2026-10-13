@@ -24,6 +24,7 @@ from ..templating import render
 from ..services.run_history import record_run_created_safe
 from ..services import edit_locks
 from .dependencies import get_ctx
+from .utils import get_username
 
 
 router = APIRouter(tags=["wizard"])
@@ -59,12 +60,16 @@ def wizard_step1(
     """GET /runs/new/step/1 — run setup (name, instrument, cycles).
 
     Opened for a new run (``new=1``) and from a draft's "Edit setup" link.
-    A Ready or Archived run cannot be changed, so it goes to its run page.
+    A Ready or Archived run cannot be changed, so it goes to its run page;
+    so does a draft the viewer is not editing.
     """
     run = ctx.run_repo.get_by_id(run_id)
     if not run:
         return RedirectResponse("/", status_code=303)
     if run.status != RunStatus.DRAFT:
+        return RedirectResponse(f"/runs/{run.id}", status_code=303)
+    # Only the person editing the draft may change its setup.
+    if not edit_locks.state(ctx.edit_lock_repo, run.id, get_username(request)).mine:
         return RedirectResponse(f"/runs/{run.id}", status_code=303)
 
     instrument_config = get_instrument_config_repo().get()

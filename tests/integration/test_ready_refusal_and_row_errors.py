@@ -14,6 +14,7 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.validation import ValidationService, clear_validation_cache
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver", "HX-Request": "true"}
 
@@ -39,6 +40,7 @@ def _make_bad_run(ctx):
     run.add_sample(Sample(id="s-l9", sample_id="LANE9", lanes=[9], index_pair=_pair(3, "TCCGGAGA", "ATAGAGGC")))
     run.add_sample(Sample(id="s-ok", sample_id="OK", lanes=[2], index_pair=_pair(4, "CGCTCATT", "CCTATCCT")))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run.id
 
 
@@ -84,6 +86,7 @@ class TestReadyRefusal:
         )
         run.add_sample(Sample(id="x", sample_id="<b>bad</b>", lanes=[9]))
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
         resp = logged_in_client.post("/runs/escape-run/status/ready", headers=ORIGIN)
         assert "<b>bad</b>" not in resp.text
         assert "&lt;b&gt;bad&lt;/b&gt;" in resp.text

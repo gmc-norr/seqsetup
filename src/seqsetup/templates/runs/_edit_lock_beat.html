@@ -1,0 +1,12 @@
+{#
+   The editor's page says "still here" every minute so others see the run is
+   being edited (services/edit_locks.py). If the lock has gone -- someone
+   took over -- the answer's message shows here in red. Rendered only for
+   the person holding the lock.
+
+   Inputs:
+     run: SequencingRun
+#}
+<p class="edit-lock-lost" role="alert" x-cloak
+   x-data='editLock({{ ("/runs/" ~ run.id ~ "/edit-lock/heartbeat") | tojson }}, {{ edit_lock_beat_seconds }})'
+   x-show="lost" x-text="lost"></p>

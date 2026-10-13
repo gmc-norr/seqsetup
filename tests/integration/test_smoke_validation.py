@@ -18,6 +18,7 @@ from seqsetup.models.sequencing_run import (
     RunStatus,
     SequencingRun,
 )
+from .conftest import hold_edit_lock
 
 
 def _origin() -> dict:
@@ -59,6 +60,7 @@ def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
         ),
     ))
     ctx.run_repo.save(run)
+    hold_edit_lock(ctx, run.id)
     return run.id
 
 
@@ -82,6 +84,7 @@ class TestMarkReady:
             flowcell_type="10B",
         )
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         response = logged_in_client.post(
             "/runs/empty-run/status/ready",
@@ -122,6 +125,7 @@ class TestStatusTransition:
             status=RunStatus.ARCHIVED,
         )
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         # Try to bring it back to DRAFT.
         response = logged_in_client.post(

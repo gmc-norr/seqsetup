@@ -210,7 +210,7 @@ class TestTheHeartbeat:
         answer = admin.post(f"/runs/{run_id}/edit-lock/heartbeat", headers=ORIGIN).json()
 
         assert answer["editing"] is False
-        assert "Test Operator has been editing this run since" in answer["message"]
+        assert "Test Operator is editing this run now (since" in answer["message"]
 
     def test_heartbeats_are_not_audited(self, two):
         ctx, admin, _op = two
@@ -286,3 +286,138 @@ class TestTheLockFollowsTheRun:
 
         assert admin.delete(f"/runs/{run_id}", headers=ORIGIN).status_code == 200
         assert ctx.run_repo.get_by_id(run_id) is None and _holder(ctx, run_id) is None
+
+
+def _page(client, run_id):
+    return client.get(f"/runs/{run_id}").text
+
+
+MARK_READY = '/status/ready"'
+EDIT_SETUP = "Edit setup</a>"
+SET_TEST = 'class="validate-fix"'
+
+
+def _a_test_profile(ctx):
+    """The Check panel offers "Set test" only when there is a test to set."""
+    from seqsetup.models.test_profile import TestProfile
+    ctx.test_profile_repo.save(TestProfile(test_type="WGS"))
+HEARTBEAT = "editLock("
+
+
+class TestWhatTheRunPageShows:
+    """Only the editor sees the edit controls; everyone else sees the run
+    read-only, with who is editing and the button to get the lock."""
+
+    def test_the_editor_sees_the_edit_page_and_done_editing(self, two):
+        ctx, admin, _op = two
+        _a_test_profile(ctx)
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+
+        page = _page(admin, run_id)
+
+        assert "You are editing this run" in page and "Done editing" in page
+        assert MARK_READY in page and EDIT_SETUP in page and SET_TEST in page
+        assert f'{HEARTBEAT}"/runs/{run_id}/edit-lock/heartbeat"' in page
+        assert "locked-message" not in page
+
+    def test_someone_else_sees_who_is_editing_and_take_over(self, two):
+        ctx, admin, op = two
+        _a_test_profile(ctx)
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+
+        page = _page(op, run_id)
+
+        assert "Test Admin is editing this run" in page and "Take over editing" in page
+        assert "If you take over, Test Admin can no longer save" in page
+        assert MARK_READY not in page and EDIT_SETUP not in page and SET_TEST not in page
+        assert HEARTBEAT not in page
+        assert "Press Edit run to make changes." in page
+
+    def test_nobody_editing_offers_edit_run(self, two):
+        ctx, _admin, op = two
+        run_id = _draft(ctx, samples=1)
+
+        page = _page(op, run_id)
+
+        assert ">Edit run</button>" in page and "Take over editing" not in page
+        assert MARK_READY not in page and EDIT_SETUP not in page and HEARTBEAT not in page
+
+    def test_someone_elses_old_lock_shows_as_free(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+        ctx.edit_lock_repo.collection.update_one(
+            {"_id": run_id}, {"$set": {"seen_at": utcnow() - timedelta(minutes=4)}})
+
+        page = _page(op, run_id)
+
+        assert ">Edit run</button>" in page and "Take over editing" not in page
+
+    def test_a_ready_run_has_no_editing_buttons(self, two):
+        ctx, admin, _op = two
+        run_id = _draft(ctx)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.status = RunStatus.READY
+        ctx.run_repo.save(run)
+
+        page = _page(admin, run_id)
+
+        assert "Edit run</button>" not in page and "Done editing" not in page
+        assert "Return to Draft" in page
+
+    def test_the_check_panel_offers_its_fixes_to_the_editor_only(self, two):
+        ctx, admin, op = two
+        _a_test_profile(ctx)
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+
+        assert SET_TEST in admin.get(f"/runs/{run_id}/validate-panel").text
+        assert SET_TEST not in op.get(f"/runs/{run_id}/validate-panel").text
+
+    def test_back_to_draft_answers_with_the_edit_page_parts(self, two):
+        ctx, _admin, op = two
+        run_id = _draft(ctx, samples=1)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.status = RunStatus.READY
+        ctx.run_repo.save(run)
+
+        answer = op.post(f"/runs/{run_id}/status/draft", headers=ORIGIN).text
+
+        assert "You are editing this run" in answer and MARK_READY in answer
+        assert "locked-message" not in answer
+
+
+class TestTheSetupPage:
+    def test_the_editor_gets_it(self, two):
+        ctx, admin, _op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+
+        resp = admin.get(f"/runs/new/step/1?run_id={run_id}", follow_redirects=False)
+
+        assert resp.status_code == 200
+        assert f'{HEARTBEAT}"/runs/{run_id}/edit-lock/heartbeat"' in resp.text
+
+    def test_anyone_else_is_sent_to_the_run_page(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+
+        resp = op.get(f"/runs/new/step/1?run_id={run_id}", follow_redirects=False)
+
+        assert resp.status_code == 303 and resp.headers["location"] == f"/runs/{run_id}"
+
+
+class TestTheHeartbeatsMessage:
+    def test_it_says_who_has_it_now(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+        op.post(f"/runs/{run_id}/edit-lock/take-over", headers=ORIGIN)
+
+        message = admin.post(f"/runs/{run_id}/edit-lock/heartbeat", headers=ORIGIN).json()["message"]
+
+        assert message.startswith("Test Operator is editing this run now (since ")
+        assert message.endswith("). Reload the page: your changes are no longer saved.")

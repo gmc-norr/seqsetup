@@ -14,6 +14,7 @@ from seqsetup.services.validation import ValidationService
 
 from .conftest import disable_repos, mark_ready
 from .test_group_1c import _pair
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -27,6 +28,7 @@ class TestTheReportsCheckMustPassToo:
                             flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
         run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         real_check = ValidationService.validate_run
         real_write = SampleSheetV2Exporter.export

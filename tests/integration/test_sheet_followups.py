@@ -11,6 +11,7 @@ from seqsetup.services.validation import clear_validation_cache
 
 from .conftest import disable_repos
 from .test_sheet_safety import _assert_validation_passes, _seed_draft, _seed_synced_profile
+from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -26,6 +27,7 @@ class TestInvisibleCharacterStopsMarkReady:
         run = ctx.run_repo.get_by_id(run_id)
         run.samples[0].description = "Tube​7"
         ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
