@@ -14,8 +14,9 @@ Each target is a plain dict:
     software_version            the BCL Convert version the v2 sheet states,
                                 or None (a v1 sheet states none)
     i5_workflow                 the run's i5 workflow
-    index2_column               "forward" (as the index kit lists the i5) or
-                                "reverse-complement"
+    index2_column               "forward" (each sample's i5 as stored),
+                                "reverse-complement", or "none" (no sample
+                                has an i5)
     needs_runinfo_reverse_mark  True when the sheet relies on BCL Convert
                                 acting on the IsReverseComplement="Y" mark
                                 RunInfo.xml puts on the i5 read
@@ -37,22 +38,27 @@ def bclconvert_software_version(samplesheet_v2: str) -> Optional[str]:
     return None
 
 
-def _column(reversed_: bool) -> str:
-    return "reverse-complement" if reversed_ else "forward"
-
-
 def sheet_targets(
     instrument: str, direction: I5Direction, samplesheet_v2: str, samplesheet_v1: Optional[str],
+    has_i5: bool = True,
 ) -> dict:
-    """The targets of a run's v2 sheet and, when it has one, its v1 sheet."""
+    """The targets of a run's v2 sheet and, when it has one, its v1 sheet.
+    ``has_i5`` is whether any sample has an i5: with none, neither sheet
+    writes one, and none relies on the RunInfo.xml mark."""
+
+    def column(reversed_: bool) -> str:
+        if not has_i5:
+            return "none"
+        return "reverse-complement" if reversed_ else "forward"
+
     return {
         "samplesheet_v2": {
             "instrument": instrument,
             "software": "BCL Convert",
             "software_version": bclconvert_software_version(samplesheet_v2),
             "i5_workflow": direction.workflow,
-            "index2_column": _column(direction.index2_column_reversed),
-            "needs_runinfo_reverse_mark": direction.index2_mask_reversed,
+            "index2_column": column(direction.index2_column_reversed),
+            "needs_runinfo_reverse_mark": has_i5 and direction.index2_mask_reversed,
         },
         # bcl2fastq compares the i5 as the workflow reads it, and reads no
         # mark in RunInfo.xml (samplesheet_v1_exporter).
@@ -61,7 +67,7 @@ def sheet_targets(
             "software": "bcl2fastq",
             "software_version": None,
             "i5_workflow": direction.workflow,
-            "index2_column": _column(direction.reads_reversed),
+            "index2_column": column(direction.reads_reversed),
             "needs_runinfo_reverse_mark": False,
         } if samplesheet_v1 else None,
     }

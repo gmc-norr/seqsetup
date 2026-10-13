@@ -214,8 +214,8 @@ Each ``target`` object:
      - The run's i5 workflow.
    * - ``index2_column``
      - string
-     - ``forward`` (the i5 as the index kit lists it) or
-       ``reverse-complement``.
+     - ``forward`` (each sample's i5 as stored), ``reverse-complement``,
+       or ``none`` (no sample has an i5).
    * - ``needs_runinfo_reverse_mark``
      - boolean
      - ``true`` when the sheet relies on BCL Convert acting on the

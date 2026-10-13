@@ -13,6 +13,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
 from .conftest import disable_repos, mark_ready
+from .test_group_a3 import profiles  # noqa: F401 (fixture)
 from .test_group_1c import _pair
 from .test_served_runs import _full, _run, _section, _token
 
@@ -180,13 +181,13 @@ class TestTheApiExportsPageShowsThem:
             "Instrument": "NovaSeq 6000",
             "Software": "BCL Convert 4.3.6",
             "i5 workflow": "v1.5 reagents",
-            "i5 column": "Reverse complement of the index kit's i5",
+            "i5 column": "Reverse complement of each sample's stored i5",
         }
         assert _target_box(_section(page, "samplesheet-v1")) == {
             "Instrument": "NovaSeq 6000",
             "Software": "bcl2fastq",
             "i5 workflow": "v1.5 reagents",
-            "i5 column": "Reverse complement of the index kit's i5",
+            "i5 column": "Reverse complement of each sample's stored i5",
         }
         assert RUNINFO_NOTE not in html.unescape(page)
         for resource in ("json", "validation-report", "validation-pdf"):
@@ -197,7 +198,7 @@ class TestTheApiExportsPageShowsThem:
         _app, ctx, _db = fresh_app
         _ready(logged_in_client, ctx, "marked", InstrumentPlatform.NOVASEQ_X, "10B", "")
         section = _section(logged_in_client.get("/served-runs/marked").text, "samplesheet-v2")
-        assert _target_box(section)["i5 column"] == "Forward, as the index kit lists it"
+        assert _target_box(section)["i5 column"] == "Forward: each sample's i5 as stored"
         assert RUNINFO_NOTE in html.unescape(section)
 
     def test_a_v2_sheet_that_states_no_version(self, logged_in_client, fresh_app):
@@ -215,3 +216,91 @@ class TestTheApiExportsPageShowsThem:
             section = _section(page, resource)
             assert _target_box(section) is None
             assert NOT_RECORDED in html.unescape(section), resource
+
+
+class TestTheI5RuleMustHoldWhileTheExportsAreWritten:
+    """The sheets, the report and the target each read the instrument's i5
+    rule. A sync that changes it while Mark Ready writes them could make
+    them disagree -- even one v2 sheet's header with its rows -- so Mark
+    Ready reads it before and after and refuses when it moved (review,
+    2026-10-13). Nothing is stored; the run stays a Draft."""
+
+    @pytest.mark.parametrize("hook", ["v2-rows", "json", "validation-report"])
+    def test_a_rule_changed_mid_export_is_refused(self, logged_in_client, fresh_app, monkeypatch, hook):
+        from seqsetup.data import instruments as instruments_module
+        from seqsetup.services.json_exporter import JSONExporter
+        from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
+        from seqsetup.services.validation_report import ValidationReportJSON
+
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run = SequencingRun(id="rule-moved", run_name="Rule moved", instrument_platform=InstrumentPlatform.NOVASEQ_X,
+                            flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
+        run.add_sample(Sample(sample_id="S1", index_pair=_pair("ATTACTCG", I5, "p1"), lanes=[1]))
+        ctx.run_repo.save(run)
+
+        config = instruments_module.get_instrument_config
+
+        def flipped(name):
+            found = config(name)
+            return {**found, "runinfo_marks_i5_reversed": not found["runinfo_marks_i5_reversed"]}
+
+        owner, name = {"v2-rows": (SampleSheetV2Exporter, "_resolve_i5"), "json": (JSONExporter, "export"),
+                       "validation-report": (ValidationReportJSON, "export")}[hook]
+        original = getattr(owner, name)
+
+        def sync_lands_here(*args, **kwargs):
+            monkeypatch.setattr(instruments_module, "get_instrument_config", flipped)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(owner, name, sync_lands_here)
+
+        resp = mark_ready(logged_in_client, run.id, ORIGIN)
+
+        assert resp.status_code == 409
+        assert "i5 settings changed while the exports were being generated" in resp.text
+        stored = ctx.run_repo.get_by_id(run.id)
+        assert stored.status == RunStatus.DRAFT
+        assert stored.generated_samplesheet_v2 is None and stored.sheet_targets == {}
+        # The one-sample run is asked about colour balance first (mark_ready answers it).
+        reasons = [e.details["reason"] for e in ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied")]
+        assert reasons.count("i5_settings_changed_during_export") == 1, reasons
+
+
+class TestTheProfilePath:
+    """Mark Ready as production runs it: the BCLConvert profile writes the
+    [BCLConvert_Settings], SoftwareVersion included (group A3's profiles)."""
+
+    def test_the_version_is_the_one_the_profile_wrote(self, logged_in_client, profiles):
+        from seqsetup.models.index import Index, IndexType
+        run = SequencingRun(id="profile-path", run_name="profile-path", instrument_platform=InstrumentPlatform.NOVASEQ_X,
+                            flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
+        sample = Sample(sample_id="S1", lanes=[1], test_id="A3T", test_version="1")
+        sample.assign_index1(Index(name="i7", sequence="ATTACTCGAT", index_type=IndexType.I7))
+        sample.assign_index2(Index(name="i5", sequence="TATAGCCTGA", index_type=IndexType.I5))
+        run.add_sample(sample)
+        profiles.run_repo.save(run)
+
+        resp = mark_ready(logged_in_client, run.id, ORIGIN)
+        stored = profiles.run_repo.get_by_id(run.id)
+        assert stored.status == RunStatus.READY, html.unescape(resp.text)[:400]
+
+        settings = _settings(stored.generated_samplesheet_v2, "[BCLConvert_Settings]")
+        v2 = stored.sheet_targets["samplesheet_v2"]
+        assert v2["software_version"] == settings["SoftwareVersion"] == "4.3.6"
+        assert _cell(stored.generated_samplesheet_v2, "[BCLConvert_Data]", "Index2") == "TATAGCCTGA"
+        assert v2["index2_column"] == "forward" and v2["needs_runinfo_reverse_mark"] is True
+
+    def test_a_run_with_no_i5_says_none(self, logged_in_client, profiles):
+        from .test_later_1 import _single_index_draft
+        run = _single_index_draft(profiles, "no-i5")
+
+        resp = mark_ready(logged_in_client, run.id, ORIGIN)
+        stored = profiles.run_repo.get_by_id(run.id)
+        assert stored.status == RunStatus.READY, html.unescape(resp.text)[:400]
+
+        v2 = stored.sheet_targets["samplesheet_v2"]
+        assert v2["index2_column"] == "none" and v2["needs_runinfo_reverse_mark"] is False
+        section = _section(logged_in_client.get(f"/served-runs/{run.id}").text, "samplesheet-v2")
+        assert _target_box(section)["i5 column"] == "None: no sample has an i5"
+        assert RUNINFO_NOTE not in html.unescape(section)

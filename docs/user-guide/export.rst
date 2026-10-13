@@ -95,6 +95,8 @@ to have an index assigned -- if any sample does not, they stay disabled
 even though the run is Ready; the JSON and validation downloads have no
 such requirement.
 
+.. _api-exports:
+
 API Exports
 -------------
 
@@ -128,16 +130,21 @@ sheet was written for:
   its ``[BCLConvert_Settings]``, for the v2 sheet; bcl2fastq for the v1
   sheet.
 - **i5 workflow** -- the run's i5 workflow (see :doc:`run-setup`).
-- **i5 column** -- the i5 as the index kit lists it, or its reverse
-  complement (see the note on the i5 under `Sample Sheet v2 format`_).
+- **i5 column** -- each sample's i5 as stored, or its reverse complement
+  (see the note on the i5 under `Sample Sheet v2 format`_); *None* when no
+  sample has an i5.
 
 When the sheet relies on BCL Convert acting on the
 ``IsReverseComplement="Y"`` mark that ``RunInfo.xml`` puts on the i5 read
 -- with the shipped instruments, a NovaSeq X, NextSeq 1000/2000 or MiSeq
 i100 read-first run -- the box says so: the sheet is right only for a BCL
-Convert that acts on the mark. Mark Ready saves the target with the sheets; it is not worked out
-again later, so a change to an instrument's settings afterwards does not
-change it. **Back to Draft** clears it with the stored files. A run
+Convert that acts on the mark. Mark Ready saves the target with the
+sheets; it is not worked out again later, so a change to an instrument's
+settings afterwards does not change it. If a sync changes the instrument's
+i5 settings while **Mark Ready** is writing the exports, **Mark Ready**
+refuses with *"The instrument's i5 settings changed while the exports were
+being generated, so the Sample Sheets could disagree with each other. The
+run is still a Draft. Mark it Ready again."* **Back to Draft** clears it with the stored files. A run
 marked Ready before SeqSetup saved targets says *"Not recorded"*. The API
 gives the same facts as ``target`` in its run list (see
 :doc:`/api-reference/runs`).

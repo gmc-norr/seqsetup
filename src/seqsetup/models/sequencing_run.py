@@ -42,6 +42,38 @@ def checked_i5_workflow(value) -> str:
     return value.replace("\r", " ").replace("\n", " ")[:256]
 
 
+_TARGET_KEYS = {"instrument", "software", "software_version", "i5_workflow", "index2_column",
+                "needs_runinfo_reverse_mark"}
+
+
+def checked_sheet_targets(value) -> dict:
+    """A run's ``sheet_targets`` (services/sheet_target.py): {} when not
+    recorded, else both sheets' targets, the v1 one None when the run has no
+    v1 sheet. Anything else raises ValueError: the API's run list and the API
+    Exports page read every key (review, 2026-10-13)."""
+    if not isinstance(value, dict):
+        raise ValueError(f"sheet_targets must be a dict, got {value!r}")
+    if not value:
+        return value
+    if set(value) != {"samplesheet_v2", "samplesheet_v1"}:
+        raise ValueError(f"sheet_targets must name samplesheet_v2 and samplesheet_v1, got {sorted(value)}")
+    for sheet, software in (("samplesheet_v2", "BCL Convert"), ("samplesheet_v1", "bcl2fastq")):
+        target = value[sheet]
+        if target is None and sheet == "samplesheet_v1":
+            continue
+        if not isinstance(target, dict) or set(target) != _TARGET_KEYS:
+            raise ValueError(f"{sheet}'s target must have exactly {sorted(_TARGET_KEYS)}")
+        version = target["software_version"]
+        if (target["software"] != software
+                or target["index2_column"] not in ("forward", "reverse-complement", "none")
+                or not isinstance(target["needs_runinfo_reverse_mark"], bool)
+                or not all(isinstance(target[k], str) and len(target[k]) <= 256
+                           for k in ("instrument", "i5_workflow"))
+                or not (version is None or (isinstance(version, str) and len(version) <= 256))):
+            raise ValueError(f"{sheet}'s target is malformed: {target!r}")
+    return value
+
+
 class RunStatus(Enum):
     """Status of a sequencing run."""
 
@@ -214,7 +246,7 @@ class SequencingRun:
     # services/sheet_target.py: {"samplesheet_v2": {...}, "samplesheet_v1":
     # {...} or None}; {} when not recorded (the user's request, 2026-10-13).
     # Stored and cleared with the exports.
-    sheet_targets: dict = field(default_factory=dict)
+    sheet_targets: dict = field(default_factory=dict)  # checked_sheet_targets on every assignment
 
     # True once the run has been Ready (or Archived). Kept by __setattr__ and
     # never cleared: it decides who may delete an emptied draft and whether a
@@ -253,6 +285,8 @@ class SequencingRun:
             value = value.replace("\r", " ").replace("\n", " ")[:4096]
         elif name == "i5_workflow":
             value = checked_i5_workflow(value)
+        elif name == "sheet_targets":
+            value = checked_sheet_targets(value)
         elif name in ("created_by", "updated_by", "flowcell_type", "reagent_cycles_kit") and isinstance(value, str):
             value = value[:256]
         elif name == "status" and value in (RunStatus.READY, RunStatus.ARCHIVED):

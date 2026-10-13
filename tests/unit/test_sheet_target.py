@@ -84,3 +84,61 @@ class TestTheBclConvertVersion:
     def test_a_dragen_version_alone_is_not_a_bclconvert_version(self):
         sheet = "[Header]\nFileFormatVersion,2\n\n[DragenGermline_Settings]\nSoftwareVersion,4.4.1\n"
         assert bclconvert_software_version(sheet) is None
+
+
+class TestASheetWithNoI5:
+    """A run where no sample has an i5 writes none: the target says so, and
+    the sheet relies on no RunInfo.xml mark (review, 2026-10-13)."""
+
+    @pytest.mark.parametrize("read,marks", [("forward", False), ("reverse-complement", True)])
+    def test_both_sheets_say_none(self, read, marks):
+        targets = sheet_targets("NovaSeq 6000", _direction(read, marks), V2, V1, has_i5=False)
+        for sheet in ("samplesheet_v2", "samplesheet_v1"):
+            assert targets[sheet]["index2_column"] == "none"
+            assert targets[sheet]["needs_runinfo_reverse_mark"] is False
+
+
+class TestTheModelChecksTheShape:
+    """run.sheet_targets is checked on every assignment (CLAUDE.md, models are
+    self-validating): a malformed one would break the API's run list."""
+
+    GOOD = sheet_targets("NovaSeq 6000", _direction("forward", False), V2, V1)
+
+    def _bad(self, change):
+        import copy
+        value = copy.deepcopy(self.GOOD)
+        change(value)
+        return value
+
+    def test_empty_and_well_formed_are_accepted(self):
+        from seqsetup.models.sequencing_run import SequencingRun
+        assert SequencingRun(sheet_targets={}).sheet_targets == {}
+        run = SequencingRun()
+        run.sheet_targets = self.GOOD
+        assert run.sheet_targets == self.GOOD
+        no_v1 = sheet_targets("NovaSeq X Series", _direction("forward", False), V2, None)
+        run.sheet_targets = no_v1
+        assert run.sheet_targets == no_v1
+
+    @pytest.mark.parametrize("change", [
+        lambda v: v.pop("samplesheet_v1"),
+        lambda v: v.update(samplesheet_v2=None),
+        lambda v: v["samplesheet_v2"].pop("software_version"),
+        lambda v: v["samplesheet_v2"].update(extra=1),
+        lambda v: v["samplesheet_v2"].update(software="bcl2fastq"),
+        lambda v: v["samplesheet_v1"].update(software="BCL Convert"),
+        lambda v: v["samplesheet_v2"].update(index2_column="backwards"),
+        lambda v: v["samplesheet_v2"].update(needs_runinfo_reverse_mark="yes"),
+        lambda v: v["samplesheet_v2"].update(instrument=None),
+        lambda v: v["samplesheet_v2"].update(i5_workflow="W" * 257),
+        lambda v: v["samplesheet_v2"].update(software_version=4.3),
+    ], ids=["no-v1-key", "no-v2", "missing-key", "extra-key", "v2-software", "v1-software",
+            "bad-column", "non-bool", "non-str", "too-long", "non-str-version"])
+    def test_a_malformed_one_is_refused(self, change):
+        from seqsetup.models.sequencing_run import SequencingRun
+        bad = self._bad(change)
+        with pytest.raises(ValueError):
+            SequencingRun(sheet_targets=bad)
+        run = SequencingRun()
+        with pytest.raises(ValueError):
+            run.sheet_targets = bad

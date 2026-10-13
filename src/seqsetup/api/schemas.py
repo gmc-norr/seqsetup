@@ -18,13 +18,15 @@ class SheetTarget(BaseModel):
     instrument: str = Field(..., description="The run's instrument (e.g., 'NovaSeq X Series').")
     software: str = Field(..., description='"BCL Convert" (v2 sheet) or "bcl2fastq" (v1 sheet).')
     software_version: Optional[str] = Field(
-        None, description="The BCL Convert version the v2 sheet states; null when the sheet states none.",
+        None,
+        description="The BCL Convert version the v2 sheet states; null when the sheet states none, "
+                    "and always null for a v1 sheet.",
     )
     i5_workflow: str = Field(..., description="The run's i5 workflow.")
     index2_column: str = Field(
         ...,
-        description='How the sheet writes each i5: "forward" (as the index kit lists it) '
-                    'or "reverse-complement".',
+        description='How the sheet writes each i5: "forward" (each sample\'s i5 as stored), '
+                    '"reverse-complement", or "none" (no sample has an i5).',
     )
     needs_runinfo_reverse_mark: bool = Field(
         ...,

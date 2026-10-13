@@ -60,8 +60,9 @@ def _target_rows(target: dict) -> list[tuple[str, str]]:
         software += f" {target['software_version']}"
     elif software == "BCL Convert":
         software += " (the sheet states no version)"
-    column = ("Forward, as the index kit lists it" if target["index2_column"] == "forward"
-              else "Reverse complement of the index kit's i5")
+    column = {"forward": "Forward: each sample's i5 as stored",
+              "reverse-complement": "Reverse complement of each sample's stored i5",
+              "none": "None: no sample has an i5"}[target["index2_column"]]
     return [("Instrument", target["instrument"]), ("Software", software),
             ("i5 workflow", target["i5_workflow"]), ("i5 column", column)]
 
