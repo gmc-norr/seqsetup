@@ -77,6 +77,19 @@ _FINGERPRINT_IGNORED_KEYS = (
 )
 
 
+class ChecksFailedDuringExport(Exception):
+    """The check the validation report is made from found an error that
+    Mark Ready's own check did not: a sync changed an input in between
+    (review P3-2, 2026-10-13). Nothing is stored."""
+
+    def __init__(self):
+        super().__init__(
+            "The checks found an error while the exports were being generated, so the run "
+            "was not marked Ready. The run is still a Draft. Read the Check panel, then "
+            "mark it Ready again."
+        )
+
+
 def _pregenerate_exports(
     run: SequencingRun, ctx: AppContext, plan_fingerprint: Optional[str] = None,
 ) -> tuple:
@@ -121,6 +134,8 @@ def _pregenerate_exports(
     )
     if plan_fingerprint is not None and result.sheet_plan_fingerprint != plan_fingerprint:
         raise SheetPlanChanged()
+    if result.error_count > 0:
+        raise ChecksFailedDuringExport()
     val_json = ValidationReportJSON.export(run, result)
     val_pdf = ValidationReportPDF.export(run, result)
     if run_i5_direction(run) != i5_direction:
@@ -682,6 +697,19 @@ async def update_status(
                 target=run.id,
                 outcome="denied",
                 reason="i5_settings_changed_during_export",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(str(e))
+        except ChecksFailedDuringExport as e:
+            # The report's own check found an error (review P3-2,
+            # 2026-10-13): nothing is stored.
+            clear_validation_cache()
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="checks_failed_during_export",
                 attempted_status=new_status.value,
             )
             raise ConflictError(str(e))

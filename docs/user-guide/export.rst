@@ -24,6 +24,13 @@ messages the Check panel and the Issues tab already show:
 
    The Mark Ready refusal, under the status bar, outlined.
 
+The validation report saved with the exports is made from a second check,
+run while they are written. If a sync changes something in between so
+that this check finds an error, **Mark Ready** refuses too: *"The checks
+found an error while the exports were being generated, so the run was not
+marked Ready. The run is still a Draft. Read the Check panel, then mark it
+Ready again."* Nothing is saved.
+
 Once every error is fixed, selecting **Mark Ready** again succeeds: the
 status badge changes to **Ready**, the run is locked against further
 edits, and its exports are generated:
