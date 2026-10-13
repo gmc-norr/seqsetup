@@ -832,6 +832,37 @@ def test_export_panel_ready(demo_page, base_url, demo):
     snap(page, "export/panel-ready", buttons, region=page.locator("#export-panel"))
 
 
+_TIME = r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Z]{3,4}"
+
+
+def test_export_served_runs(demo_page, base_url, demo):
+    page = demo_page
+    # DEMO-RUN-06, marked Ready for real above, is listed with docs_world's
+    # seeded Ready run. Their times of change differ per run; fixed
+    # example times keep the picture the same (newest first).
+    page.goto(f"{base_url}/served-runs")
+    table = page.locator("#main table")
+    rows = table.locator("tbody tr").count()
+    assert rows >= 2
+    replace_text(table, _TIME, [f"2026-03-10 10:{16 - n:02d} CET" for n in range(rows)])
+    link = page.locator(f'#served-run-{_CLEAN_RUN["id"]} a', has_text="See files")
+    snap(page, "export/served-runs", link, region=page.locator("#main .max-w-5xl"))
+
+
+def test_export_served_run(demo_page, base_url, demo):
+    page = demo_page
+    # The run's id is made fresh on every docs run and is written in the
+    # address and in the sheet's Custom_UUID; a fixed example id keeps the
+    # picture the same.
+    run_id = _CLEAN_RUN["id"]
+    page.goto(f"{base_url}/served-runs/{run_id}")
+    section = page.locator("#served-samplesheet-v2")
+    found = section.evaluate("(el, id) => el.textContent.split(id).length - 1", run_id)
+    assert found >= 2
+    replace_text(section, re.escape(run_id), ["demo-run-06"] * found)
+    snap(page, "export/served-run", section.locator("code").first, region=section)
+
+
 def test_ready_back_to_draft(demo_page, base_url, demo):
     page = demo_page
     page.goto(f"{base_url}/runs/{_CLEAN_RUN['id']}")

@@ -1367,6 +1367,10 @@ body {
 .more-section-heading { font-size: var(--fs-sm); font-weight: var(--fw-semibold); margin: 0 0 var(--space-2); }
 .more-section-content form + .more-section-heading { margin-top: var(--space-4); }
 
+/* What the API serves: a stored file shown as it is. A long line scrolls
+   sideways inside its box, not the page. */
+.served-content { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-3); margin-top: var(--space-2); overflow-x: auto; font-size: var(--fs-sm); }
+
 .paste-form-content {
     padding: 1rem;
 }

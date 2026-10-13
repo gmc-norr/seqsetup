@@ -1,0 +1,51 @@
+{#
+   What the API serves for one run: each per-run address and its answer.
+
+   Inputs:
+     run:        SequencingRun
+     files:      list[ServedFile] — routes/served_runs.py; empty for a Draft
+     not_served: str — the API's 403 detail for a Draft, else ""
+
+   A stored text file is shown exactly as stored. A browser drops the one
+   newline right after <pre>'s start tag, so one is written there: a file
+   that itself starts with a newline still shows it.
+#}
+{% extends "_app_shell.html" %}
+{% set page_title = "What the API serves: " ~ (run.run_name or "Untitled run") %}
+{% set active_route = "/served-runs" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-4 space-y-4">
+  <div>
+    <a class="text-sm text-primary underline" href="/served-runs?status={{ 'archived' if run.status.value == 'archived' else 'ready' }}">&larr; What the API serves</a>
+    <h1 class="text-xl font-semibold mt-1">{{ run.run_name or "Untitled run" }}</h1>
+    <p class="text-sm text-slate-600">
+      {{ run.status.value | capitalize }} &middot; <a class="text-primary underline" href="/runs/{{ run.id }}">Open the run</a>
+    </p>
+  </div>
+
+  {% if not_served %}
+  <p class="served-answer">The API does not serve Drafts. Each address answers
+    <code>403: {{ not_served }}</code></p>
+  {% else %}
+  <p class="text-sm text-slate-600">
+    Each file exactly as the API hands it out: the copy stored when the run was marked Ready.
+  </p>
+  {% for f in files %}
+  <section id="served-{{ f.resource }}" class="config-panel">
+    <h2 class="font-semibold">{{ f.label }}</h2>
+    <p class="text-sm"><code>GET /api/runs/{{ run.id }}/{{ f.resource }}</code></p>
+    {% if f.missing %}
+    <p class="served-answer text-sm text-slate-600">The API answers <code>404: {{ f.missing }}</code></p>
+    {% elif f.pdf_size is not none %}
+    <p class="text-sm">A PDF of {{ "{:,}".format(f.pdf_size) }} bytes.
+      <a class="text-primary underline" href="/runs/{{ run.id }}/export/validation-pdf">Download PDF</a></p>
+    {% else %}
+<pre class="served-content">
+{{ f.text }}</pre>
+    {% endif %}
+  </section>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}
