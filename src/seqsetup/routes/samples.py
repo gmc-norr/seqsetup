@@ -1122,9 +1122,12 @@ async def assign_indexes_bulk(
     changed = [sample.sample_id for sample, row in zip(would_fill, shown)
                if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
     if changed:
+        # What to do comes before the IDs: the page's error banner shows the
+        # first 300 characters, and ten 25-character LIMS sample IDs are 268
+        # of them (batch 4 review fix B).
         return Response(
-            f"The index on {name_list(changed)} changed since this page was loaded. "
-            "Nothing was assigned. Reload the page and drag again.",
+            "Nothing was assigned. Reload the page and drag again. The index on these "
+            f"samples changed since this page was loaded: {name_list(changed)}.",
             status_code=409,
         )
     refusal = _kit_swap_refusal([

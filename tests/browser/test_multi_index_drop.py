@@ -192,8 +192,8 @@ def test_a_drop_onto_an_index_set_in_another_tab_is_refused(
 
     assert resp.value.status == 409
     expect(page.locator("#error-banner")).to_contain_text(
-        "The index on EMPTY-02 changed since this page was loaded. Nothing was assigned. "
-        "Reload the page and drag again."
+        "Nothing was assigned. Reload the page and drag again. The index on these "
+        "samples changed since this page was loaded: EMPTY-02."
     )
     samples = app_ctx.run_repo.get_by_id(empty_rows_run_id).samples
     assert [s.index1_sequence for s in samples] == [None, "GGGGCCCCAA", None]

@@ -98,10 +98,11 @@ page and drag again."* Reload the page and drag again.
 The same holds for the indexes on those rows. The drop sends the i7 and
 i5 each target row was showing, and if any of them has since been
 assigned, replaced or cleared elsewhere, nothing is assigned and the page
-names the samples: *"The index on PAT2 changed since this page was
-loaded. Nothing was assigned. Reload the page and drag again."* The
-confirmation above tells you which indexes **this** page's drop would
-replace; this refusal is for the ones it could not have known about.
+names the samples: *"Nothing was assigned. Reload the page and drag
+again. The index on these samples changed since this page was loaded:
+PAT2."* The confirmation above tells you which indexes **this** page's
+drop would replace; this refusal is for the ones it could not have known
+about.
 
 .. note::
    Ticking sample checkboxes (below) has no effect on a multi-index drag

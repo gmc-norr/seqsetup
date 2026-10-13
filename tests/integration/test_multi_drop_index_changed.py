@@ -73,8 +73,8 @@ class TestADropOntoAChangedIndexIsRefused:
 
         assert resp.status_code == 409, resp.text[:300]
         assert resp.text == (
-            "The index on PAT2 changed since this page was loaded. Nothing was assigned. "
-            "Reload the page and drag again.")
+            "Nothing was assigned. Reload the page and drag again. The index on these "
+            "samples changed since this page was loaded: PAT2.")
         assert _indexes(ctx) == before
 
     def test_every_changed_sample_is_named(self, logged_in_client, two_empty_rows):
@@ -86,7 +86,7 @@ class TestADropOntoAChangedIndexIsRefused:
         resp = _drop(logged_in_client, kit, 2, EMPTY_TWO)
 
         assert resp.status_code == 409
-        assert resp.text.startswith("The index on PAT1, PAT2 changed since this page was loaded.")
+        assert resp.text.endswith("changed since this page was loaded: PAT1, PAT2.")
         assert _indexes(ctx) == before
 
     def test_an_i5_changed_on_its_own(self, logged_in_client, two_empty_rows):
@@ -100,7 +100,7 @@ class TestADropOntoAChangedIndexIsRefused:
         resp = _drop(logged_in_client, kit, 2, EMPTY_TWO)
 
         assert resp.status_code == 409
-        assert resp.text.startswith("The index on PAT2 changed since this page was loaded.")
+        assert resp.text.endswith("changed since this page was loaded: PAT2.")
         assert _indexes(ctx) == before
 
     def test_an_index_cleared_in_another_tab(self, logged_in_client, two_empty_rows):
@@ -116,7 +116,7 @@ class TestADropOntoAChangedIndexIsRefused:
         resp = _drop(logged_in_client, kit, 2, shown)
 
         assert resp.status_code == 409
-        assert resp.text.startswith("The index on PAT2 changed since this page was loaded.")
+        assert resp.text.endswith("changed since this page was loaded: PAT2.")
         assert _indexes(ctx) == before
 
 
@@ -140,6 +140,35 @@ class TestADropThatMatchesTheStoredIndexesGoesAhead:
         assert resp.status_code == 200, resp.text[:300]
         assert _indexes(ctx) == [("PAT1", PLAIN_PAIRS[0][0], PLAIN_PAIRS[0][1]),
                                  ("PAT2", PLAIN_PAIRS[1][0], PLAIN_PAIRS[1][1])]
+
+
+class TestTheBannerBudgetIsKept:
+    """The page's error banner shows the first 300 characters, so what to do
+    comes before the IDs -- as it does in the sibling kit-swap refusal
+    (batch 4 review fix B)."""
+
+    def test_what_to_do_comes_before_the_ids(self, logged_in_client, fresh_app):
+        """Ten rows with 25-character LIMS sample IDs: the IDs alone are 268
+        characters, so a message that led with them told the operator what
+        changed and never that nothing was saved or to reload."""
+        _app, ctx, _db = fresh_app
+        ids = [f"Seq2026-{n:017d}" for n in range(10)]
+        assert {len(sample_id) for sample_id in ids} == {25}
+        _run(ctx, ids)
+        kit = _pair_kit(ctx, "PlainKit", [
+            ("ACGTACGT" + "ACGT"[n // 4] + "ACGT"[n % 4],
+             "TGCATGCA" + "ACGT"[n // 4] + "ACGT"[n % 4]) for n in range(10)])
+        for k in range(1, 11):
+            _assign_behind_the_page(ctx, f"s{k}", "GGGGCCCCAA")
+        before = _indexes(ctx)
+
+        resp = _drop(logged_in_client, kit, 10, [["", ""]] * 10)
+
+        assert resp.status_code == 409, resp.text[:300]
+        assert "Nothing was assigned" in resp.text[:300]
+        assert "Reload the page and drag again" in resp.text[:300]
+        assert resp.text.endswith(f"{ids[9]}.")
+        assert _indexes(ctx) == before
 
 
 class TestWhatTheDropSendsMustBeReadable:
