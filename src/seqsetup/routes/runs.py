@@ -53,6 +53,7 @@ from ..services.validation_summary import error_messages
 from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
 from ..services import edit_locks
+from ..services.edit_locks import EditLockRefused
 from .dependencies import get_archivable_run, get_ctx, get_editable_run, require_edit_lock, saving_run
 from .utils import check_status_transition, get_username, sanitize_string, selected_kit_id
 
@@ -788,6 +789,22 @@ async def update_status(
                 "while the exports were being generated. The run is still a Draft. "
                 "Pick another instrument in Run Setup."
             )
+
+    if new_status == RunStatus.READY:
+        # The exports took seconds: someone may have taken over meanwhile
+        # (review P3-2, 2026-10-13). Only the editor marks the run Ready.
+        try:
+            edit_locks.require(ctx.edit_lock_repo, run.id, get_username(request))
+        except EditLockRefused as e:
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="edit_lock_lost",
+                attempted_status=new_status.value,
+            )
+            raise ConflictError(str(e))
 
     with saving_run(run, ctx, request):
         run.status = new_status

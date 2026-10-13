@@ -65,7 +65,8 @@ def start(repo, run_id: str, user, now: Optional[datetime] = None) -> EditLock:
     name = holder.display_name if holder else "Someone"
     since = f" (since {local_time(holder.started_at)})" if holder else ""
     raise EditLockRefused(
-        f"{name} is editing this run{since}. If they have left, press Take over editing.")
+        f"{name} is editing this run{since}. If they have left, reload the page and press "
+        "Take over editing.")
 
 
 def take_over(repo, run_id: str, user, now: Optional[datetime] = None) -> Optional[EditLock]:

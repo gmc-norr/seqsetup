@@ -333,7 +333,7 @@ class TestWhatTheRunPageShows:
         assert "If you take over, Test Admin can no longer save" in page
         assert MARK_READY not in page and EDIT_SETUP not in page and SET_TEST not in page
         assert HEARTBEAT not in page
-        assert "Press Edit run to make changes." in page
+        assert "Test Admin is editing this run. Only they can change it now." in page
 
     def test_nobody_editing_offers_edit_run(self, two):
         ctx, _admin, op = two
@@ -453,3 +453,170 @@ class TestStartingFromATemplate:
 
         assert _choose(admin, template_id, blank).status_code == 303
         assert ctx.run_repo.get_by_id(blank) is None and _holder(ctx, blank) is None
+
+
+class TestTheHeartbeatIsNotActivity:
+    """Review P1 (2026-10-13): the heartbeat kept the login alive, so an
+    edit page left open switched off the idle logout. It must not count as
+    use; an ended login stops it."""
+
+    def _seen(self, ctx, username):
+        return ctx.web_session_repo.collection.find_one({"username": username})["last_seen_at"]
+
+    def test_a_heartbeat_does_not_move_the_logins_last_use(self, two):
+        ctx, admin, _op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+        earlier = utcnow() - timedelta(minutes=20)
+        ctx.web_session_repo.collection.update_many({"username": ADMIN}, {"$set": {"last_seen_at": earlier}})
+
+        assert admin.post(f"/runs/{run_id}/edit-lock/heartbeat", headers=ORIGIN).json() == {"editing": True}
+
+        assert abs(self._seen(ctx, ADMIN) - earlier) < timedelta(seconds=1)
+        admin.get(f"/runs/{run_id}")
+        assert self._seen(ctx, ADMIN) > utcnow() - timedelta(minutes=1)
+
+    def test_an_idle_login_still_ends_with_the_page_open(self, two):
+        ctx, admin, _op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+        ctx.web_session_repo.collection.update_many(
+            {"username": ADMIN}, {"$set": {"last_seen_at": utcnow() - timedelta(minutes=31)}})
+
+        resp = admin.post(f"/runs/{run_id}/edit-lock/heartbeat", headers=ORIGIN, follow_redirects=False)
+
+        assert resp.status_code == 303 and resp.headers["location"] == "/login"
+
+    def test_a_run_that_left_draft_answers_403(self, two):
+        ctx, admin, _op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.status = RunStatus.READY
+        ctx.run_repo.save(run)
+
+        assert admin.post(f"/runs/{run_id}/edit-lock/heartbeat", headers=ORIGIN).status_code == 403
+
+
+class TestMarkReadyChecksTheLockAgainBeforeSaving:
+    """Review P3-2: Mark Ready writes its exports for seconds; someone who
+    takes over meanwhile keeps the lock, and the run stays a Draft."""
+
+    def test_a_take_over_during_the_exports_is_refused(self, two, monkeypatch):
+        from seqsetup.routes import runs as runs_module
+        from .conftest import disable_repos
+        from .test_group_1c import _clean_run
+        ctx, admin, op = two
+        disable_repos(ctx, "test_profile", "app_profile")
+        run_id = _clean_run(ctx, "lock-lost").id
+        _edit(admin, run_id)
+        generate = runs_module._pregenerate_exports
+
+        def taken_meanwhile(run, ctx_, **kw):
+            op.post(f"/runs/{run_id}/edit-lock/take-over", headers=ORIGIN)
+            return generate(run, ctx_, **kw)
+
+        monkeypatch.setattr(runs_module, "_pregenerate_exports", taken_meanwhile)
+
+        resp = mark_ready(admin, run_id, ORIGIN)
+
+        assert resp.status_code == 409 and "Test Operator has been editing this run since" in resp.text
+        assert ctx.run_repo.get_by_id(run_id).status == RunStatus.DRAFT
+        assert _holder(ctx, run_id) == OPERATOR
+        reasons = [d.get("reason") for e, _a, d in _events(ctx, "run.status.denied")]
+        assert reasons == ["edit_lock_lost"], reasons
+
+
+class TestMoreLockPaths:
+    def test_deleting_a_draft_whose_other_lock_is_old_is_allowed(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+        ctx.edit_lock_repo.collection.update_one(
+            {"_id": run_id}, {"$set": {"seen_at": utcnow() - timedelta(minutes=4)}})
+
+        assert op.delete(f"/runs/{run_id}", headers=ORIGIN).status_code == 200
+        assert ctx.run_repo.get_by_id(run_id) is None and _holder(ctx, run_id) is None
+
+    def test_a_run_from_the_templates_page_is_its_makers(self, two):
+        from .test_new_run_from_template_choice import _make_template
+        ctx, admin, op = two
+        template_id = _make_template(admin, ctx, "Lock tmpl page")
+
+        resp = op.post(f"/runs/new/from-template/{template_id}", headers=ORIGIN, follow_redirects=False)
+
+        assert resp.status_code == 303
+        assert _holder(ctx, resp.headers["location"].rsplit("/", 1)[1]) == OPERATOR
+
+    def test_taking_an_old_lock_names_whose_it_was(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+        ctx.edit_lock_repo.collection.update_one(
+            {"_id": run_id}, {"$set": {"seen_at": utcnow() - timedelta(minutes=4)}})
+
+        _edit(op, run_id)
+
+        (started,) = [d for e, a, d in _events(ctx, "run.edit.started") if a == OPERATOR]
+        assert started["from_user"] == ADMIN
+
+    def test_a_refused_edit_run_says_to_reload_for_take_over(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx)
+        _edit(admin, run_id)
+
+        assert "reload the page and press Take over editing" in _edit(op, run_id).text
+
+    def test_the_read_only_page_names_who_is_editing(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+
+        assert "Test Admin is editing this run. Only they can change it now." in _page(op, run_id)
+
+
+class TestEveryRunChangeIsGuarded:
+    """Every POST, PUT, PATCH or DELETE under /runs/{run_id} loads its run
+    with get_editable_run, or is on this list with the reason it need not."""
+
+    NOT_EDITABLE_GUARDED = {
+        ("POST", "/runs/{run_id}/status/{status}"): "checks the lock itself for Mark Ready",
+        ("POST", "/runs/{run_id}/archive"): "Ready runs only",
+        ("DELETE", "/runs/{run_id}"): "checks someone else's live lock itself",
+        ("POST", "/runs/{run_id}/duplicate"): "reads the run, makes a new one",
+        ("POST", "/runs/{run_id}/save-as-template"): "reads the run, writes a template",
+        ("POST", "/runs/{run_id}/edit-lock"): "the lock itself",
+        ("DELETE", "/runs/{run_id}/edit-lock"): "the lock itself",
+        ("POST", "/runs/{run_id}/edit-lock/take-over"): "the lock itself",
+        ("POST", "/runs/{run_id}/edit-lock/heartbeat"): "the lock itself",
+    }
+
+    def _uses(self, dependant, fn):
+        return any(d.call is fn or self._uses(d, fn) for d in dependant.dependencies)
+
+    def _api_routes(self, routes):
+        """Every APIRoute, also inside included routers (FastAPI keeps an
+        included router whole, as its original_router)."""
+        from fastapi.routing import APIRoute
+        for route in routes:
+            if isinstance(route, APIRoute):
+                yield route
+            elif hasattr(route, "original_router"):
+                yield from self._api_routes(route.original_router.routes)
+
+    def test_each_one_is_guarded_or_listed(self, fresh_app):
+        from seqsetup.routes.dependencies import get_editable_run
+        app, _ctx, _db = fresh_app
+        found = set()
+        unguarded = []
+        for route in self._api_routes(app.routes):
+            if not route.path.startswith("/runs/{run_id}"):
+                continue
+            for method in route.methods & {"POST", "PUT", "PATCH", "DELETE"}:
+                found.add((method, route.path))
+                if not self._uses(route.dependant, get_editable_run) and (
+                        method, route.path) not in self.NOT_EDITABLE_GUARDED:
+                    unguarded.append((method, route.path))
+        assert len(found) > 20, found
+        assert unguarded == []
+        assert set(self.NOT_EDITABLE_GUARDED) <= found, set(self.NOT_EDITABLE_GUARDED) - found

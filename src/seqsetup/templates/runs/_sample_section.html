@@ -100,7 +100,7 @@
     {% else %}
         {# Read-only locked view #}
         <div class="add-samples-btn">
-            <p class="locked-message">{% if run.status.value == 'draft' %}Press Edit run to make changes.{% else %}Run is locked for editing. Return to Draft to make changes.{% endif %}</p>
+            <p class="locked-message">{% if run.status.value == 'draft' and edit_lock and edit_lock.someone_else %}{{ edit_lock.lock.display_name }} is editing this run. Only they can change it now.{% elif run.status.value == 'draft' %}Press Edit run to make changes.{% else %}Run is locked for editing. Return to Draft to make changes.{% endif %}</p>
         </div>
         {# Full columns (indexes, lanes, settings) so a locked run can be
            checked before loading; editable=False makes every cell

@@ -83,3 +83,38 @@ def test_edit_take_over_and_done(logged_in_page, browser, base_url, run_id):
     staff.get_by_role("button", name="Done editing").click()
     expect(staff.locator(BAR)).to_contain_text("Nobody is editing this run")
     staff.context.close()
+
+
+def _beat(page):
+    page.evaluate("() => Alpine.$data(document.querySelector('.edit-lock-lost')).beat()")
+
+
+@pytest.mark.browser
+def test_the_page_says_when_the_run_can_no_longer_be_edited(logged_in_page, base_url, run_id, app_ctx):
+    page = logged_in_page
+    page.goto(f"{base_url}/runs/{run_id}")
+    page.get_by_role("button", name="Edit run").click()
+    expect(page.locator(BAR)).to_contain_text("You are editing this run")
+
+    run = app_ctx.run_repo.get_by_id(run_id)
+    run.status = RunStatus.READY  # marked Ready from another tab, say
+    app_ctx.run_repo.save(run)
+    _beat(page)
+
+    expect(page.locator(".edit-lock-lost")).to_have_text(
+        "This run can no longer be edited here. Reload the page.")
+
+
+@pytest.mark.browser
+def test_the_page_says_when_the_sign_in_has_ended(browser, base_url, run_id, app_ctx):
+    page = _staff_page(browser, base_url)
+    page.goto(f"{base_url}/runs/{run_id}")
+    page.get_by_role("button", name="Edit run").click()
+    expect(page.locator(BAR)).to_contain_text("You are editing this run")
+
+    app_ctx.web_session_repo.delete_for_user(STAFF["username"])
+    _beat(page)
+
+    expect(page.locator(".edit-lock-lost")).to_have_text(
+        "Your sign-in has ended, so your changes are no longer saved. Reload the page and sign in again.")
+    page.context.close()

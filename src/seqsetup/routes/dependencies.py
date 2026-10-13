@@ -8,7 +8,11 @@ Clinical-safety contract (codified per Section 7 of the design spec):
   403 as an HTML fragment, not the FastAPI default JSON.
 
 * ``get_editable_run`` loads + checks an editable run, and that the
-  request's user holds its edit lock. Mutation handlers then enter the ``saving_run`` context manager to persist;
+  request's user holds its edit lock. ``get_draft_run`` skips the lock
+  check: it is only for the four ``/edit-lock`` routes that take, give
+  back or keep the lock (tests/integration/test_edit_lock.py lists every
+  run-changing route that does not use ``get_editable_run``). Mutation
+  handlers then enter the ``saving_run`` context manager to persist;
   reviewers grep ``with saving_run(`` to enumerate every mutation
   handler.
 

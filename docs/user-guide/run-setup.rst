@@ -152,8 +152,10 @@ run page says where the run stands:
 
 - **Nobody is editing this run** -- the run is shown read-only, with
   *"Press Edit run to make changes."* above the samples. Press **Edit run**.
-- **Sam Staff is editing this run (since 10:00)** -- the run is shown
-  read-only. If Sam has left -- gone home with the page open, say -- press
+- **Sam Staff is editing this run (since 2026-03-02 10:00 CET)** -- the
+  run is shown read-only, with *"Sam Staff is editing this run. Only they
+  can change it now."* above the samples. If Sam has left -- gone home
+  with the page open, say -- press
   **Take over editing**. SeqSetup asks first and names them; once you
   take over, they can no longer save changes to the run.
 - **You are editing this run** -- the page shows everything you can
@@ -173,9 +175,14 @@ taken to the run page.
 
 While you edit, your open page tells SeqSetup once a minute that you are
 still there. About three minutes after you close the page -- or your
-computer goes to sleep -- the run shows as free, and anyone can press
-**Edit run** without being asked. Until someone does, the run is still
-yours: come back to it and carry on.
+computer goes to sleep, or the browser puts the tab to sleep to save
+power -- the run shows as free, and anyone can press **Edit run** without
+being asked; SeqSetup records whose editing they took. Until someone
+does, the run is still yours: come back to it and carry on.
+
+An open edit page does not keep you signed in: if you do nothing for 30
+minutes, your sign-in ends as on any other page (see
+:doc:`authentication`), and the page says so in red.
 
 If someone takes over while your page is open, a red line in the status
 bar says so within a minute -- *"Sam Staff is editing this run now (since

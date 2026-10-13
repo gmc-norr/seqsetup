@@ -89,8 +89,10 @@ def start(sessions, user: User, now: datetime, policy: SessionPolicy) -> str:
 
 
 def resolve(sessions, users, ticket: str, now: datetime,
-            policy: SessionPolicy) -> Optional[User]:
-    """The logged-in user for ``ticket``, or None. Database errors propagate."""
+            policy: SessionPolicy, *, in_use: bool = True) -> Optional[User]:
+    """The logged-in user for ``ticket``, or None. Database errors propagate.
+    ``in_use=False`` checks the login without counting the request as use,
+    so it does not hold off the idle limit (the edit lock's heartbeat)."""
     sid = ticket_id(ticket)
     row = sessions.get(sid)
     if row is None:
@@ -107,7 +109,8 @@ def resolve(sessions, users, ticket: str, now: datetime,
             sessions.delete(sid)
             return None
         user = current.to_user()
-    sessions.touch(sid, now)
+    if in_use:
+        sessions.touch(sid, now)
     return user
 
 

@@ -36,12 +36,16 @@ def start_editing(
     run: SequencingRun = Depends(get_draft_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """Edit run. 409, naming them, while someone else is editing."""
+    """Edit run. 409, naming them, while someone else is editing. Taking a
+    lock someone else left (not seen for three minutes) names them."""
+    actor = get_username(request)
+    previous = ctx.edit_lock_repo.get(run.id)
     try:
         edit_locks.start(ctx.edit_lock_repo, run.id, request.scope.get("auth"))
     except EditLockRefused as e:
         raise ConflictError(str(e))
-    audit("run.edit.started", actor=get_username(request), target=run.id)
+    audit("run.edit.started", actor=actor, target=run.id,
+          from_user=previous.username if previous and previous.username != actor else "")
     return _reload(run)
 
 

@@ -179,7 +179,7 @@ src/seqsetup/
 | File | Purpose |
 |------|---------|
 | `routes/utils.py` | `check_status_transition()`, `get_username()`, `sanitize_string()`, `sanitize_filename()` (scrubs a download name), `attachment_disposition()` (builds the `Content-Disposition` value) |
-| `routes/dependencies.py` | `get_ctx`, `get_editable_run`, `get_exportable_run`, `get_archivable_run`, `require_admin_dep`, `saving_run`, `is_htmx_request` |
+| `routes/dependencies.py` | `get_ctx`, `get_editable_run`, `get_draft_run` (a Draft whoever holds its lock: only the four `/edit-lock` routes), `require_edit_lock`, `get_exportable_run`, `get_archivable_run`, `require_admin_dep`, `saving_run`, `is_htmx_request` |
 | `utils/html.py` | `escape_js_string()`, `escape_html_attr()` — use these for all user data in HTML/JS |
 | `models/sequencing_run.py` | `SequencingRun`, `RunStatus`, `RunCycles` — central data model |
 | `models/sample.py` | `Sample` — DNA sequences validated here |

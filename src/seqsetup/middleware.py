@@ -7,6 +7,7 @@ FastHTML's ``@rt``-decorated handlers; routes registered directly on
 """
 
 import logging
+import re
 
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -59,10 +60,15 @@ def _banner(body: str, status: int) -> HTMLResponse:
         "HX-Reselect": "unset", "Cache-Control": "no-store"})
 
 
-def _resolve(ticket: str):
+def _resolve(ticket: str, in_use: bool = True):
     return web_sessions.resolve(
         startup.get_web_session_repo(), startup.get_local_user_repo(), ticket,
-        web_sessions.utcnow(), web_sessions.current_policy())
+        web_sessions.utcnow(), web_sessions.current_policy(), in_use=in_use)
+
+
+# The edit page's "still here" (routes/edit_lock.py) is sent by the page, not
+# by its user: it must not hold off the idle logout (review P1, 2026-10-13).
+_NOT_USE = re.compile(r"^/runs/[^/]+/edit-lock/heartbeat$")
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -109,7 +115,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         ticket = sess.get("sid")
         try:
-            user = await run_in_threadpool(_resolve, ticket) if ticket else None
+            user = await run_in_threadpool(
+                _resolve, ticket, not _NOT_USE.match(path)) if ticket else None
         except Exception:
             # Never let a request through on a guess.
             logger.exception("Login check failed: database unavailable")

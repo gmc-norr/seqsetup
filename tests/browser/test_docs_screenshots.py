@@ -878,7 +878,8 @@ def test_someone_else_is_editing(demo_page, base_url, demo, app_ctx):
         page.goto(f"{base_url}/runs/{run_id}")
         bar = page.locator("#run-status-bar")
         expect(bar).to_contain_text("Sam Staff is editing this run (since 2026-03-02 10:00 CET)")
-        expect(page.locator(".locked-message")).to_have_text("Press Edit run to make changes.")
+        expect(page.locator(".locked-message")).to_have_text(
+            "Sam Staff is editing this run. Only they can change it now.")
         snap(page, "new-run/someone-editing", bar.locator(".run-status-actions"), region=bar)
     finally:
         app_ctx.edit_lock_repo.replace(EditLock(
