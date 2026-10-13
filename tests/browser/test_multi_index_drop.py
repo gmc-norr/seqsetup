@@ -170,3 +170,54 @@ def test_indexes_past_the_last_sample_go_ahead_once_confirmed(logged_in_page, ba
     assert resp.value.status == 200
     assert len(dialogs) == 1 and "not be used" in dialogs[0]
     assert app_ctx.run_repo.get_by_id(mutable_run_id).get_sample(f"{mutable_run_id}-s4").has_index
+
+
+@pytest.mark.browser
+def test_a_drop_onto_an_index_set_in_another_tab_is_refused(
+        logged_in_page, base_url, empty_rows_run_id, app_ctx):
+    """Another tab gave EMPTY-02 an index after this page loaded. Two
+    indexes dropped on EMPTY-01 would overwrite it: the page sends the
+    index each row showed, nothing is assigned, and the refusal names
+    EMPTY-02 (batch 4, item 16)."""
+    from seqsetup.models.index import Index, IndexType
+    page = logged_in_page
+    _open(page, base_url, empty_rows_run_id)
+    run = app_ctx.run_repo.get_by_id(empty_rows_run_id)
+    run.get_sample(f"{empty_rows_run_id}-s2").assign_index1(
+        Index(name="other", sequence="GGGGCCCCAA", index_type=IndexType.I7))
+    app_ctx.run_repo.save(run)
+
+    with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
+        page.evaluate(_MULTI_DROP, [2, f"#sample-row-{empty_rows_run_id}-s1"])
+
+    assert resp.value.status == 409
+    expect(page.locator("#error-banner")).to_contain_text(
+        "The index on EMPTY-02 changed since this page was loaded. Nothing was assigned. "
+        "Reload the page and drag again."
+    )
+    samples = app_ctx.run_repo.get_by_id(empty_rows_run_id).samples
+    assert [s.index1_sequence for s in samples] == [None, "GGGGCCCCAA", None]
+
+
+@pytest.mark.browser
+def test_a_drop_over_an_index_this_page_shows_goes_ahead(
+        logged_in_page, base_url, empty_rows_run_id, app_ctx):
+    """EMPTY-02 already has an index and this page shows it, so replacing it
+    is the lab's own choice: the drop is confirmed and goes ahead. The page
+    has to send what each row shows, not nothing (batch 4, item 16)."""
+    page = logged_in_page
+    run = app_ctx.run_repo.get_by_id(empty_rows_run_id)
+    kit = app_ctx.index_kit_repo.list_all()[0]
+    run.samples[1].assign_index(kit.index_pairs[0])
+    app_ctx.run_repo.save(run)
+    _open(page, base_url, empty_rows_run_id)
+    dialogs = []
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
+
+    with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as resp:
+        page.evaluate(_MULTI_DROP, [3, f"#sample-row-{empty_rows_run_id}-s1"])
+
+    assert resp.value.status == 200, resp.value.text()[:300]
+    assert len(dialogs) == 1 and "EMPTY-02" in dialogs[0] and "replace" in dialogs[0]
+    samples = app_ctx.run_repo.get_by_id(empty_rows_run_id).samples
+    assert [s.has_index for s in samples] == [True, True, True]

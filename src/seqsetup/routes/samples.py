@@ -452,6 +452,32 @@ def _parse_sample_ids(raw: str) -> Optional[list[str]]:
     return parsed
 
 
+def _shown_indexes(raw, count: int) -> tuple[Optional[list[list[str]]], bool]:
+    """What a multi-index drop says the page showed in each of the ``count``
+    rows it fills: ([i7, i5] per row, True), (None, True) when the page sent
+    nothing, or (None, False) when what it sent cannot be read.
+
+    The sequences are compared with the stored ones before anything is
+    assigned, so a row whose index another tab changed is refused instead of
+    overwritten (batch 4, item 16).
+    """
+    if not raw:
+        return None, True
+    if not isinstance(raw, str):
+        return None, False
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None, False
+    if not isinstance(parsed, list) or len(parsed) != count:
+        return None, False
+    for row in parsed:
+        if (not isinstance(row, list) or len(row) != 2
+                or not all(isinstance(cell, str) for cell in row)):
+            return None, False
+    return parsed, True
+
+
 def _find_index(ctx: AppContext, idx_type: str, idx_id: str, kit_id: str):
     """(index pair or index, kit, None), or (None, None, error Response).
 
@@ -1051,12 +1077,28 @@ async def assign_indexes_bulk(
     target_ids = _parse_sample_ids(form.get("target_sample_ids", ""))
     if target_ids is None:
         return Response("This page is out of date. Reload the page and drag again.", status_code=400)
-    would_fill = [s.id for s in run.samples[start_idx:start_idx + len(resolved_assignments)]]
-    if would_fill != target_ids:
+    would_fill = run.samples[start_idx:start_idx + len(resolved_assignments)]
+    if [s.id for s in would_fill] != target_ids:
         return Response(
             "The sample list changed since this page was loaded. Reload the page and drag again.",
             status_code=409,
         )
+    # The page also names the index it showed in each of those rows. A row
+    # whose index another tab has since assigned, replaced or cleared is
+    # refused rather than overwritten, and nothing is assigned (batch 4,
+    # item 16).
+    shown, readable = _shown_indexes(form.get("target_indexes", ""), len(would_fill))
+    if not readable:
+        return Response("This page is out of date. Reload the page and drag again.", status_code=400)
+    if shown is not None:
+        changed = [sample.sample_id for sample, row in zip(would_fill, shown)
+                   if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
+        if changed:
+            return Response(
+                f"The index on {name_list(changed)} changed since this page was loaded. "
+                "Nothing was assigned. Reload the page and drag again.",
+                status_code=409,
+            )
     refusal = _kit_swap_refusal([
         (run.samples[start_idx + offset], idx_type, kit)
         for offset, (idx_type, _index, kit) in enumerate(resolved_assignments)

@@ -218,6 +218,11 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
                 // the drop if the run would now fill other rows.
                 target_sample_ids: JSON.stringify(
                     (targets || []).map(r => r.id.slice('sample-row-'.length))),
+                // And the index each of those rows shows, so the server
+                // refuses a row whose index changed in another tab instead
+                // of overwriting it.
+                target_indexes: JSON.stringify(
+                    (targets || []).map(r => [r.dataset.i7 || '', r.dataset.i5 || ''])),
                 index_type: dropZoneType || '',
                 indexes_json: JSON.stringify(indexes),
                 context: context,
