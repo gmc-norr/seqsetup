@@ -104,7 +104,9 @@ To build the SeqSetup image separately:
    docker build -t seqsetup .
 
 The image uses the Pixi package manager to install dependencies and runs
-the application on port 5001.
+the application on port 5001. It installs the default Pixi environment only,
+so the test, browser and docs tools (pytest, pytest-playwright, mongomock,
+httpx2, sphinx, furo) are not in it.
 
 Connecting to External MongoDB
 ------------------------------

@@ -195,7 +195,8 @@ src/seqsetup/
 ## Commands
 
 ```bash
-pixi install          # Install dependencies
+pixi install          # Install the default environment (what the Docker image ships)
+pixi install --all    # ... and the dev environment (pytest, playwright, sphinx, furo)
 pixi run serve        # Run the application (localhost:5001)
 pixi run test         # Run the unit and integration suites (pytest)
 pixi run smoke-browser  # Run the browser suite (Playwright)

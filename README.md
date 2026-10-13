@@ -256,7 +256,8 @@ seqsetup/
 ### Development Commands
 
 ```bash
-pixi install                # Install all dependencies
+pixi install                # Install the default environment (what the image ships)
+pixi install --all          # ... and the dev environment (test, browser, docs tools)
 pixi run serve              # Start the application (localhost:5001)
 pixi run test               # Run the unit and integration tests
 pixi run smoke-browser      # Run the browser tests
@@ -266,6 +267,11 @@ pixi run docs-screenshots   # Retake the documentation screenshots
 pixi add <pkg>              # Add a runtime dependency
 pixi add --feature dev <pkg>  # Add a development dependency
 ```
+
+The test, browser and docs tools (pytest, pytest-playwright, mongomock,
+httpx2, sphinx, furo) are in the `dev` environment, not in the default one the
+Dockerfile installs, so they are not in the image that runs in the lab. A
+`pixi run` task that needs them installs that environment on its own.
 
 ### Mock LIMS API Server
 

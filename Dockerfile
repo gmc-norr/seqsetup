@@ -9,9 +9,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files first for layer caching
+# Copy dependency files first for layer caching. Only the default environment
+# is installed: the test, browser and docs tools are in the `dev` environment
+# (pixi.toml), so none of them ships to the lab.
 COPY pixi.toml pixi.lock ./
-RUN pixi install --locked
+RUN pixi install --locked --environment default
 
 # Copy application source and config
 COPY src/ src/
