@@ -646,12 +646,17 @@ manual sync's result is shown above the panel, in red when it failed.
 
 A sync records which repository and branch it read. When the saved
 **Repository URL** or **Branch** is not the one the last sync read -- the
-moment you save a new one, before you sync it -- the panel says *"This
-repository has not been synced yet"* and names the repository the time,
-status and message below it belong to. Nothing has been fetched from the
-new repository until a sync runs, manually or on the schedule. A status
-stored by an older SeqSetup carries no repository, and the panel then says
-nothing about it rather than claiming the repository is unsynced.
+moment you save a new one, before you sync it -- the panel says *"The
+repository and branch saved here have not been synced yet"* and names the
+repository and branch the time, status and message below it belong to. It
+says it for a new branch of a repository already synced too: the
+repository has been read, that branch has not. Nothing has been fetched
+from what is saved now until a sync runs, manually or on the schedule.
+Writing the same repository another way is not a change: a trailing slash
+or a ``.git`` suffix is compared as the sync reads it, so re-saving the
+URL that way raises nothing. A status stored by an older SeqSetup carries
+no repository, and the panel then says nothing about it rather than
+claiming the repository is unsynced.
 
 Who can do this
 -------------------

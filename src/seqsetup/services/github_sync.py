@@ -406,7 +406,8 @@ class GitHubSyncService:
             )
             return False, error_msg, 0
 
-    def _parse_repo_url(self, url: str) -> Tuple[str, str]:
+    @staticmethod
+    def _parse_repo_url(url: str) -> Tuple[str, str]:
         """Parse GitHub URL to extract owner and repo name.
 
         Handles formats like:
