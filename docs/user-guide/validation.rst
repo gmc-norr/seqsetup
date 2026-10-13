@@ -73,7 +73,7 @@ Only then can one read fit both samples. Samples that share an i7 but
 whose i5s are far enough apart -- as on a combinatorial plate -- do not
 collide, and the other way round. A pair where a sample has no i5 is
 checked on the i7 alone. The Issues tab shows both distances. This is the
-rule of DRAGEN's built-in BCL conversion, which converts by default only
+rule of DRAGEN's built-in BCL conversion, which by default stops only
 when both indexes collide; standalone ``bcl-convert`` 3.10.5 and later is
 stricter -- it stops when either index is too similar -- so convert these
 runs with DRAGEN.

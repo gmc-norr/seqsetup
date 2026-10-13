@@ -105,3 +105,27 @@ class TestTheReportSaysBoth:
                                     "i7_threshold", "i5_distance", "i5_threshold")} == {
             "hamming_distance": 4, "mismatch_threshold": 4, "i7_distance": 2,
             "i7_threshold": 2, "i5_distance": 2, "i5_threshold": 2}
+
+
+def _lane_warnings(run):
+    result = ValidationService.validate_run(run)
+    return [e for e in result.configuration_errors if e.category == "mismatch_threshold_risk"]
+
+
+class TestTheLaneMismatchWarningIsForSingleIndexPairs:
+    """The user's decision, 2026-10-13: the lane-wide "minimum i7 distance"
+    warning looks at single-index pairs only. A dual-index pair is judged by
+    the collision check above; samples that share an i7 on purpose are fine."""
+
+    def test_a_shared_i7_with_far_i5s_raises_no_warning(self):
+        assert _lane_warnings(_run((I7, "TATAGCCT"), (I7, "ATAGAGGC"))) == []
+
+    def test_a_combinatorial_plate_raises_no_warning(self):
+        kit = yaml.safe_load(Path("config/indexes/nextera_xt_combinatorial.yaml").read_text())
+        pairs = list(itertools.product([i["sequence"] for i in kit["i7_indexes"]],
+                                       [i["sequence"] for i in kit["i5_indexes"]]))
+        assert _lane_warnings(_run(*pairs)) == []
+
+    def test_a_close_single_index_pair_still_warns(self):
+        (warning,) = _lane_warnings(_run((I7, None), ("ATTACTGA", None)))
+        assert "minimum i7 distance (2)" in warning.message
