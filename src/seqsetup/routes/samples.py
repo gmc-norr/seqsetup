@@ -1119,7 +1119,7 @@ async def assign_indexes_bulk(
     shown = _shown_indexes(form.get("target_indexes", ""), len(would_fill))
     if shown is None:
         return Response("This page is out of date. Reload the page and drag again.", status_code=400)
-    changed = [sample.sample_id for sample, row in zip(would_fill, shown)
+    changed = [sample.sample_id for sample, row in zip(would_fill, shown, strict=True)
                if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
     if changed:
         # What to do comes before the IDs: the page's error banner shows the

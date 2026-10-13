@@ -803,7 +803,11 @@ class GitHubSyncService:
         nothing about where the second one is."""
         where_of = paths if paths is not None else [p.source_file for p in test_profiles]
         files: dict[tuple[str, str], list[str]] = {}
-        for profile, where in zip(test_profiles, where_of):
+        # strict=True: a plain zip stops at the shorter list, so a caller that
+        # appended a profile without its path would drop the trailing profiles
+        # out of this check and sync a test and version from two files
+        # silently. Fail closed instead (batch 4 review fix E).
+        for profile, where in zip(test_profiles, where_of, strict=True):
             files.setdefault((profile.test_type, profile.version), []).append(where)
         for (test, version), names in files.items():
             if len(names) > 1:

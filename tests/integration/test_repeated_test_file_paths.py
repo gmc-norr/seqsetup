@@ -6,6 +6,10 @@ of the test-profile tree read as the same file -- "WGS 1.2.0 is in Wgs.yaml
 and Wgs.yaml" -- and an admin had nothing to go on to find the second one.
 """
 
+import pytest
+
+from seqsetup.services.github_sync import GitHubSyncService
+
 from .test_group_a4 import FOLDER, REFUSED, TESTS_BEFORE, _sync_tests, _test_yaml
 
 
@@ -52,3 +56,45 @@ class TestTheRepeatedTestRefusalNamesPaths:
         assert ok, message
         (profile,) = ctx.test_profile_repo.list_all()
         assert profile.source_file == "Wgs.yaml"
+
+
+class TestTheRepeatCheckWillNotRunOnListsOutOfStep:
+    """The profiles and their paths are built side by side, and ``zip``
+    without ``strict=True`` stops at the shorter one. A later caller that
+    appended a profile without appending its path would drop the trailing
+    profiles out of the repeat check, and a test and version in two files
+    would sync silently -- the defect this item sits on (batch 4 review
+    fix E)."""
+
+    @staticmethod
+    def _two_wgs_1_2():
+        # Imported here: a module-level TestProfile would be collected by pytest.
+        from seqsetup.models.test_profile import TestProfile
+        return [TestProfile(test_type="WGS", version="1.2.0", source_file="Wgs.yaml"),
+                TestProfile(test_type="WGS", version="1.2.0", source_file="Wgs.yaml")]
+
+    def test_fewer_paths_than_profiles_raises_and_refuses_nothing_silently(self):
+        refused: list[str] = []
+
+        with pytest.raises(ValueError):
+            GitHubSyncService._refuse_repeated_test_versions(
+                self._two_wgs_1_2(), refused, ["a/Wgs.yaml"])
+
+        assert refused == []
+
+    def test_more_paths_than_profiles_raises(self):
+        refused: list[str] = []
+
+        with pytest.raises(ValueError):
+            GitHubSyncService._refuse_repeated_test_versions(
+                self._two_wgs_1_2()[:1], refused, ["a/Wgs.yaml", "b/Wgs.yaml"])
+
+        assert refused == []
+
+    def test_lists_in_step_still_name_both_paths(self):
+        refused: list[str] = []
+
+        GitHubSyncService._refuse_repeated_test_versions(
+            self._two_wgs_1_2(), refused, ["a/Wgs.yaml", "b/Wgs.yaml"])
+
+        assert refused == ["WGS 1.2.0 is in a/Wgs.yaml and b/Wgs.yaml"]
