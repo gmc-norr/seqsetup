@@ -90,8 +90,11 @@ samples**); going back to **Edit paste** discards nothing you have not
 already added.
 
 A file is read up to 10 MB, and **Edit paste** puts all of it back into the
-box, so pressing **Preview** again reads the same 10 MB. Text you paste or
-type into the box yourself is read up to 1 MB.
+box, so pressing **Preview** again reads up to 10 MB from the box. The two
+are not counted quite the same way -- the box's 10 MB counts what the
+browser sends, which includes the line ends it adds -- so a file very close
+to 10 MB can still be refused on the way back through the box. Text you
+paste or type into the box yourself is read up to 1 MB.
 
 .. warning::
    A pasted or imported row that has *any* content but no sample ID does
