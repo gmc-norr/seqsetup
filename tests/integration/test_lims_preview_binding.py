@@ -53,7 +53,8 @@ def _lims(ctx, monkeypatch):
 
 
 def _preview(client, worklist_id="W1"):
-    return client.get(f"/runs/{RUN}/samples/preview-worklist", params={"worklist_id": worklist_id})
+    return client.get(f"/runs/{RUN}/samples/preview-worklist",
+                      params={"worklist_id": worklist_id, "lanes": ["1"]})
 
 
 def _plan(html):
@@ -62,6 +63,7 @@ def _plan(html):
 
 
 def _post(client, **form):
+    form.setdefault("lanes", "1")  # as the preview's Import button sends it
     return client.post(f"/runs/{RUN}/samples/fetch-worklist", data=form, headers=ORIGIN)
 
 
@@ -137,7 +139,7 @@ class TestTheImportAddsWhatThePreviewShowed:
         resp = import_from_preview(logged_in_client, RUN, "W1")
 
         assert resp.status_code == 200, resp.text[:300]
-        assert "Added 2 samples from worklist." in resp.text
+        assert "Added 2 samples from worklist to lane 1." in resp.text
         assert _ids(ctx) == ["P1", "P2"]
 
 

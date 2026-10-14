@@ -63,7 +63,7 @@ def lims_run(logged_in_client, fresh_app, monkeypatch):
 
 def _preview(client, worklist_id):
     return client.get(f"/runs/{RUN}/samples/preview-worklist",
-                      params={"worklist_id": worklist_id})
+                      params={"worklist_id": worklist_id, "lanes": ["1"]})
 
 
 def _import(client, worklist_id):

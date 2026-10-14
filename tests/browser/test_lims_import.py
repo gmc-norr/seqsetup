@@ -77,7 +77,7 @@ def test_load_preview_and_import(logged_in_page, base_url, app_ctx, mutable_run_
     with page.expect_response(lambda r: r.url.endswith("/samples/fetch-worklist") and r.status == 200):
         _import_button(page).click()
 
-    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist.")
+    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist to lane 1.")
     expect(page.locator("#sample-section")).to_have_count(1)    # swapped, not nested
     expect(page.locator("#sample-table")).to_have_count(1)
     expect(page.locator("#sample-table")).to_contain_text("LIMS-02")
@@ -172,4 +172,34 @@ def test_a_success_after_a_refusal_shows_its_message(logged_in_page, base_url, a
     lims.rows = GOOD
     with page.expect_response(lambda r: r.url.endswith("/samples/fetch-worklist")):
         _import_button(page).click()
-    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist.")
+    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist to lane 1.")
+
+
+@pytest.mark.browser
+def test_the_lanes_picked_are_the_lanes_imported_to(logged_in_page, base_url, app_ctx,
+                                                     mutable_run_id, lims):
+    """Not lane 1 unseen (index mix-up audit, 2026-10-14; the user's choice
+    "Same rules as paste")."""
+    page = logged_in_page
+    _load_worksheets(page, base_url, mutable_run_id)
+    page.locator('#worklist-lanes input[value="1"]').uncheck()
+    page.locator('#worklist-lanes input[value="2"]').check()
+    _preview(page)
+    expect(page.locator("#worklist-preview")).to_contain_text("to add to lane 2")
+
+    with page.expect_response(lambda r: r.url.endswith("/samples/fetch-worklist") and r.status == 200):
+        _import_button(page).click()
+
+    samples = app_ctx.run_repo.get_by_id(mutable_run_id).samples
+    assert [(s.sample_id, s.lanes) for s in samples[-2:]] == [("LIMS-01", [2]), ("LIMS-02", [2])]
+
+
+@pytest.mark.browser
+def test_changing_a_lane_clears_the_preview(logged_in_page, base_url, mutable_run_id, lims):
+    page = logged_in_page
+    _load_worksheets(page, base_url, mutable_run_id)
+    _preview(page)
+
+    page.locator('#worklist-lanes input[value="3"]').check()
+
+    expect(page.locator("#worklist-preview")).to_be_empty()

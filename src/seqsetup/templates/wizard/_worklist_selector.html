@@ -9,6 +9,8 @@
      run_id:       str
      worklists:    list[dict] — each has 'id', optional 'investigator', optional 'updated_at'
      warnings:     list[dict] — _messages.html entries for worksheets left out of the list
+     num_lanes:    int — the flowcell's lanes; the samples go to the lanes picked here,
+                   as for a paste (index mix-up audit, 2026-10-14)
 #}
 <div>
     {% if warnings %}{% with messages = warnings %}{% include "_messages.html" %}{% endwith %}{% endif %}
@@ -27,9 +29,21 @@
         </select>
         <button type="button" class="btn-secondary"
                 hx-get="/runs/{{ run_id }}/samples/preview-worklist"
-                hx-include="#worklist-select"
+                hx-include="#worklist-select, #worklist-lanes"
                 hx-target="#worklist-preview"
                 hx-swap="innerHTML">Preview</button>
     </div>
+    {% if num_lanes > 1 %}
+    <fieldset id="worklist-lanes" class="paste-option" style="margin-top:0.5rem;">
+        <legend class="paste-option-label">Lanes for these samples</legend>
+        <div class="paste-lane-boxes">
+            {% for lane in range(1, num_lanes + 1) %}
+            <label class="paste-lane"><input type="checkbox" name="lanes" value="{{ lane }}"{% if lane == 1 %} checked{% endif %}> {{ lane }}</label>
+            {% endfor %}
+        </div>
+    </fieldset>
+    {% else %}
+    <div id="worklist-lanes"><input type="hidden" name="lanes" value="1"></div>
+    {% endif %}
     <div id="worklist-preview" class="worklist-preview"></div>
 </div>

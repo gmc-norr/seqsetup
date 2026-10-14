@@ -177,12 +177,17 @@ above the list, or under the error when nothing is left to list; at most
 ten are shown, then how many more. Ask your administrator to have the LIMS
 send each worksheet's ID once, as text, under one name.
 
-Choose one and select **Preview** to see what the import would do. It
-shows the samples the import would add, each with its Sample ID, test,
-version, i7 and i5 (``-`` for none), and the sample IDs already in the run,
-which the import skips (the first ten, then how many more). If the import
-would be refused, the preview shows that refusal instead (*"Importing this
-worksheet would be refused: ..."*). Picking another worksheet clears the
+Choose one, tick the **Lanes for these samples** they go to (lane 1 is
+ticked to start; a one-lane flowcell has no boxes and uses lane 1), and
+select **Preview** to see what the import would do. Lanes come from these
+boxes, never from the LIMS. The preview names the lanes (*"Worksheet WS1: 2
+samples to add to lanes 2, 3"*) and shows the samples the import would
+add, each with its Sample ID, test, version, i7 and i5 (``-`` for none), and
+the sample IDs already in the run, which the import skips (the first ten,
+then how many more). With no lane ticked the preview says *"Pick at least
+one lane for the new samples."* If the import would be refused, the preview
+shows that refusal instead (*"Importing this worksheet would be refused:
+..."*). Picking another worksheet, or changing a lane box, clears the
 preview.
 
 Under the samples, the preview's **Import 2 samples** button (it counts
@@ -190,13 +195,13 @@ them) adds them to the run; it is off until the import answers. There is
 no import without a preview: when every sample of the worksheet is already
 in the run, or the import would be refused, the preview has no button. The
 import asks the LIMS again and works out again what it would add and
-skip, down to what the preview's table does not show, such as index names
-and Override Cycles. If any of that changed since the preview -- in the
+skip, to the lanes the preview named, down to what the preview's table does
+not show, such as index names and Override Cycles. If any of that changed since the preview -- in the
 LIMS, or through a change to the run's samples or cycles -- nothing is
 added and the banner says *"The worksheet or the run changed since the
 preview. Nothing was added. Preview again."* Otherwise the result shows in
 the banner at the top of
-the page (*"Added 2 samples from worklist."*). If the import is refused,
+the page (*"Added 2 samples from worklist to lane 1."*). If the import is refused,
 its message shows in the banner instead, and the run's samples stay as
 they were. An imported
 row carries its worksheet ID into the **Worksheet** column -- the picked
@@ -221,6 +226,15 @@ assigned immediately, with Override Cycles calculated automatically.
    characters (*"LIMS row(s) <positions>: the sample_id is longer than 256
    characters. SeqSetup does not shorten it. Fix the upstream record(s)
    before retrying."*): it is never cut.
+   So is a row with a field that looks like an index or a lane but is not
+   one SeqSetup reads, such as ``index``, ``Index 2`` or ``lane``
+   (*"LIMS row(s) 1: the field(s) "index" look like an index or a lane,
+   but SeqSetup does not read them, so the whole worklist was refused.
+   ..."*), and a row with two names for one index, such as ``index1`` and
+   ``i7`` (*"LIMS row 1 has more than one name for an i7 sequence ("index1",
+   "i7"), so the whole worklist was refused: SeqSetup would read only one
+   of them. Send only one."*): the sample would come in without that index,
+   or with only one of the two.
    As with a paste, a sample ID already in the run is skipped
    rather than blocking.
 

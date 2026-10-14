@@ -109,7 +109,8 @@ class TestWorklistImport:
         ])
 
         resp = logged_in_client.post(
-            f"/runs/{RUN}/samples/fetch-worklist", data={"worklist_id": "WS1"}, headers=ORIGIN)
+            f"/runs/{RUN}/samples/fetch-worklist", data={"worklist_id": "WS1", "lanes": "1"},
+            headers=ORIGIN)
 
         assert resp.status_code == 400, resp.text[:300]
         assert "only of zeros" in resp.text

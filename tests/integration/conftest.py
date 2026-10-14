@@ -302,10 +302,16 @@ def import_from_preview(client, run_id: str, worklist_id: str):
     own Import button, which sends the plan the preview showed (outside
     review of 7f858e0, finding 2). A preview that offers no import gives no
     plan, so the import answers with its own refusal. Returns the import's
-    response."""
+    response.
+
+    The page's lane boxes start with lane 1 ticked, and its Import button
+    sends back the lanes the preview showed (index mix-up audit,
+    2026-10-14); so do these."""
     shown = client.get(f"/runs/{run_id}/samples/preview-worklist",
-                       params={"worklist_id": worklist_id}).text
+                       params={"worklist_id": worklist_id, "lanes": ["1"]}).text
     plan = re.search(r'name="plan" value="([^"]*)"', shown)
+    lanes = re.findall(r'<input type="hidden" name="lanes" value="(\d+)">', shown) or ["1"]
     return client.post(f"/runs/{run_id}/samples/fetch-worklist",
-                       data={"worklist_id": worklist_id, "plan": plan.group(1) if plan else ""},
+                       data={"worklist_id": worklist_id, "plan": plan.group(1) if plan else "",
+                             "lanes": lanes},
                        headers={"Origin": "http://testserver"})
