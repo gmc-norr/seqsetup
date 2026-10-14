@@ -88,7 +88,10 @@ a total a little over the label is normal.
 
 Read 1 and Read 2 are typed as whole numbers from 0 to 600; an invalid
 value is rejected and nothing is saved. Index 1 and Index 2 are chosen
-from a fixed list of cycle counts -- 8, 10, 12, 17, or 24.
+from a fixed list of cycle counts -- 8, 10, 12, 17, or 24. A run whose
+count is not in that list -- 0 for no Index 2 read, say, or a count your
+lab's instrument settings no longer list -- shows its count too, marked
+**(not in the usual list)**, and keeps it until you pick another.
 
 .. warning::
    When the selected reagent kit has a known cycle limit, going over it
