@@ -322,7 +322,7 @@ function handleIndexKeydown(event) {                 // chip: Enter/Space = sele
 
 function assignSelectedIndexToSample(sampleId, runId, dropZoneType, dropZoneEl) {
     if (selectedIndexes.length === 0) return false;  // nothing selected → no-op
-    const idx = selectedIndexes[0];                  // keyboard path = single assign
+    const idx = inPanelOrder(selectedIndexes)[0];    // keyboard path = single assign: the panel's first
     if ((idx.type === 'i7' || idx.type === 'i5') && dropZoneType && dropZoneType !== idx.type) return false;
     const context = dropZoneEl && dropZoneEl.dataset ? (dropZoneEl.dataset.context || '') : '';
     const sampleTable = document.getElementById('sample-table');

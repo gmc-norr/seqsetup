@@ -3,7 +3,9 @@ them, however they were clicked (index mix-up audit, 2026-10-14; the user's
 choice "Panel order").
 
 Clicking the last chip first and shift-clicking the first one used to send
-the chips in click order, so the first row got the last chip's index.
+the chips in click order, so the first row got the last chip's index. The
+kit here is stored out of name order (PO2, PO0, PO1), so the panel's order
+is neither the click order nor the names' order (review of 2471610, P3-1).
 """
 
 import json
@@ -19,20 +21,21 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunSta
 from .conftest import hold_edit_lock
 
 KIT = "Panel-Order-Kit"
-I7 = ["AACCGGTT", "CCGGTTAA", "GGTTAACC"]
+SHOWN = ["PO2", "PO0", "PO1"]  # the panel's order: the kit's stored order
+I7 = ["AACCGGTT", "CCGGTTAA", "GGTTAACC"]  # of SHOWN[0], SHOWN[1], SHOWN[2]
 I5 = ["TGTGCACA", "GTGTACAC", "CACAGTGT"]
 
 
 @pytest.fixture
 def kit(app_ctx):
-    """A three-pair kit; deleted afterwards."""
+    """A three-pair kit stored as PO2, PO0, PO1; deleted afterwards."""
     from seqsetup.services.validation import clear_validation_cache
 
     kit = IndexKit(name=KIT, version="1.0", index_mode=IndexMode.UNIQUE_DUAL, index_pairs=[
-        IndexPair(id=f"{KIT}_PO{k}", name=f"PO{k}",
-                  index1=Index(name=f"PO{k}", sequence=I7[k], index_type=IndexType.I7),
-                  index2=Index(name=f"PO{k}", sequence=I5[k], index_type=IndexType.I5))
-        for k in range(3)])
+        IndexPair(id=f"{KIT}_{name}", name=name,
+                  index1=Index(name=name, sequence=I7[k], index_type=IndexType.I7),
+                  index2=Index(name=name, sequence=I5[k], index_type=IndexType.I5))
+        for k, name in enumerate(SHOWN)])
     app_ctx.index_kit_repo.save(kit)
     clear_validation_cache()
     yield kit
@@ -67,7 +70,8 @@ def _open_on_kit(page, base_url, run_id, kit_id):
 
 
 def _chip(page, k):
-    return page.locator(f'#index-list-container [data-index-pair-id="{KIT}_PO{k}"]')
+    """The chip the panel shows k-th."""
+    return page.locator(f'#index-list-container [data-index-pair-id="{KIT}_{SHOWN[k]}"]')
 
 
 def _zone(page, run_id, n):
@@ -98,7 +102,7 @@ def test_a_shift_click_made_backwards_fills_in_panel_order(
     _chip(page, 0).click(modifiers=["Shift"])
     sent = _drag_and_read(page, run_id, 0)
 
-    assert sent == [f"{KIT}_PO0", f"{KIT}_PO1", f"{KIT}_PO2"]
+    assert sent == [f"{KIT}_{name}" for name in SHOWN]
     assert _stored_i7s(app_ctx, run_id) == I7
 
 
@@ -112,5 +116,24 @@ def test_chips_ctrl_clicked_out_of_order_fill_in_panel_order(
     _chip(page, 0).click(modifiers=["Control"])
     sent = _drag_and_read(page, run_id, 1)
 
-    assert sent == [f"{KIT}_PO0", f"{KIT}_PO1"]
+    assert sent == [f"{KIT}_{SHOWN[0]}", f"{KIT}_{SHOWN[1]}"]
     assert _stored_i7s(app_ctx, run_id) == [I7[0], I7[1], None]
+
+
+@pytest.mark.browser
+def test_enter_with_several_selected_assigns_the_panels_first(
+        logged_in_page, base_url, app_ctx, kit, run_id):
+    """The keyboard assigns one index: the panel's first selected one, not
+    the first one clicked (review of 2471610, P3-2)."""
+    page = logged_in_page
+    _open_on_kit(page, base_url, run_id, kit.kit_id)
+
+    _chip(page, 2).click()
+    _chip(page, 0).click(modifiers=["Shift"])
+    zone = _zone(page, run_id, 1)
+    zone.focus()
+    with page.expect_response(lambda r: "/assign-index" in r.url) as resp:
+        zone.press("Enter")
+
+    assert resp.value.status == 200
+    assert _stored_i7s(app_ctx, run_id) == [I7[0], None, None]

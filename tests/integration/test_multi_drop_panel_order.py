@@ -37,6 +37,29 @@ def _combinatorial_kit(name="Order-Comb"):
                                 for k in range(5)])
 
 
+PLATE = ["A01", "B01", "A02", "B02"]
+
+
+def _plate_kit(name="Plate-Kit"):
+    """Stored the way a plate is read, down the columns: A01, B01, A02, B02.
+    Their names sort A01, A02, B01, B02, so a fill by name would differ
+    (review of 2471610, P3-1)."""
+    return IndexKit(
+        name=name, version="1.0", index_mode=IndexMode.COMBINATORIAL,
+        i7_indexes=[Index(name=well, sequence=I7[k], index_type=IndexType.I7)
+                    for k, well in enumerate(PLATE)],
+        i5_indexes=[Index(name=well, sequence=I5[k], index_type=IndexType.I5)
+                    for k, well in enumerate(PLATE)])
+
+
+def _plate_pair_kit(name="Plate-Pairs"):
+    return IndexKit(name=name, version="1.0", index_mode=IndexMode.UNIQUE_DUAL, index_pairs=[
+        IndexPair(id=f"{name}_{well}", name=well,
+                  index1=Index(name=well, sequence=I7[k], index_type=IndexType.I7),
+                  index2=Index(name=well, sequence=I5[k], index_type=IndexType.I5))
+        for k, well in enumerate(PLATE)])
+
+
 def _pair(kit, n):
     return {"id": f"{kit.name}_A0{n}", "type": "pair", "kit_id": kit.kit_id}
 
@@ -109,6 +132,42 @@ class TestTheRowsAreFilledInPanelOrder:
 
         assert resp.status_code == 200
         assert [i7 for _id, i7, _i5 in _stored(ctx, run.id)[:4]] == I7[:4]
+
+    def test_the_panel_order_not_the_names_order_for_pairs(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        kit = _plate_pair_kit()
+        run = _run(ctx, kit)
+        clicked = ["B02", "A01", "B01", "A02"]
+
+        resp = _drop(logged_in_client, run, [
+            {"id": f"{kit.name}_{well}", "type": "pair", "kit_id": kit.kit_id} for well in clicked])
+
+        assert resp.status_code == 200
+        assert _stored(ctx, run.id)[:4] == [(f"P{k + 1}", I7[k], I5[k]) for k in range(4)]
+
+    def test_the_panel_order_not_the_names_order_for_i7s(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        kit = _plate_kit()
+        run = _run(ctx, kit)
+
+        resp = _drop(logged_in_client, run, [
+            {"id": f"{kit.name}_i7_{well}", "type": "i7", "kit_id": kit.kit_id}
+            for well in ["A02", "B02", "A01", "B01"]])
+
+        assert resp.status_code == 200
+        assert [i7 for _id, i7, _i5 in _stored(ctx, run.id)[:4]] == I7[:4]
+
+    def test_the_panel_order_not_the_names_order_for_i5s(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        kit = _plate_kit()
+        run = _run(ctx, kit)
+
+        resp = _drop(logged_in_client, run, [
+            {"id": f"{kit.name}_i5_{well}", "type": "i5", "kit_id": kit.kit_id}
+            for well in ["B02", "A02", "B01", "A01"]])
+
+        assert resp.status_code == 200
+        assert [i5 for _id, _i7, i5 in _stored(ctx, run.id)[:4]] == I5[:4]
 
     def test_the_indexes_left_over_are_the_last_in_the_panel(self, logged_in_client, fresh_app):
         """Five indexes dropped on the last two rows: those two rows get the
