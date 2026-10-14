@@ -87,6 +87,16 @@ function updateSelectionCount() {
     }
 }
 
+// The selected chips in the order the panel shows them, not the order they
+// were clicked: the rows are filled in this order, and the server sorts them
+// the same way. A shift-click made backwards used to give the first row the
+// last chip (index mix-up audit, 2026-10-14).
+function inPanelOrder(indexes) {
+    const shown = Array.from(document.querySelectorAll('.draggable-index, .draggable-index-compact'))
+        .map(el => el.dataset.indexPairId || el.dataset.indexId);
+    return [...indexes].sort((a, b) => shown.indexOf(a.id) - shown.indexOf(b.id));
+}
+
 function handleDragStart(event, indexId, indexType) {
     const chip = event.target.closest('.draggable-index, .draggable-index-compact');
     const indexData = { id: indexId, type: indexType || 'pair', kit_id: chip ? (chip.dataset.kitId || '') : '' };
@@ -95,7 +105,7 @@ function handleDragStart(event, indexId, indexType) {
     // Otherwise, just drag this one index
     let dragData;
     if (selectedIndexes.find(i => i.id === indexId)) {
-        dragData = { indexes: selectedIndexes, multi: true };
+        dragData = { indexes: inPanelOrder(selectedIndexes), multi: true };
     } else {
         // Clear selection and drag just this one
         clearIndexSelection();

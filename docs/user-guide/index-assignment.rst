@@ -113,13 +113,19 @@ of a range.
    was shift-clicked, outlined.
 
 Drag the selection onto a sample the same way as a single index. The
-first selected index goes to the sample you drop on, the next one to the
-row below it, and so on down the table -- filling that many rows starting
-from the drop target, in table order. If any of those rows already has an
+selected indexes go out in the order the panel lists them, whatever order
+you clicked them in: the panel's first selected index goes to the sample
+you drop on, the next one to the row below it, and so on down the table --
+filling that many rows starting from the drop target, in table order.
+Clicking UDI0008 first and shift-clicking UDI0006 fills the rows with
+UDI0006, UDI0007, UDI0008, the same as clicking UDI0006 first. A drop
+holds indexes of one kind (pairs, i7 or i5) from one kit; SeqSetup
+refuses any other with *"Drag indexes of one kind from one kit at a time.
+Nothing was assigned."* If any of those rows already has an
 index it will be replaced, and if the table runs out of rows before the
 selection does, the extra indexes are left unused; SeqSetup asks you to
 confirm before going ahead only when one of those two things would
-actually happen. A drop that neither replaces an existing index nor
+actually happen. The indexes left unused are the panel's last ones. A drop that neither replaces an existing index nor
 leaves any index unused goes ahead immediately, with no confirmation.
 
 SeqSetup fills exactly the rows this page shows. If samples were removed

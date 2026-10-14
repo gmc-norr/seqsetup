@@ -267,19 +267,37 @@ class TestAssignSeveralInOrder:
             headers=ORIGIN,
         )
 
-    def test_each_entry_comes_from_its_own_kit_version(self, logged_in_client, fresh_app):
+    def test_the_entries_come_from_the_kit_version_they_name(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _v1, v2 = _two_versions(ctx)
+
+        resp = self._post(logged_in_client, [
+            {"id": "VerKit_UDP0", "type": "pair", "kit_id": v2.kit_id},
+            {"id": "VerKit_UDP1", "type": "pair", "kit_id": v2.kit_id},
+        ])
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert _sample(ctx, "s1").index1_sequence == V2_I7[0]
+        assert _sample(ctx, "s2").index1_sequence == V2_I7[1]
+
+    def test_entries_from_two_kit_versions_are_refused(self, logged_in_client, fresh_app):
+        """The page clears the selection when the kit changes, so it never
+        sends this. Two kits have no one panel order to fill the rows in
+        (index mix-up audit, 2026-10-14): nothing is assigned."""
         _app, ctx, _db = fresh_app
         _run(ctx)
         v1, v2 = _two_versions(ctx)
+        before = _stored(ctx)
 
         resp = self._post(logged_in_client, [
             {"id": "VerKit_UDP0", "type": "pair", "kit_id": v2.kit_id},
             {"id": "VerKit_UDP1", "type": "pair", "kit_id": v1.kit_id},
         ])
 
-        assert resp.status_code == 200, resp.text[:300]
-        assert _sample(ctx, "s1").index1_sequence == V2_I7[0]
-        assert _sample(ctx, "s2").index1_sequence == V1_I7[1]
+        assert resp.status_code == 400
+        assert resp.text == "Drag indexes of one kind from one kit at a time. Nothing was assigned."
+        assert _stored(ctx) == before
 
     def test_no_kit_id_and_two_versions_hold_the_pair_refuses(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app

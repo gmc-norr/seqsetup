@@ -95,7 +95,10 @@ class TestTheMessageNamesTheKitVersion:
             "clear these samples' indexes first: PAT1, PAT2.")
         assert _indexes(ctx) == before
 
-    def test_two_versions_of_one_name_are_two_kits(self, logged_in_client, two_versions):
+    def test_a_drop_from_two_versions_is_refused_before_this_check(self, logged_in_client, two_versions):
+        """Two kits have no one panel order to fill the rows in (index
+        mix-up audit, 2026-10-14), so such a drop is refused first and the
+        two-kit message below is reached only by a direct call."""
         ctx, v1, v2 = two_versions
         before = _indexes(ctx)
 
@@ -105,12 +108,23 @@ class TestTheMessageNamesTheKitVersion:
         ])
 
         assert resp.status_code == 400, resp.text[:300]
-        assert resp.text == (
+        assert resp.text == "Drag indexes of one kind from one kit at a time. Nothing was assigned."
+        assert _indexes(ctx) == before
+
+    def test_two_versions_of_one_name_are_two_kits(self, two_versions):
+        from seqsetup.routes.samples import _kit_swap_refusal
+        ctx, v1, v2 = two_versions
+        run = _stored(ctx)
+
+        text = _kit_swap_refusal(
+            [(run.samples[0], "i5", v1), (run.samples[1], "i5", v2)], run.run_cycles,
+        ).body.decode()
+
+        assert text == (
             "These samples keep an index from a kit that reads Read 1 and Read 2 differently "
             "from the kit being assigned. Assign both indexes from one kit, or clear these "
             "samples' indexes first: VerKit 1 (Read 1 plain, Read 2 plain): PAT1; "
             "VerKit 2 (Read 1 U6Y*, Read 2 U6Y*): PAT2.")
-        assert _indexes(ctx) == before
 
 
 class TestTheBannerBudgetIsKept:

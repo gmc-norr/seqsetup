@@ -545,6 +545,13 @@ def _find_index(ctx: AppContext, idx_type: str, idx_id: str, kit_id: str):
     return found, kits[0], None
 
 
+def _panel_position(idx_type: str, index, kit) -> int:
+    """Where the index panel shows ``index``: its place in the kit's own list
+    (templates/wizard/_index_list_compact.html lists them in that order)."""
+    shown = {"pair": kit.index_pairs, "i7": kit.i7_indexes, "i5": kit.i5_indexes}[idx_type]
+    return next(k for k, item in enumerate(shown) if item is index)
+
+
 # ---------------------------------------------------------------------------
 # Mutation handlers — all require DRAFT run via Depends(get_editable_run)
 # ---------------------------------------------------------------------------
@@ -1148,6 +1155,18 @@ async def assign_indexes_bulk(
             resolved_assignments.append((idx_type, found, kit))
         else:
             return Response(f"Invalid index type: {idx_type}", status_code=400)
+
+    # The rows are filled in the order the index panel shows the indexes,
+    # never in the order they were clicked: a shift-click made backwards
+    # sent A05, A01, A02, ... and gave the first sample A05 (index mix-up
+    # audit, 2026-10-14; the user's choice "Panel order"). Indexes of two
+    # kinds, or from two kits, have no one panel order.
+    if len({(idx_type, kit.kit_id) for idx_type, _index, kit in resolved_assignments}) > 1:
+        return Response(
+            "Drag indexes of one kind from one kit at a time. Nothing was assigned.",
+            status_code=400,
+        )
+    resolved_assignments.sort(key=lambda item: _panel_position(*item))
 
     # The page names the rows it showed for this drop. Fill them only if
     # they are still the rows the run would fill: a row removed or added in
