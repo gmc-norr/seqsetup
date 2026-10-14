@@ -30,7 +30,6 @@
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-sample-ids">
         <input type="hidden" name="lanes" id="bulk-lanes">
-        <input type="hidden" name="all_lanes" id="bulk-all-lanes">
     </form>
     <form id="bulk-mismatches-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-mismatches"
@@ -87,7 +86,7 @@
                 </div>
                 <div class="bulk-action-buttons">
                     <button type="button" class="btn btn-primary btn-small" data-action="bulk-apply-lanes">Apply</button>
-                    <button type="button" class="btn btn-secondary btn-small" data-action="bulk-all-lanes" title="Put the ticked samples in every lane">All lanes</button>
+                    <button type="button" class="btn btn-secondary btn-small" data-action="bulk-all-lanes" title="Tick every lane, then Apply">All lanes</button>
                     <button type="button" class="btn btn-secondary btn-small" data-action="bulk-toggle-lanes" title="Invert lane selections">Toggle</button>
                 </div>
             </div>

@@ -203,18 +203,18 @@ class TestSetLanesNeedsItsField:
         assert response.text == "Invalid lanes JSON"
         assert _stored(ctx).get_sample("s1").lanes == [1]
 
-    def test_a_sent_empty_lane_list_is_still_stored_as_all_lanes(self, logged_in_client, fresh_app):
+    def test_a_sent_empty_lane_list_is_refused(self, logged_in_client, fresh_app):
+        # No lane is never saved from the panel (test_lanes_never_empty.py).
         _app, ctx, _db = fresh_app
         _run(ctx, lanes=(1,))
 
-        # As the All lanes button sends it (test_lanes_all_confirm.py).
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/set-lanes",
-            data={"sample_ids": json.dumps(["s1"]), "lanes": json.dumps([]), "all_lanes": "yes"},
+            data={"sample_ids": json.dumps(["s1"]), "lanes": json.dumps([])},
             headers=ORIGIN)
 
-        assert response.status_code == 200
-        assert _stored(ctx).get_sample("s1").lanes == []
+        assert response.status_code == 400
+        assert _stored(ctx).get_sample("s1").lanes == [1]
 
 
 class TestSetTestIdNeedsItsField:
