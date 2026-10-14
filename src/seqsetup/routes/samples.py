@@ -1432,7 +1432,7 @@ async def set_lanes_bulk(
     A submission with no ``lanes`` is refused: the default "[]" means every
     lane, so the selected samples would be put in all of them (CLAUDE.md,
     partial updates). The panel's hidden input always sends a value, "[]"
-    among them when Clear is used.
+    among them when All lanes is used.
     """
     run_id = run.id
 
@@ -1457,6 +1457,11 @@ async def set_lanes_bulk(
             f"Invalid lane selection. Use lane numbers between 1 and {max_lanes}.",
             status_code=400,
         )
+    # No lane means every lane: only the All lanes button sends that, after
+    # asking. Apply with no lane ticked once put the samples in every lane
+    # without a word (index mix-up audit #5, 2026-10-14).
+    if not normalized_lanes and form.get("all_lanes") != "yes":
+        return Response("Tick at least one lane. Nothing was saved.", status_code=400)
 
     selected_ids = {str(sample_id) for sample_id in sample_ids}
 

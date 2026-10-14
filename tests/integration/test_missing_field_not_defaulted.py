@@ -207,9 +207,10 @@ class TestSetLanesNeedsItsField:
         _app, ctx, _db = fresh_app
         _run(ctx, lanes=(1,))
 
+        # As the All lanes button sends it (test_lanes_all_confirm.py).
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/set-lanes",
-            data={"sample_ids": json.dumps(["s1"]), "lanes": json.dumps([])},
+            data={"sample_ids": json.dumps(["s1"]), "lanes": json.dumps([]), "all_lanes": "yes"},
             headers=ORIGIN)
 
         assert response.status_code == 200

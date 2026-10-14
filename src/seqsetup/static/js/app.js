@@ -522,24 +522,29 @@ function applyBulkLanesForm() {
     const laneCheckboxes = document.querySelectorAll('.bulk-lane-checkbox:checked');
     const lanes = Array.from(laneCheckboxes).map(cb => parseInt(cb.value));
 
-    // Populate hidden form fields
+    // Populate hidden form fields. No lane ticked sends an empty list, which
+    // the server refuses: only All lanes may put samples in every lane.
     document.getElementById('bulk-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-lanes').value = JSON.stringify(lanes);
+    document.getElementById('bulk-all-lanes').value = '';
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-lanes-form', 'submit');
 }
 
-function clearBulkLanesForm() {
+function allLanesBulkForm() {
     const selectedSampleIds = getSelectedSampleIds();
     if (selectedSampleIds.length === 0) {
         alert('Please select at least one sample');
         return;
     }
+    const n = selectedSampleIds.length;
+    if (!window.confirm(`Put ${n} sample${n === 1 ? '' : 's'} in every lane?`)) return;
 
-    // Populate hidden form fields with empty lanes
+    // Populate hidden form fields with empty lanes: every lane
     document.getElementById('bulk-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-lanes').value = JSON.stringify([]);
+    document.getElementById('bulk-all-lanes').value = 'yes';
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-lanes-form', 'submit');
@@ -698,7 +703,7 @@ function clearWorklistPreview() {
 
 const _CLICK_ACTIONS = {
     'bulk-apply-lanes': applyBulkLanesForm,
-    'bulk-clear-lanes': clearBulkLanesForm,
+    'bulk-all-lanes': allLanesBulkForm,
     'bulk-toggle-lanes': toggleBulkLanes,
     'bulk-apply-mismatches': applyBulkMismatchesForm,
     'bulk-clear-mismatches': clearBulkMismatchesForm,

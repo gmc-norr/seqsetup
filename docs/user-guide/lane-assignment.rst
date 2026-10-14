@@ -8,9 +8,9 @@ before previewing, in the **Lanes for these samples** box), a single
 sample added by hand is assigned lane 1, and samples brought in from a LIMS
 worklist go to the lanes ticked under **Lanes for these samples** next to
 the worksheet picker (lane 1 to start). The only way to put a sample into
-*every* lane of the flowcell is to tick it and select **Clear** in the
-bulk-action panel (see :ref:`Clearing a lane assignment
-<clearing-a-lane-assignment>` below).
+*every* lane of the flowcell is to tick it, select **All lanes** in the
+bulk-action panel and answer yes (see :ref:`Putting samples in every lane
+<every-lane>` below).
 
 The Lanes column
 ------------------
@@ -43,7 +43,7 @@ Setting lanes for one or more samples
    :alt: The bulk-action panel's Lanes row, with lanes 2 and 3 ticked and two samples selected, outlined.
 
    The Lanes row of the bulk-action panel, outlined -- the ticked lane
-   numbers, and the Apply / Clear / Toggle buttons that act on every
+   numbers, and the Apply / All lanes / Toggle buttons that act on every
    ticked sample.
 
 Applying replaces the lanes on every ticked sample with exactly the lanes
@@ -56,17 +56,20 @@ table updates immediately:
    A sample's Lanes cell after applying lanes 2 and 3, outlined.
 
 **Toggle** inverts which lane checkboxes are ticked, which is a quick way
-to pick "every lane except this one." Selecting **Apply** or **Clear**
+to pick "every lane except this one." Selecting **Apply** or **All lanes**
 (below) without ticking any sample does nothing but remind you to tick one
-first.
+first. **Apply** with no lane number ticked is refused, and nothing is
+saved (*"Tick at least one lane. Nothing was saved."*): it once put the
+samples in every lane without a word.
 
-.. _clearing-a-lane-assignment:
+.. _every-lane:
 
-Clearing a lane assignment
+Putting samples in every lane
 ------------------------------
 
-Tick the sample(s) and select **Clear** instead of **Apply**. This applies
-an empty lane list, which returns those samples to the default "all lanes"
+Tick the sample(s) and select **All lanes** instead of **Apply**. SeqSetup
+asks first (*"Put 2 samples in every lane?"*); answer no and nothing
+changes. On yes, those samples go back to the default "all lanes"
 behavior -- the same as a sample that has never had lanes set.
 
 .. warning::
