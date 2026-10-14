@@ -244,9 +244,11 @@ class TestKitModes:
 class TestSignature:
 
     def test_signature_is_what_will_be_saved(self):
-        plan = build_fill_plan(_run(2), _dual_kit())
+        kit = _dual_kit()
+        plan = build_fill_plan(_run(2), kit)
         assert json.loads(plan.signature()) == [
             "Kit:1",
+            kit.fingerprint(),
             [["s1", "p0", I7[0], I5[0]], ["s2", "p1", I7[1], I5[1]]],
         ]
 
@@ -274,8 +276,8 @@ class TestSignature:
         plan_b = build_fill_plan(run, kit("GTGTGTGT"), start_id="p0")
         assert [r.entry.id for r in plan_a.rows] == ["p0", "p0"]
         assert [r.entry.id for r in plan_b.rows] == ["p0", "p0"]
-        assert json.loads(plan_a.signature())[1][1] == ["s2", "p0", I7[1], I5[1]]
-        assert json.loads(plan_b.signature())[1][1] == ["s2", "p0", "GTGTGTGT", I5[1]]
+        assert json.loads(plan_a.signature())[2][1] == ["s2", "p0", I7[1], I5[1]]
+        assert json.loads(plan_b.signature())[2][1] == ["s2", "p0", "GTGTGTGT", I5[1]]
         assert plan_a.signature() != plan_b.signature()
 
     def test_signature_changes_when_the_run_changes(self):

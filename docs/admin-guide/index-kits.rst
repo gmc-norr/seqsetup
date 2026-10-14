@@ -71,7 +71,11 @@ Before a kit is saved, SeqSetup checks, in order:
    :doc:`profiles`), which is skipped, with the reason in the log, rather
    than stored.
 5. **Name + version clash** -- a kit with the same name and version already
-   present is rejected rather than silently overwritten.
+   present is rejected rather than silently overwritten. A kit deleted
+   and then uploaded again under its name and version is stored, even
+   with other indexes: give a changed kit a new version instead. A run
+   page loaded before the change cannot assign from the new kit (see
+   :doc:`/user-guide/index-assignment`).
 
 .. warning::
    A duplicate pair *sequence* under a different name -- two indexes that

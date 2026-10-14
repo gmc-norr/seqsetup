@@ -123,7 +123,7 @@ def _assign(client, ctx, route, slot, kit):
     (drop on one row), "selected" (drop on ticked rows) or "drop" (a
     multi-index drop)."""
     if route == "drop":
-        entries = [{"id": _entry_id(kit, slot, k), "type": slot, "kit_id": kit.kit_id} for k in range(2)]
+        entries = [{"id": _entry_id(kit, slot, k), "type": slot, "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()} for k in range(2)]
         resp = client.post(f"/runs/{RUN}/samples/assign-indexes-bulk", data={
             "start_sample_id": "s1", "indexes_json": json.dumps(entries),
             "target_sample_ids": json.dumps(["s1", "s2"]),
@@ -132,7 +132,7 @@ def _assign(client, ctx, route, slot, kit):
         assert resp.status_code == 200, resp.text[:300]
         return
     for k, sid in enumerate(["s1", "s2"]):
-        data = {"kit_id": kit.kit_id}
+        data = {"kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()}
         if slot == "pair":
             data["index_pair_id"] = _entry_id(kit, slot, k)
         else:
@@ -272,7 +272,7 @@ def _drop(client, kit, start, count, targets):
     data = {
         "start_sample_id": start,
         "indexes_json": json.dumps([
-            {"id": f"{kit.name}_P{k}", "type": "pair", "kit_id": kit.kit_id} for k in range(count)
+            {"id": f"{kit.name}_P{k}", "type": "pair", "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()} for k in range(count)
         ]),
     }
     if targets is not None:

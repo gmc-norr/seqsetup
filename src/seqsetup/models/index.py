@@ -1,5 +1,7 @@
 """Index-related data models."""
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -14,6 +16,9 @@ _VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 # Single-segment override pattern alphabet (Y/I/U/N/digits/*) — e.g. "Y*", "N2Y*".
 # ``\Z`` (not ``$``) so a trailing newline can't sneak past, per project convention.
 _VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*\Z')
+# What a kit's fingerprint leaves out: nothing here can reach a sample or the
+# sheet (``_id`` is the name and version, which are in it already).
+_NOT_IN_FINGERPRINT = ("_id", "description", "comments", "created_by", "source")
 
 
 class IndexType(Enum):
@@ -241,6 +246,16 @@ class IndexKit:
     def kit_id(self) -> str:
         """Composite identity: name:version."""
         return f"{self.name}:{self.version}"
+
+    def fingerprint(self) -> str:
+        """sha256, in hex, of everything in the kit that can reach a sample or
+        the sheet. A kit could change under the same name and version, and a
+        drop from a page loaded before took the new sequences (index mix-up
+        audit #6, 2026-10-14)."""
+        content = {key: value for key, value in self.to_dict().items()
+                   if key not in _NOT_IN_FINGERPRINT}
+        text = json.dumps(content, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(text.encode()).hexdigest()
 
     def is_unique_dual(self) -> bool:
         """Check if kit uses unique dual index mode (pre-paired)."""

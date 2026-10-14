@@ -24,6 +24,7 @@
      data-index-type="{{ index_type | e }}"
      data-kit-name="{{ kit_name | e }}"
      data-kit-id="{{ kit.kit_id | e }}"
+     data-kit-fingerprint="{{ kit_fingerprint | e }}"
      data-well="{{ index.well_position or '' | e }}"
      aria-label="{{ index.name | e }} {{ index_type | e }} sequence {{ index.sequence | e }}"
      title="{{ index.name | e }}&#10;Well: {{ index.well_position or 'N/A' | e }}&#10;Sequence: {{ index.sequence | e }}">

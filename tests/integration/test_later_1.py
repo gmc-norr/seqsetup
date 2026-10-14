@@ -33,14 +33,14 @@ def _swap(client, ctx, route, slot, kit, sids=("s1", "s2")):
     """Give ``sids`` the kit's first indexes in ``slot`` through ``route``,
     in one request; the response."""
     if route == "drop":
-        entries = [{"id": _entry_id(kit, slot, k), "type": slot, "kit_id": kit.kit_id}
+        entries = [{"id": _entry_id(kit, slot, k), "type": slot, "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()}
                    for k in range(len(sids))]
         return client.post(f"/runs/{RUN}/samples/assign-indexes-bulk", data={
             "start_sample_id": sids[0], "indexes_json": json.dumps(entries),
             "target_sample_ids": json.dumps(list(sids)),
             "target_indexes": json.dumps(_shown(ctx, sids)),
         }, headers=ORIGIN)
-    data = {"kit_id": kit.kit_id, "index_id": _entry_id(kit, slot, 0), "index_type": slot}
+    data = {"kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint(), "index_id": _entry_id(kit, slot, 0), "index_type": slot}
     if route == "one":
         assert len(sids) == 1
         return client.post(f"/runs/{RUN}/samples/{sids[0]}/assign-index", data=data,
@@ -112,7 +112,7 @@ class TestAKitSwapWithOtherReadPatternsIsRefused:
         plain = _combo_kit(ctx, "PlainCombo", COMBO_B_I7, COMBO_B_I5)
         _run(ctx, ["PAT1", "PAT2"])
         resp = logged_in_client.post(f"/runs/{RUN}/samples/s2/assign-index", data={
-            "kit_id": umi.kit_id, "index_id": _entry_id(umi, "i7", 1), "index_type": "i7",
+            "kit_id": umi.kit_id, "kit_fingerprint": umi.fingerprint(), "index_id": _entry_id(umi, "i7", 1), "index_type": "i7",
         }, headers=ORIGIN)
         assert resp.status_code == 200, resp.text[:300]
         before = _indexes(ctx)
