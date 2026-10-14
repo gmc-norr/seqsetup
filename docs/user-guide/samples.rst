@@ -3,11 +3,10 @@ Samples
 
 A sample is one DNA library to sequence. You get samples into a Draft run
 three ways: paste a single row, paste a whole block from a spreadsheet, or
-import a worklist from a configured LIMS. Pasting either way always goes
-through a preview screen -- nothing is saved until you confirm what was
-read. Importing a worklist is different: previewing it first is optional,
-and there is no separate confirm step at all (see "Importing from a
-worklist (LIMS)" below).
+import a worklist from a configured LIMS. Each way goes through a preview
+screen -- nothing is saved until you confirm what was read. A worklist
+import adds only what its preview showed (see "Importing from a worklist
+(LIMS)" below).
 
 Adding samples
 ---------------
@@ -143,20 +142,28 @@ above the list, or under the error when nothing is left to list; at most
 ten are shown, then how many more. Ask your administrator to have the LIMS
 send each worksheet's ID once, as text, under one name.
 
-Choosing one and selecting **Preview** shows what the import would do, if
-you want to check it first -- this step is optional. It shows the samples
-the import would add, each with its Sample ID, test, version, i7 and i5
-(``-`` for none), and the sample IDs already in the run, which the import
-skips (the first ten, then how many more). If the import would be refused,
-the preview shows that refusal instead (*"Importing this worksheet would be
-refused: ..."*). The import fetches the worksheet again, so it adds what the
-LIMS sends at that moment, with every check.
+Choose one and select **Preview** to see what the import would do. It
+shows the samples the import would add, each with its Sample ID, test,
+version, i7 and i5 (``-`` for none), and the sample IDs already in the run,
+which the import skips (the first ten, then how many more). If the import
+would be refused, the preview shows that refusal instead (*"Importing this
+worksheet would be refused: ..."*). Picking another worksheet clears the
+preview.
 
-Selecting **Import Samples** adds the worksheet's samples to the run right
-away, without a separate confirm step; the button is off until the import
-answers. Its result shows in the banner at the top of the page (*"Added 2
-samples from worklist."*). If the import is refused, its message shows in
-the banner instead, and the run's samples stay as they were. An imported
+Under the samples, the preview's **Import 2 samples** button (it counts
+them) adds them to the run; it is off until the import answers. There is
+no import without a preview: when every sample of the worksheet is already
+in the run, or the import would be refused, the preview has no button. The
+import asks the LIMS again and works out again what it would add and
+skip, down to what the preview's table does not show, such as index names
+and Override Cycles. If any of that changed since the preview -- in the
+LIMS, or through a change to the run's samples or cycles -- nothing is
+added and the banner says *"The worksheet or the run changed since the
+preview. Nothing was added. Preview again."* Otherwise the result shows in
+the banner at the top of
+the page (*"Added 2 samples from worklist."*). If the import is refused,
+its message shows in the banner instead, and the run's samples stay as
+they were. An imported
 row carries its worksheet ID into the **Worksheet** column -- the picked
 worksheet's when the row has none -- and any index sequence it supplies is
 assigned immediately, with Override Cycles calculated automatically.

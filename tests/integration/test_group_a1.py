@@ -13,7 +13,7 @@ from seqsetup.services import sample_api as sample_api_module
 from seqsetup.services.index_fill import build_fill_plan
 
 from .conftest import disable_repos, mark_ready
-from .conftest import hold_edit_lock
+from .conftest import hold_edit_lock, import_from_preview
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN = "a1-run"
@@ -424,11 +424,8 @@ def _lims(ctx, monkeypatch, rows):
 
 
 def _import(client):
-    # In the form body, as the page sends it (spec 2026-10-10 later list
-    # slice 2, §2).
-    return client.post(
-        f"/runs/{RUN}/samples/fetch-worklist", data={"worklist_id": "WS1"}, headers=ORIGIN,
-    )
+    # From the preview, as the page does (outside review of 7f858e0, finding 2).
+    return import_from_preview(client, RUN, "WS1")
 
 
 class TestWorklistWithARepeatedSampleId:

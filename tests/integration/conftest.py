@@ -295,3 +295,17 @@ def mark_ready(client, run_id: str, headers: dict):
         "the color-balance answer was not accepted; the question came back"
     )
     return answered
+
+
+def import_from_preview(client, run_id: str, worklist_id: str):
+    """Import a worksheet the way the page does: Preview, then the preview's
+    own Import button, which sends the plan the preview showed (outside
+    review of 7f858e0, finding 2). A preview that offers no import gives no
+    plan, so the import answers with its own refusal. Returns the import's
+    response."""
+    shown = client.get(f"/runs/{run_id}/samples/preview-worklist",
+                       params={"worklist_id": worklist_id}).text
+    plan = re.search(r'name="plan" value="([^"]*)"', shown)
+    return client.post(f"/runs/{run_id}/samples/fetch-worklist",
+                       data={"worklist_id": worklist_id, "plan": plan.group(1) if plan else ""},
+                       headers={"Origin": "http://testserver"})

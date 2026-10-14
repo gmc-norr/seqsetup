@@ -11,7 +11,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sample_api_config import SampleApiConfig
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services import sample_api as sample_api_module
-from .conftest import hold_edit_lock
+from .conftest import hold_edit_lock, import_from_preview
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN = "l2-run"
@@ -125,6 +125,11 @@ def _worksheet(monkeypatch, rows):
 
 
 def _import(client, **form):
+    """Import as the page does: from the preview, with the plan it shows
+    (outside review of 7f858e0, finding 2). With no worksheet picked there
+    is no preview."""
+    if form.get("worklist_id"):
+        return import_from_preview(client, RUN, form["worklist_id"])
     return client.post(f"/runs/{RUN}/samples/fetch-worklist", data=form, headers=ORIGIN)
 
 
@@ -149,15 +154,17 @@ class TestTheImportSwapsTheSampleSection:
     """The import answers with the whole #sample-section; swapped in place of
     #sample-table, the section landed inside itself."""
 
-    def test_import_samples_targets_the_section(self, logged_in_client, fresh_app, monkeypatch):
+    def test_the_previews_import_targets_the_section(self, logged_in_client, fresh_app, monkeypatch):
+        """The import is the preview's button now (outside review of 7f858e0,
+        finding 2)."""
         _app, ctx, _db = fresh_app
         _run(ctx)
         _lims_on(ctx)
-        _worksheet_list(monkeypatch, [{"id": "W1"}])
-        resp = logged_in_client.get(f"/runs/{RUN}/samples/worklists")
-        button = re.search(r'<button[^>]*hx-post="[^"]*fetch-worklist[^"]*"[^>]*>', resp.text).group(0)
-        assert 'hx-target="#sample-section"' in button
-        assert 'hx-swap="outerHTML"' in button
+        _worksheet(monkeypatch, [{"sample_id": "P1"}])
+        resp = _preview(logged_in_client)
+        form = re.search(r'<form[^>]*hx-post="[^"]*fetch-worklist[^"]*"[^>]*>', resp.text).group(0)
+        assert 'hx-target="#sample-section"' in form
+        assert 'hx-swap="outerHTML"' in form
 
 
 class TestTheImportReadsTheWorksheetFromTheFormBody:
@@ -172,7 +179,8 @@ class TestTheImportReadsTheWorksheetFromTheFormBody:
         resp = _import(logged_in_client, worklist_id="WS1")
         assert resp.status_code == 200, resp.text[:300]
         assert "Added 1 sample from worklist." in resp.text
-        assert asked == ["https://lims.example.org/api/worksheets/WS1"]
+        # Asked by the preview, then again by the import, which compares.
+        assert asked == ["https://lims.example.org/api/worksheets/WS1"] * 2
         assert [s.sample_id for s in ctx.run_repo.get_by_id(RUN).samples] == ["P1"]
 
     def test_the_query_string_is_not_read(self, logged_in_client, fresh_app, monkeypatch):
@@ -256,17 +264,15 @@ class TestEachRefusalOfTheImportGoesToTheBanner:
                 'samples (run already has 1).</p>') in self._refused(
             logged_in_client, ctx, worklist_id="WS1")
 
-    def test_every_sample_already_in_the_run_answers_as_today(
-            self, logged_in_client, fresh_app, monkeypatch):
+    def test_every_sample_already_in_the_run(self, logged_in_client, fresh_app, monkeypatch):
+        """The preview offers no import then, so there is no plan to send
+        (outside review of 7f858e0, finding 2)."""
         _app, ctx, _db = fresh_app
         _run(ctx, ["OLD1"])
         _lims_on(ctx)
         _worksheet(monkeypatch, [{"sample_id": "OLD1"}])
-        resp = _import(logged_in_client, worklist_id="WS1")
-        assert resp.status_code == 200
-        assert _headers(resp) == {name: None for name in BANNER}
-        assert 'id="sample-section"' in resp.text
-        assert '<p class="warning-message">No new samples added from worklist.</p>' in resp.text
+        assert ('<p class="error-message">Preview the worksheet first, then import it from the '
+                'preview.</p>') in self._refused(logged_in_client, ctx, worklist_id="WS1")
 
 
 # --- spec §4: the preview is the import's plan -------------------------------
@@ -541,10 +547,10 @@ class TestTheLimsRoutesAreSafeToUse:
         _app, ctx, _db = fresh_app
         _run(ctx)
         _lims_on(ctx)
-        _worksheet_list(monkeypatch, [{"id": "W1"}])
-        resp = logged_in_client.get(f"/runs/{RUN}/samples/worklists")
-        [button] = re.findall(r"<button[^>]*samples/fetch-worklist[^>]*>", resp.text)
-        assert 'hx-disabled-elt="this"' in button
+        _worksheet(monkeypatch, [{"sample_id": "P1"}])
+        resp = _preview(logged_in_client)
+        [form] = re.findall(r"<form[^>]*samples/fetch-worklist[^>]*>", resp.text)
+        assert 'hx-disabled-elt="find button"' in form
 
     def test_the_lims_routes_run_in_the_thread_pool(self):
         """An async def import made its LIMS call, up to 30 s, on the server's

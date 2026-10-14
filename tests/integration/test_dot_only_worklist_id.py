@@ -18,7 +18,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sample_api_config import SampleApiConfig
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services import sample_api as sample_api_module
-from .conftest import hold_edit_lock
+from .conftest import hold_edit_lock, import_from_preview
 
 ORIGIN = {"Origin": "http://testserver"}
 RUN = "dots-run"
@@ -67,8 +67,8 @@ def _preview(client, worklist_id):
 
 
 def _import(client, worklist_id):
-    return client.post(f"/runs/{RUN}/samples/fetch-worklist",
-                       data={"worklist_id": worklist_id}, headers=ORIGIN)
+    # From the preview, as the page does (outside review of 7f858e0, finding 2).
+    return import_from_preview(client, RUN, worklist_id)
 
 
 class TestThePreviewRefusesIt:
@@ -130,7 +130,8 @@ class TestTheImportRefusesIt:
 
         imported = _import(client, "1.2")
 
-        assert asked == ["https://lims.example.org/api/worksheets/1.2"]
+        # Asked by the preview, then again by the import, which compares.
+        assert asked == ["https://lims.example.org/api/worksheets/1.2"] * 2
         assert imported.status_code == 200
         assert [s.sample_id for s in ctx.run_repo.get_by_id(RUN).samples] == ["P1"]
 
