@@ -89,7 +89,10 @@ A sequencing sample with assigned indexes.
 - ``test_version`` -- Which version of the test: ``1`` (the newest 1.x.x),
   ``1.2`` (the newest 1.2.x) or ``1.2.3``; empty, or 1 to 3 whole numbers of
   at most 9 digits, checked on every assignment and never cut
-- ``lanes`` -- Lane assignments (empty list = all lanes)
+- ``lanes`` -- Lane assignments. An empty list -- no page sets one any more,
+  but an older sample, or a copy of one, can have it -- is a Check error
+  (*Lanes not picked*) with a ``Lane`` column in the profile, and means
+  every lane without one
 - ``index_pair`` -- Assigned IndexPair (for unique dual mode)
 - ``index1``, ``index2`` -- Individual indexes (for combinatorial/single mode)
 - ``index_kit_name`` -- Name of the kit the indexes came from

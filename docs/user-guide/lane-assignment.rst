@@ -7,17 +7,19 @@ never left without a lane: pasted samples start in lane 1 (change this
 before previewing, in the **Lanes for these samples** box), a single
 sample added by hand is assigned lane 1, and samples brought in from a LIMS
 worklist go to the lanes ticked under **Lanes for these samples** next to
-the worksheet picker (lane 1 to start). The only way to put a sample into
-*every* lane of the flowcell is to tick it and select **Clear** in the
-bulk-action panel (see :ref:`Clearing a lane assignment
-<clearing-a-lane-assignment>` below).
+the worksheet picker (lane 1 to start). To put a sample into *every* lane
+of the flowcell, tick it, select **All lanes** in the bulk-action panel to
+tick every lane number, and select **Apply** (see :ref:`Putting samples in
+every lane <every-lane>` below).
 
 The Lanes column
 ------------------
 
 The sample table's **Lanes** column shows each sample's current assignment:
 a sorted, comma-separated list of lane numbers (for example ``2,3``), or
-``All`` when no specific lane is set. A sample holds each lane once: a lane
+``All`` for a sample with no lane -- only a sample saved before SeqSetup
+refused that, or copied from one, can have none (see :ref:`below
+<every-lane>`). A sample holds each lane once: a lane
 given twice is stored once, because a sample in one lane twice would get two
 identical rows in that lane in the Sample Sheet.
 
@@ -43,7 +45,7 @@ Setting lanes for one or more samples
    :alt: The bulk-action panel's Lanes row, with lanes 2 and 3 ticked and two samples selected, outlined.
 
    The Lanes row of the bulk-action panel, outlined -- the ticked lane
-   numbers, and the Apply / Clear / Toggle buttons that act on every
+   numbers, and the Apply / All lanes / Toggle buttons that act on every
    ticked sample.
 
 Applying replaces the lanes on every ticked sample with exactly the lanes
@@ -55,19 +57,30 @@ table updates immediately:
 
    A sample's Lanes cell after applying lanes 2 and 3, outlined.
 
-**Toggle** inverts which lane checkboxes are ticked, which is a quick way
-to pick "every lane except this one." Selecting **Apply** or **Clear**
-(below) without ticking any sample does nothing but remind you to tick one
-first.
+**All lanes** ticks every lane number (below), and **Toggle** inverts which
+lane checkboxes are ticked, which is a quick way to pick "every lane except
+this one." Neither saves anything until you select **Apply**. Selecting
+**Apply** without ticking any sample does nothing but remind you to tick
+one first. **Apply** with no lane number ticked is refused, and nothing is
+saved (*"Tick at least one lane. Nothing was saved."*): it once saved the
+samples with no lane without a word.
 
-.. _clearing-a-lane-assignment:
+.. _every-lane:
 
-Clearing a lane assignment
+Putting samples in every lane
 ------------------------------
 
-Tick the sample(s) and select **Clear** instead of **Apply**. This applies
-an empty lane list, which returns those samples to the default "all lanes"
-behavior -- the same as a sample that has never had lanes set.
+Tick the sample(s), select **All lanes** to tick every lane number, and
+select **Apply**. Those samples then list every lane (``1,2,3,4,5,6,7,8``
+on a ``10B`` flowcell). The paste box's **All lanes** does the same for new
+samples.
+
+No page gives a sample no lane; only an older sample, or a copy of one, can
+have none. With a ``Lane`` column in the
+profile, as in the shipped one, a sample with no lane would get an empty
+``Lane`` cell: the **Check** panel marks it *Lanes not picked* (*"... so
+their Lane cell would be empty: <IDs>. Pick their lanes."*), and **Mark
+Ready** is refused until its lanes are picked.
 
 .. warning::
    Two samples that share a lane must not share an index -- with nothing
@@ -91,8 +104,8 @@ by the application profile a sample's Test ID and test version resolve to
 (see
 :doc:`export`), not by whether any sample in the run has an explicit
 lane. In the shipped BCLConvert profile, ``Lane`` is always a column: a
-sample still left on "All" gets a blank cell there rather than a lane
-number, and a sample assigned to more than one lane produces one row per
-lane in the exported data section -- a sample in lanes 2 and 3 becomes two
-rows. A different application profile is free to define its own data
+sample with no lane stops **Mark Ready** (see :ref:`above <every-lane>`),
+so it never reaches the sheet, and a sample assigned to more than one lane
+produces one row per lane in the exported data section -- a sample in
+lanes 2 and 3 becomes two rows. A different application profile is free to define its own data
 columns and can leave ``Lane`` out entirely.

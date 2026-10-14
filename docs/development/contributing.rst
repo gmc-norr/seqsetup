@@ -315,9 +315,11 @@ set-test-id routes stored an empty value over a real one. The pages
 themselves always send these fields (a select sends its value, and the bulk
 panel's Clear and Auto buttons send an empty one), so an absent field is a
 request no page makes. A field that IS sent, empty or not, keeps its
-meaning: an empty ``lanes`` list still means every lane, an empty
-``test_id`` still clears the test, and an empty ``override_cycles`` still
-recalculates.
+meaning: an empty ``test_id`` still clears the test, and an empty
+``override_cycles`` still recalculates. An empty ``lanes`` list is refused
+for its own reason: a sample with no lane is a Check error with a ``Lane``
+column, so the panel never saves one (*"Tick at least one lane. Nothing was
+saved."*).
 
 A handler that saves a whole panel at once is all or nothing: it names
 every field it is missing and saves none of them, so a half-finished

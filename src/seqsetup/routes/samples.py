@@ -321,8 +321,8 @@ def _kit_swap_refusal(planned, run_cycles) -> Optional[Response]:
 def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
     """Validate and normalize lane selection payload.
 
-    Returns sorted unique lanes, or None if the payload is invalid.
-    Empty list means "all lanes".
+    Returns sorted unique lanes, or None if the payload is invalid. An
+    empty list is returned as it is; every caller refuses it.
     """
     if not isinstance(raw_lanes, list):
         return None
@@ -1429,10 +1429,10 @@ async def set_lanes_bulk(
 ) -> Response:
     """POST /runs/{run_id}/samples/set-lanes — set lanes for selected samples.
 
-    A submission with no ``lanes`` is refused: the default "[]" means every
-    lane, so the selected samples would be put in all of them (CLAUDE.md,
-    partial updates). The panel's hidden input always sends a value, "[]"
-    among them when Clear is used.
+    A submission with no ``lanes`` is refused: reading it as "[]" would
+    write a value nobody chose (CLAUDE.md, partial updates). The panel's
+    hidden input always sends a value; "[]", no lane ticked, is refused
+    below.
     """
     run_id = run.id
 
@@ -1457,6 +1457,12 @@ async def set_lanes_bulk(
             f"Invalid lane selection. Use lane numbers between 1 and {max_lanes}.",
             status_code=400,
         )
+    # No lane is never saved: with a Lane column it is a Check error, without
+    # one every lane. Apply with no lane ticked, and the old Clear, once saved
+    # it without a word; All lanes ticks every box (index mix-up audit #5,
+    # 2026-10-14).
+    if not normalized_lanes:
+        return Response("Tick at least one lane. Nothing was saved.", status_code=400)
 
     selected_ids = {str(sample_id) for sample_id in sample_ids}
 
