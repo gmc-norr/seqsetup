@@ -19,7 +19,7 @@ from starlette.responses import HTMLResponse, Response
 from ...context import AppContext
 from ...forms.validators import clamp, strip_and_truncate
 from ...services.audit_log import audit
-from ...services.github_sync import GitHubSyncError, GitHubSyncService
+from ...services.github_sync import GitHubSyncError, GitHubSyncService, paused_page_message
 from ...templating import render
 from ..dependencies import get_ctx, require_admin_dep
 from ..utils import get_username
@@ -81,11 +81,16 @@ def _page_ctx(ctx: AppContext, message: str = "", message_ok: bool = True) -> di
         and (not _same_repo(config.github_repo_url, config.last_sync_repo_url)
              or config.last_sync_branch != config.github_branch)
     )
+    paused = ctx.profile_sync_config_repo.writing_note()
     return {
         "config": config,
         "app_profiles": app_profiles,
         "test_profiles": test_profiles,
         "last_sync_other_repo": last_sync_other_repo,
+        # A sync that stopped part-way pauses Mark Ready (review P2-3).
+        "paused_message": (paused_page_message(paused["since"], paused["collections"],
+                                               config.sync_instruments_enabled)
+                           if paused else ""),
         "message": message,
         "message_ok": message_ok,
     }

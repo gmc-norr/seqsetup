@@ -3,8 +3,10 @@
 import json
 import logging
 import ssl
+import threading
 import urllib.request
 import urllib.error
+from datetime import datetime
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
@@ -25,9 +27,52 @@ from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
 from .instrument_validator import validate_instrument_yaml, ValidationResult
 from .validation import clear_validation_cache
+from ..utils.clock import local_time, utcnow
 
 
 logger = logging.getLogger(__name__)
+
+# The scheduler's sync and an admin's Sync now run in one process and could
+# overlap: one sync could clear the "writing" note while the other is still
+# writing. So syncs run one at a time.
+_SYNC_LOCK = threading.Lock()
+
+_PAUSED_IN_STATUS = ("The settings were only partly written, so Mark Ready is paused "
+                     "until a sync writes them again.")
+# Starts the message of a sync that finished but could not lift the pause;
+# the scheduler then waits its whole interval (services/scheduler.py).
+STAYS_PAUSED = "Mark Ready stays paused"
+
+# What the "writing" note names. Synced index kits are not noted: a kit never
+# reaches a sheet, because assigning one copies its sequences onto the sample.
+_APP_PROFILES = "application profiles"
+_TEST_PROFILES = "test profiles"
+_INSTRUMENTS = ProfileSyncConfigRepository.INSTRUMENT_SETTINGS
+_NOTED_IN_ORDER = (_APP_PROFILES, _TEST_PROFILES, _INSTRUMENTS)
+
+
+def _names(collections: list[str]) -> str:
+    """'a', 'a and b', 'a, b and c', in the order the sync writes them."""
+    names = [name for name in _NOTED_IN_ORDER if name in collections]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def unfinished_sync_message(since: datetime, collections: list[str]) -> str:
+    """Why Mark Ready refuses while a sync's writes have not finished (outside
+    review of 7f858e0, finding 4; the user's choice, 2026-10-14)."""
+    return (f"A configuration sync started at {local_time(since)} did not finish writing the "
+            f"{_names(collections)}, so they may be incomplete. Mark Ready is paused until a "
+            "sync writes them again. If a sync is running now, try again in a minute; "
+            "otherwise an admin can press Sync now on the Config Sync page.")
+
+
+def paused_page_message(since: datetime, collections: list[str],
+                        instruments_synced: bool) -> str:
+    """The Config Sync page's line while Mark Ready is paused."""
+    then = ("Switch on Also sync instruments, then press Sync now"
+            if _INSTRUMENTS in collections and not instruments_synced else "Press Sync now")
+    return (f"Mark Ready is paused: a sync started at {local_time(since)} did not finish "
+            f"writing the {_names(collections)}. {then} to write them again.")
 
 
 class InstrumentFileRefused(ValueError):
@@ -180,7 +225,17 @@ class GitHubSyncService:
         Returns:
             Tuple of (success, message, count)
         """
+        with _SYNC_LOCK:
+            return self._sync()
+
+    def _sync(self) -> Tuple[bool, str, int]:
         config = self.config_repo.get()
+        # Each collection this sync replaces goes on the "writing" note before
+        # it is deleted, and comes off only when the whole sync has finished;
+        # while the note names one, Mark Ready is paused (outside review of
+        # 7f858e0, finding 4). True from the first note on.
+        writing = False
+        replaced: list[str] = []
 
         if not config.github_repo_url:
             return False, "GitHub repository URL not configured", 0
@@ -292,13 +347,19 @@ class GitHubSyncService:
                     "synced index kits"
                 )
 
-            # Save to database (replace all)
+            # Save to database (replace all). The deletes and writes below are
+            # not one step: each collection is noted before it is deleted.
+            self.config_repo.mark_writing(utcnow(), _APP_PROFILES)
+            writing = True
             self.app_profile_repo.delete_all()
             self.app_profile_repo.bulk_save(app_profiles)
+            replaced.append(_APP_PROFILES)
 
             if not refused_tests:
+                self.config_repo.mark_writing(utcnow(), _TEST_PROFILES)
                 self.test_profile_repo.delete_all()
                 self.test_profile_repo.bulk_save(test_profiles)
+                replaced.append(_TEST_PROFILES)
 
             if store_instruments:
                 # Preserve the operator-set ``enabled`` flag across the
@@ -310,17 +371,27 @@ class GitHubSyncService:
                 # instrument) rather than ``id`` (regenerated). Only the two
                 # fields are read, so a stored record that cannot be loaded
                 # does not stop the sync that replaces it.
+                switches = self.instrument_definition_repo.enabled_switches()
                 disabled_keys = {
                     samplesheet_name
-                    for samplesheet_name, enabled
-                    in self.instrument_definition_repo.enabled_switches()
+                    for samplesheet_name, enabled in switches
                     if not enabled and samplesheet_name
                 }
+                # A sync that stopped after deleting the records noted their
+                # switches. A noted switch counts only for an instrument that
+                # sync did not write again: one it wrote carries the admin's
+                # switch, perhaps changed since.
+                note = self.config_repo.writing_note()
+                if note:
+                    stored = {samplesheet_name for samplesheet_name, _enabled in switches}
+                    disabled_keys |= set(note["disabled_instruments"]) - stored
+                self.config_repo.mark_writing(utcnow(), _INSTRUMENTS, disabled_keys)
                 self.instrument_definition_repo.delete_all()
                 for inst in instruments:
                     if inst.samplesheet_name in disabled_keys:
                         inst.enabled = False
                 self.instrument_definition_repo.bulk_save(instruments)
+                replaced.append(_INSTRUMENTS)
 
             # For index kits, only delete synced ones (preserve user-uploaded)
             if config.sync_index_kits_enabled and self.index_kit_repo:
@@ -342,11 +413,17 @@ class GitHubSyncService:
             # the next validate_run() re-computes against the new content.
             clear_validation_cache()
 
+            # Every write finished, and the caches are cleared: strike off what
+            # this sync wrote. What a sync that stopped earlier left incomplete,
+            # and this one did not write again, keeps Mark Ready paused.
+            still_incomplete = self.config_repo.written(replaced)
+            writing = False
+
             count = len(app_profiles) + (0 if refused_tests else len(test_profiles))
             instruments_count = len(instruments) if store_instruments else 0
             index_kits_count = len(index_kits)
 
-            if refused_tests or refused_instruments or refused_kits:
+            if refused_tests or refused_instruments or refused_kits or still_incomplete:
                 synced = [f"{len(app_profiles)} application profiles"]
                 if not refused_tests:
                     synced.append(f"{len(test_profiles)} test profiles")
@@ -384,6 +461,17 @@ class GitHubSyncService:
                             + ", ".join(sorted(f"{kit.name} {kit.version}" for kit in kept_kits))
                             + " until the file is fixed."
                         )
+                if still_incomplete:
+                    stays = (
+                        f"{STAYS_PAUSED}: a sync that stopped earlier left the "
+                        f"{_names(still_incomplete)} incomplete, and this sync did not write "
+                        "them again."
+                    )
+                    if _INSTRUMENTS in still_incomplete and not config.sync_instruments_enabled:
+                        stays += " Switch on Also sync instruments, then sync again."
+                    elif refused_tests or refused_instruments:
+                        stays += " Fix the refused files, then sync again."
+                    refusals.append(stays)
                 message = " ".join(refusals) + f" Synced {', '.join(synced)}."
                 self.config_repo.update_sync_status(
                     "error", message, count, instruments_count, index_kits_count,
@@ -413,6 +501,8 @@ class GitHubSyncService:
 
         except GitHubSyncError as e:
             error_msg = str(e)
+            if writing:
+                error_msg += " " + _PAUSED_IN_STATUS
             logger.error(f"Sync failed: {error_msg}")
             self.config_repo.update_sync_status(
                 "error", error_msg, 0, 0, 0,
@@ -422,6 +512,8 @@ class GitHubSyncService:
 
         except Exception as e:
             error_msg = f"Unexpected error: {e}"
+            if writing:
+                error_msg += " " + _PAUSED_IN_STATUS
             logger.exception("Sync failed with unexpected error")
             self.config_repo.update_sync_status(
                 "error", error_msg, 0, 0, 0,

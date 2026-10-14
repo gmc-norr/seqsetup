@@ -31,6 +31,19 @@ found an error while the exports were being generated, so the run was not
 marked Ready. The run is still a Draft. Read the Check panel, then mark it
 Ready again."* Nothing is saved.
 
+**Mark Ready** also waits while a configuration sync has not finished
+writing the profiles or instrument settings, because they may then be
+incomplete: *"A configuration sync started at ... did not finish writing
+the test profiles, so they may be incomplete. Mark Ready is paused until a
+sync writes them again. If a sync is running now, try again in a minute;
+otherwise an admin can press Sync now on the Config Sync page."* (see
+:ref:`config-sync`). And if the settings change while **Mark Ready** runs
+-- a sync, an index kit uploaded or removed, an instrument switched on or
+off -- it refuses with *"The profiles or instrument settings changed while
+the exports were being generated, so the Sample Sheet might not match what
+was checked. The run is still a Draft. Mark it Ready again."* Nothing is
+saved in either case.
+
 Once every error is fixed, selecting **Mark Ready** again succeeds: the
 status badge changes to **Ready**, the run is locked against further
 edits, and its exports are generated:

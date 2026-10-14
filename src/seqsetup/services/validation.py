@@ -125,6 +125,13 @@ def _current_validation_input_version() -> int:
         return _VALIDATION_INPUT_VERSION
 
 
+def validation_inputs_version() -> int:
+    """The counter ``clear_validation_cache`` bumps: two equal readings mean
+    no validation input (profiles, instruments, kits) changed in between, in
+    this process."""
+    return _current_validation_input_version()
+
+
 class ValidationService:
     """Service for validating sequencing run configuration.
 
