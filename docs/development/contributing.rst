@@ -574,6 +574,44 @@ Running Tests
    # Run tests matching a pattern
    pixi run test -k "test_validate"
 
+The Index Safety Net
+~~~~~~~~~~~~~~~~~~~~
+
+``tests/integration/test_index_safety_net.py`` and
+``tests/browser/test_index_safety_net.py`` prove that no sample ends up with
+another sample's index, or the wrong lane, in a stored Sample Sheet. The
+integration net builds a run of 40 to 96 samples through the real routes by
+every path the app has for setting a sample's index or its lanes -- a paste
+with index columns, a LIMS worklist import on picked lanes, a sample added by
+hand, one drop, a drop on ticked rows, several indexes dropped at once in a
+shuffled order, a drop naming one of two kit versions by its fingerprint,
+clear and drop again, a drop onto an assigned sample, Fill in order from a
+non-default start, ``set-lanes``, and the edits that must move no index --
+marks the run Ready, copies it and marks the copy Ready too, then reads both
+runs' stored sheets back through the Bearer API and compares every row
+(Sample_ID, Index, Index2, Lane) to a map the test keeps itself
+(``tests/index_safety_net.py``). The browser net does the smaller version of
+the same thing on one real page, so ``app.js`` is in the loop. Both run with
+the normal suites::
+
+   pixi run test tests/integration/test_index_safety_net.py
+   pixi run smoke-browser tests/browser/test_index_safety_net.py
+
+Three fixed seeds run by default, about 20 s each. To soak many seeds, set
+``SEQSETUP_SAFETY_NET_SEEDS`` to a range or a comma-separated list::
+
+   SEQSETUP_SAFETY_NET_SEEDS=1-50 pixi run test \
+       tests/integration/test_index_safety_net.py
+
+**Adding a new way to set a sample's index or its lanes means adding it to
+the net.** The net asserts that every path it knows about was used, so a path
+it does not know about is simply not covered: add it to ``_ASSIGN_PATHS`` or
+``_LANE_PATHS`` in the integration net and drive it in ``Net.build``. The
+expected map must be built only from what the test sends plus the sequences
+its own kits hold -- never by reading the run back or calling exporter,
+parser or ``reverse_complement`` code from ``src/``. An oracle that asks the
+application for the answer proves nothing.
+
 Documentation
 -------------
 
