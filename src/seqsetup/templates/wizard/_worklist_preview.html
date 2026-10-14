@@ -1,13 +1,17 @@
 {#
    Preview of a worklist import — replaces #worklist-preview innerHTML. It shows
    the import's own plan: the samples it would add and the sample IDs it would
-   skip (spec 2026-10-10 later list slice 2, §4).
+   skip (spec 2026-10-10 later list slice 2, §4). Its Import button sends the
+   plan's signature, and the import refuses a plan that changed since (outside
+   review of 7f858e0, finding 2).
 
    Inputs:
+     run_id:        str
      samples:       list[Sample] — the samples the import would add
      skipped:       str — the sample IDs already in the run, as name_list writes them
      skipped_count: int
      worklist_id:   str
+     plan:          str — the plan's signature (routes/samples.py _worklist_plan_signature)
 #}
 <div class="worklist-preview-content" style="margin-top: 1rem; padding: 1rem; background: var(--card-bg); border-radius: 8px;">
     <h4>Worksheet {{ worklist_id }}: {{ samples|length }} {{ 'sample' if samples|length == 1 else 'samples' }} to add</h4>
@@ -39,5 +43,16 @@
     {% endif %}
     {% if skipped_count %}
     <p class="warning-message">{{ skipped_count }} already in this run, will be skipped: {{ skipped }}</p>
+    {% endif %}
+    {% if samples %}
+    <form hx-post="/runs/{{ run_id }}/samples/fetch-worklist"
+          hx-target="#sample-section"
+          hx-swap="outerHTML"
+          hx-disabled-elt="find button"
+          style="margin-top: 0.5rem;">
+        <input type="hidden" name="worklist_id" value="{{ worklist_id }}">
+        <input type="hidden" name="plan" value="{{ plan }}">
+        <button type="submit" class="btn-primary">Import {{ samples|length }} {{ 'sample' if samples|length == 1 else 'samples' }}</button>
+    </form>
     {% endif %}
 </div>

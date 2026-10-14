@@ -1,21 +1,15 @@
 {#
-   LIMS worklist selector — dropdown + Preview/Import buttons.
+   LIMS worklist selector — dropdown + Preview button. The import is the
+   preview's own button (wizard/_worklist_preview.html), so it adds only what
+   the preview showed (outside review of 7f858e0, finding 2); picking another
+   worksheet clears the preview (static/js/app.js).
    Renders the partial returned by GET /runs/{run_id}/samples/worklists.
 
    Inputs:
      run_id:       str
      worklists:    list[dict] — each has 'id', optional 'investigator', optional 'updated_at'
      warnings:     list[dict] — _messages.html entries for worksheets left out of the list
-     context:      str — "add_step1" routes import to #worklist-import-result innerHTML,
-                          else to #sample-section outerHTML, the element the import answers with
-     existing_ids: str — comma-separated sample ids that already existed pre-wizard
 #}
-{% set params = [] %}
-{% if context %}{% set _ = params.append('context=' ~ context) %}{% endif %}
-{% if existing_ids %}{% set _ = params.append('existing_ids=' ~ existing_ids) %}{% endif %}
-{% set query_string = ('?' ~ params|join('&')) if params else '' %}
-{% set import_target = '#worklist-import-result' if context == 'add_step1' else '#sample-section' %}
-{% set import_swap = 'innerHTML' if context == 'add_step1' else 'outerHTML' %}
 <div>
     {% if warnings %}{% with messages = warnings %}{% include "_messages.html" %}{% endwith %}{% endif %}
     <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
@@ -36,12 +30,6 @@
                 hx-include="#worklist-select"
                 hx-target="#worklist-preview"
                 hx-swap="innerHTML">Preview</button>
-        <button type="button" class="btn-primary"
-                hx-post="/runs/{{ run_id }}/samples/fetch-worklist{{ query_string }}"
-                hx-include="#worklist-select"
-                hx-target="{{ import_target }}"
-                hx-swap="{{ import_swap }}"
-                hx-disabled-elt="this">Import Samples</button>
     </div>
     <div id="worklist-preview" class="worklist-preview"></div>
     <div id="worklist-import-result"></div>

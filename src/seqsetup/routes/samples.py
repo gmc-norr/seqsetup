@@ -4,6 +4,7 @@ Migrated from legacy register(app, ctx) closure pattern to APIRouter +
 Depends(get_editable_run) + with saving_run(...).
 """
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -116,13 +117,13 @@ def _messages_only(request, messages) -> HTMLResponse:
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
-def _banner_only(request, messages) -> HTMLResponse:
+def _banner_only(request, messages, status_code: int = 400) -> HTMLResponse:
     """The _messages.html partial as a 400 aimed at the page's error banner,
     for a refusal that leaves the page as it was. A 400, not a 200: app.js
     clears the banner after a 200 from a button whose last request failed
     (spec 2026-10-10 later list slice 2, §2)."""
     html = templates.env.get_template("_messages.html").render(messages=messages)
-    return HTMLResponse(html, status_code=400, headers={
+    return HTMLResponse(html, status_code=status_code, headers={
         "HX-Retarget": "#error-banner", "HX-Reswap": "innerHTML",
         "HX-Reselect": "unset", "Cache-Control": "no-store"})
 
@@ -925,6 +926,26 @@ def _plan_worklist_import(run, raw_rows, api_config, worklist_id: str) -> tuple:
     return new_samples, skipped_duplicates
 
 
+_IMPORT_NEEDS_A_PREVIEW = "Preview the worksheet first, then import it from the preview."
+_CHANGED_SINCE_THE_PREVIEW = (
+    "The worksheet or the run changed since the preview. Nothing was added. Preview again.")
+
+
+def _worklist_plan_signature(worklist_id: str, new_samples: list, skipped: list) -> str:
+    """What the import will save, for it to compare with what its preview
+    showed: the worksheet, each sample it adds as it would be stored, less
+    its random id, in order, and the sample IDs it skips (outside review of
+    7f858e0, finding 2). A hash, so the page carries 64 characters, not the
+    samples."""
+    stored = []
+    for sample in new_samples:
+        row = sample.to_dict()
+        row.pop("id", None)
+        stored.append(row)
+    text = json.dumps([worklist_id, stored, skipped], sort_keys=True, default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 @router.get("/runs/{run_id}/samples/preview-worklist", response_class=HTMLResponse)
 def preview_worklist(
     request: Request,
@@ -961,10 +982,12 @@ def preview_worklist(
         return _messages_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
 
     return render(request, "wizard/_worklist_preview.html", {
+        "run_id": run.id,
         "samples": new_samples,
         "skipped": name_list(skipped),
         "skipped_count": len(skipped),
         "worklist_id": worklist_id,
+        "plan": _worklist_plan_signature(worklist_id, new_samples, skipped),
     })
 
 
@@ -979,13 +1002,16 @@ def import_worklist_samples(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
     worklist_id: Annotated[str, Form()] = "",
+    plan: Annotated[str, Form()] = "",
     context: str = "",
 ) -> Response:
     """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist.
 
-    The page posts the worksheet in the form body. A refusal goes to the
-    error banner and leaves the samples section as it was (spec 2026-10-10
-    later list slice 2, §2)."""
+    The preview's Import button posts the worksheet and the preview's plan
+    signature in the form body. The import fetches the worksheet again and
+    saves only when its plan is the one the preview showed (outside review
+    of 7f858e0, finding 2). A refusal goes to the error banner and leaves the
+    samples section as it was (spec 2026-10-10 later list slice 2, §2)."""
     run_id = run.id
 
     if ctx.sample_api_config_repo is None:
@@ -1011,6 +1037,12 @@ def import_worklist_samples(
 
     if not new_samples and not skipped_duplicates:
         return _banner_only(request, [{"text": "No valid samples found in worklist.", "kind": "warning"}])
+
+    if not plan:
+        return _banner_only(request, [{"text": _IMPORT_NEEDS_A_PREVIEW, "kind": "error"}])
+    if plan != _worklist_plan_signature(worklist_id, new_samples, skipped_duplicates):
+        return _banner_only(
+            request, [{"text": _CHANGED_SINCE_THE_PREVIEW, "kind": "error"}], status_code=409)
 
     added_count = len(new_samples)
     if added_count > 0:
