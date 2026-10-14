@@ -114,7 +114,9 @@ def _seeds() -> list[int]:
     """The default seeds, or the soak's (``SEQSETUP_SAFETY_NET_SEEDS``)."""
     asked = os.environ.get("SEQSETUP_SAFETY_NET_SEEDS", "").strip()
     if not asked:
-        return [11, 404, 9001]
+        # One seed per case, so every instrument and i5 workflow in CASES
+        # reaches a stored sheet (test_the_default_seeds_reach_every_case).
+        return [12, 404, 9001]
     seeds: list[int] = []
     for part in asked.split(","):
         part = part.strip()
@@ -344,6 +346,11 @@ class Net:
     def _some_lanes(self, how_many: int) -> list[int]:
         return sorted(self.rng.sample(range(1, self.lanes + 1), how_many))
 
+    def _lanes_above_one(self, how_many: int) -> list[int]:
+        """Lanes that do not include lane 1: a path that quietly fell back to
+        lane 1 would otherwise be invisible whenever lane 1 was picked."""
+        return sorted(self.rng.sample(range(2, self.lanes + 1), how_many))
+
     def rows(self) -> list[dict]:
         return page_rows(self.client, self.run_id)
 
@@ -405,7 +412,7 @@ class Net:
         A paste never carries a lane column -- the lanes come from the Lanes
         picker (``services/sample_parser.py``), and the net proves that in
         ``test_a_paste_may_not_carry_a_lane_column``."""
-        lanes = self._some_lanes(self.rng.choice([1, 2]))
+        lanes = self._lanes_above_one(self.rng.choice([1, 2]))
         sequences = self.kits.sequences
         made = []
         lines = ["sample_id\tindex_i7\tindex_i5"]
@@ -451,7 +458,8 @@ class Net:
     def lims_import(self, how_many: int, with_indexes: bool, worksheet: str):
         """A worklist import: Preview, then the preview's own Import button,
         on the lanes picked for the import."""
-        lanes = self._some_lanes(self.rng.choice([1, 2]))
+        lanes = (self._lanes_above_one if with_indexes else self._some_lanes)(
+            self.rng.choice([1, 2]))
         made = []
         rows = []
         pairs = self.kits.sequences.pairs(how_many) if with_indexes \
@@ -535,6 +543,14 @@ class Net:
             self.expected.set_pair(row["sample_id"], "drop on ticked rows",
                                    i7=pair.index1_sequence, i5=pair.index2_sequence)
 
+    def _a_stretch_to_fill(self) -> list[dict]:
+        """Consecutive rows with no index, for a several-index drop: the server
+        refuses a drop whose rows are not the ones the page named."""
+        stretch = self.longest_unindexed_stretch()
+        assert len(stretch) >= 3, (
+            f"the net needs three rows with no index in a row, found {len(stretch)}")
+        return stretch[:min(len(stretch), self.rng.randint(3, 6))]
+
     def drop_several_at_once(self, rows: list[dict]):
         """Several chips dragged at once, sent in a shuffled order: the rows
         are filled in the panel's own order, never the click order (CLAUDE.md,
@@ -549,6 +565,11 @@ class Net:
         in_panel_order = sorted(chips, key=lambda chip: panel.index(chip))
         sent = list(chips)
         self.rng.shuffle(sent)
+        if sent == in_panel_order:
+            # A shuffle that came out in panel order would hide a server that
+            # fills the rows in the order it was sent.
+            sent.reverse()
+        assert sent != in_panel_order
 
         answer = self._post(
             "/samples/assign-indexes-bulk",
@@ -564,22 +585,27 @@ class Net:
             self.expected.set_pair(row["sample_id"], "several indexes dropped at once",
                                    i7=chip["i7"], i5=chip["i5"])
 
-    def drop_from_one_kit_version(self, row: dict):
+    def drop_from_each_kit_version(self, rows: list[dict]):
         """Two versions of one kit hold the same index names and other
-        sequences; the drop names a version by kit id and fingerprint, and the
-        sample must get that version's sequences."""
+        sequences; a drop names its version by kit id and fingerprint, and the
+        sample must get that version's sequences.
+
+        One sample from each version, never one at random: a server that took
+        whichever version the database returned first would pass half the
+        time."""
         old, new = self.kits.twice_old, self.kits.twice_new
-        pair_old = old.index_pairs[0]
-        pair_new = new.index_pairs[0]
-        assert pair_old.name == pair_new.name, "the two versions must share a name"
-        assert pair_old.index1_sequence != pair_new.index1_sequence
-        kit = self.rng.choice([old, new])
-        pair = kit.index_pairs[0]
-        chip = self.chip_for(kit, pair.id)
-        assert chip["kit_id"] == kit.kit_id
-        self._drop(row["row_id"], chip)
-        self.expected.set_pair(row["sample_id"], "a drop from one of two kit versions",
-                               i7=pair.index1_sequence, i5=pair.index2_sequence)
+        assert [p.name for p in old.index_pairs] == [p.name for p in new.index_pairs], \
+            "the two versions must share their index names"
+        for row, kit in zip(rows, (old, new), strict=True):
+            pair = kit.index_pairs[0]
+            other = (new if kit is old else old).index_pairs[0]
+            assert pair.index1_sequence != other.index1_sequence
+            chip = self.chip_for(kit, pair.id)
+            assert chip["kit_id"] == kit.kit_id
+            self._drop(row["row_id"], chip)
+            self.expected.set_pair(row["sample_id"],
+                                   "a drop from one of two kit versions",
+                                   i7=pair.index1_sequence, i5=pair.index2_sequence)
 
     def clear_then_drop_again(self, row: dict):
         answer = self._post(f"/samples/{row['row_id']}/clear-index")
@@ -746,9 +772,8 @@ class Net:
         assigning = [
             lambda: self.drop_an_i7_and_an_i5(self.unindexed()[0]),
             lambda: self.drop_on_ticked_rows(self.unindexed()[:ticked]),
-            lambda: self.drop_several_at_once(
-                self.longest_unindexed_stretch()[:self.rng.randint(3, 6)]),
-            lambda: self.drop_from_one_kit_version(self.unindexed()[0]),
+            lambda: self.drop_several_at_once(self._a_stretch_to_fill()),
+            lambda: self.drop_from_each_kit_version(self.unindexed()[:2]),
             lambda: self.clear_then_drop_again(to_clear),
             lambda: self.drop_onto_an_assigned_sample(to_replace),
             lambda: self.set_lanes_on_a_subset(),
@@ -768,18 +793,25 @@ class Net:
         self.expected.check_page({row["sample_id"]: row for row in self.rows()})
         self.expected.assert_no_lane_shares_an_index()
 
+    #: The fewest samples a making path contributes. The two paths that make
+    #: samples with no index give more, because every assign path takes its
+    #: own rows from them and the fill takes what is left.
+    _FEWEST = {"paste indexed": 3, "paste plain": 8, "lims indexed": 3,
+               "lims plain": 8}
+
     def _share_out(self, total: int) -> dict:
         """How many samples each making path contributes."""
         by_hand = self.rng.randint(1, 3)
         rest = total - by_hand
         shares = [self.rng.random() for _ in range(4)]
         scale = rest / sum(shares)
-        counts = [max(3, int(share * scale)) for share in shares]
-        counts[0] += rest - sum(counts)
-        assert counts[0] >= 3, "the net could not share out its samples"
-        return {"paste indexed": counts[0], "paste plain": counts[1],
-                "lims indexed": counts[2], "lims plain": counts[3],
-                "by hand": by_hand}
+        counts = {name: max(fewest, int(share * scale))
+                  for (name, fewest), share in zip(self._FEWEST.items(), shares,
+                                                   strict=True)}
+        counts["paste indexed"] += rest - sum(counts.values())
+        assert counts["paste indexed"] >= self._FEWEST["paste indexed"], \
+            "the net could not share out its samples"
+        return dict(counts, **{"by hand": by_hand})
 
     # -- Ready, then the sheets ----------------------------------------
 
@@ -888,6 +920,13 @@ class TestTheNetsOwnTools:
         assert reverse_complement("ATTACTCG") == "CGAGTAAT"
         assert reverse_complement("TATAGCCT") == "AGGCTATA"
         assert reverse_complement(reverse_complement("ACGTTGCA")) == "ACGTTGCA"
+
+    def test_the_default_seeds_reach_every_case(self):
+        """Each default seed picks a different run, so every instrument and i5
+        workflow in CASES really is built and marked Ready."""
+        if os.environ.get("SEQSETUP_SAFETY_NET_SEEDS", "").strip():
+            pytest.skip("a soak was asked for; it picks its own seeds")
+        assert {seed % len(CASES) for seed in _seeds()} == set(range(len(CASES)))
 
     def test_the_i5_table_holds_both_directions(self):
         """One instrument writes Index2 as entered and one reverses it, so a
