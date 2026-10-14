@@ -16,9 +16,9 @@ import json
 import logging
 import re
 from contextlib import contextmanager
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
@@ -595,11 +595,13 @@ _SETTINGS_CHANGED_DURING_EXPORT = (
 
 
 @router.post("/runs/{run_id}/status/{status}", response_class=HTMLResponse)
-async def update_status(
+def update_status(
     request: Request,
     status: str,
     run: SequencingRun = Depends(get_archivable_run),
     ctx: AppContext = Depends(get_ctx),
+    confirmed_at: Annotated[Optional[str], Form(alias="color_balance_confirmed_at")] = None,
+    confirmed_lanes: Annotated[Optional[str], Form(alias="color_balance_lanes")] = None,
 ) -> Response:
     """POST /runs/{run_id}/status/{status} — transition run status.
 
@@ -611,6 +613,11 @@ async def update_status(
     For DRAFT->READY, validation is run in real time. If errors are
     present the transition is refused with an inline error message
     returned via HX-Retarget to #ready-message.
+
+    A plain ``def``, so Starlette runs it on a side worker: drawing the
+    report's charts takes up to two minutes for a large run, and on the
+    event loop it held up every other request (the user's choice "Side
+    worker", 2026-10-14).
     """
     try:
         new_status = RunStatus(status)
@@ -663,11 +670,10 @@ async def update_status(
             # mix up patients, and one-sample lanes almost always show it —
             # so ask, and record the answer (spec 2026-09-27, F13). The
             # answer counts only for the run version and lanes shown.
-            form = await request.form()
             shown = ",".join(str(lane) for lane in color_balance_lanes)
             confirmed = (
-                form.get("color_balance_confirmed_at") == run.updated_at.isoformat()
-                and form.get("color_balance_lanes") == shown
+                confirmed_at == run.updated_at.isoformat()
+                and confirmed_lanes == shown
             )
             if not confirmed:
                 audit(

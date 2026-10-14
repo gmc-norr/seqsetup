@@ -7,8 +7,10 @@ from xml.sax.saxutils import escape as xml_escape
 
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend
-import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+# Each chart is its own Figure, never pyplot's: two people can mark runs
+# Ready at once, and pyplot's "current figure" is shared by the whole app.
+from matplotlib.figure import Figure
 import numpy as np
 from reportlab.lib import colors as rl_colors
 from reportlab.lib.pagesizes import A4
@@ -378,7 +380,8 @@ class ValidationReportPDF:
         # Create figure
         fig_width = max(3, min(7, n * 0.5 + 1.5))
         fig_height = max(2.5, min(6, n * 0.4 + 1.5))
-        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        fig = Figure(figsize=(fig_width, fig_height))
+        ax = fig.subplots()
 
         # Custom colormap: red (low/dangerous) to green (high/safe)
         cmap = mcolors.LinearSegmentedColormap.from_list(
@@ -404,11 +407,10 @@ class ValidationReportPDF:
 
         ax.set_title("Combined Index Distance (i7+i5)", fontsize=8)
         fig.colorbar(im, ax=ax, shrink=0.8)
-        plt.tight_layout()
+        fig.tight_layout()
 
         buf = BytesIO()
         fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-        plt.close(fig)
         buf.seek(0)
 
         img_width = min(17 * cm, fig_width * 2.2 * cm)
@@ -436,7 +438,8 @@ class ValidationReportPDF:
         t_counts = [p.t_count for p in positions]
 
         fig_width = max(4, min(8, n * 0.4 + 2))
-        fig, ax = plt.subplots(figsize=(fig_width, 2.5))
+        fig = Figure(figsize=(fig_width, 2.5))
+        ax = fig.subplots()
 
         bar_width = 0.6
         ax.bar(x, a_counts, bar_width, label="A", color="#4caf50")
@@ -460,11 +463,10 @@ class ValidationReportPDF:
         ax.set_title(f"{index_type} Color Balance", fontsize=8)
         ax.legend(fontsize=6, loc="upper right")
         ax.tick_params(axis="y", labelsize=6)
-        plt.tight_layout()
+        fig.tight_layout()
 
         buf = BytesIO()
         fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-        plt.close(fig)
         buf.seek(0)
 
         img_width = min(17 * cm, fig_width * 2.2 * cm)
