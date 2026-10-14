@@ -342,10 +342,11 @@ Example nginx configuration:
        client_max_body_size 2m;
 
        # Mark Ready answers only once it has drawn the check report: about
-       # two minutes for 96 samples on all 8 lanes of a NovaSeq X 10B.
-       # nginx's own default is 60 s; past it the page shows an error while
-       # the run still turns Ready.
-       proxy_read_timeout 300s;
+       # two minutes for 96 samples on all 8 lanes of a NovaSeq X 10B, and
+       # longer when two people mark large runs Ready at once. nginx's own
+       # default is 60 s; past it the page shows an error while the run
+       # still turns Ready.
+       proxy_read_timeout 600s;
 
        location / {
            proxy_pass http://127.0.0.1:5001;

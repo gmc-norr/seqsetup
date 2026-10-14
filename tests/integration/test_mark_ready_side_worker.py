@@ -65,8 +65,10 @@ class TestTheProxyExampleWaitsForMarkReady:
     """nginx gives up on an answer after 60 seconds unless told otherwise; the
     person then sees an error while the run still turns Ready."""
 
-    def test_the_nginx_example_waits_five_minutes(self):
+    def test_the_nginx_example_waits_ten_minutes(self):
+        """Two large Mark Readys at once each took about 2.5 times as long
+        (review of e0d0d95, P3-1): the report's drawing shares one CPU."""
         guide = Path(__file__).resolve().parents[2] / "docs" / "getting-started" / "deployment.rst"
         found = re.findall(r"^       proxy_read_timeout (\d+)s;", guide.read_text(), re.M)
         assert len(found) == 1
-        assert int(found[0]) >= 300
+        assert int(found[0]) >= 600
