@@ -183,11 +183,14 @@ does, the run is still yours: come back to it and carry on.
 
 When you press **Edit run** or **Take over editing** on a run you were
 not already editing, the run's **Updated** time changes to that moment,
-and its name to yours, though nothing in the run changed. The run page
-shows the time; the dashboard shows both, and lists the run first. That
-is what stops a change from the person who had the run before from
-landing afterwards. **Done editing** changes neither, so a last change of
-yours that is still on its way is kept.
+and the dashboard's **Modified by** to you, though nothing in the run
+changed; the dashboard also lists the run first. That is what stops a
+change from the person who had the run before from landing afterwards.
+
+**Done editing** changes neither. Still, wait for your last change to
+show on the page before you press it: if someone presses **Edit run**
+while that change is on its way, it is refused, and you will not see the
+message, because the page has reloaded.
 
 An open edit page does not keep you signed in: if you do nothing for 30
 minutes, your sign-in ends as on any other page (see

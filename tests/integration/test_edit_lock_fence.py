@@ -144,6 +144,49 @@ class TestTheRunShowsWhoStartedEditing:
         assert after.updated_at > before
         assert after.updated_by == OPERATOR
 
+    def test_take_over_on_a_free_run_marks_it_changed_by_the_editor(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        before = ctx.run_repo.get_by_id(run_id).updated_at
+
+        op.post(f"/runs/{run_id}/edit-lock/take-over", headers=ORIGIN)
+
+        after = ctx.run_repo.get_by_id(run_id)
+        assert _holder(ctx, run_id) == OPERATOR
+        assert after.updated_at > before
+        assert after.updated_by == OPERATOR
+
+
+class TestTheGuardLoadsTheRunBeforeCheckingTheLock:
+    """Checking the lock first and loading after would let a take-over in
+    between hand the request the marked version, and its save would land
+    (review of 6b123a2, P3-4)."""
+
+    def test_a_take_over_just_before_the_load_is_refused(self, two, monkeypatch):
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+        sample = ctx.run_repo.get_by_id(run_id).samples[0]
+        real = ctx.run_repo.get_by_id
+        seen = {}
+
+        def taken_over_first(*a, **k):
+            if not seen:
+                seen["status"] = None
+                seen["status"] = op.post(f"/runs/{run_id}/edit-lock/take-over",
+                                         headers=ORIGIN).status_code
+            return real(*a, **k)
+
+        monkeypatch.setattr(ctx.run_repo, "get_by_id", taken_over_first)
+        resp = admin.post(f"/runs/{run_id}/samples/{sample.id}/settings",
+                          data={"barcode_mismatches_index1": "2"}, headers=ORIGIN)
+        monkeypatch.undo()
+
+        assert seen["status"] == 200
+        assert _holder(ctx, run_id) == OPERATOR
+        assert resp.status_code == 409, resp.text[:300]
+        assert _mismatch(ctx, run_id) == 1
+
 
 class TestNothingIsMarkedWhenTheEditorStaysTheSame:
 
