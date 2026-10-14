@@ -140,7 +140,7 @@ class TestAWorklist:
         self._lims(ctx, monkeypatch, [{"sample_id": "P1"}, {"sample_id": "P2", "worksheet_id": LONG}])
 
         resp = logged_in_client.get(f"/runs/{RUN}/samples/preview-worklist",
-                                    params={"worklist_id": "WS1"})
+                                    params={"worklist_id": "WS1", "lanes": ["1"]})
 
         assert ("Importing this worksheet would be refused: LIMS row(s) 2: the worksheet ID is "
                 "longer than 256 characters.") in resp.text

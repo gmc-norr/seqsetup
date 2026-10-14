@@ -238,6 +238,17 @@ shows recognized field names for each attribute:
      - ``i5_name``, ``index_i5_name``, ``index2_name``
      - i5 index identifier name
 
+A sample row's field whose name looks like an index or a lane -- it has
+*index* or *barcode* anywhere in it, or a word starting with *i7*, *i5* or
+*lane* -- must be one of the names above (or one you mapped under **Field
+Mappings**). Any other such field, for example ``index`` (Illumina's own
+name for the i7), ``Index 2`` or ``lane``, refuses the **entire import**,
+naming the field and its rows: SeqSetup would otherwise drop it, and the
+sample would come in without that index. Map it to the right attribute
+under **Field Mappings**. Lanes are never read from the LIMS: the user
+picks them on the import, as for a paste (see :doc:`/user-guide/samples`).
+The iGene API sends no such field.
+
 Every value pulled from a sample row is trimmed. A sample ID, test or
 worksheet ID longer than 256 characters refuses the whole worklist, naming
 its rows -- it is never cut, as a cut ID would be another ID; any other

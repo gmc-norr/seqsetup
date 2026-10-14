@@ -24,6 +24,7 @@ from ..models.sample import (
 )
 from ..models.sample_api_config import InvalidWorklistIdError, SampleApiConfig, validate_worklist_id
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
+from .sample_parser import _looks_like_index_or_lane
 
 logger = logging.getLogger(__name__)
 
@@ -907,6 +908,29 @@ def _refuse_a_changed_value(what: str, value) -> None:
 # with none of them.
 _SAMPLE_WORKSHEET_ID_NAMES = ("worksheet_id", "worksheetid", "worksheet", "worklist_id", "al")
 
+# The names an i7 and an i5 sequence are read from, before an admin's mapped
+# name; in this order in the message that refuses a field it does not read.
+_I7_NAMES = ("index_i7", "index1", "i7", "index_i7_sequence", "i7_sequence")
+_I5_NAMES = ("index_i5", "index2", "i5", "index_i5_sequence", "i5_sequence")
+
+
+def _unread_fields_error(fields: dict[str, list[int]]) -> ValueError:
+    """Reject the whole worklist: a field looks like an index or a lane but
+    is not one SeqSetup reads (index mix-up audit, 2026-10-14; the user's
+    choice "Same rules as paste")."""
+    rows = ", ".join(str(n) for n in sorted({row for found in fields.values() for row in found}))
+    quoted = ", ".join(f'"{shown_value(name)}"' for name in fields)
+    lanes = any(word.startswith("lane")
+                for name in fields for word in re.split(r"[^a-z0-9]+", name.lower()))
+    return ValueError(
+        f"LIMS row(s) {rows}: the field(s) {quoted} look like an index or a lane, but SeqSetup "
+        f"does not read them, so the whole worklist was refused. It reads the i7 from "
+        f"{', '.join(_I7_NAMES[:-1])} or {_I7_NAMES[-1]}, and the i5 from "
+        f"{', '.join(_I5_NAMES[:-1])} or {_I5_NAMES[-1]}. An admin can map a LIMS field to one "
+        f"of these in the LIMS settings."
+        + (" Lanes come from the Lanes picker on the import, not from the LIMS." if lanes else "")
+    )
+
 
 # How a message names a sample field read from a LIMS row; the fields checked
 # by their JSON type (spec 2026-10-10 later list slice 1, §1). The test and
@@ -949,8 +973,8 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         # 2026-10-07 group A4, §2).
         "test_version": ["test_version", "testversion"],
         "worksheet_id": list(_SAMPLE_WORKSHEET_ID_NAMES),
-        "index1_sequence": ["index_i7", "index1", "i7", "index_i7_sequence", "i7_sequence"],
-        "index2_sequence": ["index_i5", "index2", "i5", "index_i5_sequence", "i5_sequence"],
+        "index1_sequence": list(_I7_NAMES),
+        "index2_sequence": list(_I5_NAMES),
         "index_pair_name": ["index_pair_name", "pair_name", "index_pair", "index_kit", "kit_name"],
         "index1_name": ["i7_name", "index_i7_name", "index1_name", "index_name"],
         "index2_name": ["i5_name", "index_i5_name", "index2_name"],
@@ -976,11 +1000,19 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
     rows_zero_sample_id: list[int] = []  # 1-based positions of rows named only 0
     rows_too_long: dict[str, list[int]] = {field: [] for field in _NEVER_CUT}
     read_names = {alias for field in sample_fields for alias in field_aliases[field]}
+    unread_fields: dict[str, list[int]] = {}
 
     for index, item in enumerate(data, start=1):
         if not isinstance(item, dict):
             rows_missing_sample_id.append(index)
             continue
+
+        # A field that looks like an index or a lane must be one SeqSetup
+        # reads: "index" (Illumina's name for the i7) was dropped, and the
+        # sample came in with only its i5 (index mix-up audit, 2026-10-14).
+        for name in item:
+            if name.lower() not in read_names and _looks_like_index_or_lane(name):
+                unread_fields.setdefault(name, []).append(index)
 
         # Two names SeqSetup reads that differ only in capitals would be read
         # as one, and one value lost (spec 2026-10-10 later list slice 1, §1).
@@ -1076,6 +1108,8 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
 
         results.append(sample)
 
+    if unread_fields:
+        raise _unread_fields_error(unread_fields)
     if rows_missing_sample_id:
         rows_str = ", ".join(str(n) for n in rows_missing_sample_id)
         raise ValueError(

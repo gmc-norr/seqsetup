@@ -6,7 +6,8 @@ lane(s) its reads are sorted into during demultiplexing. A new sample is
 never left without a lane: pasted samples start in lane 1 (change this
 before previewing, in the **Lanes for these samples** box), a single
 sample added by hand is assigned lane 1, and samples brought in from a LIMS
-worklist are also assigned lane 1. The only way to put a sample into
+worklist go to the lanes ticked under **Lanes for these samples** next to
+the worksheet picker (lane 1 to start). The only way to put a sample into
 *every* lane of the flowcell is to tick it and select **Clear** in the
 bulk-action panel (see :ref:`Clearing a lane assignment
 <clearing-a-lane-assignment>` below).

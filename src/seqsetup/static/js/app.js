@@ -716,14 +716,17 @@ const _CLICK_ACTIONS = {
 // dropdown shows another one the preview goes away. So does the index
 // selection: its chips are no longer on screen, and another version of the
 // kit has chips with the same ids.
-// A worklist preview names one worksheet and its Import adds that one, so
-// once the worksheet dropdown shows another the preview goes away too.
+// A worklist preview names one worksheet and its lanes, and its Import adds
+// to those, so once the worksheet dropdown or a lane box changes the preview
+// goes away too.
 document.addEventListener('change', function(event) {
     if (event.target.id === 'index-kit-dropdown') {
         clearIndexFillArea();
         clearIndexSelection();
     }
-    if (event.target.id === 'worklist-select') clearWorklistPreview();
+    if (event.target.id === 'worklist-select' || event.target.closest('#worklist-lanes')) {
+        clearWorklistPreview();
+    }
 });
 
 document.addEventListener('click', function(event) {

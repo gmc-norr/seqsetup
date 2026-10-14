@@ -860,10 +860,24 @@ def list_worklists(
         "warnings": warnings,
         "context": context,
         "existing_ids": "",
+        "num_lanes": get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type),
     })
 
 
-def _plan_worklist_import(run, raw_rows, api_config, worklist_id: str) -> tuple:
+def _picked_lanes(raw_lanes, run) -> tuple[Optional[list[int]], str]:
+    """The lanes picked for a worksheet's samples, or (None, why not): at
+    least one, each within the flowcell, as for a paste -- never "all
+    lanes" and never lane 1 unseen (index mix-up audit, 2026-10-14)."""
+    max_lanes = get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type)
+    lanes = _normalize_lane_selection(list(raw_lanes or []), max_lanes)
+    if lanes is None:
+        return None, f"Invalid lane selection. Use lane numbers between 1 and {max_lanes}."
+    if not lanes:
+        return None, "Pick at least one lane for the new samples."
+    return lanes, ""
+
+
+def _plan_worklist_import(run, raw_rows, api_config, worklist_id: str, lanes: list[int]) -> tuple:
     """What importing these LIMS rows would do to the run, changing nothing:
     the samples it would add, built as the import builds them, and the sample
     IDs already in the run, which it skips. A row with no worksheet ID gets
@@ -915,7 +929,7 @@ def _plan_worklist_import(run, raw_rows, api_config, worklist_id: str) -> tuple:
             test_id=api_sample.get("test_id", ""),
             test_version=api_sample.get("test_version", ""),
             worksheet_id=api_sample.get("worksheet_id") or worklist_id,
-            lanes=[1],
+            lanes=list(lanes),
         )
 
         idx1_seq = api_sample.get("index1_sequence", "")
@@ -987,6 +1001,10 @@ def preview_worklist(
     if not worklist_id:
         return _messages_only(request, [{"text": "No worksheet selected.", "kind": "error"}])
 
+    lanes, why_not = _picked_lanes(request.query_params.getlist("lanes"), run)
+    if lanes is None:
+        return _messages_only(request, [{"text": why_not, "kind": "error"}])
+
     from ..services.sample_api import fetch_worklist_samples
 
     api_config = ctx.sample_api_config
@@ -998,7 +1016,7 @@ def preview_worklist(
         return _messages_only(request, [{"text": f"Failed to fetch worksheet samples: {message}", "kind": "error"}])
 
     try:
-        new_samples, skipped = _plan_worklist_import(run, raw_data, api_config, worklist_id)
+        new_samples, skipped = _plan_worklist_import(run, raw_data, api_config, worklist_id, lanes)
     except ValueError as e:
         return _messages_only(
             request, [{"text": f"Importing this worksheet would be refused: {e}", "kind": "error"}])
@@ -1012,6 +1030,8 @@ def preview_worklist(
         "skipped": name_list(skipped),
         "skipped_count": len(skipped),
         "worklist_id": worklist_id,
+        "lanes": lanes,
+        "lane_words": _lane_words(lanes),
         "plan": _worklist_plan_signature(worklist_id, new_samples, skipped),
     })
 
@@ -1028,6 +1048,7 @@ def import_worklist_samples(
     ctx: AppContext = Depends(get_ctx),
     worklist_id: Annotated[str, Form()] = "",
     plan: Annotated[str, Form()] = "",
+    lanes: Annotated[Optional[list[str]], Form()] = None,
     context: str = "",
 ) -> Response:
     """POST /runs/{run_id}/samples/fetch-worklist — import samples from a worklist.
@@ -1045,6 +1066,12 @@ def import_worklist_samples(
     if not worklist_id:
         return _banner_only(request, [{"text": "No worklist selected.", "kind": "error"}])
 
+    # The preview's lanes, sent back by its Import button; they are part of
+    # the plan compared below.
+    picked_lanes, why_not = _picked_lanes(lanes, run)
+    if picked_lanes is None:
+        return _banner_only(request, [{"text": why_not, "kind": "error"}])
+
     from ..services.sample_api import fetch_worklist_samples
 
     api_config = ctx.sample_api_config
@@ -1056,7 +1083,8 @@ def import_worklist_samples(
         return _banner_only(request, [{"text": f"Failed to fetch worklist samples: {message}", "kind": "error"}])
 
     try:
-        new_samples, skipped_duplicates = _plan_worklist_import(run, raw_data, api_config, worklist_id)
+        new_samples, skipped_duplicates = _plan_worklist_import(
+            run, raw_data, api_config, worklist_id, picked_lanes)
     except ValueError as e:
         return _banner_only(request, [{"text": f"Worklist import rejected: {e}", "kind": "error"}])
 

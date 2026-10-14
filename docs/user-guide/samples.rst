@@ -177,12 +177,17 @@ above the list, or under the error when nothing is left to list; at most
 ten are shown, then how many more. Ask your administrator to have the LIMS
 send each worksheet's ID once, as text, under one name.
 
-Choose one and select **Preview** to see what the import would do. It
-shows the samples the import would add, each with its Sample ID, test,
-version, i7 and i5 (``-`` for none), and the sample IDs already in the run,
-which the import skips (the first ten, then how many more). If the import
-would be refused, the preview shows that refusal instead (*"Importing this
-worksheet would be refused: ..."*). Picking another worksheet clears the
+Choose one, tick the **Lanes for these samples** they go to (lane 1 is
+ticked to start; a one-lane flowcell has no boxes and uses lane 1), and
+select **Preview** to see what the import would do. Lanes come from these
+boxes, never from the LIMS. The preview names the lanes (*"Worksheet WS1: 2
+samples to add to lanes 2, 3"*) and shows the samples the import would
+add, each with its Sample ID, test, version, i7 and i5 (``-`` for none), and
+the sample IDs already in the run, which the import skips (the first ten,
+then how many more). With no lane ticked the preview says *"Pick at least
+one lane for the new samples."* If the import would be refused, the preview
+shows that refusal instead (*"Importing this worksheet would be refused:
+..."*). Picking another worksheet, or changing a lane box, clears the
 preview.
 
 Under the samples, the preview's **Import 2 samples** button (it counts
@@ -190,8 +195,8 @@ them) adds them to the run; it is off until the import answers. There is
 no import without a preview: when every sample of the worksheet is already
 in the run, or the import would be refused, the preview has no button. The
 import asks the LIMS again and works out again what it would add and
-skip, down to what the preview's table does not show, such as index names
-and Override Cycles. If any of that changed since the preview -- in the
+skip, to the lanes the preview named, down to what the preview's table does
+not show, such as index names and Override Cycles. If any of that changed since the preview -- in the
 LIMS, or through a change to the run's samples or cycles -- nothing is
 added and the banner says *"The worksheet or the run changed since the
 preview. Nothing was added. Preview again."* Otherwise the result shows in

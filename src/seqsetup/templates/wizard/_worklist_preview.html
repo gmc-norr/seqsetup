@@ -11,10 +11,12 @@
      skipped:       str — the sample IDs already in the run, as name_list writes them
      skipped_count: int
      worklist_id:   str
+     lanes:         list[int] — the lanes picked; the Import button sends them back
+     lane_words:    str — the lanes as words ("lane 1", "lanes 2, 3")
      plan:          str — the plan's signature (routes/samples.py _worklist_plan_signature)
 #}
 <div class="worklist-preview-content" style="margin-top: 1rem; padding: 1rem; background: var(--card-bg); border-radius: 8px;">
-    <h4>Worksheet {{ worklist_id }}: {{ samples|length }} {{ 'sample' if samples|length == 1 else 'samples' }} to add</h4>
+    <h4>Worksheet {{ worklist_id }}: {{ samples|length }} {{ 'sample' if samples|length == 1 else 'samples' }} to add to {{ lane_words }}</h4>
     {% if samples %}
     <div class="preview-table-wrapper" style="max-height: 300px; overflow-y: auto; margin-top: 0.5rem;">
         <table class="preview-table">
@@ -52,6 +54,9 @@
           style="margin-top: 0.5rem;">
         <input type="hidden" name="worklist_id" value="{{ worklist_id }}">
         <input type="hidden" name="plan" value="{{ plan }}">
+        {% for lane in lanes %}
+        <input type="hidden" name="lanes" value="{{ lane }}">
+        {% endfor %}
         <button type="submit" class="btn-primary">Import {{ samples|length }} {{ 'sample' if samples|length == 1 else 'samples' }}</button>
     </form>
     {% endif %}

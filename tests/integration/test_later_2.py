@@ -278,7 +278,8 @@ class TestEachRefusalOfTheImportGoesToTheBanner:
 # --- spec §4: the preview is the import's plan -------------------------------
 
 def _preview(client, worklist_id="WS1"):
-    return client.get(f"/runs/{RUN}/samples/preview-worklist", params={"worklist_id": worklist_id})
+    return client.get(f"/runs/{RUN}/samples/preview-worklist",
+                      params={"worklist_id": worklist_id, "lanes": ["1"]})
 
 
 def _cells(html):
@@ -306,7 +307,7 @@ class TestThePreviewShowsWhatTheImportWouldAdd:
         _worksheet(monkeypatch, GOOD_ROWS)
         resp = _preview(logged_in_client)
         assert resp.status_code == 200
-        assert "<h4>Worksheet WS1: 2 samples to add</h4>" in resp.text
+        assert "<h4>Worksheet WS1: 2 samples to add to lane 1</h4>" in resp.text
         assert _cells(resp.text) == [["P1", "WGS", "1", "ACGTACGT", "TTGGCCAA"],
                                      ["P2", "WES", "2.1", "-", "-"]]
         assert ('<p class="warning-message">1 already in this run, will be skipped: OLD1</p>'
@@ -329,7 +330,7 @@ class TestThePreviewShowsWhatTheImportWouldAdd:
         _lims_on(ctx)
         _worksheet(monkeypatch, [{"sample_id": "P1"}])
         resp = _preview(logged_in_client)
-        assert "<h4>Worksheet WS1: 1 sample to add</h4>" in resp.text
+        assert "<h4>Worksheet WS1: 1 sample to add to lane 1</h4>" in resp.text
         assert "already in this run" not in resp.text
 
     def test_every_row_is_shown(self, logged_in_client, fresh_app, monkeypatch):
@@ -434,7 +435,7 @@ class TestThePlanGivesARowThePickedWorksheet:
         _run(ctx)
         rows = [{"sample_id": "P1", "worksheet_id": None}, {"sample_id": "P2", "worksheet_id": "W7"}]
         config = SampleApiConfig(base_url="https://lims.example.org/api", enabled=True)
-        new, skipped = _plan_worklist_import(ctx.run_repo.get_by_id(RUN), rows, config, "WS9")
+        new, skipped = _plan_worklist_import(ctx.run_repo.get_by_id(RUN), rows, config, "WS9", [1])
         assert [(s.sample_id, s.worksheet_id) for s in new] == [("P1", "WS9"), ("P2", "W7")]
         assert skipped == []
 
