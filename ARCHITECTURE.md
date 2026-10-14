@@ -48,7 +48,13 @@ Who may *edit* a Draft at a given moment is a separate, concurrency
 rule, not ownership: one person edits a Draft at a time (the user's
 decision, 2026-10-13). `get_editable_run` refuses a change from anyone not
 holding the run's edit lock (`services/edit_locks.py`), and anyone may take
-the lock over after a confirmation, so no run belongs to anyone.
+the lock over after a confirmation, so no run belongs to anyone. The lock
+is checked when a request loads the run, and the save checks only the
+run's version; so when the lock leaves its holder (Take over, Done
+editing, Edit run over a lock left behind) `routes/edit_lock.py` moves the
+run's version on (`RunRepository.mark_changed`) after writing the lock,
+and a change of the old holder's that was already past its check is
+refused by the version check.
 
 This is a security review decision (2026-06-10): the shared-access model was
 reviewed and **kept intentionally**. Introducing per-user run ownership is a

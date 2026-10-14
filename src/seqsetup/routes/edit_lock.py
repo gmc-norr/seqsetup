@@ -20,6 +20,7 @@ from ..repositories.base import ConflictError
 from ..services import edit_locks
 from ..services.audit_log import audit
 from ..services.edit_locks import EditLockRefused
+from ..utils.clock import utcnow
 from .dependencies import get_ctx, get_draft_run
 from .utils import get_username
 
@@ -28,6 +29,15 @@ router = APIRouter(tags=["edit-lock"])
 
 def _reload(run: SequencingRun) -> Response:
     return Response(status_code=200, headers={"HX-Redirect": f"/runs/{run.id}"})
+
+
+def _handed_over(ctx: AppContext, run: SequencingRun, actor: str) -> None:
+    """The lock left the user who held it: mark the run changed, after the
+    lock row was written. A change of theirs already past its lock check
+    loaded the run before this, so its save is refused (outside review of
+    7f858e0, finding 3; the user's choice, 2026-10-14). The run page then
+    shows the hand-over as its last update."""
+    ctx.run_repo.mark_changed(run.id, utcnow(), actor)
 
 
 @router.post("/runs/{run_id}/edit-lock")
@@ -44,8 +54,10 @@ def start_editing(
         edit_locks.start(ctx.edit_lock_repo, run.id, request.scope.get("auth"))
     except EditLockRefused as e:
         raise ConflictError(str(e))
-    audit("run.edit.started", actor=actor, target=run.id,
-          from_user=previous.username if previous and previous.username != actor else "")
+    left_by = previous.username if previous and previous.username != actor else ""
+    if left_by:
+        _handed_over(ctx, run, actor)
+    audit("run.edit.started", actor=actor, target=run.id, from_user=left_by)
     return _reload(run)
 
 
@@ -58,6 +70,7 @@ def stop_editing(
     """Done editing. Frees the run only when the user holds it."""
     actor = get_username(request)
     if edit_locks.end(ctx.edit_lock_repo, run.id, actor):
+        _handed_over(ctx, run, actor)
         audit("run.edit.ended", actor=actor, target=run.id)
     return _reload(run)
 
@@ -69,8 +82,11 @@ def take_over_editing(
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """Take over editing: anyone may, after the page's confirmation."""
+    actor = get_username(request)
     previous = edit_locks.take_over(ctx.edit_lock_repo, run.id, request.scope.get("auth"))
-    audit("run.edit.taken_over", actor=get_username(request), target=run.id,
+    if previous and previous.username != actor:
+        _handed_over(ctx, run, actor)
+    audit("run.edit.taken_over", actor=actor, target=run.id,
           from_user=previous.username if previous else "")
     return _reload(run)
 
