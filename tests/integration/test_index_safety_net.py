@@ -800,17 +800,22 @@ class Net:
                "lims plain": 8}
 
     def _share_out(self, total: int) -> dict:
-        """How many samples each making path contributes."""
+        """How many samples each making path contributes: its fewest, plus a
+        random share of what is left over. Giving each path a random share of
+        the whole and then raising it to its fewest could leave the last path
+        below its own (the soak's seeds 10 and 15)."""
         by_hand = self.rng.randint(1, 3)
-        rest = total - by_hand
-        shares = [self.rng.random() for _ in range(4)]
-        scale = rest / sum(shares)
-        counts = {name: max(fewest, int(share * scale))
-                  for (name, fewest), share in zip(self._FEWEST.items(), shares,
-                                                   strict=True)}
-        counts["paste indexed"] += rest - sum(counts.values())
-        assert counts["paste indexed"] >= self._FEWEST["paste indexed"], \
-            "the net could not share out its samples"
+        spare = total - by_hand - sum(self._FEWEST.values())
+        assert spare >= 0, (
+            f"{total} samples is too few: the making paths need "
+            f"{sum(self._FEWEST.values()) + by_hand}")
+        shares = [self.rng.random() for _ in range(len(self._FEWEST))]
+        extra = [int(spare * share / sum(shares)) for share in shares]
+        extra[0] += spare - sum(extra)
+        counts = {name: fewest + more
+                  for (name, fewest), more in zip(self._FEWEST.items(), extra,
+                                                  strict=True)}
+        assert sum(counts.values()) + by_hand == total, counts
         return dict(counts, **{"by hand": by_hand})
 
     # -- Ready, then the sheets ----------------------------------------
