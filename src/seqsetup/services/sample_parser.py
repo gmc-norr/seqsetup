@@ -99,9 +99,12 @@ FIELD_LABELS = {
 # "Refuse, say why").
 _HEADERLESS_FIELDS = ("sample_id", "test_id")
 
-# A header word that marks an index or lane column: such a column must be
+# A header name that marks an index or lane column: such a column must be
 # one the paste reads, or the paste is refused (same audit and choice).
-_INDEX_OR_LANE_WORD = re.compile(r"^(index|barcode|i7|i5|lane)")
+# "index" and "barcode" anywhere in the name; i7, i5 and lane as the start
+# of a word.
+_INDEX_OR_LANE_TEXT = ("index", "barcode")
+_INDEX_OR_LANE_WORD = re.compile(r"^(i7|i5|lane)")
 
 
 @dataclass
@@ -212,11 +215,13 @@ def _is_header_row(parts: list[str]) -> bool:
     if first_lower in SAMPLE_HEADERS:
         return True
 
-    # Check if any column matches known headers. A sample header counts in
-    # any column: "Well, Sample_ID" is a header row, not a sample named Well.
+    # Check if any column matches known headers. A header that names the
+    # sample ID itself counts in any column: "Well, Sample_ID" is a header
+    # row, not a sample named Well. "Sample", "ID" or "Name" there could be a
+    # test's name in a data row, so they count only in the first column.
     all_headers = (
-        SAMPLE_HEADERS | TEST_HEADERS | TEST_VERSION_HEADERS | INDEX1_HEADERS | INDEX2_HEADERS
-        | INDEX_PAIR_NAME_HEADERS | INDEX1_NAME_HEADERS | INDEX2_NAME_HEADERS
+        _SAMPLE_HEADER_RANKS[0] | TEST_HEADERS | TEST_VERSION_HEADERS | INDEX1_HEADERS
+        | INDEX2_HEADERS | INDEX_PAIR_NAME_HEADERS | INDEX1_NAME_HEADERS | INDEX2_NAME_HEADERS
     )
     for col in parts[1:]:
         col_lower = col.lower().strip()
@@ -256,7 +261,7 @@ def _no_header_error(lines: list[int]) -> ValueError:
         f"these rows have more than two columns. Without a header row SeqSetup reads only "
         f"the sample ID (first column) and the test (second column); it does not guess which "
         f"column holds which index. Add a header row naming the columns, for example: "
-        f"sample_id, test_id, index_i7, index_i5."
+        f"sample_id, test_id, index_i7, index_i5. The header row must be the first line."
     )
 
 
@@ -272,14 +277,36 @@ def _unread_columns_error(names: list[str]) -> ValueError:
         f"Column(s) {quoted}: SeqSetup does not read these, so the whole paste was "
         f"refused. The i7 is read from a column named {', '.join(_INDEX1_NAMES[:-1])} or "
         f"{_INDEX1_NAMES[-1]}; the i5 from {', '.join(_INDEX2_NAMES[:-1])} or "
-        f"{_INDEX2_NAMES[-1]}."
+        f"{_INDEX2_NAMES[-1]}. Index names are read from columns such as i7_name, i5_name and "
+        f"index_pair_name."
         + (" Lanes come from the Lanes picker, not from the paste." if lanes else "")
         + " Rename or remove the column(s), or keep one column for each index."
     )
 
 
+def _first_column_taken_error(name: str, field: str) -> ValueError:
+    """Reject the whole paste: no sample ID header, and the first column,
+    read as the sample ID by default, is already read as another field."""
+    return ValueError(
+        f'The header row has no sample ID column, and its first column, "{name}", is read as '
+        f"the {FIELD_LABELS[field]}. Name the sample ID column sample_id."
+    )
+
+
+def _unnamed_column_error(cells: list[tuple[int, int]]) -> ValueError:
+    """Reject the whole paste: data under a column with no header name."""
+    lines = ", ".join(str(line) for line in dict.fromkeys(line for line, _col in cells))
+    columns = ", ".join(str(col) for col in sorted({col for _line, col in cells}))
+    return ValueError(
+        f"Row(s) {lines}: column {columns} has data but no header name, so SeqSetup cannot "
+        f"tell what it is. Give the column a header name, or remove its data."
+    )
+
+
 def _looks_like_index_or_lane(name: str) -> bool:
-    return any(_INDEX_OR_LANE_WORD.match(word) for word in re.split(r"[^a-z0-9]+", name.lower()))
+    name = name.lower()
+    return (any(text in name for text in _INDEX_OR_LANE_TEXT)
+            or any(_INDEX_OR_LANE_WORD.match(word) for word in re.split(r"[^a-z0-9]+", name)))
 
 
 def _multiline_cell_error(line_no: int) -> ValueError:
@@ -378,20 +405,37 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     rows_long_sample_id: list[int] = []
     rows_long_test: list[int] = []
     rows_bad_version: list[int] = []
+    unnamed_cells: list[tuple[int, int]] = []
+    header: list[str] = []
 
     for i, (source_line, parts) in enumerate(rows):
         # Check first non-empty line for header
         if i == 0 and _is_header_row(parts):
             column_mapping = _detect_column_mapping(parts)
-            # Ensure sample_id has a mapping (default to first column if not found)
-            if "sample_id" not in column_mapping:
-                column_mapping["sample_id"] = 0
+            # Only the columns read by their name count as read: the first
+            # column, read as the sample ID when no column names it, is
+            # checked like any other (review of 5157983, P2-1).
+            read_by_name = {k: field for field, k in column_mapping.items()}
             unread = [name for k, name in enumerate(parts)
-                      if k not in column_mapping.values() and _looks_like_index_or_lane(name)]
+                      if k not in read_by_name and _looks_like_index_or_lane(name)]
             if unread:
                 raise _unread_columns_error(unread)
+            # Ensure sample_id has a mapping (default to first column if not found)
+            if "sample_id" not in column_mapping:
+                if 0 in read_by_name:
+                    raise _first_column_taken_error(parts[0], read_by_name[0])
+                column_mapping["sample_id"] = 0
+            header = parts
             header_detected = True
             continue
+
+        # Data under a column with no header name is never dropped unseen
+        # (review of 5157983, P2-2).
+        if header_detected:
+            unnamed_cells.extend(
+                (source_line, k + 1) for k, cell in enumerate(parts)
+                if cell and (k >= len(header) or not header[k])
+            )
 
         # Extract values using column mapping
         sample_id = parts[column_mapping.get("sample_id", 0)] if len(parts) > column_mapping.get("sample_id", 0) else ""
@@ -496,6 +540,8 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             line=source_line,
         ))
 
+    if unnamed_cells:
+        raise _unnamed_column_error(unnamed_cells)
     if rows_missing_sample_id:
         rows_str = ", ".join(str(n) for n in rows_missing_sample_id)
         raise ValueError(

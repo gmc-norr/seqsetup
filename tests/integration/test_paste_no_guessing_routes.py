@@ -31,3 +31,15 @@ class TestThePasteRoutesRefuse:
 
         assert 'Column(s) "Index 2": SeqSetup does not read these' in html.unescape(r.text)
         assert _samples(ctx, run_id) == {}
+
+    def test_a_file_is_read_by_the_same_rules(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+
+        r = logged_in_client.post(
+            f"/runs/{run_id}/samples/bulk",
+            files={"sample_file": ("worklist.csv", b"S1,WGS,TATAGCCT,ATTACTCG\n", "text/csv")},
+            data={"lanes": "1"}, headers={"Origin": "http://testserver"})
+
+        assert "Row(s) 1: this paste has no header row" in html.unescape(r.text)
+        assert _samples(ctx, run_id) == {}

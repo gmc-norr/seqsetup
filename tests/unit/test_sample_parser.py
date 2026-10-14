@@ -238,8 +238,11 @@ class TestReadPastedSamples:
         with pytest.raises(ValueError, match="has no header row"):
             read_pasted_samples("S1,WGS,ATTACTCG,TATAGCCT,extra\n")
 
-    def test_data_beyond_the_header_is_unused(self):
-        assert read_pasted_samples("sample_id,test_id\nS1,WGS,surprise\n").columns_unused == ["column 3"]
+    def test_data_beyond_the_header_is_refused(self):
+        """Data with no header name is never dropped unseen (review of
+        5157983, P2-2): an i5 there was lost."""
+        with pytest.raises(ValueError, match="column 3 has data but no header name"):
+            read_pasted_samples("sample_id,test_id\nS1,WGS,surprise\n")
 
     def test_parse_pasted_samples_still_returns_the_list(self):
         assert [s.sample_id for s in parse_pasted_samples("S1\nS2")] == ["S1", "S2"]
