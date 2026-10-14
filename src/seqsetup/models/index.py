@@ -248,10 +248,11 @@ class IndexKit:
         return f"{self.name}:{self.version}"
 
     def fingerprint(self) -> str:
-        """sha256, in hex, of everything in the kit that can reach a sample or
-        the sheet. A kit could change under the same name and version, and a
-        drop from a page loaded before took the new sequences (index mix-up
-        audit #6, 2026-10-14)."""
+        """sha256, in hex, of everything in the kit but ``_NOT_IN_FINGERPRINT``,
+        which reaches no sample or sheet; the rest is in, adapters too, though
+        no sheet reads them. A kit could change under the same name and
+        version, and a drop from a page loaded before took the new sequences
+        (index mix-up audit #6, 2026-10-14)."""
         content = {key: value for key, value in self.to_dict().items()
                    if key not in _NOT_IN_FINGERPRINT}
         text = json.dumps(content, sort_keys=True, separators=(",", ":"))

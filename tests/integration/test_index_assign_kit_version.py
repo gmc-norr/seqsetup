@@ -149,6 +149,7 @@ class TestAssignOneIndex:
         )
 
         assert resp.status_code == 409
+        assert "more than one version" in resp.text
         assert _stored(ctx) == before
 
     def test_no_kit_id_and_one_kit_holds_the_pair_still_assigns(self, logged_in_client, fresh_app):
@@ -228,6 +229,7 @@ class TestAssignToSelected:
         )
 
         assert resp.status_code == 409
+        assert "more than one version" in resp.text
         assert _stored(ctx) == before
 
     def test_unknown_index_type_is_400_and_saves_nothing(self, logged_in_client, fresh_app):

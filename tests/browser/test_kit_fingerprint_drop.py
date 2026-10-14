@@ -79,6 +79,12 @@ def _change_the_kit(app_ctx):
     app_ctx.index_kit_repo.save(_kit(["GGGGGGGG", "CAGTCAGT"]))
 
 
+def _sent_the_shown_fingerprint(resp):
+    """The drop sent the fingerprint of the kit the page showed: refused for
+    that, not for sending none (review P3-5, 2026-10-14)."""
+    return _kit(SHOWN).fingerprint() in resp.value.request.post_data
+
+
 @pytest.mark.browser
 def test_one_dragged_chip(logged_in_page, base_url, app_ctx, kit, run_id):
     page = logged_in_page
@@ -89,6 +95,7 @@ def test_one_dragged_chip(logged_in_page, base_url, app_ctx, kit, run_id):
         _chip(page, 0).drag_to(_zone(page, run_id, 1))
 
     assert resp.value.status == 409
+    assert _sent_the_shown_fingerprint(resp)
     expect(page.locator("#error-banner")).to_contain_text(CHANGED)
     assert _i7s(app_ctx, run_id) == [None, None]
 
@@ -105,6 +112,7 @@ def test_several_dragged_chips(logged_in_page, base_url, app_ctx, kit, run_id):
         _chip(page, 0).drag_to(_zone(page, run_id, 1))
 
     assert resp.value.status == 409
+    assert _sent_the_shown_fingerprint(resp)
     expect(page.locator("#error-banner")).to_contain_text(CHANGED)
     assert _i7s(app_ctx, run_id) == [None, None]
 

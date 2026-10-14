@@ -371,3 +371,19 @@ class TestAKitNameAndVersionMeanOneContent:
         assert ok is False
         assert "Kept the stored index kits Dual Kit 2.1.0 until the file is fixed." in message
         assert _i7s(ctx) == ["ATTACTCG", "TCCGGAGA"]
+
+    def test_a_sync_stopped_for_storing_no_kit_names_the_refused_files(self, fresh_app, monkeypatch):
+        """Review P3-2 (2026-10-14): with another kit stored and every kit
+        file refused, the sync stops rather than store no kit, and said only
+        "Refusing to replace", not which files were refused or why."""
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"lab.yaml": GOOD_LAB_KIT})
+
+        ok, message, _count = _sync_with_kits(
+            ctx, monkeypatch, {"a.yaml": GOOD_KIT_YAML, "b.yaml": GOOD_KIT_YAML})
+
+        assert ok is False
+        assert "Refusing to replace 1 existing synced index kits with 0 fetched items" in message
+        assert ("Index kit files were refused, so they were not stored: index_kits/a.yaml "
+                "(Dual Kit 2.1.0): index_kits/b.yaml gives this kit name and version too") in message
+        assert _synced(ctx) == ["Lab Kit 1.0"]
