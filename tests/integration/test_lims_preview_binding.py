@@ -182,6 +182,37 @@ class TestAnImportThatIsNotWhatThePreviewShowedIsRefused:
         rows.append({"sample_id": "P3", "test_id": "WGS"})
         self._refused(logged_in_client, ctx, 409, CHANGED, worklist_id="W1", plan=plan)
 
+    def test_an_index_name_changed_in_the_lims(self, logged_in_client, fresh_app, monkeypatch):
+        """The preview's table shows no index names; the import still holds
+        to them (review of 314d640, P3-3)."""
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        rows = _lims(ctx, monkeypatch)
+        plan = _plan(_preview(logged_in_client).text)
+        rows[0]["i7_name"] = "D701"
+        self._refused(logged_in_client, ctx, 409, CHANGED, worklist_id="W1", plan=plan)
+
+    def test_the_runs_cycles_changed_since(self, logged_in_client, fresh_app, monkeypatch):
+        """Each sample's Override Cycles would differ from the preview's plan."""
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims(ctx, monkeypatch)
+        plan = _plan(_preview(logged_in_client).text)
+        run = ctx.run_repo.get_by_id(RUN)
+        run.run_cycles = RunCycles(101, 101, 10, 10)
+        ctx.run_repo.save(run)
+        self._refused(logged_in_client, ctx, 409, CHANGED, worklist_id="W1", plan=plan)
+
+    def test_another_worksheet_with_the_same_rows(self, logged_in_client, fresh_app, monkeypatch):
+        """Rows that name their own worksheet plan the same samples for W1
+        and W2; the import is still held to the worksheet previewed."""
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        for row in _lims(ctx, monkeypatch):
+            row["worksheet_id"] = "W1"
+        plan = _plan(_preview(logged_in_client, "W1").text)
+        self._refused(logged_in_client, ctx, 409, CHANGED, worklist_id="W2", plan=plan)
+
     def test_a_sample_added_in_the_lims_that_the_run_already_has(
             self, logged_in_client, fresh_app, monkeypatch):
         """The import would add the same two samples, but skip one the
@@ -218,3 +249,22 @@ class TestAnImportThatIsNotWhatThePreviewShowedIsRefused:
         _run(ctx)
         _lims(ctx, monkeypatch)
         self._refused(logged_in_client, ctx, 409, CHANGED, worklist_id="W1", plan="0" * 64)
+
+
+class TestAPlanWithNothingToAdd:
+    """The preview offers no import then. A request that sends that plan
+    anyway adds nothing and says so, as before (review of 314d640, P3-3)."""
+
+    def test_it_says_nothing_was_added(self, logged_in_client, fresh_app, monkeypatch):
+        from seqsetup.routes.samples import _worklist_plan_signature
+        _app, ctx, _db = fresh_app
+        _run(ctx, ["P1", "P2"])
+        _lims(ctx, monkeypatch)
+        before = ctx.run_repo.get_by_id(RUN).to_dict()
+
+        resp = _post(logged_in_client, worklist_id="W1",
+                     plan=_worklist_plan_signature("W1", [], ["P1", "P2"]))
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert '<p class="warning-message">No new samples added from worklist.</p>' in resp.text
+        assert ctx.run_repo.get_by_id(RUN).to_dict() == before

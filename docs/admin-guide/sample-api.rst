@@ -299,9 +299,12 @@ worklist list, lets you preview one, and imports its samples from the
 preview; all three answer only for a Draft run. The preview shows what the
 import would do: the samples it would add, the ones already in the run, or
 the refusal it would give. The import fetches the worksheet again, with
-every check, and adds the samples only if they are exactly what the
-preview showed; if the worksheet changed in the LIMS in between, nothing
-is added and the user is asked to preview again. If importing the
+every check, and adds the samples only if what it would add and skip is
+exactly what the preview worked out; if that changed in between, in the
+LIMS or through a change to the run, nothing is added and the user is
+asked to preview again. The order of the rows is part of what is compared,
+as it is the order the samples are added in, so the LIMS must send a
+worksheet's rows in the same order each time. If importing the
 worklist would push the run over the per-run sample maximum, the whole
 import is refused rather than adding a partial worklist. A refused import
 shows its message in the page's error banner and changes nothing.

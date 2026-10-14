@@ -154,11 +154,13 @@ Under the samples, the preview's **Import 2 samples** button (it counts
 them) adds them to the run; it is off until the import answers. There is
 no import without a preview: when every sample of the worksheet is already
 in the run, or the import would be refused, the preview has no button. The
-import asks the LIMS again and adds the samples only if they are exactly
-what the preview showed. If the worksheet changed in the LIMS since the
-preview, or the run's samples did, nothing is added and the banner says
-*"The worksheet or the run changed since the preview. Nothing was added.
-Preview again."* Otherwise the result shows in the banner at the top of
+import asks the LIMS again and works out again what it would add and
+skip, down to what the preview's table does not show, such as index names
+and Override Cycles. If any of that changed since the preview -- in the
+LIMS, or through a change to the run's samples or cycles -- nothing is
+added and the banner says *"The worksheet or the run changed since the
+preview. Nothing was added. Preview again."* Otherwise the result shows in
+the banner at the top of
 the page (*"Added 2 samples from worklist."*). If the import is refused,
 its message shows in the banner instead, and the run's samples stay as
 they were. An imported

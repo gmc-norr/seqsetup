@@ -118,10 +118,10 @@ def _messages_only(request, messages) -> HTMLResponse:
 
 
 def _banner_only(request, messages, status_code: int = 400) -> HTMLResponse:
-    """The _messages.html partial as a 400 aimed at the page's error banner,
-    for a refusal that leaves the page as it was. A 400, not a 200: app.js
-    clears the banner after a 200 from a button whose last request failed
-    (spec 2026-10-10 later list slice 2, §2)."""
+    """The _messages.html partial as a 400 (or the given status, 4xx) aimed
+    at the page's error banner, for a refusal that leaves the page as it
+    was. Not a 200: app.js clears the banner after a 200 from a button whose
+    last request failed (spec 2026-10-10 later list slice 2, §2)."""
     html = templates.env.get_template("_messages.html").render(messages=messages)
     return HTMLResponse(html, status_code=status_code, headers={
         "HX-Retarget": "#error-banner", "HX-Reswap": "innerHTML",
