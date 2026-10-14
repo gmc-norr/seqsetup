@@ -64,12 +64,11 @@ TEST_HEADERS = {
 TEST_VERSION_HEADERS = {
     "test_version", "testversion", "test version", "test-version",
 }
-INDEX1_HEADERS = {
-    "index", "index1", "i7", "index_i7", "i7_index", "index i7",
-}
-INDEX2_HEADERS = {
-    "index2", "i5", "index_i5", "i5_index", "index i5",
-}
+# In this order in the message that refuses a column it does not read.
+_INDEX1_NAMES = ("index", "index1", "i7", "index_i7", "i7_index", "index i7")
+_INDEX2_NAMES = ("index2", "i5", "index_i5", "i5_index", "index i5")
+INDEX1_HEADERS = set(_INDEX1_NAMES)
+INDEX2_HEADERS = set(_INDEX2_NAMES)
 INDEX_PAIR_NAME_HEADERS = {
     "index_pair_name", "pair_name", "index_pair", "index pair",
     "index_kit", "kit_name", "kit name", "index kit",
@@ -94,8 +93,15 @@ FIELD_LABELS = {
     "index2_name": "i5 name",
 }
 
-# Without a header row, columns 1-4 are read as these fields, in order.
-_HEADERLESS_FIELDS = ("sample_id", "test_id", "index1", "index2")
+# Without a header row, columns 1-2 are read as these fields, in order, and
+# a paste with more columns is refused: which column holds the i7 and which
+# the i5 is never guessed (index mix-up audit, 2026-10-14; the user's choice
+# "Refuse, say why").
+_HEADERLESS_FIELDS = ("sample_id", "test_id")
+
+# A header word that marks an index or lane column: such a column must be
+# one the paste reads, or the paste is refused (same audit and choice).
+_INDEX_OR_LANE_WORD = re.compile(r"^(index|barcode|i7|i5|lane)")
 
 
 @dataclass
@@ -206,9 +212,10 @@ def _is_header_row(parts: list[str]) -> bool:
     if first_lower in SAMPLE_HEADERS:
         return True
 
-    # Check if any column matches known headers
+    # Check if any column matches known headers. A sample header counts in
+    # any column: "Well, Sample_ID" is a header row, not a sample named Well.
     all_headers = (
-        TEST_HEADERS | TEST_VERSION_HEADERS | INDEX1_HEADERS | INDEX2_HEADERS
+        SAMPLE_HEADERS | TEST_HEADERS | TEST_VERSION_HEADERS | INDEX1_HEADERS | INDEX2_HEADERS
         | INDEX_PAIR_NAME_HEADERS | INDEX1_NAME_HEADERS | INDEX2_NAME_HEADERS
     )
     for col in parts[1:]:
@@ -240,6 +247,39 @@ def _unreadable_line_error(line_no: int) -> ValueError:
         f'Line {line_no}: this line could not be read — check it for a double '
         f'quote (") that is not closed correctly, then paste again.'
     )
+
+
+def _no_header_error(lines: list[int]) -> ValueError:
+    """Reject the whole paste: no header row, and more than two columns."""
+    return ValueError(
+        f"Row(s) {', '.join(str(n) for n in lines)}: this paste has no header row, and "
+        f"these rows have more than two columns. Without a header row SeqSetup reads only "
+        f"the sample ID (first column) and the test (second column); it does not guess which "
+        f"column holds which index. Add a header row naming the columns, for example: "
+        f"sample_id, test_id, index_i7, index_i5."
+    )
+
+
+def _unread_columns_error(names: list[str]) -> ValueError:
+    """Reject the whole paste: a header column looks like an index or a lane
+    but is not a column the paste reads."""
+    quoted = ", ".join(f'"{name}"' for name in names)
+    lanes = any(
+        word.startswith("lane")
+        for name in names for word in re.split(r"[^a-z0-9]+", name.lower())
+    )
+    return ValueError(
+        f"Column(s) {quoted}: SeqSetup does not read these, so the whole paste was "
+        f"refused. The i7 is read from a column named {', '.join(_INDEX1_NAMES[:-1])} or "
+        f"{_INDEX1_NAMES[-1]}; the i5 from {', '.join(_INDEX2_NAMES[:-1])} or "
+        f"{_INDEX2_NAMES[-1]}."
+        + (" Lanes come from the Lanes picker, not from the paste." if lanes else "")
+        + " Rename or remove the column(s), or keep one column for each index."
+    )
+
+
+def _looks_like_index_or_lane(name: str) -> bool:
+    return any(_INDEX_OR_LANE_WORD.match(word) for word in re.split(r"[^a-z0-9]+", name.lower()))
 
 
 def _multiline_cell_error(line_no: int) -> ValueError:
@@ -320,8 +360,13 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
         rows.append((line_no, [cell[:_MAX_CELL_LEN] for cell in cells]))
         long_cells[line_no] = {k for k, cell in enumerate(cells) if len(cell) > _MAX_CELL_LEN}
 
+    if rows and not _is_header_row(rows[0][1]):
+        wide = [line_no for line_no, parts in rows if any(parts[len(_HEADERLESS_FIELDS):])]
+        if wide:
+            raise _no_header_error(wide)
+
     # Default column mapping (no header)
-    column_mapping = {"sample_id": 0, "test_id": 1, "index1": 2, "index2": 3}
+    column_mapping = {"sample_id": 0, "test_id": 1}
     header_detected = False
 
     # Track row numbers that had content but no sample_id, so the caller can
@@ -341,6 +386,10 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             # Ensure sample_id has a mapping (default to first column if not found)
             if "sample_id" not in column_mapping:
                 column_mapping["sample_id"] = 0
+            unread = [name for k, name in enumerate(parts)
+                      if k not in column_mapping.values() and _looks_like_index_or_lane(name)]
+            if unread:
+                raise _unread_columns_error(unread)
             header_detected = True
             continue
 
@@ -358,15 +407,9 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
 
         if "index1" in column_mapping and len(parts) > column_mapping["index1"]:
             index1 = parts[column_mapping["index1"]]
-        elif not header_detected and len(parts) > 2:
-            # Default: third column is index1 if no header
-            index1 = parts[2]
 
         if "index2" in column_mapping and len(parts) > column_mapping["index2"]:
             index2 = parts[column_mapping["index2"]]
-        elif not header_detected and len(parts) > 3:
-            # Default: fourth column is index2 if no header
-            index2 = parts[3]
 
         # Name columns (only when header is detected, no default positions)
         index_pair_name = ""

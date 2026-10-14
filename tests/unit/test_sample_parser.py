@@ -18,13 +18,15 @@ class TestSampleCountCap:
 
     def test_exceeding_cap_raises(self, monkeypatch):
         monkeypatch.setattr(sample_parser_module, "MAX_SAMPLES_PER_RUN", 5)
-        data = "\n".join(f"S{i},WGS,ATTACTCG,TATAGCCT" for i in range(6))
+        data = "sample_id,test_id,index,index2\n" + "\n".join(
+            f"S{i},WGS,ATTACTCG,TATAGCCT" for i in range(6))
         with pytest.raises(ValueError, match="maximum"):
             parse_pasted_samples(data)
 
     def test_at_cap_succeeds(self, monkeypatch):
         monkeypatch.setattr(sample_parser_module, "MAX_SAMPLES_PER_RUN", 5)
-        data = "\n".join(f"S{i},WGS,ATTACTCG,TATAGCCT" for i in range(5))
+        data = "sample_id,test_id,index,index2\n" + "\n".join(
+            f"S{i},WGS,ATTACTCG,TATAGCCT" for i in range(5))
         samples = parse_pasted_samples(data)
         assert len(samples) == 5
 
@@ -53,20 +55,22 @@ class TestParseBasicShape:
         assert result[0].index1_sequence == "ATTACTCG"
 
     def test_no_header_default_column_order(self):
-        data = "S1\tWGS\tATTACTCG\tTATAGCCT\n"
+        """Without a header row: sample ID, then test, and nothing more
+        (index mix-up audit, 2026-10-14)."""
+        data = "S1\tWGS\n"
         result = parse_pasted_samples(data)
         assert len(result) == 1
         assert result[0].sample_id == "S1"
         assert result[0].test_id == "WGS"
 
     def test_dna_lowercased_is_uppercased(self):
-        data = "S1\tWGS\tattactcg\ttatagcct\n"
+        data = "sample_id\ttest_id\tindex\tindex2\nS1\tWGS\tattactcg\ttatagcct\n"
         result = parse_pasted_samples(data)
         assert result[0].index1_sequence == "ATTACTCG"
         assert result[0].index2_sequence == "TATAGCCT"
 
     def test_invalid_dna_raises(self):
-        data = "S1\tWGS\tATTACTCXZ\tTATAGCCT\n"
+        data = "sample_id\ttest_id\tindex\tindex2\nS1\tWGS\tATTACTCXZ\tTATAGCCT\n"
         with pytest.raises(ValueError, match="Invalid characters"):
             parse_pasted_samples(data)
 
@@ -215,24 +219,24 @@ class TestReadPastedSamples:
         assert [(s.sample_id, s.line) for s in read.samples] == [("S1", 3), ("S2", 4)]
 
     def test_header_columns_used_and_unused(self):
-        read = read_pasted_samples("sample_id\ttest_id\tlane\nS1\tWGS\t3\n")
+        read = read_pasted_samples("sample_id\ttest_id\twell\nS1\tWGS\tA03\n")
         assert read.header_found is True
         assert read.columns_used == [("sample_id", "Sample ID"), ("test_id", "Test")]
-        assert read.columns_unused == ["lane"]
+        assert read.columns_unused == ["well"]
 
     def test_empty_unknown_column_is_not_listed(self):
         assert read_pasted_samples("sample_id\tcomment\nS1\t\n").columns_unused == []
 
     def test_headerless_columns_are_guessed_by_position(self):
-        read = read_pasted_samples("S1\tATTACTCG\tTATAGCCT\n")
+        read = read_pasted_samples("S1\tATTACTCG\n")
         assert read.header_found is False
-        assert read.columns_used == [
-            ("column 1", "Sample ID"), ("column 2", "Test"), ("column 3", "i7"),
-        ]
+        assert read.columns_used == [("column 1", "Sample ID"), ("column 2", "Test")]
         assert read.samples[0].test_id == "ATTACTCG"  # the guess the preview must show
 
-    def test_headerless_fifth_column_is_unused(self):
-        assert read_pasted_samples("S1,WGS,ATTACTCG,TATAGCCT,extra\n").columns_unused == ["column 5"]
+    def test_headerless_extra_columns_are_refused(self):
+        """Index mix-up audit, 2026-10-14: no column is read by guess past the test."""
+        with pytest.raises(ValueError, match="has no header row"):
+            read_pasted_samples("S1,WGS,ATTACTCG,TATAGCCT,extra\n")
 
     def test_data_beyond_the_header_is_unused(self):
         assert read_pasted_samples("sample_id,test_id\nS1,WGS,surprise\n").columns_unused == ["column 3"]
