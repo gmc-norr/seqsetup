@@ -169,6 +169,19 @@ class TestNothingIsMarkedWhenTheEditorStaysTheSame:
 
         assert ctx.run_repo.get_by_id(run_id).updated_at == before
 
+    def test_take_over_of_your_own_lock(self, two):
+        """From a second tab, say: the editor's change from the first one is kept."""
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+        before = ctx.run_repo.get_by_id(run_id).updated_at
+
+        resp = admin.post(f"/runs/{run_id}/edit-lock/take-over", headers=ORIGIN)
+
+        assert resp.status_code == 200
+        assert _holder(ctx, run_id) == ADMIN
+        assert ctx.run_repo.get_by_id(run_id).updated_at == before
+
     def test_done_editing(self, two):
         ctx, admin, op = two
         run_id = _draft(ctx, samples=1)
