@@ -52,6 +52,21 @@ def shown_value(text: str) -> str:
     return text if len(text) <= 40 else text[:40] + "…"
 
 
+# The sample text that reaches the sheet or is matched against the LIMS and
+# the test profiles. Longer than MAX_SAMPLE_TEXT it is refused, never cut: a
+# cut ID is another ID, and two IDs alike in their first 256 characters
+# would become one (outside review of 7f858e0, finding 5; spec 2026-10-14
+# long sample text).
+MAX_SAMPLE_TEXT = 256
+SAMPLE_TEXT_LABELS = {
+    "sample_id": "sample ID",
+    "sample_name": "sample name",
+    "project": "project",
+    "test_id": "test",
+    "worksheet_id": "worksheet ID",
+}
+
+
 # A LIMS may use 0 for an empty well, and JSON sends that as the number 0, so
 # a worklist row for a well with nothing in it looks like a sample called "0".
 # Stored, it names a patient sample 0 in the Sample Sheet, or hides a real
@@ -174,7 +189,8 @@ class Sample:
           - ``description`` capped at 4096 chars; ``metadata`` rejected if
             not a dict (defense-in-depth: free-form fields could otherwise
             balloon the document).
-          - Free-form string identifiers capped at 256.
+          - The text in SAMPLE_TEXT_LABELS refused over MAX_SAMPLE_TEXT,
+            never cut; ``index_kit_name`` capped at 256.
           - ``test_version`` text that follows TEST_VERSION_RULE, never cut.
           - ``sample_id`` rejected when it is made only of zeros.
         """
@@ -209,10 +225,13 @@ class Sample:
                         "Sample.metadata must be a dict; got "
                         f"{type(value).__name__}"
                     )
-            elif name in (
-                "sample_id", "sample_name", "project", "test_id",
-                "worksheet_id", "index_kit_name",
-            ) and isinstance(value, str):
+            elif name in SAMPLE_TEXT_LABELS and isinstance(value, str):
+                if len(value) > MAX_SAMPLE_TEXT:
+                    raise ValueError(
+                        f"The {SAMPLE_TEXT_LABELS[name]} is longer than {MAX_SAMPLE_TEXT} "
+                        f"characters ({len(value)}): {shown_value(value)!r}. SeqSetup does "
+                        f"not shorten it.")
+            elif name == "index_kit_name" and isinstance(value, str):
                 value = value[:256]
         object.__setattr__(self, name, value)
 

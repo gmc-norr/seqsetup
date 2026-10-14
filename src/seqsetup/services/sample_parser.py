@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..models.sample import (
+    MAX_SAMPLE_TEXT,
     TEST_VERSION_RE,
     TEST_VERSION_RULE,
     ZERO_SAMPLE_ID_RULE,
@@ -22,8 +23,10 @@ _VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 
 # Per-cell character cap. Matches the 256 limit applied by routes' sanitize_string()
 # on form-submitted fields, so pasted/imported values arrive at the model layer
-# already bounded.
-_MAX_CELL_LEN = 256
+# already bounded. A sample ID or test cell over it is refused instead, never
+# cut (spec 2026-10-14 long sample text): the cut is for the cells that do not
+# become one of them.
+_MAX_CELL_LEN = MAX_SAMPLE_TEXT
 
 
 @dataclass
@@ -292,6 +295,9 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     # position regardless of blank-row filtering. A record starts on the line
     # after the previous record ended.
     rows: list[tuple[int, list[str]]] = []
+    # The columns of each line whose cell was longer than _MAX_CELL_LEN,
+    # before the cut, so a sample ID or test that long is refused.
+    long_cells: dict[int, set[int]] = {}
     start_line = 1
     while True:
         try:
@@ -310,7 +316,9 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
         # Clamp each cell to MAX_CELL_LEN per the CLAUDE.md input-sanitization
         # rule; downstream code assumes bounded strings (model invariants, DB
         # field widths, render budgets).
-        rows.append((line_no, [cell.strip()[:_MAX_CELL_LEN] for cell in raw]))
+        cells = [cell.strip() for cell in raw]
+        rows.append((line_no, [cell[:_MAX_CELL_LEN] for cell in cells]))
+        long_cells[line_no] = {k for k, cell in enumerate(cells) if len(cell) > _MAX_CELL_LEN}
 
     # Default column mapping (no header)
     column_mapping = {"sample_id": 0, "test_id": 1, "index1": 2, "index2": 3}
@@ -322,6 +330,8 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     # 95-sample run with no indication anything was lost.
     rows_missing_sample_id: list[int] = []
     rows_zero_sample_id: list[int] = []
+    rows_long_sample_id: list[int] = []
+    rows_long_test: list[int] = []
     rows_bad_version: list[int] = []
 
     for i, (source_line, parts) in enumerate(rows):
@@ -382,6 +392,16 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             # The model refuses it, so the whole paste is refused here —
             # naming its rows, like a row with no sample ID at all.
             rows_zero_sample_id.append(source_line)
+            continue
+
+        # A sample ID or test longer than the cut is refused, never cut: the
+        # cut one is another ID (spec 2026-10-14 long sample text).
+        too_long = long_cells.get(source_line, set())
+        if column_mapping.get("sample_id", 0) in too_long:
+            rows_long_sample_id.append(source_line)
+            continue
+        if column_mapping.get("test_id", None if header_detected else 1) in too_long:
+            rows_long_test.append(source_line)
             continue
 
         # A version is at most 29 characters, so a cell cut to _MAX_CELL_LEN
@@ -445,6 +465,13 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             f"Row(s) {rows_str}: {ZERO_SAMPLE_ID_RULE}. "
             f"Give the sample its real ID or remove the row entirely."
         )
+    for long_rows, what in ((rows_long_sample_id, "the sample_id"), (rows_long_test, "the test")):
+        if long_rows:
+            rows_str = ", ".join(str(n) for n in long_rows)
+            raise ValueError(
+                f"Row(s) {rows_str}: {what} is longer than {MAX_SAMPLE_TEXT} characters. "
+                f"SeqSetup does not shorten it; shorten it in the source."
+            )
     if rows_bad_version:
         rows_str = ", ".join(str(n) for n in rows_bad_version)
         raise ValueError(f"Row(s) {rows_str}: the test version is not right. {TEST_VERSION_RULE}.")
