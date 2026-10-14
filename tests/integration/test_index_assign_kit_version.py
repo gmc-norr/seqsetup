@@ -95,7 +95,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_pair_id": "VerKit_UDP0", "kit_id": kits[which].kit_id},
+            data={"index_pair_id": "VerKit_UDP0", "kit_id": kits[which].kit_id, "kit_fingerprint": kits[which].fingerprint()},
             headers=ORIGIN,
         )
 
@@ -112,7 +112,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_id": "ComboKit_i7_A1", "index_type": "i7", "kit_id": v2.kit_id},
+            data={"index_id": "ComboKit_i7_A1", "index_type": "i7", "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
             headers=ORIGIN,
         )
 
@@ -149,16 +149,17 @@ class TestAssignOneIndex:
         )
 
         assert resp.status_code == 409
+        assert "more than one version" in resp.text
         assert _stored(ctx) == before
 
     def test_no_kit_id_and_one_kit_holds_the_pair_still_assigns(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         _run(ctx)
-        _dual_kit(ctx, "1.0", V1_I7, V1_I5)
+        kit = _dual_kit(ctx, "1.0", V1_I7, V1_I5)
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_pair_id": "VerKit_UDP0"},
+            data={"index_pair_id": "VerKit_UDP0", "kit_fingerprint": kit.fingerprint()},
             headers=ORIGIN,
         )
 
@@ -189,7 +190,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_pair_id": "VerKit_UDP0", "kit_id": other.kit_id},
+            data={"index_pair_id": "VerKit_UDP0", "kit_id": other.kit_id, "kit_fingerprint": other.fingerprint()},
             headers=ORIGIN,
         )
 
@@ -208,7 +209,7 @@ class TestAssignToSelected:
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/assign-index-to-selected",
             data={"sample_ids": json.dumps(["s1"]), "index_pair_id": "VerKit_UDP1",
-                  "kit_id": v2.kit_id},
+                  "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
             headers=ORIGIN,
         )
 
@@ -228,6 +229,7 @@ class TestAssignToSelected:
         )
 
         assert resp.status_code == 409
+        assert "more than one version" in resp.text
         assert _stored(ctx) == before
 
     def test_unknown_index_type_is_400_and_saves_nothing(self, logged_in_client, fresh_app):
@@ -242,7 +244,7 @@ class TestAssignToSelected:
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/assign-index-to-selected",
             data={"sample_ids": json.dumps(["s1"]), "index_id": "ComboKit_i7_A1",
-                  "index_type": "bogus", "kit_id": combo.kit_id},
+                  "index_type": "bogus", "kit_id": combo.kit_id, "kit_fingerprint": combo.fingerprint()},
             headers=ORIGIN,
         )
 
@@ -273,8 +275,8 @@ class TestAssignSeveralInOrder:
         _v1, v2 = _two_versions(ctx)
 
         resp = self._post(logged_in_client, [
-            {"id": "VerKit_UDP0", "type": "pair", "kit_id": v2.kit_id},
-            {"id": "VerKit_UDP1", "type": "pair", "kit_id": v2.kit_id},
+            {"id": "VerKit_UDP0", "type": "pair", "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
+            {"id": "VerKit_UDP1", "type": "pair", "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
         ])
 
         assert resp.status_code == 200, resp.text[:300]
@@ -291,8 +293,8 @@ class TestAssignSeveralInOrder:
         before = _stored(ctx)
 
         resp = self._post(logged_in_client, [
-            {"id": "VerKit_UDP0", "type": "pair", "kit_id": v2.kit_id},
-            {"id": "VerKit_UDP1", "type": "pair", "kit_id": v1.kit_id},
+            {"id": "VerKit_UDP0", "type": "pair", "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
+            {"id": "VerKit_UDP1", "type": "pair", "kit_id": v1.kit_id, "kit_fingerprint": v1.fingerprint()},
         ])
 
         assert resp.status_code == 400

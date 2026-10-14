@@ -61,15 +61,15 @@ def _plate_pair_kit(name="Plate-Pairs"):
 
 
 def _pair(kit, n):
-    return {"id": f"{kit.name}_A0{n}", "type": "pair", "kit_id": kit.kit_id}
+    return {"id": f"{kit.name}_A0{n}", "type": "pair", "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()}
 
 
 def _i7(kit, n):
-    return {"id": f"{kit.name}_i7_N70{n}", "type": "i7", "kit_id": kit.kit_id}
+    return {"id": f"{kit.name}_i7_N70{n}", "type": "i7", "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()}
 
 
 def _i5(kit, n):
-    return {"id": f"{kit.name}_i5_S50{n}", "type": "i5", "kit_id": kit.kit_id}
+    return {"id": f"{kit.name}_i5_S50{n}", "type": "i5", "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()}
 
 
 def _run(ctx, *kits, rows=5):
@@ -140,7 +140,7 @@ class TestTheRowsAreFilledInPanelOrder:
         clicked = ["B02", "A01", "B01", "A02"]
 
         resp = _drop(logged_in_client, run, [
-            {"id": f"{kit.name}_{well}", "type": "pair", "kit_id": kit.kit_id} for well in clicked])
+            {"id": f"{kit.name}_{well}", "type": "pair", "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()} for well in clicked])
 
         assert resp.status_code == 200
         assert _stored(ctx, run.id)[:4] == [(f"P{k + 1}", I7[k], I5[k]) for k in range(4)]
@@ -151,7 +151,7 @@ class TestTheRowsAreFilledInPanelOrder:
         run = _run(ctx, kit)
 
         resp = _drop(logged_in_client, run, [
-            {"id": f"{kit.name}_i7_{well}", "type": "i7", "kit_id": kit.kit_id}
+            {"id": f"{kit.name}_i7_{well}", "type": "i7", "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()}
             for well in ["A02", "B02", "A01", "B01"]])
 
         assert resp.status_code == 200
@@ -163,7 +163,7 @@ class TestTheRowsAreFilledInPanelOrder:
         run = _run(ctx, kit)
 
         resp = _drop(logged_in_client, run, [
-            {"id": f"{kit.name}_i5_{well}", "type": "i5", "kit_id": kit.kit_id}
+            {"id": f"{kit.name}_i5_{well}", "type": "i5", "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()}
             for well in ["B02", "A02", "B01", "A01"]])
 
         assert resp.status_code == 200

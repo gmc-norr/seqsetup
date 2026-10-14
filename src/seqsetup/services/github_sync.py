@@ -57,6 +57,14 @@ def _names(collections: list[str]) -> str:
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def _refused_kits_text(refused_kits: list[dict]) -> str:
+    """Each refused kit file, its kit and why, for the sync's message."""
+    return ("Index kit files were refused, so they were not stored: "
+            + "; ".join(f"{r['path']} ({r['kit']}): {r['reason']}" if r["kit"]
+                        else f"{r['path']}: {r['reason']}" for r in refused_kits)
+            + ".")
+
+
 def unfinished_sync_message(since: datetime, collections: list[str]) -> str:
     """Why Mark Ready refuses while a sync's writes have not finished (outside
     review of 7f858e0, finding 4; the user's choice, 2026-10-14)."""
@@ -299,6 +307,7 @@ class GitHubSyncService:
             refused_kits: list[dict] = []
             kept_kits: list[IndexKit] = []
             if config.sync_index_kits_enabled and self.index_kit_repo:
+                kit_paths: list[str] = []
                 index_kits = self._fetch_index_kits(
                     owner,
                     repo,
@@ -308,7 +317,10 @@ class GitHubSyncService:
                     refused=refused_kits,
                     uploaded_ids=frozenset(
                         kit.kit_id for kit in self.index_kit_repo.list_user_uploaded()),
+                    paths=kit_paths,
                 )
+                index_kits = self._refuse_changed_or_repeated_kits(
+                    index_kits, kit_paths, refused_kits)
                 logger.info(f"Fetched {len(index_kits)} index kits")
                 if refused_kits:
                     kept_kits = self._synced_kits_to_keep(index_kits, refused_kits)
@@ -342,10 +354,16 @@ class GitHubSyncService:
                 existing_synced_index_kits = self.index_kit_repo.collection.count_documents(
                     {"source": "github"}
                 )
-                self._guard_against_destructive_replace(
-                    existing_synced_index_kits, len(index_kits) + len(kept_kits),
-                    "synced index kits"
-                )
+                try:
+                    self._guard_against_destructive_replace(
+                        existing_synced_index_kits, len(index_kits) + len(kept_kits),
+                        "synced index kits"
+                    )
+                except GitHubSyncError as e:
+                    # Every kit file refused: say which, not only that none is left.
+                    if not refused_kits:
+                        raise
+                    raise GitHubSyncError(f"{e}. {_refused_kits_text(refused_kits)}") from e
 
             # Save to database (replace all). The deletes and writes below are
             # not one step: each collection is noted before it is deleted.
@@ -449,12 +467,7 @@ class GitHubSyncService:
                         "and the stored ones are kept: " + "; ".join(refused_instruments) + "."
                     )
                 if refused_kits:
-                    refusals.append(
-                        "Index kit files were refused, so they were not stored: "
-                        + "; ".join(f"{r['path']} ({r['kit']}): {r['reason']}" if r["kit"]
-                                    else f"{r['path']}: {r['reason']}" for r in refused_kits)
-                        + "."
-                    )
+                    refusals.append(_refused_kits_text(refused_kits))
                     if kept_kits:
                         refusals.append(
                             "Kept the stored index kits "
@@ -907,6 +920,38 @@ class GitHubSyncService:
                   for profile in self.test_profile_repo.list_all()}
         return [f"{test} {version}" for test, version in sorted(stored - read)]
 
+    def _refuse_changed_or_repeated_kits(self, kits: list[IndexKit], paths: list[str],
+                                         refused: list[dict]) -> list[IndexKit]:
+        """The fetched kits the sync may store. A kit name and version given
+        by two files, or stored before with other content (its fingerprint),
+        is added to ``refused`` and not stored, so the stored kit stays: while
+        a kit is stored its name and version mean the same indexes (a kit whose
+        file left the repository is removed, and may come back changed), and a
+        drop from a page loaded before cannot pick up new ones (index mix-up
+        audit #6, 2026-10-14)."""
+        files: dict[str, list[str]] = {}
+        # strict=True: a kit without its path would be checked against none.
+        for kit, where in zip(kits, paths, strict=True):
+            files.setdefault(kit.kit_id, []).append(where)
+        stored = {kit.kit_id: kit.fingerprint() for kit in self.index_kit_repo.list_synced()}
+        allowed = []
+        for kit, where in zip(kits, paths, strict=True):
+            others = [path for path in files[kit.kit_id] if path != where]
+            if others:
+                reason = (f"{', '.join(others)} {'gives' if len(others) == 1 else 'give'} this "
+                          f"kit name and version too; a kit name and version may be in one "
+                          f"file only")
+            elif kit.kit_id in stored and stored[kit.kit_id] != kit.fingerprint():
+                reason = ("a kit of this name and version is stored with other indexes or "
+                          "settings; give the changed kit a new version")
+            else:
+                allowed.append(kit)
+                continue
+            logger.error(f"Index kit '{kit.name}' {kit.version} ({where}): {reason}")
+            refused.append({"path": where, "name": kit.name,
+                            "kit": f"{kit.name} {kit.version}", "reason": reason})
+        return allowed
+
     def _synced_kits_to_keep(self, fetched: list[IndexKit], refused: list[dict]) -> list[IndexKit]:
         """The stored synced kits a sync with refused kit files keeps: those
         this sync did not read that carry a refused file's kit name, or -- when
@@ -982,6 +1027,7 @@ class GitHubSyncService:
         strict: bool = False,
         refused: Optional[list[dict]] = None,
         uploaded_ids: frozenset = frozenset(),
+        paths: Optional[list[str]] = None,
     ) -> list[IndexKit]:
         """Fetch index kit definitions from GitHub.
 
@@ -992,7 +1038,8 @@ class GitHubSyncService:
         night run's Q3: the sync names it and keeps the kit stored before).
         A kit whose kit_id is in ``uploaded_ids`` -- a kit uploaded through
         SeqSetup -- is refused the same way, and the uploaded one is kept
-        (review P2-2, 2026-10-13).
+        (review P2-2, 2026-10-13). ``paths`` gets each returned kit's file
+        path, in step with the returned list.
 
         Args:
             owner: GitHub owner
@@ -1026,7 +1073,8 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_kits = self._fetch_index_kits(owner, repo, branch, item_path,
-                                                  refused=refused, uploaded_ids=uploaded_ids)
+                                                  refused=refused, uploaded_ids=uploaded_ids,
+                                                  paths=paths)
                 # Subdirectories are best-effort; top-level fetch is strict.
                 index_kits.extend(sub_kits)
 
@@ -1056,6 +1104,8 @@ class GitHubSyncService:
                                     })
                             elif validation.is_valid:
                                 index_kits.append(kit)
+                                if paths is not None:
+                                    paths.append(item_path)
                                 logger.debug(f"Parsed index kit from {item_path}")
                             else:
                                 for error in validation.errors:

@@ -6,7 +6,11 @@
 
    Inputs:
      kit: IndexKit (non-None — caller guarded)
+
+   kit_fingerprint goes on every chip for the drop to send: the server
+   refuses a drop from a kit changed since the page was loaded.
 #}
+{% set kit_fingerprint = kit.fingerprint() %}
 {% if kit.is_combinatorial() %}
 <div id="index-list-items" class="combinatorial-content">
     <div class="index-subsection i7-section">

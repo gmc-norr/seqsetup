@@ -57,9 +57,12 @@ class FillPlan:
     def signature(self) -> str:
         """What Assign will save, for the apply route to compare. Holds the
         sequences, not just the index ids: a kit sync can change a sequence
-        without changing the kit's name, version or index ids."""
+        without changing the kit's name, version or index ids. And the kit's
+        fingerprint: Assign copies the kit's defaults onto each sample too
+        (index mix-up audit #6, 2026-10-14)."""
         return json.dumps([
             self.kit.kit_id,
+            self.kit.fingerprint(),
             [[row.sample_id, row.entry.id, row.entry.i7, row.entry.i5] for row in self.rows],
         ])
 

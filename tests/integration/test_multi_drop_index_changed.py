@@ -28,7 +28,7 @@ def _drop(client, kit, count, shown, start="s1", targets=None):
     data = {
         "start_sample_id": start,
         "indexes_json": json.dumps([
-            {"id": f"{kit.name}_P{k}", "type": "pair", "kit_id": kit.kit_id}
+            {"id": f"{kit.name}_P{k}", "type": "pair", "kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint()}
             for k in range(count)
         ]),
         "target_sample_ids": json.dumps(

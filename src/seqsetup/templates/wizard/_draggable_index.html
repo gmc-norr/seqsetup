@@ -23,6 +23,7 @@
      data-index-type="{{ _index_type | e }}"
      data-kit-name="{{ kit.name | e }}"
      data-kit-id="{{ kit.kit_id | e }}"
+     data-kit-fingerprint="{{ kit_fingerprint | e }}"
      data-well="{{ idx.well_position or '' | e }}"
      aria-label="{{ idx.name | e }} {{ _index_type | e }} sequence {{ idx.sequence | e }}"
      title="{{ idx.name | e }}&#10;Well: {{ idx.well_position or 'N/A' | e }}&#10;Sequence: {{ idx.sequence | e }}">

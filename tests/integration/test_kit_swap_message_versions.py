@@ -84,8 +84,8 @@ class TestTheMessageNamesTheKitVersion:
         before = _indexes(ctx)
 
         resp = _drop_i5s(logged_in_client, ctx, [
-            {"id": "VerKit_i5_A0", "type": "i5", "kit_id": v1.kit_id},
-            {"id": "VerKit_i5_A1", "type": "i5", "kit_id": v1.kit_id},
+            {"id": "VerKit_i5_A0", "type": "i5", "kit_id": v1.kit_id, "kit_fingerprint": v1.fingerprint()},
+            {"id": "VerKit_i5_A1", "type": "i5", "kit_id": v1.kit_id, "kit_fingerprint": v1.fingerprint()},
         ])
 
         assert resp.status_code == 400, resp.text[:300]
@@ -103,8 +103,8 @@ class TestTheMessageNamesTheKitVersion:
         before = _indexes(ctx)
 
         resp = _drop_i5s(logged_in_client, ctx, [
-            {"id": "VerKit_i5_A0", "type": "i5", "kit_id": v1.kit_id},
-            {"id": "VerKit_i5_A1", "type": "i5", "kit_id": v2.kit_id},
+            {"id": "VerKit_i5_A0", "type": "i5", "kit_id": v1.kit_id, "kit_fingerprint": v1.fingerprint()},
+            {"id": "VerKit_i5_A1", "type": "i5", "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
         ])
 
         assert resp.status_code == 400, resp.text[:300]

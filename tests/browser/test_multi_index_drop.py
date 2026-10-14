@@ -20,7 +20,8 @@ from .conftest import hold_edit_lock
 _MULTI_DROP = """([n, rowSel]) => {
     const chips = Array.from(document.querySelectorAll('.draggable-index-compact')).slice(0, n);
     const payload = {multi: true, indexes: chips.map(c => ({
-        id: c.dataset.indexPairId || c.dataset.indexId, type: c.dataset.indexType || 'pair'}))};
+        id: c.dataset.indexPairId || c.dataset.indexId, type: c.dataset.indexType || 'pair',
+        kit_id: c.dataset.kitId || '', kit_fingerprint: c.dataset.kitFingerprint || ''}))};
     const zone = document.querySelector(rowSel + ' .drop-zone');
     const dt = new DataTransfer();
     dt.setData('text/plain', JSON.stringify(payload));

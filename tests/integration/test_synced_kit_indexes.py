@@ -282,3 +282,108 @@ class TestAnUploadedKitIsNotOverwritten:
         (kit,) = [k for k in ctx.index_kit_repo.list_all() if k.name == "Dual Kit"]
         assert kit.source == "user" and kit.index_pairs[0].index2.sequence == "GGGGGGGG"
         assert _synced(ctx) == ["Lab Kit 1.0"]
+
+
+# GOOD_KIT_YAML with D701's i7 changed, same name and version.
+CHANGED_KIT_YAML = GOOD_KIT_YAML.replace('sequence: "ATTACTCG"', 'sequence: "GGGGGGGG"')
+STORED_WITH_OTHERS = ("a kit of this name and version is stored with other indexes or "
+                      "settings; give the changed kit a new version")
+
+
+def _i7s(ctx, name="Dual Kit"):
+    (kit,) = [k for k in ctx.index_kit_repo.list_synced() if k.name == name]
+    return [pair.index1.sequence for pair in kit.index_pairs]
+
+
+class TestAKitNameAndVersionMeanOneContent:
+    """Index mix-up audit #6 (2026-10-14; the user's choice "Drop + sync"):
+    a sync replaced a stored kit with other indexes under the same name and
+    version, and two files with one name and version left whichever came
+    last, both without a word. Now the file is refused and named, and the
+    stored kit stays; a changed kit needs a new version."""
+
+    def test_a_changed_kit_is_refused_and_the_stored_one_stays(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        assert _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML})[0] is True
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {"dual.yaml": CHANGED_KIT_YAML})
+
+        assert ok is False
+        assert f"index_kits/dual.yaml (Dual Kit 2.1.0): {STORED_WITH_OTHERS}" in message
+        assert "Kept the stored index kits Dual Kit 2.1.0 until the file is fixed." in message
+        assert _i7s(ctx) == ["ATTACTCG", "TCCGGAGA"]
+
+    def test_a_changed_kit_with_a_new_version_is_stored(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML})
+
+        ok, message, _count = _sync_with_kits(
+            ctx, monkeypatch, {"dual.yaml": CHANGED_KIT_YAML.replace('"2.1.0"', '"2.2.0"')})
+
+        assert ok is True, message
+        assert _synced(ctx) == ["Dual Kit 2.2.0"]
+        assert _i7s(ctx) == ["GGGGGGGG", "TCCGGAGA"]
+
+    def test_the_same_file_again_is_stored_as_before(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML, "lab.yaml": GOOD_LAB_KIT})
+
+        ok, message, _count = _sync_with_kits(
+            ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML, "lab.yaml": GOOD_LAB_KIT})
+
+        assert ok is True and "refused" not in message
+        assert _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
+
+    def test_a_new_description_alone_is_stored(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML})
+
+        ok, message, _count = _sync_with_kits(
+            ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML + 'description: "Now described"\n'})
+
+        assert ok is True, message
+        (kit,) = ctx.index_kit_repo.list_synced()
+        assert kit.description == "Now described"
+
+    @pytest.mark.parametrize("second", [GOOD_KIT_YAML, CHANGED_KIT_YAML], ids=["same", "changed"])
+    def test_two_files_with_one_name_and_version_are_both_refused(
+            self, fresh_app, monkeypatch, second):
+        _app, ctx, _db = fresh_app
+
+        ok, message, _count = _sync_with_kits(
+            ctx, monkeypatch, {"a.yaml": GOOD_KIT_YAML, "vendor": {"b.yaml": second},
+                               "lab.yaml": GOOD_LAB_KIT})
+
+        assert ok is False
+        assert ("index_kits/a.yaml (Dual Kit 2.1.0): index_kits/vendor/b.yaml gives this kit "
+                "name and version too; a kit name and version may be in one file only") in message
+        assert ("index_kits/vendor/b.yaml (Dual Kit 2.1.0): index_kits/a.yaml gives this kit "
+                "name and version too; a kit name and version may be in one file only") in message
+        assert _synced(ctx) == ["Lab Kit 1.0"]
+
+    def test_two_files_keep_the_kit_stored_before(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"a.yaml": GOOD_KIT_YAML})
+
+        ok, message, _count = _sync_with_kits(
+            ctx, monkeypatch, {"a.yaml": GOOD_KIT_YAML, "b.yaml": CHANGED_KIT_YAML})
+
+        assert ok is False
+        assert "Kept the stored index kits Dual Kit 2.1.0 until the file is fixed." in message
+        assert _i7s(ctx) == ["ATTACTCG", "TCCGGAGA"]
+
+    def test_a_sync_stopped_for_storing_no_kit_names_the_refused_files(self, fresh_app, monkeypatch):
+        """Review P3-2 (2026-10-14): with another kit stored and every kit
+        file refused, the sync stops rather than store no kit, and said only
+        "Refusing to replace", not which files were refused or why."""
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"lab.yaml": GOOD_LAB_KIT})
+
+        ok, message, _count = _sync_with_kits(
+            ctx, monkeypatch, {"a.yaml": GOOD_KIT_YAML, "b.yaml": GOOD_KIT_YAML})
+
+        assert ok is False
+        assert "Refusing to replace 1 existing synced index kits with 0 fetched items" in message
+        assert ("Index kit files were refused, so they were not stored: index_kits/a.yaml "
+                "(Dual Kit 2.1.0): index_kits/b.yaml gives this kit name and version too") in message
+        assert _synced(ctx) == ["Lab Kit 1.0"]

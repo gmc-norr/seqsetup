@@ -146,6 +146,15 @@ PAT2."* The confirmation above tells you which indexes **this** page's
 drop would replace; this refusal is for the ones it could not have known
 about.
 
+The kit itself is checked too, for every drop and keyboard assign, one
+index or several. Each index chip carries a fingerprint of its kit -- a
+short code that changes whenever the kit's indexes or settings change: a
+sequence, an index name, the order, the defaults. If
+the kit changed since the page was loaded, even under the same name and
+version, nothing is assigned and the page says *"The index kit changed
+since this page was loaded. Nothing was assigned. Reload the page."*
+Reload the page; the chips then show the kit as it is now.
+
 .. note::
    Ticking sample checkboxes (below) has no effect on a multi-index drag
    -- it always fills consecutive rows starting at the row you drop on,

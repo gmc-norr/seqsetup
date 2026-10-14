@@ -513,13 +513,20 @@ def _shown_indexes(raw, count: int) -> Optional[list[list[str]]]:
     return parsed
 
 
-def _find_index(ctx: AppContext, idx_type: str, idx_id: str, kit_id: str):
+_KIT_CHANGED = ("The index kit changed since this page was loaded. Nothing was assigned. "
+                "Reload the page.")
+
+
+def _find_index(ctx: AppContext, idx_type: str, idx_id: str, kit_id: str, kit_fingerprint):
     """(index pair or index, kit, None), or (None, None, error Response).
 
     Index ids are built from the kit name, so every version of a kit holds
     the same ids. The index is taken from the kit the chip was shown in
     (``kit_id``); without one, the id must be in exactly one kit — never
-    whichever version the database returns first.
+    whichever version the database returns first. ``kit_fingerprint`` is the
+    one the chip showed: a kit changed under the same name and version since
+    the page was loaded, or a drop that sends none, is refused (index mix-up
+    audit #6, 2026-10-14).
     """
     what = "Index pair" if idx_type == "pair" else "Index"
     repo = ctx.index_kit_repo
@@ -537,6 +544,8 @@ def _find_index(ctx: AppContext, idx_type: str, idx_id: str, kit_id: str):
             f"{what} is in more than one version of the kit. Reload the page and try again.",
             status_code=409,
         )
+    if kits and kits[0].fingerprint() != kit_fingerprint:
+        return None, None, Response(_KIT_CHANGED, status_code=409)
     found = None
     if kits:
         kit = kits[0]
@@ -1174,6 +1183,7 @@ async def assign_indexes_bulk(
         idx_id = idx_data.get("id")
         idx_type = idx_data.get("type", "pair")
         kit_id = idx_data.get("kit_id", "")
+        kit_fingerprint = idx_data.get("kit_fingerprint", "")
 
         if not isinstance(idx_id, str) or not idx_id:
             return Response("Invalid indexes_json entry: missing 'id'", status_code=400)
@@ -1181,7 +1191,7 @@ async def assign_indexes_bulk(
             return Response("Invalid indexes_json entry: 'kit_id' must be a string", status_code=400)
 
         if idx_type in ("pair", "i7", "i5"):
-            found, kit, error = _find_index(ctx, idx_type, idx_id, kit_id)
+            found, kit, error = _find_index(ctx, idx_type, idx_id, kit_id, kit_fingerprint)
             if error:
                 return error
             resolved_assignments.append((idx_type, found, kit))
@@ -1359,6 +1369,7 @@ async def assign_index_to_selected(
     index_id = form.get("index_id", "")
     index_type = form.get("index_type", "")
     kit_id = form.get("kit_id", "")
+    kit_fingerprint = form.get("kit_fingerprint", "")
     context = form.get("context", "")
 
     if not sample_ids_json:
@@ -1375,13 +1386,13 @@ async def assign_index_to_selected(
     index = None
 
     if index_pair_id:
-        index_pair, kit, error = _find_index(ctx, "pair", index_pair_id, kit_id)
+        index_pair, kit, error = _find_index(ctx, "pair", index_pair_id, kit_id, kit_fingerprint)
         if error:
             return error
     elif index_id and index_type:
         if index_type not in ("i7", "i5"):
             return Response(f"Invalid index type: {index_type}", status_code=400)
-        index, kit, error = _find_index(ctx, index_type, index_id, kit_id)
+        index, kit, error = _find_index(ctx, index_type, index_id, kit_id, kit_fingerprint)
         if error:
             return error
     else:
@@ -1846,6 +1857,7 @@ async def assign_index(
     index_id = form.get("index_id", "")
     index_type = form.get("index_type", "")
     kit_id = form.get("kit_id", "")
+    kit_fingerprint = form.get("kit_fingerprint", "")
     context = form.get("context", "") or request.query_params.get("context", "")
 
     sample = run.get_sample(sample_id_path)
@@ -1856,7 +1868,7 @@ async def assign_index(
 
     kit = None
     if index_pair_id:
-        index_pair, kit, error = _find_index(ctx, "pair", index_pair_id, kit_id)
+        index_pair, kit, error = _find_index(ctx, "pair", index_pair_id, kit_id, kit_fingerprint)
         if error:
             return error
 
@@ -1866,7 +1878,7 @@ async def assign_index(
             _apply_kit_defaults(sample, kit, "pair")
             _update_override_cycles(sample, run)
     elif index_id and index_type:
-        index, kit, error = _find_index(ctx, index_type, index_id, kit_id)
+        index, kit, error = _find_index(ctx, index_type, index_id, kit_id, kit_fingerprint)
         if error:
             return error
 

@@ -481,6 +481,34 @@ class TestApplyStaleSignatureRefused:
         assert resp.status_code == 409
         assert ctx.run_repo.get_by_id(run_id).to_dict() == before
 
+    def test_kit_default_changed_since_preview_is_409(self, logged_in_client, fresh_app):
+        """Assign copies the kit's defaults onto each sample too; a default
+        changed since the preview, same name and version, is refused like a
+        sequence (index mix-up audit #6, 2026-10-14)."""
+        _app, ctx, _db = fresh_app
+        run_id = _run(ctx)
+        kit = _dual_kit(ctx, default_index1_cycles=8)
+        run = ctx.run_repo.get_by_id(run_id)
+        stale_plan = build_fill_plan(run, kit)
+        shown = stale_plan.signature()  # before the change: the plan holds this kit
+
+        kit.default_index1_cycles = 6
+        ctx.index_kit_repo.save(kit)
+        before = ctx.run_repo.get_by_id(run_id).to_dict()
+
+        resp = logged_in_client.post(
+            f"/runs/{run_id}/index-fill",
+            data={
+                "selected_kit": kit.kit_id,
+                "start_id": stale_plan.start.id,
+                "plan": shown,
+            },
+            headers=ORIGIN,
+        )
+
+        assert resp.status_code == 409
+        assert ctx.run_repo.get_by_id(run_id).to_dict() == before
+
 
 class TestApplyLeavesIndexedSamplesAlone:
     """A sample that already had an index keeps exactly that index."""

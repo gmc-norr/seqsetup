@@ -624,6 +624,20 @@ A sync (manual or scheduled) always does all of the following:
   cannot be listed is reported and handled the same way. A kit file with
   the same name and version as a kit uploaded through the UI is refused
   too, and the uploaded kit is kept.
+- While a kit is stored, its name and version mean the same indexes. A
+  kit file that changes a stored synced kit's indexes or settings -- a
+  sequence, an index name, the order, a well, the defaults, an adapter --
+  but keeps its name and version is refused, and the stored kit stays
+  (*"index_kits/lab.yaml (Lab Kit 1.0): a kit of this name and version is
+  stored with other indexes or settings; give the changed kit a new
+  version"*); give the changed kit a new version. A changed description
+  or comment alone is stored as usual. Two kit files with the same name
+  and version are both refused, each naming the other, and a kit stored
+  before under it stays. A kit whose file left the repository is removed
+  at that sync, so a later sync stores a file of that name and version
+  with whatever indexes it holds, as an upload after a delete is (see
+  :doc:`index-kits`). A run page loaded before a kit changed cannot
+  assign from it either (see :doc:`/user-guide/index-assignment`).
 - As a safety net, a sync that would replace an existing, non-empty
   collection with **zero** fetched items is refused rather than applied --
   a misconfigured path or a network blip cannot wipe out reference data

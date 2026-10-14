@@ -14,7 +14,10 @@ function handleIndexClick(event, indexId, indexType) {
 
     // kit_id: every version of a kit has the same index ids, so the server
     // needs the chip's kit to know which version's sequences to assign.
-    const indexData = { id: indexId, type: indexType || 'pair', kit_id: element.dataset.kitId || '' };
+    // kit_fingerprint: the server refuses the drop if that kit changed
+    // since the page was loaded (index mix-up audit #6).
+    const indexData = { id: indexId, type: indexType || 'pair', kit_id: element.dataset.kitId || '',
+                        kit_fingerprint: element.dataset.kitFingerprint || '' };
 
     // Check if already selected
     const existingIndex = selectedIndexes.findIndex(i => i.id === indexId);
@@ -51,7 +54,8 @@ function handleIndexClick(event, indexId, indexType) {
                     const elId = el.dataset.indexPairId || el.dataset.indexId;
                     const elType = el.dataset.indexType || 'pair';
                     if (!selectedIndexes.find(s => s.id === elId)) {
-                        selectedIndexes.push({ id: elId, type: elType, kit_id: el.dataset.kitId || '' });
+                        selectedIndexes.push({ id: elId, type: elType, kit_id: el.dataset.kitId || '',
+                                               kit_fingerprint: el.dataset.kitFingerprint || '' });
                         el.classList.add('index-selected');
                     }
                 }
@@ -99,7 +103,8 @@ function inPanelOrder(indexes) {
 
 function handleDragStart(event, indexId, indexType) {
     const chip = event.target.closest('.draggable-index, .draggable-index-compact');
-    const indexData = { id: indexId, type: indexType || 'pair', kit_id: chip ? (chip.dataset.kitId || '') : '' };
+    const indexData = { id: indexId, type: indexType || 'pair', kit_id: chip ? (chip.dataset.kitId || '') : '',
+                        kit_fingerprint: chip ? (chip.dataset.kitFingerprint || '') : '' };
 
     // If dragging a selected index, include all selected indexes
     // Otherwise, just drag this one index
@@ -187,13 +192,15 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
                     index_id: indexData.type !== 'pair' ? indexData.id : '',
                     index_type: indexData.type !== 'pair' ? indexData.type : '',
                     kit_id: indexData.kit_id || '',
+                    kit_fingerprint: indexData.kit_fingerprint || '',
                     context: context,
                     existing_ids: existingIds
                 }
             });
         } else {
             // No samples selected — assign to just the drop target
-            const values = { context: context, existing_ids: existingIds, kit_id: indexData.kit_id || '' };
+            const values = { context: context, existing_ids: existingIds, kit_id: indexData.kit_id || '',
+                             kit_fingerprint: indexData.kit_fingerprint || '' };
 
             if (indexData.type === 'pair') {
                 values.index_pair_id = indexData.id;
@@ -327,7 +334,8 @@ function assignSelectedIndexToSample(sampleId, runId, dropZoneType, dropZoneEl) 
     const context = dropZoneEl && dropZoneEl.dataset ? (dropZoneEl.dataset.context || '') : '';
     const sampleTable = document.getElementById('sample-table');
     const existingIds = sampleTable ? (sampleTable.dataset.existingIds || '') : '';
-    const values = { context: context, existing_ids: existingIds, kit_id: idx.kit_id || '' };
+    const values = { context: context, existing_ids: existingIds, kit_id: idx.kit_id || '',
+                     kit_fingerprint: idx.kit_fingerprint || '' };
     if (idx.type === 'pair') { values.index_pair_id = idx.id; }
     else { values.index_id = idx.id; values.index_type = idx.type; }
     htmx.ajax('POST', `/runs/${runId}/samples/${sampleId}/assign-index`, {
