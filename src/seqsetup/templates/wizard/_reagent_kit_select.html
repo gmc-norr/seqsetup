@@ -7,6 +7,10 @@
                    (needs run, cycles, kit_max_cycles; see _cycle_total.html)
      kit_select_oob: bool    — swap this select in out of band (an
                    instrument change can change which kits are offered)
+
+   A kit the flowcell does not list is shown too, selected and marked
+   "(not available)", as the i5 workflow select does (review of 084943d,
+   P2-1).
 #}
 <select name="reagent_cycles" id="reagent-kit-select"
         hx-post="/runs/{{ run_id }}/reagent-kit"
@@ -16,5 +20,8 @@
     {% for kit in reagent_kits %}
     <option value="{{ kit }}" {% if current == kit %}selected{% endif %}>{{ kit }} cycles</option>
     {% endfor %}
+    {% if current not in reagent_kits %}
+    <option value="{{ current }}" selected>{{ current }} cycles (not available)</option>
+    {% endif %}
 </select>
 {% if cycle_total_oob %}{% with oob=True %}{% include "wizard/_cycle_total.html" %}{% endwith %}{% endif %}

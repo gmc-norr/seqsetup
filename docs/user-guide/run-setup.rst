@@ -56,9 +56,13 @@ Instrument, flowcell and reagent kit
   the last instrument sync left it out (see :doc:`/admin-guide/instruments`),
   and **Mark Ready** refuses the run too until you pick another.
 - **Flowcell** -- the flowcell type for that instrument. Changing it
-  refreshes the Reagent Kit choices.
+  refreshes the Reagent Kit choices. If the run's own flowcell is not one
+  the instrument lists, or it has none, it still shows, selected and
+  marked **(not available)**.
 - **Reagent Kit (cycles)** -- the reagent kit. Changing it resets Read 1,
-  Read 2, Index 1 and Index 2 below to that kit's default cycle counts.
+  Read 2, Index 1 and Index 2 below to that kit's default cycle counts. A
+  kit the flowcell does not list still shows, selected and marked
+  **(not available)**.
 - **i5 workflow** -- shown only for an instrument that reads the i5 in more
   than one way. As shipped: MiSeq i100 Series (**Index-first**, the
   instrument's default, or **Read-first**), MiniSeq (**Standard kits** or
@@ -88,7 +92,11 @@ a total a little over the label is normal.
 
 Read 1 and Read 2 are typed as whole numbers from 0 to 600; an invalid
 value is rejected and nothing is saved. Index 1 and Index 2 are chosen
-from a fixed list of cycle counts -- 8, 10, 12, 17, or 24.
+from a fixed list of cycle counts -- 8, 10, 12, 17, or 24. A run whose
+count is not in that list -- 0 for no Index 2 read, say, or a count your
+administrator has since taken off the list -- shows its count too, marked
+**(not in the usual list)**, and keeps it until you pick another count or
+another reagent kit.
 
 .. warning::
    When the selected reagent kit has a known cycle limit, going over it

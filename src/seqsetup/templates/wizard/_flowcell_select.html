@@ -1,6 +1,10 @@
 {#
    Flowcell <select>. Rendered both inside the instrument config form
    (initial page) and as an HTMX outerHTML swap target (after platform change).
+   A flowcell the instrument does not list, or none, is shown too, selected
+   and marked "(not available)", as the i5 workflow select does: otherwise
+   the page shows the list's first, a flowcell the run does not have
+   (review of 084943d, P2-1).
 
    Inputs:
      run_id:    str
@@ -24,6 +28,9 @@
     {% for fc, info in flowcells.items() %}
     <option value="{{ fc }}" {% if current == fc %}selected{% endif %}>{{ fc }} - {{ info["description"] }}</option>
     {% endfor %}
+    {% if current not in flowcells %}
+    <option value="{{ current }}" selected>{{ current or "No flowcell set" }} (not available)</option>
+    {% endif %}
 </select>
 {% if cycle_total_oob %}{% with oob=True %}{% include "wizard/_cycle_total.html" %}{% endwith %}{% endif %}
 {% if kit_select_oob %}{% with current=reagent_cycles, cycle_total_oob=False %}{% include "wizard/_reagent_kit_select.html" %}{% endwith %}{% endif %}

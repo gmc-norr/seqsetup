@@ -8,12 +8,24 @@
    back, so a value being typed in another box is never overwritten. A
    rejected value (400) shows in the error banner and nothing is saved.
 
+   An Index count the list does not have -- 0, say, or one a lab's
+   instruments file has since dropped -- is listed too, in number order,
+   selected and marked: a select whose stored value matches no option sends
+   its first, so the next save would change the run's cycles unseen
+   (outside review of 7f858e0, finding 1).
+
    Inputs:
      run:                  SequencingRun
      cycles:               RunCycles
      index_cycle_options:  list[int]
      kit_max_cycles:       int | None (see _cycle_total.html)
 #}
+{% macro index_cycle_choices(stored, listed) -%}
+    {%- set known = stored in listed %}
+    {%- for v in (listed if known else listed + [stored]) | sort %}
+                <option value="{{ v }}" {% if stored == v %}selected{% endif %}>{{ v }}{% if not known and v == stored %} (not in the usual list){% endif %}</option>
+    {%- endfor %}
+{%- endmacro %}
 <fieldset class="cycle-config" id="cycle-config"
           hx-post="/runs/{{ run.id }}/cycles"
           hx-trigger="change"
@@ -38,17 +50,13 @@
         <div class="form-group">
             <label for="index1_cycles">Index 1</label>
             <select name="index1_cycles" id="index1_cycles">
-                {% for v in index_cycle_options %}
-                <option value="{{ v }}" {% if cycles.index1_cycles == v %}selected{% endif %}>{{ v }}</option>
-                {% endfor %}
+                {{ index_cycle_choices(cycles.index1_cycles, index_cycle_options) }}
             </select>
         </div>
         <div class="form-group">
             <label for="index2_cycles">Index 2</label>
             <select name="index2_cycles" id="index2_cycles">
-                {% for v in index_cycle_options %}
-                <option value="{{ v }}" {% if cycles.index2_cycles == v %}selected{% endif %}>{{ v }}</option>
-                {% endfor %}
+                {{ index_cycle_choices(cycles.index2_cycles, index_cycle_options) }}
             </select>
         </div>
     </div>
