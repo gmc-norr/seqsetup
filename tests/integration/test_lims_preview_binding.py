@@ -182,6 +182,17 @@ class TestAnImportThatIsNotWhatThePreviewShowedIsRefused:
         rows.append({"sample_id": "P3", "test_id": "WGS"})
         self._refused(logged_in_client, ctx, 409, CHANGED, worklist_id="W1", plan=plan)
 
+    def test_a_sample_added_in_the_lims_that_the_run_already_has(
+            self, logged_in_client, fresh_app, monkeypatch):
+        """The import would add the same two samples, but skip one the
+        preview did not name."""
+        _app, ctx, _db = fresh_app
+        _run(ctx, ["OLD1"])
+        rows = _lims(ctx, monkeypatch)
+        plan = _plan(_preview(logged_in_client).text)
+        rows.append({"sample_id": "OLD1"})
+        self._refused(logged_in_client, ctx, 409, CHANGED, worklist_id="W1", plan=plan)
+
     def test_another_worksheet_than_the_one_previewed(self, logged_in_client, fresh_app, monkeypatch):
         """W2 answers the same rows: the worksheet each sample is given differs."""
         _app, ctx, _db = fresh_app
