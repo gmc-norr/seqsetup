@@ -75,7 +75,8 @@ select **Apply**. Those samples then list every lane (``1,2,3,4,5,6,7,8``
 on a ``10B`` flowcell). The paste box's **All lanes** does the same for new
 samples.
 
-A sample is never saved with no lane. With a ``Lane`` column in the
+No page gives a sample no lane; only an older sample, or a copy of one, can
+have none. With a ``Lane`` column in the
 profile, as in the shipped one, a sample with no lane would get an empty
 ``Lane`` cell: the **Check** panel marks it *Lanes not picked* (*"... so
 their Lane cell would be empty: <IDs>. Pick their lanes."*), and **Mark

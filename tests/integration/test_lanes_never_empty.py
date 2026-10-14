@@ -32,9 +32,9 @@ def _run(ctx):
     hold_edit_lock(ctx, RUN_ID)
 
 
-def _set(client, lanes, **form):
+def _set(client, lanes):
     return client.post(f"/runs/{RUN_ID}/samples/set-lanes", data={
-        "sample_ids": json.dumps(["s1"]), "lanes": json.dumps(lanes), **form,
+        "sample_ids": json.dumps(["s1"]), "lanes": json.dumps(lanes),
     }, headers=ORIGIN)
 
 
@@ -43,14 +43,14 @@ def _lanes(ctx):
 
 
 class TestAnEmptyLaneListIsRefused:
+    """set-lanes saves only a list with at least one lane."""
 
     @pytest.mark.parametrize("lanes", [[], [""], [" "]])
-    @pytest.mark.parametrize("form", [{}, {"all_lanes": "yes"}])
-    def test_nothing_is_saved(self, logged_in_client, fresh_app, lanes, form):
+    def test_nothing_is_saved(self, logged_in_client, fresh_app, lanes):
         _app, ctx, _db = fresh_app
         _run(ctx)
 
-        r = _set(logged_in_client, lanes, **form)
+        r = _set(logged_in_client, lanes)
 
         assert r.status_code == 400
         assert r.text == TICK_A_LANE
@@ -76,8 +76,10 @@ class TestAnEmptyLaneListIsRefused:
 
 
 class TestThePanel:
+    """The lane panel has All lanes in place of Clear (what it does is in
+    tests/browser/test_lanes_never_empty.py)."""
 
-    def test_all_lanes_only_ticks_the_boxes(self, logged_in_client, fresh_app):
+    def test_it_has_all_lanes_and_no_clear(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         _run(ctx)
 
@@ -85,5 +87,3 @@ class TestThePanel:
 
         assert re.search(r'data-action="bulk-all-lanes"[^>]*>All lanes</button>', page)
         assert 'data-action="bulk-clear-lanes"' not in page
-        form = re.search(r'<form id="bulk-lanes-form".*?</form>', page, re.S).group(0)
-        assert "all_lanes" not in form
