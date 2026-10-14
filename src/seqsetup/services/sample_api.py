@@ -1028,16 +1028,22 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
             rows_zero_sample_id.append(index)
             continue
 
-        too_long = [field for field in _NEVER_CUT if len(sample.get(field, "")) > MAX_SAMPLE_TEXT]
-        if too_long:
-            for field in too_long:
-                rows_too_long[field].append(index)
+        # The sample ID first: the messages below name it. The test after its
+        # own check, so a test that is not text is called that, not long.
+        if len(sample["sample_id"]) > MAX_SAMPLE_TEXT:
+            rows_too_long["sample_id"].append(index)
             continue
 
         # A null name gives way to the next one, as for every field above.
         raw_test = next((lower_item[alias] for alias in field_aliases["test_id"]
                          if lower_item.get(alias) is not None), None)
         _refuse_a_changed_value(f"Sample '{sample['sample_id']}' has a test", raw_test)
+        too_long = [field for field in ("test_id", "worksheet_id")
+                    if len(sample.get(field, "")) > MAX_SAMPLE_TEXT]
+        if too_long:
+            for field in too_long:
+                rows_too_long[field].append(index)
+            continue
         raw_version = next((lower_item[alias] for alias in field_aliases["test_version"]
                             if lower_item.get(alias) is not None), None)
         sample["test_version"] = _lims_test_version(sample["sample_id"], raw_version)

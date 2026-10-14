@@ -43,6 +43,14 @@ written to any sheet, and the user's question did not include it.
    (`RunRepository.list_all_readable`); opening it fails as any unreadable
    run does. No run can gain such a value from now on.
 
+   Found by the review of 6d50fce (P3-1): as for any unreadable run, a
+   Ready or Archived run holding such a value also makes the two listings
+   with no per-run guard fail for every run -- `/api/runs?status=...` and
+   the API Exports page (`RunRepository.list_by_status`) -- and its own
+   API sheet endpoints answer 500 where they served its stored bytes. Only
+   a run saved before 2026-05-25 can hold such a value, and none has been
+   deployed.
+
 2. **Paste parser.** The cells that become `sample_id` and `test_id` are not
    cut. A row whose sample ID or test is over 256 is collected, and the
    whole paste is refused with a `ValueError` naming the source lines, like

@@ -26,7 +26,7 @@ _VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 # already bounded. A sample ID or test cell over it is refused instead, never
 # cut (spec 2026-10-14 long sample text): the cut is for the cells that do not
 # become one of them.
-_MAX_CELL_LEN = 256
+_MAX_CELL_LEN = MAX_SAMPLE_TEXT
 
 
 @dataclass

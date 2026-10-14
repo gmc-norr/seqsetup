@@ -254,10 +254,10 @@ rejected and nothing is saved.
 
 A sample ID is never made only of zeros: adding a sample called ``0`` or
 ``00`` is refused (*"A sample ID made only of zeros is not a sample ID --
-a LIMS may use 0 for an empty well."*) and nothing is saved. Nor is a
-sample ID, name, project or test longer than 256 characters, when a sample
-is added or changed: it is refused, never cut (*"The sample ID is longer
-than 256 characters. Nothing was saved."*).
+a LIMS may use 0 for an empty well."*) and nothing is saved. A sample ID,
+name, project or test longer than 256 characters is refused too, when a
+sample is added or changed, and never cut (*"The sample ID is longer than
+256 characters. Nothing was saved."*).
 
 Sample ID is set when a sample is added and cannot be changed afterward in
 this table; to correct a typo, remove the sample and add it again. Test ID

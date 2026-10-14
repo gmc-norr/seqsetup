@@ -74,6 +74,12 @@ class TestAPasteIsRefusedWhole:
         [sample] = parse_pasted_samples(f"{FULL}\t{FULL}\n")
         assert (sample.sample_id, sample.test_id) == (FULL, FULL)
 
+    def test_the_sample_id_column_a_header_names_is_the_one_checked(self):
+        """Review of 6d50fce, P3-4: the check follows the mapped column."""
+        header = "comment\tsample_id\ttest_id\n"
+        with pytest.raises(ValueError, match=r"Row\(s\) 3: the sample_id is longer"):
+            parse_pasted_samples(header + f"{LONG}\tP1\tWGS\nnote\t{LONG}\tWGS\n")
+
     def test_a_long_cell_nobody_reads_is_no_reason_to_refuse(self):
         header = "sample_id\ttest_id\tcomment\n"
         [sample] = parse_pasted_samples(header + f"P1\tWGS\t{'x' * 3000}\n")
@@ -91,6 +97,11 @@ class TestAWorklistIsRefusedWhole:
                 rf"LIMS row\(s\) 2: {label} is longer than 256 characters\. SeqSetup does not "
                 rf"shorten it\. Fix the upstream record\(s\) before retrying\.")):
             parse_api_samples(rows)
+
+    def test_a_test_that_is_not_text_is_called_that(self):
+        """Not "longer than 256" (review of 6d50fce, P3-2)."""
+        with pytest.raises(ValueError, match="not text or a whole number"):
+            parse_api_samples([{"sample_id": "P1", "test_id": ["x" * 300]}])
 
     def test_256_is_read_whole(self):
         [row] = parse_api_samples([{"sample_id": FULL, "test_id": FULL, "worksheet_id": FULL}])

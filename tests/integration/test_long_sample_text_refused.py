@@ -35,10 +35,6 @@ def _stored(ctx):
     return ctx.run_repo.get_by_id(RUN).to_dict()
 
 
-def _refused(text):
-    return f"is longer than 256 characters. Nothing was saved." in text
-
-
 LABELS = {"sample_id": "sample ID", "sample_name": "sample name", "project": "project",
           "test_id": "test"}
 
