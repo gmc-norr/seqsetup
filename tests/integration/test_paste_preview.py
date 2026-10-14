@@ -155,7 +155,7 @@ class TestPreviewRoute:
     def test_guessed_columns_are_announced(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _run(ctx)
-        r = _post(logged_in_client, run_id, "preview", "S1\tATTACTCG\tTATAGCCT\n")
+        r = _post(logged_in_client, run_id, "preview", "S1\tATTACTCG\n")
         assert "No header row, so we guessed the columns." in r.text
 
     def test_form_is_refilled_for_back_to_edit(self, logged_in_client, fresh_app):

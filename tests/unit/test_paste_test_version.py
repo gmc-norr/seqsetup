@@ -26,10 +26,11 @@ class TestTheColumn:
         assert [s.test_version for s in read.samples] == [""]
         assert read.columns_unused == ["version"]
 
-    def test_without_a_header_a_fifth_column_is_not_read(self):
-        read = read_pasted_samples("S1\tWGS\tACGTACGT\tTTGGCCAA\t1.2\n")
-        assert [s.test_version for s in read.samples] == [""]
-        assert read.columns_unused == ["column 5"]
+    def test_without_a_header_a_version_column_is_refused(self):
+        """Without a header row only the sample ID and the test are read
+        (index mix-up audit, 2026-10-14)."""
+        with pytest.raises(ValueError, match="has no header row"):
+            read_pasted_samples("S1\tWGS\tACGTACGT\tTTGGCCAA\t1.2\n")
 
     def test_the_columns_used_line_names_it(self):
         read = read_pasted_samples("sample_id\ttest_id\ttest_version\nS1\tWGS\t1\n")

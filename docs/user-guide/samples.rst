@@ -50,8 +50,36 @@ comma-separated:
   A spreadsheet can turn ``1.10`` into ``1.1`` before you copy it: format
   the ``test_version`` column as text, and check the preview's **Version**
   column.
-- Without a header row, the first four columns are read in that fixed
-  order: sample ID, test, i7 index, i5 index.
+- Without a header row, only the first two columns are read: sample ID,
+  then test. A paste without a header row that has anything in a third
+  column is refused, naming its rows: SeqSetup does not guess which column
+  holds the i7 and which the i5. Add a header row, for example
+  ``sample_id``, ``test_id``, ``index_i7``, ``index_i5``. The header row
+  must be the first line: a title line above it makes the paste read as
+  one without a header row.
+- A header row is found wherever a column named ``sample_id`` (or
+  ``sampleid``, ``sample id``, ``sample-id``) sits, so ``Well``,
+  ``Sample_ID`` is a header, not a sample named Well. ``sample``, ``id``
+  and ``name`` mark a header only in the first column. A header row with
+  no sample ID column reads its first column as the sample ID, unless that
+  column is an index or lane column, which refuses the paste.
+- With a header row, a column whose name looks like an index or a lane --
+  it has *index* or *barcode* anywhere in it, or a word starting with
+  *i7*, *i5* or *lane* -- must be one SeqSetup reads. The i7 is read from
+  ``index``, ``index1``, ``i7``, ``index_i7``, ``i7_index`` or
+  ``index i7``; the i5 from ``index2``, ``i5``, ``index_i5``,
+  ``i5_index`` or ``index i5``; the index names from ``index_pair_name``,
+  ``pair_name``, ``index_pair``, ``index pair``, ``index_kit``,
+  ``kit_name``, ``kit name`` or ``index kit`` (the pair), ``i7_name``,
+  ``i7 name``, ``index_i7_name``, ``index1_name``, ``index_name`` or
+  ``index name`` (the i7) and ``i5_name``, ``i5 name``,
+  ``index_i5_name`` or ``index2_name`` (the i5). Any other such column --
+  ``Index 2``, ``i7_sequence``, ``I7_Index_ID``, ``Lane``, or a second i7
+  column -- refuses the **entire** paste, naming the column. Lanes come
+  from the **Lanes** picker, never from the paste.
+- Data in a column with no header name -- an empty header cell, or a row
+  longer than the header -- refuses the **entire** paste, naming its rows
+  and the column.
 - The **Test for rows without one** picker fills a test only on rows that
   did not already carry one; a row with its own test column keeps it.
   **Version for rows without one** does the same for the version, on rows

@@ -43,7 +43,7 @@ class TestRowStates:
         assert (row.state, row.notes) == ("look", ['No test called "WGX".'])
 
     def test_test_that_looks_like_dna_gets_a_hint(self):
-        row = _preview("S1\tATTACTCG\tTATAGCCT\n").rows[0]
+        row = _preview("S1\tATTACTCG\n").rows[0]
         assert "looks like an index sequence" in row.notes[0]
 
     def test_missing_test_is_flagged(self):
