@@ -157,7 +157,8 @@ run page says where the run stands:
   can change it now."* above the samples. If Sam has left -- gone home
   with the page open, say -- press
   **Take over editing**. SeqSetup asks first and names them; once you
-  take over, they can no longer save changes to the run.
+  take over, they can no longer save changes to the run -- not even a
+  change they had just made that was still on its way.
 - **You are editing this run** -- the page shows everything you can
   change: **Edit setup**, adding samples, indexes and lanes, the Check
   panel's fixes, and **Mark Ready**. Press **Done editing** when you have
@@ -179,6 +180,17 @@ computer goes to sleep, or the browser puts the tab to sleep to save
 power -- the run shows as free, and anyone can press **Edit run** without
 being asked; SeqSetup records whose editing they took. Until someone
 does, the run is still yours: come back to it and carry on.
+
+When you press **Edit run** or **Take over editing** on a run you were
+not already editing, the run's **Updated** time changes to that moment,
+and the dashboard's **Modified by** to you, though nothing in the run
+changed; the dashboard also lists the run first. That is what stops a
+change from the person who had the run before from landing afterwards.
+
+**Done editing** changes neither. Still, wait for your last change to
+show on the page before you press it: if someone presses **Edit run**
+while that change is on its way, it is refused, and you will not see the
+message, because the page has reloaded.
 
 An open edit page does not keep you signed in: if you do nothing for 30
 minutes, your sign-in ends as on any other page (see
