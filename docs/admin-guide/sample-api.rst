@@ -238,8 +238,10 @@ shows recognized field names for each attribute:
      - ``i5_name``, ``index_i5_name``, ``index2_name``
      - i5 index identifier name
 
-Every value pulled from a sample row is trimmed and capped at 256
-characters, and an index sequence is uppercased and checked against
+Every value pulled from a sample row is trimmed. A sample ID, test or
+worksheet ID longer than 256 characters refuses the whole worklist, naming
+its rows -- it is never cut, as a cut ID would be another ID; any other
+value is capped at 256 characters. An index sequence is uppercased and checked against
 ``[ACGTN]`` before it is accepted -- naming the offending sample instead of
 failing with an unrelated server error later. An i7 or i5 name without the
 sequence for it, or an index pair name with no sequence at all, rejects the

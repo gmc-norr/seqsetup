@@ -114,6 +114,13 @@ paste or type into the box yourself is read up to 1 MB.
    sample called 0; stored, it would name a patient sample 0 in the Sample
    Sheet. An ID that merely contains a zero (``0A``, ``100``) is fine.
 
+.. warning::
+   A sample ID or test longer than 256 characters is refused, never cut,
+   and the whole paste with it (*"Row(s) <line numbers>: the sample_id is
+   longer than 256 characters. SeqSetup does not shorten it; shorten it in
+   the source."*). A cut ID would be another ID: two IDs alike in their
+   first 256 characters would become one.
+
 Two other things block the whole paste before you can add it: the same
 sample ID appearing more than once in the pasted text (SeqSetup cannot
 tell which row is right), and a paste that would push the run over its
@@ -182,6 +189,10 @@ assigned immediately, with Override Cycles calculated automatically.
    as text (*"LIMS row(s) <positions>: A sample ID made only of zeros is
    not a sample ID -- a LIMS may use 0 for an empty well. Fix the upstream
    record(s) before retrying."*) -- a LIMS may use 0 for an empty well.
+   So is a row whose sample ID, test or worksheet ID is longer than 256
+   characters (*"LIMS row(s) <positions>: the sample_id is longer than 256
+   characters. SeqSetup does not shorten it. Fix the upstream record(s)
+   before retrying."*): it is never cut.
    As with a paste, a sample ID already in the run is skipped
    rather than blocking.
 
@@ -243,7 +254,10 @@ rejected and nothing is saved.
 
 A sample ID is never made only of zeros: adding a sample called ``0`` or
 ``00`` is refused (*"A sample ID made only of zeros is not a sample ID --
-a LIMS may use 0 for an empty well."*) and nothing is saved.
+a LIMS may use 0 for an empty well."*) and nothing is saved. Nor is a
+sample ID, name, project or test longer than 256 characters, when a sample
+is added or changed: it is refused, never cut (*"The sample ID is longer
+than 256 characters. Nothing was saved."*).
 
 Sample ID is set when a sample is added and cannot be changed afterward in
 this table; to correct a typo, remove the sample and add it again. Test ID

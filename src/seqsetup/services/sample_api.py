@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 from ..models.sample import (
+    MAX_SAMPLE_TEXT,
     TEST_VERSION_RE,
     TEST_VERSION_RULE,
     ZERO_SAMPLE_ID_RULE,
@@ -31,8 +32,11 @@ _MAX_RESPONSE_SIZE = 10 * 1024 * 1024
 
 # Per-field character cap on values extracted from LIMS payloads. Matches the
 # 256-char limit applied by form-submission paths so model invariants never
-# see an unbounded string regardless of which ingest route was taken.
+# see an unbounded string regardless of which ingest route was taken. The
+# fields below are refused over it instead, never cut, naming their rows: a
+# cut ID is another ID (spec 2026-10-14 long sample text).
 _MAX_FIELD_LEN = 256
+_NEVER_CUT = {"sample_id": "the sample_id", "test_id": "the test", "worksheet_id": "the worksheet ID"}
 
 # Index sequences from a LIMS must be DNA; validate at this ingest point (like
 # the paste parser) so a malformed sequence is a clean, sample-naming rejection
@@ -970,6 +974,7 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
     results = []
     rows_missing_sample_id: list[int] = []  # 1-based positions of dropped rows
     rows_zero_sample_id: list[int] = []  # 1-based positions of rows named only 0
+    rows_too_long: dict[str, list[int]] = {field: [] for field in _NEVER_CUT}
     read_names = {alias for field in sample_fields for alias in field_aliases[field]}
 
     for index, item in enumerate(data, start=1):
@@ -1005,7 +1010,8 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
                         _refuse_a_changed_value(f"LIMS row {index} has {label}", val)
                     # Strip + length-clamp per CLAUDE.md input-sanitization rule.
                     # LIMS payloads aren't trusted to honor field widths.
-                    sample[field] = str(val).strip()[:_MAX_FIELD_LEN]
+                    text = str(val).strip()
+                    sample[field] = text if field in _NEVER_CUT else text[:_MAX_FIELD_LEN]
                     break
 
         # Must have at least sample_id. Silent skip would route the dropped
@@ -1020,6 +1026,12 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         # its rows, like a row with no sample ID at all.
         if is_zero_only(sample["sample_id"]):
             rows_zero_sample_id.append(index)
+            continue
+
+        too_long = [field for field in _NEVER_CUT if len(sample.get(field, "")) > MAX_SAMPLE_TEXT]
+        if too_long:
+            for field in too_long:
+                rows_too_long[field].append(index)
             continue
 
         # A null name gives way to the next one, as for every field above.
@@ -1071,6 +1083,14 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
             f"LIMS row(s) {rows_str}: {ZERO_SAMPLE_ID_RULE}. "
             f"Fix the upstream record(s) before retrying."
         )
+
+    for field, what in _NEVER_CUT.items():
+        if rows_too_long[field]:
+            rows_str = ", ".join(str(n) for n in rows_too_long[field])
+            raise ValueError(
+                f"LIMS row(s) {rows_str}: {what} is longer than {MAX_SAMPLE_TEXT} characters. "
+                f"SeqSetup does not shorten it. Fix the upstream record(s) before retrying."
+            )
 
     # One sample ID twice: SeqSetup cannot tell which row is right, so the
     # whole worklist is refused, like a paste (review DI-01; spec

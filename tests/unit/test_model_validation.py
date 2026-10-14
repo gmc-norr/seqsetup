@@ -523,17 +523,18 @@ class TestSampleStringFields:
         sample = Sample(sample_id="")
         assert sample.sample_id == ""
 
-    def test_sample_id_long_string_clamped_at_model(self):
-        """The model clamps free-form string identifiers at 256 chars.
+    def test_sample_id_long_string_refused_at_model(self):
+        """The model refuses a sample ID over 256 chars, never cuts it: a
+        cut ID is another ID (spec 2026-10-14 long sample text).
 
-        Routes also sanitize at the boundary, but per CLAUDE.md the model
+        Routes also check at the boundary, but per CLAUDE.md the model
         is the load-bearing invariant — direct attribute writes (e.g. from
         a future code path that bypasses the form) must not balloon the
         document.
         """
         long_id = "A" * 500
-        sample = Sample(sample_id=long_id)
-        assert len(sample.sample_id) == 256
+        with pytest.raises(ValueError, match="longer than 256 characters"):
+            Sample(sample_id=long_id)
 
     def test_sample_id_with_special_chars(self):
         sample = Sample(sample_id="SAMPLE-2024_001#v2")
@@ -776,13 +777,13 @@ class TestSampleFreeFormFieldBounds:
         with pytest.raises(ValueError, match="metadata must be a dict"):
             Sample(metadata=["not", "a", "dict"])
 
-    def test_sample_name_clamped_at_256(self):
-        sample = Sample(sample_name="A" * 500)
-        assert len(sample.sample_name) == 256
+    def test_sample_name_refused_over_256(self):
+        with pytest.raises(ValueError, match="longer than 256 characters"):
+            Sample(sample_name="A" * 500)
 
-    def test_test_id_clamped_at_256(self):
-        sample = Sample(test_id="A" * 500)
-        assert len(sample.test_id) == 256
+    def test_test_id_refused_over_256(self):
+        with pytest.raises(ValueError, match="longer than 256 characters"):
+            Sample(test_id="A" * 500)
 
 
 class TestSequencingRunFreeFormBounds:

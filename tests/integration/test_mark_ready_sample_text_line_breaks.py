@@ -92,26 +92,24 @@ class TestMarkReadyRefusesLineBreaks:
         assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
 
-    def test_sample_id_clamped_to_end_in_newline_is_refused(
+    def test_sample_id_that_a_cut_would_end_in_newline_is_refused(
         self, logged_in_client, fresh_app
     ):
+        """The route cut this to 255 A's and a line break, which only Mark
+        Ready then caught. It is refused at the rename now: too long, never
+        cut (spec 2026-10-14 long sample text)."""
         _app, ctx, _db = fresh_app
         run_id, sample_id = _seed_miseq_draft(ctx, "lb-id")
-        assert logged_in_client.post(
+        before = ctx.run_repo.get_by_id(run_id).get_sample(sample_id).sample_id
+        resp = logged_in_client.post(
             f"/runs/{run_id}/samples/{sample_id}",
             data={"sample_id": "A" * 255 + "\nEVIL,GGGGGGGG,GGGGGGGG"},
             headers=ORIGIN,
-        ).status_code == 200
-        stored = ctx.run_repo.get_by_id(run_id).get_sample(sample_id).sample_id
-        assert stored == "A" * 255 + "\n", "the route stored a trailing newline"
+        )
 
-        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
-
-        assert resp.headers.get("HX-Retarget") == "#ready-message"
-        assert "invalid characters" in resp.text
-        run = ctx.run_repo.get_by_id(run_id)
-        assert run.status.value == "draft"
-        assert not run.generated_samplesheet_v2
+        assert resp.status_code == 400
+        assert "longer than 256 characters" in resp.text
+        assert ctx.run_repo.get_by_id(run_id).get_sample(sample_id).sample_id == before
 
     def test_plain_sample_text_is_made_ready_with_one_data_section(
         self, logged_in_client, fresh_app

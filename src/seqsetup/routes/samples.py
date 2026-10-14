@@ -17,6 +17,8 @@ from ..context import AppContext
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.index import Index, IndexKit, IndexType
 from ..models.sample import (
+    MAX_SAMPLE_TEXT,
+    SAMPLE_TEXT_LABELS,
     TEST_VERSION_RE,
     TEST_VERSION_RULE,
     ZERO_SAMPLE_ID_RULE,
@@ -115,6 +117,16 @@ def _messages_only(request, messages) -> HTMLResponse:
     """Render the _messages.html partial as the entire response."""
     html = templates.env.get_template("_messages.html").render(messages=messages)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+def _too_long(field: str, raw) -> str:
+    """The refusal for sample text longer than MAX_SAMPLE_TEXT once
+    stripped, or "": it is refused, never cut (spec 2026-10-14 long sample
+    text). ``field`` is a key of SAMPLE_TEXT_LABELS."""
+    if isinstance(raw, str) and len(raw.strip()) > MAX_SAMPLE_TEXT:
+        return (f"The {SAMPLE_TEXT_LABELS[field]} is longer than {MAX_SAMPLE_TEXT} "
+                f"characters. Nothing was saved.")
+    return ""
 
 
 def _banner_only(request, messages, status_code: int = 400) -> HTMLResponse:
@@ -433,6 +445,8 @@ async def _read_paste_input(
     if not lanes:
         return None, "Pick at least one lane for the new samples."
 
+    if refusal := _too_long("test_id", form.get("default_test_id", "")):
+        return None, refusal
     default_test = sanitize_string(form.get("default_test_id", ""), 256)
     if default_test and default_test not in _test_types(ctx):
         return None, f'No test called "{default_test}".'
@@ -552,6 +566,10 @@ async def add_sample(
 
     if not sample_id or not sample_id.strip():
         return Response("sample_id is required", status_code=400)
+    for field, value in (("sample_id", sample_id), ("sample_name", sample_name),
+                         ("project", project), ("test_id", test_id)):
+        if refusal := _too_long(field, value):
+            return Response(refusal, status_code=400)
     sample_id = sanitize_string(sample_id, 256)
     if is_zero_only(sample_id):
         return Response(f"{ZERO_SAMPLE_ID_RULE}.", status_code=400)
@@ -1586,6 +1604,8 @@ async def set_test_id_bulk(
     if only_if not in ("", "no_test", "no_version"):
         return Response("only_if must be no_test or no_version", status_code=400)
 
+    if refusal := _too_long("test_id", test_id_str):
+        return Response(refusal, status_code=400)
     test_id = sanitize_string(test_id_str, 256)
     test_version, problem = _test_version_with(test_id, form.get("test_version", ""))
     if problem:
@@ -1715,6 +1735,9 @@ async def update_sample(
     has_sample_id = "sample_id" in form
     has_sample_name = "sample_name" in form
     has_project = "project" in form
+    for field in ("sample_id", "sample_name", "project"):
+        if refusal := _too_long(field, form.get(field, "")):
+            return Response(refusal, status_code=400)
 
     # Reject blank sample_id when it IS being updated — blanking it would
     # silently break demultiplexing for that sample.
