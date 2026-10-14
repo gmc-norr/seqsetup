@@ -53,6 +53,11 @@ edits, and its exports are generated:
 
    The status badge just after Mark Ready succeeds, outlined.
 
+Generating the exports includes drawing the validation report's charts.
+For a large run this takes a while -- about two minutes for 96 samples on
+all 8 lanes of a NovaSeq X 10B -- and the button reads **Checking...**
+until it is done. Everyone else can keep working in SeqSetup meanwhile.
+
 If the run has no errors but a lane has a color balance error (see
 :doc:`validation`), **Mark Ready** does not go ahead yet. It asks, under
 the status bar, and names the lanes:
