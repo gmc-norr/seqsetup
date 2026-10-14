@@ -1,17 +1,20 @@
-"""A change already on its way when the edit lock changes hands is refused
+"""A change already on its way when someone else starts editing is refused
 (outside review of 7f858e0, finding 3; the user's choice "Mark run as
 changed", 2026-10-14).
 
 The lock is checked once, when the request loads the run; the save then
-checks only that the run is the version it loaded. So Take over, Done
-editing, and Edit run over a lock someone left now also mark the run
-changed: a save loaded before that is refused, like any save that lost a
-race. Each test makes the old editor's request hand the lock over between
-its guard and its save.
+checks only that the run is the version it loaded. So whoever starts
+editing a run they did not hold -- Edit run, or Take over -- also marks the
+run changed, after writing the lock: a save loaded before that is refused,
+like any save that lost a race. Done editing marks nothing, so the editor's
+own last change, still on its way, is kept (review of 999447b, P2). Each
+test makes the old editor's request hand the lock over between its guard
+and its save.
 """
 
 from datetime import timedelta
 
+from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.routes import samples as samples_module
 from seqsetup.utils.clock import utcnow
 
@@ -59,18 +62,21 @@ class TestAChangeOnItsWayIsRefused:
         assert resp.status_code == 409, resp.text[:300]
         assert _mismatch(ctx, run_id) == 1
 
-    def test_when_the_editor_presses_done_editing(self, two, monkeypatch):
-        """Someone else may press Edit run right after and draw the page."""
+    def test_when_someone_presses_edit_run_after_done_editing(self, two, monkeypatch):
         ctx, admin, op = two
         run_id = _draft(ctx, samples=1)
         _edit(admin, run_id)
-        seen = _meanwhile(monkeypatch, lambda: admin.delete(
-            f"/runs/{run_id}/edit-lock", headers=ORIGIN).status_code)
+
+        def done_then_someone_edits():
+            admin.delete(f"/runs/{run_id}/edit-lock", headers=ORIGIN)
+            return op.post(f"/runs/{run_id}/edit-lock", headers=ORIGIN).status_code
+
+        seen = _meanwhile(monkeypatch, done_then_someone_edits)
 
         resp = _late_save(admin, ctx, run_id)
 
         assert seen["status"] == 200
-        assert _holder(ctx, run_id) is None
+        assert _holder(ctx, run_id) == OPERATOR
         assert resp.status_code == 409, resp.text[:300]
         assert _mismatch(ctx, run_id) == 1
 
@@ -94,7 +100,25 @@ class TestAChangeOnItsWayIsRefused:
         assert _mismatch(ctx, run_id) == 1
 
 
-class TestTheRunShowsTheHandOver:
+class TestTheEditorsOwnLastChangeIsKept:
+
+    def test_when_they_press_done_editing_while_it_is_on_its_way(self, two, monkeypatch):
+        """Done editing reloads the page, so a refusal would go unseen."""
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+        seen = _meanwhile(monkeypatch, lambda: admin.delete(
+            f"/runs/{run_id}/edit-lock", headers=ORIGIN).status_code)
+
+        resp = _late_save(admin, ctx, run_id)
+
+        assert seen["status"] == 200
+        assert _holder(ctx, run_id) is None
+        assert resp.status_code == 200, resp.text[:300]
+        assert _mismatch(ctx, run_id) == 2
+
+
+class TestTheRunShowsWhoStartedEditing:
 
     def test_take_over_marks_the_run_changed_by_the_new_editor(self, two):
         ctx, admin, op = two
@@ -109,31 +133,19 @@ class TestTheRunShowsTheHandOver:
         assert after.updated_by == OPERATOR
         assert after.to_dict()["samples"] == before.to_dict()["samples"]
 
-    def test_done_editing_marks_the_run_changed(self, two):
-        ctx, admin, op = two
-        run_id = _draft(ctx, samples=1)
-        _edit(admin, run_id)
-        before = ctx.run_repo.get_by_id(run_id)
-
-        admin.delete(f"/runs/{run_id}/edit-lock", headers=ORIGIN)
-
-        after = ctx.run_repo.get_by_id(run_id)
-        assert after.updated_at > before.updated_at
-        assert after.updated_by == ADMIN
-
-
-class TestNothingIsMarkedWhenNoOneElseHeldIt:
-    """Edit run on a run nobody holds, or pressing it again, hands nothing
-    over: the run's Updated time stays."""
-
-    def test_edit_run_on_a_free_run(self, two):
+    def test_edit_run_on_a_free_run_marks_it_changed_by_the_editor(self, two):
         ctx, admin, op = two
         run_id = _draft(ctx, samples=1)
         before = ctx.run_repo.get_by_id(run_id).updated_at
 
-        _edit(admin, run_id)
+        _edit(op, run_id)
 
-        assert ctx.run_repo.get_by_id(run_id).updated_at == before
+        after = ctx.run_repo.get_by_id(run_id)
+        assert after.updated_at > before
+        assert after.updated_by == OPERATOR
+
+
+class TestNothingIsMarkedWhenTheEditorStaysTheSame:
 
     def test_edit_run_again(self, two):
         ctx, admin, op = two
@@ -145,13 +157,78 @@ class TestNothingIsMarkedWhenNoOneElseHeldIt:
 
         assert ctx.run_repo.get_by_id(run_id).updated_at == before
 
-    def test_done_editing_by_someone_who_is_not_editing(self, two):
+    def test_edit_run_on_your_own_lock_left_behind(self, two):
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+        ctx.edit_lock_repo.collection.update_one(
+            {"_id": run_id}, {"$set": {"seen_at": utcnow() - timedelta(minutes=4)}})
+        before = ctx.run_repo.get_by_id(run_id).updated_at
+
+        _edit(admin, run_id)
+
+        assert ctx.run_repo.get_by_id(run_id).updated_at == before
+
+    def test_done_editing(self, two):
         ctx, admin, op = two
         run_id = _draft(ctx, samples=1)
         _edit(admin, run_id)
         before = ctx.run_repo.get_by_id(run_id).updated_at
 
-        op.delete(f"/runs/{run_id}/edit-lock", headers=ORIGIN)
+        admin.delete(f"/runs/{run_id}/edit-lock", headers=ORIGIN)
 
-        assert _holder(ctx, run_id) == ADMIN
+        assert _holder(ctx, run_id) is None
         assert ctx.run_repo.get_by_id(run_id).updated_at == before
+
+
+class TestTheLockIsWrittenBeforeTheRunIsMarked:
+    """A request that loads the run after the mark must find the new lock
+    (review of 999447b, P3-3)."""
+
+    def _order(self, ctx, monkeypatch):
+        order = []
+        for name in ("take", "replace"):
+            real = getattr(ctx.edit_lock_repo, name)
+            monkeypatch.setattr(ctx.edit_lock_repo, name,
+                                lambda *a, _real=real, _name=name, **k: order.append(_name) or _real(*a, **k))
+        real_mark = ctx.run_repo.mark_changed
+        monkeypatch.setattr(ctx.run_repo, "mark_changed",
+                            lambda *a, **k: order.append("mark") or real_mark(*a, **k))
+        return order
+
+    def test_edit_run(self, two, monkeypatch):
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        order = self._order(ctx, monkeypatch)
+
+        _edit(op, run_id)
+
+        assert order == ["take", "mark"], order
+
+    def test_take_over(self, two, monkeypatch):
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        _edit(admin, run_id)
+        order = self._order(ctx, monkeypatch)
+
+        op.post(f"/runs/{run_id}/edit-lock/take-over", headers=ORIGIN)
+
+        assert order == ["replace", "mark"], order
+
+
+class TestOnlyADraftIsMarked:
+
+    def test_a_ready_run_keeps_its_version(self, two):
+        """A Take over racing the old editor's Mark Ready must not move a
+        Ready run's Updated time (review of 999447b, P3-2)."""
+        ctx, admin, op = two
+        run_id = _draft(ctx, samples=1)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.status = RunStatus.READY
+        ctx.run_repo.save(run)
+        before = ctx.run_repo.get_by_id(run_id)
+
+        assert ctx.run_repo.mark_changed(run_id, utcnow(), OPERATOR) is False
+
+        after = ctx.run_repo.get_by_id(run_id)
+        assert (after.updated_at, after.updated_by) == (before.updated_at, before.updated_by)

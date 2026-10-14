@@ -50,11 +50,12 @@ decision, 2026-10-13). `get_editable_run` refuses a change from anyone not
 holding the run's edit lock (`services/edit_locks.py`), and anyone may take
 the lock over after a confirmation, so no run belongs to anyone. The lock
 is checked when a request loads the run, and the save checks only the
-run's version; so when the lock leaves its holder (Take over, Done
-editing, Edit run over a lock left behind) `routes/edit_lock.py` moves the
-run's version on (`RunRepository.mark_changed`) after writing the lock,
-and a change of the old holder's that was already past its check is
-refused by the version check.
+run's version; so when someone who did not hold the lock starts editing
+(Edit run, on a free run too, or Take over) `routes/edit_lock.py` moves
+the run's version on (`RunRepository.mark_changed`, a Draft only) after
+writing the lock, and a change of the previous holder's that was already
+past its check is refused by the version check. Done editing moves
+nothing, so the holder's own last change on its way is kept.
 
 This is a security review decision (2026-06-10): the shared-access model was
 reviewed and **kept intentionally**. Introducing per-user run ownership is a

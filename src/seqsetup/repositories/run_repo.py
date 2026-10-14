@@ -7,6 +7,7 @@ from ..data.instruments import get_default_cycles
 from ..models.sequencing_run import (
     InstrumentPlatform,
     RunCycles,
+    RunStatus,
     SequencingRun,
 )
 from .base import BaseRepository, ConflictError
@@ -108,11 +109,12 @@ class RunRepository(BaseRepository[SequencingRun]):
         run._loaded_updated_at = run.updated_at
 
     def mark_changed(self, run_id: str, when: datetime, by: str) -> bool:
-        """Move the stored version (``updated_at``) on without changing the
-        run's content, so a save of a copy loaded before now is refused by
-        the version check in ``save``."""
+        """Move a Draft's stored version (``updated_at``) on without changing
+        its content, so a save of a copy loaded before now is refused by the
+        version check in ``save``. A run no longer a Draft is left as it is."""
         result = self.collection.update_one(
-            {"_id": run_id}, {"$set": {"updated_at": when.isoformat(), "updated_by": by}},
+            {"_id": run_id, "status": RunStatus.DRAFT.value},
+            {"$set": {"updated_at": when.isoformat(), "updated_by": by}},
         )
         return result.matched_count == 1
 

@@ -181,11 +181,13 @@ power -- the run shows as free, and anyone can press **Edit run** without
 being asked; SeqSetup records whose editing they took. Until someone
 does, the run is still yours: come back to it and carry on.
 
-When the editing passes from one person -- **Take over editing**,
-**Done editing**, or **Edit run** on a run someone left -- the run's
-**Updated** time and name change to that moment and that person, though
-nothing in the run changed. That is what stops a change from the person
-who had it before from landing afterwards.
+When you press **Edit run** or **Take over editing** on a run you were
+not already editing, the run's **Updated** time changes to that moment,
+and its name to yours, though nothing in the run changed. The run page
+shows the time; the dashboard shows both, and lists the run first. That
+is what stops a change from the person who had the run before from
+landing afterwards. **Done editing** changes neither, so a last change of
+yours that is still on its way is kept.
 
 An open edit page does not keep you signed in: if you do nothing for 30
 minutes, your sign-in ends as on any other page (see
