@@ -338,7 +338,8 @@ def _normalize_lane_selection(raw_lanes, max_lanes: int) -> list[int] | None:
             lane = lane.strip()
             if not lane:
                 continue
-            if not lane.isdigit():
+            # Not isdigit(): "²" passes it and int() then raises.
+            if not lane.isdecimal():
                 return None
             lane = int(lane)
         elif not isinstance(lane, int):
@@ -1109,15 +1110,18 @@ def import_worklist_samples(
             worklist_id=worklist_id,
             added_count=added_count,
             skipped_duplicates_count=len(skipped_duplicates),
+            lanes=",".join(str(n) for n in picked_lanes),
         )
 
     messages: list[dict] = []
     if added_count == 0:
         messages.append({"text": "No new samples added from worklist.", "kind": "warning"})
-    elif added_count == 1:
-        messages.append({"text": "Added 1 sample from worklist.", "kind": "success"})
     else:
-        messages.append({"text": f"Added {added_count} samples from worklist.", "kind": "success"})
+        noun = "sample" if added_count == 1 else "samples"
+        messages.append({
+            "text": f"Added {added_count} {noun} from worklist to {_lane_words(picked_lanes)}.",
+            "kind": "success",
+        })
 
     if skipped_duplicates:
         messages.append({"text": f"Skipped {len(skipped_duplicates)} duplicate(s) already in run.", "kind": "warning"})

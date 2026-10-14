@@ -460,7 +460,7 @@ class TestWorklistWithARepeatedSampleId:
         resp = _import(logged_in_client)
 
         assert resp.status_code == 200, resp.text[:300]
-        assert "Added 2 samples from worklist." in resp.text
+        assert "Added 2 samples from worklist to lane 1." in resp.text
         assert [(s.sample_id, s.test_id) for s in _stored(ctx).samples] == [("P1", "WGS"), ("P2", "WES")]
 
     def test_an_id_already_in_the_run_is_still_skipped(self, logged_in_client, fresh_app, monkeypatch):

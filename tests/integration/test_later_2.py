@@ -178,7 +178,7 @@ class TestTheImportReadsTheWorksheetFromTheFormBody:
         asked = _worksheet(monkeypatch, [{"sample_id": "P1", "test_id": ""}])
         resp = _import(logged_in_client, worklist_id="WS1")
         assert resp.status_code == 200, resp.text[:300]
-        assert "Added 1 sample from worklist." in resp.text
+        assert "Added 1 sample from worklist to lane 1." in resp.text
         # Asked by the preview, then again by the import, which compares.
         assert asked == ["https://lims.example.org/api/worksheets/WS1"] * 2
         assert [s.sample_id for s in ctx.run_repo.get_by_id(RUN).samples] == ["P1"]

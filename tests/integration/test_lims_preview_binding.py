@@ -139,7 +139,7 @@ class TestTheImportAddsWhatThePreviewShowed:
         resp = import_from_preview(logged_in_client, RUN, "W1")
 
         assert resp.status_code == 200, resp.text[:300]
-        assert "Added 2 samples from worklist." in resp.text
+        assert "Added 2 samples from worklist to lane 1." in resp.text
         assert _ids(ctx) == ["P1", "P2"]
 
 

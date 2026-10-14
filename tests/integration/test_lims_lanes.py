@@ -11,6 +11,8 @@ uses the lanes its preview showed: they are part of the plan it compares.
 import html
 import re
 
+from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
+from .conftest import hold_edit_lock
 from .test_lims_preview_binding import CHANGED, ORIGIN, RUN, _ids, _lims, _plan, _run
 
 PICK_A_LANE = "Pick at least one lane for the new samples."
@@ -110,6 +112,81 @@ class TestTheImportUsesThePreviewsLanes:
         assert r.status_code == 400
         assert PICK_A_LANE in r.text
         assert _ids(ctx) == []
+
+    def test_a_lane_gone_since_the_preview_is_refused(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims(ctx, monkeypatch)
+
+        page = _preview(logged_in_client, lanes=("8",)).text
+        run = ctx.run_repo.get_by_id(RUN)
+        run.flowcell_type = "1.5B"  # 2 lanes
+        ctx.run_repo.save(run)
+        r = _import(logged_in_client, page)
+
+        assert r.status_code == 400
+        assert "Use lane numbers between 1 and 2." in r.text
+        assert _ids(ctx) == []
+
+    def test_the_lanes_are_in_the_message_and_the_log(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims(ctx, monkeypatch)
+
+        r = _import(logged_in_client, _preview(logged_in_client, lanes=("2", "3")).text)
+
+        assert "Added 2 samples from worklist to lanes 2, 3." in r.text
+        (event,) = ctx.audit_event_repo.search(limit=5, event_prefix="sample.worklist_imported")
+        assert event.details["lanes"] == "2,3"
+
+
+class TestALaneValueThatIsNotANumber:
+    """"²" passed isdigit() and then int() raised: a 500 (review of 69d910a)."""
+
+    def test_the_preview_refuses_it(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims(ctx, monkeypatch)
+
+        r = _preview(logged_in_client, lanes=("²",))
+
+        assert r.status_code < 500
+        assert "Invalid lane selection. Use lane numbers between 1 and 8." in r.text
+        assert _plan(r.text) is None
+
+    def test_the_import_refuses_it(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+        _lims(ctx, monkeypatch)
+
+        r = _import(logged_in_client, _preview(logged_in_client).text, lanes=("²",))
+
+        assert r.status_code == 400
+        assert "Invalid lane selection." in r.text
+        assert _ids(ctx) == []
+
+
+class TestAOneLaneFlowcell:
+
+    def test_lane_1_is_sent_without_a_box(self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        ctx.run_repo.save(SequencingRun(
+            id=RUN, run_name="One lane", instrument_platform=InstrumentPlatform.NEXTSEQ_1000_2000,
+            flowcell_type="P2", run_cycles=RunCycles(151, 151, 10, 10)))
+        hold_edit_lock(ctx, RUN)
+        _lims(ctx, monkeypatch)
+
+        picker = logged_in_client.get(f"/runs/{RUN}/samples/worklists").text
+        assert 'type="checkbox" name="lanes"' not in picker
+        hidden = re.search(r'<div id="worklist-lanes">(.*?)</div>', picker, re.S)
+        assert hidden and _shown_lanes(hidden.group(1)) == ["1"]
+
+        page = _preview(logged_in_client, lanes=_shown_lanes(hidden.group(1))).text
+        assert "to lane 1" in page
+        r = _import(logged_in_client, page)
+
+        assert r.status_code == 200, r.text[:300]
+        assert _lanes(ctx) == {"P1": [1], "P2": [1]}
 
 
 class TestALimsLaneFieldIsRefused:

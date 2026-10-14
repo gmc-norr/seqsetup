@@ -926,9 +926,9 @@ def _unread_fields_error(fields: dict[str, list[int]]) -> ValueError:
         f"LIMS row(s) {rows}: the field(s) {quoted} look like an index or a lane, but SeqSetup "
         f"does not read them, so the whole worklist was refused. It reads the i7 from "
         f"{', '.join(_I7_NAMES[:-1])} or {_I7_NAMES[-1]}, and the i5 from "
-        f"{', '.join(_I5_NAMES[:-1])} or {_I5_NAMES[-1]}. An admin can map a LIMS field to one "
-        f"of these in the LIMS settings."
+        f"{', '.join(_I5_NAMES[:-1])} or {_I5_NAMES[-1]}."
         + (" Lanes come from the Lanes picker on the import, not from the LIMS." if lanes else "")
+        + " Rename or remove the field(s) in the LIMS."
     )
 
 
@@ -945,6 +945,10 @@ _FIELD_LABELS = {
     "index1_name": "an i7 name",
     "index2_name": "an i5 name",
 }
+
+# The fields that hold a sample's indexes: each may come under one name only.
+_INDEX_FIELDS = ("index1_sequence", "index2_sequence", "index_pair_name", "index1_name",
+                 "index2_name")
 
 
 def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None) -> list[dict]:
@@ -1028,6 +1032,19 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
                     f"Send only one of them."
                 )
             first_spelling[lower] = name
+
+        # Two names for one index would be read as one, the other dropped
+        # without a word — an empty first one left the sample with no i7; the
+        # paste refuses a second column for it (review of 69d910a).
+        for field in _INDEX_FIELDS:
+            names = [name for name in item if name.lower() in field_aliases[field]]
+            if len(names) > 1:
+                quoted = ", ".join(f'"{shown_value(name)}"' for name in names)
+                raise ValueError(
+                    f"LIMS row {index} has more than one name for {_FIELD_LABELS[field]} "
+                    f"({quoted}), so the whole worklist was refused: SeqSetup would read only "
+                    f"one of them. Send only one."
+                )
 
         # Build a lowercase key lookup
         lower_item = {k.lower(): v for k, v in item.items()}

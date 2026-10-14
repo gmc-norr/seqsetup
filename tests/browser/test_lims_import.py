@@ -77,7 +77,7 @@ def test_load_preview_and_import(logged_in_page, base_url, app_ctx, mutable_run_
     with page.expect_response(lambda r: r.url.endswith("/samples/fetch-worklist") and r.status == 200):
         _import_button(page).click()
 
-    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist.")
+    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist to lane 1.")
     expect(page.locator("#sample-section")).to_have_count(1)    # swapped, not nested
     expect(page.locator("#sample-table")).to_have_count(1)
     expect(page.locator("#sample-table")).to_contain_text("LIMS-02")
@@ -172,7 +172,7 @@ def test_a_success_after_a_refusal_shows_its_message(logged_in_page, base_url, a
     lims.rows = GOOD
     with page.expect_response(lambda r: r.url.endswith("/samples/fetch-worklist")):
         _import_button(page).click()
-    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist.")
+    expect(page.locator("#error-banner")).to_contain_text("Added 2 samples from worklist to lane 1.")
 
 
 @pytest.mark.browser

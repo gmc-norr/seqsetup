@@ -201,7 +201,7 @@ LIMS, or through a change to the run's samples or cycles -- nothing is
 added and the banner says *"The worksheet or the run changed since the
 preview. Nothing was added. Preview again."* Otherwise the result shows in
 the banner at the top of
-the page (*"Added 2 samples from worklist."*). If the import is refused,
+the page (*"Added 2 samples from worklist to lane 1."*). If the import is refused,
 its message shows in the banner instead, and the run's samples stay as
 they were. An imported
 row carries its worksheet ID into the **Worksheet** column -- the picked
@@ -226,6 +226,15 @@ assigned immediately, with Override Cycles calculated automatically.
    characters (*"LIMS row(s) <positions>: the sample_id is longer than 256
    characters. SeqSetup does not shorten it. Fix the upstream record(s)
    before retrying."*): it is never cut.
+   So is a row with a field that looks like an index or a lane but is not
+   one SeqSetup reads, such as ``index``, ``Index 2`` or ``lane``
+   (*"LIMS row(s) 1: the field(s) "index" look like an index or a lane,
+   but SeqSetup does not read them, so the whole worklist was refused.
+   ..."*), and a row with two names for one index, such as ``index1`` and
+   ``i7`` (*"LIMS row 1 has more than one name for an i7 sequence ("index1",
+   "i7"), so the whole worklist was refused: SeqSetup would read only one
+   of them. Send only one."*): the sample would come in without that index,
+   or with only one of the two.
    As with a paste, a sample ID already in the run is skipped
    rather than blocking.
 
