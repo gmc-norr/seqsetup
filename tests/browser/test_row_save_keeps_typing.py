@@ -843,3 +843,32 @@ class TestWhatTheGivenUpActionSaysAndLocks:
         expect(page.locator("#ready-message")).to_contain_text("Cannot mark ready")
         expect(page.get_by_role("button", name="Mark Ready", exact=True)).to_be_enabled()
         expect(page.get_by_role("button", name="Done editing")).to_be_enabled()
+
+    def test_the_other_action_is_refused_even_with_its_button_enabled(
+            self, logged_in_page, base_url, mutable_run_id, slow_first_save):
+        """The greyed-out button is the sign; the rule is at the click, so
+        that anything redrawing the status bar while an action waits cannot
+        let both of them fire."""
+        page = logged_in_page
+        sent = []
+        page.on("request", lambda r: sent.append(r.url.rsplit("/", 1)[-1])
+                if r.url.endswith("/status/ready") else None)
+        _open(page, base_url, mutable_run_id)
+        _row(page, mutable_run_id).locator(
+            'input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("0")
+        page.keyboard.press("Tab")          # the save starts (held 0.8 s)
+
+        page.get_by_role("button", name="Done editing").click()
+        page.evaluate("""() => document
+            .querySelectorAll('[data-after-row-saves] button')
+            .forEach(b => { b.disabled = false; })""")
+        page.get_by_role("button", name="Mark Ready", exact=True).click()
+        note = page.evaluate(
+            "() => document.getElementById('row-setting-notes').textContent")
+        page.wait_for_load_state("networkidle")
+
+        assert "Done editing is already waiting" in note, note
+        assert sent == [], sent
+        expect(page.locator("#run-status-bar")).to_contain_text("Nobody is editing this run")

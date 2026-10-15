@@ -973,8 +973,11 @@ function showWaitingForRowSaves(element, waiting) {
 }
 
 // Done editing and Mark Ready are mutually exclusive, so while either waits
-// neither may be clicked. Undone before the request goes: htmx re-enables
-// only a button it disabled itself, and skips one that is already disabled.
+// neither may be clicked. This is the sign only -- the rule is in the
+// htmx:confirm listener below, which refuses the second click whatever the
+// button looks like, so that anything redrawing these forms cannot undo it.
+// Undone before the request goes: htmx re-enables only a button it disabled
+// itself, and skips one that is already disabled.
 function lockRowSaveActions(locked) {
     for (const form of document.querySelectorAll('[data-after-row-saves]')) {
         for (const button of form.querySelectorAll('button')) button.disabled = locked;
@@ -1030,6 +1033,12 @@ document.body.addEventListener('htmx:trigger', function(event) {
 document.body.addEventListener('htmx:confirm', function(event) {
     const element = event.target;
     if (!(element instanceof Element) || !element.matches('[data-after-row-saves]')) return;
+    if (afterRowSaves.length > 0 && !afterRowSaves.some(([w]) => w === element)) {
+        event.preventDefault();
+        noteRowActionProblem(`${rowSaveActionName(afterRowSaves[0][0])} is already `
+            + "waiting for a sample row's change to be saved.");
+        return;
+    }
     clearRowActionNotes();             // this click answers the last note
     if (unsentRowSaves() === 0 && rowSettingSaves.size === 0) return;
     event.preventDefault();
@@ -1062,7 +1071,6 @@ new MutationObserver(function() {
             + 'was not saved, because the row was redrawn before it was sent. Enter it again.');
     }
     sendWhatWaitsForRowSaves();
-    if (afterRowSaves.length > 0) lockRowSaveActions(true);  // a redraw may have undone it
 }).observe(document.body, {childList: true, subtree: true});
 
 document.body.addEventListener('htmx:beforeSend', function(event) {
