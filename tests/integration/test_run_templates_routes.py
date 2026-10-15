@@ -89,33 +89,105 @@ class TestCloneRun:
         assert r.status_code == 404
 
 
-class TestSaveAsTemplate:
-    def test_save_as_template_captures_config_and_selected_samples(
-        self, logged_in_client, fresh_app
-    ):
-        _app, ctx, _db = fresh_app
-        run_id = _create_run(logged_in_client)
-        _add_sample(logged_in_client, run_id, "CTRL_POS")
-        run = ctx.run_repo.get_by_id(run_id)
-        scaffold_uuid = run.samples[0].id
+SETUP_ONLY = "A template holds a run's setup only, not its samples. Nothing was saved."
 
-        r = logged_in_client.post(
-            f"/runs/{run_id}/save-as-template",
-            data={
-                "name": "WGS Standard",
-                "description": "std",
-                "scaffold_sample_ids": json.dumps([scaffold_uuid]),
-            },
-            headers=_origin(),
-            follow_redirects=False,
-        )
+
+class TestATemplateHoldsNoSamples:
+    """The user's choice (2026-10-15): a template is a run's setup only. The
+    page never sent samples (its hidden scaffold_sample_ids is "[]"), but the
+    route took a list from any request and stored those samples with their
+    indexes, to copy into every run made from the template -- a way to copy
+    indexes nothing checked. A request naming samples is now refused."""
+
+    def _run_with_a_sample(self, client, ctx):
+        run_id = _create_run(client)
+        _add_sample(client, run_id, "CTRL_POS")
+        return run_id, ctx.run_repo.get_by_id(run_id).samples[0].id
+
+    def _save(self, client, run_id, **fields):
+        return client.post(f"/runs/{run_id}/save-as-template",
+                           data={"name": "WGS Standard", "description": "std", **fields},
+                           headers=_origin(), follow_redirects=False)
+
+    def test_a_request_naming_samples_is_refused_and_saves_nothing(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id, sample_uuid = self._run_with_a_sample(logged_in_client, ctx)
+
+        r = self._save(logged_in_client, run_id, scaffold_sample_ids=json.dumps([sample_uuid]))
+
+        assert (r.status_code, r.text) == (400, SETUP_ONLY)
+        assert ctx.run_template_repo.list_all() == []
+
+    def test_a_sample_id_the_run_does_not_hold_is_refused_too(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id, _sample_uuid = self._run_with_a_sample(logged_in_client, ctx)
+
+        r = self._save(logged_in_client, run_id, scaffold_sample_ids=json.dumps(["not-a-sample"]))
+
+        assert (r.status_code, r.text) == (400, SETUP_ONLY)
+        assert ctx.run_template_repo.list_all() == []
+
+    @pytest.mark.parametrize("value", ['"CTRL_POS"', '{"CTRL_POS": 1}', "5", "null"])
+    def test_a_sample_list_that_is_not_a_list_is_refused(
+            self, logged_in_client, fresh_app, value):
+        _app, ctx, _db = fresh_app
+        run_id, _sample_uuid = self._run_with_a_sample(logged_in_client, ctx)
+
+        r = self._save(logged_in_client, run_id, scaffold_sample_ids=value)
+
+        assert (r.status_code, r.text) == (400, "Invalid scaffold_sample_ids")
+        assert ctx.run_template_repo.list_all() == []
+
+    @pytest.mark.parametrize("named_first", [False, True],
+                             ids=["named list last", "named list first"])
+    def test_the_sample_list_sent_twice_is_refused(
+            self, logged_in_client, fresh_app, named_first):
+        """Review P3 (2026-10-15): the route read only the last of two
+        values, so a named list followed by "[]" saved as if none was sent."""
+        _app, ctx, _db = fresh_app
+        run_id, sample_uuid = self._run_with_a_sample(logged_in_client, ctx)
+        named = json.dumps([sample_uuid])
+
+        r = self._save(logged_in_client, run_id,
+                       scaffold_sample_ids=[named, "[]"] if named_first else ["[]", named])
+
+        assert (r.status_code, r.text) == (400, "Invalid scaffold_sample_ids")
+        assert ctx.run_template_repo.list_all() == []
+
+    def test_a_sample_list_nested_too_deep_to_read_is_refused(
+            self, logged_in_client, fresh_app):
+        """Review P3 (2026-10-15): Python's json gives up on a list nested
+        100,000 deep with a RecursionError, which answered 500."""
+        _app, ctx, _db = fresh_app
+        run_id, _sample_uuid = self._run_with_a_sample(logged_in_client, ctx)
+        deep = "[" * 100_000 + "]" * 100_000
+
+        r = logged_in_client.post(f"/runs/{run_id}/save-as-template",
+                                  data={"name": "WGS Standard", "description": ""},
+                                  files={"scaffold_sample_ids": (None, deep)},
+                                  headers=_origin(), follow_redirects=False)
+
+        assert (r.status_code, r.text) == (400, "Invalid scaffold_sample_ids")
+        assert ctx.run_template_repo.list_all() == []
+
+    @pytest.mark.parametrize("fields", [{"scaffold_sample_ids": "[]"}, {}],
+                             ids=["empty list, as the page sends", "no list"])
+    def test_the_setup_alone_is_saved(self, logged_in_client, fresh_app, fields):
+        _app, ctx, _db = fresh_app
+        run_id, _sample_uuid = self._run_with_a_sample(logged_in_client, ctx)
+        run = ctx.run_repo.get_by_id(run_id)
+
+        r = self._save(logged_in_client, run_id, **fields)
+
         assert r.status_code == 303
-        templates = ctx.run_template_repo.list_all()
-        assert len(templates) == 1
-        t = templates[0]
-        assert t.name == "WGS Standard"
-        assert t.flowcell_type == run.flowcell_type
-        assert [s.sample_id for s in t.scaffold_samples] == ["CTRL_POS"]
+        (t,) = ctx.run_template_repo.list_all()
+        assert (t.name, t.flowcell_type, t.scaffold_samples) == (
+            "WGS Standard", run.flowcell_type, [])
+
+
+class TestSaveAsTemplate:
 
     def test_save_as_template_with_no_scaffold_is_config_only(
         self, logged_in_client, fresh_app
@@ -169,37 +241,18 @@ class TestSaveAsTemplate:
         ctrl = next(s for s in run.samples if s.sample_id == "CTRL_POS")
         return run_id, ctrl.id
 
-    def test_save_as_template_filters_analyses_to_scaffold(
+    def test_save_as_template_drops_the_runs_analyses(
         self, logged_in_client, fresh_app
     ):
-        # Analysis references S1 (not scaffolded) + CTRL_POS (scaffolded); the
-        # stored template must keep only the scaffold reference.
+        # A template holds no samples (TestATemplateHoldsNoSamples), so no
+        # analysis has a sample left to name: each is dropped.
         _app, ctx, _db = fresh_app
-        run_id, ctrl_id = self._run_with_analysis(
+        run_id, _ctrl_id = self._run_with_analysis(
             logged_in_client, ctx, ["S1", "CTRL_POS"]
         )
         r = logged_in_client.post(
             f"/runs/{run_id}/save-as-template",
-            data={"name": "Filtered", "description": "",
-                  "scaffold_sample_ids": json.dumps([ctrl_id])},
-            headers=_origin(), follow_redirects=False,
-        )
-        assert r.status_code == 303
-        t = ctx.run_template_repo.list_all()[0]
-        assert [s.sample_id for s in t.scaffold_samples] == ["CTRL_POS"]
-        assert len(t.analyses) == 1
-        assert t.analyses[0].sample_ids == ["CTRL_POS"]
-
-    def test_save_as_template_drops_analysis_with_no_scaffold_samples(
-        self, logged_in_client, fresh_app
-    ):
-        # Analysis references only S1, which is NOT scaffolded → analysis dropped.
-        _app, ctx, _db = fresh_app
-        run_id, ctrl_id = self._run_with_analysis(logged_in_client, ctx, ["S1"])
-        r = logged_in_client.post(
-            f"/runs/{run_id}/save-as-template",
-            data={"name": "Dropped", "description": "",
-                  "scaffold_sample_ids": json.dumps([ctrl_id])},
+            data={"name": "Dropped", "description": "", "scaffold_sample_ids": "[]"},
             headers=_origin(), follow_redirects=False,
         )
         assert r.status_code == 303
@@ -271,17 +324,23 @@ class TestTemplateCrud:
 
 class TestCreateFromTemplate:
     def _make_template_with_scaffold(self, logged_in_client, ctx) -> str:
+        """A template stored with a sample, as one saved before a template
+        held the setup only (TestATemplateHoldsNoSamples): the route no
+        longer makes one, and such a template still makes its run."""
+        from seqsetup.models.index import Index, IndexPair, IndexType
+        from seqsetup.models.sample import Sample
         run_id = _create_run(logged_in_client)
-        _add_sample(logged_in_client, run_id, "CTRL_POS")
         run = ctx.run_repo.get_by_id(run_id)
-        sid = run.samples[0].id
-        logged_in_client.post(
-            f"/runs/{run_id}/save-as-template",
-            data={"name": "WithCtrl", "description": "",
-                  "scaffold_sample_ids": json.dumps([sid])},
-            headers=_origin(), follow_redirects=False,
-        )
-        return ctx.run_template_repo.list_all()[0].id
+        pair = IndexPair(id="OldKit_P1", name="P1",
+                         index1=Index("P1", "ACGTACGT", IndexType.I7),
+                         index2=Index("P1", "TTGGCCAA", IndexType.I5))
+        template = RunTemplate(name="WithCtrl", instrument_platform=run.instrument_platform,
+                               flowcell_type=run.flowcell_type,
+                               reagent_cycles=run.reagent_cycles, run_cycles=run.run_cycles,
+                               scaffold_samples=[Sample(sample_id="CTRL_POS", lanes=[2],
+                                                        index_pair=pair)])
+        ctx.run_template_repo.save(template)
+        return template.id
 
     def test_from_template_creates_draft_with_scaffold(
         self, logged_in_client, fresh_app
@@ -297,7 +356,10 @@ class TestCreateFromTemplate:
         new_run = ctx.run_repo.get_by_id(new_id)
         assert new_run.status == RunStatus.DRAFT
         assert new_run.run_name == "WithCtrl"
-        assert [s.sample_id for s in new_run.samples] == ["CTRL_POS"]
+        # The sample keeps exactly the indexes and lanes it was stored with
+        # (review P3, 2026-10-15: only its ID was checked).
+        assert [(s.sample_id, s.index1_sequence, s.index2_sequence, s.lanes)
+                for s in new_run.samples] == [("CTRL_POS", "ACGTACGT", "TTGGCCAA", [2])]
         assert new_run.generated_samplesheet_v2 is None
 
     def test_from_template_refuses_stale_reference(

@@ -25,6 +25,8 @@ from .utils import get_username, sanitize_string
 
 router = APIRouter(tags=["run-templates"])
 
+_SETUP_ONLY = "A template holds a run's setup only, not its samples. Nothing was saved."
+
 
 def _bool_field(form, key: str) -> bool:
     raw = form.get(key)
@@ -84,7 +86,8 @@ async def duplicate_run(
 
 
 def _config_from_run(run, name: str, description: str, scaffold_samples) -> RunTemplate:
-    """Build a RunTemplate capturing a run's config + chosen scaffold samples.
+    """Build a RunTemplate capturing a run's config + the scaffold samples given
+    (save_as_template gives none: a template holds a run's setup only).
 
     Analyses are filtered to the scaffold samples (and emptied analyses dropped)
     so the stored template never references a sample that isn't in its scaffold —
@@ -116,20 +119,30 @@ async def save_as_template(
     run=Depends(get_archivable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/save-as-template — snapshot a run's config (+ chosen
-    scaffold samples) into a NEW template. Create-only; a run of any status may
-    be templated and the scaffold is captured as a deep-copied snapshot."""
+    """POST /runs/{run_id}/save-as-template — snapshot a run's config into a
+    NEW template. Create-only; a run of any status may be templated. A request
+    naming samples for the template is refused (400)."""
     form = await request.form()
     name = sanitize_string(form.get("name", ""), 256)
     if not name:
         return Response("Template name is required", status_code=400)
     description = sanitize_string(form.get("description", ""), 4096)
 
-    try:
-        wanted_ids = set(json.loads(form.get("scaffold_sample_ids", "[]")))
-    except (ValueError, TypeError):
+    values = form.getlist("scaffold_sample_ids")
+    if len(values) > 1:
         return Response("Invalid scaffold_sample_ids", status_code=400)
-    scaffold = [s for s in run.samples if s.id in wanted_ids]
+    try:
+        wanted_ids = json.loads(values[0] if values else "[]")
+    except (ValueError, TypeError, RecursionError):
+        return Response("Invalid scaffold_sample_ids", status_code=400)
+    if not isinstance(wanted_ids, list):
+        return Response("Invalid scaffold_sample_ids", status_code=400)
+    # A template is a run's setup only: samples it held were copied, with
+    # their indexes, into every run made from it, and the page never sends
+    # any (the user's choice, 2026-10-15).
+    if wanted_ids:
+        return Response(_SETUP_ONLY, status_code=400)
+    scaffold = []
 
     template = _config_from_run(run, name, description, scaffold)
     template.created_by = get_username(request)
