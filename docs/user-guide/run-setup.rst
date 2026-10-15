@@ -62,7 +62,9 @@ Instrument, flowcell and reagent kit
 - **Reagent Kit (cycles)** -- the reagent kit. Changing it resets Read 1,
   Read 2, Index 1 and Index 2 below to that kit's default cycle counts. A
   kit the flowcell does not list still shows, selected and marked
-  **(not available)**.
+  **(not available)**. While a sample has an Override Cycles typed by
+  hand, a change to the cycle counts -- here or below -- is refused (see
+  :doc:`override-cycles`).
 - **i5 workflow** -- shown only for an instrument that reads the i5 in more
   than one way. As shipped: MiSeq i100 Series (**Index-first**, the
   instrument's default, or **Read-first**), MiniSeq (**Standard kits** or

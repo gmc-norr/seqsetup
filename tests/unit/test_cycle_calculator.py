@@ -342,3 +342,58 @@ class TestOverrideCyclesProblem:
         rc = RunCycles(151, 0, 10, 10)
         assert CycleCalculator.override_cycles_problem("Y151;I10;I10", rc) is None
         assert CycleCalculator.override_cycles_problem("Y151;I10;I10;Y0", rc) == "mismatch"
+
+
+class TestSamplesWithTypedOverrideCycles:
+    """The samples a recalculation would change: a stored Override Cycles
+    that is not the one calculated from the sample and the run's cycles
+    (found 2026-10-15)."""
+
+    @staticmethod
+    def _run(*samples, run_cycles=RunCycles(151, 151, 10, 10)):
+        return SequencingRun(run_cycles=run_cycles, samples=list(samples))
+
+    @staticmethod
+    def _sample(override=None, read1_pattern=None, indexed=True):
+        sample = Sample(sample_id="S1")
+        if indexed:
+            sample.assign_index(IndexPair(
+                id="p", name="p",
+                index1=Index(name="i7", sequence="ACGTACGTAC", index_type=IndexType.I7),
+                index2=Index(name="i5", sequence="TTGGCCAATT", index_type=IndexType.I5)))
+        sample.read1_override_pattern = read1_pattern
+        sample.override_cycles = override
+        return sample
+
+    @pytest.mark.parametrize("override, read1_pattern", [
+        pytest.param(None, None, id="nothing-stored"),
+        pytest.param("Y151;I10;I10;Y151", None, id="the-calculated-value"),
+        pytest.param("y151,i10,i10,y151", None, id="the-calculated-value-with-commas"),
+        pytest.param("U8Y143;I10;I10;Y151", "U8Y*", id="the-kit-read-pattern"),
+    ])
+    def test_a_calculated_value_is_not_typed(self, override, read1_pattern):
+        run = self._run(self._sample(override, read1_pattern))
+        assert CycleCalculator.samples_with_typed_override_cycles(run) == []
+
+    @pytest.mark.parametrize("override, read1_pattern", [
+        pytest.param("U8Y143;I10;I10;Y151", None, id="a-typed-umi"),
+        pytest.param("Y151;I10;I10;Y151", "U8Y*", id="typed-over-a-kit-pattern"),
+        pytest.param("Y151;I8N2;I10;Y151", None, id="a-typed-mask"),
+    ])
+    def test_a_value_that_is_not_the_calculated_one_is_typed(self, override, read1_pattern):
+        sample = self._sample(override, read1_pattern)
+        assert CycleCalculator.samples_with_typed_override_cycles(self._run(sample)) == [sample]
+
+    def test_a_sample_without_an_index_counts_too(self):
+        typed = self._sample("U8Y143;N10;N10;Y151", indexed=False)
+        auto = self._sample(None, indexed=False)
+        run = self._run(typed, auto)
+        assert CycleCalculator.samples_with_typed_override_cycles(run) == [typed]
+
+    def test_without_cycles_every_stored_value_counts(self):
+        # Nothing to calculate from: a stored value cannot be told from a
+        # typed one, and the first cycles saved would replace it.
+        typed = self._sample("U8Y143;I10;I10;Y151")
+        auto = self._sample(None)
+        run = self._run(typed, auto, run_cycles=None)
+        assert CycleCalculator.samples_with_typed_override_cycles(run) == [typed]

@@ -141,15 +141,16 @@ class TestSaveSetup:
 class TestSameCyclesKeepSampleOverrides:
     """Changing cycles recomputes every sample's OverrideCycles. Re-saving
     the SAME cycles (e.g. "Back to Run" after only renaming) must not, or
-    it would silently wipe overrides the user set by hand."""
+    it would silently wipe overrides the user set by hand. Other cycles are
+    refused while one is set by hand (test_typed_override_cycles_kept.py)."""
 
     SAME = {"read1_cycles": "151", "read2_cycles": "151", "index1_cycles": "10", "index2_cycles": "10"}
 
-    def _run_with_override(self, ctx):
+    def _run_with_override(self, ctx, override="Y151;I10;I10;Y151"):
         from seqsetup.models.sample import Sample
         run_id = _make_run(ctx)
         run = ctx.run_repo.get_by_id(run_id)
-        run.add_sample(Sample(sample_id="S1", override_cycles="Y151;I10;I10;Y151"))
+        run.add_sample(Sample(sample_id="S1", override_cycles=override))
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)
         return run_id
@@ -176,7 +177,8 @@ class TestSameCyclesKeepSampleOverrides:
 
     def test_changed_cycles_still_recompute(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        run_id = self._run_with_override(ctx)
+        # The value calculated for an un-indexed sample, not one set by hand.
+        run_id = self._run_with_override(ctx, override="Y151;N10;N10;Y151")
         resp = logged_in_client.post(f"/runs/{run_id}/cycles", data={**CYCLES, "run_version": run_version(ctx, run_id)}, headers=ORIGIN)
         assert resp.status_code == 200
         # An un-indexed sample has no computed override.

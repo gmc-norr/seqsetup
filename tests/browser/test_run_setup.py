@@ -81,6 +81,46 @@ def test_bad_cycle_value_is_shown_and_blocks_continue(logged_in_page, base_url, 
 
 
 @pytest.mark.browser
+def test_a_cycle_change_refused_for_a_typed_value_is_shown(logged_in_page, base_url, app_ctx, created_runs):
+    """A cycle change, or a reagent kit with other counts, is refused while a
+    sample has an Override Cycles typed by hand; the refusal shows in the
+    error banner, not only in a toast that fades (found 2026-10-15)."""
+    from seqsetup.models.sample import Sample
+    from seqsetup.models.sequencing_run import RunCycles
+
+    page = logged_in_page
+    run_id = _new_run(page, base_url)
+    created_runs.append(run_id)
+    run = app_ctx.run_repo.get_by_id(run_id)
+    run.run_cycles = RunCycles(149, 149, 10, 10)
+    run.add_sample(Sample(sample_id="TYPED-1", lanes=[1], override_cycles="U8Y141;N10;N10;Y149"))
+    app_ctx.run_repo.save(run)
+    page.goto(f"{base_url}/runs/new/step/1?run_id={run_id}")
+    page.wait_for_load_state("networkidle")
+
+    with page.expect_response(lambda r: r.url.endswith("/cycles") and r.status == 400):
+        page.fill("#read2_cycles", "101")
+        page.dispatch_event("#read2_cycles", "change")
+    expect(page.locator("#error-banner")).to_contain_text("Nothing was saved")
+    expect(page.locator("#error-banner")).to_contain_text("TYPED-1")
+
+    page.goto(f"{base_url}/runs/new/step/1?run_id={run_id}")
+    page.wait_for_load_state("networkidle")
+    current = page.locator("#reagent-kit-select").input_value()
+    other = [v for v in page.locator("#reagent-kit-select option").evaluate_all(
+        "os => os.map(o => o.value)") if v != current][0]
+    with page.expect_response(lambda r: r.url.endswith("/reagent-kit") and r.status == 400):
+        page.select_option("#reagent-kit-select", other)
+    expect(page.locator("#error-banner")).to_contain_text("TYPED-1")
+    expect(page.locator("#error-banner")).to_contain_text(f"keeps the {current}-cycle kit")
+
+    stored = app_ctx.run_repo.get_by_id(run_id)
+    assert stored.run_cycles == RunCycles(149, 149, 10, 10)
+    assert stored.reagent_cycles == int(current)
+    assert stored.samples[0].override_cycles == "U8Y141;N10;N10;Y149"
+
+
+@pytest.mark.browser
 def test_enter_in_name_stays_on_page(logged_in_page, base_url, app_ctx, created_runs):
     page = logged_in_page
     run_id = _new_run(page, base_url)

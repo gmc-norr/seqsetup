@@ -421,7 +421,9 @@ async def update_reagent_kit(
     A submission with no ``reagent_cycles`` is refused: the default would be a
     1-cycle kit, which resets all four cycle counts and recomputes every
     sample's OverrideCycles — a typed UMI read would be lost (CLAUDE.md,
-    partial updates). The select always sends its value.
+    partial updates). The select always sends its value. The counts go
+    through ``_set_run_cycles``: a kit whose counts are the run's changes no
+    sample, and other counts are refused while a value is typed by hand.
     """
     form = await request.form()
     # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
@@ -432,15 +434,18 @@ async def update_reagent_kit(
     reagent_cycles = max(1, min(_int_field(form, "reagent_cycles", 1), 2000))
 
     defaults = get_default_cycles(reagent_cycles)
-    with saving_run(run, ctx, request):
-        run.reagent_cycles = reagent_cycles
-        run.run_cycles = RunCycles(
-            read1_cycles=defaults["read1"],
-            read2_cycles=defaults["read2"],
-            index1_cycles=defaults["index1"],
-            index2_cycles=defaults["index2"],
-        )
-        CycleCalculator.update_all_sample_override_cycles(run)
+    kept_kit = run.reagent_cycles
+    try:
+        with saving_run(run, ctx, request):
+            run.reagent_cycles = reagent_cycles
+            _set_run_cycles(run, RunCycles(
+                read1_cycles=defaults["read1"],
+                read2_cycles=defaults["read2"],
+                index1_cycles=defaults["index1"],
+                index2_cycles=defaults["index2"],
+            ))
+    except TypedOverrideCyclesRefused as exc:
+        return _typed_override_cycles_refusal(exc, kept=f"The run keeps the {kept_kit}-cycle kit. ")
 
     index_cycle_options = get_index_cycle_options()
     return _with_fresh_version(render(request, "wizard/_cycle_config_form.html", {
@@ -474,12 +479,45 @@ def _parse_run_cycles(form) -> RunCycles:
     return RunCycles(**values)
 
 
+class TypedOverrideCyclesRefused(Exception):
+    """Raised by ``_set_run_cycles`` inside ``saving_run``, so nothing is
+    saved. Each route answers it with ``_typed_override_cycles_refusal``: a
+    plain 400, which app.js writes into the error banner. An HTTPException's
+    answer is aimed at the banner too, but the cycle fields' ``hx-select``
+    keeps only ".cycle-total" from it, and the banner stayed empty."""
+
+    def __init__(self, samples):
+        super().__init__("Override Cycles typed by hand")
+        self.samples = samples
+
+
+def _typed_override_cycles_refusal(exc: TypedOverrideCyclesRefused, kept: str = "") -> Response:
+    """The 400 for a cycle change refused while samples have an Override
+    Cycles that is not the calculated one. Names five, then counts the rest;
+    the names come last, so a long one cannot push the rest off the banner
+    (app.js shows 300 characters)."""
+    names = [sample.sample_id or sample.id for sample in exc.samples]
+    shown = ", ".join(names[:5]) + (f", and {len(names) - 5} more" if len(names) > 5 else "")
+    return Response(
+        f"Nothing was saved. {len(names)} sample(s) have an Override Cycles that is not "
+        f"the calculated one (typed by hand, or left by a cleared index), and new cycles "
+        f"would replace it. Set them to Auto, change the cycles, then retype the values. "
+        f"{kept}Samples: {shown}",
+        status_code=400, media_type="text/plain",
+    )
+
+
 def _set_run_cycles(run: SequencingRun, run_cycles: RunCycles) -> None:
     """Apply cycle counts. Every sample's OverrideCycles is recomputed only
     when the counts change: re-saving the same counts must not wipe
-    overrides the user set by hand."""
+    overrides the user set by hand. A change is refused while any sample has
+    one that is not the calculated one, which the recompute would replace
+    with no word (found 2026-10-15): raises TypedOverrideCyclesRefused."""
     if run.run_cycles == run_cycles:
         return
+    typed = CycleCalculator.samples_with_typed_override_cycles(run)
+    if typed:
+        raise TypedOverrideCyclesRefused(typed)
     run.run_cycles = run_cycles
     CycleCalculator.update_all_sample_override_cycles(run)
 
@@ -504,8 +542,11 @@ async def update_cycles(
     except ValueError as exc:
         return Response(str(exc), status_code=400)
 
-    with saving_run(run, ctx, request):
-        _set_run_cycles(run, run_cycles)
+    try:
+        with saving_run(run, ctx, request):
+            _set_run_cycles(run, run_cycles)
+    except TypedOverrideCyclesRefused as exc:
+        return _typed_override_cycles_refusal(exc)
 
     return _with_fresh_version(render(request, "wizard/_cycle_config_form.html", {
         "run": run,
@@ -539,10 +580,13 @@ async def update_setup(
     run_name = sanitize_string(form.get("run_name", ""), 256)
     run_description = sanitize_string(form.get("run_description", ""), 4096)
 
-    with saving_run(run, ctx, request):
-        run.run_name = run_name
-        run.run_description = run_description
-        _set_run_cycles(run, run_cycles)
+    try:
+        with saving_run(run, ctx, request):
+            run.run_name = run_name
+            run.run_description = run_description
+            _set_run_cycles(run, run_cycles)
+    except TypedOverrideCyclesRefused as exc:
+        return _typed_override_cycles_refusal(exc)
     return _with_fresh_version(Response(""), form, run)
 
 
