@@ -25,6 +25,8 @@ from .utils import get_username, sanitize_string
 
 router = APIRouter(tags=["run-templates"])
 
+_SETUP_ONLY = "A template holds a run's setup only, not its samples. Nothing was saved."
+
 
 def _bool_field(form, key: str) -> bool:
     raw = form.get(key)
@@ -116,9 +118,9 @@ async def save_as_template(
     run=Depends(get_archivable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
-    """POST /runs/{run_id}/save-as-template — snapshot a run's config (+ chosen
-    scaffold samples) into a NEW template. Create-only; a run of any status may
-    be templated and the scaffold is captured as a deep-copied snapshot."""
+    """POST /runs/{run_id}/save-as-template — snapshot a run's config into a
+    NEW template. Create-only; a run of any status may be templated. A request
+    naming samples for the template is refused (400)."""
     form = await request.form()
     name = sanitize_string(form.get("name", ""), 256)
     if not name:
@@ -126,10 +128,17 @@ async def save_as_template(
     description = sanitize_string(form.get("description", ""), 4096)
 
     try:
-        wanted_ids = set(json.loads(form.get("scaffold_sample_ids", "[]")))
+        wanted_ids = json.loads(form.get("scaffold_sample_ids", "[]"))
     except (ValueError, TypeError):
         return Response("Invalid scaffold_sample_ids", status_code=400)
-    scaffold = [s for s in run.samples if s.id in wanted_ids]
+    if not isinstance(wanted_ids, list):
+        return Response("Invalid scaffold_sample_ids", status_code=400)
+    # A template is a run's setup only: samples it held were copied, with
+    # their indexes, into every run made from it, and the page never sends
+    # any (the user's choice, 2026-10-15).
+    if wanted_ids:
+        return Response(_SETUP_ONLY, status_code=400)
+    scaffold = []
 
     template = _config_from_run(run, name, description, scaffold)
     template.created_by = get_username(request)
