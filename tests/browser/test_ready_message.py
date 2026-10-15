@@ -50,9 +50,17 @@ def test_save_failure_survives_mark_ready(logged_in_page, base_url, app_ctx, cle
     page.goto(f"{base_url}/runs/{run_id}")
     page.wait_for_load_state("networkidle")
     box = page.locator('td.override-cell input[name="override_cycles"]').first
+    # One change, as a person makes: box.fill() fires a change of its own, so
+    # with dispatch_event the same refused value was saved twice, the second
+    # queued behind the first (hx-sync "closest tr"), and still waiting when
+    # Mark Ready was clicked -- which now gives Mark Ready up, because a
+    # change was not stored (static/js/app.js, fresh review of b425b0b P1-1).
+    # What this test is about is the message slots.
+    box.click()
+    page.keyboard.press("Control+A")
+    page.keyboard.type("Y*Q;I8;I8;Y*")
     with page.expect_response(lambda r: r.url.endswith("/settings") and r.status == 400):
-        box.fill("Y*Q;I8;I8;Y*")
-        box.dispatch_event("change")
+        page.keyboard.press("Tab")
     expect(page.locator("#error-banner")).to_contain_text("not valid OverrideCycles")
 
     page.get_by_role("button", name="Mark Ready").click()
@@ -69,9 +77,18 @@ def test_refusal_does_not_replace_a_save_failure(logged_in_page, base_url, app_c
     page.goto(f"{base_url}/runs/{run_id}")
     page.wait_for_load_state("networkidle")
     box = page.locator('td.override-cell input[name="override_cycles"]').first
+    # One change, as a person makes: box.fill() fires a change of its own, so
+    # with dispatch_event the same refused value was saved twice, the second
+    # queued behind the first (hx-sync "closest tr"), and still waiting when
+    # Mark Ready was clicked -- which now gives Mark Ready up, because a
+    # change was not stored (static/js/app.js, fresh review of b425b0b P1-1).
+    # What this test is about is the message slots.
+    box.click()
+    page.keyboard.press("Control+A")
+    page.keyboard.type("Y*Q;I8;I8;Y*")
     with page.expect_response(lambda r: r.url.endswith("/settings") and r.status == 400):
-        box.fill("Y*Q;I8;I8;Y*")
-        box.dispatch_event("change")
+        page.keyboard.press("Tab")
+    expect(page.locator("#error-banner")).to_contain_text("not valid OverrideCycles")
 
     page.get_by_role("button", name="Mark Ready").click()
 

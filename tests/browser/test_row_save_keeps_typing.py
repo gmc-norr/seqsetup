@@ -547,3 +547,163 @@ class TestLeavingWhileASaveWaits:
             page.get_by_role("link", name="Dashboard").click()
 
         assert dialogs == []
+
+
+@pytest.mark.browser
+class TestAWaitingActionWhenASaveDoesNotLand:
+    """Done editing and Mark Ready wait for the row's saves (the class above).
+    A fresh review of b425b0b found that the wait ends when the saves are
+    *answered*, not when they are *stored*: a refused save released Done
+    editing, whose redirect took the error banner with it, so the person
+    landed on a read-only run with the typed value gone and nothing on
+    screen. The wait was also invisible and had no end: a save whose answer
+    never comes held the click for ever."""
+
+    def _done_editing_form(self, page):
+        return page.locator('form[data-after-row-saves][hx-delete]')
+
+    def _type_a_refused_mismatch(self, page, base_url, run_id, slow_next_load):
+        _open(page, base_url, run_id)
+        _row(page, run_id).locator('input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("5")             # only 0, 1 or 2 are accepted
+        slow_next_load["armed"] = True      # the refusal is held, so the click waits
+
+    def test_done_editing_is_not_done_when_a_row_save_is_refused(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+        page = logged_in_page
+        answers = []
+        page.on("response", lambda r: answers.append((r.url.rsplit("/", 1)[-1], r.status))
+                if _a_settings_answer(r) or r.url.endswith("/edit-lock") else None)
+        self._type_a_refused_mismatch(page, base_url, mutable_run_id, slow_next_load)
+
+        with page.expect_response(lambda r: _a_settings_answer(r) and r.status == 400):
+            page.get_by_role("button", name="Done editing").click()
+        _handled(page)
+
+        assert answers == [("settings", 400)], answers
+        expect(page.locator("#error-banner")).to_contain_text("0, 1 or 2")
+        expect(page.locator("#row-setting-notes")).to_contain_text(
+            "Done editing was not done")
+        expect(page.locator("#run-status-bar")).to_contain_text("You are editing this run")
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 != 5
+
+    def test_mark_ready_is_not_done_when_a_row_save_is_refused(
+            self, logged_in_page, base_url, mutable_run_id, slow_next_load):
+        page = logged_in_page
+        sent = []
+        page.on("request", lambda r: sent.append(r.url.rsplit("/", 1)[-1])
+                if r.url.endswith("/status/ready") else None)
+        self._type_a_refused_mismatch(page, base_url, mutable_run_id, slow_next_load)
+
+        with page.expect_response(lambda r: _a_settings_answer(r) and r.status == 400):
+            page.get_by_role("button", name="Mark Ready").click()
+        _handled(page)
+
+        assert sent == [], sent
+        expect(page.locator("#row-setting-notes")).to_contain_text(
+            "Mark Ready was not done")
+
+    def test_done_editing_is_not_done_when_a_change_was_lost_to_a_redraw(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+        """The i5 save waits in the row's queue when the row is redrawn, so it
+        is never sent: the run must not be left, nor marked Ready, with that
+        change silently gone."""
+        page = logged_in_page
+        sent = []
+        page.on("request", lambda r: sent.append(r.url.rsplit("/", 1)[-1])
+                if r.url.endswith("/edit-lock") else None)
+        _open(page, base_url, mutable_run_id)
+        row = _row(page, mutable_run_id)
+        row.locator('input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("0")
+        slow_next_load["armed"] = True
+        page.keyboard.press("Tab")          # the i7 save starts; its load is held
+        page.keyboard.type("2")
+        page.keyboard.press("Tab")          # the i5 save waits its turn
+        page.get_by_role("button", name="Done editing").click()
+        assert slow_next_load["holding"].wait(5), "the i7 save never reached its load"
+        _redraw_row(page, mutable_run_id)   # drops the queued i5 save
+        with page.expect_response(_a_settings_answer):
+            pass                            # the held i7 save is answered
+        _handled(page)
+
+        assert sent == [], sent
+        notes = page.locator("#row-setting-notes")
+        expect(notes).to_contain_text("MM i5 of MUT-01")
+        expect(notes).to_contain_text("Done editing was not done")
+        expect(page.locator("#run-status-bar")).to_contain_text("You are editing this run")
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index2 == 1
+
+    def test_a_waiting_action_shows_that_it_waits(
+            self, logged_in_page, base_url, mutable_run_id, slow_first_save):
+        page = logged_in_page
+        _open(page, base_url, mutable_run_id)
+        _row(page, mutable_run_id).locator(
+            'input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("0")
+        page.keyboard.press("Tab")          # the i7 save starts (held 0.8 s)
+        page.keyboard.type("2")             # the i5 box, not yet left
+
+        button = page.get_by_role("button", name="Done editing")
+        with page.expect_navigation():
+            button.click()
+            expect(button).to_be_disabled()
+            expect(self._done_editing_form(page)).to_have_class("htmx-request")
+        page.wait_for_load_state("networkidle")
+
+    def test_a_waiting_action_gives_up_when_a_save_never_answers(
+            self, logged_in_page, base_url, mutable_run_id):
+        page = logged_in_page
+        held = []
+        sent = []
+        page.on("request", lambda r: sent.append(r.url.rsplit("/", 1)[-1])
+                if r.url.endswith("/edit-lock") else None)
+        _open(page, base_url, mutable_run_id)
+        page.evaluate("window.rowSaveWaitMs = 600")
+        page.route("**/samples/**/settings", lambda route: held.append(route))
+        try:
+            _row(page, mutable_run_id).locator(
+                'input[name="barcode_mismatches_index1"]').click()
+            page.keyboard.press("Control+A")
+            page.keyboard.type("0")
+            page.keyboard.press("Tab")      # the save is never answered
+            button = page.get_by_role("button", name="Done editing")
+            button.click()
+
+            expect(page.locator("#row-setting-notes")).to_contain_text(
+                "Done editing was not done")
+            expect(page.locator("#row-setting-notes")).to_contain_text(
+                "taking too long to save")
+            expect(button).to_be_enabled()
+            assert sent == [], sent
+        finally:
+            page.unroute("**/samples/**/settings")
+            for route in held:
+                try:
+                    route.abort()
+                except Exception:          # the page may have gone meanwhile
+                    pass
+
+    def test_control_done_editing_is_done_once_the_refused_value_is_put_right(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+        page = logged_in_page
+        self._type_a_refused_mismatch(page, base_url, mutable_run_id, slow_next_load)
+        with page.expect_response(lambda r: _a_settings_answer(r) and r.status == 400):
+            page.get_by_role("button", name="Done editing").click()
+        _handled(page)
+        expect(page.locator("#row-setting-notes")).to_contain_text(
+            "Done editing was not done")
+
+        i7 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index1"]')
+        i7.click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("2")
+        with page.expect_navigation():
+            page.get_by_role("button", name="Done editing").click()
+        page.wait_for_load_state("networkidle")
+
+        expect(page.locator("#run-status-bar")).to_contain_text("Nobody is editing this run")
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 2
