@@ -59,3 +59,9 @@ src/seqsetup/static/css/app.css
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+/.ignore
+
+# Local work: git worktrees, outside reviews, browser-test screenshots
+/.worktrees/
+/docs/reviews/
+/tests/browser/screenshots/

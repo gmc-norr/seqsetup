@@ -101,7 +101,7 @@ def _contrast(fg: str, bg: str) -> float:
 
 
 # §4.4 contrast matrix — each tuple is (fg, bg, min_ratio, description)
-# Source: docs/superpowers/specs/2026-06-10-gui-design-system-refresh-design.md §4.4
+# Source: docs/design/2026-06-10-gui-design-system-refresh-design.md §4.4
 _CONTRAST_PAIRS = [
     # body / headings — well above 4.5:1
     ("#0f172a", "#f8fafc", 4.5, "text on bg"),

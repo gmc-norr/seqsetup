@@ -1,5 +1,5 @@
 """Integration tests: preview and apply routes for "Fill empty samples in
-order" (Part B of the index-fill design, docs/superpowers/specs/
+order" (Part B of the index-fill design, docs/design/
 2026-09-25-index-fill-design.md).
 
 The preview route (POST /runs/{id}/index-fill/preview) builds a plan and

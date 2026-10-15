@@ -25,7 +25,6 @@ RUN pixi install --locked --environment default
 # Copy application source and config
 COPY src/ src/
 COPY tools/ tools/
-COPY tailwind.config.js ./
 COPY config/ config/
 
 EXPOSE 5001

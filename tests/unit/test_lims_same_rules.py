@@ -17,7 +17,7 @@ from seqsetup.services.sample_api import parse_api_samples
 I7, I5 = "ATTACTCG", "TATAGCCT"
 NOT_READ = "SeqSetup does not read"
 
-# Every field name in the iGene LIMS API (igene_openapi.json): none of them
+# Every field name in the iGene LIMS API (tools/igene_openapi.json): none of them
 # may be refused by this rule.
 IGENE_FIELDS = [
     "ExternalRID", "ExternalSampleID", "Father", "Investigator", "JointAnalysisID",

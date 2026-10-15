@@ -249,8 +249,8 @@ seqsetup/
 │   ├── utils/       # HTML/JS escaping helpers
 │   └── static/      # CSS, JS, images
 ├── tests/           # unit/, integration/, browser/
-├── tools/           # mock LIMS API and maintenance scripts
-└── docs/            # Sphinx documentation
+├── tools/           # mock LIMS API (and the LIMS's OpenAPI spec), maintenance scripts
+└── docs/            # Sphinx documentation; docs/design/ holds the design notes
 ```
 
 ### Development Commands
@@ -283,7 +283,7 @@ pixi run mock-api
 # API key for testing: test-api-key-12345
 ```
 
-The mock server implements the OpenAPI spec defined in `igene_openapi.json`.
+The mock server implements the OpenAPI spec defined in `tools/igene_openapi.json`.
 
 ## Author
 

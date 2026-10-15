@@ -234,7 +234,7 @@ class IndexCollisionValidator:
           can fit both samples only when both indexes are that close. It is
           the default of DRAGEN's built-in BCL conversion, which the lab
           runs; standalone bcl-convert 3.10.5+ is stricter (either index).
-          The user's decision, 2026-10-13 (docs/superpowers/specs/
+          The user's decision, 2026-10-13 (docs/design/
           2026-10-12-collision-rule-design.md); it replaced the summed rule
           d_i7 + d_i5 <= 2 * (m_i7 + m_i5).
 
