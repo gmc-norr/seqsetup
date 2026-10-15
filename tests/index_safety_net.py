@@ -347,7 +347,13 @@ class Expected:
 
     # -- comparing a sheet ----------------------------------------------
 
-    def check_sheet(self, sheet: str, version: str, direction: str) -> int:
+    #: The columns a sheet's sample-naming sections must between them hold,
+    #: or the net compared less than it thinks: a renamed Index header would
+    #: silently stop every i7 comparison while every row count still matched.
+    MUST_HOLD = frozenset({"sample_id", "lane", "i7", "i5"})
+
+    def check_sheet(self, sheet: str, version: str, direction: str,
+                    must_hold=MUST_HOLD) -> int:
         """Compare every row of every sample-naming section of ``sheet`` to the
         map, then the rows as multisets. Returns the number of rows checked.
 
@@ -362,8 +368,18 @@ class Expected:
                 f"{[s.name for s in parse_sections(sheet)]}"
             )
         checked = 0
+        seen = set()
         for section in sections:
             checked += self._check_section(section, version, direction)
+            seen |= set(section.roles)
+        missing = set(must_hold) - seen
+        if missing:
+            raise Mismatch(
+                f"{self.label}: the {version} sheet's sections hold no "
+                f"{sorted(missing)} column, so the net compared less than it "
+                f"means to. Sections and their columns: "
+                f"{[(one.name, one.header) for one in sections]}"
+            )
         return checked
 
     def _check_section(self, section: Section, version: str, direction: str) -> int:

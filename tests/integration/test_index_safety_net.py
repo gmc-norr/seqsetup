@@ -68,16 +68,23 @@ CASES = [
 # The net asserts each one was used (``_assert_every_path_was_used``).
 _ASSIGN_PATHS = [
     "paste index columns",
+    "a paste from a file",
     "LIMS index fields",
     "one drop: a pair",
     "one drop: an i7",
     "one drop: an i5",
+    "a single index onto a pair",
     "drop on ticked rows",
+    "one i7 on ticked rows",
+    "one i5 on ticked rows",
     "several indexes dropped at once",
+    "several indexes dropped onto assigned rows",
     "a drop from one of two kit versions",
     "clear, then drop again",
+    "clear one half, then drop again",
     "drop onto an assigned sample",
     "fill in order",
+    "a drop after Ready, then Ready again",
 ]
 _LANE_PATHS = [
     "the paste's lanes",
@@ -89,6 +96,7 @@ _LANE_PATHS = [
 _QUIET_PATHS = [
     "rename a sample",
     "delete samples",
+    "delete one sample by hand",
     "set the test",
     "set the barcode mismatches",
     "set the override cycles",
@@ -103,11 +111,20 @@ ALL_PATHS = _ASSIGN_PATHS + _LANE_PATHS + _QUIET_PATHS + [_COPY_PATH]
 # (``Expected.assert_no_lane_shares_an_index``). The ticked-rows drop is the
 # one path that gives its index to several samples, and it puts each of them
 # in a lane of its own.
-_SEED_PAIRS = slice(0, 3)      # one single drop each, to start the run off
-_TICKED_PAIR = 3               # one index on every ticked row
-_CLEARED_PAIR = 4              # dropped again after a clear
-_REPLACING_PAIR = 5            # dropped onto a sample that already has one
-_BULK_PAIRS = slice(6, None)   # several dropped at once
+_SEED_PAIRS = slice(0, 4)        # one single drop each, to start the run off
+_TICKED_PAIR = 4                 # one index on every ticked row
+_CLEARED_PAIR = 5                # dropped again after a clear
+_REPLACING_PAIR = 6              # dropped onto a sample that already has one
+_REPROMOTED_PAIR = 7             # dropped after Ready, before Ready again
+_BULK_PAIRS = slice(8, 16)       # several dropped at once
+_BULK_AGAIN_PAIRS = slice(16, 24)  # several dropped onto rows that have one
+
+# And which of the combinatorial kit's single indexes. Same rule: one
+# position per path, so no two samples share an index by accident.
+_COMB_ON_EMPTY = 0     # an i7 and an i5 onto a row with no index
+_COMB_ON_A_PAIR = 1    # one single index onto a sample that has a pair
+_COMB_ON_TICKED = 2    # one i7, then one i5, on two ticked rows
+_COMB_HALF_CLEAR = 3   # the i5 dropped again after half a clear
 
 
 def _seeds() -> list[int]:
@@ -161,9 +178,12 @@ def page_rows(client, run_id: str) -> list[dict]:
         body = found.group("body")
         shown_id = _SHOWN_ID.search(body)
         lanes = _SHOWN_LANES.search(body)
+        assert shown_id, (
+            f"the run page's row {found.group('row_id')} shows no sample ID "
+            f"cell; the row template's shape changed")
         rows.append({
             "row_id": found.group("row_id"),
-            "sample_id": shown_id.group(1) if shown_id else "",
+            "sample_id": shown_id.group(1),
             "i7": found.group("i7"),
             "i5": found.group("i5"),
             "lanes": [] if not lanes or lanes.group(1) == "All"
@@ -440,6 +460,27 @@ class Net:
             self.expected.add(name, lanes, "paste index columns", i7=i7, i5=i5)
         self.expected.paths["the paste's lanes"] += 1
 
+    def paste_from_a_file(self, how_many: int):
+        """The same paste, sent as an uploaded file: the route reads the file
+        with the same parser, and the net must see it too (review P2-6)."""
+        lanes = self._lanes_above_one(1)
+        made = []
+        lines = ["sample_id,index_i7,index_i5"]
+        for i7, i5 in self.kits.sequences.pairs(how_many):
+            name = next(self.names)
+            lines.append(f"{name},{i7},{i5}")
+            made.append((name, i7, i5))
+        added = self.client.post(
+            f"/runs/{self.run_id}/samples/bulk",
+            files={"sample_file": ("worklist.csv",
+                                   ("\n".join(lines) + "\n").encode(), "text/csv")},
+            data={"lanes": [str(lane) for lane in lanes]}, headers=ORIGIN)
+        assert added.status_code == 200, added.text[:300]
+        assert "rejected" not in added.text, added.text[:400]
+        for name, i7, i5 in made:
+            self.expected.add(name, lanes, "a paste from a file", i7=i7, i5=i5)
+        self.expected.paths["the paste's lanes"] += 1
+
     def paste_without_indexes(self, how_many: int):
         """A paste of sample IDs only, on its own picked lanes."""
         lanes = self._some_lanes(1)
@@ -510,15 +551,39 @@ class Net:
             self.expected.set_pair(row["sample_id"], path,
                                    i7=pair.index1_sequence, i5=pair.index2_sequence)
 
-    def drop_an_i7_and_an_i5(self, row: dict):
-        """A single i7 and a single i5 from a combinatorial kit."""
+    def _drop_single(self, row: dict, kind: str, which: int, path: str):
         kit = self.kits.comb
-        i7 = kit.i7_indexes[self.rng.randrange(len(kit.i7_indexes))]
-        i5 = kit.i5_indexes[self.rng.randrange(len(kit.i5_indexes))]
-        self._drop(row["row_id"], self.chip_for(kit, f"{kit.name}_i7_{i7.name}", "i7"))
-        self.expected.set_indexes(row["sample_id"], "one drop: an i7", i7=i7.sequence)
-        self._drop(row["row_id"], self.chip_for(kit, f"{kit.name}_i5_{i5.name}", "i5"))
-        self.expected.set_indexes(row["sample_id"], "one drop: an i5", i5=i5.sequence)
+        holds = kit.i7_indexes if kind == "i7" else kit.i5_indexes
+        index = holds[which]
+        self._drop(row["row_id"],
+                   self.chip_for(kit, f"{kit.name}_{kind}_{index.name}", kind))
+        self.expected.set_indexes(row["sample_id"], path,
+                                  **{kind: index.sequence})
+        return index
+
+    def drop_an_i7_and_an_i5(self, row: dict):
+        """A single i7 and a single i5 from a combinatorial kit, onto a row
+        with no index."""
+        self._drop_single(row, "i7", _COMB_ON_EMPTY, "one drop: an i7")
+        self._drop_single(row, "i5", _COMB_ON_EMPTY, "one drop: an i5")
+
+    def drop_a_single_index_onto_a_pair(self, row: dict):
+        """One single index dropped on a sample that already holds a pair:
+        the pair goes, i7 and i5 both, and the sample keeps only what was
+        dropped (``replaceDropConfirmed`` in app.js). Then the other half is
+        dropped, so the sample ends with a full pair of single indexes
+        (review P1-1: nothing drove this, and the only thing that makes the
+        drop take effect is ``Sample.assign_index1`` clearing index_pair)."""
+        shown = next(one for one in self.rows() if one["row_id"] == row["row_id"])
+        assert shown["i7"] and shown["i5"], "this path needs a sample with a pair"
+        i7 = self._drop_single(row, "i7", _COMB_ON_A_PAIR, "a single index onto a pair")
+        # The i5 of the pair went with it; the map says so.
+        self.expected.set_indexes(row["sample_id"], "a single index onto a pair", i5="")
+        gone = next(one for one in self.rows() if one["row_id"] == row["row_id"])
+        assert (gone["i7"], gone["i5"]) == (i7.sequence, ""), (
+            f"{self.expected.label}: a single i7 dropped on a paired sample left "
+            f"{gone}; the pair must go, i7 and i5 both")
+        self._drop_single(row, "i5", _COMB_ON_A_PAIR, "a single index onto a pair")
 
     def drop_on_ticked_rows(self, rows: list[dict]):
         """One index dropped while several rows are ticked: every ticked row
@@ -551,7 +616,70 @@ class Net:
             f"the net needs three rows with no index in a row, found {len(stretch)}")
         return stretch[:min(len(stretch), self.rng.randint(3, 6))]
 
-    def drop_several_at_once(self, rows: list[dict]):
+    def _a_stretch_already_filled(self) -> list[dict]:
+        """Consecutive rows that all carry an index: what a several-index drop
+        replaces, which app.js asks about first (``multiDropWarning``) and the
+        server refuses if any row's index changed since the page was loaded."""
+        best: list[dict] = []
+        current: list[dict] = []
+        for row in self.rows():
+            if not row["i7"] or row["sample_id"] in self.one_index_group:
+                current = []
+                continue
+            current.append(row)
+            if len(current) > len(best):
+                best = list(current)
+        assert len(best) >= 3, (
+            f"the net needs three rows with an index in a row, found {len(best)}")
+        return best[:min(len(best), self.rng.randint(3, 6))]
+
+    def drop_one_single_index_on_ticked_rows(self, rows: list[dict]):
+        """The single-index branch of assign-index-to-selected: one i7, then
+        one i5, to the same ticked rows. They end up with the same pair of
+        sequences, so each needs a lane of its own (review P2-6)."""
+        for offset, row in enumerate(rows):
+            lane = [offset + 1]
+            answer = self._post("/samples/set-lanes",
+                                sample_ids=json.dumps([row["row_id"]]),
+                                lanes=json.dumps(lane))
+            assert answer.status_code == 200, answer.text[:300]
+            self.expected.set_lanes(row["sample_id"], lane, "set lanes on a subset")
+            self.one_index_group.add(row["sample_id"])
+
+        kit = self.kits.comb
+        for kind, path in (("i7", "one i7 on ticked rows"),
+                           ("i5", "one i5 on ticked rows")):
+            holds = kit.i7_indexes if kind == "i7" else kit.i5_indexes
+            index = holds[_COMB_ON_TICKED]
+            chip = self.chip_for(kit, f"{kit.name}_{kind}_{index.name}", kind)
+            answer = self._post(
+                "/samples/assign-index-to-selected",
+                sample_ids=json.dumps([row["row_id"] for row in rows]),
+                index_id=chip["id"], index_type=kind, kit_id=chip["kit_id"],
+                kit_fingerprint=chip["kit_fingerprint"])
+            assert answer.status_code == 200, answer.text[:300]
+            for row in rows:
+                self.expected.set_indexes(row["sample_id"], path,
+                                          **{kind: index.sequence})
+
+    def clear_one_half_then_drop_again(self, row: dict):
+        """Half a clear: a sample whose i7 and i5 are single indexes (not a
+        pair) can have one half cleared on its own. The route refuses half of
+        a pair, so this path needs a sample built from singles."""
+        shown = next(one for one in self.rows() if one["row_id"] == row["row_id"])
+        assert shown["i7"] and shown["i5"], "this path needs a sample with both halves"
+        answer = self._post(f"/samples/{row['row_id']}/clear-index?index_type=i5")
+        assert answer.status_code == 200, answer.text[:300]
+        self.expected.set_indexes(row["sample_id"], "clear one half, then drop again",
+                                  i5="")
+        half = next(one for one in self.rows() if one["row_id"] == row["row_id"])
+        assert (half["i7"], half["i5"]) == (shown["i7"], ""), (
+            f"{self.expected.label}: clearing the i5 left {half}")
+        self._drop_single(row, "i5", _COMB_HALF_CLEAR,
+                          "clear one half, then drop again")
+
+    def drop_several_at_once(self, rows: list[dict], which=_BULK_PAIRS,
+                             path="several indexes dropped at once"):
         """Several chips dragged at once, sent in a shuffled order: the rows
         are filled in the panel's own order, never the click order (CLAUDE.md,
         "Several indexes dropped at once fill the rows in panel order")."""
@@ -559,8 +687,11 @@ class Net:
         panel = page_panel(self.client, kit.kit_id)
         # Only this path's own pairs: a pair another path handed out would put
         # one index on two samples, which the net's collision guard refuses.
-        mine = {pair.id for pair in kit.index_pairs[_BULK_PAIRS]}
+        mine = {pair.id for pair in kit.index_pairs[which]}
         choices = [chip for chip in panel if chip["id"] in mine]
+        assert len(choices) >= len(rows), (
+            f"the panel shows {len(choices)} of this path's own chips, "
+            f"{len(rows)} rows need filling")
         chips = self.rng.sample(choices, len(rows))
         in_panel_order = sorted(chips, key=lambda chip: panel.index(chip))
         sent = list(chips)
@@ -582,8 +713,14 @@ class Net:
         )
         assert answer.status_code == 200, answer.text[:300]
         for row, chip in zip(rows, in_panel_order, strict=True):
-            self.expected.set_pair(row["sample_id"], "several indexes dropped at once",
-                                   i7=chip["i7"], i5=chip["i5"])
+            # The sequences come from this test's own kit, never from the chip:
+            # a chip is the app showing its own stored kit back (review P2-2).
+            # chip_for checks the chip against the kit as well.
+            pair = next(p for p in kit.index_pairs if p.id == chip["id"])
+            assert (chip["i7"], chip["i5"]) == (pair.index1_sequence,
+                                                pair.index2_sequence)
+            self.expected.set_pair(row["sample_id"], path,
+                                   i7=pair.index1_sequence, i5=pair.index2_sequence)
 
     def drop_from_each_kit_version(self, rows: list[dict]):
         """Two versions of one kit hold the same index names and other
@@ -636,6 +773,13 @@ class Net:
         paths -- it is the one whose rows are "every sample with no index"."""
         waiting = [row["sample_id"] for row in self.unindexed()]
         assert waiting, "the fill has nothing to fill"
+        # The page says which rows have no index; the map must say the same,
+        # or a sample whose index went missing earlier would be refilled here
+        # and the map quietly updated to agree (review P2-4).
+        assert set(waiting) == {name for name, row in self.expected.samples.items()
+                                if not row["i7"] and not row["i5"]}, (
+            f"{self.expected.label}: the page and the map disagree about which "
+            f"samples have no index")
         kit = self.kits.fill
         start = kit.index_pairs[2]  # not the kit's first: a non-default Start at
         shown = self._post("/index-fill/preview", selected_kit=kit.kit_id,
@@ -693,6 +837,12 @@ class Net:
             answer = self._post(f"/samples/{row['row_id']}", sample_id=new)
             assert answer.status_code == 200, answer.text[:300]
             self.expected.rename(row["sample_id"], new, "rename a sample")
+            if row["sample_id"] in self.one_index_group:
+                # The samples that share one index are named by sample ID, so
+                # a rename has to follow them: delete_some leaves the group
+                # whole.
+                self.one_index_group.discard(row["sample_id"])
+                self.one_index_group.add(new)
 
     def delete_some(self):
         rows = self.rows()
@@ -705,6 +855,17 @@ class Net:
         assert answer.status_code == 200, answer.text[:300]
         for row in chosen:
             self.expected.remove(row["sample_id"], "delete samples")
+
+    def delete_one_by_hand(self):
+        """The row's own trash button: DELETE /runs/{id}/samples/{sid}. Which
+        sample every later row is depends on it (review P2-6)."""
+        free = [row for row in self.rows()
+                if row["sample_id"] not in self.one_index_group]
+        row = self.rng.choice(free)
+        answer = self.client.delete(
+            f"/runs/{self.run_id}/samples/{row['row_id']}", headers=ORIGIN)
+        assert answer.status_code == 200, answer.text[:300]
+        self.expected.remove(row["sample_id"], "delete one sample by hand")
 
     def set_the_test(self):
         """Every sample gets the net's test, so the sheet plan finds a profile
@@ -749,6 +910,7 @@ class Net:
         blocks = self._share_out(self.how_many)
         making = [
             lambda: self.paste_with_indexes(blocks["paste indexed"]),
+            lambda: self.paste_from_a_file(blocks["paste file"]),
             lambda: self.paste_without_indexes(blocks["paste plain"]),
             lambda: self.lims_import(blocks["lims indexed"], True, "W-INDEXED"),
             lambda: self.lims_import(blocks["lims plain"], False, "W-PLAIN"),
@@ -761,30 +923,41 @@ class Net:
             f"the net meant to make {self.how_many} samples, the page shows "
             f"{len(self.rows())}")
 
-        # Three rows of their own, so clear-and-drop-again and
-        # drop-onto-an-assigned-sample each own one.
-        seeds = self.unindexed()[:3]
-        assert len(seeds) == 3, "the net needs three samples with no index to start"
+        # Four rows of their own, so clear-and-drop-again,
+        # drop-onto-an-assigned-sample and the single-index-onto-a-pair drop
+        # each own one.
+        seeds = self.unindexed()[:4]
+        assert len(seeds) == 4, "the net needs four samples with no index to start"
         self.drop_one_pair(seeds)
-        plain, to_clear, to_replace = seeds
+        _plain, to_clear, to_replace, to_lose_its_pair = seeds
+
+        # The sample built from single indexes, which the half-clear needs.
+        from_singles = self.unindexed()[0]
+        self.drop_an_i7_and_an_i5(from_singles)
 
         ticked = max(2, min(3, self.lanes))
         assigning = [
-            lambda: self.drop_an_i7_and_an_i5(self.unindexed()[0]),
             lambda: self.drop_on_ticked_rows(self.unindexed()[:ticked]),
+            lambda: self.drop_one_single_index_on_ticked_rows(self.unindexed()[:2]),
             lambda: self.drop_several_at_once(self._a_stretch_to_fill()),
             lambda: self.drop_from_each_kit_version(self.unindexed()[:2]),
             lambda: self.clear_then_drop_again(to_clear),
+            lambda: self.clear_one_half_then_drop_again(from_singles),
             lambda: self.drop_onto_an_assigned_sample(to_replace),
+            lambda: self.drop_a_single_index_onto_a_pair(to_lose_its_pair),
             lambda: self.set_lanes_on_a_subset(),
         ]
         self.rng.shuffle(assigning)
         for step in assigning:
             step()
         self.fill_in_order()
+        # Now every row carries an index, so a several-index drop can replace.
+        self.drop_several_at_once(self._a_stretch_already_filled(),
+                                  which=_BULK_AGAIN_PAIRS,
+                                  path="several indexes dropped onto assigned rows")
 
-        quiet = [self.rename_some, self.delete_some, self.set_the_mismatches,
-                 self.set_the_override_cycles]
+        quiet = [self.rename_some, self.delete_some, self.delete_one_by_hand,
+                 self.set_the_mismatches, self.set_the_override_cycles]
         self.rng.shuffle(quiet)
         for step in quiet:
             step()
@@ -796,8 +969,8 @@ class Net:
     #: The fewest samples a making path contributes. The two paths that make
     #: samples with no index give more, because every assign path takes its
     #: own rows from them and the fill takes what is left.
-    _FEWEST = {"paste indexed": 3, "paste plain": 8, "lims indexed": 3,
-               "lims plain": 8}
+    _FEWEST = {"paste indexed": 3, "paste file": 3, "paste plain": 9,
+               "lims indexed": 3, "lims plain": 9}
 
     def _share_out(self, total: int) -> dict:
         """How many samples each making path contributes: its fewest, plus a
@@ -826,6 +999,43 @@ class Net:
         stored = self.ctx.run_repo.get_by_id(self.run_id)
         assert stored.status == RunStatus.READY, (
             f"{self.expected.label}: Mark Ready refused the run: {answer.text[:600]}")
+
+    def edit_after_ready_then_ready_again(self):
+        """READY -> DRAFT -> one drop -> READY: the correction a lab makes when
+        it spots a wrong index after marking a run Ready. READY->DRAFT clears
+        the pre-generated exports, so the second Ready must write new sheets;
+        a re-promotion that adopted the old blobs would serve the index the
+        operator just replaced (CLAUDE.md, run state integrity; review P2-6)."""
+        back = self.client.post(f"/runs/{self.run_id}/status/draft", headers=ORIGIN)
+        assert back.status_code == 200, back.text[:300]
+        stored = self.ctx.run_repo.get_by_id(self.run_id)
+        assert stored.status == RunStatus.DRAFT, "the run did not go back to Draft"
+        assert stored.generated_samplesheet_v2 is None, (
+            "READY->DRAFT must clear the pre-generated sheets")
+
+        row = next(one for one in self.rows()
+                   if one["i7"] and one["sample_id"] not in self.one_index_group)
+        pair = self.kits.dual.index_pairs[_REPROMOTED_PAIR]
+        assert pair.index1_sequence != row["i7"]
+        self._drop(row["row_id"], self.chip_for(self.kits.dual, pair.id))
+        self.expected.set_pair(row["sample_id"], "a drop after Ready, then Ready again",
+                               i7=pair.index1_sequence, i5=pair.index2_sequence)
+        self.expected.assert_no_lane_shares_an_index()
+        self.mark_ready()
+
+    def rename_one_in_the_copy(self, copy_id: str, copy_expected):
+        """One edit on the copy before it is marked Ready, so its sheets cannot
+        be byte-equal to the source's: that is what tells a sheet the copy
+        generated from one it inherited (review P3)."""
+        hold_edit_lock(self.ctx, copy_id)
+        rows = page_rows(self.client, copy_id)
+        row = next(one for one in rows
+                   if one["sample_id"] not in self.one_index_group)
+        new = f"{row['sample_id']}-C"
+        answer = self.client.post(f"/runs/{copy_id}/samples/{row['row_id']}",
+                                  data={"sample_id": new}, headers=ORIGIN)
+        assert answer.status_code == 200, answer.text[:300]
+        copy_expected.rename(row["sample_id"], new, "an edit on the copy")
 
     def duplicate(self) -> str:
         """A copy of the Ready run, as "Re-run" makes it: a fresh Draft with
@@ -882,15 +1092,19 @@ def _assert_the_i5_rule_bites(expected, sheet: str, direction: str, label: str):
     section = next(one for one in data_sections(sheet) if "i5" in one.roles)
     written = {section.cell(row, "sample_id"): section.cell(row, "i5")
                for row in section.rows}
+    told = 0
     for name, row in expected.samples.items():
-        if row["i5"] and reverse_complement(row["i5"]) != row["i5"]:
-            found = written.get(name)
-            if direction == AS_ENTERED:
-                assert found == row["i5"] and found != reverse_complement(row["i5"])
-            else:
-                assert found == reverse_complement(row["i5"]) and found != row["i5"]
-            return
-    raise AssertionError(f"{label}: no row could tell the two i5 directions apart")
+        if not row["i5"] or reverse_complement(row["i5"]) == row["i5"]:
+            continue
+        found = written.get(name)
+        if direction == AS_ENTERED:
+            assert found == row["i5"] and found != reverse_complement(row["i5"]), \
+                f"{label}: {name}'s Index2 is {found!r}, not the i5 as entered"
+        else:
+            assert found == reverse_complement(row["i5"]) and found != row["i5"], \
+                f"{label}: {name}'s Index2 is {found!r}, not the i5 reversed"
+        told += 1
+    assert told, f"{label}: no row could tell the two i5 directions apart"
 
 
 # --------------------------------------------------------------------------
@@ -978,6 +1192,9 @@ def test_no_sample_gets_another_samples_index(seed, logged_in_client, fresh_app,
     net.mark_ready()
 
     headers = _bearer(logged_in_client, ctx)
+    # One snapshot of the map per Ready run, so the row count below is taken
+    # from the map each sheet was read against.
+    maps = [net.expected.copy(f"{net.expected.label} at its first Ready")]
     checked = _read_sheets(logged_in_client, headers, net.run_id, net.expected,
                            net.direction)
 
@@ -986,36 +1203,48 @@ def test_no_sample_gets_another_samples_index(seed, logged_in_client, fresh_app,
     _assert_the_i5_rule_bites(net.expected, v2, net.direction["v2"],
                               net.expected.label)
 
-    # A copy of the run, marked Ready too: its sheets must match the same map.
+    # Back to Draft, one index replaced, Ready again: the second Ready's sheets
+    # must hold the new index, never the one it replaced.
+    net.edit_after_ready_then_ready_again()
+    after = net.expected.copy(f"{net.expected.label} at its second Ready")
+    maps.append(after)
+    checked += _read_sheets(logged_in_client, headers, net.run_id, after,
+                            net.direction)
+
+    # A copy of the run, with one sample renamed, marked Ready too: its sheets
+    # must match the copy's own map.
     copy_id = net.duplicate()
     copy_expected = net.expected.copy(f"{net.expected.label} copy")
+    net.rename_one_in_the_copy(copy_id, copy_expected)
     assert mark_ready(logged_in_client, copy_id, ORIGIN).status_code == 200
     assert ctx.run_repo.get_by_id(copy_id).status == RunStatus.READY
+    maps.append(copy_expected)
     checked += _read_sheets(logged_in_client, headers, copy_id, copy_expected,
                             net.direction)
 
     # Vacuity guards.
     _assert_every_path_was_used(net.expected)
     assert checked > 0
-    assert checked == _expected_row_count(net.expected, copy_expected, net.direction), (
-        f"{net.expected.label}: checked {checked} rows")
+    wanted = sum(_expected_row_count(one, net.direction) for one in maps)
+    assert checked == wanted, f"{net.expected.label}: checked {checked} rows, {wanted} wanted"
     assert any(len(row["lanes"]) > 1 for row in net.expected.samples.values()), (
         f"{net.expected.label}: no sample has more than one lane")
 
 
-def _expected_row_count(expected, copy_expected, direction) -> int:
-    """How many rows the net must have compared: the sections with a Lane
-    column hold one row per (sample, lane), the others one per sample, and the
-    JSON export one entry per sample. Both sheets of both runs."""
-    total = 0
-    for one in (expected, copy_expected):
-        with_lane = sum(one.rows_with_a_lane().values())
-        without = sum(one.rows_without_a_lane().values())
-        total += with_lane  # [BCLConvert_Data]: a Lane column
-        total += without    # [Cloud_Data]: no Lane column
-        if direction["v1"] is not None:
-            total += with_lane  # the v1 [Data] section
-        total += without        # the JSON export's samples
+def _expected_row_count(one, direction) -> int:
+    """How many rows one map's run must have had compared: the sections with a
+    Lane column hold one row per (sample, lane), the others one per sample, and
+    the JSON export one entry per sample.
+
+    Counted from the map and the sections a sheet has, never from what the
+    checker read."""
+    with_lane = sum(one.rows_with_a_lane().values())
+    without = sum(one.rows_without_a_lane().values())
+    total = with_lane   # [BCLConvert_Data]: a Lane column
+    total += without    # [Cloud_Data]: no Lane column
+    if direction["v1"] is not None:
+        total += with_lane  # the v1 [Data] section
+    total += without        # the JSON export's samples
     return total
 
 

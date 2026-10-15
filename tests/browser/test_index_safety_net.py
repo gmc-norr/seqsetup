@@ -14,7 +14,10 @@ last chip's index (index mix-up audit, 2026-10-14). Only a browser can see
 that, which is why this net exists beside the other one.
 """
 
+import json
+import re
 from datetime import datetime
+from urllib.parse import parse_qs
 
 import pytest
 from playwright.sync_api import expect
@@ -267,7 +270,14 @@ def test_no_sample_gets_another_samples_index_on_the_page(
         with page.expect_response(lambda r: "assign-indexes-bulk" in r.url) as answer:
             _chip(page, DROP_KIT, 1).drag_to(_zone(page, run_id, A_RANGE[0]))
     assert answer.value.status == 200
-    assert f"{DROP_KIT}_P1" in asked.value.post_data
+    # What app.js SENT, in order: the chips were clicked P3 first, so a page
+    # that sent click order would send P3, P1, P2 here. This is the audit's
+    # first bug and the reason this net runs in a browser at all -- the server
+    # sorts into panel order as well, so only the request itself can show it.
+    sent = json.loads(parse_qs(asked.value.post_data)["indexes_json"][0])
+    assert [entry["id"] for entry in sent] == \
+        [f"{DROP_KIT}_P{k}" for k in (1, 2, 3)], sent
+    assert all(len(entry["kit_fingerprint"]) == 64 for entry in sent)
     for offset, name in enumerate(A_RANGE):
         expected.set_pair(name, "a range shift-clicked backwards",
                           *DROP_PAIRS[1 + offset])
@@ -302,7 +312,8 @@ def test_no_sample_gets_another_samples_index_on_the_page(
     with page.expect_response(lambda r: r.url.endswith("/index-fill/preview")
                               and r.status == 200):
         page.click(".index-fill-start button")
-    second = page.locator("#index-fill-start option", has_text="P1").get_attribute("value")
+    second = page.locator("#index-fill-start option").filter(
+        has_text=re.compile(r"^P1$")).get_attribute("value")
     with page.expect_response(lambda r: r.url.endswith("/index-fill/preview")
                               and r.status == 200):
         page.select_option("#index-fill-start", second)
