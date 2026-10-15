@@ -14,7 +14,7 @@ This is the recommended way to run a fully functional instance.
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/gmc-norr/seqsetup.git
 cd seqsetup
 
 # Your settings: copy, then fill in .env (docker compose refuses to start
@@ -116,12 +116,19 @@ pixi run smoke-browser
 
 Environment variables take precedence over configuration files.
 
+These are the settings most installs meet first. The rest, with what each does
+and its default, are in `.env.example` (with Docker Compose, `MONGODB_URI` is
+built from the MongoDB user and password set there);
+`docs/getting-started/deployment.rst` explains HTTPS, the reverse proxy and the
+time zone.
+
 ### Configuration Files
 
 All configuration files are in the `config/` directory:
 
 - **`mongodb.yaml`** -- MongoDB connection settings (URI and database name).
 - **`instruments.yaml`** -- Supported sequencing instruments, flowcell types, reagent kits, SBS chemistry definitions, and default cycle configurations.
+- **`instruments/`** -- One example file per instrument, in the format a config sync reads (see the admin guide's Instruments page).
 - **`profiles/`** -- Application and test profile definitions (can be synced from GitHub).
 - **`indexes/`** -- Bundled index kit definitions in CSV and YAML formats.
 
@@ -163,7 +170,7 @@ The core workflow is wizard-based:
 3. **Assign indexes** -- Drag-and-drop indexes from uploaded index kits onto samples. Supports unique dual, combinatorial, and single-index modes.
 4. **Check** -- The run's Check panel and validation page show index collisions, color balance, dark cycles, missing tests and other problems, updated after every change.
 5. **Mark Ready** -- Runs every check again and refuses if there is any error; otherwise locks the run and pre-generates all export files.
-6. **Export** -- Download Sample Sheet v2, Sample Sheet v1 (MiSeq), JSON metadata, or validation reports (JSON/PDF).
+6. **Export** -- Download Sample Sheet v2, Sample Sheet v1 (MiSeq, NovaSeq 6000), JSON metadata, or validation reports (JSON/PDF).
 
 ### Run Status State Machine
 
@@ -184,8 +191,8 @@ Runs follow a strict state machine: **Draft** → **Ready** → **Archived**
 
 | Format | Description |
 |--------|-------------|
-| Sample Sheet v2 | Illumina CSV for NovaSeq X, MiSeq i100, NextSeq 1000/2000. Includes BCLConvert and DRAGEN sections based on application profiles. |
-| Sample Sheet v1 | Legacy CSV format for instruments that require it (MiSeq). |
+| Sample Sheet v2 | Illumina CSV for every instrument in `config/instruments.yaml`. Includes BCLConvert and DRAGEN sections based on application profiles. |
+| Sample Sheet v1 | Legacy CSV (bcl2fastq) for the instruments whose settings list it: MiSeq and NovaSeq 6000 as shipped. |
 | JSON Metadata | Complete run and sample data including test IDs, indexes, override cycles, and all configuration. |
 | Validation Report (JSON) | Machine-readable validation results with error details, distance matrices, and color balance analysis. |
 | Validation Report (PDF) | Human-readable validation summary with heatmaps and color balance charts. |
@@ -225,6 +232,7 @@ API documentation is available at `/api/docs` (Swagger UI) and `/api/openapi.jso
 
 ### Where to read more
 
+- **The online documentation** -- <https://seqsetup.readthedocs.io>, built from `docs/` on every change to `main`.
 - **`ARCHITECTURE.md`** -- how the code is organised, the conventions for routes, forms, templates and HTMX, and the reference implementations to copy.
 - **`CLAUDE.md`** -- the project's hard rules for clinical safety (input bounds, run state, exports, authentication).
 - **The Sphinx docs in `docs/`** -- user guide, admin guide, API reference, architecture and development pages, with screenshots. Build them with `pixi run docs`; the result is in `docs/_build/html/`.
@@ -284,6 +292,10 @@ pixi run mock-api
 ```
 
 The mock server implements the OpenAPI spec defined in `tools/igene_openapi.json`.
+
+## License
+
+MIT -- see [LICENSE](LICENSE).
 
 ## Author
 
