@@ -988,6 +988,9 @@ function sendWhatWaitsForRowSaves() {
         clearTimeout(timer);
         if (!element.isConnected) continue;
         showWaitingForRowSaves(element, false);
+        // true means "do not ask again", which skips hx-confirm as well as
+        // htmx:confirm: do not put hx-confirm and data-after-row-saves on
+        // one element, or the question would be skipped here.
         issueRequest(true);
     }
 }

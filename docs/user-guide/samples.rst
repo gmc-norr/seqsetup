@@ -297,8 +297,8 @@ rejected and nothing is saved.
 You can go on typing while a change saves: the changes of one row are sent
 one after another, and a field keeps what you type in it meanwhile.
 **Done editing** and **Mark Ready** wait until they are saved -- their
-button greys out while they wait -- and leaving the page before then asks
-first. If the row is redrawn before a change of yours was sent -- an index
+button greys out while they wait -- and leaving the page while a change has
+not even been sent yet asks first. If the row is redrawn before a change of yours was sent -- an index
 dropped on it or cleared, a bulk **Apply** -- a note under the banner names
 the change that was not saved; enter it again. If a note says the row may
 show an older value, reload the page.
