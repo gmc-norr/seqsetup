@@ -707,3 +707,32 @@ class TestAWaitingActionWhenASaveDoesNotLand:
 
         expect(page.locator("#run-status-bar")).to_contain_text("Nobody is editing this run")
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 2
+
+    def test_control_a_refusal_before_the_click_does_not_stop_a_later_one(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_first_save):
+        """The refusal is answered while nothing is waiting for it, so
+        ``sendWhatWaitsForRowSaves`` returns before it can strike the
+        not-stored note off: registering a waiter must reset it, or this
+        refusal would stop every later Done editing on the page with a
+        message saying a change was not saved when it was."""
+        page = logged_in_page
+        _open(page, base_url, mutable_run_id)
+        i7 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index1"]')
+        i7.click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("5")
+        with page.expect_response(lambda r: _a_settings_answer(r) and r.status == 400):
+            page.keyboard.press("Tab")
+        _handled(page)
+        expect(page.locator("#error-banner")).to_contain_text("0, 1 or 2")
+        expect(page.locator("#row-setting-notes")).not_to_contain_text("was not done")
+
+        i7.click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("2")             # saved, and held 0.8 s, so the click waits
+        with page.expect_navigation():
+            page.get_by_role("button", name="Done editing").click()
+        page.wait_for_load_state("networkidle")
+
+        expect(page.locator("#run-status-bar")).to_contain_text("Nobody is editing this run")
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 2
