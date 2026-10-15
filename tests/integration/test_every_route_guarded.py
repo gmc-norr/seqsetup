@@ -198,3 +198,15 @@ class TestEveryAdminRouteNeedsAnAdmin:
         assert len(targets) >= 25, [(m, p) for m, p, _r in targets]
         assert ADMIN_ONLY_OUTSIDE_ADMIN <= {(m, p) for m, p, _r in targets}
         assert missing == []
+
+    def test_no_admin_only_route_is_left_off_the_list(self, fresh_app):
+        """The other way round: every route that carries require_admin_dep is
+        under /admin or in ADMIN_ONLY_OUTSIDE_ADMIN, so the walk above tries
+        each one with a standard user and the list cannot go stale."""
+        from seqsetup.routes.dependencies import require_admin_dep
+        app, _ctx, _db = fresh_app
+        endpoints, _mounts, _unknown = _endpoints(app)
+        carrying = {(m, p) for m, p, r in endpoints if _uses(r.dependant, require_admin_dep)}
+        listed = {(m, p) for m, p, _r in endpoints
+                  if _is_admin_path(p) or (m, p) in ADMIN_ONLY_OUTSIDE_ADMIN}
+        assert carrying - listed == set()

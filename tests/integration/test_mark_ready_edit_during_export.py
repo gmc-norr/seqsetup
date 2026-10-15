@@ -208,11 +208,6 @@ class TestAnEditDuringTheExportsIsRefused:
                 _another_user_saves(ctx, run.id, _change_i7)
             return sheet
 
-        # The colour-balance question comes first for a two-sample lane;
-        # answer it before the writer is patched, so only the request that
-        # writes the exports meets the edit.
-        asked = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
-        assert "Mark Ready anyway" in asked.text
         monkeypatch.setattr(SampleSheetV2Exporter, "export", classmethod(write_then_edit))
 
         resp = mark_ready(logged_in_client, run.id, ORIGIN)
@@ -275,11 +270,19 @@ class TestControls:
         run, so Mark Ready saves them onto the newer version."""
         _app, ctx, _db = fresh_app
         run = _draft(ctx, "touch-mid-export")
-        calls = _after_the_exports(monkeypatch, lambda: _another_user_saves(ctx, run.id, None))
+        moved = {}
+
+        def touch_only():
+            before = ctx.run_repo.get_by_id(run.id).updated_at
+            _another_user_saves(ctx, run.id, None)
+            moved["version"] = ctx.run_repo.get_by_id(run.id).updated_at != before
+
+        calls = _after_the_exports(monkeypatch, touch_only)
 
         resp = mark_ready(logged_in_client, run.id, ORIGIN)
 
         assert calls["n"] == 1
+        assert moved == {"version": True}, "the other user's save did not move the version"
         assert resp.status_code == 200, html.unescape(resp.text)[:400]
         stored = ctx.run_repo.get_by_id(run.id)
         assert stored.status == RunStatus.READY

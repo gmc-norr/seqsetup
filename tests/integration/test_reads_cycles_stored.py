@@ -138,14 +138,16 @@ class TestTheCycleRouteStoresEachCount:
 
 class TestMarkReadyStoresEachCountInEveryExport:
     """The stored v2 sheet, v1 sheet and JSON carry the counts set through
-    the route, each under its own name."""
+    the route, each under its own name, and the API serves those bytes. One
+    Mark Ready per set of counts: each one makes the whole report."""
 
     @pytest.mark.parametrize("counts,samples", CASES)
-    def test_the_stored_v2_reads(self, logged_in_client, fresh_app, counts, samples):
+    def test_every_stored_export_carries_each_count(self, logged_in_client, fresh_app,
+                                                    counts, samples):
         _app, ctx, _db = fresh_app
         read1, read2, index1, index2 = counts
 
-        stored = _ready_run(logged_in_client, ctx, "cycles-v2", counts, samples)
+        stored = _ready_run(logged_in_client, ctx, "cycles-stored", counts, samples)
 
         assert _reads(stored.generated_samplesheet_v2) == [
             f"Read1Cycles,{read1}", f"Read2Cycles,{read2}",
@@ -158,40 +160,18 @@ class TestMarkReadyStoresEachCountInEveryExport:
         assert [row.split(",")[column] for row in data] == (
             [f"Y{read1};I{index1};I{index2};Y{read2}"] * len(samples))
 
-    @pytest.mark.parametrize("counts,samples", CASES)
-    def test_the_stored_v1_reads(self, logged_in_client, fresh_app, counts, samples):
-        _app, ctx, _db = fresh_app
-
-        stored = _ready_run(logged_in_client, ctx, "cycles-v1", counts, samples)
-
         assert stored.generated_samplesheet_v1 is not None
-        assert _reads(stored.generated_samplesheet_v1) == [str(counts[0]), str(counts[1])]
-
-    @pytest.mark.parametrize("counts,samples", CASES)
-    def test_the_stored_json_cycles(self, logged_in_client, fresh_app, counts, samples):
-        _app, ctx, _db = fresh_app
-        read1, read2, index1, index2 = counts
-
-        stored = _ready_run(logged_in_client, ctx, "cycles-json", counts, samples)
+        assert _reads(stored.generated_samplesheet_v1) == [str(read1), str(read2)]
 
         assert json.loads(stored.generated_json)["cycles"] == {
             "read1_cycles": read1, "read2_cycles": read2,
             "index1_cycles": index1, "index2_cycles": index2,
             "total_cycles": read1 + read2 + index1 + index2}
 
-    def test_the_api_serves_the_stored_exports(self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
-        counts, samples = CASES[0].values
-        stored = _ready_run(logged_in_client, ctx, "cycles-api", counts, samples)
         headers = _bearer(logged_in_client, ctx)
-
-        v2 = logged_in_client.get("/api/runs/cycles-api/samplesheet-v2", headers=headers)
-        v1 = logged_in_client.get("/api/runs/cycles-api/samplesheet-v1", headers=headers)
-        payload = logged_in_client.get("/api/runs/cycles-api/json", headers=headers)
-
-        assert (v2.status_code, v1.status_code, payload.status_code) == (200, 200, 200)
-        assert v2.text == stored.generated_samplesheet_v2
-        assert v1.text == stored.generated_samplesheet_v1
-        assert _reads(v2.text)[:2] == ["Read1Cycles,151", "Read2Cycles,101"]
-        assert _reads(v1.text) == ["151", "101"]
-        assert payload.json()["cycles"]["index2_cycles"] == 8
+        served = {kind: logged_in_client.get(f"/api/runs/cycles-stored/{kind}", headers=headers)
+                  for kind in ("samplesheet-v2", "samplesheet-v1", "json")}
+        assert {kind: r.status_code for kind, r in served.items()} == dict.fromkeys(served, 200)
+        assert served["samplesheet-v2"].text == stored.generated_samplesheet_v2
+        assert served["samplesheet-v1"].text == stored.generated_samplesheet_v1
+        assert served["json"].json()["cycles"] == json.loads(stored.generated_json)["cycles"]

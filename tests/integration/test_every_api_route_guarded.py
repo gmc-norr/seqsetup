@@ -9,6 +9,7 @@ tested only on samplesheet-v2. These tests walk every route the sub-app
 registers, so a new one is covered the day it is added.
 """
 
+import re
 from datetime import datetime
 
 from fastapi.routing import iter_route_contexts
@@ -21,6 +22,16 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunSta
 # /api routes meant to answer without a token, each with its reason. None
 # today: the schema and the Swagger page are token-gated too (api/app.py).
 OPEN_API_ROUTES: dict[tuple[str, str], str] = {}
+
+# The /api routes that serve no one run. Every other /api route is taken to
+# serve a run, so it must take the run in its path and refuse a Draft; a new
+# route that serves no run has to be added here on purpose.
+NOT_PER_RUN = {
+    ("GET", "/api/runs"),
+    ("GET", "/api/openapi.json"),
+    ("GET", "/api/docs"),
+    ("GET", "/api/docs/init.js"),
+}
 
 # The per-run endpoints the API serves today (api/app.py).
 PER_RUN_PATHS = {
@@ -49,7 +60,8 @@ def _api_endpoints(app):
 
 
 def _url(path, run_id="dummy-1"):
-    return path.replace("{run_id}", run_id)
+    """The path with every path parameter, whatever its name, set to run_id."""
+    return re.sub(r"\{[^}]+\}", run_id, path)
 
 
 def _token(ctx) -> str:
@@ -148,7 +160,19 @@ class TestNoDraftThroughTheApi:
     the same endpoints serve a Ready and an Archived run."""
 
     def _per_run(self, app):
-        return sorted((m, p) for m, p, _r in _api_endpoints(app) if "{run_id}" in p)
+        """Every /api route but the few that serve no one run, whatever its
+        path parameter is called."""
+        return sorted((m, p) for m, p, _r in _api_endpoints(app) if (m, p) not in NOT_PER_RUN)
+
+    def test_every_route_serving_a_run_takes_it_in_its_path(self, fresh_app):
+        """A route outside NOT_PER_RUN with no path parameter (a run picked by
+        a query string, say) could not be walked with a Draft's id below; it
+        must be named on purpose instead."""
+        app, _ctx, _db = fresh_app
+        found = {(m, p) for m, p, _r in _api_endpoints(app)}
+        no_parameter = [(m, p) for m, p in self._per_run(app) if not re.search(r"\{[^}]+\}", p)]
+        assert NOT_PER_RUN <= found, NOT_PER_RUN - found
+        assert no_parameter == []
 
     def test_every_per_run_endpoint_refuses_a_draft(self, fresh_app):
         app, ctx, _db = fresh_app

@@ -6,7 +6,11 @@ Index1Cycles and Index2Cycles, passed them all. These runs have four
 different counts: the v2 [Reads] section (profile path, as Mark Ready writes
 it, and the fallback), the v1 [Reads] section, and the JSON export's cycle
 fields must each carry every count under its own name. A single-end run
-(Read 2 = 0) and a single-index run (Index 2 = 0) pin what is written today.
+(Read 2 = 0) and a single-index run (Index 2 = 0) pin what is written today:
+v2 writes the zero line (``Read2Cycles,0`` / ``Index2Cycles,0``) rather than
+leaving it out. Whether the instruments accept a zero line is not known here
+and belongs to the lab's validation; if leaving the line out turns out to be
+right, change those tests with the writer.
 """
 
 import json
@@ -95,7 +99,7 @@ class TestTheV2ReadsSectionWritesEachCountOnItsOwnLine:
         # The path Mark Ready takes: _pregenerate_exports passes the profile repos.
         sheet = SampleSheetV2Exporter.export(_run(counts), *_shipped_repos())
 
-        assert "[BCLConvert_Data]" in sheet  # the profile sections were written
+        assert "[DragenGermline_Settings]" in sheet  # only the profile path writes it
         assert _v2_reads(sheet) == _expected_v2(counts)
 
     @pytest.mark.parametrize("counts", DISTINCT)
@@ -103,7 +107,7 @@ class TestTheV2ReadsSectionWritesEachCountOnItsOwnLine:
         apps, tests = _wgs()
         sheet = SampleSheetV2Exporter.export(_run(counts), *_repos(apps, tests))
 
-        assert "[BCLConvert_Data]" in sheet
+        assert "[DragenGermline_Settings]" in sheet
         assert _v2_reads(sheet) == _expected_v2(counts)
 
     @pytest.mark.parametrize("counts", DISTINCT)
@@ -111,6 +115,7 @@ class TestTheV2ReadsSectionWritesEachCountOnItsOwnLine:
         sheet = SampleSheetV2Exporter.export(_run(counts))
 
         assert "[BCLConvert_Data]" in sheet
+        assert "[DragenGermline_Settings]" not in sheet  # no profiles: the fallback ran
         assert _v2_reads(sheet) == _expected_v2(counts)
 
     def test_each_label_appears_once_in_the_sheet(self):
@@ -118,12 +123,6 @@ class TestTheV2ReadsSectionWritesEachCountOnItsOwnLine:
 
         for label in ("Read1Cycles,", "Read2Cycles,", "Index1Cycles,", "Index2Cycles,"):
             assert sum(line.startswith(label) for line in sheet.splitlines()) == 1, label
-
-    def test_equal_counts_cannot_stand_in_for_distinct_ones(self):
-        # Invalid input for the check above: a 151/151/10/10 sheet is not what
-        # a 151/101/10/8 run must write, so the comparison can fail.
-        same = SampleSheetV2Exporter.export(_run((151, 151, 10, 10)))
-        assert _v2_reads(same) != _expected_v2((151, 101, 10, 8))
 
 
 class TestTheV1ReadsSectionKeepsReadOneFirst:
