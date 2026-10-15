@@ -295,11 +295,12 @@ than the letters ``Y``, ``I``, ``U``, ``N``, digits, ``;`` and ``,`` is
 rejected and nothing is saved.
 
 You can go on typing while a change saves: the changes of one row are sent
-one after another, and a field keeps what you type in it meanwhile. If the
-row is redrawn before a change of yours was sent -- an index dropped on it
-or cleared, a bulk **Apply** -- the banner names the change that was not
-saved; enter it again. If the banner says the row may show an older value,
-reload the page.
+one after another, and a field keeps what you type in it meanwhile.
+**Done editing** and **Mark Ready** wait until they are saved, and leaving
+the page before then asks first. If the row is redrawn before a change of
+yours was sent -- an index dropped on it or cleared, a bulk **Apply** -- a
+note under the banner names the change that was not saved; enter it again.
+If a note says the row may show an older value, reload the page.
 
 A sample ID is never made only of zeros: adding a sample called ``0`` or
 ``00`` is refused (*"A sample ID made only of zeros is not a sample ID --

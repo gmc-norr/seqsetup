@@ -865,14 +865,18 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
 // wizard/_sample_row.html) save on change, and their answer replaces nothing
 // (hx-swap none): the box takes the value the server stored only while it
 // still shows what was sent, so a correction typed while the save was on its
-// way stays, and is sent next from the row's queue (hx-sync). A redraw of the
-// row (an index drop or clear, a bulk Apply, the Check's Set test) still
-// replaces the boxes, and htmx drops a save waiting in a replaced row's queue
-// without a word: the banner names it. An answer that comes back for a
-// replaced box, having stored another value than the redrawn row shows, asks
-// for a reload. (Outside review of f490536, F3.) A refused save leaves what
-// was typed on screen, as every refused edit does.
+// way stays, and is sent next from the row's queue (hx-sync). A save waiting
+// in that queue is lost when the page goes before it is sent, or when the
+// row is redrawn (an index drop or clear, a bulk Apply, the Check's Set
+// test): htmx drops it from the replaced row without a word. So Done editing
+// and Mark Ready (data-after-row-saves) wait for the saves, leaving the page
+// asks first, and a note names a save lost to a redraw. An answer that comes
+// back for a replaced box, having stored another value than the redrawn row
+// shows, asks for a reload. (Outside review of f490536, F3.) A refused save
+// leaves what was typed on screen, as every refused edit does.
 const unsentRowSettings = new Map();  // box -> changes not yet sent
+const rowSettingSaves = new Set();     // XHRs sent and not yet answered
+const afterRowSaves = [];              // [element, issueRequest] waiting for them
 
 function rowSettingName(box) {
     const row = box.closest('tr');
@@ -885,18 +889,39 @@ function quotedSetting(value) {
     return value === '' ? 'empty' : `"${value}"`;
 }
 
-// Added to what the banner says, not in place of it, and no later success
-// clears it: it stays until the next failure.
-function noteRowSettingProblem(message) {
-    const banner = document.getElementById('error-banner');
-    if (banner) {
+function unsentRowSaves() {
+    let n = 0;
+    for (const count of unsentRowSettings.values()) n += count;
+    return n;
+}
+
+// In #row-setting-notes, which no other message replaces; a note goes once
+// its box saves, or with the page.
+function noteRowSettingProblem(box, message) {
+    const notes = document.getElementById('row-setting-notes');
+    if (notes) {
         const div = document.createElement('div');
         div.className = 'error-message';
+        div.dataset.box = box.id;
         div.textContent = message;
-        banner.appendChild(div);
+        notes.appendChild(div);
     }
     showErrorToast(message);
-    errorSource = null;
+}
+
+function clearRowSettingNotes(box) {
+    const notes = document.getElementById('row-setting-notes');
+    if (!notes) return;
+    for (const note of [...notes.children]) {
+        if (note.dataset.box === box.id) note.remove();
+    }
+}
+
+function sendWhatWaitsForRowSaves() {
+    if (unsentRowSaves() > 0 || rowSettingSaves.size > 0) return;
+    for (const [element, issueRequest] of afterRowSaves.splice(0)) {
+        if (element.isConnected) issueRequest(true);
+    }
 }
 
 document.body.addEventListener('htmx:trigger', function(event) {
@@ -906,13 +931,31 @@ document.body.addEventListener('htmx:trigger', function(event) {
     }
 });
 
+document.body.addEventListener('htmx:confirm', function(event) {
+    const element = event.target;
+    if (!(element instanceof Element) || !element.matches('[data-after-row-saves]')) return;
+    if (unsentRowSaves() === 0 && rowSettingSaves.size === 0) return;
+    event.preventDefault();
+    if (!afterRowSaves.some(([waiting]) => waiting === element)) {
+        afterRowSaves.push([element, event.detail.issueRequest]);
+    }
+});
+
+window.addEventListener('beforeunload', function(event) {
+    if (unsentRowSaves() === 0) return;
+    event.preventDefault();
+    event.returnValue = '';
+});
+
 new MutationObserver(function() {
+    if (unsentRowSettings.size === 0) return;
     for (const [box] of unsentRowSettings) {
         if (box.isConnected) continue;
         unsentRowSettings.delete(box);
-        noteRowSettingProblem(`${rowSettingName(box)}: your change to ${quotedSetting(box.value)} `
+        noteRowSettingProblem(box, `${rowSettingName(box)}: your change to ${quotedSetting(box.value)} `
             + 'was not saved, because the row was redrawn before it was sent. Enter it again.');
     }
+    sendWhatWaitsForRowSaves();
 }).observe(document.body, {childList: true, subtree: true});
 
 document.body.addEventListener('htmx:beforeSend', function(event) {
@@ -922,6 +965,7 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
     const unsent = (unsentRowSettings.get(box) || 0) - 1;
     if (unsent > 0) unsentRowSettings.set(box, unsent);
     else unsentRowSettings.delete(box);
+    rowSettingSaves.add(xhr);
     const sent = event.detail.requestConfig.formData.get(box.name);
     xhr.addEventListener('load', function() {
         if (xhr.status < 200 || xhr.status >= 300) return;
@@ -933,14 +977,19 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
         if (box.isConnected) {
             box.defaultValue = stored;
             if (box.value === sent) box.value = stored;
+            clearRowSettingNotes(box);
             return;
         }
         const shown = document.getElementById(box.id);
         if (shown && shown.defaultValue !== stored) {
-            noteRowSettingProblem(`${rowSettingName(box)} was saved as ${quotedSetting(stored)} `
+            noteRowSettingProblem(box, `${rowSettingName(box)} was saved as ${quotedSetting(stored)} `
                 + 'while its row was being redrawn, and the row may show an older value: '
                 + 'reload the page.');
         }
+    });
+    xhr.addEventListener('loadend', function() {
+        rowSettingSaves.delete(xhr);
+        sendWhatWaitsForRowSaves();
     });
 });
 

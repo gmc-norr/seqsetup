@@ -191,7 +191,8 @@ class TestARowSaveKeepsWhatIsBeingTypedNextToIt:
     def test_the_saves_of_one_row_go_one_after_another(
             self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_first_save):
         """The second save is sent only once the first is answered, so two
-        saves of one run never race each other's version check."""
+        saves of one row never race each other's version check (saves of two
+        rows still can: the one refused says so in the banner)."""
         page = logged_in_page
         _open(page, base_url, mutable_run_id)
         row = _row(page, mutable_run_id)
@@ -353,7 +354,7 @@ class TestARowRedrawnWhileASaveIsOnItsWay:
 
         self._save_two_and_redraw(page, base_url, mutable_run_id, slow_next_load)
 
-        banner = page.locator("#error-banner")
+        banner = page.locator("#row-setting-notes")
         expect(banner).to_contain_text("MM i5 of MUT-01")
         expect(banner).to_contain_text("was not saved")
         with page.expect_response(_a_settings_answer):
@@ -377,8 +378,8 @@ class TestARowRedrawnWhileASaveIsOnItsWay:
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 0
         i7 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index1"]')
         assert i7.input_value() == "1", "the redrawn row was drawn after the save"
-        expect(page.locator("#error-banner")).to_contain_text("MM i7 of MUT-01")
-        expect(page.locator("#error-banner")).to_contain_text("reload the page")
+        expect(page.locator("#row-setting-notes")).to_contain_text("MM i7 of MUT-01")
+        expect(page.locator("#row-setting-notes")).to_contain_text("reload the page")
 
     def test_control_a_redraw_after_the_saves_are_answered_says_nothing(
             self, logged_in_page, base_url, mutable_run_id, app_ctx):
@@ -396,4 +397,153 @@ class TestARowRedrawnWhileASaveIsOnItsWay:
         _handled(page)
 
         expect(page.locator("#error-banner")).to_be_empty()
+        expect(page.locator("#row-setting-notes")).to_be_empty()
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 0
+
+    def test_a_save_lost_to_a_bulk_apply_is_named(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+        """Apply redraws the whole table; the Override Cycles change waits
+        behind the held i7 save, as the click on Apply commits it."""
+        page = logged_in_page
+        _open(page, base_url, mutable_run_id)
+        row = _row(page, mutable_run_id)
+        _row(page, mutable_run_id, 2).locator(".sample-checkbox").check()
+        page.locator('.bulk-lane-checkbox[value="2"]').check()
+        row.locator('input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("0")
+        slow_next_load["armed"] = True
+        page.keyboard.press("Tab")          # the i7 save starts; its load is held
+        assert slow_next_load["holding"].wait(5), "the i7 save never reached its load"
+        row.locator('input[name="override_cycles"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type(TYPED_OVERRIDE)
+        with page.expect_response(lambda r: r.url.endswith("/samples/set-lanes")):
+            page.locator('[data-action="bulk-apply-lanes"]').click()
+
+        expect(page.locator("#main")).to_contain_text("Override Cycles of MUT-01")
+        expect(page.locator("#main")).to_contain_text("was not saved")
+        assert _stored(app_ctx, mutable_run_id).override_cycles != TYPED_OVERRIDE
+
+    def test_a_later_failure_keeps_the_not_saved_note(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+        page = logged_in_page
+        self._save_two_and_redraw(page, base_url, mutable_run_id, slow_next_load)
+        expect(page.locator("#main")).to_contain_text("MM i5 of MUT-01")
+        with page.expect_response(_a_settings_answer):
+            pass                            # the held i7 save is answered
+        _handled(page)
+
+        i7 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index1"]')
+        i7.click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("5")
+        with page.expect_response(lambda r: _a_settings_answer(r) and r.status == 400):
+            page.keyboard.press("Tab")
+        expect(page.locator("#error-banner")).to_contain_text("0, 1 or 2")
+
+        expect(page.locator("#main")).to_contain_text("MM i5 of MUT-01")
+
+    def test_the_not_saved_note_goes_once_the_change_is_saved(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+        page = logged_in_page
+        self._save_two_and_redraw(page, base_url, mutable_run_id, slow_next_load)
+        expect(page.locator("#main")).to_contain_text("MM i5 of MUT-01")
+        with page.expect_response(_a_settings_answer):
+            pass
+        _handled(page)
+
+        i5 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index2"]')
+        i5.click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("2")             # entered again, as the note asks
+        with page.expect_response(_a_settings_answer):
+            page.keyboard.press("Tab")
+        _handled(page)
+
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index2 == 2
+        expect(page.locator("#main")).not_to_contain_text("MM i5 of MUT-01")
+
+
+@pytest.mark.browser
+class TestLeavingWhileASaveWaits:
+    """Done editing, Mark Ready and leaving the page come right after typing:
+    the click that does them commits the box, whose save then waits behind
+    the one on its way."""
+
+    def _type_two(self, page, base_url, run_id):
+        _open(page, base_url, run_id)
+        _row(page, run_id).locator('input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("0")
+        page.keyboard.press("Tab")          # the i7 save starts (held 0.8 s)
+        page.keyboard.type("2")             # the i5 box, not yet left
+
+    def test_done_editing_waits_for_the_rows_saves(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_first_save):
+        page = logged_in_page
+        answers = []
+        page.on("response", lambda r: answers.append((r.url.rsplit("/", 1)[-1], r.status))
+                if _a_settings_answer(r) or r.url.endswith("/edit-lock") else None)
+        self._type_two(page, base_url, mutable_run_id)
+
+        with page.expect_navigation():
+            page.get_by_role("button", name="Done editing").click()
+        page.wait_for_load_state("networkidle")
+
+        assert answers == [("settings", 200), ("settings", 200), ("edit-lock", 200)], answers
+        stored = _stored(app_ctx, mutable_run_id)
+        assert (stored.barcode_mismatches_index1, stored.barcode_mismatches_index2) == (0, 2)
+
+    def test_mark_ready_waits_for_the_rows_saves(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_first_save):
+        page = logged_in_page
+        events = []
+        page.on("request", lambda r: events.append(("sent", r.url.rsplit("/", 1)[-1]))
+                if _a_settings_answer(r) or r.url.endswith("/status/ready") else None)
+        page.on("response", lambda r: events.append(("answered", r.url.rsplit("/", 1)[-1]))
+                if _a_settings_answer(r) or r.url.endswith("/status/ready") else None)
+        self._type_two(page, base_url, mutable_run_id)
+
+        with page.expect_response(lambda r: r.url.endswith("/status/ready")):
+            page.get_by_role("button", name="Mark Ready").click()
+
+        assert events.index(("sent", "ready")) > max(
+            i for i, e in enumerate(events) if e == ("answered", "settings")), events
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index2 == 2
+
+    def test_leaving_the_page_while_a_save_waits_asks_first(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_first_save):
+        page = logged_in_page
+        dialogs = []
+
+        def stay(dialog):
+            dialogs.append(dialog.type)
+            dialog.dismiss()
+
+        page.on("dialog", stay)
+        self._type_two(page, base_url, mutable_run_id)
+        page.keyboard.press("Tab")          # the i5 save waits behind the i7 one
+        page.get_by_role("link", name="Dashboard").click()
+        _handled(page)
+
+        assert dialogs == ["beforeunload"], dialogs
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index2 == 2
+
+    def test_control_leaving_once_the_saves_are_answered_asks_nothing(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx):
+        page = logged_in_page
+        dialogs = []
+        page.on("dialog", lambda d: (dialogs.append(d.type), d.dismiss()))
+        _open(page, base_url, mutable_run_id)
+        _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("0")
+        with page.expect_response(_a_settings_answer):
+            page.keyboard.press("Tab")
+        _handled(page)
+
+        with page.expect_navigation():
+            page.get_by_role("link", name="Dashboard").click()
+
+        assert dialogs == []
