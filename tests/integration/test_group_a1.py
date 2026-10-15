@@ -1,5 +1,5 @@
 """Group A1 through the real routes: every sample gets the right index
-(spec docs/superpowers/specs/2026-10-03-group-a1-design.md)."""
+(spec docs/design/2026-10-03-group-a1-design.md)."""
 
 import json
 

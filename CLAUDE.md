@@ -140,6 +140,7 @@ For admin-only routes, attach the dep at router level:
 - **Read code before modifying it.** Understand the existing pattern before touching it.
 - **Run tests after changes.** Do not assume correctness — verify it.
 - **Ask before making architectural changes.** The existing patterns exist for reasons.
+- **Design notes go in `docs/design/`** as `YYYY-MM-DD-<topic>-design.md` (see its README), not in `docs/superpowers/`. Implementation plans are not kept in the repository.
 
 ## Project Structure
 

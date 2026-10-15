@@ -1,6 +1,6 @@
 """Two dual-index samples in one lane clash only when BOTH indexes are close:
 d_i7 <= 2*m_i7 AND d_i5 <= 2*m_i5 (the user's decision, 2026-10-13, on the
-night run's Q1; docs/superpowers/specs/2026-10-12-collision-rule-design.md).
+night run's Q1; docs/design/2026-10-12-collision-rule-design.md).
 That is when a read can fit both samples, and it is the default of DRAGEN's
 built-in BCL conversion, which the lab runs. The summed rule it replaces
 raised 92 false alarms on an ordinary combinatorial plate. A pair where either

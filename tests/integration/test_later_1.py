@@ -1,5 +1,5 @@
 """Later list slice 1 through the real routes (spec
-docs/superpowers/specs/2026-10-10-later-1-design.md)."""
+docs/design/2026-10-10-later-1-design.md)."""
 
 import json
 

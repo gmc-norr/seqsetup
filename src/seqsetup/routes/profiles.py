@@ -10,7 +10,7 @@ Patterns demonstrated:
     iterates only)
 
 See ARCHITECTURE.md and the design spec at
-docs/superpowers/specs/2026-05-24-htmx-best-practices-redesign-design.md
+docs/design/2026-05-24-htmx-best-practices-redesign-design.md
 """
 
 from fastapi import APIRouter, Depends, Request
