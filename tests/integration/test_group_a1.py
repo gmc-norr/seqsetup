@@ -142,6 +142,9 @@ def _assign(client, ctx, route, slot, kit):
         else:
             url = f"/runs/{RUN}/samples/assign-index-to-selected"
             data["sample_ids"] = json.dumps([sid])
+        # The index the row shows, which both single-row routes compare with
+        # the stored one before they write (F8).
+        data["target_indexes"] = json.dumps(_shown(ctx, [sid]))
         resp = client.post(url, data=data, headers=ORIGIN)
         assert resp.status_code == 200, resp.text[:300]
 

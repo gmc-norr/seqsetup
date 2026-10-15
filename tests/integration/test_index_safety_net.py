@@ -367,6 +367,15 @@ class Net:
     def _post(self, path: str, **data):
         return self.client.post(f"/runs/{self.run_id}{path}", data=data, headers=ORIGIN)
 
+    def _shown(self, row_ids: list[str]) -> str:
+        """The index the page shows in each of those rows, as app.js sends it
+        with every single-row assign and clear: the route refuses a row whose
+        index has moved since the page was drawn (F8)."""
+        by_id = {row["row_id"]: row for row in self.rows()}
+        return json.dumps([[by_id[rid]["i7"] if rid in by_id else "",
+                            by_id[rid]["i5"] if rid in by_id else ""]
+                           for rid in row_ids])
+
     def _some_lanes(self, how_many: int) -> list[int]:
         return sorted(self.rng.sample(range(1, self.lanes + 1), how_many))
 
@@ -426,6 +435,7 @@ class Net:
         else:
             values["index_id"] = chip["id"]
             values["index_type"] = chip["type"]
+        values["target_indexes"] = self._shown([row_id])
         answer = self._post(f"/samples/{row_id}/assign-index", **values)
         assert answer.status_code == 200, answer.text[:300]
 
@@ -605,6 +615,7 @@ class Net:
         chip = self.chip_for(self.kits.dual, pair.id)
         answer = self._post("/samples/assign-index-to-selected",
                             sample_ids=json.dumps([row["row_id"] for row in rows]),
+                            target_indexes=self._shown([row["row_id"] for row in rows]),
                             index_pair_id=chip["id"], kit_id=chip["kit_id"],
                             kit_fingerprint=chip["kit_fingerprint"])
         assert answer.status_code == 200, answer.text[:300]
@@ -659,6 +670,7 @@ class Net:
             answer = self._post(
                 "/samples/assign-index-to-selected",
                 sample_ids=json.dumps([row["row_id"] for row in rows]),
+                target_indexes=self._shown([row["row_id"] for row in rows]),
                 index_id=chip["id"], index_type=kind, kit_id=chip["kit_id"],
                 kit_fingerprint=chip["kit_fingerprint"])
             assert answer.status_code == 200, answer.text[:300]
@@ -672,7 +684,8 @@ class Net:
         a pair, so this path needs a sample built from singles."""
         shown = next(one for one in self.rows() if one["row_id"] == row["row_id"])
         assert shown["i7"] and shown["i5"], "this path needs a sample with both halves"
-        answer = self._post(f"/samples/{row['row_id']}/clear-index?index_type=i5")
+        answer = self._post(f"/samples/{row['row_id']}/clear-index?index_type=i5",
+                            target_indexes=self._shown([row["row_id"]]))
         assert answer.status_code == 200, answer.text[:300]
         self.expected.set_indexes(row["sample_id"], "clear one half, then drop again",
                                   i5="")
@@ -749,7 +762,8 @@ class Net:
                                    i7=pair.index1_sequence, i5=pair.index2_sequence)
 
     def clear_then_drop_again(self, row: dict):
-        answer = self._post(f"/samples/{row['row_id']}/clear-index")
+        answer = self._post(f"/samples/{row['row_id']}/clear-index",
+                            target_indexes=self._shown([row["row_id"]]))
         assert answer.status_code == 200, answer.text[:300]
         self.expected.clear_indexes(row["sample_id"], "clear, then drop again")
         cleared = next(one for one in self.rows() if one["row_id"] == row["row_id"])

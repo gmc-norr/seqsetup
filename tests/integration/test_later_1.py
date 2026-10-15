@@ -40,7 +40,9 @@ def _swap(client, ctx, route, slot, kit, sids=("s1", "s2")):
             "target_sample_ids": json.dumps(list(sids)),
             "target_indexes": json.dumps(_shown(ctx, sids)),
         }, headers=ORIGIN)
-    data = {"kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint(), "index_id": _entry_id(kit, slot, 0), "index_type": slot}
+    data = {"kit_id": kit.kit_id, "kit_fingerprint": kit.fingerprint(), "index_id": _entry_id(kit, slot, 0), "index_type": slot,
+            # The index each row shows, compared with the stored one (F8).
+            "target_indexes": json.dumps(_shown(ctx, list(sids)))}
     if route == "one":
         assert len(sids) == 1
         return client.post(f"/runs/{RUN}/samples/{sids[0]}/assign-index", data=data,
@@ -113,6 +115,7 @@ class TestAKitSwapWithOtherReadPatternsIsRefused:
         _run(ctx, ["PAT1", "PAT2"])
         resp = logged_in_client.post(f"/runs/{RUN}/samples/s2/assign-index", data={
             "kit_id": umi.kit_id, "kit_fingerprint": umi.fingerprint(), "index_id": _entry_id(umi, "i7", 1), "index_type": "i7",
+            "target_indexes": json.dumps(_shown(ctx, ["s2"])),
         }, headers=ORIGIN)
         assert resp.status_code == 200, resp.text[:300]
         before = _indexes(ctx)

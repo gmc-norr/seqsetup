@@ -146,6 +146,15 @@ PAT2."* The confirmation above tells you which indexes **this** page's
 drop would replace; this refusal is for the ones it could not have known
 about.
 
+This holds for **every** way of assigning an index, not only a drag of
+several: one chip dropped on one row, one chip assigned with the keyboard,
+one chip dropped on the ticked rows, and the **x** button that clears a
+row's index. Each of them sends the i7 and i5 that row was showing, and is
+refused the same way when the row has moved on -- a clear says *"Nothing
+was cleared. Reload the page and try again. The index on these samples
+changed since this page was loaded: PAT2."* Reload the page; the rows then
+show the indexes as they are now, and you can see what to change.
+
 The kit itself is checked too, for every drop and keyboard assign, one
 index or several. Each index chip carries a fingerprint of its kit -- a
 short code that changes whenever the kit's indexes or settings change: a

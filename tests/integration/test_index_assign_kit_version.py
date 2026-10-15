@@ -83,6 +83,12 @@ def _stored(ctx):
     return ctx.run_repo.get_by_id(RUN_ID).to_dict()
 
 
+# What the page shows in the one row these posts touch: _run gives s1 no
+# index, and each test posts once. The two single-row routes compare it
+# with the stored index before they write (F8).
+SHOWN_ONE = json.dumps([["", ""]])
+
+
 class TestAssignOneIndex:
     """POST /runs/{id}/samples/{sid}/assign-index (drag, drop or keyboard)."""
 
@@ -95,7 +101,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_pair_id": "VerKit_UDP0", "kit_id": kits[which].kit_id, "kit_fingerprint": kits[which].fingerprint()},
+            data={"target_indexes": SHOWN_ONE, "index_pair_id": "VerKit_UDP0", "kit_id": kits[which].kit_id, "kit_fingerprint": kits[which].fingerprint()},
             headers=ORIGIN,
         )
 
@@ -112,7 +118,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_id": "ComboKit_i7_A1", "index_type": "i7", "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
+            data={"target_indexes": SHOWN_ONE, "index_id": "ComboKit_i7_A1", "index_type": "i7", "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
             headers=ORIGIN,
         )
 
@@ -127,7 +133,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_pair_id": "VerKit_UDP0"},
+            data={"target_indexes": SHOWN_ONE, "index_pair_id": "VerKit_UDP0"},
             headers=ORIGIN,
         )
 
@@ -144,7 +150,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_id": "ComboKit_i7_A1", "index_type": "i7"},
+            data={"target_indexes": SHOWN_ONE, "index_id": "ComboKit_i7_A1", "index_type": "i7"},
             headers=ORIGIN,
         )
 
@@ -159,7 +165,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_pair_id": "VerKit_UDP0", "kit_fingerprint": kit.fingerprint()},
+            data={"target_indexes": SHOWN_ONE, "index_pair_id": "VerKit_UDP0", "kit_fingerprint": kit.fingerprint()},
             headers=ORIGIN,
         )
 
@@ -174,7 +180,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_pair_id": "VerKit_UDP0", "kit_id": "VerKit:9.9"},
+            data={"target_indexes": SHOWN_ONE, "index_pair_id": "VerKit_UDP0", "kit_id": "VerKit:9.9"},
             headers=ORIGIN,
         )
 
@@ -190,7 +196,7 @@ class TestAssignOneIndex:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/assign-index",
-            data={"index_pair_id": "VerKit_UDP0", "kit_id": other.kit_id, "kit_fingerprint": other.fingerprint()},
+            data={"target_indexes": SHOWN_ONE, "index_pair_id": "VerKit_UDP0", "kit_id": other.kit_id, "kit_fingerprint": other.fingerprint()},
             headers=ORIGIN,
         )
 
@@ -208,7 +214,7 @@ class TestAssignToSelected:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/assign-index-to-selected",
-            data={"sample_ids": json.dumps(["s1"]), "index_pair_id": "VerKit_UDP1",
+            data={"target_indexes": SHOWN_ONE, "sample_ids": json.dumps(["s1"]), "index_pair_id": "VerKit_UDP1",
                   "kit_id": v2.kit_id, "kit_fingerprint": v2.fingerprint()},
             headers=ORIGIN,
         )
@@ -224,7 +230,7 @@ class TestAssignToSelected:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/assign-index-to-selected",
-            data={"sample_ids": json.dumps(["s1"]), "index_pair_id": "VerKit_UDP1"},
+            data={"target_indexes": SHOWN_ONE, "sample_ids": json.dumps(["s1"]), "index_pair_id": "VerKit_UDP1"},
             headers=ORIGIN,
         )
 
@@ -243,7 +249,7 @@ class TestAssignToSelected:
 
         resp = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/assign-index-to-selected",
-            data={"sample_ids": json.dumps(["s1"]), "index_id": "ComboKit_i7_A1",
+            data={"target_indexes": SHOWN_ONE, "sample_ids": json.dumps(["s1"]), "index_id": "ComboKit_i7_A1",
                   "index_type": "bogus", "kit_id": combo.kit_id, "kit_fingerprint": combo.fingerprint()},
             headers=ORIGIN,
         )
