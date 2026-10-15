@@ -132,6 +132,59 @@ class TestACycleChangeKeepsTypedOverrideCycles:
         assert resp.status_code == 200, resp.text
         assert _stored(ctx).samples[0].override_cycles == TYPED
 
+    def test_a_typed_value_on_a_sample_without_an_index_is_kept(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _make_run(ctx)
+        run = _stored(ctx)
+        run.add_sample(Sample(id="bare", sample_id="BARE", lanes=[1], override_cycles=TYPED))
+        ctx.run_repo.save(run)
+
+        resp = _post_cycles(logged_in_client, ctx, read2_cycles="101")
+
+        assert resp.status_code == 400
+        assert "1 sample(s)" in resp.text and "BARE" in resp.text
+        assert _stored(ctx).get_sample("bare").override_cycles == TYPED
+
+    def test_a_run_without_cycles_keeps_a_stored_value(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _make_run(ctx)
+        run = _stored(ctx)
+        run.run_cycles = None
+        run.samples[0].override_cycles = TYPED
+        ctx.run_repo.save(run)
+
+        resp = _post_cycles(logged_in_client, ctx)
+
+        assert resp.status_code == 400
+        run = _stored(ctx)
+        assert run.run_cycles is None
+        assert run.samples[0].override_cycles == TYPED
+
+    def test_the_refusal_is_plain_text_for_the_error_banner(self, logged_in_client, fresh_app):
+        # An HTTPException's answer is aimed at the banner (HX-Retarget), but
+        # the cycle fields' hx-select keeps only ".cycle-total" from it: the
+        # banner stayed empty. app.js writes a plain 400 into the banner.
+        _app, ctx, _db = fresh_app
+        _make_run(ctx)
+        _type(logged_in_client, ["s0"], TYPED)
+
+        resp = _post_cycles(logged_in_client, ctx, read2_cycles="101")
+
+        assert resp.status_code == 400
+        assert "HX-Retarget" not in resp.headers
+        assert resp.headers["content-type"].startswith("text/plain")
+
+    def test_a_refused_reagent_kit_says_which_kit_the_run_keeps(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _make_run(ctx)
+        _type(logged_in_client, ["s0"], TYPED)
+
+        resp = logged_in_client.post(f"/runs/{RUN_ID}/reagent-kit", headers=ORIGIN, data={
+            "reagent_cycles": "200", "run_version": run_version(ctx, RUN_ID)})
+
+        assert resp.status_code == 400
+        assert "The run keeps the 300-cycle kit." in resp.text
+
     def test_the_message_names_five_samples_and_counts_the_rest(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         _make_run(ctx, samples=7)

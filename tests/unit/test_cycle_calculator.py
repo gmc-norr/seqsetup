@@ -390,6 +390,10 @@ class TestSamplesWithTypedOverrideCycles:
         run = self._run(typed, auto)
         assert CycleCalculator.samples_with_typed_override_cycles(run) == [typed]
 
-    def test_a_run_without_cycles_has_none(self):
-        run = self._run(self._sample("U8Y143;I10;I10;Y151"), run_cycles=None)
-        assert CycleCalculator.samples_with_typed_override_cycles(run) == []
+    def test_without_cycles_every_stored_value_counts(self):
+        # Nothing to calculate from: a stored value cannot be told from a
+        # typed one, and the first cycles saved would replace it.
+        typed = self._sample("U8Y143;I10;I10;Y151")
+        auto = self._sample(None)
+        run = self._run(typed, auto, run_cycles=None)
+        assert CycleCalculator.samples_with_typed_override_cycles(run) == [typed]

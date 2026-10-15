@@ -448,12 +448,13 @@ class CycleCalculator:
     @classmethod
     def samples_with_typed_override_cycles(cls, run: SequencingRun) -> list[Sample]:
         """The samples whose stored Override Cycles is not the one calculated
-        from the sample and the run's cycles -- typed by hand. A
-        recalculation (``update_all_sample_override_cycles``) would replace
-        it with no word, so a cycle change is refused while any sample is
-        listed (found 2026-10-15). Read-only."""
+        from the sample and the run's cycles -- typed by hand, or left by a
+        cleared index. A recalculation (``update_all_sample_override_cycles``)
+        would replace it with no word, so a cycle change is refused while any
+        sample is listed (found 2026-10-15). A run with no cycles has nothing
+        to calculate from: every stored value is listed. Read-only."""
         if not run.run_cycles:
-            return []
+            return [sample for sample in run.samples if sample.override_cycles]
         return [
             sample for sample in run.samples
             if sample.override_cycles
