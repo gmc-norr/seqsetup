@@ -254,3 +254,95 @@ class TestTheSheetAfterARefusedSync:
 
         assert stored.status == RunStatus.READY, resp.text[:2000]
         assert ADAPTER in stored.generated_samplesheet_v2, stored.generated_samplesheet_v2
+
+
+class TestARefusedNewProfileIsNotFound:
+    """A refused file of a profile that was never stored is as if it were not
+    synced yet: the stored ones stay, and a run that needs it is refused at
+    Mark Ready, naming it (the fresh review of 06e765e, P3 6)."""
+
+    def test_mark_ready_says_the_profile_is_not_found(self, fresh_app, logged_in_client,
+                                                      monkeypatch):
+        _app, ctx, _db = fresh_app
+        _seed_instrument(ctx)
+        other = _profile("1.0.0", adapter=True).replace("GuardProfile", "OtherProfile")
+        ok, msg, _count = _fake_github(ctx, monkeypatch, EXACT_TESTS,
+                                       app_files={"other.yaml": other}).sync()
+        assert ok, msg
+
+        ok, msg, _count = _fake_github(ctx, monkeypatch, EXACT_TESTS, app_files={
+            "other.yaml": other, "guard.yaml": "broken: ["}).sync()
+        assert not ok, msg
+
+        run = _indexed_draft(ctx, "refused-new", test_id="WGS", test_version="1")
+        resp = mark_ready(logged_in_client, run.id, ORIGIN)
+
+        assert "GuardProfile" in resp.text and "not found" in resp.text, resp.text[:2000]
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.DRAFT
+
+
+class TestAProfileNameMustBeText:
+    """A profile name that YAML reads as a list or a number is refused and
+    named: it is how a reference finds the profile, and a stored list once
+    answered a reference to any name in it (the fresh review of 06e765e, P3 1)."""
+
+    @pytest.mark.parametrize("name", ["[GuardProfile, OtherProfile]", "{a: b}", "123"])
+    def test_sync_refuses_the_file(self, fresh_app, monkeypatch, name):
+        _app, ctx, _db = fresh_app
+        odd = OLD.replace("ApplicationProfileName: GuardProfile",
+                          f"ApplicationProfileName: {name}")
+
+        ok, msg, _count = _fake_github(ctx, monkeypatch, EXACT_TESTS,
+                                       app_files={"old.yaml": OLD, "odd.yaml": odd}).sync()
+
+        assert not ok, msg
+        assert "odd.yaml" in msg and "'ApplicationProfileName' must be text" in msg, msg
+        assert ctx.app_profile_repo.list_all() == []
+        assert [p.test_type for p in ctx.test_profile_repo.list_all()] == ["WGS"]
+
+    def test_a_quoted_number_is_text(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        quoted = OLD.replace("ApplicationProfileName: GuardProfile",
+                             'ApplicationProfileName: "123"')
+
+        ok, msg, _count = _fake_github(ctx, monkeypatch, EXACT_TESTS,
+                                       app_files={"old.yaml": quoted}).sync()
+
+        assert ok, msg
+        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["123"]
+
+
+class TestTheRefusalMessage:
+    """What the sync says when application profiles are refused (the fresh
+    review of 06e765e, P3 4 and 5)."""
+
+    def test_a_file_that_is_not_a_mapping_says_so(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+
+        ok, msg, _count = _fake_github(ctx, monkeypatch, EXACT_TESTS, app_files={
+            "old.yaml": OLD, "list.yaml": "- GuardProfile\n- 1.0.0\n"}).sync()
+
+        assert not ok
+        assert "list.yaml: is not a profile: YAML read it as a list, not a mapping" in msg, msg
+
+    def test_nothing_synced_says_no_synced_part(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+
+        ok, msg, _count = _fake_github(ctx, monkeypatch, {**EXACT_TESTS, "Empty.yaml": ""},
+                                       app_files={"old.yaml": OLD, "new.yaml": ""}).sync()
+
+        assert not ok
+        assert "Synced" not in msg, msg
+        assert msg.endswith("."), msg
+
+    def test_a_pause_left_by_an_earlier_sync_says_fix_the_files(self, fresh_app, monkeypatch):
+        from seqsetup.utils.clock import utcnow
+        _app, ctx, _db = fresh_app
+        _sync_both_versions(ctx, monkeypatch)
+        ctx.profile_sync_config_repo.mark_writing(utcnow(), "application profiles")
+
+        ok, msg, _count = _sync_again(ctx, monkeypatch, {"old.yaml": OLD, "new.yaml": ""})
+
+        assert not ok
+        assert "Mark Ready stays paused" in msg, msg
+        assert "Fix the refused files, then sync again." in msg, msg

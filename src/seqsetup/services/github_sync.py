@@ -734,6 +734,12 @@ class GitHubSyncService:
                     try:
                         content = self._fetch_file_content(download_url)
                         yaml_data = safe_load_strict(content)
+                        if yaml_data and not isinstance(yaml_data, dict):
+                            kind = "a list" if isinstance(yaml_data, list) else (
+                                f"{type(yaml_data).__name__} {str(yaml_data)[:40]!r}")
+                            raise ValueError(
+                                f"is not a profile: YAML read it as {kind}, not a mapping "
+                                "of fields")
                         if yaml_data:
                             profile = parser(yaml_data, item_name)
                             profiles.append(profile)
@@ -968,9 +974,10 @@ class GitHubSyncService:
         """Each application profile name and version that is in more than one
         file is logged and added to ``refused``: a test's reference would get
         whichever of the files was stored first (outside review of f490536,
-        F10). Versions are compared as versions, so "1.0" and "1.0.0", which
-        every reference matches alike, are one; the profile checks have made
-        sure each is one. ``paths`` are the files' paths in the repository,
+        F10). Versions are compared as versions, so "1.0" and "1.0.0" are one:
+        a range such as "~=1.0" matches both, while an exact reference finds
+        only the one spelled as it is. The profile checks have made sure each
+        version is a valid one. ``paths`` are the files' paths in the repository,
         in step with ``app_profiles``, as for ``_refuse_repeated_test_versions``."""
         files: dict[tuple[str, Version], list[tuple[str, str]]] = {}
         for profile, where in zip(app_profiles, paths, strict=True):

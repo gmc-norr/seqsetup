@@ -549,8 +549,11 @@ Application Profile Validation
    As for test profiles, the message also names every stored profile and
    version this sync did not read, since a version deleted from the
    repository on purpose is kept too. Without this, a refused newest file
-   would quietly make ``~=1.0.0`` pick an older version. Fix the file and
-   sync again.
+   would quietly replace a stored newer version, and ``~=1.0.0`` would pick
+   an older one. A refused file of a version that was never stored is as if
+   it were not synced yet: until it is fixed, ``~=1.0.0`` still picks the
+   newest stored version, and only the **Config Sync** page shows the
+   refusal. Fix the file and sync again.
 
    An application profile file is any file in the application profile
    folder whose name ends in ``.yaml`` or ``.yml``, in any case.

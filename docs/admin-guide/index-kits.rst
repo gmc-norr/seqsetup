@@ -68,8 +68,8 @@ Before a kit is saved, SeqSetup checks, in order:
    OverrideCycles back to the index length, and then the run passes (see
    :doc:`/user-guide/override-cycles`). A slot with no indexes
    is not checked. The same check runs on a kit synced from GitHub (see
-   :doc:`profiles`), which is skipped, with the reason in the log, rather
-   than stored.
+   :doc:`profiles`): a kit file that fails it is refused and not stored,
+   and the sync names the file and why.
 5. **Name + version clash** -- a kit with the same name and version already
    present is rejected rather than silently overwritten. A kit deleted
    and then uploaded again under its name and version is stored, even
