@@ -163,12 +163,14 @@
     {%- if show_bulk_actions %}
         <td class="lane-cell"><span class="lanes-display">{{ sample.lanes_display }}</span></td>
         {%- if editable %}
-            {#- Each box saves on its own and its answer replaces that box
-                only (hx-select picks it out of the row the route renders),
-                so what is being typed in the next box, and the row's tick,
-                stay; the saves of one row go one after another (hx-sync).
-                Replacing the whole row once threw away a value typed in the
-                next box while a save was on its way (outside review of
+            {#- Each box saves on its own and its answer replaces nothing
+                (hx-swap none): app.js puts the stored value in the box while
+                it still shows what was sent, so what is being typed there or
+                in the next box, and the row's tick, stay; the saves of one
+                row go one after another (hx-sync). A save the queue loses to
+                a redraw of the row is named in the banner (data-row-setting
+                names the box). Replacing the row, or the box, once threw away
+                a value typed while a save was on its way (outside review of
                 f490536, F3). #}
             <td class="override-cell">
                 <input type="text" name="override_cycles"
@@ -179,9 +181,9 @@
                        title="Index 2 in reading order: the index first, then masked cycles (for example I8N2)"
                        class="override-cycles-input"
                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
+                       data-row-setting="Override Cycles"
                        hx-target="this"
-                       hx-select="#override-cycles-{{ sample.id }}"
-                       hx-swap="outerHTML"
+                       hx-swap="none"
                        hx-sync="closest tr:queue all"
                        hx-trigger="change"
                        hx-include="this">
@@ -193,9 +195,9 @@
                        placeholder="-"
                        class="mismatch-input"
                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
+                       data-row-setting="MM i7"
                        hx-target="this"
-                       hx-select="#mismatch-i7-{{ sample.id }}"
-                       hx-swap="outerHTML"
+                       hx-swap="none"
                        hx-sync="closest tr:queue all"
                        hx-trigger="change"
                        hx-include="this">
@@ -207,9 +209,9 @@
                        placeholder="-"
                        class="mismatch-input"
                        hx-post="/runs/{{ run_id }}/samples/{{ sample.id }}/settings"
+                       data-row-setting="MM i5"
                        hx-target="this"
-                       hx-select="#mismatch-i5-{{ sample.id }}"
-                       hx-swap="outerHTML"
+                       hx-swap="none"
                        hx-sync="closest tr:queue all"
                        hx-trigger="change"
                        hx-include="this">

@@ -1,7 +1,8 @@
 """An error the server aims at an error slot carries HX-Reselect "unset", so
-an hx-select on the element that asked cannot pick it empty (outside review
-of f490536, F3: a sample row's settings box picks itself out of the row it
-gets back, and its refusals once showed an empty banner)."""
+an hx-select on the element that asked (the Check's Set test forms, the
+cycle form) cannot pick it empty (outside review of f490536, F3: a sample
+row's settings box that picked itself out of its row showed its refusals as
+an empty banner)."""
 
 import asyncio
 

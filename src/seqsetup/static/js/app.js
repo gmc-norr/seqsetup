@@ -861,6 +861,89 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
     });
 });
 
+// The Override Cycles and mismatch boxes of a sample row (data-row-setting,
+// wizard/_sample_row.html) save on change, and their answer replaces nothing
+// (hx-swap none): the box takes the value the server stored only while it
+// still shows what was sent, so a correction typed while the save was on its
+// way stays, and is sent next from the row's queue (hx-sync). A redraw of the
+// row (an index drop or clear, a bulk Apply, the Check's Set test) still
+// replaces the boxes, and htmx drops a save waiting in a replaced row's queue
+// without a word: the banner names it. An answer that comes back for a
+// replaced box, having stored another value than the redrawn row shows, asks
+// for a reload. (Outside review of f490536, F3.) A refused save leaves what
+// was typed on screen, as every refused edit does.
+const unsentRowSettings = new Map();  // box -> changes not yet sent
+
+function rowSettingName(box) {
+    const row = box.closest('tr');
+    const cell = row && row.querySelector('.sample-id-cell');
+    const sample = cell ? cell.title : '';  // the text may carry the Check's badge
+    return `${box.dataset.rowSetting} of ${sample || 'a sample'}`;
+}
+
+function quotedSetting(value) {
+    return value === '' ? 'empty' : `"${value}"`;
+}
+
+// Added to what the banner says, not in place of it, and no later success
+// clears it: it stays until the next failure.
+function noteRowSettingProblem(message) {
+    const banner = document.getElementById('error-banner');
+    if (banner) {
+        const div = document.createElement('div');
+        div.className = 'error-message';
+        div.textContent = message;
+        banner.appendChild(div);
+    }
+    showErrorToast(message);
+    errorSource = null;
+}
+
+document.body.addEventListener('htmx:trigger', function(event) {
+    const box = event.target;
+    if (box instanceof Element && box.matches('[data-row-setting]')) {
+        unsentRowSettings.set(box, (unsentRowSettings.get(box) || 0) + 1);
+    }
+});
+
+new MutationObserver(function() {
+    for (const [box] of unsentRowSettings) {
+        if (box.isConnected) continue;
+        unsentRowSettings.delete(box);
+        noteRowSettingProblem(`${rowSettingName(box)}: your change to ${quotedSetting(box.value)} `
+            + 'was not saved, because the row was redrawn before it was sent. Enter it again.');
+    }
+}).observe(document.body, {childList: true, subtree: true});
+
+document.body.addEventListener('htmx:beforeSend', function(event) {
+    const box = event.detail.elt;
+    const xhr = event.detail.xhr;
+    if (!xhr || !(box instanceof Element) || !box.matches('[data-row-setting]')) return;
+    const unsent = (unsentRowSettings.get(box) || 0) - 1;
+    if (unsent > 0) unsentRowSettings.set(box, unsent);
+    else unsentRowSettings.delete(box);
+    const sent = event.detail.requestConfig.formData.get(box.name);
+    xhr.addEventListener('load', function() {
+        if (xhr.status < 200 || xhr.status >= 300) return;
+        const answer = document.createElement('template');
+        answer.innerHTML = xhr.responseText || '';
+        const answered = answer.content.getElementById(box.id);
+        if (!answered) return;
+        const stored = answered.getAttribute('value') || '';
+        if (box.isConnected) {
+            box.defaultValue = stored;
+            if (box.value === sent) box.value = stored;
+            return;
+        }
+        const shown = document.getElementById(box.id);
+        if (shown && shown.defaultValue !== stored) {
+            noteRowSettingProblem(`${rowSettingName(box)} was saved as ${quotedSetting(stored)} `
+                + 'while its row was being redrawn, and the row may show an older value: '
+                + 'reload the page.');
+        }
+    });
+});
+
 document.addEventListener('input', function(event) {
     const filter = event.target.closest('.index-filter-input');
     if (filter) filterIndexesWizard(filter.value);

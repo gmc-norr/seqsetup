@@ -52,8 +52,10 @@ def _is_api_path(request: Request) -> bool:
 
 # HX-Reselect "unset", as in middleware._banner: an hx-select on the element
 # that sent the request would otherwise pick a part the error lacks and show
-# nothing. A sample row's settings box picks itself out of the row it gets
-# back (outside review of f490536, F3), and its refusals went missing.
+# nothing. The Check's Set test forms pick #sample-section out of what they
+# get back, the cycle form .cycle-total (outside review of f490536, F3: a
+# sample row's settings box that picked itself out of its row showed its
+# refusals as an empty banner).
 _ERROR_SELECT = "unset"
 
 

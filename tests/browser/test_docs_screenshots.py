@@ -329,13 +329,13 @@ def test_samples_row_edit(demo_page, base_url, demo):
     box = row.locator('input[name="override_cycles"]')
     box.fill("Y151;I8;I8;Y151")
     box.dispatch_event("change")
-    # The box is swapped outerHTML by POST .../settings; wait for the
-    # saved value to actually be on the page, not the pre-swap input.
+    # app.js writes the value POST .../settings stored into the box's value
+    # attribute; wait for it, not the typed value.
     page.wait_for_selector(
         'tr.sample-row:has-text("SAMPLE-A01") '
         'input[name="override_cycles"][value="Y151;I8;I8;Y151"]'
     )
-    # The swap keeps focus in the box; a person would have moved on.
+    # The save keeps focus in the box; a person would have moved on.
     page.evaluate("document.activeElement && document.activeElement.blur()")
     row = page.locator("tr.sample-row").filter(has_text="SAMPLE-A01")
     # region=row alone clipped to a 65px sliver -- half of the row above and
