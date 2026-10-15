@@ -23,13 +23,14 @@ it never changes it.
 
 .. note::
    Saving as a template captures the run's setup only: instrument
-   platform, flowcell, reagent cycles, read and index cycle lengths,
-   barcode mismatch tolerances, adapter behavior and the
-   FASTQ/lane-splitting switches. It never captures the run's samples or
-   their indexes, so a run made from a template starts with no samples,
-   however many the source run had. A request that asks to save samples
-   in a template is refused, and nothing is saved: *"A template holds a
-   run's setup only, not its samples. Nothing was saved."*
+   platform, flowcell, reagent cycles, i5 workflow, read and index cycle
+   lengths, barcode mismatch tolerances, adapter behavior, the
+   FASTQ/lane-splitting switches and the run description. It never
+   captures the run's samples, their indexes or its analyses, so a run
+   made from a template saved here starts with no samples, however many
+   the source run had. A request that asks to save samples in a template
+   is refused, and nothing is saved: *"A template holds a run's setup
+   only, not its samples. Nothing was saved."*
 
 Managing templates
 -------------------
@@ -74,4 +75,7 @@ template exists; see :doc:`run-setup`.
    reagent-cycle count is no longer offered for that instrument, starting
    a run from it is refused with an error message naming what is missing,
    and nothing is created. This does not check any index kit: a template
-   saved here holds no samples, so it names no kit.
+   saved here holds no samples, so it names no kit. A template stored
+   with samples -- only a request made outside these pages could ever
+   store one -- still copies them, with the index sequences it holds and
+   no kit check, into each run made from it.

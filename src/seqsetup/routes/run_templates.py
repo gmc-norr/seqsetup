@@ -86,7 +86,8 @@ async def duplicate_run(
 
 
 def _config_from_run(run, name: str, description: str, scaffold_samples) -> RunTemplate:
-    """Build a RunTemplate capturing a run's config + chosen scaffold samples.
+    """Build a RunTemplate capturing a run's config + the scaffold samples given
+    (save_as_template gives none: a template holds a run's setup only).
 
     Analyses are filtered to the scaffold samples (and emptied analyses dropped)
     so the stored template never references a sample that isn't in its scaffold —
@@ -127,9 +128,12 @@ async def save_as_template(
         return Response("Template name is required", status_code=400)
     description = sanitize_string(form.get("description", ""), 4096)
 
+    values = form.getlist("scaffold_sample_ids")
+    if len(values) > 1:
+        return Response("Invalid scaffold_sample_ids", status_code=400)
     try:
-        wanted_ids = json.loads(form.get("scaffold_sample_ids", "[]"))
-    except (ValueError, TypeError):
+        wanted_ids = json.loads(values[0] if values else "[]")
+    except (ValueError, TypeError, RecursionError):
         return Response("Invalid scaffold_sample_ids", status_code=400)
     if not isinstance(wanted_ids, list):
         return Response("Invalid scaffold_sample_ids", status_code=400)

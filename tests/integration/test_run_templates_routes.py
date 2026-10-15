@@ -140,6 +140,38 @@ class TestATemplateHoldsNoSamples:
         assert (r.status_code, r.text) == (400, "Invalid scaffold_sample_ids")
         assert ctx.run_template_repo.list_all() == []
 
+    @pytest.mark.parametrize("named_first", [False, True],
+                             ids=["named list last", "named list first"])
+    def test_the_sample_list_sent_twice_is_refused(
+            self, logged_in_client, fresh_app, named_first):
+        """Review P3 (2026-10-15): the route read only the last of two
+        values, so a named list followed by "[]" saved as if none was sent."""
+        _app, ctx, _db = fresh_app
+        run_id, sample_uuid = self._run_with_a_sample(logged_in_client, ctx)
+        named = json.dumps([sample_uuid])
+
+        r = self._save(logged_in_client, run_id,
+                       scaffold_sample_ids=[named, "[]"] if named_first else ["[]", named])
+
+        assert (r.status_code, r.text) == (400, "Invalid scaffold_sample_ids")
+        assert ctx.run_template_repo.list_all() == []
+
+    def test_a_sample_list_nested_too_deep_to_read_is_refused(
+            self, logged_in_client, fresh_app):
+        """Review P3 (2026-10-15): Python's json gives up on a list nested
+        100,000 deep with a RecursionError, which answered 500."""
+        _app, ctx, _db = fresh_app
+        run_id, _sample_uuid = self._run_with_a_sample(logged_in_client, ctx)
+        deep = "[" * 100_000 + "]" * 100_000
+
+        r = logged_in_client.post(f"/runs/{run_id}/save-as-template",
+                                  data={"name": "WGS Standard", "description": ""},
+                                  files={"scaffold_sample_ids": (None, deep)},
+                                  headers=_origin(), follow_redirects=False)
+
+        assert (r.status_code, r.text) == (400, "Invalid scaffold_sample_ids")
+        assert ctx.run_template_repo.list_all() == []
+
     @pytest.mark.parametrize("fields", [{"scaffold_sample_ids": "[]"}, {}],
                              ids=["empty list, as the page sends", "no list"])
     def test_the_setup_alone_is_saved(self, logged_in_client, fresh_app, fields):
@@ -295,13 +327,18 @@ class TestCreateFromTemplate:
         """A template stored with a sample, as one saved before a template
         held the setup only (TestATemplateHoldsNoSamples): the route no
         longer makes one, and such a template still makes its run."""
+        from seqsetup.models.index import Index, IndexPair, IndexType
         from seqsetup.models.sample import Sample
         run_id = _create_run(logged_in_client)
         run = ctx.run_repo.get_by_id(run_id)
+        pair = IndexPair(id="OldKit_P1", name="P1",
+                         index1=Index("P1", "ACGTACGT", IndexType.I7),
+                         index2=Index("P1", "TTGGCCAA", IndexType.I5))
         template = RunTemplate(name="WithCtrl", instrument_platform=run.instrument_platform,
                                flowcell_type=run.flowcell_type,
                                reagent_cycles=run.reagent_cycles, run_cycles=run.run_cycles,
-                               scaffold_samples=[Sample(sample_id="CTRL_POS")])
+                               scaffold_samples=[Sample(sample_id="CTRL_POS", lanes=[2],
+                                                        index_pair=pair)])
         ctx.run_template_repo.save(template)
         return template.id
 
@@ -319,7 +356,10 @@ class TestCreateFromTemplate:
         new_run = ctx.run_repo.get_by_id(new_id)
         assert new_run.status == RunStatus.DRAFT
         assert new_run.run_name == "WithCtrl"
-        assert [s.sample_id for s in new_run.samples] == ["CTRL_POS"]
+        # The sample keeps exactly the indexes and lanes it was stored with
+        # (review P3, 2026-10-15: only its ID was checked).
+        assert [(s.sample_id, s.index1_sequence, s.index2_sequence, s.lanes)
+                for s in new_run.samples] == [("CTRL_POS", "ACGTACGT", "TTGGCCAA", [2])]
         assert new_run.generated_samplesheet_v2 is None
 
     def test_from_template_refuses_stale_reference(

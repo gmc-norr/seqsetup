@@ -19,7 +19,11 @@ game, and is read the way ``app.js`` reads it -- a chip's
 because that is the input the app gets from a browser.
 
 A new way to set a sample's index or lane must be added to ``_ASSIGN_PATHS``
-or ``_LANE_PATHS`` below, or the net will not cover it.
+or ``_LANE_PATHS`` below, or the net will not cover it. Templates are not in
+them: a template saved through the app holds no samples
+(``tests/integration/test_run_templates_routes.py``), and one stored with
+samples before copies them through the same ``build_draft_run`` that "a copy
+of the run" drives.
 
 Seeds: a few fixed ones by default. ``SEQSETUP_SAFETY_NET_SEEDS=1-200`` (or a
 comma-separated list) runs a soak instead; see
