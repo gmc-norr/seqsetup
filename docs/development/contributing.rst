@@ -581,18 +581,21 @@ The Index Safety Net
 ``tests/browser/test_index_safety_net.py`` prove that no sample ends up with
 another sample's index, or the wrong lane, in a stored Sample Sheet. The
 integration net builds a run of 40 to 96 samples through the real routes by
-every path the app has for setting a sample's index or its lanes -- a paste
-with index columns, a LIMS worklist import on picked lanes, a sample added by
-hand, one drop, a drop on ticked rows, several indexes dropped at once in a
-shuffled order, a drop naming one of two kit versions by its fingerprint,
-clear and drop again, a drop onto an assigned sample, Fill in order from a
-non-default start, ``set-lanes``, and the edits that must move no index --
-marks the run Ready, copies it and marks the copy Ready too, then reads both
-runs' stored sheets back through the Bearer API and compares every row
-(Sample_ID, Index, Index2, Lane) to a map the test keeps itself
-(``tests/index_safety_net.py``). The browser net does the smaller version of
-the same thing on one real page, so ``app.js`` is in the loop. Both run with
-the normal suites::
+the paths listed in ``_ASSIGN_PATHS`` and ``_LANE_PATHS`` -- a paste with
+index columns (typed and uploaded), a LIMS worklist import on picked lanes, a
+sample added by hand, one drop, a single index onto a sample that already has
+a pair, a drop on ticked rows, several indexes dropped at once in a shuffled
+order (onto empty rows and onto filled ones), a drop naming one of two kit
+versions by its fingerprint, clear and drop again (whole and half), a drop
+onto an assigned sample, Fill in order from a non-default start,
+``set-lanes``, and the edits that must move no index -- marks the run Ready,
+edits one index and marks it Ready again, copies it and marks the copy Ready
+too, then reads every run's stored sheets back through the Bearer API and
+compares every row (Sample_ID, Index, Index2, Lane) to a map the test keeps
+itself (``tests/index_safety_net.py``). The browser net does the smaller
+version of the same thing on one real page, so ``app.js`` is in the loop.
+Those two lists are what the net covers, not everything the app can do: a
+path it does not name is not covered. Both nets run with the normal suites::
 
    pixi run test tests/integration/test_index_safety_net.py
    pixi run smoke-browser tests/browser/test_index_safety_net.py
