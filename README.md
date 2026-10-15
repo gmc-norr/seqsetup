@@ -2,7 +2,7 @@
 
 A web application for configuring Illumina DNA sequencing runs. SeqSetup manages sample information, index assignment, and validation, and generates Illumina Sample Sheet v2 files and associated metadata for instruments including NovaSeq X, MiSeq i100, NextSeq 1000/2000, and others.
 
-> **Not a CE-marked medical device.** SeqSetup is free, open-source software. If you use it for patient care, your organisation is responsible for validating it and for how you use it, under your own rules.
+> **Use at your own risk.** SeqSetup is provided as is, without warranty of any kind. Its authors and the organisations they work for are not responsible for any harm, loss or damage that comes from using it. See the [LICENSE](LICENSE).
 
 ## Prerequisites
 
