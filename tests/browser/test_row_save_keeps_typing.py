@@ -736,3 +736,110 @@ class TestAWaitingActionWhenASaveDoesNotLand:
 
         expect(page.locator("#run-status-bar")).to_contain_text("Nobody is editing this run")
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 2
+
+
+@pytest.mark.browser
+class TestWhatTheGivenUpActionSaysAndLocks:
+    """A second fresh review, of 0aba74b, found three things wrong with
+    giving the action up: the not-stored note was one page-wide flag, so a
+    refusal the person put right *while the click waited* still gave the
+    click up and said a change was not saved when their value was stored;
+    the note stayed on screen through a later action, so it could be read
+    beside Status: Ready; and the other action's button stayed clickable
+    while one waited, so Done editing and Mark Ready could both fire and
+    the loser was refused 409 with its message taken away by the winner's
+    redirect."""
+
+    def _type_a_refused_mismatch(self, page, base_url, run_id, slow_next_load):
+        _open(page, base_url, run_id)
+        _row(page, run_id).locator('input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("5")             # only 0, 1 or 2 are accepted
+        slow_next_load["armed"] = True      # the refusal is held, so the click waits
+
+    def test_a_refusal_put_right_while_the_click_waits_lets_it_go(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+        page = logged_in_page
+        self._type_a_refused_mismatch(page, base_url, mutable_run_id, slow_next_load)
+        page.get_by_role("button", name="Done editing").click()   # waits
+        assert slow_next_load["holding"].wait(5), "the refusal never reached its load"
+
+        i7 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index1"]')
+        i7.click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("2")             # put right while the click waits
+        with page.expect_navigation():
+            page.keyboard.press("Tab")
+        page.wait_for_load_state("networkidle")
+
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 2
+        expect(page.locator("#run-status-bar")).to_contain_text("Nobody is editing this run")
+        expect(page.locator("#row-setting-notes")).not_to_contain_text("was not done")
+
+    def test_the_given_up_note_names_the_setting_and_the_sample(
+            self, logged_in_page, base_url, mutable_run_id, slow_next_load):
+        page = logged_in_page
+        self._type_a_refused_mismatch(page, base_url, mutable_run_id, slow_next_load)
+        with page.expect_response(lambda r: _a_settings_answer(r) and r.status == 400):
+            page.get_by_role("button", name="Done editing").click()
+        _handled(page)
+
+        expect(page.locator("#row-setting-notes")).to_contain_text(
+            "MM i7 of MUT-01 was not saved")
+
+    def test_a_given_up_note_goes_when_the_next_action_is_clicked(
+            self, logged_in_page, base_url, mutable_run_id, slow_next_load):
+        """The note must not be left to be read beside a Ready run: the next
+        action answers it, whether that action waits or goes straight away."""
+        page = logged_in_page
+        self._type_a_refused_mismatch(page, base_url, mutable_run_id, slow_next_load)
+        with page.expect_response(lambda r: _a_settings_answer(r) and r.status == 400):
+            page.get_by_role("button", name="Done editing").click()
+        _handled(page)
+        expect(page.locator("#row-setting-notes")).to_contain_text("was not done")
+
+        with page.expect_response(lambda r: r.url.endswith("/status/ready")):
+            page.get_by_role("button", name="Mark Ready", exact=True).click()
+        _handled(page)
+
+        expect(page.locator("#row-setting-notes")).not_to_contain_text("was not done")
+
+    def test_the_other_action_cannot_be_clicked_while_one_waits(
+            self, logged_in_page, base_url, mutable_run_id, slow_first_save):
+        page = logged_in_page
+        _open(page, base_url, mutable_run_id)
+        _row(page, mutable_run_id).locator(
+            'input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("0")
+        page.keyboard.press("Tab")          # the save starts (held 0.8 s)
+
+        done = page.get_by_role("button", name="Done editing")
+        ready = page.get_by_role("button", name="Mark Ready", exact=True)
+        with page.expect_navigation():
+            done.click()
+            expect(ready).to_be_disabled()
+            expect(done).to_be_disabled()
+        page.wait_for_load_state("networkidle")
+
+    def test_both_buttons_work_again_after_a_refused_mark_ready(
+            self, logged_in_page, base_url, mutable_run_id, slow_first_save):
+        """Mark Ready is refused here (the run has Check errors), and its
+        answer retargets #ready-message, so #run-status-bar is NOT replaced:
+        whatever was disabled while the click waited must be undone before
+        the request goes, or htmx leaves the button disabled for good."""
+        page = logged_in_page
+        _open(page, base_url, mutable_run_id)
+        _row(page, mutable_run_id).locator(
+            'input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("0")
+        page.keyboard.press("Tab")          # the save starts (held 0.8 s)
+
+        with page.expect_response(lambda r: r.url.endswith("/status/ready")):
+            page.get_by_role("button", name="Mark Ready", exact=True).click()
+        _handled(page)
+
+        expect(page.locator("#ready-message")).to_contain_text("Cannot mark ready")
+        expect(page.get_by_role("button", name="Mark Ready", exact=True)).to_be_enabled()
+        expect(page.get_by_role("button", name="Done editing")).to_be_enabled()

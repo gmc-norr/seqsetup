@@ -296,20 +296,21 @@ rejected and nothing is saved.
 
 You can go on typing while a change saves: the changes of one row are sent
 one after another, and a field keeps what you type in it meanwhile.
-**Done editing** and **Mark Ready** wait until they are saved -- their
-button greys out while they wait -- and leaving the page while a change has
-not even been sent yet asks first. If the row is redrawn before a change of yours was sent -- an index
+**Done editing** and **Mark Ready** wait until they are saved -- while
+either waits, both buttons grey out, because they cannot both be done --
+and leaving the page while a change has not even been sent yet asks first. If the row is redrawn before a change of yours was sent -- an index
 dropped on it or cleared, a bulk **Apply** -- a note under the banner names
 the change that was not saved; enter it again. If a note says the row may
 show an older value, reload the page.
 
 A change one of them waited for that was *not* saved -- refused, or lost to
 a redraw -- stops the click: **Done editing** or **Mark Ready** is not done
-at all, and a note says so (*"Mark Ready was not done, because a change on a
-sample row was not saved. Put it right and click again."*). Put the change
-right and click again. A save that takes more than fifteen seconds gives the
-click up the same way, and the note asks you to reload the page to see what
-was stored.
+at all, and a note names the setting and the sample (*"Mark Ready was not
+done, because MM i7 of P24-0183 was not saved. Put it right, or click again
+to go on without it."*). Putting the change right while the click waits lets
+it go through. The note is said once: clicking again goes on without that
+change. A save that takes more than fifteen seconds gives the click up the
+same way, and that note asks you to reload the page to see what was stored.
 
 A sample ID is never made only of zeros: adding a sample called ``0`` or
 ``00`` is refused (*"A sample ID made only of zeros is not a sample ID --

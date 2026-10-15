@@ -884,10 +884,20 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
 // with the change never applied. While an action waits, its button is
 // disabled and carries htmx-request, so the click is not invisible.
 // (Fresh review of b425b0b, P1-1, P2-1, P2-2.)
+//
+// What was not stored is kept per box, not as one flag for the page: a
+// refusal the person puts right while the click waits lets the click go,
+// instead of telling them a change was not saved when their value is
+// stored. While an action waits, every action's button on the page is
+// disabled, because Done editing and Mark Ready are mutually exclusive and
+// both firing left the loser refused 409 with its message taken away by
+// the winner's redirect. A note is answered by the next click, so it is
+// never left to be read beside a Ready run. (Second fresh review of
+// 0aba74b, P2-1, P2-2, P2-3.)
 const unsentRowSettings = new Map();  // box -> changes not yet sent
 const rowSettingSaves = new Set();     // XHRs sent and not yet answered
 const afterRowSaves = [];              // [element, issueRequest, timer] waiting
-let rowSaveNotStored = false;          // a change of theirs was not stored
+const rowSavesNotStored = new Map();    // box id -> name, changes not stored
 // A save whose answer never comes would hold the click for ever, so a
 // waiting action gives up after this long and says so. The browser tests
 // shorten it.
@@ -960,16 +970,29 @@ function noteRowActionProblem(message) {
 
 function showWaitingForRowSaves(element, waiting) {
     element.classList.toggle('htmx-request', waiting);
-    for (const button of element.querySelectorAll('button')) button.disabled = waiting;
+}
+
+// Done editing and Mark Ready are mutually exclusive, so while either waits
+// neither may be clicked. Undone before the request goes: htmx re-enables
+// only a button it disabled itself, and skips one that is already disabled.
+function lockRowSaveActions(locked) {
+    for (const form of document.querySelectorAll('[data-after-row-saves]')) {
+        for (const button of form.querySelectorAll('button')) button.disabled = locked;
+    }
+}
+
+function unwaitRowSaveActions(waiters) {
+    for (const [element, , timer] of waiters) {
+        clearTimeout(timer);               // never leave a timer to drop a later click
+        showWaitingForRowSaves(element, false);
+    }
+    lockRowSaveActions(false);
 }
 
 function dropWhatWaitsForRowSaves(why) {
     const dropped = afterRowSaves.splice(0);
     if (dropped.length === 0) return;
-    for (const [element, , timer] of dropped) {
-        clearTimeout(timer);
-        if (element.isConnected) showWaitingForRowSaves(element, false);
-    }
+    unwaitRowSaveActions(dropped);
     const names = dropped.map(([element]) => rowSaveActionName(element));
     noteRowActionProblem(`${names.join(' and ')} `
         + `${names.length > 1 ? 'were' : 'was'} not done, because ${why}`);
@@ -978,16 +1001,18 @@ function dropWhatWaitsForRowSaves(why) {
 function sendWhatWaitsForRowSaves() {
     if (unsentRowSaves() > 0 || rowSettingSaves.size > 0) return;
     if (afterRowSaves.length === 0) return;
-    if (rowSaveNotStored) {
-        rowSaveNotStored = false;
-        dropWhatWaitsForRowSaves('a change on a sample row was not saved. '
-            + 'Put it right and click again.');
+    if (rowSavesNotStored.size > 0) {
+        const names = [...rowSavesNotStored.values()];
+        rowSavesNotStored.clear();         // said once: clicking again goes on
+        dropWhatWaitsForRowSaves(`${names.join(', ')} `
+            + `${names.length > 1 ? 'were' : 'was'} not saved. Put it right, or `
+            + 'click again to go on without it.');
         return;
     }
-    for (const [element, issueRequest, timer] of afterRowSaves.splice(0)) {
-        clearTimeout(timer);
+    const waiters = afterRowSaves.splice(0);
+    unwaitRowSaveActions(waiters);         // before the request: see lockRowSaveActions
+    for (const [element, issueRequest] of waiters) {
         if (!element.isConnected) continue;
-        showWaitingForRowSaves(element, false);
         // true means "do not ask again", which skips hx-confirm as well as
         // htmx:confirm: do not put hx-confirm and data-after-row-saves on
         // one element, or the question would be skipped here.
@@ -1005,12 +1030,12 @@ document.body.addEventListener('htmx:trigger', function(event) {
 document.body.addEventListener('htmx:confirm', function(event) {
     const element = event.target;
     if (!(element instanceof Element) || !element.matches('[data-after-row-saves]')) return;
+    clearRowActionNotes();             // this click answers the last note
     if (unsentRowSaves() === 0 && rowSettingSaves.size === 0) return;
     event.preventDefault();
     if (afterRowSaves.some(([waiting]) => waiting === element)) return;
     if (afterRowSaves.length === 0) {
-        rowSaveNotStored = false;      // only what happens from now counts
-        clearRowActionNotes();
+        rowSavesNotStored.clear();     // only what happens from now counts
     }
     const timer = setTimeout(function() {
         dropWhatWaitsForRowSaves('a change on a sample row is taking too long to save. '
@@ -1018,6 +1043,7 @@ document.body.addEventListener('htmx:confirm', function(event) {
     }, window.rowSaveWaitMs);
     afterRowSaves.push([element, event.detail.issueRequest, timer]);
     showWaitingForRowSaves(element, true);
+    lockRowSaveActions(true);
 });
 
 window.addEventListener('beforeunload', function(event) {
@@ -1031,11 +1057,12 @@ new MutationObserver(function() {
     for (const [box] of unsentRowSettings) {
         if (box.isConnected) continue;
         unsentRowSettings.delete(box);
-        rowSaveNotStored = true;
+        rowSavesNotStored.set(box.id, rowSettingName(box));
         noteRowSettingProblem(box, `${rowSettingName(box)}: your change to ${quotedSetting(box.value)} `
             + 'was not saved, because the row was redrawn before it was sent. Enter it again.');
     }
     sendWhatWaitsForRowSaves();
+    if (afterRowSaves.length > 0) lockRowSaveActions(true);  // a redraw may have undone it
 }).observe(document.body, {childList: true, subtree: true});
 
 document.body.addEventListener('htmx:beforeSend', function(event) {
@@ -1049,6 +1076,7 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
     const sent = event.detail.requestConfig.formData.get(box.name);
     xhr.addEventListener('load', function() {
         if (xhr.status < 200 || xhr.status >= 300) return;
+        rowSavesNotStored.delete(box.id);   // this value is stored
         const answer = document.createElement('template');
         answer.innerHTML = xhr.responseText || '';
         const answered = answer.content.getElementById(box.id);
@@ -1069,7 +1097,9 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
     });
     xhr.addEventListener('loadend', function() {
         rowSettingSaves.delete(xhr);
-        if (xhr.status < 200 || xhr.status >= 300) rowSaveNotStored = true;
+        if (xhr.status < 200 || xhr.status >= 300) {
+            rowSavesNotStored.set(box.id, rowSettingName(box));
+        }
         sendWhatWaitsForRowSaves();
     });
 });
