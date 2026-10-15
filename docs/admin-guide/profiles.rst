@@ -532,17 +532,28 @@ Application Profile Validation
 
 .. note::
    These checks run when a profile file is pulled in by :ref:`Config Sync
-   <config-sync>`. A file that fails them is **not** imported, and does not
-   count towards the "N profiles synced" total on the Config Sync page --
-   but no per-file error is shown there either. The reason is only visible
-   on :doc:`Admin > Logs <logs>`, as a warning naming the file.
+   <config-sync>`. The sync also refuses **every** file of a profile name
+   and version that is in more than one file -- a test's reference could get
+   either -- naming each by its path in the repository. Versions are
+   compared as versions, so ``1.0`` and ``1.0.0`` are one version.
 
-   The sync then replaces the stored profiles with the ones that passed, so
-   a run that needs a refused profile is stopped at **Mark Ready** with
-   *"Application profile '<name>' version '<version>' not found"*. If
-   **every** application profile (or every test profile) is refused, the
-   sync stops instead and changes nothing: the profiles stored before stay
-   in use.
+   **Any refused application profile file stops every application profile
+   change**, as for test profiles (see `Test versions`_): one that fails
+   these checks, cannot be read as YAML, is empty, cannot be downloaded, or
+   sits in a sub-folder that cannot be listed. The sync then stores no
+   application profile, keeps the ones already stored, still syncs the test
+   profiles, and ends with **error**, naming each file and why::
+
+      Application profile files were refused, so no application profiles were stored and the stored ones are kept: profiles/application_profiles/Guard_1.0.1.yaml: cannot be read as YAML: ... Synced 4 test profiles.
+
+   As for test profiles, the message also names every stored profile and
+   version this sync did not read, since a version deleted from the
+   repository on purpose is kept too. Without this, a refused newest file
+   would quietly make ``~=1.0.0`` pick an older version. Fix the file and
+   sync again.
+
+   An application profile file is any file in the application profile
+   folder whose name ends in ``.yaml`` or ``.yml``, in any case.
 
 Runtime Validation
 ~~~~~~~~~~~~~~~~~~~
@@ -599,7 +610,10 @@ A sync (manual or scheduled) always does all of the following:
   from their configured repository paths and **completely replace** what is
   already stored -- every application and test profile not present in this
   sync is gone afterwards, whether or not **Enable scheduled sync** is
-  checked.
+  checked. If any file of one kind is refused, that kind is not changed at
+  all: the stored ones stay, and the sync reports that it failed and names
+  each refused file (see `Test versions`_ and `Application Profile
+  Validation`_).
 - **Instruments** and **index kits** are each synced only if their own
   checkbox (**Also sync instruments** / **Also sync index kits**) is on.
   Instruments are also replaced wholesale, but an instrument's **Enabled**

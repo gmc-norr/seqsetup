@@ -160,6 +160,44 @@ class TestASyncThatStopsWhileWritingPausesMarkReady:
         _refused_while_paused(logged_in_client, ctx, run.id,
                               "application profiles and test profiles")
 
+    def test_a_failed_test_profile_write_after_refused_application_profiles(
+            self, fresh_app, logged_in_client, monkeypatch):
+        """With the application profiles refused, the test profiles are the
+        first collection written; their failed write still says Mark Ready
+        is paused (outside review of f490536, F1)."""
+        _app, ctx, _db = fresh_app
+        ok, message, _ = _sync(ctx, monkeypatch)
+        assert ok, message
+        run = _wgs_draft(ctx, "sync-test-write-apps-refused")
+
+        _fail_save(monkeypatch, ctx.get_github_sync_service().test_profile_repo)
+        ok, message, _ = _fake_github(ctx, monkeypatch, dict(TEST_FILES),
+                                      app_files={**APP_FILES, "Bad.yaml": ""}).sync()
+
+        assert ok is False
+        assert message.endswith(PAUSED_IN_STATUS), message
+        _refused_while_paused(logged_in_client, ctx, run.id, "test profiles")
+
+    def test_a_failed_instrument_write_after_refused_profiles(
+            self, fresh_app, logged_in_client, monkeypatch):
+        """With both profile kinds refused, the instruments are the first
+        collection written; their failed write still says Mark Ready is
+        paused."""
+        from .test_group_a2 import GOOD_FILES
+        _app, ctx, _db = fresh_app
+        ok, message, _ = _sync(ctx, monkeypatch)
+        assert ok, message
+        run = _wgs_draft(ctx, "sync-instrument-write-profiles-refused")
+
+        _fail_save(monkeypatch, ctx.get_github_sync_service().instrument_definition_repo)
+        ok, message, _ = _fake_github(
+            ctx, monkeypatch, {**TEST_FILES, "Empty.yaml": ""},
+            app_files={**APP_FILES, "Bad.yaml": ""}, instrument_files=GOOD_FILES).sync()
+
+        assert ok is False
+        assert message.endswith(PAUSED_IN_STATUS), message
+        _refused_while_paused(logged_in_client, ctx, run.id, "instrument settings")
+
     def test_a_failed_instrument_write(self, fresh_app, logged_in_client, monkeypatch):
         """The stored instruments are gone, so the shipped file would turn
         the i5 round."""

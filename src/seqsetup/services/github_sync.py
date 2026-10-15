@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import yaml
+from packaging.version import Version
 
 from ..utils.yaml_safety import safe_load_strict
 from ..data.instruments import clear_synced_instruments_cache
@@ -253,7 +254,13 @@ class GitHubSyncService:
             owner, repo = self._parse_repo_url(config.github_repo_url)
             logger.info(f"Starting sync from {owner}/{repo} branch {config.github_branch}")
 
-            # Fetch application profiles (recursive)
+            # Fetch application profiles (recursive). Any refused application
+            # profile file means no application profile is stored, as for test
+            # profiles: a refused newest file made a "~=1.0.0" reference pick
+            # the older 1.0.0, and two files of one name and version made a
+            # run get either (outside review of f490536, F1 and F10).
+            refused_apps: list[str] = []
+            app_paths: list[str] = []
             app_profiles = self._fetch_profiles_recursive(
                 owner,
                 repo,
@@ -261,7 +268,10 @@ class GitHubSyncService:
                 config.application_profiles_path,
                 self._parse_application_profile,
                 strict=True,
+                refused=refused_apps,
+                paths=app_paths,
             )
+            self._refuse_repeated_app_versions(app_profiles, refused_apps, app_paths)
             logger.info(f"Fetched {len(app_profiles)} application profiles")
 
             # Fetch test profiles (recursive). Any refused test file means no
@@ -329,9 +339,10 @@ class GitHubSyncService:
             # If we already have synced data, never replace it with an empty fetch result.
             existing_app_profiles = self.app_profile_repo.collection.count_documents({})
             existing_test_profiles = self.test_profile_repo.collection.count_documents({})
-            self._guard_against_destructive_replace(
-                existing_app_profiles, len(app_profiles), "application profiles"
-            )
+            if not refused_apps:
+                self._guard_against_destructive_replace(
+                    existing_app_profiles, len(app_profiles), "application profiles"
+                )
             if not refused_tests:
                 self._guard_against_destructive_replace(
                     existing_test_profiles, len(test_profiles), "test profiles"
@@ -367,14 +378,16 @@ class GitHubSyncService:
 
             # Save to database (replace all). The deletes and writes below are
             # not one step: each collection is noted before it is deleted.
-            self.config_repo.mark_writing(utcnow(), _APP_PROFILES)
-            writing = True
-            self.app_profile_repo.delete_all()
-            self.app_profile_repo.bulk_save(app_profiles)
-            replaced.append(_APP_PROFILES)
+            if not refused_apps:
+                self.config_repo.mark_writing(utcnow(), _APP_PROFILES)
+                writing = True
+                self.app_profile_repo.delete_all()
+                self.app_profile_repo.bulk_save(app_profiles)
+                replaced.append(_APP_PROFILES)
 
             if not refused_tests:
                 self.config_repo.mark_writing(utcnow(), _TEST_PROFILES)
+                writing = True
                 self.test_profile_repo.delete_all()
                 self.test_profile_repo.bulk_save(test_profiles)
                 replaced.append(_TEST_PROFILES)
@@ -404,6 +417,7 @@ class GitHubSyncService:
                     stored = {samplesheet_name for samplesheet_name, _enabled in switches}
                     disabled_keys |= set(note["disabled_instruments"]) - stored
                 self.config_repo.mark_writing(utcnow(), _INSTRUMENTS, disabled_keys)
+                writing = True
                 self.instrument_definition_repo.delete_all()
                 for inst in instruments:
                     if inst.samplesheet_name in disabled_keys:
@@ -437,12 +451,16 @@ class GitHubSyncService:
             still_incomplete = self.config_repo.written(replaced)
             writing = False
 
-            count = len(app_profiles) + (0 if refused_tests else len(test_profiles))
+            count = ((0 if refused_apps else len(app_profiles))
+                     + (0 if refused_tests else len(test_profiles)))
             instruments_count = len(instruments) if store_instruments else 0
             index_kits_count = len(index_kits)
 
-            if refused_tests or refused_instruments or refused_kits or still_incomplete:
-                synced = [f"{len(app_profiles)} application profiles"]
+            if (refused_apps or refused_tests or refused_instruments or refused_kits
+                    or still_incomplete):
+                synced = []
+                if not refused_apps:
+                    synced.append(f"{len(app_profiles)} application profiles")
                 if not refused_tests:
                     synced.append(f"{len(test_profiles)} test profiles")
                 if instruments_count > 0:
@@ -450,6 +468,19 @@ class GitHubSyncService:
                 if config.sync_index_kits_enabled and self.index_kit_repo:
                     synced.append(f"{index_kits_count} index kits")
                 refusals = []
+                if refused_apps:
+                    refusals.append(
+                        "Application profile files were refused, so no application profiles "
+                        "were stored and the stored ones are kept: "
+                        + "; ".join(refused_apps) + "."
+                    )
+                    kept = self._kept_app_versions_not_read(app_profiles)
+                    if kept:
+                        refusals.append(
+                            "Kept application profiles this sync did not read: "
+                            + ", ".join(kept)
+                            + " -- each is in a refused file or no longer in the repository."
+                        )
                 if refused_tests:
                     refusals.append(
                         "Test profile files were refused, so no test profiles were stored "
@@ -482,10 +513,12 @@ class GitHubSyncService:
                     )
                     if _INSTRUMENTS in still_incomplete and not config.sync_instruments_enabled:
                         stays += " Switch on Also sync instruments, then sync again."
-                    elif refused_tests or refused_instruments:
+                    elif refused_apps or refused_tests or refused_instruments:
                         stays += " Fix the refused files, then sync again."
                     refusals.append(stays)
-                message = " ".join(refusals) + f" Synced {', '.join(synced)}."
+                message = " ".join(refusals)
+                if synced:
+                    message += f" Synced {', '.join(synced)}."
                 self.config_repo.update_sync_status(
                     "error", message, count, instruments_count, index_kits_count,
                     config.github_repo_url, config.github_branch
@@ -654,7 +687,8 @@ class GitHubSyncService:
             refused: when given, each file or sub-folder that gives no
                 profile, for any reason, is added as "<path>: <problem>",
                 and a .yaml or .yml ending is read in any case (test
-                profiles, spec 2026-10-07 group A4, §1)
+                profiles, spec 2026-10-07 group A4, §1; application
+                profiles, outside review of f490536, F1)
             paths: when given, each returned profile's path in the repository
                 is appended, in step with the returned list, so a refusal can
                 name a file by its path and not by a base name two folders
@@ -688,8 +722,9 @@ class GitHubSyncService:
                 )
                 profiles.extend(sub_profiles)
 
-            # In the test profile folder (``refused`` given) a .YAML or .Yml
-            # ending counts too (spec 2026-10-07 group A4, §1, decision 9).
+            # In the test and application profile folders (``refused`` given)
+            # a .YAML or .Yml ending counts too (spec 2026-10-07 group A4, §1,
+            # decision 9).
             elif item_type == "file" and (
                 item_name.lower() if refused is not None else item_name
             ).endswith((".yaml", ".yml")):
@@ -919,6 +954,38 @@ class GitHubSyncService:
         stored = {(profile.test_type, profile.version)
                   for profile in self.test_profile_repo.list_all()}
         return [f"{test} {version}" for test, version in sorted(stored - read)]
+
+    def _kept_app_versions_not_read(self, app_profiles: list[ApplicationProfile]) -> list[str]:
+        """As ``_kept_test_versions_not_read``, for application profiles."""
+        read = {(profile.name, profile.version) for profile in app_profiles}
+        stored = {(profile.name, profile.version)
+                  for profile in self.app_profile_repo.list_all()}
+        return [f"{name} {version}" for name, version in sorted(stored - read)]
+
+    @staticmethod
+    def _refuse_repeated_app_versions(app_profiles: list[ApplicationProfile],
+                                      refused: list[str], paths: list[str]) -> None:
+        """Each application profile name and version that is in more than one
+        file is logged and added to ``refused``: a test's reference would get
+        whichever of the files was stored first (outside review of f490536,
+        F10). Versions are compared as versions, so "1.0" and "1.0.0", which
+        every reference matches alike, are one; the profile checks have made
+        sure each is one. ``paths`` are the files' paths in the repository,
+        in step with ``app_profiles``, as for ``_refuse_repeated_test_versions``."""
+        files: dict[tuple[str, Version], list[tuple[str, str]]] = {}
+        for profile, where in zip(app_profiles, paths, strict=True):
+            files.setdefault((profile.name, Version(profile.version)), []).append(
+                (where, profile.version))
+        for (name, _version), found in files.items():
+            if len(found) > 1:
+                names = sorted(where for where, _spelled in found)
+                spellings = " = ".join(sorted({spelled for _where, spelled in found}))
+                where = f"{name} {spellings} is in {', '.join(names[:-1])} and {names[-1]}"
+                logger.warning(
+                    f"Application profiles refused: {where}. A profile name and version "
+                    "may be in one file only."
+                )
+                refused.append(where + "; a profile name and version may be in one file only")
 
     def _refuse_changed_or_repeated_kits(self, kits: list[IndexKit], paths: list[str],
                                          refused: list[dict]) -> list[IndexKit]:
