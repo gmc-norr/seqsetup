@@ -872,3 +872,31 @@ class TestWhatTheGivenUpActionSaysAndLocks:
         assert "Done editing is already waiting" in note, note
         assert sent == [], sent
         expect(page.locator("#run-status-bar")).to_contain_text("Nobody is editing this run")
+
+    def test_control_a_refusal_the_person_left_does_not_stop_a_later_action(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_first_save):
+        """A refusal answered while nothing waits, which the person leaves
+        as it is and goes on to another box: the click they make then is
+        about that other change, so only what happens from the click
+        onwards stops it. (Striking a box off when a later save of *that*
+        box is stored does not cover this: the box is never put right.)"""
+        page = logged_in_page
+        _open(page, base_url, mutable_run_id)
+        row = _row(page, mutable_run_id)
+        row.locator('input[name="barcode_mismatches_index1"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("5")             # only 0, 1 or 2 are accepted
+        with page.expect_response(lambda r: _a_settings_answer(r) and r.status == 400):
+            page.keyboard.press("Tab")
+        _handled(page)
+        expect(page.locator("#error-banner")).to_contain_text("0, 1 or 2")
+
+        row.locator('input[name="barcode_mismatches_index2"]').click()
+        page.keyboard.press("Control+A")
+        page.keyboard.type("2")             # another box; this save is held 0.8 s
+        with page.expect_navigation():
+            page.get_by_role("button", name="Done editing").click()
+        page.wait_for_load_state("networkidle")
+
+        expect(page.locator("#run-status-bar")).to_contain_text("Nobody is editing this run")
+        assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index2 == 2
