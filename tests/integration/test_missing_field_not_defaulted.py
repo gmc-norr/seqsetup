@@ -116,8 +116,10 @@ class TestReagentKitNeedsItsField:
         assert _stored(ctx).get_sample("s1").override_cycles == UMI_OVERRIDE
 
     def test_a_sent_kit_is_still_saved_and_resets_the_cycles(self, logged_in_client, fresh_app):
+        # A calculated value is recalculated; a typed one refuses the kit
+        # (test_typed_override_cycles_kept.py).
         _app, ctx, _db = fresh_app
-        _run(ctx, override_cycles=UMI_OVERRIDE)
+        _run(ctx, override_cycles=AUTO_OVERRIDE, index_pair=_pair())
 
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/reagent-kit", data={**{"reagent_cycles": "200"}, "run_version": run_version(ctx, RUN_ID)}, headers=ORIGIN)
@@ -125,7 +127,8 @@ class TestReagentKitNeedsItsField:
         assert response.status_code == 200
         stored = _stored(ctx)
         assert stored.reagent_cycles == 200
-        assert stored.get_sample("s1").override_cycles != UMI_OVERRIDE
+        assert stored.run_cycles == RunCycles(101, 101, 10, 10)
+        assert stored.get_sample("s1").override_cycles == "Y101;I10;I10;Y101"
 
 
 class TestFlowcellNeedsItsField:

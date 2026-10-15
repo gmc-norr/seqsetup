@@ -421,7 +421,9 @@ async def update_reagent_kit(
     A submission with no ``reagent_cycles`` is refused: the default would be a
     1-cycle kit, which resets all four cycle counts and recomputes every
     sample's OverrideCycles — a typed UMI read would be lost (CLAUDE.md,
-    partial updates). The select always sends its value.
+    partial updates). The select always sends its value. The counts go
+    through ``_set_run_cycles``: a kit whose counts are the run's changes no
+    sample, and other counts are refused while a value is typed by hand.
     """
     form = await request.form()
     # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
@@ -434,13 +436,12 @@ async def update_reagent_kit(
     defaults = get_default_cycles(reagent_cycles)
     with saving_run(run, ctx, request):
         run.reagent_cycles = reagent_cycles
-        run.run_cycles = RunCycles(
+        _set_run_cycles(run, RunCycles(
             read1_cycles=defaults["read1"],
             read2_cycles=defaults["read2"],
             index1_cycles=defaults["index1"],
             index2_cycles=defaults["index2"],
-        )
-        CycleCalculator.update_all_sample_override_cycles(run)
+        ))
 
     index_cycle_options = get_index_cycle_options()
     return _with_fresh_version(render(request, "wizard/_cycle_config_form.html", {
@@ -474,12 +475,30 @@ def _parse_run_cycles(form) -> RunCycles:
     return RunCycles(**values)
 
 
+def _typed_override_cycles_refusal(samples) -> str:
+    """The 400 message for a cycle change refused while ``samples`` have an
+    Override Cycles typed by hand. Names five, then counts the rest; the
+    names come last, so a long one cannot push the rest off the banner."""
+    names = [sample.sample_id or sample.id for sample in samples]
+    shown = ", ".join(names[:5]) + (f", and {len(names) - 5} more" if len(names) > 5 else "")
+    return (
+        f"Nothing was saved: new cycles would replace the Override Cycles typed by hand "
+        f"for {len(names)} sample(s). Set them back to Auto first, then change the "
+        f"cycles and type the values again. Samples: {shown}"
+    )
+
+
 def _set_run_cycles(run: SequencingRun, run_cycles: RunCycles) -> None:
     """Apply cycle counts. Every sample's OverrideCycles is recomputed only
     when the counts change: re-saving the same counts must not wipe
-    overrides the user set by hand."""
+    overrides the user set by hand. A change is refused (400) while any
+    sample has one typed by hand, which the recompute would replace with no
+    word (found 2026-10-15); raised inside ``saving_run``, nothing is saved."""
     if run.run_cycles == run_cycles:
         return
+    typed = CycleCalculator.samples_with_typed_override_cycles(run)
+    if typed:
+        raise HTTPException(status_code=400, detail=_typed_override_cycles_refusal(typed))
     run.run_cycles = run_cycles
     CycleCalculator.update_all_sample_override_cycles(run)
 

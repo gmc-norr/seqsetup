@@ -446,6 +446,22 @@ class CycleCalculator:
         return None
 
     @classmethod
+    def samples_with_typed_override_cycles(cls, run: SequencingRun) -> list[Sample]:
+        """The samples whose stored Override Cycles is not the one calculated
+        from the sample and the run's cycles -- typed by hand. A
+        recalculation (``update_all_sample_override_cycles``) would replace
+        it with no word, so a cycle change is refused while any sample is
+        listed (found 2026-10-15). Read-only."""
+        if not run.run_cycles:
+            return []
+        return [
+            sample for sample in run.samples
+            if sample.override_cycles
+            and sample.override_cycles.replace(",", ";")
+            != cls.calculate_override_cycles(sample, run.run_cycles)
+        ]
+
+    @classmethod
     def update_all_sample_override_cycles(cls, run: SequencingRun) -> None:
         """
         Update override cycles for all samples in a run.

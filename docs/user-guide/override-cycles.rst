@@ -69,6 +69,16 @@ typed it by hand -- only an empty cell means nothing is stored.
    Re-dropping an index on a sample that already has one has the same
    effect, even if it is the same index as before.
 
+   Changing the run's cycles -- a cycle count, **Continue to Run** /
+   **Back to Run** with other counts, or a reagent kit with other default
+   counts -- recalculates every sample's Override Cycles too. While any
+   sample has a value typed by hand (one that is not the calculated
+   value), that change is refused and nothing is saved; the error banner
+   counts those samples and names up to five. To change the cycles, set
+   those samples back to **Auto** (below), change the cycles, then type
+   their values again. Saving the same counts again, or picking a reagent
+   kit whose default counts are the run's, changes no sample.
+
    Clearing an index does **not** reliably do the same. Clearing i5 alone
    leaves the stored Override Cycles completely untouched, so a segment
    sized for an index that is now gone can be left behind silently.
