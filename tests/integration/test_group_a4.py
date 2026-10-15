@@ -114,15 +114,18 @@ class TestATestFileEndingInAnyCase:
         assert ok, message
         assert _stored(ctx) == STORED_BEFORE
 
-    def test_an_application_profile_file_still_needs_a_lower_case_ending(self, fresh_app,
-                                                                         monkeypatch):
-        # Only the test profile folder reads any case (plan review of 8b17009).
+    def test_an_application_profile_file_ending_in_any_case_is_read(self, fresh_app,
+                                                                    monkeypatch):
+        # Once only the test profile folder read any case (plan review of
+        # 8b17009), and an application profile file ending in .YAML was
+        # skipped without a word (outside review of f490536, F1).
         _app, ctx, _db = fresh_app
         ok, message, _logged = _sync_tests(ctx, monkeypatch, TESTS_BEFORE, app_files={
             "Guard.yaml": _app_profile_yaml("GuardProfile", '"4.3.6"'),
             "Other.YAML": _app_profile_yaml("OtherProfile", '"4.3.6"')})
         assert ok, message
-        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["GuardProfile"]
+        assert sorted(p.name for p in ctx.app_profile_repo.list_all()) == [
+            "GuardProfile", "OtherProfile"]
 
 
 def _last_sync(page: str) -> str:

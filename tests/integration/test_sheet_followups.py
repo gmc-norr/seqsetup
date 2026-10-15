@@ -113,7 +113,7 @@ def _sync(ctx, monkeypatch, app_profile_files: dict[str, str]):
 class TestSyncRefusesRiskyValues:
     """Through a real config sync (spec 2026-09-29 Sample Sheet follow-ups, §1)."""
 
-    def test_unquoted_4_10_is_skipped_and_logged(self, fresh_app, monkeypatch):
+    def test_unquoted_4_10_is_refused_and_logged(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
         handler = _Messages()
         _SYNC_LOGGER.addHandler(handler)
@@ -125,8 +125,12 @@ class TestSyncRefusesRiskyValues:
         finally:
             _SYNC_LOGGER.removeHandler(handler)
 
-        assert ok, message
-        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["Good"]
+        # A refused file stops every application-profile change (outside
+        # review of f490536, F1).
+        assert not ok, message
+        assert "Bad.yaml" in message
+        assert "'SoftwareVersion' is a number with a decimal point" in message
+        assert ctx.app_profile_repo.list_all() == []
         assert any(
             "Bad.yaml" in m and "'SoftwareVersion' is a number with a decimal point" in m
             for m in handler.messages
@@ -174,12 +178,11 @@ class TestSyncRefusesRiskyValues:
 
 class TestSyncIntoStoredProfiles:
     """A refused file when profiles are already stored (Astra review P7): the
-    sync replaces them with the ones that passed, unless none passed; then it
-    stops and keeps the old ones."""
+    sync stops and keeps every stored profile. It once replaced them with the
+    ones that passed, so a run needing the refused one could pick an older
+    version (outside review of f490536, F1)."""
 
-    def test_a_refused_profile_is_gone_and_blocks_mark_ready(
-        self, fresh_app, logged_in_client, monkeypatch
-    ):
+    def test_a_refused_profile_keeps_every_stored_one(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
         good = _app_profile_yaml("Good", '"4.3.6"')
         first = _sync(ctx, monkeypatch, {
@@ -191,13 +194,11 @@ class TestSyncIntoStoredProfiles:
             "Good.yaml": good, "GuardProfile.yaml": _app_profile_yaml("GuardProfile", "4.10"),
         })
 
-        assert ok, message
-        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["Good"]
-        run_id = _seed_draft(ctx, "sync-gone", test_id="WGS")
-        resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
-        assert resp.headers.get("HX-Retarget") == "#ready-message"
-        assert "GuardProfile" in resp.text and "not found" in resp.text
-        assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
+        assert not ok, message
+        assert "GuardProfile.yaml" in message
+        assert sorted(p.name for p in ctx.app_profile_repo.list_all()) == ["Good", "GuardProfile"]
+        (guard,) = ctx.app_profile_repo.get_by_name("GuardProfile")
+        assert guard.settings["SoftwareVersion"] == "4.3.6"
 
     def test_when_every_profile_is_refused_the_old_ones_stay(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -211,7 +212,8 @@ class TestSyncIntoStoredProfiles:
         })
 
         assert not ok
-        assert "Refusing to replace 1 existing application profiles with 0 fetched items" in message
+        assert "Application profile files were refused" in message
+        assert "GuardProfile.yaml" in message
         (profile,) = ctx.app_profile_repo.list_all()
         assert profile.settings["SoftwareVersion"] == "4.3.6"
 

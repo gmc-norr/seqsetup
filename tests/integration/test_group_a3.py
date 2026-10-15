@@ -336,7 +336,8 @@ class TestTheWriterWritesFromThePlanTheChecksPassed:
 class TestTheSyncRefusesNamesTheSheetWouldNotCarry:
     """A profile file with a repeated column, a BCLConvert setting also
     written as a column, or another spelling of a name SeqSetup fills is
-    skipped and logged; the others sync (spec §1)."""
+    refused, named with its reason, and logged (spec §1); no application
+    profile is stored (outside review of f490536, F1)."""
 
     @pytest.mark.parametrize("change,logged", [
         pytest.param(("  - Index2\n", "  - Index2\n  - index\n"),
@@ -346,7 +347,7 @@ class TestTheSyncRefusesNamesTheSheetWouldNotCarry:
         pytest.param(("  SoftwareVersion:", "  softwareversion:"),
                      "'softwareversion' must be spelled SoftwareVersion", id="spelling"),
     ])
-    def test_the_file_is_skipped_and_logged(self, fresh_app, monkeypatch, change, logged):
+    def test_the_file_is_refused_and_logged(self, fresh_app, monkeypatch, change, logged):
         from .test_sheet_followups import _SYNC_LOGGER, _Messages, _app_profile_yaml, _sync
         _app, ctx, _db = fresh_app
         bad = _app_profile_yaml("Bad", '"4.3.6"').replace(*change)
@@ -360,8 +361,9 @@ class TestTheSyncRefusesNamesTheSheetWouldNotCarry:
         finally:
             _SYNC_LOGGER.removeHandler(handler)
 
-        assert ok, message
-        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["Good"]
+        assert not ok, message
+        assert "Bad.yaml" in message and logged in message, message
+        assert ctx.app_profile_repo.list_all() == []
         assert any("Bad.yaml" in m and logged in m for m in handler.messages), handler.messages
 
 

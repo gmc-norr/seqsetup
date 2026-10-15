@@ -375,8 +375,11 @@ class TestProfilesCannotChangeTheRule:
             "Good.yaml": _app_profile_yaml("Good", '"4.3.6"'),
             "Bad.yaml": bad,
         })
-        assert ok, message
-        assert [p.name for p in ctx.app_profile_repo.list_all()] == ["Good"]
+        # A refused file stops every application-profile change, so Good is
+        # not stored either (outside review of f490536, F1).
+        assert not ok, message
+        assert "Bad.yaml" in message
+        assert ctx.app_profile_repo.list_all() == []
 
     def test_a_stored_one_stops_mark_ready(self, logged_in_client, fresh_app):
         from .test_sheet_safety import _seed_draft, _seed_synced_profile

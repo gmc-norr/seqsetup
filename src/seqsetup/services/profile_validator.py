@@ -199,6 +199,16 @@ def validate_application_profile_yaml(yaml_data: dict, source_file: str = "") ->
         elif _is_empty(yaml_data[field]):
             errors.append(f"Field '{field}' must not be empty")
 
+    # A test profile's reference finds the profile by this name, and a sync
+    # tells repeats apart by it: a list would answer a reference to any name
+    # in it (the fresh review of 06e765e).
+    profile_name = yaml_data.get("ApplicationProfileName")
+    if not _is_empty(profile_name) and not isinstance(profile_name, str):
+        errors.append(
+            "Field 'ApplicationProfileName' must be text: YAML read it as "
+            f"{type(profile_name).__name__}. Put the name in quotes."
+        )
+
     # ApplicationName becomes a Sample Sheet section name ([<name>_Settings]),
     # written as is, so it may hold only letters, digits, '_' and '-'.
     app_name = yaml_data.get("ApplicationName")
