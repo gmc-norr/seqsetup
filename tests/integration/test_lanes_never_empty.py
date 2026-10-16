@@ -33,8 +33,11 @@ def _run(ctx):
 
 
 def _set(client, lanes):
+    # target_lanes: what the page showed for the ticked row, as the panel
+    # sends it (design note 2026-10-17); P1 sits on lane 2.
     return client.post(f"/runs/{RUN_ID}/samples/set-lanes", data={
         "sample_ids": json.dumps(["s1"]), "lanes": json.dumps(lanes),
+        "target_lanes": json.dumps([[2]]),
     }, headers=ORIGIN)
 
 

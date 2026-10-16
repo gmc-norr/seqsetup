@@ -191,9 +191,12 @@ class TestSetLanesRefusesALaneOutsideTheFlowcell:
     """POST /runs/{run_id}/samples/set-lanes refuses any lane the flow cell
     does not have, before anything is saved (today's behaviour, pinned)."""
 
-    def _set(self, client, run_id: str, lanes):
+    def _set(self, client, run_id: str, lanes, shown=((1,),)):
+        # target_lanes: what the page showed for the ticked row, as the
+        # panel sends it (design note 2026-10-17).
         return client.post(f"/runs/{run_id}/samples/set-lanes", data={
-            "sample_ids": json.dumps(["id-S1"]), "lanes": json.dumps(lanes)}, headers=ORIGIN)
+            "sample_ids": json.dumps(["id-S1"]), "lanes": json.dumps(lanes),
+            "target_lanes": json.dumps([list(row) for row in shown])}, headers=ORIGIN)
 
     @pytest.mark.parametrize("lanes", [[3], [1, 3], ["3"], [0], [-1]])
     def test_it_is_refused_and_nothing_is_saved(self, logged_in_client, fresh_app, lanes):

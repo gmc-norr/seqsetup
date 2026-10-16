@@ -30,6 +30,9 @@
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-sample-ids">
         <input type="hidden" name="lanes" id="bulk-lanes">
+        {# The lanes each ticked row showed, in the same order: the route
+           refuses the Apply when one has moved in another tab. #}
+        <input type="hidden" name="target_lanes" id="bulk-target-lanes">
     </form>
     <form id="bulk-mismatches-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-mismatches"

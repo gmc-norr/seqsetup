@@ -534,15 +534,70 @@ def _rows_with_a_changed_index(samples, shown: list[list[str]]) -> list[str]:
             if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
 
 
-def _changed_rows_refusal(changed: list[str], nothing_was: str) -> Response:
+def _changed_rows_refusal(changed: list[str], nothing_was: str, what: str = "index") -> Response:
     # What to do comes before the IDs: the page's error banner shows the
     # first 300 characters, and ten 25-character LIMS sample IDs are 268
     # of them (batch 4 review fix B).
     return Response(
-        f"{nothing_was} The index on these samples changed since this page "
+        f"{nothing_was} The {what} on these samples changed since this page "
         f"was loaded: {name_list(changed)}.",
         status_code=409,
     )
+
+
+# The bulk panel's actions say what the page showed for the field they
+# change, and are refused the same two ways as the index routes above
+# (design note docs/design/2026-10-17-stale-page-checks-design.md).
+STALE_PAGE_SAVE = ("This page is out of date. Nothing was saved. "
+                   "Reload the page and try again.")
+CHANGED_ROWS_SAVE = "Nothing was saved. Reload the page and try again."
+SAMPLE_LIST_CHANGED_SAVE = ("The sample list changed since this page was loaded. "
+                            "Reload the page and try again.")
+
+
+def _targets_or_refusal(run, sample_ids: list[str]):
+    """(the targeted samples, None), or (None, a 409) when the run no longer
+    has one of them. Skipping it silently told the person their change was
+    made to a sample that is not there any more."""
+    targets = [run.get_sample(sid) for sid in sample_ids]
+    if any(target is None for target in targets):
+        return None, Response(SAMPLE_LIST_CHANGED_SAVE, status_code=409)
+    return targets, None
+
+
+def _shown_lanes(raw, count: int) -> Optional[list[list[int]]]:
+    """The lanes a lane Apply says the page showed in each of the ``count``
+    rows it changes: a list of lane numbers per row, or None when the field
+    is missing, empty or unreadable -- the field is required, so all three
+    are refused.
+
+    Compared with the stored lanes before anything is written, so a row
+    another tab has moved is refused instead of overwritten. A request
+    without the field would overwrite those lanes, and no real client sends
+    one: app.js is served as /js/app.js?v=<content hash>, so a browser
+    cannot hold a pre-change script against post-change HTML.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list) or len(parsed) != count:
+        return None
+    for row in parsed:
+        if not isinstance(row, list) or not all(
+                isinstance(lane, int) and not isinstance(lane, bool) for lane in row):
+            return None
+    return parsed
+
+
+def _rows_with_changed_lanes(samples, shown: list[list[int]]) -> list[str]:
+    """The Sample IDs of the rows whose stored lanes are not the ones the
+    page says it showed. Order counts: the stored order is the order the
+    row shows and the order the sheet writes."""
+    return [sample.sample_id for sample, row in zip(samples, shown, strict=True)
+            if list(sample.lanes) != row]
 
 
 _KIT_CHANGED = ("The index kit changed since this page was loaded. Nothing was assigned. "
@@ -1508,6 +1563,19 @@ async def set_lanes_bulk(
     # 2026-10-14).
     if not normalized_lanes:
         return Response("Tick at least one lane. Nothing was saved.", status_code=400)
+
+    # The panel names the lanes it showed in each ticked row. A row another
+    # tab has since moved, or a sample the run no longer has, refuses the
+    # whole Apply with nothing written (design note 2026-10-17, step 1).
+    targets, refusal = _targets_or_refusal(run, sample_ids)
+    if refusal:
+        return refusal
+    shown = _shown_lanes(form.get("target_lanes", ""), len(sample_ids))
+    if shown is None:
+        return Response(STALE_PAGE_SAVE, status_code=400)
+    changed = _rows_with_changed_lanes(targets, shown)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_SAVE, "lanes")
 
     selected_ids = {str(sample_id) for sample_id in sample_ids}
 

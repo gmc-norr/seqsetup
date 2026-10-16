@@ -538,7 +538,11 @@ class TestBulkHandlersReachRoutes:
         import json
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/set-lanes",
-            data={"sample_ids": json.dumps(ids), "lanes": json.dumps([1, 2])},
+            # target_lanes: the lanes the page showed for each ticked row,
+            # as the panel sends them (design note 2026-10-17).
+            data={"sample_ids": json.dumps(ids), "lanes": json.dumps([1, 2]),
+                  "target_lanes": json.dumps(
+                      [ctx.run_repo.get_by_id(run_id).get_sample(sid).lanes for sid in ids])},
             headers=_origin(),
         )
         assert response.status_code == 200

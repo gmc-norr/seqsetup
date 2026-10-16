@@ -51,8 +51,14 @@
    send it (hx-vals) and app.js sends it with every single-row assign: the
    server refuses a clear of an index another tab has changed (F8). #}
 {% set shown_indexes = [[sample.index1_sequence or '', sample.index2_sequence or '']] | tojson %}
+{# data-lanes: the lanes this row shows, which the lane panel's Apply sends
+   back for each ticked row (target_lanes), so the server can refuse a row
+   whose lanes changed in another tab. The stored list, in its stored order,
+   not .lanes-display, which sorts them and writes "All" for none (design
+   note docs/design/2026-10-17-stale-page-checks-design.md). #}
 <tr id="sample-row-{{ sample.id }}" class="{{ row_class }}"
-    data-i7="{{ sample.index1_sequence or '' }}" data-i5="{{ sample.index2_sequence or '' }}">
+    data-i7="{{ sample.index1_sequence or '' }}" data-i5="{{ sample.index2_sequence or '' }}"
+    data-lanes="{{ sample.lanes | join(',') }}">
 {%- if effective_checkboxes %}
     <td class="checkbox-cell">
         <input type="checkbox" class="sample-checkbox"

@@ -132,6 +132,17 @@ function shownIndexOfRow(sampleId) {
     return [(row && row.dataset.i7) || '', (row && row.dataset.i5) || ''];
 }
 
+// The lanes a row shows, as the server compares them with the stored ones:
+// data-lanes of #sample-row-<id> (wizard/_sample_row.html). Sent with the
+// lane panel's Apply so the server can refuse a row another tab has moved
+// instead of overwriting it. A row this page does not have reads as [],
+// which the server refuses: no sample is stored with no lane.
+function shownLanesOfRow(sampleId) {
+    const row = document.getElementById(`sample-row-${sampleId}`);
+    const raw = (row && row.dataset.lanes) || '';
+    return raw ? raw.split(',').map(Number) : [];
+}
+
 function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     event.preventDefault();
 
@@ -549,6 +560,9 @@ function applyBulkLanesForm() {
     // the server refuses: a sample is never saved with no lane.
     document.getElementById('bulk-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-lanes').value = JSON.stringify(lanes);
+    // What each ticked row showed, in the same order the ids are sent.
+    document.getElementById('bulk-target-lanes').value =
+        JSON.stringify(selectedSampleIds.map(shownLanesOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-lanes-form', 'submit');

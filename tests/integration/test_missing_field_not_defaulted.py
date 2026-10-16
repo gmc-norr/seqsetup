@@ -184,7 +184,8 @@ class TestSetLanesNeedsItsField:
 
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/set-lanes",
-            data={"sample_ids": json.dumps(["s1"]), "lanes": json.dumps([2])},
+            data={"sample_ids": json.dumps(["s1"]), "lanes": json.dumps([2]),
+                  "target_lanes": json.dumps([[1]])},
             headers=ORIGIN)
 
         assert response.status_code == 200
