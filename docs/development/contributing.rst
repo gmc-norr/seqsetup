@@ -677,9 +677,12 @@ spec file to maintain.
    models leak into ``seqsetup.models``.
 5. Emit an audit event via ``audit("api.run.read", actor=api_actor(token),
    target=run_id, resource="...")`` so the access is in the log.
-6. Document in ``docs/api-reference/runs.rst``. The auto-generated Swagger
-   UI at ``/api/docs`` is the runtime source of truth, but the Sphinx
-   reference is still what readers find via search.
+6. Document in ``docs/api-reference/runs.rst``. That Sphinx reference is
+   what readers have: the Swagger UI at ``/api/docs`` cannot be opened in a
+   browser (it needs a Bearer token, which a navigation does not send) and
+   loads Swagger itself from a CDN, so an offline lab gets a blank page. The
+   generated schema at ``/api/openapi.json`` describes the surface, but only
+   to a tool that fetches it with a token.
 
 Adding CSS Styles
 ~~~~~~~~~~~~~~~~~

@@ -1,11 +1,30 @@
 Runs
 ====
 
-The interactive Swagger UI for this API is hosted at ``/api/docs`` on a
-running SeqSetup instance. The OpenAPI 3.1 schema is at
-``/api/openapi.json`` — it is the authoritative description of the API
-surface (auto-generated from the route signatures in
-``seqsetup.api.app``). This document is a complementary reference.
+The OpenAPI 3.1 schema at ``/api/openapi.json`` is the authoritative
+description of the API surface (auto-generated from the route signatures in
+``seqsetup.api.app``, and declaring the Bearer scheme every endpoint needs).
+This document is a complementary reference.
+
+.. important::
+   Neither ``/api/openapi.json`` nor the Swagger UI page at ``/api/docs``
+   can be opened in a browser. Both need an ``Authorization: Bearer
+   <token>`` header, which a browser navigation does not send, so a
+   signed-in user gets **401** -- and so do the page's own
+   ``/api/docs/init.js`` and its fetch of the schema. On top of that the
+   page loads Swagger UI itself from a public CDN
+   (``cdn.jsdelivr.net``), so it needs internet access from the machine
+   showing it; a lab with no outside network gets a blank page.
+
+   To read the schema, fetch it with a token and point your own tool at it:
+
+   .. code-block:: bash
+
+      curl -H "Authorization: Bearer $SEQSETUP_TOKEN" \
+        https://your-host/api/openapi.json > seqsetup-openapi.json
+
+   Everything the API offers is written out in this reference, so you do
+   not need either of those pages.
 
 Access Restrictions
 -------------------
