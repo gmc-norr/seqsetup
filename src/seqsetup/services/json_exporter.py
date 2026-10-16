@@ -1,9 +1,9 @@
 """Export full metadata to JSON format."""
 
 import json
-from typing import Any
+from typing import Any, Optional
 
-from ..data.instruments import NoI5Direction
+from ..data.instruments import NoI5Direction, run_i5_direction
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .sheet_plan import sheet_index2, sheet_override_cycles
@@ -13,21 +13,38 @@ class JSONExporter:
     """Export full metadata to JSON format."""
 
     @classmethod
-    def export(cls, run: SequencingRun) -> str:
+    def export(
+        cls,
+        run: SequencingRun,
+        sheet_mismatches: Optional[dict] = None,
+        test_versions: Optional[list] = None,
+    ) -> str:
         """
         Export sequencing run to JSON with all metadata.
 
         Args:
             run: Sequencing run configuration
+            sheet_mismatches: the numbers the Sample Sheet's
+                BarcodeMismatchesIndex columns carry, keyed by (sample id, 1 or
+                2), from ``ValidationResult.sheet_mismatches``. None for a run
+                exported live, with no sheet plan: the two
+                ``samplesheet_barcode_mismatches_*`` keys are then null, the
+                shape ``samplesheet_index2`` already has when SeqSetup cannot
+                say what the sheet would write.
+            test_versions: the exact test versions the checks passed. Passed in
+                because this export is written before ``run.test_versions_used``
+                is set. None for a live export.
 
         Returns:
             JSON string
         """
-        data = cls._serialize_run(run)
+        data = cls._serialize_run(run, sheet_mismatches or {}, test_versions)
         return json.dumps(data, indent=2, default=str)
 
     @classmethod
-    def _serialize_run(cls, run: SequencingRun) -> dict[str, Any]:
+    def _serialize_run(
+        cls, run: SequencingRun, sheet_mismatches: dict, test_versions: Optional[list],
+    ) -> dict[str, Any]:
         """Serialize run to dictionary with computed values."""
         return {
             "id": run.id,
@@ -47,12 +64,29 @@ class JSONExporter:
                 "create_fastq_for_index_reads": run.create_fastq_for_index_reads,
                 "no_lane_splitting": run.no_lane_splitting,
             },
-            "samples": [cls._serialize_sample(s, run) for s in run.samples],
+            # The exact versions the checks passed, and the i5 direction every
+            # export was written with -- both decide what the Sample Sheet says
+            # (review F7).
+            "test_versions_used": (list(test_versions) if test_versions is not None
+                                   else list(run.test_versions_used)),
+            "i5_workflow": cls._i5_workflow(run),
+            "samples": [cls._serialize_sample(s, run, sheet_mismatches)
+                        for s in run.samples],
             "analyses": [cls._serialize_analysis(a) for a in run.analyses],
         }
 
     @classmethod
-    def _serialize_sample(cls, sample, run: SequencingRun) -> dict:
+    def _i5_workflow(cls, run: SequencingRun) -> str:
+        """The run's i5 workflow, or "" when the instrument does not say: no
+        Sample Sheet can be written for such a run either."""
+        try:
+            direction = run_i5_direction(run)
+        except NoI5Direction:
+            return ""
+        return direction.workflow if direction else ""
+
+    @classmethod
+    def _serialize_sample(cls, sample, run: SequencingRun, sheet_mismatches: dict) -> dict:
         """Serialize sample with computed override cycles."""
         override = sample.override_cycles
         if not override and sample.has_index and run.run_cycles:
@@ -105,6 +139,31 @@ class JSONExporter:
             "samplesheet_index2": i2_in_sheet,
             "override_cycles": override,
             "samplesheet_override_cycles": override_in_sheet,
+            # What picks the application profiles the sheet is written from,
+            # where the sample came from, and which kit its index is out of
+            # (review F7).
+            "test_id": sample.test_id,
+            "test_version": sample.test_version,
+            "worksheet_id": sample.worksheet_id,
+            "index_kit_name": sample.index_kit_name,
+            # This sample's own value, and the number the sheet actually
+            # carries, read from the sheet plan -- never derived again here, or
+            # the two exports of one run could disagree. A sample with no value
+            # of its own takes the application profile's Data default, which
+            # only the plan knows.
+            #
+            # null for an index the sample does not have: the sheet's cell is
+            # then "na", not a number, because the v2 writer puts that guard
+            # first while the plan stores a number for every sample. The JSON
+            # stated 1 -- or whatever had been typed for an index that is not
+            # there -- as if the sheet carried it (review of 60fb18c, P1-1).
+            # samplesheet_index2 is null for such a sample in the same way.
+            "barcode_mismatches_index1": sample.barcode_mismatches_index1,
+            "barcode_mismatches_index2": sample.barcode_mismatches_index2,
+            "samplesheet_barcode_mismatches_index1": (
+                sheet_mismatches.get((sample.id, 1)) if i1_seq else None),
+            "samplesheet_barcode_mismatches_index2": (
+                sheet_mismatches.get((sample.id, 2)) if i2_seq else None),
             "analyses": sample.analyses,
             "description": sample.description,
             "metadata": sample.metadata,

@@ -318,6 +318,10 @@ class ValidationResult:
     # the checks used and its file: {"test", "asked", "version", "file"}, in
     # the order first seen (spec 2026-10-07 group A4, §3). Mark Ready stores it.
     test_versions: list[dict] = field(default_factory=list)
+    # (sample id, 1 or 2) -> the number the sheet's BarcodeMismatchesIndex
+    # column carries, resolved in services/sheet_plan.py. Empty when there
+    # is no plan (review F7).
+    sheet_mismatches: dict = field(default_factory=dict)
 
     @property
     def has_errors(self) -> bool:

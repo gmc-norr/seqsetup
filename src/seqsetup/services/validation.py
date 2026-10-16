@@ -309,6 +309,11 @@ class ValidationService:
             sheet_plan_fingerprint=plan.fingerprint if plan else "",
             v1_sheet_withheld=v1_withheld,
             test_versions=list(plan.test_versions) if plan else [],
+            # The numbers the sheet's BarcodeMismatchesIndex columns carry,
+            # resolved where the profile fallback is (sheet_plan.py). The JSON
+            # export states them rather than deriving them again, so the two
+            # exports of one run cannot disagree (review F7).
+            sheet_mismatches=dict(plan.mismatches) if plan else {},
         )
 
     @classmethod
