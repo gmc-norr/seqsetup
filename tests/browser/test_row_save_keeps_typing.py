@@ -81,12 +81,17 @@ def _handled(page):
 
 
 def _redraw_row(page, run_id):
-    """Redraw the first row as its index Clear button does."""
+    """Redraw the first row as its index Clear button does, sending the
+    index the row shows as that button does (hx-vals target_indexes), which
+    the clear route refuses a page without (outside review F8)."""
     sample = f"{run_id}-s1"
-    with page.expect_response(lambda r: r.url.endswith("/clear-index")):
-        page.evaluate("""([run, sample]) => htmx.ajax(
-            'POST', `/runs/${run}/samples/${sample}/clear-index`,
-            {target: `#sample-row-${sample}`, swap: 'outerHTML'})""", [run_id, sample])
+    with page.expect_response(lambda r: r.url.endswith("/clear-index") and r.status == 200):
+        page.evaluate("""([run, sample]) => {
+            const row = document.getElementById(`sample-row-${sample}`);
+            htmx.ajax('POST', `/runs/${run}/samples/${sample}/clear-index`,
+                {target: `#sample-row-${sample}`, swap: 'outerHTML',
+                 values: {target_indexes: JSON.stringify([[row.dataset.i7, row.dataset.i5]])}});
+        }""", [run_id, sample])
 
 
 def _stored(app_ctx, run_id):
