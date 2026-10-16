@@ -87,6 +87,28 @@ class TestTheReadyManifestNamesExactlyWhatWasJustWritten:
     operator had just replaced.
     """
 
+    def test_a_draft_that_carries_stale_blobs_in_its_own_document_loses_them(
+            self, logged_in_client, fresh_app):
+        """The same for the fields a run stored before the files moved out
+        carries them in: an older release's Return to Draft, or a hand-edited
+        document, could leave one on a Draft, and a Ready run must carry
+        none -- every reader serves the manifest only once there is one, so a
+        blob left beside it would be dead weight that a later release's
+        fallback could pick up."""
+        _app, ctx, _db = fresh_app
+        run_id = seed_run(ctx, "stale-blobs")
+        ctx.run_repo.collection.update_one({"_id": run_id}, {"$set": {
+            "generated_samplesheet_v2": "[Header]\nSTALE-BLOB\n",
+            "generated_json": '{"stale": true}'}})
+
+        assert mark_ready(logged_in_client, run_id, ORIGIN).status_code == 200
+
+        doc = ctx.run_repo.collection.find_one({"_id": run_id})
+        assert doc["generated_samplesheet_v2"] is None, "a stale blob survived Mark Ready"
+        assert doc["generated_json"] is None
+        resp = logged_in_client.get(f"/runs/{run_id}/export/samplesheet-v2")
+        assert resp.status_code == 200 and "STALE-BLOB" not in resp.text
+
     def test_a_draft_that_carries_a_stale_manifest_does_not_keep_it(
             self, logged_in_client, fresh_app, monkeypatch):
         from .conftest import seed_stored_exports

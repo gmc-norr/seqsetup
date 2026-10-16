@@ -124,6 +124,18 @@ class TestAManifestIsTheOnlySource:
         with pytest.raises(ExportDamaged):
             read_export(ctx, run, "json")
 
+    def test_a_manifest_whose_length_alone_was_changed_is_refused(self, ctx):
+        """A hash and a length are two statements about the same bytes. A
+        manifest edited to disagree with itself is not a manifest to serve
+        from, even though the bytes match its hash."""
+        run = _ready_run()
+        manifest = _store(ctx, run)
+        entry = dict(manifest["json"])
+        entry["size"] = entry["size"] + 1
+        run.exports = dict(manifest, json=entry)
+        with pytest.raises(ExportDamaged, match="bytes"):
+            read_export(ctx, run, "json")
+
     def test_a_record_whose_content_is_the_wrong_python_type_is_refused(self, ctx):
         run = _ready_run()
         _store(ctx, run)
