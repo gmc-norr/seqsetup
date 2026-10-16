@@ -8,6 +8,7 @@ Anyone signed in may look; they can already download these files.
 """
 
 import html
+import json
 import re
 from datetime import datetime
 
@@ -17,7 +18,10 @@ from seqsetup.models.api_token import ApiToken
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import seed_stored_exports
+from .conftest import (
+    disable_repos, hold_edit_lock, mark_ready, seed_stored_exports, stored_export,
+)
+from .test_group_1c import _pair
 
 SHEET = "[Header]\nFileFormatVersion,2\nRunName,Served <b>&amp; \"run\"</b>\n\n[Reads]\nRead1Cycles,151\n"
 JSON_TEXT = '{\n  "run_name": "<script>alert(1)</script>",\n  "samples": []\n}'
@@ -279,3 +283,110 @@ class TestTheRunPageLinksHere:
         page = logged_in_client.get(f"/runs/{run_id}").text
         export = page.split('id="export-panel"', 1)[1].split("</fieldset>", 1)[0]
         assert re.search(rf'<a [^>]*href="/served-runs/{run_id}"[^>]*>See this run in API Exports</a>', export)
+
+
+# Shaped as ValidationReportJSON writes it: the counts, the error lists, then
+# the per-lane tables last.
+REPORT_DATA = {
+    "run_id": "report",
+    "summary": {"error_count": 0, "warning_count": 1, "collision_count": 0},
+    "errors": {
+        "index_collisions": [],
+        "configuration_errors": [
+            {"severity": "warning", "category": "c", "message": "a warning", "lane": None},
+        ],
+    },
+    "per_lane": {
+        "1": {
+            "sample_count": 2,
+            "distance_matrix": {
+                "sample_names": ["S1", "S2"],
+                "i7": [[0, 8], [8, 0]], "i5": [[0, 8], [8, 0]], "combined": [[0, 16], [16, 0]],
+            },
+        },
+    },
+}
+REPORT = json.dumps(REPORT_DATA, indent=2)
+REPORT_SHOWN = json.dumps({k: v for k, v in REPORT_DATA.items() if k != "per_lane"}, indent=2)
+
+
+class TestTheCheckReportOnThePage:
+    """The check report's per-lane tables -- the index distance of every
+    sample pair, three times per lane, and the color balance -- are nearly
+    all of its size, up to about 15 MB. The page shows the rest (the counts,
+    the error lists, the warnings) and leaves the tables to the download,
+    which, like the API, gives the whole file (the user's decision,
+    2026-10-17). A Ready run never has a collision: Mark Ready refuses one."""
+
+    def _report_run(self, ctx, run_id, report):
+        return _run(ctx, run_id, exports=seed_stored_exports(
+            ctx, run_id, samplesheet_v2=SHEET, json="{}", validation_json=report,
+            validation_pdf=PDF))
+
+    def _report_section(self, client, run_id):
+        return _section(client.get(f"/served-runs/{run_id}").text, "validation-report")
+
+    def test_the_per_lane_tables_are_left_out(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        section = self._report_section(logged_in_client, self._report_run(ctx, "tables", REPORT))
+        assert _shown_text(section) == REPORT_SHOWN
+        assert "distance_matrix" not in section
+
+    def test_the_page_says_so_and_gives_the_whole_files_size(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        section = self._report_section(logged_in_client, self._report_run(ctx, "said", REPORT))
+        assert "per-lane tables" in section
+        assert f"{len(REPORT.encode()):,} bytes" in section
+
+    def test_the_download_and_the_api_give_the_whole_file(self, logged_in_client, client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._report_run(ctx, "whole", REPORT)
+        section = self._report_section(logged_in_client, run_id)
+        link = re.search(r'<a [^>]*href="([^"]+)"[^>]*>Download</a>', section)
+        assert link
+        assert logged_in_client.get(link.group(1)).content == REPORT.encode()
+        api = client.get(f"/api/runs/{run_id}/validation-report",
+                         headers={"Authorization": f"Bearer {_token(ctx)}"})
+        assert api.text == REPORT
+
+    def test_a_report_with_no_per_lane_tables_is_shown_exactly(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        report = '{"summary": {"error_count": 0}, "per_lane": {}}'
+        section = self._report_section(logged_in_client, self._report_run(ctx, "none", report))
+        assert _shown_text(section) == report
+        assert "per-lane tables" not in section
+
+    @pytest.mark.parametrize("report", ["not json {", "[1, 2]", '"per_lane"'])
+    def test_a_report_that_is_not_a_json_object_is_shown_as_stored(self, logged_in_client,
+                                                                     fresh_app, report):
+        _app, ctx, _db = fresh_app
+        section = self._report_section(logged_in_client, self._report_run(ctx, "odd", report))
+        assert _shown_text(section) == report
+        assert "per-lane tables" not in section
+
+    def test_a_ready_runs_report_shows_its_counts_not_its_tables(self, logged_in_client, fresh_app):
+        """Marked Ready through the real route, so the report is the one the
+        checks wrote."""
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run = SequencingRun(
+            id="real-report", run_name="Real report",
+            instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
+        )
+        run.add_sample(Sample(sample_id="S1", index_pair=_pair("ACGTACGT", "TTGGCCAA", "p1"),
+                              lanes=[1]))
+        run.add_sample(Sample(sample_id="S2", index_pair=_pair("CATGCATG", "AATTCCGG", "p2"),
+                              lanes=[1]))
+        ctx.run_repo.save(run)
+        hold_edit_lock(ctx, run.id)
+        assert mark_ready(logged_in_client, run.id, {"Origin": "http://testserver"}).status_code == 200
+        assert ctx.run_repo.get_by_id(run.id).status == RunStatus.READY, "Mark Ready refused the run"
+        stored = stored_export(ctx, ctx.run_repo.get_by_id(run.id), "validation_json")
+        assert '"distance_matrix"' in stored, "the checks wrote no per-lane table to leave out"
+
+        shown = _shown_text(self._report_section(logged_in_client, run.id))
+        assert '"collision_count": 0' in shown
+        assert '"per_lane":' not in shown
+        assert '"distance_matrix":' not in shown and '"color_balance":' not in shown
+        assert len(shown) < len(stored)
