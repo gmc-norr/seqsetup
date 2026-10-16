@@ -92,13 +92,25 @@ this kit.** A 300-cycle kit's defaults already add up to 322 cycles (151
 + 151 + 10 + 10), because the kit label understates its real capacity, so
 a total a little over the label is normal.
 
-Read 1 and Read 2 are typed as whole numbers from 0 to 600; an invalid
-value is rejected and nothing is saved. Index 1 and Index 2 are chosen
+Read 1 is typed as a whole number from **1** to 600 -- a run with no Read 1
+has nothing to sequence, so ``0`` is rejected (*"Read 1 cycles must be a
+whole number from 1 to 600: a run with no Read 1 has nothing to
+sequence."*) and nothing is saved. Read 2 is 0 to 600; ``0`` there is a
+single-end run. An invalid value in either is rejected and nothing is
+saved. Index 1 and Index 2 are chosen
 from a fixed list of cycle counts -- 8, 10, 12, 17, or 24. A run whose
 count is not in that list -- 0 for no Index 2 read, say, or a count your
 administrator has since taken off the list -- shows its count too, marked
 **(not in the usual list)**, and keeps it until you pick another count or
 another reagent kit.
+
+A run that has **no** cycle counts at all -- which only old stored data can
+be in -- shows **not set** instead of counts, and its four fields are
+empty, with **not set** picked for Index 1 and Index 2. Nothing is filled
+in for you: a count you did not choose must never reach a sample sheet.
+Type the counts and press **Continue**; until you do, **Continue** is
+refused, naming the first field it cannot read, and **Check** reports the
+run as not ready.
 
 .. warning::
    When the selected reagent kit has a known cycle limit, going over it

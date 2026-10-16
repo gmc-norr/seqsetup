@@ -73,7 +73,10 @@ def test_bad_cycle_value_is_shown_and_blocks_continue(logged_in_page, base_url, 
     with page.expect_response(lambda r: r.url.endswith("/cycles") and r.status == 400):
         page.fill("#read1_cycles", "")
         page.dispatch_event("#read1_cycles", "change")
-    expect(page.locator("#error-banner")).to_contain_text("Read 1 cycles must be a whole number")
+    # An empty count says it is not set, and that all four are saved together:
+    # the fieldset posts on every change, and the index fields are a dropdown
+    # (review of 9fac120, P2-3).
+    expect(page.locator("#error-banner")).to_contain_text("Read 1 cycles is not set")
 
     with page.expect_response(lambda r: r.url.endswith("/setup") and r.status == 400):
         page.click("text=Continue to Run")

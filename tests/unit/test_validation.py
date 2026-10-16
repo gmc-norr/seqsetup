@@ -760,11 +760,17 @@ class TestValidateRun:
         assert result.has_errors is True
 
     def test_no_errors_when_valid(self):
-        """has_errors is False when run is valid."""
+        """has_errors is False when run is valid.
+
+        run_cycles was missing here, which the checks now refuse: a run with
+        no cycle counts has an empty [Reads] section in its sheet (outside
+        review of f490536, F2). A valid run has counts, so this one does.
+        """
         run = SequencingRun(
             run_name="Valid run",
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
             flowcell_type="10B",
+            run_cycles=RunCycles(151, 151, 8, 8),
             samples=[
                 Sample(
                     sample_id="S1",

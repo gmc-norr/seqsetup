@@ -7,14 +7,21 @@
    Inputs:
      run:      SequencingRun
      messages: list[str] — validation_summary.error_messages(result)
+     heading:  str | None — for a refusal that is not about the checks
+     sample_errors: bool — False when no sample is marked and the validation
+               page has nothing to add (the Ready record being too large to
+               store, say): the footer would send the person to a page
+               reporting zero errors.
 #}
 <div class="error-message ready-refused">
-    <p><strong>Cannot mark ready: {{ messages | length }} error{{ '' if messages | length == 1 else 's' }} to fix first.</strong></p>
+    <p><strong>{% if heading %}{{ heading }}{% else %}Cannot mark ready: {{ messages | length }} error{{ '' if messages | length == 1 else 's' }} to fix first.{% endif %}</strong></p>
     <ul>
         {%- for message in messages %}
         <li>{{ message }}</li>
         {%- endfor %}
     </ul>
+    {%- if sample_errors is not defined or sample_errors %}
     <p>Samples with errors are marked in the table.
        <a href="/runs/{{ run.id }}/validation">Open the validation page</a> for details.</p>
+    {%- endif %}
 </div>
