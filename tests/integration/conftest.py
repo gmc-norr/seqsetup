@@ -335,10 +335,17 @@ def stored_export(ctx, run_or_id, kind: str):
 def nothing_stored(ctx, run_or_id) -> bool:
     """True when the run has no export of any kind -- a Draft, or a run whose
     Mark Ready was refused. The manifest is empty AND its own document
-    carries no file either, so neither shape can hide one."""
-    from seqsetup.models.sequencing_run import EXPORT_KINDS
+    carries no file either, so neither shape can hide one.
+
+    The legacy fields are checked with ``is None``, as the assertions this
+    replaced did: a field set to ``""`` is not "nothing stored", it is a
+    stored empty file, and this helper must not call that clean (review 1).
+    """
+    from seqsetup.models.sequencing_run import EXPORT_KINDS, LEGACY_EXPORT_FIELDS
     run = run_or_id if hasattr(run_or_id, "exports") else ctx.run_repo.get_by_id(run_or_id)
-    return not run.exports and not any(stored_export(ctx, run, kind) for kind in EXPORT_KINDS)
+    return (not run.exports
+            and all(getattr(run, name) is None for name in LEGACY_EXPORT_FIELDS.values())
+            and not any(stored_export(ctx, run, kind) for kind in EXPORT_KINDS))
 
 
 # Shared with the browser suite: tests/export_seed.py.

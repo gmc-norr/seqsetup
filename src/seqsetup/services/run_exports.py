@@ -34,9 +34,12 @@ from .samplesheet_v1_exporter import SampleSheetV1Exporter
 logger = logging.getLogger(__name__)
 
 # MongoDB refuses a document over 16 MiB. One file now has that whole budget
-# to itself, which is what removes the limit on a run as a whole; the margin
-# covers nothing in particular and is there so a record measured just under
-# the line cannot be refused by the server instead.
+# to itself, so the size of a run's files is no longer a limit on the run as
+# a whole (the run document is still measured for its own settings and
+# samples: routes/runs.py). What is measured here is the whole record, every
+# field included, so the margin covers nothing in particular -- it is slack,
+# so a record measured just under the line cannot be refused by the server
+# instead.
 MAX_EXPORT_FILE = 16 * 1024 * 1024
 EXPORT_FILE_MARGIN = 64 * 1024
 
@@ -62,6 +65,17 @@ class ExportFileTooBig(Exception):
         self.kind = kind
         self.size = size
         super().__init__(f"{kind} is {size} bytes")
+
+
+class ExportFileMissing(Exception):
+    """A file every Ready run must have was not there to write — an exporter
+    returned nothing. Raised before any file is written: Ready is the last
+    step, and a reader must never see a Ready run whose files are not all
+    stored (review 1, P3-2)."""
+
+    def __init__(self, kinds):
+        self.kinds = tuple(kinds)
+        super().__init__(f"nothing to store for {', '.join(self.kinds)}")
 
 
 class ExportFileNotStored(Exception):
@@ -198,15 +212,21 @@ def write_exports(ctx, run, files: dict, *, actor: str = "") -> dict:
     insert-only, so no reader of an older manifest can lose a file
     (docs/design/2026-10-16-export-files-own-records-design.md).
     """
+    missing = [kind for kind in _ALWAYS_REQUIRED if not files.get(kind)]
+    if missing:
+        raise ExportFileMissing(missing)
+
     planned = []
     for kind in EXPORT_KINDS:
         content = files.get(kind)
-        if content is None:
+        if not content:
             continue
         record, raw = _record(run.id, kind, content, actor)
-        size = len(BSON.encode(record))
-        if size > MAX_EXPORT_FILE - EXPORT_FILE_MARGIN:
-            raise ExportFileTooBig(kind, size)
+        # The record is what MongoDB must hold, so the record is what is
+        # measured; the message names the file's own bytes, which is the
+        # number that means something to a person (review 1, P3-6).
+        if len(BSON.encode(record)) > MAX_EXPORT_FILE - EXPORT_FILE_MARGIN:
+            raise ExportFileTooBig(kind, len(raw))
         planned.append((kind, record, raw))
 
     manifest = {}
@@ -224,4 +244,11 @@ def write_exports(ctx, run, files: dict, *, actor: str = "") -> dict:
                       f"not the {len(raw)} that were written")
         manifest[kind] = {"id": record["_id"], "sha256": record["sha256"],
                           "size": record["size"]}
+    # Logged with the run id, always: a Mark Ready that is refused after this
+    # point leaves these records referenced by nothing, and this line plus
+    # that refusal's own line are how an operator finds them (the spec's
+    # "Files written by an attempt that then fails ... and logged with the
+    # run id"; review 1, P2-1).
+    logger.info("Run %s: stored %d export files: %s", run.id, len(manifest),
+                ", ".join(f"{kind}={entry['id']}" for kind, entry in manifest.items()))
     return manifest

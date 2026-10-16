@@ -45,7 +45,8 @@ def _seed_ready_run(ctx, run_id: str = "api-ready-run", status: RunStatus = RunS
         exports=seed_stored_exports(
             ctx, run_id,
             samplesheet_v2="[Header]\nFileFormatVersion,2\n\n[Reads]\nRead1Cycles,151\n",
-            json='{"run_name": "API Test Run"}'),
+            json='{"run_name": "API Test Run"}',
+            validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n"),
     )
     run.add_sample(Sample(
         sample_id="S1",

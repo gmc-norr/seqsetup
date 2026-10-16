@@ -434,7 +434,7 @@ class TestSafetyBoundaries:
         run_id = _create_run(logged_in_client)
         run = ctx.run_repo.get_by_id(run_id)
         run.status = RunStatus.ARCHIVED
-        run.exports = seed_stored_exports(ctx, run_id, samplesheet_v2="snapshot")
+        run.exports = seed_stored_exports(ctx, run_id, samplesheet_v2="snapshot", json="{}", validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n")
         ctx.run_repo.save(run)
 
         r = logged_in_client.post(

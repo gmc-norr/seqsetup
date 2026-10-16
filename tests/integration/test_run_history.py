@@ -422,7 +422,8 @@ class TestReadyPromotionDiff:
         before = run.to_dict()
         run.status = RunStatus.READY
         run.exports = seed_stored_exports(ctx, run.id, samplesheet_v2="SHEET-V2",
-                                          json="JSON", validation_pdf=b"PDFBYTES")
+                                          json="JSON", validation_pdf=b"PDFBYTES",
+                                          validation_json="VJ")
         run.touch(updated_by="alice")
         ctx.run_repo.save(run)
         record_run_updated(ctx, run, before, "alice")

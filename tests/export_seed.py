@@ -14,7 +14,20 @@ from seqsetup.models.sequencing_run import EXPORT_KINDS
 
 def seed_stored_exports(ctx, run_id: str, **files) -> dict:
     """Write ``files`` (kind=content) into their own records and return the
-    manifest to put on the run's ``exports``."""
+    manifest to put on the run's ``exports``.
+
+    Every kind a manifest must name has to be given: a manifest with only
+    some of them is a *damaged* run, which read_export refuses, and a fixture
+    that seeded one would hand a later test a 500 that reads like an
+    application bug (review 1, P3-4). Pass ``allow_partial=True`` for a test
+    that means to seed a damaged run.
+    """
+    from seqsetup.services.run_exports import _ALWAYS_REQUIRED
+    if not files.pop("allow_partial", False):
+        missing = [kind for kind in _ALWAYS_REQUIRED if kind not in files]
+        assert not missing, (
+            f"a seeded manifest must name {sorted(_ALWAYS_REQUIRED)}; missing {missing}. "
+            f"Pass allow_partial=True to seed a damaged run on purpose.")
     manifest = {}
     for kind, content in files.items():
         assert kind in EXPORT_KINDS, kind

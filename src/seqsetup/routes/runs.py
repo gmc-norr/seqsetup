@@ -47,7 +47,8 @@ from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
 from ..services.github_sync import unfinished_sync_message
 from ..services.run_exports import (
-    ExportFileNotStored, ExportFileTooBig, export_file_too_big_message, write_exports,
+    ExportFileMissing, ExportFileNotStored, ExportFileTooBig,
+    export_file_too_big_message, write_exports,
 )
 from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
@@ -682,8 +683,21 @@ def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_st
         raise
 
 
+def _files_left(manifest: dict) -> dict:
+    """The files this Mark Ready already wrote, for a refusal's audit row.
+
+    A refusal after the files were written leaves them referenced by nothing,
+    and ``run_exports`` is never pruned, so each refusal names what it left
+    (the spec's "logged with the run id"; review 1, P2-1). Empty before the
+    write, and for every transition that writes nothing."""
+    if not manifest:
+        return {}
+    return {"export_files": [entry["id"] for entry in manifest.values()]}
+
+
 def _refused_while_a_sync_is_writing(
     request: Request, run: SequencingRun, ctx: AppContext, new_status: RunStatus,
+    written: Optional[dict] = None,
 ) -> None:
     """Mark Ready waits while a config sync's writes have not finished: the
     profiles and instrument records may be partly written (outside review of
@@ -698,6 +712,7 @@ def _refused_while_a_sync_is_writing(
         outcome="denied",
         reason="config_sync_unfinished",
         attempted_status=new_status.value,
+        **_files_left(written or {}),
     )
     raise ConflictError(unfinished_sync_message(note["since"], note["collections"]))
 
@@ -938,6 +953,25 @@ def update_status(
                     "HX-Reswap": "innerHTML",
                 },
             )
+        except ExportFileMissing as nothing_to_store:
+            logger.error(
+                "Run %s: nothing to store for %s; the run is still a Draft",
+                run.id, ", ".join(nothing_to_store.kinds),
+            )
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="export_file_missing",
+                attempted_status=new_status.value,
+                kinds=list(nothing_to_store.kinds),
+            )
+            return Response(
+                "One of this run's files came out empty, so it is still a Draft. Nothing "
+                "of it is served. Tell your SeqSetup administrator.",
+                status_code=500,
+            )
         except ExportFileNotStored as not_stored:
             logger.error(
                 "Run %s: its %s did not read back as written; the run is still a Draft (%s)",
@@ -1001,6 +1035,7 @@ def update_status(
                 outcome="denied",
                 reason="concurrent_edit_during_export",
                 attempted_status=new_status.value,
+                **_files_left(new_exports),
             )
             raise ConflictError(
                 "This run was edited by another user (or session) while its "
@@ -1027,6 +1062,7 @@ def update_status(
                 outcome="denied",
                 reason="instrument_disabled_during_export",
                 attempted_status=new_status.value,
+                **_files_left(new_exports),
             )
             raise ConflictError(
                 f"{run.instrument_platform.value} was disabled by an administrator "
@@ -1047,10 +1083,11 @@ def update_status(
                 outcome="denied",
                 reason="edit_lock_lost",
                 attempted_status=new_status.value,
+                **_files_left(new_exports),
             )
             raise ConflictError(str(e))
         # A sync may have started writing while the exports were made.
-        _refused_while_a_sync_is_writing(request, run, ctx, new_status)
+        _refused_while_a_sync_is_writing(request, run, ctx, new_status, new_exports)
         if validation_inputs_version() != inputs_at_start:
             audit(
                 "run.status.denied",
@@ -1059,6 +1096,7 @@ def update_status(
                 outcome="denied",
                 reason="settings_changed_during_export",
                 attempted_status=new_status.value,
+                **_files_left(new_exports),
             )
             raise ConflictError(_SETTINGS_CHANGED_DURING_EXPORT)
 
@@ -1116,6 +1154,7 @@ def update_status(
             reason="ready_document_too_large",
             attempted_status=new_status.value,
             document_bytes=too_big.size,
+            **_files_left(new_exports),
         )
         return HTMLResponse(
             templates.env.get_template("runs/_ready_refused.html").render(

@@ -40,7 +40,7 @@ def _make_run(ctx, status=RunStatus.DRAFT, samples=0, was_ready=False, name="Run
         run.status = RunStatus.READY
     run.status = status
     if sheet is not None:
-        run.exports = seed_stored_exports(ctx, run.id, samplesheet_v2=sheet)
+        run.exports = seed_stored_exports(ctx, run.id, samplesheet_v2=sheet, json="{}", validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n")
     ctx.run_repo.save(run)
     return run.id
 

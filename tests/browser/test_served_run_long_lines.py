@@ -30,7 +30,8 @@ def run_id(app_ctx):
         created_at=t, updated_at=t,
         exports=seed_stored_exports(
             app_ctx, "served-wide-run",
-            samplesheet_v2=f"[Header]\nFileFormatVersion,2\n\n[BCLConvert_Data]\n{LONG_LINE}\n"),
+            samplesheet_v2=f"[Header]\nFileFormatVersion,2\n\n[BCLConvert_Data]\n{LONG_LINE}\n",
+            json="{}", validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n"),
         sheet_targets={"samplesheet_v1": None, "samplesheet_v2": {
             "instrument": "NovaSeq X Series", "software": "BCL Convert", "software_version": "4.3.6",
             "i5_workflow": "W" * 64, "index2_column": "forward", "needs_runinfo_reverse_mark": True}},

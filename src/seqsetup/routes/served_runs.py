@@ -127,9 +127,9 @@ def _served_files(ctx, run, actor: str = "") -> list[ServedFile]:
                                     pdf_size_text=f"{len(content):,}"))
         else:
             files.append(ServedFile(resource, label, text=content))
+    files = [_with_target(f, run) if f.resource in ("samplesheet-v2", "samplesheet-v1")
+             else f for f in files]
     for f in files:
-        if f.resource in ("samplesheet-v2", "samplesheet-v1"):
-            _with_target(f, run)
         if not f.missing and not f.damaged:
             f.download = f"/runs/{run.id}/export/{f.resource}"
     return files

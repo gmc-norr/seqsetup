@@ -46,9 +46,9 @@ saved in either case.
 
 A run with one very large file is refused too, for that file's size. Each
 of the five files SeqSetup writes for a Ready run -- both Sample Sheets,
-the JSON, and the check report as JSON and as a PDF -- is stored as a
-record of its own, and one record can hold at most 16 MB. The size of a
-whole run is therefore no longer a limit; only one file's is. The check
+the JSON, and the check report as JSON and as a PDF -- is stored on its
+own, and SeqSetup stores at most 16 MB in one file. A run's files are
+therefore no longer measured together, only one at a time. The check
 report's per-lane pictures and index tables grow with the number of
 **different** samples in each lane, and at 200 different samples per lane
 on an eight-lane flowcell -- with the longest sample names SeqSetup
@@ -57,6 +57,12 @@ Ready** refuses and says which file it was and the size it measured;
 nothing is saved and the run stays a Draft. This is a limit of how
 SeqSetup stores a file, not a problem with the run: tell your SeqSetup
 administrator.
+
+A run record itself is held to the same 16 MB, for what the run says
+rather than for its files: its settings, and every sample with its names,
+test, worksheet and description. Thousands of samples with long
+descriptions can reach it. **Mark Ready** refuses that too, with the size
+it measured, and again nothing is saved.
 
 Once every error is fixed, selecting **Mark Ready** again succeeds: the
 status badge changes to **Ready**, the run is locked against further

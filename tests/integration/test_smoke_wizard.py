@@ -427,7 +427,7 @@ class TestReadyToDraftClearsExports:
         run = ctx.run_repo.get_by_id(run_id)
         from seqsetup.models.sequencing_run import RunStatus
         run.status = RunStatus.READY
-        run.exports = seed_stored_exports(ctx, run_id, samplesheet_v2="stale-sheet")
+        run.exports = seed_stored_exports(ctx, run_id, samplesheet_v2="stale-sheet", json="{}", validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n")
         ctx.run_repo.save(run)
         file_id = run.exports["samplesheet_v2"]["id"]
 
@@ -444,7 +444,9 @@ class TestReadyToDraftClearsExports:
         from seqsetup.models.sequencing_run import RunStatus
         run.status = RunStatus.READY
         run.exports = seed_stored_exports(ctx, run_id, samplesheet_v2="snapshot-sheet",
-                                          json="snapshot-json")
+                                          json="snapshot-json",
+                                          validation_json='{"errors": []}',
+                                          validation_pdf=b"%PDF-1.4\n")
         ctx.run_repo.save(run)
 
         response = logged_in_client.post(

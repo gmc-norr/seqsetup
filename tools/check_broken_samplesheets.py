@@ -145,11 +145,12 @@ def check_runs(db) -> tuple[str, int]:
     )
     broken: dict[str, list[tuple[dict, list[str]]]] = {"ready": [], "archived": []}
     checked = no_sheet = 0
-    # The run document no longer carries its files, so this reads whole
-    # documents; the legacy fields are projected for runs stored before they
-    # moved out, and the one pre-rename name the model also reads.
-    projection = {name: 1 for name in LEGACY_EXPORT_FIELDS.values()}
-    projection[LEGACY_EXPORT_V2_ALIAS] = 1
+    # Only the v2 sheet's own legacy field, for a run stored before the files
+    # moved into their own records, and the one pre-rename name the model also
+    # reads. Not the other four: nothing here can read them, and projecting
+    # the base64 report would pull 14 MB per such run across the wire -- the
+    # very cost this change removed (review 1, P3-3).
+    projection = {LEGACY_EXPORT_FIELDS["samplesheet_v2"]: 1, LEGACY_EXPORT_V2_ALIAS: 1}
     runs = db["runs"].find(
         {"status": {"$in": CHECKED_STATUSES}},
         {

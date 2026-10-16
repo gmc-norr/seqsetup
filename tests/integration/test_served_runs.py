@@ -212,7 +212,8 @@ class TestOneRunsFiles:
         page writes one there so the file's own first newline survives."""
         _app, ctx, _db = fresh_app
         run_id = _run(ctx, "newline-first", exports=seed_stored_exports(
-            ctx, "newline-first", samplesheet_v2="\n[Header]\nFileFormatVersion,2\n"))
+            ctx, "newline-first", samplesheet_v2="\n[Header]\nFileFormatVersion,2\n",
+            json="{}", validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n"))
         section = _section(logged_in_client.get(f"/served-runs/{run_id}").text, "samplesheet-v2")
         assert _shown_text(section) == "\n[Header]\nFileFormatVersion,2\n"
 

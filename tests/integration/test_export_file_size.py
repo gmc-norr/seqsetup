@@ -214,8 +214,9 @@ class TestTheLimitItselfIsPinned:
         assert MAX_EXPORT_FILE - EXPORT_FILE_MARGIN < MONGO_LIMIT
 
     def test_a_record_just_under_the_threshold_really_fits(self):
-        """The margin covers the record's other fields: an id, a hash, a
-        kind, a run id, a date and a name."""
+        """What is measured is the whole record, every field included, so the
+        margin is slack rather than an allowance for the other fields. This
+        pins that a record right at the threshold really is accepted."""
         content = b"x" * (MAX_EXPORT_FILE - EXPORT_FILE_MARGIN)
         doc = {"_id": "a" * 32, "run_id": "r" * 64, "kind": "validation_pdf",
                "content": content, "sha256": "b" * 64, "size": len(content),

@@ -262,5 +262,5 @@ class TestStoredMismatchOfTheWrongKind:
 
         doc = ctx.run_repo.collection.find_one({"_id": run_id})
         assert doc["status"] == "draft"
-        assert not doc.get("exports")
+        assert not doc.get("exports") and not doc.get("generated_samplesheet_v2")
         assert doc["samples"][0]["barcode_mismatches_index1"] is True

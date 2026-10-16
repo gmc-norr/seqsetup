@@ -114,7 +114,9 @@ class TestTheReadyManifestNamesExactlyWhatWasJustWritten:
         from .conftest import seed_stored_exports
         _app, ctx, _db = fresh_app
         run_id = seed_run(ctx, "stale-manifest")
-        stale = seed_stored_exports(ctx, run_id, samplesheet_v1="[Header]\nSTALE-V1\n")
+        # On purpose only a v1 sheet: this is the stale manifest a Draft must lose.
+        stale = seed_stored_exports(ctx, run_id, samplesheet_v1="[Header]\nSTALE-V1\n",
+                                    allow_partial=True)
         run = ctx.run_repo.get_by_id(run_id)
         run.exports = stale
         ctx.run_repo.save(run)
