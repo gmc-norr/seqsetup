@@ -289,6 +289,22 @@ class TestTheRunDocumentIsStillMeasured:
     but a run with very many samples could still outgrow it, and the driver
     must not be the one to say so."""
 
+    def test_the_measurement_is_the_bytes_the_repository_writes(self, fresh_app):
+        """Nothing else now drives a genuinely oversized run document through
+        the real measurement -- the oversized report trips the per-file gate
+        first -- so this pins that ``_ready_document_size`` measures the same
+        document ``RunRepository.save`` stores (review 2, P3-6)."""
+        from seqsetup.routes.runs import _ready_document_size
+        _app, ctx, _db = fresh_app
+        run_id = seed_run(ctx, "measured", samples=4)
+        run = ctx.run_repo.get_by_id(run_id)
+        run.run_description = "x" * 4000
+        ctx.run_repo.save(run)
+
+        stored = ctx.run_repo.collection.find_one({"_id": run_id})
+
+        assert _ready_document_size(ctx.run_repo.get_by_id(run_id)) == len(BSON.encode(stored))
+
     def test_a_run_document_over_the_limit_is_refused_with_its_own_message(
             self, logged_in_client, mongo_limit, monkeypatch):
         from seqsetup.routes import runs as runs_module

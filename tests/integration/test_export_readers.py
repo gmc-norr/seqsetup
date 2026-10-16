@@ -34,7 +34,15 @@ def _ready(client, ctx, run_id, which=BOTH_SHEETS, monkeypatch=None):
     """Mark the run Ready and freeze what each exporter returned while doing
     it. Frozen on purpose: a reader that generated a file afresh would call
     the same exporter again, and a spy read afterwards would hand the test
-    that fresh value and call it a match."""
+    that fresh value and call it a match.
+
+    That makes the comparison bite for the two check reports, which carry
+    their generation time; the sheets and the JSON are deterministic, so a
+    regeneration of those would be byte-identical and this test alone could
+    not see it. That nothing is regenerated at all is pinned separately, by
+    TestTheV1DecisionComesFromTheManifest's no-live test and by the damaged
+    tests below, which refuse rather than serve a fresh file (review 2,
+    P3-7)."""
     seed = seed_run(ctx, run_id, which)
     seen = spy_on_exporters(monkeypatch) if monkeypatch is not None else None
     assert mark_ready(client, seed, ORIGIN).status_code == 200
@@ -144,6 +152,26 @@ class TestADamagedFileIsRefusedByEveryReader:
         assert "cannot be served" in page.text
         # The other files are still shown.
         assert "FileFormatVersion" in page.text
+
+    def test_the_page_says_exactly_what_the_api_answers_for_it(
+            self, logged_in_client, fresh_app):
+        """The page's own promise: each row carries the answer the API gives.
+        The missing rows and the Draft's 403 are pinned against the API
+        itself in test_served_runs.py; this pins the damaged row the same way
+        (review 2, P3-5)."""
+        import html as html_module
+        import re
+        _app, ctx, _db = fresh_app
+        _ready(logged_in_client, ctx, "page-vs-api")
+        self._damage(ctx, "page-vs-api", "json")
+
+        api = _api(logged_in_client, ctx, "page-vs-api", "json")
+        page = logged_in_client.get("/served-runs/page-vs-api")
+        section = re.search(r'<section[^>]*id="served-json".*?</section>',
+                            page.text, re.S).group(0)
+
+        assert api.status_code == 500, api.text[:200]
+        assert f"500: {api.json()['detail']}" in html_module.unescape(section), section
 
     def test_the_operator_tool_reports_it_rather_than_passing_the_run(
             self, logged_in_client, fresh_app):
