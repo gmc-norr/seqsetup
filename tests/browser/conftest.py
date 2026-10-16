@@ -31,6 +31,8 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunSta
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.models.user import UserRole
 
+from ..export_seed import seed_stored_exports
+
 from .docs_shots import docs_launch_args
 
 # Module-level AppContext reference, set once by app_server and used by
@@ -429,8 +431,14 @@ def app_server(tmp_path_factory):
         updated_by=BROWSER_ADMIN["username"],
         created_at=_t_ready,
         updated_at=_t_ready,
-        generated_samplesheet_v2="[Header]\nFileFormatVersion,2\n\n[Reads]\nRead1Cycles,151\n",
-        generated_json='{"run_name": "Screenshot ready run"}',
+        # Every kind a manifest must name: a manifest with only some of
+        # them is a damaged run, which read_export refuses (review 1, P3-4).
+        exports=seed_stored_exports(
+            ctx, READY_RUN_ID,
+            samplesheet_v2="[Header]\nFileFormatVersion,2\n\n[Reads]\nRead1Cycles,151\n",
+            json='{"run_name": "Screenshot ready run"}',
+            validation_json='{"errors": [], "warnings": []}',
+            validation_pdf=b"%PDF-1.4\n% screenshot ready\n"),
     )
     ready_run.add_sample(Sample(
         id="ss-ready-s1", sample_id="READY-01", sample_name="Ready One",
@@ -457,8 +465,14 @@ def app_server(tmp_path_factory):
         updated_by=BROWSER_ADMIN["username"],
         created_at=_t_arch,
         updated_at=_t_arch,
-        generated_samplesheet_v2="[Header]\nFileFormatVersion,2\n\n[Reads]\nRead1Cycles,151\n",
-        generated_json='{"run_name": "Screenshot archived run"}',
+        # Every kind a manifest must name: a manifest with only some of
+        # them is a damaged run, which read_export refuses (review 1, P3-4).
+        exports=seed_stored_exports(
+            ctx, ARCHIVED_RUN_ID,
+            samplesheet_v2="[Header]\nFileFormatVersion,2\n\n[Reads]\nRead1Cycles,151\n",
+            json='{"run_name": "Screenshot archived run"}',
+            validation_json='{"errors": [], "warnings": []}',
+            validation_pdf=b"%PDF-1.4\n% screenshot archived\n"),
     )
     archived_run.add_sample(Sample(
         id="ss-arch-s1", sample_id="ARCH-01", sample_name="Archived One",

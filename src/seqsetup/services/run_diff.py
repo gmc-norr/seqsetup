@@ -1,9 +1,11 @@
 """Pure field-level diff of two SequencingRun.to_dict() snapshots.
 
 Produces (field_changes, sample_changes) for the change-history feature.
-No DB, no model imports — operates only on plain dicts so it is trivially
-unit-tested.
+No DB — the one model import is the names of the export fields, so this
+denylist and the model cannot drift apart.
 """
+
+from ..models.sequencing_run import LEGACY_EXPORT_FIELDS
 
 # Top-level run keys excluded from the config diff: volatile outputs, per-touch
 # metadata, the optimistic-lock token, transient UI state, the doc id, and
@@ -12,8 +14,7 @@ unit-tested.
 RUN_DIFF_IGNORED_KEYS = {
     "_id", "id", "samples",
     "updated_at", "updated_by", "_loaded_updated_at", "wizard_step",
-    "generated_samplesheet_v2", "generated_samplesheet_v1", "generated_json",
-    "generated_validation_json", "generated_validation_pdf", "samplesheet_v1_withheld",
+    "exports", *LEGACY_EXPORT_FIELDS.values(), "samplesheet_v1_withheld",
     "test_versions_used", "sheet_targets",
     # Follows status, whose change is already recorded (spec 2026-09-28 group 2a).
     "was_ready",

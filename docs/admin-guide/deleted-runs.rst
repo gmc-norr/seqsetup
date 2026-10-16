@@ -6,11 +6,15 @@ Ready -- an Archived run, or an empty Draft that was Ready once -- with a
 copy of the run and its :doc:`/user-guide/change-history`.
 
 Before such a run is deleted, SeqSetup saves a full copy of it as it is at
-that moment: its settings, its samples, and any sample sheet, JSON export
-and validation report it still has. An Archived run still has them,
-exactly as they were made. A Draft that was sent back from Ready does not:
-sending a run back to Draft clears them. If the copy cannot be saved, the
-run is not deleted. Change history is never deleted, for any run.
+that moment: its settings, its samples, and which sample sheet, JSON export
+and validation report it points at. An Archived run still points at them,
+exactly as they were made, and the files themselves stay in the
+``run_exports`` collection -- so a copy keeps naming files that are still
+there, and that collection must never be pruned (see
+:doc:`/getting-started/deployment`). A Draft that was sent back from Ready
+points at none: sending a run back to Draft drops them. If the copy cannot
+be saved, the run is not deleted. Change history is never deleted, for any
+run.
 
 An empty Draft that was never Ready is deleted without a copy: it never
 produced a sample sheet.

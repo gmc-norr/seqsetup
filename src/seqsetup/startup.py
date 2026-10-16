@@ -16,6 +16,7 @@ from .repositories.api_token_repo import ApiTokenRepository
 from .repositories.local_user_repo import LocalUserRepository
 from .repositories.sample_api_config_repo import SampleApiConfigRepository
 from .repositories.instrument_definition_repo import InstrumentDefinitionRepository
+from .repositories.run_export_repo import RunExportRepository
 from .repositories.run_template_repo import RunTemplateRepository
 from .repositories.run_history_repo import RunHistoryRepository
 from .repositories.deleted_run_repo import DeletedRunRepository
@@ -117,6 +118,7 @@ _REPO_REGISTRY = {
     "local_user": LocalUserRepository,
     "sample_api_config": SampleApiConfigRepository,
     "instrument_definition": InstrumentDefinitionRepository,
+    "run_export": RunExportRepository,
     "run_template": RunTemplateRepository,
     "run_history": RunHistoryRepository,
     "deleted_run": DeletedRunRepository,
@@ -190,6 +192,9 @@ def get_sample_api_config_repo() -> SampleApiConfigRepository:
 def get_instrument_definition_repo() -> InstrumentDefinitionRepository:
     return _get_repo("instrument_definition")
 
+def get_run_export_repo() -> RunExportRepository:
+    return _get_repo("run_export")
+
 def get_run_template_repo() -> RunTemplateRepository:
     return _get_repo("run_template")
 
@@ -216,6 +221,7 @@ def get_app_context() -> AppContext:
         run_repo=get_run_repo(),
         index_kit_repo=get_index_kit_repo(),
         test_repo=get_test_repo(),
+        run_export_repo=get_run_export_repo(),
         test_profile_repo=get_test_profile_repo(),
         app_profile_repo=get_app_profile_repo(),
         instrument_config_repo=get_instrument_config_repo(),

@@ -23,7 +23,7 @@ from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services import github_sync
 from seqsetup.utils.clock import local_time
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, nothing_stored, stored_export
 from .test_group_a3 import ORIGIN, _indexed_draft
 from .test_group_a4 import _fake_github, _test_yaml
 from .test_scheduled_sync_instrument_cache import _scheduled_sync, _seed_run
@@ -124,7 +124,7 @@ def _refused_while_paused(client, ctx, run_id, what):
     assert _paused(since, what) in html.unescape(resp.text)
     run = ctx.run_repo.get_by_id(run_id)
     assert run.status == RunStatus.DRAFT
-    assert run.generated_samplesheet_v2 is None
+    assert nothing_stored(ctx, run)
     assert "config_sync_unfinished" in _reasons(ctx)
 
 
@@ -233,7 +233,7 @@ class TestThePauseEnds:
         assert ctx.profile_sync_config_repo.writing_since() is None
         resp = mark_ready(logged_in_client, run.id, ORIGIN)
         assert resp.status_code == 200, html.unescape(resp.text)[:300]
-        assert NEW_ADAPTER in ctx.run_repo.get_by_id(run.id).generated_samplesheet_v2
+        assert NEW_ADAPTER in stored_export(ctx, run.id, "samplesheet_v2")
 
     def test_a_sync_whose_files_are_refused_does_not_pause(
             self, fresh_app, logged_in_client, monkeypatch):
@@ -368,7 +368,7 @@ class TestMarkReadyChecksAgainBeforeSaving:
         assert SETTINGS_CHANGED in html.unescape(resp.text)
         stored = ctx.run_repo.get_by_id(run.id)
         assert stored.status == RunStatus.DRAFT
-        assert stored.generated_samplesheet_v2 is None
+        assert nothing_stored(ctx, stored)
         assert "settings_changed_during_export" in _reasons(ctx)
 
 

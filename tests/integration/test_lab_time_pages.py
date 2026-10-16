@@ -16,6 +16,8 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunStatus, Sequen
 from seqsetup.services.log_capture import get_log_capture_handler
 from seqsetup.utils.clock import utcnow
 
+from .conftest import seed_stored_exports
+
 WINTER = datetime(2026, 1, 15, 12, 0)          # shown 2026-01-15 13:00 CET
 WINTER_SHOWN = "2026-01-15 13:00 CET"
 SUMMER = datetime(2026, 9, 1, 9, 0)            # shown 2026-09-01 11:00 CEST
@@ -152,7 +154,8 @@ class TestTheApi:
     def test_run_times_are_utc_marked_as_utc(self, client, fresh_app):
         _app, ctx, _db = fresh_app
         _run(ctx, run_id="lt-api", status=RunStatus.READY, updated_at=SUMMER,
-             generated_samplesheet_v2="[Header]\n", generated_json="{}")
+             exports=seed_stored_exports(ctx, "lt-api", samplesheet_v2="[Header]\n",
+                                         json="{}", validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n"))
         plaintext = ApiToken.generate_token()
         token_hash, token_prefix = ApiToken.hash_token(plaintext)
         ctx.api_token_repo.save(ApiToken(name="lt-api", token_hash=token_hash, token_prefix=token_prefix))

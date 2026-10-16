@@ -10,10 +10,14 @@ GET /served-runs/{run_id}  — each stored file a per-run API address hands
 
 Read-only: it shows what Mark Ready stored and never makes a file anew (the
 Export downloads do that for runs made before files were stored; the API
-does not, so a download is offered only for a stored file). The not-stored
-answers repeat api/app.py's; tests/integration/test_served_runs.py checks
-each against the API itself. Anyone signed in may look: they can already
-download these files.
+does not, so a download is offered only for a stored file). Every file is
+read through ``read_export`` (services/run_exports.py), so what this page
+shows is what the API serves, byte for byte. A file that cannot be served as
+it was stored gets its own row saying so, with the answer the API gives for
+it -- the other files are still shown. The not-stored answers repeat
+api/app.py's; tests/integration/test_served_runs.py checks each against the
+API itself. Anyone signed in may look: they can already download these
+files.
 """
 
 from dataclasses import dataclass, field
@@ -25,6 +29,7 @@ from starlette.responses import HTMLResponse, Response
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus
 from ..services.audit_log import audit
+from ..services.run_exports import ExportDamaged, read_export
 from ..templating import render
 from .dependencies import get_ctx
 from .utils import get_username
@@ -57,6 +62,7 @@ class ServedFile:
     target_note: str = ""            # what the sheet relies on BCL Convert to do
     target_rule_note: str = ""       # the converter whose collision rule was checked
     target_missing: bool = False     # a stored sheet whose target was never saved
+    damaged: str = ""                # why a stored file cannot be served
 
 
 def _target_rows(target: dict) -> list[tuple[str, str]]:
@@ -74,7 +80,7 @@ def _target_rows(target: dict) -> list[tuple[str, str]]:
 
 def _with_target(f: ServedFile, run) -> ServedFile:
     """A stored sheet with the target Mark Ready saved for it."""
-    if f.missing:
+    if f.missing or f.damaged:
         return f
     target = (run.sheet_targets or {}).get(f.resource.replace("-", "_"))
     if not target:
@@ -86,30 +92,45 @@ def _with_target(f: ServedFile, run) -> ServedFile:
     return f
 
 
-def _served_files(run) -> list[ServedFile]:
-    if run.generated_samplesheet_v1:
-        v1 = ServedFile("samplesheet-v1", "Sample Sheet v1", text=run.generated_samplesheet_v1)
-    elif run.samplesheet_v1_withheld:
-        v1 = ServedFile("samplesheet-v1", "Sample Sheet v1",
-                        missing=f"No v1 sheet for this run: {run.samplesheet_v1_withheld}.")
-    else:
-        v1 = ServedFile("samplesheet-v1", "Sample Sheet v1", missing="SampleSheet v1 not available for this run")
-    pdf = run.generated_validation_pdf
-    files = [
-        _with_target(ServedFile("samplesheet-v2", "Sample Sheet v2", text=run.generated_samplesheet_v2,
-                                missing="" if run.generated_samplesheet_v2 else "SampleSheet v2 not yet generated"),
-                     run),
-        _with_target(v1, run),
-        ServedFile("json", "JSON", text=run.generated_json,
-                   missing="" if run.generated_json else "JSON metadata not yet generated"),
-        ServedFile("validation-report", "Validation report (JSON)", text=run.generated_validation_json,
-                   missing="" if run.generated_validation_json else "Validation report not yet generated"),
-        ServedFile("validation-pdf", "Validation report (PDF)", pdf_size=len(pdf) if pdf else None,
-                   pdf_size_text=f"{len(pdf):,}" if pdf else "",
-                   missing="" if pdf else "Validation PDF not yet generated"),
-    ]
+# resource -> (label, export kind, the API's 404 detail when nothing is stored)
+_FILES = (
+    ("samplesheet-v2", "Sample Sheet v2", "samplesheet_v2", "SampleSheet v2 not yet generated"),
+    ("samplesheet-v1", "Sample Sheet v1", "samplesheet_v1",
+     "SampleSheet v1 not available for this run"),
+    ("json", "JSON", "json", "JSON metadata not yet generated"),
+    ("validation-report", "Validation report (JSON)", "validation_json",
+     "Validation report not yet generated"),
+    ("validation-pdf", "Validation report (PDF)", "validation_pdf",
+     "Validation PDF not yet generated"),
+)
+
+
+def _served_files(ctx, run, actor: str = "") -> list[ServedFile]:
+    files = []
+    for resource, label, kind, not_stored in _FILES:
+        if kind == "samplesheet_v1" and run.samplesheet_v1_withheld:
+            # Why Mark Ready made none (spec 2026-10-05 group A3, §3).
+            files.append(ServedFile(resource, label,
+                                    missing=f"No v1 sheet for this run: {run.samplesheet_v1_withheld}."))
+            continue
+        try:
+            content = read_export(ctx, run, kind, actor=actor)
+        except ExportDamaged as exc:
+            # This one file's own row, with the answer the API gives for it;
+            # the rest of the page is still shown.
+            files.append(ServedFile(resource, label, damaged=str(exc)))
+            continue
+        if content is None:
+            files.append(ServedFile(resource, label, missing=not_stored))
+        elif kind == "validation_pdf":
+            files.append(ServedFile(resource, label, pdf_size=len(content),
+                                    pdf_size_text=f"{len(content):,}"))
+        else:
+            files.append(ServedFile(resource, label, text=content))
+    files = [_with_target(f, run) if f.resource in ("samplesheet-v2", "samplesheet-v1")
+             else f for f in files]
     for f in files:
-        if not f.missing:
+        if not f.missing and not f.damaged:
             f.download = f"/runs/{run.id}/export/{f.resource}"
     return files
 
@@ -134,7 +155,7 @@ def served_run(request: Request, run_id: str, ctx: AppContext = Depends(get_ctx)
         audit("export.viewed", actor=get_username(request), target=run.id)
     return render(request, "served_runs/run.html", {
         "run": run,
-        "files": _served_files(run) if served else [],
+        "files": _served_files(ctx, run, get_username(request)) if served else [],
         "not_served": "" if served else _NOT_SERVED,
         "back_status": "archived" if run.status == RunStatus.ARCHIVED else "ready",
     })

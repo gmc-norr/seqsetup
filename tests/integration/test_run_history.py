@@ -7,7 +7,7 @@ import pytest
 from seqsetup.models.run_history import RunHistoryEntry
 from seqsetup.models.sequencing_run import RunStatus
 
-from .conftest import disable_repos
+from .conftest import disable_repos, seed_stored_exports
 
 
 def _origin() -> dict:
@@ -412,17 +412,18 @@ class TestHistoryRouteAndPanel:
 
 class TestReadyPromotionDiff:
     def test_ready_promotion_records_only_status_not_export_blobs(self, fresh_app):
-        # Promoting to READY also populates the (large, volatile) generated_*
-        # export blobs in the same save. The history entry must record ONLY
-        # status: draft -> ready, never the export blobs.
+        # Promoting to READY also writes the export manifest in the same
+        # save (and, on a run stored before the files moved out of the run
+        # document, the blobs themselves). The history entry must record ONLY
+        # status: draft -> ready, never either.
         from seqsetup.services.run_history import record_run_updated
         _app, ctx, _db = fresh_app
         run = ctx.run_repo.create_run("alice")
         before = run.to_dict()
         run.status = RunStatus.READY
-        run.generated_samplesheet_v2 = "SHEET-V2"
-        run.generated_json = "JSON"
-        run.generated_validation_pdf = b"PDFBYTES"
+        run.exports = seed_stored_exports(ctx, run.id, samplesheet_v2="SHEET-V2",
+                                          json="JSON", validation_pdf=b"PDFBYTES",
+                                          validation_json="VJ")
         run.touch(updated_by="alice")
         ctx.run_repo.save(run)
         record_run_updated(ctx, run, before, "alice")
@@ -430,6 +431,7 @@ class TestReadyPromotionDiff:
         assert entry.kind == "updated"
         names = {c["field"] for c in entry.field_changes}
         assert "status" in names
+        assert "exports" not in names
         assert not any(n.startswith("generated_") for n in names)
 
 

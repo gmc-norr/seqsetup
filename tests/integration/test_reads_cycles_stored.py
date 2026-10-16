@@ -18,7 +18,7 @@ import pytest
 from seqsetup.models.sequencing_run import (InstrumentPlatform, RunCycles, RunStatus,
                                             SequencingRun)
 
-from .conftest import hold_edit_lock, mark_ready, run_version
+from .conftest import hold_edit_lock, mark_ready, run_version, stored_export
 from .test_index_safety_net import TEST_ID, TEST_VERSION, _bearer, _seed_profiles
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -154,21 +154,25 @@ class TestMarkReadyStoresEachCountInEveryExport:
 
         stored = _ready_run(logged_in_client, ctx, "cycles-stored", counts, samples)
 
-        assert _reads(stored.generated_samplesheet_v2) == [
+        v2 = stored_export(ctx, stored, "samplesheet_v2")
+        v1 = stored_export(ctx, stored, "samplesheet_v1")
+        json_text = stored_export(ctx, stored, "json")
+
+        assert _reads(v2) == [
             f"Read1Cycles,{read1}", f"Read2Cycles,{read2}",
             f"Index1Cycles,{index1}", f"Index2Cycles,{index2}"]
         # Each row's OverrideCycles reads the same four counts, in the
         # instrument's order (Read 1, Index 1, Index 2, Read 2).
-        rows = stored.generated_samplesheet_v2.split("[BCLConvert_Data]\n")[1].split("\n\n")[0]
+        rows = v2.split("[BCLConvert_Data]\n")[1].split("\n\n")[0]
         header, *data = rows.splitlines()
         column = header.split(",").index("OverrideCycles")
         assert [row.split(",")[column] for row in data] == (
             [f"Y{read1};I{index1};I{index2};Y{read2}"] * len(samples))
 
-        assert stored.generated_samplesheet_v1 is not None
-        assert _reads(stored.generated_samplesheet_v1) == [str(read1), str(read2)]
+        assert v1 is not None
+        assert _reads(v1) == [str(read1), str(read2)]
 
-        assert json.loads(stored.generated_json)["cycles"] == {
+        assert json.loads(json_text)["cycles"] == {
             "read1_cycles": read1, "read2_cycles": read2,
             "index1_cycles": index1, "index2_cycles": index2,
             "total_cycles": read1 + read2 + index1 + index2}
@@ -177,6 +181,6 @@ class TestMarkReadyStoresEachCountInEveryExport:
         served = {kind: logged_in_client.get(f"/api/runs/cycles-stored/{kind}", headers=headers)
                   for kind in ("samplesheet-v2", "samplesheet-v1", "json")}
         assert {kind: r.status_code for kind, r in served.items()} == dict.fromkeys(served, 200)
-        assert served["samplesheet-v2"].text == stored.generated_samplesheet_v2
-        assert served["samplesheet-v1"].text == stored.generated_samplesheet_v1
-        assert served["json"].json()["cycles"] == json.loads(stored.generated_json)["cycles"]
+        assert served["samplesheet-v2"].text == v2
+        assert served["samplesheet-v1"].text == v1
+        assert served["json"].json()["cycles"] == json.loads(json_text)["cycles"]

@@ -16,7 +16,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.models.user import UserRole
 
-from .conftest import disable_repos
+from .conftest import disable_repos, nothing_stored, seed_stored_exports
 
 ORIGIN = {"Origin": "http://testserver"}
 HX = {**ORIGIN, "HX-Request": "true"}
@@ -40,7 +40,7 @@ def _make_run(ctx, status=RunStatus.DRAFT, samples=0, was_ready=False, name="Run
         run.status = RunStatus.READY
     run.status = status
     if sheet is not None:
-        run.generated_samplesheet_v2 = sheet
+        run.exports = seed_stored_exports(ctx, run.id, samplesheet_v2=sheet, json="{}", validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n")
     ctx.run_repo.save(run)
     return run.id
 
@@ -114,7 +114,10 @@ class TestWhoMayDelete:
         assert logged_in_client.delete(f"/runs/{run_id}", headers=HX).status_code == 200
         (copy,) = _copies(db, run_id)
         assert copy["state"] == "completed"
-        assert copy["run"]["generated_samplesheet_v2"] == "[Header]\nSHEET-BYTES\n"
+        # The copy holds the manifest, and the file it names is still there
+        # (the design, 2026-10-16: the collection is insert-only).
+        entry = copy["run"]["exports"]["samplesheet_v2"]
+        assert ctx.run_export_repo.get(entry["id"])["content"] == "[Header]\nSHEET-BYTES\n"
         assert [s["sample_id"] for s in copy["run"]["samples"]] == ["S0", "S1"]
         assert ctx.run_history_repo.list_by_run(run_id, limit=10)
 
@@ -277,13 +280,15 @@ class TestWhatTheCopyHolds:
         # Back to Draft through the real status route: it clears the exports.
         assert logged_in_client.post(f"/runs/{run_id}/status/draft", headers=HX).status_code == 200
         run = ctx.run_repo.get_by_id(run_id)
-        assert (run.status, run.was_ready, run.generated_samplesheet_v2) == (RunStatus.DRAFT, True, None)
+        assert (run.status, run.was_ready) == (RunStatus.DRAFT, True)
+        assert nothing_stored(ctx, run)
         sample = run.samples[0].id
         assert logged_in_client.delete(f"/runs/{run_id}/samples/{sample}", headers=HX).status_code == 200
         assert logged_in_client.delete(f"/runs/{run_id}", headers=HX).status_code == 200
         (copy,) = _copies(db, run_id)
         assert copy["state"] == "completed"
         assert copy["run"]["samples"] == []
+        assert copy["run"]["exports"] == {}
         assert (copy["run"]["generated_samplesheet_v2"], copy["run"]["generated_json"]) == (None, None)
 
 

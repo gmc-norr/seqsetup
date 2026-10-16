@@ -47,6 +47,7 @@ def _source_run(samples=None, analyses=None):
         generated_json="STALE",
         generated_validation_json="STALE",
         generated_validation_pdf=b"STALE",
+        exports={"samplesheet_v2": {"id": "a" * 32, "sha256": "b" * 64, "size": 5}},
     )
 
 
@@ -61,7 +62,10 @@ class TestBuildDraftRunBasics:
         assert run.id != src.id
         assert run.created_by == "alice" and run.updated_by == "alice"
         assert run._loaded_updated_at is None
-        # ALL five pre-generated export blobs must be shed, not just the v2 sheet.
+        # The manifest of the source's files must be shed: a fresh Draft
+        # names no file (the design, 2026-10-16). A source stored before they
+        # moved out of the run document sheds all five blobs too.
+        assert run.exports == {}
         assert run.generated_samplesheet_v2 is None
         assert run.generated_samplesheet_v1 is None
         assert run.generated_json is None

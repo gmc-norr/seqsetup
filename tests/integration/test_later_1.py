@@ -285,7 +285,8 @@ class TestTheReadySheetHasNaForAMissingIndex:
 
         stored = profiles.run_repo.get_by_id(run.id)
         assert stored.status == RunStatus.READY, html.unescape(resp.text)[:400]
-        rows = stored.generated_samplesheet_v2.split("[BCLConvert_Data]\n")[1].split("\n\n")[0]
+        sheet = stored_export(profiles, stored, "samplesheet_v2")
+        rows = sheet.split("[BCLConvert_Data]\n")[1].split("\n\n")[0]
         assert rows.splitlines()[1:] == ["S1,1,ACGTACGTAC,,Y151;I10;N10;Y151,1,na",
                                          "S2,1,TGCATGCAAC,,Y151;I10;N10;Y151,1,na"]
 
@@ -319,7 +320,7 @@ class TestMarkReadyRefusesAMismatchSettingWithoutTheIndex:
 # --- spec §3: no lane splitting with a Lane column ---------------------------
 
 from .test_group_a3 import _indexed_draft  # noqa: E402
-from .conftest import hold_edit_lock
+from .conftest import hold_edit_lock, stored_export
 
 
 class TestMarkReadyRefusesNoLaneSplittingWithALaneColumn:

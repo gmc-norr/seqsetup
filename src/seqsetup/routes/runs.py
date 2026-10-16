@@ -39,11 +39,17 @@ from ..data.instruments import (
     SyncedInstrumentsUnusable,
 )
 from ..models.instrument_definition import InstrumentRecordError
-from ..models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from ..models.sequencing_run import (
+    InstrumentPlatform, LEGACY_EXPORT_FIELDS, RunCycles, RunStatus, SequencingRun,
+)
 from ..repositories.base import ConflictError
 from ..services.audit_log import audit
 from ..services.cycle_calculator import CycleCalculator
 from ..services.github_sync import unfinished_sync_message
+from ..services.run_exports import (
+    ExportFileMissing, ExportFileNotStored, ExportFileTooBig,
+    export_file_too_big_message, write_exports,
+)
 from ..services.json_exporter import JSONExporter
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
@@ -73,11 +79,8 @@ _FINGERPRINT_IGNORED_KEYS = (
     "updated_at",
     "updated_by",
     "_loaded_updated_at",
-    "generated_samplesheet_v2",
-    "generated_samplesheet_v1",
-    "generated_json",
-    "generated_validation_json",
-    "generated_validation_pdf",
+    "exports",
+    *LEGACY_EXPORT_FIELDS.values(),
     "samplesheet_v1_withheld",
     "sheet_targets",
 )
@@ -168,7 +171,8 @@ def _export_input_fingerprint(run: SequencingRun) -> str:
         exports are stale; refuse the transition with a clear message so the
         user can retry without an unexpected 409.
 
-    Stripping the ``generated_*`` blobs is what keeps the fingerprint about
+    Stripping the export fields (the manifest and the legacy blobs, named
+    in _FINGERPRINT_IGNORED_KEYS) is what keeps the fingerprint about
     *inputs* — those fields are output of the very transition we're trying
     to commit, so including them would always fingerprint-differ.
     """
@@ -660,8 +664,21 @@ async def update_setup(
 
 # --- update_status: cross-status transitions (uses get_archivable_run) ---
 
+def _files_left(manifest: dict) -> dict:
+    """The files this Mark Ready already wrote, for a refusal's audit row.
+
+    A refusal after the files were written leaves them referenced by nothing,
+    and ``run_exports`` is never pruned, so each refusal names what it left
+    (the spec's "logged with the run id"; review 1, P2-1). Empty before the
+    write, and for every transition that writes nothing."""
+    if not manifest:
+        return {}
+    return {"export_files": [entry["id"] for entry in manifest.values()]}
+
+
 @contextmanager
-def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_status: RunStatus):
+def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_status: RunStatus,
+                                    written: Optional[dict] = None):
     """Mark Ready stops when the synced instrument records cannot be used:
     audit the refusal, then let the error reach its handler (spec 2026-10-04
     group A2, §5). Nothing has been saved at these points."""
@@ -675,12 +692,14 @@ def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_st
             outcome="denied",
             reason="synced_instruments_unusable",
             attempted_status=new_status.value,
+            **_files_left(written or {}),
         )
         raise
 
 
 def _refused_while_a_sync_is_writing(
     request: Request, run: SequencingRun, ctx: AppContext, new_status: RunStatus,
+    written: Optional[dict] = None,
 ) -> None:
     """Mark Ready waits while a config sync's writes have not finished: the
     profiles and instrument records may be partly written (outside review of
@@ -695,6 +714,7 @@ def _refused_while_a_sync_is_writing(
         outcome="denied",
         reason="config_sync_unfinished",
         attempted_status=new_status.value,
+        **_files_left(written or {}),
     )
     raise ConflictError(unfinished_sync_message(note["since"], note["collections"]))
 
@@ -818,6 +838,8 @@ def update_status(
     new_val_json = None
     new_val_pdf = None
     new_i5_direction = None
+    new_exports: dict = {}
+    stored_v1 = None
     if new_status == RunStatus.READY:
         try:
             with _denied_if_instruments_unusable(request, run, new_status):
@@ -885,6 +907,112 @@ def update_status(
             logger.error(f"Failed to generate exports for run {run.id}", exc_info=True)
             return Response("Failed to generate exports", status_code=500)
 
+        # Each file goes into its own record (services/run_exports.py), and
+        # the run will carry only the manifest. Measured first, so a file
+        # that cannot be stored refuses the transition before anything is
+        # written; then written and read straight back, so the run never goes
+        # Ready naming a file that cannot be served
+        # (docs/design/2026-10-16-export-files-own-records-design.md).
+        stored_v1 = (
+            new_ss_v1 if new_ss_v1 is not None and not validation_result.v1_sheet_withheld
+            else None
+        )
+        try:
+            new_exports = write_exports(
+                ctx, run,
+                {
+                    "samplesheet_v2": new_ss_v2,
+                    "samplesheet_v1": stored_v1,
+                    "json": new_json,
+                    "validation_json": new_val_json,
+                    "validation_pdf": new_val_pdf,
+                },
+                actor=get_username(request),
+            )
+        except ExportFileTooBig as too_big:
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="export_file_too_large",
+                attempted_status=new_status.value,
+                kind=too_big.kind,
+                file_bytes=too_big.size,
+            )
+            return HTMLResponse(
+                templates.env.get_template("runs/_ready_refused.html").render(
+                    run=run,
+                    messages=[export_file_too_big_message(too_big.kind, too_big.size)],
+                    # Not a validation refusal: no sample is marked, and the
+                    # same run reports zero errors on the validation page.
+                    heading="Cannot mark ready: one of this run's exports is too large to store.",
+                    sample_errors=False,
+                ),
+                headers={
+                    "Cache-Control": "no-store",
+                    "HX-Retarget": "#ready-message",
+                    "HX-Reswap": "innerHTML",
+                },
+            )
+        except ExportFileMissing as nothing_to_store:
+            logger.error(
+                "Run %s: nothing to store for %s; the run is still a Draft",
+                run.id, ", ".join(nothing_to_store.kinds),
+            )
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="export_file_missing",
+                attempted_status=new_status.value,
+                kinds=list(nothing_to_store.kinds),
+            )
+            return Response(
+                "One of this run's files came out empty, so it is still a Draft. Nothing "
+                "of it is served. Tell your SeqSetup administrator.",
+                status_code=500,
+            )
+        except ExportFileNotStored as not_stored:
+            logger.error(
+                "Run %s: its %s did not read back as written; the run is still a Draft (%s)",
+                run.id, not_stored.kind, not_stored.why,
+            )
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="export_file_not_stored",
+                attempted_status=new_status.value,
+                kind=not_stored.kind,
+            )
+            return Response(
+                "This run's files were not stored as they were written, so it is still a "
+                "Draft. Nothing of it is served. Tell your SeqSetup administrator.",
+                status_code=500,
+            )
+        except Exception:
+            # A write that failed for any other reason (the database went
+            # away mid-insert): the same answer, named in the log and in the
+            # audit trail rather than a bare 500 nobody can place.
+            logger.error("Run %s: its files could not be written; the run is still a Draft",
+                         run.id, exc_info=True)
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="export_files_not_written",
+                attempted_status=new_status.value,
+            )
+            return Response(
+                "This run's files could not be stored, so it is still a Draft. Nothing of "
+                "it is served. Tell your SeqSetup administrator.",
+                status_code=500,
+            )
+
     # On DRAFT→READY, re-fetch the run right before save so the optimistic-
     # lock token reflects the freshest version. Export generation above
     # took multiple seconds; without this refresh, any unrelated touch
@@ -909,6 +1037,7 @@ def update_status(
                 outcome="denied",
                 reason="concurrent_edit_during_export",
                 attempted_status=new_status.value,
+                **_files_left(new_exports),
             )
             raise ConflictError(
                 "This run was edited by another user (or session) while its "
@@ -922,7 +1051,8 @@ def update_status(
         # The instrument may have been switched off while the exports were
         # being generated. Read the switch from the database, not the
         # in-process cache (spec 2026-09-28 group 1c, F27, review P2).
-        with _denied_if_instruments_unusable(request, run, new_status), reading_synced_records():
+        with _denied_if_instruments_unusable(
+                request, run, new_status, new_exports), reading_synced_records():
             definition = (
                 ctx.instrument_definition_repo.get_by_name(run.instrument_platform.value)
                 if ctx.instrument_definition_repo is not None else None
@@ -935,6 +1065,7 @@ def update_status(
                 outcome="denied",
                 reason="instrument_disabled_during_export",
                 attempted_status=new_status.value,
+                **_files_left(new_exports),
             )
             raise ConflictError(
                 f"{run.instrument_platform.value} was disabled by an administrator "
@@ -955,10 +1086,11 @@ def update_status(
                 outcome="denied",
                 reason="edit_lock_lost",
                 attempted_status=new_status.value,
+                **_files_left(new_exports),
             )
             raise ConflictError(str(e))
         # A sync may have started writing while the exports were made.
-        _refused_while_a_sync_is_writing(request, run, ctx, new_status)
+        _refused_while_a_sync_is_writing(request, run, ctx, new_status, new_exports)
         if validation_inputs_version() != inputs_at_start:
             audit(
                 "run.status.denied",
@@ -967,6 +1099,7 @@ def update_status(
                 outcome="denied",
                 reason="settings_changed_during_export",
                 attempted_status=new_status.value,
+                **_files_left(new_exports),
             )
             raise ConflictError(_SETTINGS_CHANGED_DURING_EXPORT)
 
@@ -976,21 +1109,24 @@ def update_status(
         with saving_run(run, ctx, request):
             run.status = new_status
             if new_status == RunStatus.READY:
-                run.generated_samplesheet_v2 = new_ss_v2
-                run.generated_json = new_json
+                # The manifest of the files just written, assigned whole:
+                # never merged into one already there, so a Ready run names
+                # exactly the files this Mark Ready stored.
+                run.exports = new_exports
+                # A run marked Ready by this release carries no file in its
+                # own document; only a run stored before they moved out does.
+                for field_name in LEGACY_EXPORT_FIELDS.values():
+                    setattr(run, field_name, None)
                 # No v1 sheet when the checks that let the run through say it
                 # cannot carry their settings (spec 2026-10-05 group A3, §3).
                 run.samplesheet_v1_withheld = validation_result.v1_sheet_withheld
                 # The exact test versions the checks used (spec 2026-10-07 group A4, §3).
                 run.test_versions_used = list(validation_result.test_versions)
-                if new_ss_v1 is not None and not validation_result.v1_sheet_withheld:
-                    run.generated_samplesheet_v1 = new_ss_v1
-                run.generated_validation_json = new_val_json
-                run.generated_validation_pdf = new_val_pdf
-                # Of the sheets just stored (the user's request, 2026-10-13).
+                # Of the sheets just stored (the user's request, 2026-10-13):
+                # the texts that were written, which the run no longer holds.
                 run.sheet_targets = sheet_targets(
                     run.instrument_platform.value, new_i5_direction,
-                    run.generated_samplesheet_v2, run.generated_samplesheet_v1,
+                    new_ss_v2, stored_v1,
                     has_i5=any(s.index2_sequence for s in run.samples),
                 )
                 # Everything the Ready run will carry is on it now: measure it
@@ -1006,14 +1142,12 @@ def update_status(
                 # run back to DRAFT. READY→ARCHIVED retains the exports —
                 # archived runs are read-only snapshots whose exports must
                 # remain accessible via the API surface.
-                run.generated_samplesheet_v2 = None
-                run.generated_samplesheet_v1 = None
+                run.exports = {}
+                for field_name in LEGACY_EXPORT_FIELDS.values():
+                    setattr(run, field_name, None)
                 run.samplesheet_v1_withheld = ""
                 run.test_versions_used = []
                 run.sheet_targets = {}
-                run.generated_json = None
-                run.generated_validation_json = None
-                run.generated_validation_pdf = None
     except ReadyDocumentTooBig as too_big:
         audit(
             "run.status.denied",
@@ -1023,6 +1157,7 @@ def update_status(
             reason="ready_document_too_large",
             attempted_status=new_status.value,
             document_bytes=too_big.size,
+            **_files_left(new_exports),
         )
         return HTMLResponse(
             templates.env.get_template("runs/_ready_refused.html").render(

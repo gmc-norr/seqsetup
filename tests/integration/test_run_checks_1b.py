@@ -6,7 +6,7 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 
-from .conftest import disable_repos
+from .conftest import disable_repos, nothing_stored
 from .conftest import hold_edit_lock
 
 
@@ -232,7 +232,7 @@ class TestColorBalanceQuestion:
         assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert "Color balance errors" in resp.text and "Mark Ready anyway" in resp.text
         run = ctx.run_repo.get_by_id(run_id)
-        assert run.status.value == "draft" and run.generated_samplesheet_v2 is None
+        assert run.status.value == "draft" and nothing_stored(ctx, run)
         (event,) = _events(ctx, "run.status.denied")
         assert event.details["reason"] == "color_balance_unconfirmed"
         assert event.details["color_balance_lanes"] == [1]

@@ -19,6 +19,8 @@ from seqsetup.models.api_token import ApiToken
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
+from .conftest import seed_stored_exports
+
 # /api routes meant to answer without a token, each with its reason. None
 # today: the schema and the Swagger page are token-gated too (api/app.py).
 OPEN_API_ROUTES: dict[tuple[str, str], str] = {}
@@ -80,9 +82,10 @@ def _run(ctx, run_id, status):
         instrument_platform=InstrumentPlatform.NOVASEQ_6000, flowcell_type="S4",
         run_cycles=RunCycles(151, 151, 8, 8), status=status,
         created_at=datetime(2026, 1, 10, 9, 0), updated_at=datetime(2026, 1, 10, 9, 0),
-        generated_samplesheet_v2=SHEET, generated_samplesheet_v1=SHEET.replace("2", "1"),
-        generated_json='{"run_name": "x"}', generated_validation_json='{"errors": []}',
-        generated_validation_pdf=b"%PDF-1.4\n%guard\n",
+        exports=seed_stored_exports(
+            ctx, run_id, samplesheet_v2=SHEET, samplesheet_v1=SHEET.replace("2", "1"),
+            json='{"run_name": "x"}', validation_json='{"errors": []}',
+            validation_pdf=b"%PDF-1.4\n%guard\n"),
     )
     run.add_sample(Sample(id=f"{run_id}-s1", sample_id="S1", lanes=[1]))
     ctx.run_repo.save(run)

@@ -21,7 +21,7 @@ from seqsetup.models.sequencing_run import (InstrumentPlatform, RunCycles, RunSt
                                             SequencingRun)
 from seqsetup.services.validation import ValidationService
 
-from .conftest import hold_edit_lock, mark_ready, run_version
+from .conftest import hold_edit_lock, mark_ready, nothing_stored, run_version, stored_export
 from .test_index_safety_net import TEST_ID, TEST_VERSION, _seed_profiles
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -64,8 +64,7 @@ def _assert_refused(resp, ctx, run_id: str, message: str):
     assert message in html.unescape(resp.text)
     run = ctx.run_repo.get_by_id(run_id)
     assert run.status == RunStatus.DRAFT
-    assert (run.generated_samplesheet_v2, run.generated_samplesheet_v1, run.generated_json) == (
-        None, None, None)
+    assert nothing_stored(ctx, run)
 
 
 @pytest.fixture(autouse=True)
@@ -139,7 +138,7 @@ class TestMarkReadyRefusesALaneOutsideTheFlowcell:
 
         run = ctx.run_repo.get_by_id("ready-lane-2")
         assert run.status == RunStatus.READY, html.unescape(resp.text)[:600]
-        assert run.generated_samplesheet_v2 is not None
+        assert stored_export(ctx, run, "samplesheet_v2")
 
 
 class TestASmallerFlowcellLeavesALaneBehind:

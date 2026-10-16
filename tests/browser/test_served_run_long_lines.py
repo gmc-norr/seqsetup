@@ -12,6 +12,8 @@ import pytest
 
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+
+from ..export_seed import seed_stored_exports
 from .conftest import hold_edit_lock
 
 LONG_LINE = "Sample_ID," + ",".join(f"Column{n}" for n in range(120))
@@ -26,7 +28,10 @@ def run_id(app_ctx):
         instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8), status=RunStatus.READY,
         created_at=t, updated_at=t,
-        generated_samplesheet_v2=f"[Header]\nFileFormatVersion,2\n\n[BCLConvert_Data]\n{LONG_LINE}\n",
+        exports=seed_stored_exports(
+            app_ctx, "served-wide-run",
+            samplesheet_v2=f"[Header]\nFileFormatVersion,2\n\n[BCLConvert_Data]\n{LONG_LINE}\n",
+            json="{}", validation_json='{"errors": []}', validation_pdf=b"%PDF-1.4\n"),
         sheet_targets={"samplesheet_v1": None, "samplesheet_v2": {
             "instrument": "NovaSeq X Series", "software": "BCL Convert", "software_version": "4.3.6",
             "i5_workflow": "W" * 64, "index2_column": "forward", "needs_runinfo_reverse_mark": True}},

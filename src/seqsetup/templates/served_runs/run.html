@@ -52,7 +52,11 @@
     {% elif f.target_missing %}
     <p class="text-sm text-slate-600">Not recorded: this run was marked Ready before SeqSetup saved each sheet's target.</p>
     {% endif %}
-    {% if f.missing %}
+    {% if f.damaged %}
+    {# A stored file that cannot be served as it was stored. Its own row, so
+       the rest of the page is still shown (the design, 2026-10-16). #}
+    <p class="error-message text-sm">The API answers <code>500: {{ f.damaged }}</code></p>
+    {% elif f.missing %}
     <p class="text-sm text-slate-600">The API answers <code>404: {{ f.missing }}</code></p>
     {% elif f.pdf_size is not none %}
     <p class="text-sm">A PDF of {{ f.pdf_size_text }} bytes.</p>

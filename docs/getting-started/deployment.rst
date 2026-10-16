@@ -381,10 +381,28 @@ Before deploying to production:
    Set ``SEQSETUP_HTTPS_ONLY=1`` and keep the app's port on ``127.0.0.1``
    (see :ref:`port-and-https`).
 
-7. **Back up MongoDB regularly**
+7. **Back up MongoDB regularly, the whole database**
 
    Set up automated backups of the MongoDB data volume or use MongoDB
    Atlas with automated backups.
+
+   A Ready run's five export files -- both Sample Sheets, the JSON, and
+   the check report as JSON and as a PDF -- are stored in their own
+   collection, ``run_exports``, one record per file; the run document
+   names them with their lengths and SHA-256 hashes. A backup or a restore
+   that leaves that collection out keeps the runs and loses their files:
+   every download and every API call for such a run then answers ``500``
+   with a message naming the file, which is deliberate -- SeqSetup serves
+   exactly the bytes a run's checks passed, or nothing (see
+   :ref:`export-file-damaged`). Back up and restore ``runs`` and
+   ``run_exports`` together.
+
+   **Never prune ``run_exports``.** Records of a Mark Ready that failed
+   part way, and of a deleted run's kept copy, look unreferenced: they are
+   not. SeqSetup itself only ever inserts into this collection -- it never
+   updates or deletes a record -- so a file a run names is the file that
+   was checked. Removing one by hand makes that run refuse to serve
+   rather than serve something else.
 
 Reverse Proxy Configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

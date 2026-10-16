@@ -607,9 +607,8 @@ def test_override_cycles_bulk(demo_page, base_url, demo):
 #
 # demo['ready'] and demo['archived'] were written straight into the database
 # with that status (docs_world.seed_demo) -- they never went through the
-# real DRAFT->READY route, so their generated_* export fields are None and
-# their Export panel would not show what a genuinely-promoted run looks
-# like. A brand-new run is built and driven through Mark Ready / Return to
+# real DRAFT->READY route, so they store no export files and their Export
+# panel would not show what a genuinely-promoted run looks like. A brand-new run is built and driven through Mark Ready / Return to
 # Draft / Archive for real instead, using UDI0005-UDI0008 -- the same four
 # pairs demo['archived'] uses, proven collision- and dark-cycle-free.
 # _CLEAN_RUN carries that run's id from test_ready_mark_ready to the tests

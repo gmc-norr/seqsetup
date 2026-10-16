@@ -11,7 +11,7 @@ already has downloadable, pre-generated content.
 from .test_smoke_validation import _make_ready_eligible_run
 from seqsetup.services.samplesheet_v1_exporter import SampleSheetV1Exporter
 
-from .conftest import mark_ready
+from .conftest import mark_ready, stored_export
 
 
 def _origin() -> dict:
@@ -64,12 +64,13 @@ class TestArchivedExportPanelEnabled:
         run = ctx.run_repo.get_by_id(run_id)
 
         links_and_stored = [
-            ("samplesheet-v2", run.generated_samplesheet_v2),
-            ("json", run.generated_json),
-            ("validation-report", run.generated_validation_json),
+            ("samplesheet-v2", stored_export(ctx, run, "samplesheet_v2")),
+            ("json", stored_export(ctx, run, "json")),
+            ("validation-report", stored_export(ctx, run, "validation_json")),
         ]
         if SampleSheetV1Exporter.supports(run.instrument_platform):
-            links_and_stored.append(("samplesheet-v1", run.generated_samplesheet_v1))
+            links_and_stored.append(
+                ("samplesheet-v1", stored_export(ctx, run, "samplesheet_v1")))
 
         for path, stored in links_and_stored:
             assert stored, f"expected {path} to be pre-generated on the archived run"
@@ -77,10 +78,11 @@ class TestArchivedExportPanelEnabled:
             assert resp.status_code == 200
             assert resp.text == stored
 
-        assert run.generated_validation_pdf
+        pdf = stored_export(ctx, run, "validation_pdf")
+        assert pdf
         resp = logged_in_client.get(f"/runs/{run_id}/export/validation-pdf")
         assert resp.status_code == 200
-        assert resp.content == run.generated_validation_pdf
+        assert resp.content == pdf
 
     def test_ready_panel_unchanged(self, logged_in_client, fresh_app):
         """A Ready run's panel is unaffected by the fix: same links, none disabled."""

@@ -2,10 +2,12 @@
 
 import base64
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from types import MappingProxyType
+from typing import Mapping, Optional
 import uuid
 
 from .sample import Sample, checked_mismatches
@@ -40,6 +42,64 @@ def checked_i5_workflow(value) -> str:
     if not isinstance(value, str):
         raise ValueError(f"i5_workflow must be text, got {value!r}")
     return value.replace("\r", " ").replace("\n", " ")[:256]
+
+
+# The five files Mark Ready writes, each in its own record
+# (repositories/run_export_repo.py). A run document carries only the
+# manifest below (docs/design/2026-10-16-export-files-own-records-design.md).
+EXPORT_KINDS = (
+    "samplesheet_v2", "samplesheet_v1", "json", "validation_json", "validation_pdf",
+)
+# The field a run stored before that change carries each file in. Mark Ready
+# never writes one; only read_export and the clearing on Return to Draft
+# touch them (tests/unit/test_no_legacy_export_reads.py).
+LEGACY_EXPORT_FIELDS = {
+    "samplesheet_v2": "generated_samplesheet_v2",
+    "samplesheet_v1": "generated_samplesheet_v1",
+    "json": "generated_json",
+    "validation_json": "generated_validation_json",
+    "validation_pdf": "generated_validation_pdf",
+}
+# What the v2 sheet's field was called before it was renamed; from_dict
+# still reads it, and so does the operator's tool (tools/
+# check_broken_samplesheets.py), which must not spell it itself -- see
+# tests/unit/test_no_legacy_export_reads.py.
+LEGACY_EXPORT_V2_ALIAS = "generated_samplesheet"
+_EXPORT_ENTRY_KEYS = {"id", "sha256", "size"}
+_HEX32 = re.compile(r"\A[0-9a-f]{32}\Z")
+_HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
+
+
+def checked_exports(value) -> Mapping:
+    """A Ready run's export manifest: kind -> {"id", "sha256", "size"}.
+
+    Checked on every assignment and kept as a read-only mapping of its own
+    copy, so neither ``run.exports[kind] = ...`` nor a later write to the
+    dict that was handed in can point a Ready run at bytes no check passed.
+    An entry that is not exactly an id, a hash and a length raises
+    ValueError: ``read_export`` trusts all three to decide whether the bytes
+    it is about to serve are the ones Mark Ready wrote.
+    """
+    if not isinstance(value, Mapping):
+        raise ValueError(f"exports must be a mapping of kind to file, got {value!r}")
+    kept = {}
+    for kind, entry in value.items():
+        if kind not in EXPORT_KINDS:
+            raise ValueError(f"exports names an unknown kind {kind!r}")
+        if not isinstance(entry, Mapping) or set(entry) != _EXPORT_ENTRY_KEYS:
+            raise ValueError(
+                f"exports[{kind!r}] must have exactly {sorted(_EXPORT_ENTRY_KEYS)}, got {entry!r}"
+            )
+        file_id, sha256, size = entry["id"], entry["sha256"], entry["size"]
+        if not isinstance(file_id, str) or not _HEX32.match(file_id):
+            raise ValueError(f"exports[{kind!r}] id must be 32 hex characters, got {file_id!r}")
+        if not isinstance(sha256, str) or not _HEX64.match(sha256):
+            raise ValueError(
+                f"exports[{kind!r}] sha256 must be 64 hex characters, got {sha256!r}")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise ValueError(f"exports[{kind!r}] size must be a whole number, got {size!r}")
+        kept[kind] = {"id": file_id, "sha256": sha256, "size": size}
+    return MappingProxyType(kept)
 
 
 _TARGET_KEYS = {"instrument", "software", "software_version", "i5_workflow", "index2_column",
@@ -215,14 +275,25 @@ class SequencingRun:
     # Assigned analyses
     analyses: list[Analysis] = field(default_factory=list)
 
-    # Pre-generated exports (populated when status transitions to READY).
+    # The files Mark Ready wrote, each in its own record: kind ->
+    # {"id", "sha256", "size"} (repositories/run_export_repo.py,
+    # services/run_exports.py). Empty on a Draft, and on a run stored before
+    # the files moved out of this document. Only ever assigned whole;
+    # checked_exports keeps it read-only.
+    exports: Mapping = field(default_factory=dict)  # checked_exports on every assignment
+
+    # The files of a run stored before they moved into their own records
+    # (repositories/run_export_repo.py). A run marked Ready by this release
+    # sets all five to None and carries the manifest above instead; these
+    # fields are read by read_export alone, for a run that has no manifest.
     #
     # Encryption-at-rest note (audit M3)
     # ----------------------------------
-    # These fields may contain sample identifiers and other clinical
-    # metadata once a run is approved. They are stored plaintext in the
-    # MongoDB document. For deployments that need protection against
-    # backup or storage-level disclosure, encrypt at the *storage* layer:
+    # These fields, and the records in ``run_exports`` that replaced them,
+    # may contain sample identifiers and other clinical metadata once a run
+    # is approved. They are stored plaintext in MongoDB. For deployments
+    # that need protection against backup or storage-level disclosure,
+    # encrypt at the *storage* layer:
     #   - MongoDB's built-in encryption-at-rest (Enterprise) or
     #     client-side field-level encryption (CSFLE), or
     #   - Encrypted block storage on the host running mongod.
@@ -287,6 +358,8 @@ class SequencingRun:
             value = checked_i5_workflow(value)
         elif name == "sheet_targets":
             value = checked_sheet_targets(value)
+        elif name == "exports":
+            value = checked_exports(value)
         elif name in ("created_by", "updated_by", "flowcell_type", "reagent_cycles_kit") and isinstance(value, str):
             value = value[:256]
         elif name == "status" and value in (RunStatus.READY, RunStatus.ARCHIVED):
@@ -413,6 +486,7 @@ class SequencingRun:
             "no_lane_splitting": self.no_lane_splitting,
             "samples": [s.to_dict() for s in self.samples],
             "analyses": [a.to_dict() for a in self.analyses],
+            "exports": {k: dict(v) for k, v in self.exports.items()},
             "generated_samplesheet_v2": self.generated_samplesheet_v2,
             "generated_samplesheet_v1": self.generated_samplesheet_v1,
             "samplesheet_v1_withheld": self.samplesheet_v1_withheld,
@@ -502,7 +576,9 @@ class SequencingRun:
             no_lane_splitting=data.get("no_lane_splitting", False),
             samples=[Sample.from_dict(s) for s in data.get("samples", [])],
             analyses=[Analysis.from_dict(a) for a in data.get("analyses", [])],
-            generated_samplesheet_v2=data.get("generated_samplesheet_v2") or data.get("generated_samplesheet"),
+            exports=data.get("exports") or {},
+            generated_samplesheet_v2=(data.get("generated_samplesheet_v2")
+                                      or data.get(LEGACY_EXPORT_V2_ALIAS)),
             generated_samplesheet_v1=data.get("generated_samplesheet_v1"),
             samplesheet_v1_withheld=data.get("samplesheet_v1_withheld") or "",
             test_versions_used=list(data.get("test_versions_used") or []),

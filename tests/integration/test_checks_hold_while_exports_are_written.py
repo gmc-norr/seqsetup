@@ -12,7 +12,7 @@ from seqsetup.models.validation import ConfigurationError, ValidationSeverity
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.validation import ValidationService
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, nothing_stored
 from .test_group_1c import _pair
 from .conftest import hold_edit_lock
 
@@ -57,6 +57,6 @@ class TestTheReportsCheckMustPassToo:
         assert "The checks found an error while the exports were being generated" in resp.text
         stored = ctx.run_repo.get_by_id(run.id)
         assert stored.status == RunStatus.DRAFT
-        assert stored.generated_samplesheet_v2 is None and stored.generated_validation_json is None
+        assert nothing_stored(ctx, stored)
         reasons = [e.details["reason"] for e in ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied")]
         assert reasons == ["checks_failed_during_export"], reasons

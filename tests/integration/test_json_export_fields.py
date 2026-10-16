@@ -16,7 +16,7 @@ from pathlib import Path
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services.json_exporter import JSONExporter
 
-from .conftest import hold_edit_lock
+from .conftest import hold_edit_lock, stored_export
 from .test_group_a3 import ORIGIN, profiles  # noqa: F401  (the fixture)
 from .test_group_a4 import _a3_draft
 
@@ -46,7 +46,7 @@ def _ready_json(ctx, client, run_id):
     assert resp.status_code == 200, resp.text[:400]
     run = ctx.run_repo.get_by_id(run_id)
     assert run.status == RunStatus.READY, resp.text[:400]
-    return json.loads(run.generated_json), run
+    return json.loads(stored_export(ctx, run, "json")), run
 
 
 class TestASampleCarriesItsTestAndWorksheet:
@@ -106,7 +106,7 @@ class TestTheMismatchNumbersAgreeWithTheSheet:
             "the JSON does not say what the sheet carries")
         assert data["bclconvert_settings"]["barcode_mismatches_index1"] == 1, (
             "the run default is still 1, which is what used to be the only number")
-        assert "BarcodeMismatchesIndex1" in run.generated_samplesheet_v2
+        assert "BarcodeMismatchesIndex1" in stored_export(profiles, run, "samplesheet_v2")
 
     def test_the_sheet_number_is_there_even_with_no_override_of_its_own(
             self, logged_in_client, profiles):  # noqa: F811
@@ -260,6 +260,6 @@ class TestTheSheetsNumberComesFromTheProfilesDefault:
             "the JSON does not state the profile's number, which is what the sheet writes")
         assert data["bclconvert_settings"]["barcode_mismatches_index1"] == 1, (
             "the run default is 1: that is the number the JSON used to give")
-        row = [l for l in stored.generated_samplesheet_v2.splitlines()
+        row = [l for l in stored_export(profiles, stored, "samplesheet_v2").splitlines()
                if l.startswith("A3T") or ",2," in l]
         assert any("2" in l for l in row), row[:3]

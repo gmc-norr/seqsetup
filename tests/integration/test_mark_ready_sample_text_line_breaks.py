@@ -14,7 +14,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos
+from .conftest import disable_repos, nothing_stored
 from .conftest import hold_edit_lock
 
 
@@ -76,7 +76,7 @@ class TestMarkReadyRefusesLineBreaks:
         assert "line break" in resp.text
         run = ctx.run_repo.get_by_id(run_id)
         assert run.status.value == "draft"
-        assert not run.generated_samplesheet_v1
+        assert nothing_stored(ctx, run)
 
     def test_project_with_line_break_is_refused(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app

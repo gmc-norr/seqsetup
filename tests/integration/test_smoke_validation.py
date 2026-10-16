@@ -9,7 +9,7 @@ These cover the clinically-sensitive paths:
 
 import pytest
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, stored_export
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (
@@ -110,9 +110,9 @@ class TestMarkReady:
         updated = ctx.run_repo.get_by_id(run_id)
         assert updated.status == RunStatus.READY
         # Exports were pre-generated.
-        assert updated.generated_samplesheet_v2 is not None
-        assert "[BCLConvert_Data]" in updated.generated_samplesheet_v2
-        assert updated.generated_json is not None
+        sheet = stored_export(ctx, updated, "samplesheet_v2")
+        assert sheet and "[BCLConvert_Data]" in sheet
+        assert stored_export(ctx, updated, "json")
 
 
 class TestStatusTransition:

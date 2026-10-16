@@ -23,7 +23,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 
-from .conftest import disable_repos, hold_edit_lock, mark_ready
+from .conftest import disable_repos, hold_edit_lock, mark_ready, nothing_stored, stored_export
 
 ORIGIN = {"Origin": "http://testserver"}
 OTHER_USER = "other-user"
@@ -138,13 +138,9 @@ def _after_the_exports(monkeypatch, action) -> dict:
     return calls
 
 
-def _assert_no_exports(stored: SequencingRun) -> None:
+def _assert_no_exports(ctx, stored: SequencingRun) -> None:
     assert stored.status == RunStatus.DRAFT
-    assert stored.generated_samplesheet_v2 is None
-    assert stored.generated_samplesheet_v1 is None
-    assert stored.generated_json is None
-    assert stored.generated_validation_json is None
-    assert stored.generated_validation_pdf is None
+    assert nothing_stored(ctx, stored)
     assert stored.sheet_targets == {}
     assert stored.test_versions_used == []
 
@@ -184,7 +180,7 @@ class TestAnEditDuringTheExportsIsRefused:
         assert resp.status_code == 409, html.unescape(resp.text)[:400]
         assert EDITED_MESSAGE in html.unescape(resp.text)
         stored = ctx.run_repo.get_by_id(run.id)
-        _assert_no_exports(stored)
+        _assert_no_exports(ctx, stored)
         assert _kept(stored)[kind] == EXPECTED_KEPT[kind], "the other user's edit was lost"
         assert stored.updated_by == OTHER_USER
         # The edit does change the sheet: storing the exports made before
@@ -216,7 +212,7 @@ class TestAnEditDuringTheExportsIsRefused:
         assert resp.status_code == 409, html.unescape(resp.text)[:400]
         assert EDITED_MESSAGE in html.unescape(resp.text)
         stored = ctx.run_repo.get_by_id(run.id)
-        _assert_no_exports(stored)
+        _assert_no_exports(ctx, stored)
         assert stored.samples[0].index1_sequence == "GGACTCCT"
         assert _denied_reasons(ctx, run.id).count(("denied", "concurrent_edit_during_export")) == 1
         assert _made_ready(ctx, run.id) == []
@@ -258,9 +254,10 @@ class TestControls:
         assert resp.status_code == 200, html.unescape(resp.text)[:400]
         stored = ctx.run_repo.get_by_id(run.id)
         assert stored.status == RunStatus.READY
-        assert stored.generated_samplesheet_v2 == _sheet(ctx, run)
-        assert stored.generated_json and stored.generated_validation_json
-        assert stored.generated_validation_pdf
+        assert stored_export(ctx, stored, "samplesheet_v2") == _sheet(ctx, run)
+        assert stored_export(ctx, stored, "json")
+        assert stored_export(ctx, stored, "validation_json")
+        assert stored_export(ctx, stored, "validation_pdf")
         assert "concurrent_edit_during_export" not in [r for _o, r in _denied_reasons(ctx, run.id)]
         assert len(_made_ready(ctx, run.id)) == 1
 
@@ -286,5 +283,5 @@ class TestControls:
         assert resp.status_code == 200, html.unescape(resp.text)[:400]
         stored = ctx.run_repo.get_by_id(run.id)
         assert stored.status == RunStatus.READY
-        assert stored.generated_samplesheet_v2 == _sheet(ctx, run)
+        assert stored_export(ctx, stored, "samplesheet_v2") == _sheet(ctx, run)
         assert "concurrent_edit_during_export" not in [r for _o, r in _denied_reasons(ctx, run.id)]

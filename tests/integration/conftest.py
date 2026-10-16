@@ -315,3 +315,38 @@ def import_from_preview(client, run_id: str, worklist_id: str):
                        data={"worklist_id": worklist_id, "plan": plan.group(1) if plan else "",
                              "lanes": lanes},
                        headers={"Origin": "http://testserver"})
+
+
+def stored_export(ctx, run_or_id, kind: str):
+    """What a Ready run serves for ``kind``, read the one way the app reads
+    it (``services/run_exports.read_export``).
+
+    Mark Ready writes each file into its own record and the run carries only
+    the manifest, so a test cannot read ``run.generated_*`` to see what was
+    stored (docs/design/2026-10-16-export-files-own-records-design.md). This
+    helper works for either shape: a run stored before the files moved out is
+    read from its own document, as the app reads it.
+    """
+    from seqsetup.services.run_exports import read_export
+    run = run_or_id if hasattr(run_or_id, "exports") else ctx.run_repo.get_by_id(run_or_id)
+    return read_export(ctx, run, kind)
+
+
+def nothing_stored(ctx, run_or_id) -> bool:
+    """True when the run has no export of any kind -- a Draft, or a run whose
+    Mark Ready was refused. The manifest is empty AND its own document
+    carries no file either, so neither shape can hide one.
+
+    The legacy fields are checked with ``is None``, as the assertions this
+    replaced did: a field set to ``""`` is not "nothing stored", it is a
+    stored empty file, and this helper must not call that clean (review 1).
+    """
+    from seqsetup.models.sequencing_run import EXPORT_KINDS, LEGACY_EXPORT_FIELDS
+    run = run_or_id if hasattr(run_or_id, "exports") else ctx.run_repo.get_by_id(run_or_id)
+    return (not run.exports
+            and all(getattr(run, name) is None for name in LEGACY_EXPORT_FIELDS.values())
+            and not any(stored_export(ctx, run, kind) for kind in EXPORT_KINDS))
+
+
+# Shared with the browser suite: tests/export_seed.py.
+from ..export_seed import seed_stored_exports  # noqa: E402,F401

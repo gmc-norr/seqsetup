@@ -25,16 +25,21 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import disable_repos, hold_edit_lock
+from .conftest import disable_repos, hold_edit_lock, stored_export
 
 ORIGIN = {"Origin": "http://testserver"}
 
+# The files a Ready run carries, each in its own record; the run keeps the
+# manifest (docs/design/2026-10-16-export-files-own-records-design.md).
+STORED_FILES = {
+    "samplesheet_v2": "[Header]\nRunName,Stored\nSTORED-V2\n",
+    "samplesheet_v1": "[Header]\nSTORED-V1\n",
+    "json": '{"stored": "json"}',
+    "validation_json": '{"stored": "validation"}',
+    "validation_pdf": b"%PDF-1.4 stored report",
+}
+
 STORED_EXPORTS = {
-    "generated_samplesheet_v2": "[Header]\nRunName,Stored\nSTORED-V2\n",
-    "generated_samplesheet_v1": "[Header]\nSTORED-V1\n",
-    "generated_json": '{"stored": "json"}',
-    "generated_validation_json": '{"stored": "validation"}',
-    "generated_validation_pdf": b"%PDF-1.4 stored report",
     "test_versions_used": [{"test": "WGS", "asked": "1", "version": "1.0.0", "file": "Wgs.yaml"}],
     "sheet_targets": {
         "samplesheet_v2": {
@@ -76,10 +81,29 @@ def _seed(ctx, run_id: str, status: RunStatus) -> str:
         run.status = RunStatus.READY
         for key, value in STORED_EXPORTS.items():
             setattr(run, key, value)
+        run.exports = _write_files(ctx, run_id)
         run.status = status
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run_id)
     return run_id
+
+
+def _write_files(ctx, run_id: str) -> dict:
+    """Write STORED_FILES as Mark Ready does and return the manifest."""
+    import hashlib
+    import uuid
+    manifest = {}
+    for kind, content in STORED_FILES.items():
+        raw = content.encode("utf-8") if isinstance(content, str) else content
+        file_id = uuid.uuid4().hex
+        ctx.run_export_repo.insert({
+            "_id": file_id, "run_id": run_id, "kind": kind, "content": content,
+            "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw),
+            "created_at": "2026-10-16T00:00:00", "created_by": "seed",
+        })
+        manifest[kind] = {"id": file_id, "sha256": hashlib.sha256(raw).hexdigest(),
+                          "size": len(raw)}
+    return manifest
 
 
 def _raw(ctx, run_id: str) -> dict:
@@ -94,9 +118,12 @@ def _status_events(ctx, run_id: str) -> list:
     ]
 
 
-def _assert_exports_kept(run: SequencingRun) -> None:
+def _assert_exports_kept(ctx, run: SequencingRun) -> None:
     for key, value in STORED_EXPORTS.items():
         assert getattr(run, key) == value, f"{key} was not kept"
+    assert set(run.exports) == set(STORED_FILES), "the manifest was not kept"
+    for kind, content in STORED_FILES.items():
+        assert stored_export(ctx, run, kind) == content, f"{kind} was not kept"
 
 
 class TestADraftCannotBeArchived:
@@ -138,7 +165,7 @@ class TestAnArchivedRunStaysArchived:
         assert _raw(ctx, run_id) == before
         stored = ctx.run_repo.get_by_id(run_id)
         assert stored.status == RunStatus.ARCHIVED
-        _assert_exports_kept(stored)
+        _assert_exports_kept(ctx, stored)
         assert _status_events(ctx, run_id) == []
 
     @pytest.mark.parametrize("path,code,text", [
@@ -218,7 +245,7 @@ class TestAReadyRunCanBeArchived:
         stored = ctx.run_repo.get_by_id(run_id)
         assert stored.status == RunStatus.ARCHIVED
         assert stored.was_ready is True
-        _assert_exports_kept(stored)
+        _assert_exports_kept(ctx, stored)
         assert stored.samplesheet_v1_withheld == before.samplesheet_v1_withheld
         assert [s.to_dict() for s in stored.samples] == [s.to_dict() for s in before.samples]
         assert len(_status_events(ctx, run_id)) == 1

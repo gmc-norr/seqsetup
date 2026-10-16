@@ -14,7 +14,7 @@ import pytest
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services.github_sync import GitHubSyncError
 
-from .conftest import mark_ready
+from .conftest import mark_ready, stored_export
 from .test_group_a3 import ORIGIN, _indexed_draft
 from .test_group_a4 import _fake_github, _test_yaml
 
@@ -235,7 +235,8 @@ class TestTheSheetAfterARefusedSync:
         stored = ctx.run_repo.get_by_id(run.id)
 
         assert stored.status == RunStatus.READY, resp.text[:2000]
-        assert ADAPTER in stored.generated_samplesheet_v2, stored.generated_samplesheet_v2
+        sheet = stored_export(ctx, stored, "samplesheet_v2")
+        assert ADAPTER in sheet, sheet
 
     def test_copied_file_keeps_the_profile_stored_before(self, fresh_app, logged_in_client,
                                                          monkeypatch):
@@ -253,7 +254,8 @@ class TestTheSheetAfterARefusedSync:
         stored = ctx.run_repo.get_by_id(run.id)
 
         assert stored.status == RunStatus.READY, resp.text[:2000]
-        assert ADAPTER in stored.generated_samplesheet_v2, stored.generated_samplesheet_v2
+        sheet = stored_export(ctx, stored, "samplesheet_v2")
+        assert ADAPTER in sheet, sheet
 
 
 class TestARefusedNewProfileIsNotFound:

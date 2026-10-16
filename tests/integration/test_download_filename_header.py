@@ -19,7 +19,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, stored_export
 from .test_group_1c import _pair
 from .conftest import hold_edit_lock
 
@@ -60,7 +60,7 @@ def _ready_run(logged_in_client, ctx, run_id: str, name: str) -> str:
     resp = mark_ready(logged_in_client, run.id, ORIGIN)
     assert resp.status_code == 200
     stored = ctx.run_repo.get_by_id(run.id)
-    assert stored.generated_samplesheet_v2, "the run did not reach Ready"
+    assert stored_export(ctx, stored, "samplesheet_v2"), "the run did not reach Ready"
     return run.id
 
 

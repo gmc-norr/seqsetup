@@ -13,6 +13,7 @@ from .repositories.local_user_repo import LocalUserRepository
 from .repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .repositories.sample_api_config_repo import SampleApiConfigRepository
 from .repositories.test_profile_repo import TestProfileRepository
+from .repositories.run_export_repo import RunExportRepository
 from .repositories.run_template_repo import RunTemplateRepository
 from .repositories.run_history_repo import RunHistoryRepository
 from .repositories.deleted_run_repo import DeletedRunRepository
@@ -43,6 +44,10 @@ class AppContext:
     run_repo: RunRepository
     index_kit_repo: IndexKitRepository
     test_repo: TestRepository
+    # A Ready run's export files. Required, not Optional: a reader that found
+    # it missing would have nowhere else to go but the paths this change
+    # exists to remove (docs/design/2026-10-16-export-files-own-records-design.md).
+    run_export_repo: RunExportRepository
 
     # Optional repositories (may be None if feature not configured)
     test_profile_repo: Optional[TestProfileRepository] = None

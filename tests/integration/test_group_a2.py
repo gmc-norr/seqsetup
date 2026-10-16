@@ -10,7 +10,7 @@ import pytest
 from seqsetup.models.run_template import RunTemplate
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import run_version
+from .conftest import nothing_stored, run_version
 from .conftest import hold_edit_lock
 
 
@@ -569,7 +569,7 @@ class TestRecordsThatCannotBeUsed:
         assert resp.status_code == 503
         assert OLD_FORMAT_MESSAGE in html.unescape(resp.text)
         stored = ctx.run_repo.get_by_id(run.id)
-        assert stored.status == RunStatus.DRAFT and stored.generated_samplesheet_v2 is None
+        assert stored.status == RunStatus.DRAFT and nothing_stored(ctx, stored)
         (event,) = _denials(ctx)
         assert event.details["reason"] == "synced_instruments_unusable"
 
