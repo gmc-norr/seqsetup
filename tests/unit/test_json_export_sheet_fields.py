@@ -28,7 +28,18 @@ from .test_sheet_plan import _app, _repos, _test
 # The keys are left in the export's own order, which the tests below check.
 BASELINE = Path(__file__).resolve().parents[1] / "fixtures" / "json_export_before_sheet_fields.json"
 
-NEW_KEYS = ("samplesheet_index2", "samplesheet_override_cycles")
+# Keys added to a sample since the baseline file was recorded: the two of
+# spec 2026-10-12 batch 2 (2a), then the eight of review F7 (design note
+# docs/design/2026-10-16-json-export-fields-design.md). The guards below
+# strip them and compare the rest, so they still prove every OLDER key keeps
+# its value and its place.
+NEW_KEYS = ("samplesheet_index2", "samplesheet_override_cycles",
+            "test_id", "test_version", "worksheet_id", "index_kit_name",
+            "barcode_mismatches_index1", "barcode_mismatches_index2",
+            "samplesheet_barcode_mismatches_index1",
+            "samplesheet_barcode_mismatches_index2")
+# ... and to the run itself (review F7).
+NEW_RUN_KEYS = ("test_versions_used", "i5_workflow")
 
 I7, I5, I5_RC = "ATTACTCG", "TATAGCCT", "AGGCTATA"
 # An 8-base index on a 10-cycle read, so the Index 2 mask is asymmetric.
@@ -180,12 +191,16 @@ class TestEveryOldKeyIsUnchanged:
                 for key in NEW_KEYS:
                     assert key in sample, f"{label}: {key} missing"
                     del sample[key]
+            for key in NEW_RUN_KEYS:
+                assert key in data, f"{label}: {key} missing"
+                del data[key]
             assert data == baseline[label], label
 
     def test_the_old_keys_keep_their_order(self):
         baseline = json.loads(BASELINE.read_text())
         for label, run in _runs().items():
             data = json.loads(JSONExporter.export(run))
-            assert list(data) == list(baseline[label]), label
+            assert [key for key in data if key not in NEW_RUN_KEYS] == list(
+                baseline[label]), label
             for sample, was in zip(data["samples"], baseline[label]["samples"]):
                 assert [key for key in sample if key not in NEW_KEYS] == list(was), label
