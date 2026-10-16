@@ -119,7 +119,12 @@ class TestTheCycleRouteStoresEachCount:
         resp = _set_cycles(logged_in_client, ctx, run_id, **form)
 
         assert resp.status_code == 400
-        assert resp.text == "Index 2 cycles must be a whole number from 0 to 600."
+        # A field that is not sent at all reads as not set; the range message
+        # is for a value that IS sent and is out of range (review of 9fac120,
+        # P2-3: the index fields are a dropdown of 8, 10, 12, 17 and 24, so
+        # "a whole number from 0 to 600" named nothing they can offer).
+        assert resp.text == ("Index 2 cycles is not set. Set all four cycle counts; "
+                             "they are saved together.")
         assert _stored_counts(ctx, run_id) == (76, 76, 6, 6)
 
     def test_a_count_over_the_limit_is_refused_and_nothing_is_saved(self, logged_in_client,
