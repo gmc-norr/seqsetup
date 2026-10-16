@@ -3,7 +3,9 @@
 GET /served-runs           — the runs GET /api/runs lists: Ready (default) or
                              Archived, never a Draft, in the API's order.
 GET /served-runs/{run_id}  — each stored file a per-run API address hands
-                             out, byte for byte, with a download of it, or the
+                             out, byte for byte (the check report without its
+                             per-lane tables, see below), with a download of
+                             it, or the
                              answer the API gives when it has none; above each
                              sheet, the target instrument and software Mark
                              Ready saved with it.
@@ -105,7 +107,9 @@ def _without_per_lane_tables(text: str) -> tuple[str, bool]:
     shown as stored."""
     try:
         report = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # RecursionError: nested too deep for the reader -- only a report
+        # edited by hand, which is still shown rather than a 500.
         return text, False
     if not isinstance(report, dict) or not report.get("per_lane"):
         return text, False

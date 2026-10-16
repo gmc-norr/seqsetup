@@ -369,6 +369,39 @@ class TestTheCheckReportOnThePage:
         assert _shown_text(section) == report
         assert "per-lane tables" not in section
 
+    def test_a_report_nested_too_deep_to_read_is_shown_as_stored(self, logged_in_client, fresh_app):
+        """Only a run stored before the files moved out, edited by hand, can
+        hold one: a report too deep for the JSON reader is shown, not a 500."""
+        _app, ctx, _db = fresh_app
+        report = "[" * 100_000 + "]" * 100_000
+        section = self._report_section(logged_in_client, self._report_run(ctx, "deep", report))
+        assert _shown_text(section) == report
+        assert "per-lane tables" not in section
+
+    def test_a_damaged_report_shows_the_api_answer_and_nothing_of_it(self, logged_in_client,
+                                                                      client, fresh_app):
+        _app, ctx, _db = fresh_app
+        run_id = self._report_run(ctx, "damaged-report", REPORT)
+        entry = ctx.run_repo.get_by_id(run_id).exports["validation_json"]
+        # The same length, other bytes, still a report with per-lane tables.
+        changed = REPORT.replace('"S1"', '"S9"')
+        ctx.run_export_repo.collection.update_one({"_id": entry["id"]},
+                                                  {"$set": {"content": changed}})
+        section = self._report_section(logged_in_client, run_id)
+        api = client.get(f"/api/runs/{run_id}/validation-report",
+                         headers={"Authorization": f"Bearer {_token(ctx)}"})
+        assert api.status_code == 500
+        assert f"500: {api.json()['detail']}" in html.unescape(section)
+        assert "per-lane tables" not in section
+        assert "<pre" not in section and "Download" not in section
+
+    def test_the_page_says_a_note_marks_what_it_leaves_out(self, logged_in_client, fresh_app):
+        """Its opening line promises each file as the API hands it out; the
+        check report's tables are the one exception, and the line says so."""
+        _app, ctx, _db = fresh_app
+        page = logged_in_client.get(f"/served-runs/{self._report_run(ctx, 'promise', REPORT)}").text
+        assert "Where part of a file is left out, a note above it says so." in page
+
     def test_a_ready_runs_report_shows_its_counts_not_its_tables(self, logged_in_client, fresh_app):
         """Marked Ready through the real route, so the report is the one the
         checks wrote."""
