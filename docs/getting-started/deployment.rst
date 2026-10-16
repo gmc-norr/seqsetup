@@ -248,10 +248,14 @@ Fill in the two environment files and start it:
    cp .env.example .env          # application settings and the app DB user
    cp .env.db.example .env.db    # the MongoDB root credential, mongod only
 
-   # A session signing key, and passwords the URI can carry
+   # A session signing key, and passwords the URI and the env-file parser
+   # both leave alone. Generate hex and nothing else -- see the comments in
+   # the two files.
    openssl rand -hex 32          # -> SEQSETUP_SESSION_SECRET in .env
    openssl rand -hex 24          # -> MONGO_APP_PASSWORD in .env
    openssl rand -hex 24          # -> MONGO_INITDB_ROOT_PASSWORD in .env.db
+                                 #    FIRST INSTALL ONLY: see "Upgrading an
+                                 #    existing deployment" below
 
    docker compose up -d
 
@@ -269,6 +273,61 @@ site changed.
    throwaway local run without it, put that in
    ``docker-compose.override.yml`` on that machine and nowhere near a
    machine holding real runs.
+
+Upgrading an existing deployment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The MongoDB root credential moved out of ``.env`` into its own ``.env.db``.
+If you already run SeqSetup, do these three things before ``docker compose
+up``. Your database keeps working either way, which is exactly why none of
+them reports itself.
+
+1. **Put the root password you already have into ``.env.db``** -- do not
+   generate a new one.
+
+   .. code-block:: bash
+
+      cp .env.db.example .env.db
+      # MONGO_INITDB_ROOT_USERNAME = your old MONGO_ROOT_USER
+      # MONGO_INITDB_ROOT_PASSWORD = your old MONGO_ROOT_PASSWORD
+
+   ``MONGO_INITDB_ROOT_*`` is read only by MongoDB's own first-start step,
+   which never runs again once the data volume exists. A fresh password there
+   is **silently ignored**: the database keeps the old one, and your
+   ``.env.db`` then records a password that does not work. Use the old names'
+   values, under the new names -- writing the *old* names into ``.env.db``
+   leaves mongod with no root user at all.
+
+2. **Delete ``MONGO_ROOT_USER`` and ``MONGO_ROOT_PASSWORD`` from your
+   ``.env``.** The application container reads the whole of ``.env`` and never
+   needs them. ``docker-compose.yml`` names them empty on the application
+   service so an ``.env`` written before this change cannot hand them over,
+   but the lines are dead weight in a secret file -- remove them.
+
+3. **Check that the database still signs you in.** The database container's
+   health check now signs in as the *application* user instead of pinging:
+
+   .. code-block:: bash
+
+      docker compose up -d
+      docker compose ps          # mongodb must say (healthy)
+
+   If it says ``unhealthy``, the application will not start -- on purpose.
+   Look at ``docker compose logs mongodb`` for a line from
+   ``mongo-init.sh``. Before, this state came up *healthy* and the
+   application answered "Authentication failed" for ever.
+
+.. note::
+   If you ever worked around the old ``authSource=admin`` setting by creating
+   the application user in the ``admin`` database, that user is no longer
+   found: ``docker-compose.yml`` now authenticates against ``seqsetup``,
+   where ``docker/mongo-init.sh`` creates it. Recreate it there:
+
+   .. code-block:: bash
+
+      docker compose exec mongodb mongosh --username <root> --password \
+        --authenticationDatabase admin --eval \
+        'db.getSiblingDB("seqsetup").createUser({user: "seqsetup_app", pwd: passwordPrompt(), roles: [{role: "readWrite", db: "seqsetup"}]})'
 
 Production Checklist
 ~~~~~~~~~~~~~~~~~~~~

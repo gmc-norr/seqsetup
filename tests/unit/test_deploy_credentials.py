@@ -84,15 +84,28 @@ class TestF4TheAppAuthenticatesWhereItsUserExists:
 
 class TestF12TheAppNeverSeesTheRootCredential:
     def test_no_root_credential_reaches_the_app_container(self):
+        """A key the app's own environment: names EMPTY is not a leak -- that
+        is how an .env written before the split is neutralised, since
+        environment: wins over env_file: (measured with `docker compose
+        config`). A key that only .env carries is."""
         app = _compose()["services"]["app"]
-        keys = set(_env("app"))
+        app_env = _env("app")
+        blanked = {k for k, v in app_env.items() if v == ""}
+        keys = {k for k, v in app_env.items() if v != ""}
         for name in (app.get("env_file") or []):
             # .env is a filled-in copy of .env.example: every key in it is
-            # injected into the app container.
-            keys |= _env_file_keys(f"{name}.example") | _env_file_keys(name)
+            # injected into the app container unless environment: blanks it.
+            keys |= (_env_file_keys(f"{name}.example") | _env_file_keys(name)) - blanked
         leaked = sorted(k for k in keys
                         if k.startswith("MONGO_ROOT") or k.startswith("MONGO_INITDB_ROOT"))
         assert leaked == [], f"the app container's environment carries {leaked}"
+
+    def test_the_application_example_asks_for_no_root_credential(self):
+        """Blanking the two old names covers an .env that already exists; the
+        template must not ask for a root credential at all, under any name."""
+        asked = sorted(k for k in _env_file_keys(".env.example")
+                       if k.startswith("MONGO_ROOT") or k.startswith("MONGO_INITDB_ROOT"))
+        assert asked == [], f".env.example still asks for {asked}"
 
     def test_the_database_container_gets_the_root_credential(self):
         mongo = _compose()["services"]["mongodb"]
@@ -227,7 +240,130 @@ class TestF12EveryInstallPathCopiesBothFiles:
             f"{path} tells the admin to copy .env.example but not .env.db.example")
 
     @pytest.mark.parametrize("path", PATHS)
-    def test_it_does_not_still_name_the_moved_variables(self, path):
+    def test_it_does_not_still_ask_for_the_moved_variables(self, path):
+        """The upgrade section names them on purpose -- to say delete them.
+        Everywhere else they no longer exist."""
         text = (ROOT / path).read_text()
+        if "Upgrading an existing deployment" in text:
+            start = text.index("Upgrading an existing deployment")
+            text = text[:start] + text[start:].split("\nProduction Checklist", 1)[-1]
         gone = [name for name in ("MONGO_ROOT_USER", "MONGO_ROOT_PASSWORD") if name in text]
-        assert gone == [], f"{path} still names {gone}, which no longer exist"
+        assert gone == [], f"{path} still names {gone} outside the upgrade section"
+
+
+class TestAFailedFirstStartIsLoud:
+    """A fresh review proved a second, silent way into the state F13 exists
+    to prevent: the mongo entrypoint SOURCES the init script as uid 999, so a
+    checkout whose umask strips other-read (027, 077, 007 -- this repository's
+    own checkout is mode 770) makes it unreadable. The entrypoint does not
+    abort: the container exits 0, restarts, the volume is now initialised so
+    the script never runs again, and mongod reports *healthy* while the app
+    says "Authentication failed" for ever. Any other failure of the script
+    lands in the same place. The healthcheck must therefore prove the app user
+    exists, not just that mongod answers a ping."""
+
+    def test_the_healthcheck_signs_in_as_the_app_user(self):
+        test = _compose()["services"]["mongodb"]["healthcheck"]["test"]
+        command = " ".join(test)
+        assert "MONGO_APP_USER" in command and "MONGO_APP_PASSWORD" in command, (
+            f"the healthcheck does not sign in as the app user: {command}")
+        assert _init_database() in command, (
+            f"the healthcheck does not name the app user's database: {command}")
+
+    def test_the_app_waits_for_that_healthcheck(self):
+        depends = _compose()["services"]["app"]["depends_on"]
+        assert depends["mongodb"]["condition"] == "service_healthy"
+
+
+class TestAStaleEnvCannotLeakTheRootCredential:
+    """Moving the root credential out of .env.example does nothing to an .env
+    that already exists: an upgrading site's file still carries
+    MONGO_ROOT_USER / MONGO_ROOT_PASSWORD, and app's env_file hands them
+    straight to the app container. Compose's environment: overrides env_file:,
+    so naming them empty there neutralises the old keys whatever .env says
+    (measured with `docker compose config`)."""
+
+    def test_the_app_names_the_old_root_keys_empty(self):
+        app_env = _env("app")
+        for name in ("MONGO_ROOT_USER", "MONGO_ROOT_PASSWORD"):
+            assert app_env.get(name) == "", (
+                f"docker-compose.yml does not blank {name} on the app service, so an "
+                f"upgrading site's .env still hands it over; it has {app_env.get(name)!r}")
+
+
+class TestTheExamplesDoNotPromiseMoreThanComposeDelivers:
+    """Compose's env-file parser is not a safe place for arbitrary text: it
+    expands $VAR from the HOST environment, collapses $$ to $, strips a
+    wrapping quote, and cuts a value at ` #`. Measured in-container: a root
+    password typed as R00t$HOME-x reaches mongod as R00t/home/<user>-x, and
+    `pw with space # x` as `pw with space`. Both examples said any character
+    was safe."""
+
+    def test_the_database_example_does_not_claim_any_character_is_safe(self):
+        text = (ROOT / ".env.db.example").read_text()
+        assert "Any character is safe" not in text
+        assert "openssl rand -hex" in text, (
+            ".env.db.example does not require a password the env-file parser leaves alone")
+
+    def test_the_application_example_does_not_claim_it_either(self):
+        text = (ROOT / ".env.example").read_text()
+        assert "takes any character" not in text
+
+    @pytest.mark.parametrize("example", [".env.example", ".env.db.example"])
+    def test_the_example_names_what_the_parser_changes(self, example):
+        text = (ROOT / example).read_text()
+        assert "$" in text and "#" in text, f"{example} names nothing the parser changes"
+        assert "env-file" in text or "env file" in text, (
+            f"{example} does not say that Compose's env-file parser changes some values")
+
+
+class TestUpgradingAnExistingDeploymentIsDocumented:
+    """Three states an upgrading site lands in, all measured by the reviewer:
+    their old .env still leaks the root credential to the app; a freshly
+    generated MONGO_INITDB_ROOT_PASSWORD is silently ignored because initdb
+    does not re-run, so their .env.db records a password the database does not
+    have; and .env.db written with the OLD key names gives a healthy mongod
+    with no users at all."""
+
+    def test_the_docs_have_an_upgrade_section(self):
+        text = DEPLOYMENT.read_text()
+        assert "Upgrading an existing deployment" in text
+
+    def test_it_says_to_delete_the_old_keys_from_env(self):
+        text = DEPLOYMENT.read_text()
+        section = text[text.index("Upgrading an existing deployment"):]
+        section = section.split("\n----")[0]
+        assert "MONGO_ROOT_USER" in section and "delete" in section.lower(), (
+            "the upgrade section does not tell them to delete the old keys from .env")
+
+    def test_it_says_to_keep_the_root_password_they_already_have(self):
+        text = DEPLOYMENT.read_text()
+        section = text[text.index("Upgrading an existing deployment"):].split("\n----")[0]
+        assert "first start" in section.lower() or "initdb" in section.lower(), (
+            "the upgrade section does not say that MONGO_INITDB_ROOT_* only applies on "
+            "the first start, so a new password there is silently ignored")
+
+    def test_the_quick_start_marks_the_root_password_as_a_new_install_step(self):
+        text = DEPLOYMENT.read_text()
+        start = text.index("Fill in the two environment files")
+        block = text[start:start + 1400]
+        assert "MONGO_INITDB_ROOT_PASSWORD" in block
+        assert "first" in block.lower() or "new install" in block.lower(), (
+            "the quick start tells every reader to generate a root password, which does "
+            "nothing on a database that already exists")
+
+
+class TestTheReadmeDoesNotOverstateTheGuard:
+    """Compose's ${VAR:?} guards only the four values it interpolates from
+    .env. .env.db arrives through env_file: a missing FILE is refused, but an
+    empty password in it is not -- mongod restart-loops instead."""
+
+    def test_it_scopes_the_refusal_to_the_application_file(self):
+        text = (ROOT / "README.md").read_text()
+        start = text.index("cp .env.example .env")
+        block = text[max(0, start - 600):start]
+        assert "refuses to start" in block, "README no longer mentions the guard at all"
+        assert "restart-loop" in block or "not refused" in block, (
+            "README mentions the compose refusal without saying that .env.db is not "
+            "covered by it: that guard is only compose's ${VAR:?} on the four values "
+            f"it interpolates from .env. It says:\n{block}")

@@ -19,9 +19,11 @@ This is the recommended way to run a fully functional instance.
 git clone https://github.com/gmc-norr/seqsetup.git
 cd seqsetup
 
-# Your settings: copy both, then fill them in (docker compose refuses to
-# start while a required value is missing). .env is the application's; .env.db
-# holds the MongoDB root password and only the database container reads it.
+# Your settings: copy both and fill them in. .env is the application's;
+# docker compose refuses to start while a required value in it is missing.
+# .env.db holds the MongoDB root password and only the database container
+# reads it; a value missing there is not refused, the database container
+# restart-loops instead, so fill it in.
 cp .env.example .env
 cp .env.db.example .env.db
 
