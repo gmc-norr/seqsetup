@@ -22,14 +22,17 @@ Quick Start with Docker Compose
 -------------------------------
 
 The simplest way to run SeqSetup is with Docker Compose, which starts both
-the application and MongoDB. First copy ``.env.example`` to ``.env`` and fill
-it in: ``docker compose`` refuses to start while a required value is missing,
-``SEQSETUP_HTTPS_ONLY`` among them (see :ref:`port-and-https`).
+the application and MongoDB. There are two environment files to copy and fill
+in: ``.env`` for the application (``docker compose`` refuses to start while a
+required value is missing, ``SEQSETUP_HTTPS_ONLY`` among them -- see
+:ref:`port-and-https`) and ``.env.db`` for the MongoDB root password, which
+only the database container reads.
 
 .. code-block:: bash
 
-   # Your settings (once), then fill in .env
+   # Your settings (once), then fill both in
    cp .env.example .env
+   cp .env.db.example .env.db
 
    # Build and start both containers
    docker compose up --build
@@ -220,46 +223,52 @@ Production Deployment
 
 For production deployments, consider the following configuration.
 
-Production Docker Compose
-~~~~~~~~~~~~~~~~~~~~~~~~~
+The shipped Compose file is the production one
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a ``docker-compose.prod.yml``:
+Use the ``docker-compose.yml`` in the repository as it is. Do not write a
+second Compose file for production: this one is where the protections live,
+and a copy of it drifts.
 
-.. code-block:: yaml
+It runs ``mongod --auth`` with a root user that MongoDB creates on first
+start, creates a separate least-privileged application user through
+``docker/mongo-init.sh``, publishes the application port on ``127.0.0.1``
+only, pins the MongoDB image by digest, waits for the database to report
+healthy, drops every Linux capability from the application container and
+blocks setuid escalation in it. MongoDB gets no ``ports:`` entry at all --
+and note that an *unpublished* container port is still reachable from the
+Docker host, so running MongoDB without authentication would let any local
+account on the server read the database, or change a Ready run's stored
+sample sheet, with no password.
 
-   services:
-     app:
-       image: seqsetup:latest
-       ports:
-         - "127.0.0.1:5001:5001"
-       environment:
-         - MONGODB_URI=mongodb://mongodb:27017
-         - MONGODB_DATABASE=seqsetup
-         - SEQSETUP_SESSION_SECRET=${SESSION_SECRET}
-         - SEQSETUP_HTTPS_ONLY=1
-       volumes:
-         - ./config:/app/config:ro
-       depends_on:
-         - mongodb
-       restart: unless-stopped
-
-     mongodb:
-       image: mongo:7
-       volumes:
-         - mongo_data:/data/db
-       restart: unless-stopped
-       # Don't expose port externally in production
-
-   volumes:
-     mongo_data:
-
-Run with:
+Fill in the two environment files and start it:
 
 .. code-block:: bash
 
-   # Generate a session secret and start
-   export SESSION_SECRET=$(openssl rand -hex 32)
-   docker compose -f docker-compose.prod.yml up -d
+   cp .env.example .env          # application settings and the app DB user
+   cp .env.db.example .env.db    # the MongoDB root credential, mongod only
+
+   # A session signing key, and passwords the URI can carry
+   openssl rand -hex 32          # -> SEQSETUP_SESSION_SECRET in .env
+   openssl rand -hex 24          # -> MONGO_APP_PASSWORD in .env
+   openssl rand -hex 24          # -> MONGO_INITDB_ROOT_PASSWORD in .env.db
+
+   docker compose up -d
+
+The root credential is in its own file because the application container
+reads the whole of ``.env``, and the application never needs it.
+
+For anything site-specific -- another published address, an extra volume, a
+different log driver -- add a ``docker-compose.override.yml`` next to it.
+Compose reads it automatically and merges it over the base file, so you keep
+the protections above and still see, in one small file, exactly what your
+site changed.
+
+.. warning::
+   Never remove authentication from ``docker-compose.yml``. If you need a
+   throwaway local run without it, put that in
+   ``docker-compose.override.yml`` on that machine and nowhere near a
+   machine holding real runs.
 
 Production Checklist
 ~~~~~~~~~~~~~~~~~~~~

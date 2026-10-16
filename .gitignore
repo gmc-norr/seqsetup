@@ -18,6 +18,7 @@ venv/
 
 # Deployment env file (never commit secrets)
 .env
+.env.db
 
 # Pixi
 .pixi/

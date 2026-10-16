@@ -18,9 +18,11 @@ services:
       - "${SEQSETUP_PUBLISH_ADDRESS:-127.0.0.1}:5001:5001"
     environment:
       # Mongo connection uses authenticated credentials from .env (see env_file below).
+      # authSource is seqsetup, which is where docker/mongo-init.sh creates the app
+      # user: with authSource=admin the app could not sign in at all (review F4).
       # If you want to omit auth for a local-only dev run, override MONGODB_URI in
       # docker-compose.override.yml — do NOT remove auth from this base file.
-      - MONGODB_URI=mongodb://${MONGO_APP_USER:?must set in .env}:${MONGO_APP_PASSWORD:?must set in .env}@mongodb:27017/seqsetup?authSource=admin
+      - MONGODB_URI=mongodb://${MONGO_APP_USER:?must set in .env}:${MONGO_APP_PASSWORD:?must set in .env}@mongodb:27017/seqsetup?authSource=seqsetup
       - MONGODB_DATABASE=seqsetup
       # Session + secrets: set these in .env. The app fails closed if SEQSETUP_SESSION_SECRET
       # is too short, so an empty value here is rejected at startup.
@@ -55,13 +57,16 @@ services:
     # exposure when combined with unauthenticated Mongo. Use `docker compose
     # exec mongodb mongosh` for admin tasks instead.
     environment:
-      # Root credentials — created by Mongo itself from MONGO_INITDB_ROOT_*.
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:?must set in .env}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:?must set in .env}
       # App credentials — consumed by docker/mongo-init.sh to create the
       # least-privileged readWrite-on-seqsetup user.
       - MONGO_APP_USER=${MONGO_APP_USER:?must set in .env}
       - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD:?must set in .env}
+    env_file:
+      # The root credential lives here and NOWHERE else: the app service reads
+      # the whole of .env, so a MONGO_ROOT_* in .env would be handed to the app
+      # as well, which never needs it (review F12). Copy .env.db.example to
+      # .env.db and fill it in. Both files are gitignored.
+      - .env.db
     command: ["mongod", "--auth", "--bind_ip_all"]
     volumes:
       - mongo_data:/data/db
