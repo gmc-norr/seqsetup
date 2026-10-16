@@ -79,7 +79,14 @@ because the JSON is written before `run.test_versions_used` is set.
 The two new `samplesheet_*` keys are `null` rather than absent when unknown,
 and `docs/api-reference/export.rst` already tells consumers to test for a
 key's **presence** rather than read a missing key as a value — the same
-contract covers these.
+contract covers these. "Unknown" is two cases: there is no sheet plan (a run
+exported live), **and** the sample has no such index, where the sheet's cell
+is `na` rather than a number. The second was missed in the first cut of this
+change and found by its review: the v2 writer puts the index-presence guard
+first, while `SheetPlan.mismatches` stores a number for every sample, so the
+JSON published `1` — or whatever had been typed for an index that is not
+there — as if the sheet carried it. `samplesheet_index2` was already `null`
+for such a sample; these two now follow it.
 
 ## Keys added
 
@@ -87,6 +94,12 @@ Per sample: `test_id`, `test_version`, `worksheet_id`, `index_kit_name`,
 `barcode_mismatches_index1`, `barcode_mismatches_index2`,
 `samplesheet_barcode_mismatches_index1`,
 `samplesheet_barcode_mismatches_index2`.
+
+Note on the first pair: `Sample.barcode_mismatches_index1` **defaults to 1**,
+so that key is a number on an untouched sample, not `null`. It is `null` only
+where the value was explicitly cleared. It is "the number on the sample", not
+"the number someone typed" — the two cannot be told apart, and this export
+does not try to.
 
 Per run: `test_versions_used`, `i5_workflow`.
 
@@ -103,9 +116,27 @@ deliberately rather than overlooked.
 
 ## What proves it
 
-`tests/integration/test_json_export_fields.py`: every new key present with
-the right value for a run with a per-sample override, a run whose number
-comes from the profile default, and a sample with no index at all; the old
-keys unchanged; and the live fallback's two `samplesheet_*` keys `null`
-rather than missing. Plus a test that the stored JSON of a run marked Ready
-before this change is still served as it was.
+`tests/integration/test_json_export_fields.py`, 15 tests, all driven through
+the real Mark Ready except where they are about the live path:
+
+- the test, version, worksheet and kit on a Ready run's JSON; every new key
+  present; every key the old shape had still there
+- a sample's own mismatch number exported; the **sheet's** number exported
+  beside it; a sample that overrides nothing still carrying the sheet's
+  number
+- `TestTheSheetsNumberComesFromTheProfilesDefault`: the case this whole
+  design rests on — the sample overrides nothing, the application profile's
+  `Data` default is 2, and the JSON states 2 while `bclconvert_settings`
+  still says the run default 1
+- `TestASampleWithoutAnIndexSaysNothingAboutItsNumber`: `null` for an index
+  the sample does not have, including when a number was typed for it
+- the run's `test_versions_used` (matching what the run stored) and
+  `i5_workflow`
+- the live fallback: the two `samplesheet_*` keys `null` rather than missing,
+  the sample's own fields still there
+- the README no longer calling the export complete
+
+`tests/unit/test_json_export_sheet_fields.py`'s two baseline guards prove
+every key the old shape had keeps its value **and its position**: a key
+added by accident fails them, because each new key has to be listed in
+`NEW_KEYS` / `NEW_RUN_KEYS` to be allowed through.

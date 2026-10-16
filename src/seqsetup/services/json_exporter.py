@@ -146,15 +146,24 @@ class JSONExporter:
             "test_version": sample.test_version,
             "worksheet_id": sample.worksheet_id,
             "index_kit_name": sample.index_kit_name,
-            # This sample's own override, or null; and the number the sheet
-            # actually carries, read from the sheet plan -- never derived again
-            # here, or the two exports of one run could disagree. A sample with
-            # no override of its own takes the application profile's Data
-            # default, which only the plan knows.
+            # This sample's own value, and the number the sheet actually
+            # carries, read from the sheet plan -- never derived again here, or
+            # the two exports of one run could disagree. A sample with no value
+            # of its own takes the application profile's Data default, which
+            # only the plan knows.
+            #
+            # null for an index the sample does not have: the sheet's cell is
+            # then "na", not a number, because the v2 writer puts that guard
+            # first while the plan stores a number for every sample. The JSON
+            # stated 1 -- or whatever had been typed for an index that is not
+            # there -- as if the sheet carried it (review of 60fb18c, P1-1).
+            # samplesheet_index2 is null for such a sample in the same way.
             "barcode_mismatches_index1": sample.barcode_mismatches_index1,
             "barcode_mismatches_index2": sample.barcode_mismatches_index2,
-            "samplesheet_barcode_mismatches_index1": sheet_mismatches.get((sample.id, 1)),
-            "samplesheet_barcode_mismatches_index2": sheet_mismatches.get((sample.id, 2)),
+            "samplesheet_barcode_mismatches_index1": (
+                sheet_mismatches.get((sample.id, 1)) if i1_seq else None),
+            "samplesheet_barcode_mismatches_index2": (
+                sheet_mismatches.get((sample.id, 2)) if i2_seq else None),
             "analyses": sample.analyses,
             "description": sample.description,
             "metadata": sample.metadata,

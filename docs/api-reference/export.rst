@@ -237,8 +237,9 @@ The JSON export includes information not representable in the SampleSheet
 v2 format, such as sample names, projects, descriptions, and free-form
 metadata. Each sample also carries ``test_id``, ``test_version``,
 ``worksheet_id`` and ``index_kit_name``, and two pairs of mismatch numbers:
-``barcode_mismatches_index1`` / ``_index2`` is what **that sample**
-overrides (``null`` when it overrides nothing), while
+``barcode_mismatches_index1`` / ``_index2`` is the number **on that sample**
+-- a new sample starts at ``1``, so this is not "``null`` unless someone
+typed one"; it is ``null`` only where the value was explicitly cleared.
 ``samplesheet_barcode_mismatches_index1`` / ``_index2`` is the number the
 **Sample Sheet** carries for it, read from the same place the sheet reads it.
 Those two differ when the number comes from the application profile's
@@ -247,10 +248,16 @@ Those two differ when the number comes from the application profile's
 ``i5_workflow``.
 
 Like ``samplesheet_index2``, the two ``samplesheet_barcode_mismatches_*``
-keys are ``null`` when SeqSetup cannot say what the sheet would write: a run
-exported live, because it was created before exports were pre-generated, has
-no sheet plan. Test that the key is **present** rather than reading a
-missing key as a value.
+keys are ``null`` when SeqSetup cannot say what the sheet would write:
+
+* the sample has no such index, so the sheet's cell is ``na`` rather than a
+  number -- the sample may still carry a number of its own, which the first
+  pair reports and the sheet ignores; or
+* the run was exported live, because it was created before exports were
+  pre-generated, so there is no sheet plan to read.
+
+Test that the key is **present** rather than reading a missing key as a
+value.
 
 The export still carries no user or timestamp tracking for the run -- who
 created or last changed it, and when. Those are in the audit trail, not
