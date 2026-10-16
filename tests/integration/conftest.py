@@ -341,29 +341,5 @@ def nothing_stored(ctx, run_or_id) -> bool:
     return not run.exports and not any(stored_export(ctx, run, kind) for kind in EXPORT_KINDS)
 
 
-def seed_stored_exports(ctx, run_id: str, **files) -> dict:
-    """Write ``files`` (kind=content) as Mark Ready does — each into its own
-    record — and return the manifest to put on the run.
-
-    Use this wherever a test used to seed ``generated_*`` on a Ready run: a
-    run stored by this release carries its files this way, so a seed that
-    sets the legacy fields tests only the older shape.
-    """
-    import hashlib
-    import uuid
-
-    from seqsetup.models.sequencing_run import EXPORT_KINDS
-
-    manifest = {}
-    for kind, content in files.items():
-        assert kind in EXPORT_KINDS, kind
-        raw = content.encode("utf-8") if isinstance(content, str) else content
-        file_id = uuid.uuid4().hex
-        sha256 = hashlib.sha256(raw).hexdigest()
-        ctx.run_export_repo.insert({
-            "_id": file_id, "run_id": run_id, "kind": kind, "content": content,
-            "sha256": sha256, "size": len(raw),
-            "created_at": "2026-10-16T00:00:00", "created_by": "seed",
-        })
-        manifest[kind] = {"id": file_id, "sha256": sha256, "size": len(raw)}
-    return manifest
+# Shared with the browser suite: tests/export_seed.py.
+from ..export_seed import seed_stored_exports  # noqa: E402,F401

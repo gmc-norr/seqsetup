@@ -1,23 +1,29 @@
-"""Mark Ready refuses, with a message and an audit row, when the Ready
-record would not fit MongoDB's 16 MiB document limit (outside review of
-f490536, finding F6 -- the interim refusal, not the separate storage).
+"""Mark Ready refuses, with a message and an audit row, when what it must
+store would not fit MongoDB's 16 MiB document limit (outside review of
+f490536, finding F6).
 
-Every export lives inside the run document, the validation report's PDF as
-base64. Measured by the verifier on real mongo:7: 96 different samples per
-lane on an 8-lane flowcell is 18.9 MB, 112.8% of the limit, and the save
-fails with DocumentTooLarge after the full export time. The person saw a
-bare 500 "Internal Server Error" in the error banner, the run stayed Draft
-with the lock still held, no run.status.denied row was written, a retry
-failed the same way, and nothing said what to change.
+Every export used to live inside the run document, the validation report's
+PDF as base64. Measured by the verifier on real mongo:7: 96 different
+samples per lane on an 8-lane flowcell was 18.9 MB, 112.8% of the limit,
+and the save failed with DocumentTooLarge after the full export time. The
+person saw a bare 500 "Internal Server Error" in the error banner, the run
+stayed Draft with the lock still held, no run.status.denied row was
+written, a retry failed the same way, and nothing said what to change.
 
-The size is now measured before the save, so the refusal names it and says
-what to do, and the attempt is audited like every other refused transition.
+The files now live in their own records, one document each
+(docs/design/2026-10-16-export-files-own-records-design.md), so the size of
+a whole run is no longer a limit. What is measured here is one of them: the
+oversized report below is refused as a file, before anything is written,
+reason ``export_file_too_large``. The run document's own limit is still
+measured and still pinned at the bottom of this file; the per-file refusal
+is covered end to end in test_export_file_size.py, under a collection
+wrapper that refuses an oversize document as a real server does.
 """
 
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services.validation_report import ValidationReportPDF
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, nothing_stored
 from .test_group_a3 import ORIGIN
 from .test_scheduled_sync_instrument_cache import _seed_run
 
@@ -36,7 +42,7 @@ def _audit_reasons(ctx, run_id):
             if e.target == run_id]
 
 
-class TestMarkReadyRefusesADocumentThatWillNotFit:
+class TestMarkReadyRefusesWhatWillNotFit:
 
     def test_the_run_stays_a_draft(self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -88,7 +94,7 @@ class TestMarkReadyRefusesADocumentThatWillNotFit:
 
         mark_ready(logged_in_client, run_id, ORIGIN)
 
-        assert "ready_document_too_large" in _audit_reasons(ctx, run_id)
+        assert "export_file_too_large" in _audit_reasons(ctx, run_id)
 
     def test_nothing_of_the_exports_is_left_on_the_run(
             self, logged_in_client, fresh_app, monkeypatch):
@@ -100,8 +106,7 @@ class TestMarkReadyRefusesADocumentThatWillNotFit:
         mark_ready(logged_in_client, run_id, ORIGIN)
 
         stored = ctx.run_repo.get_by_id(run_id)
-        assert stored.generated_samplesheet_v2 is None
-        assert stored.generated_validation_pdf is None
+        assert nothing_stored(ctx, stored)
         assert stored.status == RunStatus.DRAFT
 
     def test_control_a_run_whose_exports_fit_still_goes_ready(
@@ -149,10 +154,17 @@ class TestTheRefusalIsNotAValidationRefusal:
 class TestTheLimitItselfIsPinned:
     """A fresh review pointed out that a negative margin -- which would let
     the route accept a document MongoDB refuses, the exact 500-after-two-
-    minutes this fix exists to stop -- left every test green."""
+    minutes this fix exists to stop -- left every test green. Both limits
+    are pinned: the run document's, and one export file's."""
 
     def test_the_threshold_is_at_or_below_what_mongodb_accepts(self):
         from seqsetup.routes.runs import _MAX_RUN_DOCUMENT, _RUN_DOCUMENT_MARGIN
         assert _RUN_DOCUMENT_MARGIN > 0, "no margin for what touch() writes after the check"
         assert _MAX_RUN_DOCUMENT <= 16 * 1024 * 1024, "above MongoDB's own document limit"
         assert _MAX_RUN_DOCUMENT - _RUN_DOCUMENT_MARGIN < 16 * 1024 * 1024
+
+    def test_one_file_is_measured_against_the_same_limit(self):
+        from seqsetup.services.run_exports import EXPORT_FILE_MARGIN, MAX_EXPORT_FILE
+        assert EXPORT_FILE_MARGIN > 0, "no margin for the record's other fields"
+        assert MAX_EXPORT_FILE <= 16 * 1024 * 1024, "above MongoDB's own document limit"
+        assert MAX_EXPORT_FILE - EXPORT_FILE_MARGIN < 16 * 1024 * 1024
