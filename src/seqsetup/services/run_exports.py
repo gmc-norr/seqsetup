@@ -212,14 +212,22 @@ def write_exports(ctx, run, files: dict, *, actor: str = "") -> dict:
     insert-only, so no reader of an older manifest can lose a file
     (docs/design/2026-10-16-export-files-own-records-design.md).
     """
-    missing = [kind for kind in _ALWAYS_REQUIRED if not files.get(kind)]
-    if missing:
-        raise ExportFileMissing(missing)
+    # A file every Ready run must have, and any file that was made at all,
+    # must have bytes. ``None`` for a kind this run does not have (a v1 sheet
+    # its instrument does not write, or one Mark Ready withheld) is the only
+    # legitimate absence: an empty file would be named by the manifest and
+    # then served as an empty download by the UI while the API called it "not
+    # yet generated" (review 1, P3-2).
+    empty = [kind for kind in EXPORT_KINDS
+             if not files.get(kind)
+             and (kind in _ALWAYS_REQUIRED or files.get(kind) is not None)]
+    if empty:
+        raise ExportFileMissing(empty)
 
     planned = []
     for kind in EXPORT_KINDS:
         content = files.get(kind)
-        if not content:
+        if content is None:
             continue
         record, raw = _record(run.id, kind, content, actor)
         # The record is what MongoDB must hold, so the record is what is

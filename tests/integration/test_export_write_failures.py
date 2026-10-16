@@ -172,6 +172,27 @@ class TestEveryRequiredFileMustBeThereBeforeTheRunGoesReady:
         assert ctx.run_repo.get_by_id(run_id).status == RunStatus.DRAFT
         assert records(ctx, run_id) == [], "a file was written for a run that was refused"
 
+    def test_a_v1_sheet_that_came_out_empty_refuses_too(
+            self, logged_in_client, fresh_app, monkeypatch):
+        """The v1 sheet is not required -- an instrument that writes none is
+        fine -- but an *empty* one is not "none": storing it would name a
+        file with no bytes, which the UI would serve as an empty CSV while
+        the API answered "not yet generated" (review 1, P3-2's second half).
+        Skipping it instead would leave the run damaged, since a run whose
+        instrument writes a v1 sheet and that recorded no reason must name
+        one. So it is refused, exactly like the four."""
+        from seqsetup.services.samplesheet_v1_exporter import SampleSheetV1Exporter
+        _app, ctx, _db = fresh_app
+        run_id = seed_run(ctx, "empty-v1")
+        monkeypatch.setattr(SampleSheetV1Exporter, "export", staticmethod(lambda *a, **k: ""))
+
+        resp = mark_ready(logged_in_client, run_id, ORIGIN)
+
+        assert resp.status_code == 500, resp.text[:300]
+        assert ctx.run_repo.get_by_id(run_id).status == RunStatus.DRAFT
+        assert records(ctx, run_id) == []
+        assert "export_file_missing" in _denials(ctx, run_id)
+
     def test_a_v1_sheet_is_not_required_of_an_instrument_that_writes_none(
             self, logged_in_client, fresh_app):
         """The control: the four are required, the v1 sheet is not."""
