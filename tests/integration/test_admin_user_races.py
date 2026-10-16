@@ -151,6 +151,12 @@ class TestAnEditDoesNotBringBackADeletedUser:
 
     def test_an_edit_racing_a_delete_does_not_recreate_the_account(
             self, fresh_app, logged_in_client, monkeypatch):
+        """End to end. It was red on main, where the two requests interleaved
+        freely. With _ADMIN_WRITE_LOCK the edit holds the lock across its load
+        and its write, so the delete cannot land in between and the forced
+        order times out -- which is the fix working, not the test failing.
+        The write itself is pinned by TestTheRepositoryWriteThatWillNotCreate
+        below (break checks L5, L6)."""
         app, ctx, _db = fresh_app
         client_two = _second_admin(app, ctx)
         leaver = LocalUser(username="leaver", display_name="Leaver", role=UserRole.STANDARD)
@@ -214,3 +220,41 @@ class TestAnEditDoesNotBringBackADeletedUser:
 
         assert "updated" in resp.text, resp.text[:300]
         assert ctx.local_user_repo.get_by_username("editme").display_name == "After"
+
+
+class TestTheRepositoryWriteThatWillNotCreate:
+    """``_ADMIN_WRITE_LOCK`` already stops a delete landing between the
+    edit's load and its write, so the route-level race cannot be forced any
+    more. ``update_existing`` is the second line of defence -- it is what
+    makes the write itself unable to resurrect an account -- so it is
+    tested here directly. (Break checks L5 and L6.)"""
+
+    def test_it_writes_an_account_that_is_still_there(self, fresh_app):
+        _app, ctx, _db = fresh_app
+        user = LocalUser(username="stays", display_name="Before", role=UserRole.STANDARD)
+        user.set_password("Stay5-Passw0rd!")
+        ctx.local_user_repo.save(user)
+
+        user.display_name = "After"
+        assert ctx.local_user_repo.update_existing(user) is True
+        assert ctx.local_user_repo.get_by_username("stays").display_name == "After"
+
+    def test_it_writes_nothing_and_says_so_when_the_account_is_gone(self, fresh_app):
+        _app, ctx, _db = fresh_app
+        user = LocalUser(username="gone", display_name="Gone", role=UserRole.STANDARD)
+        user.set_password("G0ne-Passw0rd!")
+
+        assert ctx.local_user_repo.update_existing(user) is False
+        assert ctx.local_user_repo.get_by_username("gone") is None, (
+            "update_existing created the account it was told to update")
+
+    def test_save_by_contrast_would_have_created_it(self, fresh_app):
+        """Why update_existing exists: the inherited save upserts."""
+        _app, ctx, _db = fresh_app
+        user = LocalUser(username="upserted", display_name="Upserted",
+                         role=UserRole.STANDARD)
+        user.set_password("Upsert3d-Passw0rd!")
+
+        ctx.local_user_repo.save(user)
+
+        assert ctx.local_user_repo.get_by_username("upserted") is not None
