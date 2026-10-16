@@ -38,6 +38,18 @@ class LocalUserRepository(BaseRepository[LocalUser]):
             return False
         return True
 
+    def update_existing(self, user: LocalUser) -> bool:
+        """Write an account that already exists. False, with nothing written,
+        when the name is gone: ``save`` upserts, so an edit that loaded the
+        account before another admin deleted it wrote the deleted account
+        back -- password hash and all, able to sign in again (outside review
+        of f490536, F15)."""
+        doc = user.to_dict()
+        doc["_id"] = user.username
+        return self.collection.replace_one(
+            {"_id": user.username}, doc, upsert=False,
+        ).matched_count == 1
+
     def count_admins(self) -> int:
         """Count the number of admin users."""
         return self.collection.count_documents({"role": UserRole.ADMIN.value})

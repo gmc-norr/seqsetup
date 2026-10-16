@@ -16,6 +16,7 @@ Admin-only via router-level require_admin_dep. Preserves:
 """
 
 import logging
+import threading
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -105,6 +106,15 @@ def _clean_up_logins(ctx, username: str):
         return None
 
 
+# One admin write at a time. The last-admin guard is a check then a write,
+# so two admin requests on the server's thread pool could both pass the
+# check and leave no admin at all -- an installation nobody can administer
+# until `pixi run create-admin` is run on the server (outside review of
+# f490536, F15). The app is one process, as _SYNC_LOCK in
+# services/github_sync.py already relies on.
+_ADMIN_WRITE_LOCK = threading.Lock()
+
+
 def _render_page(request, ctx, message="", error=""):
     """Render the full page (or the page fragment via block_name)."""
     return render(
@@ -148,6 +158,10 @@ def create_user(
     if is_dot_only(form.username):
         raise HTTPException(status_code=400, detail=DOT_ONLY_USERNAME)
     repo = ctx.local_user_repo
+    # The check is kept for the message it gives on the common path; the
+    # write below is insert-only, so two creates of one name at once cannot
+    # both win -- the check alone let the second replace the first account,
+    # password and role included (review F15).
     if repo.exists(form.username):
         return _render_page(request, ctx, error=f"User '{form.username}' already exists.")
 
@@ -161,7 +175,8 @@ def create_user(
         new_user.set_password(form.password)
     except WeakPasswordError as e:
         return _render_page(request, ctx, error=str(e))
-    repo.save(new_user)
+    if not repo.create(new_user):
+        return _render_page(request, ctx, error=f"User '{form.username}' already exists.")
 
     audit(
         "user.created",
@@ -186,33 +201,37 @@ def edit_user(
     matching the previous "save closes the edit form" UX.
     """
     repo = ctx.local_user_repo
-    user = repo.get_by_username(username)
-    if not user:
-        return _render_page(request, ctx, error=f"User '{username}' not found.")
+    with _ADMIN_WRITE_LOCK:
+        user = repo.get_by_username(username)
+        if not user:
+            return _render_page(request, ctx, error=f"User '{username}' not found.")
 
-    # Last-admin guard: if this user IS the only admin and we're
-    # demoting them, reject.
-    if user.role == UserRole.ADMIN and form.role != UserRole.ADMIN:
-        if repo.count_admins() <= 1:
-            return _render_page(
-                request, ctx,
-                error="Cannot change role: this is the last admin user.",
-            )
+        # Last-admin guard: if this user IS the only admin and we're
+        # demoting them, reject.
+        if user.role == UserRole.ADMIN and form.role != UserRole.ADMIN:
+            if repo.count_admins() <= 1:
+                return _render_page(
+                    request, ctx,
+                    error="Cannot change role: this is the last admin user.",
+                )
 
-    previous_role = user.role
-    user.display_name = form.display_name
-    user.email = form.email
-    user.role = form.role
+        previous_role = user.role
+        user.display_name = form.display_name
+        user.email = form.email
+        user.role = form.role
 
-    password_changed = bool(form.password)
-    if form.password:
-        try:
-            user.set_password(form.password)
-        except WeakPasswordError as e:
-            return _render_page(request, ctx, error=str(e))
+        password_changed = bool(form.password)
+        if form.password:
+            try:
+                user.set_password(form.password)
+            except WeakPasswordError as e:
+                return _render_page(request, ctx, error=str(e))
 
-    user.updated_at = utcnow()
-    repo.save(user)
+        user.updated_at = utcnow()
+        # Not save(): that upserts, so an edit that loaded the account before
+        # another admin deleted it wrote the deleted account back (review F15).
+        if not repo.update_existing(user):
+            return _render_page(request, ctx, error=f"User '{username}' not found.")
 
     # A role or password change also changed the user's session stamp
     # (models/local_user.py), so the save above already ended their logins.
@@ -248,15 +267,16 @@ def delete_user(
     rejects with an error message rendered into the page.
     """
     repo = ctx.local_user_repo
-    user = repo.get_by_username(username)
-    if not user:
-        return _render_page(request, ctx, error=f"User '{username}' not found.")
+    with _ADMIN_WRITE_LOCK:
+        user = repo.get_by_username(username)
+        if not user:
+            return _render_page(request, ctx, error=f"User '{username}' not found.")
 
-    if user.role == UserRole.ADMIN and repo.count_admins() <= 1:
-        return _render_page(request, ctx, error="Cannot delete the last admin user.")
+        if user.role == UserRole.ADMIN and repo.count_admins() <= 1:
+            return _render_page(request, ctx, error="Cannot delete the last admin user.")
 
-    deleted_role = user.role.value
-    repo.delete(username)
+        deleted_role = user.role.value
+        repo.delete(username)
     # With the record gone its logins are refused already; this is cleanup.
     removed = _clean_up_logins(ctx, username)
     audit(
