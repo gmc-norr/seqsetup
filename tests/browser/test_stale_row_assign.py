@@ -173,3 +173,40 @@ def test_control_after_a_reload_the_drop_is_saved(
     assert resp.value.status == 200, resp.value.text()
     _sent_what_the_row_showed(resp, OTHER_TAB)   # the page now shows the other tab's
     assert _i7s(app_ctx, run_id) == [SEQS[1][0], None]
+
+
+@pytest.mark.browser
+def test_a_drop_on_the_ticked_rows_when_one_of_them_changed(
+        logged_in_page, base_url, app_ctx, kit, run_id):
+    """Ticking a row sends the drop to every ticked row at once
+    (assign-index-to-selected). One row another tab has changed refuses the
+    whole drop, so the row the person dropped on gets nothing either."""
+    page = logged_in_page
+    page.on("dialog", lambda d: d.accept())   # one index on several rows asks first
+    _open(page, base_url, run_id)
+    _the_other_tab_assigns(app_ctx, run_id, 2)
+
+    page.locator(f'#sample-row-{run_id}-s2 .sample-checkbox').check()
+    with page.expect_response(lambda r: r.url.endswith("/assign-index-to-selected")) as resp:
+        _chip(page, 0).drag_to(_zone(page, run_id, 1))
+
+    assert resp.value.status == 409
+    _sent_what_the_row_showed(resp, "target_indexes")
+    expect(page.locator("#error-banner")).to_contain_text(CHANGED)
+    expect(page.locator("#error-banner")).to_contain_text("SR-02")
+    assert _i7s(app_ctx, run_id) == [None, OTHER_TAB], "the dropped-on row got one too"
+
+
+@pytest.mark.browser
+def test_control_a_drop_on_the_ticked_rows_the_page_shows_is_saved(
+        logged_in_page, base_url, app_ctx, kit, run_id):
+    page = logged_in_page
+    page.on("dialog", lambda d: d.accept())
+    _open(page, base_url, run_id)
+
+    page.locator(f'#sample-row-{run_id}-s2 .sample-checkbox').check()
+    with page.expect_response(lambda r: r.url.endswith("/assign-index-to-selected")) as resp:
+        _chip(page, 0).drag_to(_zone(page, run_id, 1))
+
+    assert resp.value.status == 200, resp.value.text()[:300]
+    assert _i7s(app_ctx, run_id) == [SEQS[0][0], SEQS[0][0]]
