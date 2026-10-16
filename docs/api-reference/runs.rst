@@ -261,6 +261,7 @@ Status Meaning
 403    Run is a draft (not accessible via API).
 404    Run not found or sheet not generated.
 429    Rate limit exceeded.
+500    The stored file cannot be served as stored (see below).
 ====== ============================================================
 
 **Example request**::
@@ -286,6 +287,7 @@ Status Meaning
 403    Run is a draft.
 404    Run not found or SampleSheet v1 not available for this run.
 429    Rate limit exceeded.
+500    The stored file cannot be served as stored (see below).
 ====== ============================================================
 
 Get JSON Metadata
@@ -307,6 +309,7 @@ Status Meaning
 403    Run is a draft.
 404    Run not found or JSON not yet generated.
 429    Rate limit exceeded.
+500    The stored file cannot be served as stored (see below).
 ====== ============================================================
 
 Get Validation Report (JSON)
@@ -328,6 +331,7 @@ Status Meaning
 403    Run is a draft.
 404    Run not found or validation report not yet generated.
 429    Rate limit exceeded.
+500    The stored file cannot be served as stored (see below).
 ====== ============================================================
 
 Get Validation Report (PDF)
@@ -347,4 +351,24 @@ Status Meaning
 403    Run is a draft.
 404    Run not found or validation PDF not yet generated.
 429    Rate limit exceeded.
+500    The stored file cannot be served as stored (see below).
 ====== ============================================================
+
+.. _export-file-damaged:
+
+When a stored file cannot be served
+-----------------------------------
+
+Each of the five files is stored as a record of its own, and the run names
+it with its length and a SHA-256 of its bytes. Every reader -- these
+endpoints, the web app's downloads, the API Exports pages -- hashes the
+bytes it is about to hand out and compares them with what the run names.
+
+If they do not match, or the record is missing, the answer is ``500`` with
+a message naming the file. SeqSetup never falls back to another copy and
+never writes the file afresh: a Ready run serves exactly the bytes its
+checks passed, or nothing. Retrying does not help. The cause is a change
+to the database outside SeqSetup -- a record removed or edited by hand, or
+a partial restore from a backup that left the ``run_exports`` collection
+behind. Tell your SeqSetup administrator; the event is in the audit trail
+as ``run.export.damaged``.

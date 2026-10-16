@@ -282,14 +282,18 @@ class SequencingRun:
     # checked_exports keeps it read-only.
     exports: Mapping = field(default_factory=dict)  # checked_exports on every assignment
 
-    # Pre-generated exports (populated when status transitions to READY).
+    # The files of a run stored before they moved into their own records
+    # (repositories/run_export_repo.py). A run marked Ready by this release
+    # sets all five to None and carries the manifest above instead; these
+    # fields are read by read_export alone, for a run that has no manifest.
     #
     # Encryption-at-rest note (audit M3)
     # ----------------------------------
-    # These fields may contain sample identifiers and other clinical
-    # metadata once a run is approved. They are stored plaintext in the
-    # MongoDB document. For deployments that need protection against
-    # backup or storage-level disclosure, encrypt at the *storage* layer:
+    # These fields, and the records in ``run_exports`` that replaced them,
+    # may contain sample identifiers and other clinical metadata once a run
+    # is approved. They are stored plaintext in MongoDB. For deployments
+    # that need protection against backup or storage-level disclosure,
+    # encrypt at the *storage* layer:
     #   - MongoDB's built-in encryption-at-rest (Enterprise) or
     #     client-side field-level encryption (CSFLE), or
     #   - Encrypted block storage on the host running mongod.
