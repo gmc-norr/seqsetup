@@ -73,6 +73,7 @@ _FINGERPRINT_IGNORED_KEYS = (
     "updated_at",
     "updated_by",
     "_loaded_updated_at",
+    "exports",
     "generated_samplesheet_v2",
     "generated_samplesheet_v1",
     "generated_json",

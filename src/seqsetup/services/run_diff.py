@@ -12,6 +12,7 @@ unit-tested.
 RUN_DIFF_IGNORED_KEYS = {
     "_id", "id", "samples",
     "updated_at", "updated_by", "_loaded_updated_at", "wizard_step",
+    "exports",
     "generated_samplesheet_v2", "generated_samplesheet_v1", "generated_json",
     "generated_validation_json", "generated_validation_pdf", "samplesheet_v1_withheld",
     "test_versions_used", "sheet_targets",
