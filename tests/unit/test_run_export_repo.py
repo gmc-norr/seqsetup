@@ -76,3 +76,14 @@ class TestTheRepositoryIsRequired:
         field = {f.name: f for f in dataclasses.fields(AppContext)}["run_export_repo"]
         assert field.default is dataclasses.MISSING, "an optional repository can be None"
         assert "Optional" not in str(field.type)
+
+
+class TestARunsFilesCanBeFoundByRun:
+    """The app reads a file by its id only, but the collection only grows and
+    is never pruned: an operator looking for one run's files by hand must not
+    make the database read every file of every run (the user's decision,
+    2026-10-17)."""
+
+    def test_the_collection_has_an_index_on_run_id(self, repo):
+        keys = {tuple(ix["key"]) for ix in repo.collection.index_information().values()}
+        assert (("run_id", 1),) in keys

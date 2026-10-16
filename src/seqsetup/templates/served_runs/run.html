@@ -7,7 +7,8 @@
      not_served: str — the API's 403 detail for a Draft, else ""
      back_status: "ready" | "archived" — the list tab to go back to
 
-   A stored text file is shown exactly as stored. A browser drops the one
+   A stored text file is shown exactly as stored, except the check report's
+   per-lane tables, which f.left_out says are left out. A browser drops the one
    newline right after <pre>'s start tag, so one is written there: a file
    that itself starts with a newline still shows it.
 #}
@@ -31,6 +32,7 @@
   {% else %}
   <p class="text-sm text-slate-600">
     Each file exactly as the API hands it out: the copy stored when the run was marked Ready.
+    Where part of a file is left out, a note above it says so.
   </p>
   {% for f in files %}
   <section id="served-{{ f.resource }}" class="config-panel">
@@ -61,6 +63,7 @@
     {% elif f.pdf_size is not none %}
     <p class="text-sm">A PDF of {{ f.pdf_size_text }} bytes.</p>
     {% else %}
+    {% if f.left_out %}<p class="text-sm text-slate-600">{{ f.left_out }}</p>{% endif %}
 <pre class="served-content">
 {{ f.text }}</pre>
     {% endif %}

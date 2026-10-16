@@ -3,7 +3,9 @@
 GET /served-runs           — the runs GET /api/runs lists: Ready (default) or
                              Archived, never a Draft, in the API's order.
 GET /served-runs/{run_id}  — each stored file a per-run API address hands
-                             out, byte for byte, with a download of it, or the
+                             out, byte for byte (the check report without its
+                             per-lane tables, see below), with a download of
+                             it, or the
                              answer the API gives when it has none; above each
                              sheet, the target instrument and software Mark
                              Ready saved with it.
@@ -12,7 +14,10 @@ Read-only: it shows what Mark Ready stored and never makes a file anew (the
 Export downloads do that for runs made before files were stored; the API
 does not, so a download is offered only for a stored file). Every file is
 read through ``read_export`` (services/run_exports.py), so what this page
-shows is what the API serves, byte for byte. A file that cannot be served as
+shows is what the API serves, byte for byte -- except the check report's
+per-lane tables, which are nearly all of its size (up to about 15 MB): the
+page leaves them out, says so, and its download gives the whole file (the
+user's decision, 2026-10-17). A file that cannot be served as
 it was stored gets its own row saying so, with the answer the API gives for
 it -- the other files are still shown. The not-stored answers repeat
 api/app.py's; tests/integration/test_served_runs.py checks each against the
@@ -20,6 +25,7 @@ API itself. Anyone signed in may look: they can already download these
 files.
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -44,6 +50,8 @@ _BAD_STATUS = "Invalid status. Only 'ready' and 'archived' are allowed via API."
 # decision, 2026-10-13; services/index_collision_validator.py).
 _DRAGEN_RULE_NOTE = ("Index collisions were checked as DRAGEN's built-in BCL conversion checks them: "
                      "standalone bcl-convert 3.10.5 or later is stricter and may stop.")
+_LEFT_OUT_NOTE = ("The per-lane tables (the index distances and the color balance) are left out "
+                  "here. The whole file is {size} bytes: download it to see them.")
 _RUNINFO_NOTE = ('This sheet relies on BCL Convert acting on the IsReverseComplement="Y" mark '
                  "that RunInfo.xml puts on the i5 read.")
 
@@ -63,6 +71,7 @@ class ServedFile:
     target_rule_note: str = ""       # the converter whose collision rule was checked
     target_missing: bool = False     # a stored sheet whose target was never saved
     damaged: str = ""                # why a stored file cannot be served
+    left_out: str = ""               # what of the file the page does not show, and why
 
 
 def _target_rows(target: dict) -> list[tuple[str, str]]:
@@ -90,6 +99,23 @@ def _with_target(f: ServedFile, run) -> ServedFile:
     f.target_note = _RUNINFO_NOTE if target["needs_runinfo_reverse_mark"] else ""
     f.target_rule_note = _DRAGEN_RULE_NOTE if target["software"] == "BCL Convert" else ""
     return f
+
+
+def _without_per_lane_tables(text: str) -> tuple[str, bool]:
+    """The check report without its per-lane tables, and whether any were
+    left out. A report that is not a JSON object with per-lane tables is
+    shown as stored."""
+    try:
+        report = json.loads(text)
+    except (ValueError, RecursionError):
+        # RecursionError: nested too deep for the reader -- only a report
+        # edited by hand, which is still shown rather than a 500.
+        return text, False
+    if not isinstance(report, dict) or not report.get("per_lane"):
+        return text, False
+    del report["per_lane"]
+    # As ValidationReportJSON writes it, so what is shown reads as the file.
+    return json.dumps(report, indent=2), True
 
 
 # resource -> (label, export kind, the API's 404 detail when nothing is stored)
@@ -125,6 +151,10 @@ def _served_files(ctx, run, actor: str = "") -> list[ServedFile]:
         elif kind == "validation_pdf":
             files.append(ServedFile(resource, label, pdf_size=len(content),
                                     pdf_size_text=f"{len(content):,}"))
+        elif kind == "validation_json":
+            shown, cut = _without_per_lane_tables(content)
+            note = _LEFT_OUT_NOTE.format(size=f"{len(content.encode('utf-8')):,}") if cut else ""
+            files.append(ServedFile(resource, label, text=shown, left_out=note))
         else:
             files.append(ServedFile(resource, label, text=content))
     files = [_with_target(f, run) if f.resource in ("samplesheet-v2", "samplesheet-v1")

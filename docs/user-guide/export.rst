@@ -164,8 +164,11 @@ under it the file exactly as stored when the run was marked Ready, with
 a **Download** button for it -- the same file the Export panel gives.
 Nothing is made anew here. Where nothing is stored, the page shows the
 API's answer instead, such as *"404: No v1 sheet for this run: ..."*, and
-no download. The PDF shows its size. A Draft's page says the API does not
-serve it.
+no download. The PDF shows its size. The check report (JSON) is shown
+without its per-lane tables -- the index distances of every sample pair
+and the color balance, nearly all of its size -- and says so; its
+**Download** is the whole file, as the API gives it. A Draft's page says
+the API does not serve it.
 
 Above each Sample Sheet, **Target instrument and software** says what the
 sheet was written for:
