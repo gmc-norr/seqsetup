@@ -50,6 +50,14 @@ def _is_api_path(request: Request) -> bool:
     return request.url.path == "/api" or request.url.path.startswith("/api/")
 
 
+# HX-Reselect "unset", as in middleware._banner: an hx-select on the element
+# that sent the request would otherwise pick a part the error lacks and show
+# nothing. The Check's Set test forms pick #sample-section out of what they
+# get back, the cycle form .cycle-total. (Found in the work on the outside
+# review of f490536, F3.)
+_ERROR_SELECT = "unset"
+
+
 def _error_fragment(message: str) -> str:
     """Build an HTML error fragment. ``message`` is HTML-escaped.
 
@@ -85,6 +93,7 @@ async def request_validation_handler(request: Request, exc: RequestValidationErr
         # HTMX clients: re-target the form-errors slot, inner-swap.
         headers["HX-Retarget"] = "#form-errors"
         headers["HX-Reswap"] = "innerHTML"
+        headers["HX-Reselect"] = _ERROR_SELECT
         return HTMLResponse(content=body, status_code=422, headers=headers)
 
     # Non-HTMX (rare for HTML routes): render the same minimal page.
@@ -108,6 +117,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if _is_htmx(request):
         headers["HX-Retarget"] = "#error-banner"
         headers["HX-Reswap"] = "innerHTML"
+        headers["HX-Reselect"] = _ERROR_SELECT
         return HTMLResponse(content=body, status_code=exc.status_code, headers=headers)
 
     page = f"<!DOCTYPE html><html><body>{body}</body></html>"
@@ -138,6 +148,7 @@ async def instruments_unusable_handler(request: Request, exc: Exception):
     if _is_htmx(request):
         headers["HX-Retarget"] = "#error-banner"
         headers["HX-Reswap"] = "innerHTML"
+        headers["HX-Reselect"] = _ERROR_SELECT
         return HTMLResponse(content=body, status_code=503, headers=headers)
 
     page = f"<!DOCTYPE html><html><body>{body}</body></html>"

@@ -16,7 +16,7 @@
        position, one color channel gets no signal from any sample in the lane. Reads from
        that lane may fail to be assigned to their samples. Check the Color Balance tab of
        the <a href="/runs/{{ run.id }}/validation">validation page</a> before going on.</p>
-    <form hx-post="/runs/{{ run.id }}/status/ready"
+    <form hx-post="/runs/{{ run.id }}/status/ready" data-after-row-saves="Mark Ready anyway"
           hx-target="#run-status-bar"
           hx-swap="outerHTML"
           hx-disabled-elt="find button">

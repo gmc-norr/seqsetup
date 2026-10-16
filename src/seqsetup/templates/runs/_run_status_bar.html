@@ -32,7 +32,11 @@
             {% endif %}
         {% elif status_value == 'draft' %}
             <span class="edit-lock-note">You are editing this run</span>
-            <form hx-delete="/runs/{{ run.id }}/edit-lock">
+            {# data-after-row-saves: sent once the sample rows' setting saves
+               are (app.js), so none is refused for a lock already given up.
+               Its value names the action in the note written when a save was
+               not stored, or took too long, and the action was given up. #}
+            <form hx-delete="/runs/{{ run.id }}/edit-lock" data-after-row-saves="Done editing">
                 <button type="submit" class="btn btn-secondary btn-small">Done editing</button>
             </form>
             {# Mark Ready — always clickable in DRAFT. Server-side validation
@@ -42,7 +46,7 @@
                passes, CSS (keyed on the step bar's Check step, which refreshes
                after every change) makes it quiet and shows the hint. #}
             <span class="mark-ready-hint">Check must pass first</span>
-            <form class="status-form"
+            <form class="status-form" data-after-row-saves="Mark Ready"
                   hx-post="/runs/{{ run.id }}/status/ready"
                   hx-target="#run-status-bar"
                   hx-swap="outerHTML"
