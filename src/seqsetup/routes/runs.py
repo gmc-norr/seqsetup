@@ -531,14 +531,15 @@ def _ready_document_size(run: SequencingRun) -> int:
 
 def _ready_document_too_big_message(size: int) -> str:
     return (
-        f"This run's Ready record would be {size / 1024 / 1024:.1f} MB, and the database "
-        f"stores at most {_MAX_RUN_DOCUMENT // 1024 // 1024} MB in one run. Nothing was "
-        "saved and the run is still a Draft. Most of that size is the check report's "
-        "per-lane pictures and index tables, which grow with the number of DIFFERENT "
-        "samples in each lane -- about 88 different samples per lane on an eight-lane "
-        "flowcell reaches the limit. Split the samples into more than one run, or put the "
-        "same samples on several lanes instead of different samples on each."
+        f"This run's Ready record would be {size / 1024 / 1024:.1f} MB, and SeqSetup "
+        f"stores at most {_MAX_RUN_DOCUMENT // 1024 // 1024} MB for one run. This is a "
+        "limit of SeqSetup, not a problem with the run. Nothing was saved and the run is "
+        "still a Draft. Tell your SeqSetup administrator."
     )
+    # No advice to change the run: splitting it costs another sequencing run,
+    # and how samples go on lanes is the lab's design, not something to bend to
+    # this limit (the user's decision, 2026-10-16). The real fix stores the
+    # exports outside the run document.
 
 
 class TypedOverrideCyclesRefused(Exception):

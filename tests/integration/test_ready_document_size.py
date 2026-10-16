@@ -62,8 +62,11 @@ class TestMarkReadyRefusesADocumentThatWillNotFit:
         assert "16 MB" in resp.text, resp.text[:600]
         assert "MB" in resp.text and "Draft" in resp.text, resp.text[:600]
 
-    def test_the_refusal_says_what_to_change(
+    def test_the_refusal_says_it_is_a_seqsetup_limit_and_gives_no_lab_advice(
             self, logged_in_client, fresh_app, monkeypatch):
+        """Splitting a run costs another sequencing run, and how samples go on
+        lanes is the lab's design: the message must not bend either to this
+        limit (the user's decision, 2026-10-16)."""
         _app, ctx, _db = fresh_app
         disable_repos(ctx, "test_profile", "app_profile")
         run_id = _seed_run(ctx, "too-big-advice")
@@ -71,8 +74,11 @@ class TestMarkReadyRefusesADocumentThatWillNotFit:
 
         resp = mark_ready(logged_in_client, run_id, ORIGIN)
 
-        assert "lane" in resp.text.lower(), resp.text[:600]
-        assert "more than one run" in resp.text, resp.text[:600]
+        message = resp.text.split("<ul>", 1)[-1].split("</ul>", 1)[0]
+        assert "limit of SeqSetup, not a problem with the run" in message, message
+        assert "administrator" in message, message
+        for advice in ("lane", "more than one run", "split"):
+            assert advice not in message.lower(), message
 
     def test_the_attempt_is_audited(self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
