@@ -125,8 +125,6 @@ def _pregenerate_exports(
         instrument_config=ctx.instrument_config,
         plan_fingerprint=plan_fingerprint,
     )
-    json_export = JSONExporter.export(run)
-
     ss_v1 = None
     if SampleSheetV1Exporter.supports(run.instrument_platform):
         ss_v1 = SampleSheetV1Exporter.export(run)
@@ -141,6 +139,13 @@ def _pregenerate_exports(
         raise SheetPlanChanged()
     if result.error_count > 0:
         raise ChecksFailedDuringExport()
+
+    # Written after the checks so it can state the numbers their sheet plan
+    # resolved, and the test versions they passed -- the run does not carry
+    # those yet (review F7; docs/design/2026-10-16-json-export-fields-design.md).
+    json_export = JSONExporter.export(
+        run, sheet_mismatches=result.sheet_mismatches, test_versions=result.test_versions,
+    )
     val_json = ValidationReportJSON.export(run, result)
     val_pdf = ValidationReportPDF.export(run, result)
     if run_i5_direction(run) != i5_direction:

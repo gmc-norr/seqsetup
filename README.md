@@ -195,7 +195,7 @@ Runs follow a strict state machine: **Draft** → **Ready** → **Archived**
 |--------|-------------|
 | Sample Sheet v2 | Illumina CSV for every instrument in `config/instruments.yaml`. Includes BCLConvert and DRAGEN sections based on application profiles. |
 | Sample Sheet v1 | Legacy CSV (bcl2fastq) for the instruments whose settings list it: MiSeq and NovaSeq 6000 as shipped. |
-| JSON Metadata | Complete run and sample data including test IDs, indexes, override cycles, and all configuration. |
+| JSON Metadata | Run and sample data for a machine to read: each sample's test and version, worksheet, index kit, indexes, override cycles and barcode-mismatch numbers, both its own and the ones the Sample Sheet carries. Not a second source of truth for the Sample Sheet — see `docs/api-reference/export.rst`. |
 | Validation Report (JSON) | Machine-readable validation results with error details, distance matrices, and color balance analysis. |
 | Validation Report (PDF) | Human-readable validation summary with heatmaps and color balance charts. |
 
