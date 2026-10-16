@@ -43,8 +43,29 @@ class TestTheSchemaSaysHowToAuthenticate:
                    for s in schemes.values()), f"securitySchemes={schemes!r}"
 
     def test_every_route_in_the_schema_requires_it(self, logged_in_client, bearer):
+        """The requirement must name a scheme the schema declares -- a
+        requirement for an undeclared name says nothing (review P3-2)."""
         schema = logged_in_client.get("/api/openapi.json", headers=bearer).json()
-        assert schema.get("security"), f"no top-level security: {schema.get('security')!r}"
+        required = schema.get("security")
+        assert required, f"no top-level security: {required!r}"
+        declared = set(schema.get("components", {}).get("securitySchemes", {}))
+        named = {name for entry in required for name in entry}
+        assert named and named <= declared, (
+            f"the schema requires {named}, which it does not declare ({declared})")
+        for path, operations in schema.get("paths", {}).items():
+            for method, operation in operations.items():
+                assert operation.get("security") != [], (
+                    f"{method.upper()} {path} opts out of the requirement")
+
+    def test_the_schema_says_where_its_paths_live(self, logged_in_client, bearer):
+        """This app is mounted at /api, so its paths are "/runs" and the
+        like. Without a servers entry a tool pointed at the schema calls
+        them at the host root (review P1-1)."""
+        schema = logged_in_client.get("/api/openapi.json", headers=bearer).json()
+        assert schema.get("servers") == [{"url": "/api"}], schema.get("servers")
+        assert "/runs" in schema.get("paths", {}), sorted(schema.get("paths", {}))
+        # And the root-level path really is not the API.
+        assert logged_in_client.get("/runs", headers=bearer).status_code != 200
 
     def test_run_data_still_needs_a_token(self, logged_in_client):
         """The guard that must survive: a web session alone reads no run data."""
@@ -53,21 +74,27 @@ class TestTheSchemaSaysHowToAuthenticate:
 
 class TestTheDocsSayWhatThePageNeeds:
 
-    @pytest.mark.parametrize("path", ["README.md", "docs/api-reference/runs.rst"])
+    @pytest.mark.parametrize("path", ["README.md", "docs/api-reference/runs.rst",
+                                      "docs/development/contributing.rst"])
     def test_it_does_not_simply_advertise_the_page(self, path):
+        """The window is the paragraph the mention sits in, not 1200
+        characters of unrelated text: the first cut of this test passed
+        against main's own README, where "token" came from a Technology
+        Stack row far away (review P3-1)."""
         text = (ROOT / path).read_text()
         assert "/api/docs" in text, f"{path} no longer mentions /api/docs at all"
         where = text.index("/api/docs")
-        around = text[max(0, where - 500):where + 700]
+        around = text[max(0, where - 200):where + 400]
         assert "token" in around.lower(), (
-            f"{path} points at /api/docs without saying it needs a Bearer token, "
-            f"which a browser navigation cannot send:\n{around}")
+            f"{path} points at /api/docs without saying, nearby, that it needs a "
+            f"Bearer token, which a browser navigation cannot send:\n{around}")
 
-    @pytest.mark.parametrize("path", ["README.md", "docs/api-reference/runs.rst"])
+    @pytest.mark.parametrize("path", ["README.md", "docs/api-reference/runs.rst",
+                                      "docs/development/contributing.rst"])
     def test_it_says_a_browser_cannot_open_it(self, path):
         text = (ROOT / path).read_text()
         where = text.index("/api/docs")
-        around = text[max(0, where - 500):where + 700]
+        around = text[max(0, where - 200):where + 400]
         assert "browser" in around.lower(), (
             f"{path} does not say a browser cannot open it:\n{around}")
 

@@ -33,12 +33,18 @@ NO_TELEMETRY = {"tracing": False, "metrics": False, "logs": False,
                 "operation_spans": False, "auto_configure": False}
 
 
-# Pinned Swagger UI version. Audit C5 specifically called out the
-# "unpkg.com CDN with inline script and no CSP" combo; FastAPI's default
-# /docs loads from cdn.jsdelivr.net with the same shape. We pin a specific
-# version, host the assets from the same origin via Swagger's UNPKG-served
-# bundle, AND restrict via a strict CSP. (For maximum hardening, operators
-# can mirror these files behind /static/swagger and switch _SWAGGER_BASE.)
+# Pinned Swagger UI version. Audit C5 called out the "unpkg.com CDN with
+# inline script and no CSP" combo; FastAPI's default /docs has the same
+# shape. This page pins an exact version, pins each file's SHA-384, and
+# restricts everything with a strict CSP.
+#
+# The assets are NOT same-origin: both the stylesheet and the script come
+# from cdn.jsdelivr.net below, so this page needs internet access from the
+# machine showing it and a lab with no outside network gets a blank one. An
+# earlier version of this comment claimed same-origin hosting "via Swagger's
+# UNPKG-served bundle", which was never true (review of ba3ee47, P2-2).
+# Operators who want it offline can mirror these files behind
+# /static/swagger and switch _SWAGGER_BASE.
 _SWAGGER_VERSION = "5.33.1"
 _SWAGGER_BASE = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{_SWAGGER_VERSION}"
 
@@ -145,6 +151,12 @@ def _schema_with_bearer(api: FastAPI) -> dict:
         "description": "An API token, made by an admin under Admin > API Tokens.",
     }
     schema["security"] = [{"BearerToken": []}]
+    # This app is MOUNTED at /api, so its generated paths are "/runs",
+    # "/runs/{run_id}/json" and so on. Without a servers entry a tool pointed
+    # at this schema calls those paths at the host root, where they are 303s
+    # to /login and 404s -- and the docs now tell people to point their own
+    # tool at it (review of ba3ee47, P1-1).
+    schema["servers"] = [{"url": "/api"}]
     return schema
 
 
@@ -196,12 +208,18 @@ def create_api_app(ctx: AppContext) -> FastAPI:
 
     @api.get("/docs", include_in_schema=False)
     def swagger_ui_html(_token: AuthToken) -> Response:
-        """Serve a same-origin Swagger UI page with a strict CSP.
+        """Serve a Swagger UI page with a strict CSP and pinned, SRI-checked
+        assets, in place of FastAPI's built-in /docs (inline script, no CSP
+        — audit finding C5). Bearer-token gated, so an unauthenticated
+        visitor does not see the full endpoint surface rendered
+        interactively.
 
-        Replaces FastAPI's built-in /docs (which loads from cdn.jsdelivr.net
-        with inline script and no CSP — see audit finding C5). Also
-        Bearer-token gated so an unauthenticated visitor doesn't see the
-        full endpoint surface rendered interactively.
+        A browser cannot reach this page: a navigation sends the session
+        cookie and never an Authorization header, so a signed-in user gets
+        401 here and at /api/docs/init.js and /api/openapi.json, which the
+        page itself fetches. The assets also come from cdn.jsdelivr.net.
+        docs/api-reference/runs.rst says both plainly; the written reference
+        there covers every endpoint (review of f490536, F14).
         """
         return Response(
             content=_SWAGGER_HTML,
