@@ -127,6 +127,27 @@ def _run_summary(run) -> RunSummary:
     )
 
 
+def _schema_with_bearer(api: FastAPI) -> dict:
+    """The generated schema, with the Bearer scheme every route needs.
+
+    ``make_bearer_auth`` is a plain dependency, not one of FastAPI's
+    security classes, so FastAPI generates no ``securitySchemes`` at all: a
+    client generated from this schema, and Swagger UI's Authorize button,
+    had nothing to go on, while every route answers 401 without a token
+    (outside review of f490536, F14). Setting the same keys again is
+    harmless -- FastAPI caches the schema and hands back the same dict.
+    """
+    schema = api.openapi()
+    schemes = schema.setdefault("components", {}).setdefault("securitySchemes", {})
+    schemes["BearerToken"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An API token, made by an admin under Admin > API Tokens.",
+    }
+    schema["security"] = [{"BearerToken": []}]
+    return schema
+
+
 def create_api_app(ctx: AppContext) -> FastAPI:
     """Build the FastAPI app for /api/*.
 
@@ -169,7 +190,7 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         protects every other API surface.
         """
         return Response(
-            content=json.dumps(api.openapi()),
+            content=json.dumps(_schema_with_bearer(api)),
             media_type="application/json",
         )
 

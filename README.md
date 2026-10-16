@@ -214,7 +214,18 @@ The API provides programmatic access to finalized runs using Bearer token authen
 | `GET /api/runs/{id}/validation-report` | Download validation JSON |
 | `GET /api/runs/{id}/validation-pdf` | Download validation PDF |
 
-API documentation is available at `/api/docs` (Swagger UI) and `/api/openapi.json`.
+The written reference for every endpoint is in `docs/api-reference/`.
+
+There is also a Swagger UI page at `/api/docs`, with the OpenAPI 3.1 schema
+at `/api/openapi.json` — but **you cannot open either in a browser**. Both
+need `Authorization: Bearer <token>`, which a browser navigation does not
+send, so a signed-in user gets 401; the page also loads Swagger itself from
+a public CDN, so it needs internet access from the machine showing it. To
+use the schema, fetch it with a token and point your own tool at it:
+
+```bash
+curl -H "Authorization: Bearer $SEQSETUP_TOKEN" https://your-host/api/openapi.json
+```
 
 ## Development
 
