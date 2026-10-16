@@ -34,10 +34,11 @@ import html
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import HTMLResponse
+from starlette.responses import HTMLResponse, Response
 
 from .data.instruments import SyncedInstrumentsUnusable, records_unusable_message
 from .models.instrument_definition import InstrumentRecordError
+from .services.run_exports import ExportDamaged
 from .repositories.base import ConflictError
 
 
@@ -155,8 +156,18 @@ async def instruments_unusable_handler(request: Request, exc: Exception):
     return HTMLResponse(content=page, status_code=503, headers=headers)
 
 
+async def export_damaged_handler(request: Request, exc: Exception):
+    """A stored export file cannot be served as it was stored → 500 with the
+    plain message naming the file. Never "try again": no retry helps, and
+    serving anything else — a legacy field, a fresh export — would hand out
+    bytes no check passed (docs/design/2026-10-16-export-files-own-records-design.md)."""
+    return Response(content=str(exc), media_type="text/plain", status_code=500,
+                    headers={"Cache-Control": "no-store"})
+
+
 def install(app):
     """Register the handlers on the FastAPI app."""
+    app.add_exception_handler(ExportDamaged, export_damaged_handler)
     app.add_exception_handler(RequestValidationError, request_validation_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(ConflictError, conflict_handler)

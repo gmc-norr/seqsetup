@@ -16,6 +16,7 @@ from ..context import AppContext
 from ..models.api_token import ApiToken
 from ..models.sequencing_run import RunStatus
 from ..services.audit_log import audit
+from ..services.run_exports import ExportDamaged, read_export
 from .deps import api_actor, make_bearer_auth
 from .schemas import ErrorResponse, RunListResponse, RunSummary
 from ..utils.clock import as_utc
@@ -307,6 +308,17 @@ def create_api_app(ctx: AppContext) -> FastAPI:
             offset=offset,
         )
 
+    def served(run, kind: str, token):
+        """The run's stored ``kind``, through the one reader
+        (services/run_exports.py). A file that cannot be served as it was
+        stored answers 500 with the message naming it -- never a legacy
+        field, never a fresh export
+        (docs/design/2026-10-16-export-files-own-records-design.md)."""
+        try:
+            return read_export(ctx, run, kind, actor=api_actor(token))
+        except ExportDamaged as damaged:
+            raise HTTPException(status_code=500, detail=str(damaged))
+
     @api.get(
         "/runs/{run_id}/samplesheet-v2",
         response_class=PlainTextResponse,
@@ -317,6 +329,8 @@ def create_api_app(ctx: AppContext) -> FastAPI:
             403: {"model": ErrorResponse, "description": "Run not in ready or archived status"},
             404: {"model": ErrorResponse, "description": "Run not found or sheet not generated"},
             429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+            500: {"model": ErrorResponse,
+                  "description": "The stored file cannot be served as it was stored"},
         },
     )
     def get_samplesheet_v2(
@@ -325,11 +339,12 @@ def create_api_app(ctx: AppContext) -> FastAPI:
     ):
         run = ctx.run_repo.get_by_id(run_id)
         _check_run_access(run)
-        if not run.generated_samplesheet_v2:
+        content = served(run, "samplesheet_v2", token)
+        if not content:
             raise HTTPException(status_code=404, detail="SampleSheet v2 not yet generated")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="samplesheet_v2")
         return Response(
-            content=run.generated_samplesheet_v2,
+            content=content,
             media_type="text/csv",
             headers={"Cache-Control": "no-store"},
         )
@@ -344,6 +359,8 @@ def create_api_app(ctx: AppContext) -> FastAPI:
             403: {"model": ErrorResponse, "description": "Run not in ready or archived status"},
             404: {"model": ErrorResponse, "description": "Run not found or sheet not generated"},
             429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+            500: {"model": ErrorResponse,
+                  "description": "The stored file cannot be served as it was stored"},
         },
     )
     def get_samplesheet_v1(
@@ -352,7 +369,8 @@ def create_api_app(ctx: AppContext) -> FastAPI:
     ):
         run = ctx.run_repo.get_by_id(run_id)
         _check_run_access(run)
-        if not run.generated_samplesheet_v1:
+        content = served(run, "samplesheet_v1", token)
+        if not content:
             # Why Mark Ready made none, when it stored why (spec 2026-10-05
             # group A3, §3).
             detail = (
@@ -363,7 +381,7 @@ def create_api_app(ctx: AppContext) -> FastAPI:
             raise HTTPException(status_code=404, detail=detail)
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="samplesheet_v1")
         return Response(
-            content=run.generated_samplesheet_v1,
+            content=content,
             media_type="text/csv",
             headers={"Cache-Control": "no-store"},
         )
@@ -376,6 +394,8 @@ def create_api_app(ctx: AppContext) -> FastAPI:
             403: {"model": ErrorResponse, "description": "Run not in ready or archived status"},
             404: {"model": ErrorResponse, "description": "Run not found or content not generated"},
             429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+            500: {"model": ErrorResponse,
+                  "description": "The stored file cannot be served as it was stored"},
         },
     )
     def get_json(
@@ -384,11 +404,12 @@ def create_api_app(ctx: AppContext) -> FastAPI:
     ):
         run = ctx.run_repo.get_by_id(run_id)
         _check_run_access(run)
-        if not run.generated_json:
+        content = served(run, "json", token)
+        if not content:
             raise HTTPException(status_code=404, detail="JSON metadata not yet generated")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="json")
         return Response(
-            content=run.generated_json,
+            content=content,
             media_type="application/json",
             headers={"Cache-Control": "no-store"},
         )
@@ -401,6 +422,8 @@ def create_api_app(ctx: AppContext) -> FastAPI:
             403: {"model": ErrorResponse, "description": "Run not in ready or archived status"},
             404: {"model": ErrorResponse, "description": "Run not found or content not generated"},
             429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+            500: {"model": ErrorResponse,
+                  "description": "The stored file cannot be served as it was stored"},
         },
     )
     def get_validation_json(
@@ -409,11 +432,12 @@ def create_api_app(ctx: AppContext) -> FastAPI:
     ):
         run = ctx.run_repo.get_by_id(run_id)
         _check_run_access(run)
-        if not run.generated_validation_json:
+        content = served(run, "validation_json", token)
+        if not content:
             raise HTTPException(status_code=404, detail="Validation report not yet generated")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="validation_json")
         return Response(
-            content=run.generated_validation_json,
+            content=content,
             media_type="application/json",
             headers={"Cache-Control": "no-store"},
         )
@@ -427,6 +451,8 @@ def create_api_app(ctx: AppContext) -> FastAPI:
             403: {"model": ErrorResponse, "description": "Run not in ready or archived status"},
             404: {"model": ErrorResponse, "description": "Run not found or content not generated"},
             429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+            500: {"model": ErrorResponse,
+                  "description": "The stored file cannot be served as it was stored"},
         },
     )
     def get_validation_pdf(
@@ -435,11 +461,12 @@ def create_api_app(ctx: AppContext) -> FastAPI:
     ):
         run = ctx.run_repo.get_by_id(run_id)
         _check_run_access(run)
-        if not run.generated_validation_pdf:
+        content = served(run, "validation_pdf", token)
+        if not content:
             raise HTTPException(status_code=404, detail="Validation PDF not yet generated")
         audit("api.run.read", actor=api_actor(token), target=run_id, resource="validation_pdf")
         return Response(
-            content=run.generated_validation_pdf,
+            content=content,
             media_type="application/pdf",
             headers={"Cache-Control": "no-store"},
         )

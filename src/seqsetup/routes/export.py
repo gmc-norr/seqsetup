@@ -1,12 +1,14 @@
 """Export routes for SampleSheet, JSON, and validation reports.
 
-Pure data endpoints (CSV / JSON / PDF), no HTML rendering. The run
-must be in READY or ARCHIVED status — exports are pre-generated on
-DRAFT→READY transition (see routes/runs.py:update_run_status) and
-served verbatim from the run's stored fields. Older runs created
-before pre-generation lack the cached export bytes; in that case
-we generate fresh in-memory and serve without persisting (which
-would mutate a READY/ARCHIVED run).
+Pure data endpoints (CSV / JSON / PDF), no HTML rendering. The run must be in
+READY or ARCHIVED status — exports are written on the DRAFT→READY transition
+(see routes/runs.py:update_status), each into its own record, and served
+verbatim through ``read_export`` (services/run_exports.py), which checks the
+bytes against the hash and length the run names. A file that cannot be served
+as it was stored raises ExportDamaged: answered 500, never replaced with a
+fresh export. Runs created before pre-generation carry no file at all; for
+those, and only those, we generate fresh in-memory and serve without
+persisting (which would mutate a READY/ARCHIVED run).
 """
 
 import logging
@@ -20,6 +22,7 @@ from ..models.instrument_definition import InstrumentRecordError
 from ..models.sequencing_run import SequencingRun
 from ..services.audit_log import audit
 from ..services.json_exporter import JSONExporter
+from ..services.run_exports import ExportDamaged, read_export
 from ..services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from ..services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from ..services.validation import ValidationService
@@ -65,9 +68,8 @@ def export_samplesheet_v2(
     # request, 2026-10-13): the v1 and v2 sheets never share one.
     headers = _attachment_headers(run.run_name, "SampleSheet", "_v2_BCLConvert.csv")
     try:
-        if run.generated_samplesheet_v2:
-            content = run.generated_samplesheet_v2
-        else:
+        content = read_export(ctx, run, "samplesheet_v2", actor=get_username(request))
+        if content is None:
             content = SampleSheetV2Exporter.export(
                 run,
                 test_profile_repo=ctx.test_profile_repo,
@@ -81,7 +83,7 @@ def export_samplesheet_v2(
             format="samplesheet_v2",
         )
         return Response(content=content, media_type="text/csv", headers=headers)
-    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+    except (ExportDamaged, InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).
         raise
@@ -111,17 +113,22 @@ def export_samplesheet_v1(
         # A3, §3); a run made before exports were stored gets one on the
         # spot only when the check, against the profiles stored now, finds
         # no reason.
-        withheld = run.samplesheet_v1_withheld
-        if not withheld and not run.generated_samplesheet_v1:
+        if run.samplesheet_v1_withheld:
+            return Response(
+                content=f"No v1 sheet for this run: {run.samplesheet_v1_withheld}.",
+                status_code=409,
+            )
+        content = read_export(ctx, run, "samplesheet_v1", actor=get_username(request))
+        if content is None:
             withheld = ValidationService.validate_run(
                 run,
                 test_profile_repo=ctx.test_profile_repo,
                 app_profile_repo=ctx.app_profile_repo,
                 instrument_config=ctx.instrument_config,
             ).v1_sheet_withheld
-        if withheld:
-            return Response(content=f"No v1 sheet for this run: {withheld}.", status_code=409)
-        content = run.generated_samplesheet_v1 or SampleSheetV1Exporter.export(run)
+            if withheld:
+                return Response(content=f"No v1 sheet for this run: {withheld}.", status_code=409)
+            content = SampleSheetV1Exporter.export(run)
         audit(
             "export.downloaded",
             actor=get_username(request),
@@ -129,7 +136,7 @@ def export_samplesheet_v1(
             format="samplesheet_v1",
         )
         return Response(content=content, media_type="text/csv", headers=headers)
-    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+    except (ExportDamaged, InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).
         raise
@@ -145,11 +152,14 @@ def export_samplesheet_v1(
 def export_json(
     request: Request,
     run: SequencingRun = Depends(get_exportable_run),
+    ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     # Before the try: a header that cannot be built is not a failed export.
     headers = _attachment_headers(run.run_name, "run_metadata", ".json")
     try:
-        content = run.generated_json or JSONExporter.export(run)
+        content = read_export(ctx, run, "json", actor=get_username(request))
+        if content is None:
+            content = JSONExporter.export(run)
         audit(
             "export.downloaded",
             actor=get_username(request),
@@ -157,7 +167,7 @@ def export_json(
             format="json",
         )
         return Response(content=content, media_type="application/json", headers=headers)
-    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+    except (ExportDamaged, InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).
         raise
@@ -178,9 +188,8 @@ def export_validation_json(
     # Before the try: a header that cannot be built is not a failed export.
     headers = _attachment_headers(run.run_name, "validation_report", "_validation.json")
     try:
-        if run.generated_validation_json:
-            content = run.generated_validation_json
-        else:
+        content = read_export(ctx, run, "validation_json", actor=get_username(request))
+        if content is None:
             content = ValidationReportJSON.export(run, _run_validation(run, ctx))
         audit(
             "export.downloaded",
@@ -189,7 +198,7 @@ def export_validation_json(
             format="validation_json",
         )
         return Response(content=content, media_type="application/json", headers=headers)
-    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+    except (ExportDamaged, InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).
         raise
@@ -210,14 +219,14 @@ def export_validation_pdf(
     # Before the try: a header that cannot be built is not a failed export.
     headers = _attachment_headers(run.run_name, "validation_report", "_validation.pdf")
     try:
-        # PDF is pre-generated on DRAFT→READY transition (see routes/runs.py
-        # update_run_status). Never write back here — that would mutate a
-        # READY/ARCHIVED run. Older runs created before pre-generation lack
-        # the cached PDF; generate fresh in-memory and serve without
-        # persisting.
-        pdf_bytes = run.generated_validation_pdf or ValidationReportPDF.export(
-            run, _run_validation(run, ctx)
-        )
+        # The PDF is written on the DRAFT→READY transition (see
+        # routes/runs.py update_status). Never write back here — that would
+        # mutate a READY/ARCHIVED run. Older runs created before
+        # pre-generation carry no PDF; generate fresh in-memory and serve
+        # without persisting.
+        pdf_bytes = read_export(ctx, run, "validation_pdf", actor=get_username(request))
+        if pdf_bytes is None:
+            pdf_bytes = ValidationReportPDF.export(run, _run_validation(run, ctx))
         audit(
             "export.downloaded",
             actor=get_username(request),
@@ -225,7 +234,7 @@ def export_validation_pdf(
             format="validation_pdf",
         )
         return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
-    except (InstrumentRecordError, SyncedInstrumentsUnusable):
+    except (ExportDamaged, InstrumentRecordError, SyncedInstrumentsUnusable):
         # Shown with what to do, not as a failed export (spec 2026-10-04
         # group A2, §5).
         raise

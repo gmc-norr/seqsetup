@@ -10,6 +10,10 @@ either of two profile-export bugs (fixed in samplesheet_v2_exporter):
 Usage — Docker Compose (tools/ is in the image):
     docker compose exec app env PYTHONPATH=src pixi run python tools/check_broken_samplesheets.py
 
+Reads each run's stored sheet through the application's own reader, so a
+sheet whose stored bytes are not the ones the run names is reported, never
+checked as if it were fine.
+
 Usage — from a checkout of this repo that can reach the database:
     MONGODB_URI='mongodb://...' PYTHONPATH=src pixi run python tools/check_broken_samplesheets.py
 
@@ -108,26 +112,69 @@ def find_problems(sheet: str, sample_docs: list[dict], untranslated: set[str]) -
     return problems
 
 
+def _stored_sheet(db, doc):
+    """The run's stored v2 sheet, through the one reader every part of
+    SeqSetup uses (seqsetup.services.run_exports.read_export): it checks the
+    bytes against the hash and length the run names, so this tool can never
+    report on a sheet the app would refuse to serve. Raises ExportDamaged for
+    such a run, and ValueError for a run document this release cannot read."""
+    from types import SimpleNamespace
+
+    from seqsetup.models.sequencing_run import SequencingRun
+    from seqsetup.repositories.run_export_repo import RunExportRepository
+    from seqsetup.services.run_exports import read_export
+
+    # Without the samples: this needs only the manifest, the legacy field,
+    # the instrument and the withheld note, and building every Sample would
+    # make a run with (say) one over-long sample id look like an unreadable
+    # record. The rows are checked from the raw sample dicts, as before.
+    run = SequencingRun.from_dict({**doc, "samples": []})
+    ctx = SimpleNamespace(run_export_repo=RunExportRepository(db))
+    return read_export(ctx, run, "samplesheet_v2")
+
+
 def check_runs(db) -> tuple[str, int]:
     """Check every Ready/Archived run. Returns (report text, broken run count)."""
+    from seqsetup.models.sequencing_run import LEGACY_EXPORT_FIELDS
+    from seqsetup.services.run_exports import ExportDamaged
+
     untranslated = untranslated_names(
         db["application_profiles"].find({}, {"translate": 1})
     )
     broken: dict[str, list[tuple[dict, list[str]]]] = {"ready": [], "archived": []}
     checked = no_sheet = 0
+    # The run document no longer carries its files, so this reads whole
+    # documents; the legacy fields are projected for runs stored before they
+    # moved out, and the one pre-rename name the model also reads.
+    projection = {name: 1 for name in LEGACY_EXPORT_FIELDS.values()}
+    projection["generated_samplesheet"] = 1
     runs = db["runs"].find(
         {"status": {"$in": CHECKED_STATUSES}},
         {
             "run_name": 1,
             "status": 1,
-            "generated_samplesheet_v2": 1,
-            "generated_samplesheet": 1,
+            "exports": 1,
+            "instrument_platform": 1,
+            "samplesheet_v1_withheld": 1,
             "samples.sample_id": 1,
             "samples.lanes": 1,
+            **projection,
         },
     )
     for doc in runs:
-        sheet = doc.get("generated_samplesheet_v2") or doc.get("generated_samplesheet")
+        try:
+            sheet = _stored_sheet(db, doc)
+        except ExportDamaged as damaged:
+            # Never passed over: a run whose stored sheet cannot be served is
+            # exactly what an operator has to know about.
+            checked += 1
+            broken[REPORT_GROUP[doc["status"]]].append((doc, [str(damaged)]))
+            continue
+        except Exception as exc:
+            checked += 1
+            broken[REPORT_GROUP[doc["status"]]].append(
+                (doc, [f"this run's record could not be read: {exc}"]))
+            continue
         if not sheet:
             no_sheet += 1
             continue
