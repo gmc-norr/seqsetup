@@ -121,6 +121,17 @@ function handleDragStart(event, indexId, indexType) {
     event.dataTransfer.effectAllowed = 'copy';
 }
 
+// The index a row shows, as the server compares it with the stored one:
+// data-i7 / data-i5 of #sample-row-<id> (wizard/_sample_row.html). Sent with
+// every single-row assign and clear so the server can refuse a row another
+// tab has changed instead of overwriting it (F8). A row this page does not
+// have reads as ['', ''], which the server refuses unless that sample really
+// has no index.
+function shownIndexOfRow(sampleId) {
+    const row = document.getElementById(`sample-row-${sampleId}`);
+    return [(row && row.dataset.i7) || '', (row && row.dataset.i5) || ''];
+}
+
 function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     event.preventDefault();
 
@@ -188,6 +199,8 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
                 swap: 'outerHTML',
                 values: {
                     sample_ids: JSON.stringify(checkedIds),
+                    // The index each of those rows shows, in the same order.
+                    target_indexes: JSON.stringify(checkedIds.map(shownIndexOfRow)),
                     index_pair_id: indexData.type === 'pair' ? indexData.id : '',
                     index_id: indexData.type !== 'pair' ? indexData.id : '',
                     index_type: indexData.type !== 'pair' ? indexData.type : '',
@@ -200,7 +213,8 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
         } else {
             // No samples selected — assign to just the drop target
             const values = { context: context, existing_ids: existingIds, kit_id: indexData.kit_id || '',
-                             kit_fingerprint: indexData.kit_fingerprint || '' };
+                             kit_fingerprint: indexData.kit_fingerprint || '',
+                             target_indexes: JSON.stringify([shownIndexOfRow(sampleId)]) };
 
             if (indexData.type === 'pair') {
                 values.index_pair_id = indexData.id;
@@ -335,7 +349,8 @@ function assignSelectedIndexToSample(sampleId, runId, dropZoneType, dropZoneEl) 
     const sampleTable = document.getElementById('sample-table');
     const existingIds = sampleTable ? (sampleTable.dataset.existingIds || '') : '';
     const values = { context: context, existing_ids: existingIds, kit_id: idx.kit_id || '',
-                     kit_fingerprint: idx.kit_fingerprint || '' };
+                     kit_fingerprint: idx.kit_fingerprint || '',
+                     target_indexes: JSON.stringify([shownIndexOfRow(sampleId)]) };
     if (idx.type === 'pair') { values.index_pair_id = idx.id; }
     else { values.index_id = idx.id; values.index_type = idx.type; }
     htmx.ajax('POST', `/runs/${runId}/samples/${sampleId}/assign-index`, {

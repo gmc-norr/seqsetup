@@ -513,6 +513,38 @@ def _shown_indexes(raw, count: int) -> Optional[list[list[str]]]:
     return parsed
 
 
+# The three single-row routes take the same field, and refuse the same two
+# ways: a request with nothing readable in it, and a row whose index has
+# moved (outside review of f490536, F8; index mix-up audit B4). "drag" for a
+# drop, "try" for the row's clear button.
+STALE_PAGE_DROP = "This page is out of date. Reload the page and drag again."
+STALE_PAGE_CLEAR = "This page is out of date. Reload the page and try again."
+CHANGED_ROWS_DROP = "Nothing was assigned. Reload the page and drag again."
+CHANGED_ROWS_CLEAR = "Nothing was cleared. Reload the page and try again."
+SAMPLE_LIST_CHANGED = ("The sample list changed since this page was loaded. "
+                       "Reload the page and drag again.")
+
+
+def _rows_with_a_changed_index(samples, shown: list[list[str]]) -> list[str]:
+    """The Sample IDs of the rows whose stored index is not the one the page
+    says it showed. Compared before anything is written, so a row another
+    tab has since assigned, replaced or cleared is refused rather than
+    overwritten."""
+    return [sample.sample_id for sample, row in zip(samples, shown, strict=True)
+            if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
+
+
+def _changed_rows_refusal(changed: list[str], nothing_was: str) -> Response:
+    # What to do comes before the IDs: the page's error banner shows the
+    # first 300 characters, and ten 25-character LIMS sample IDs are 268
+    # of them (batch 4 review fix B).
+    return Response(
+        f"{nothing_was} The index on these samples changed since this page "
+        f"was loaded: {name_list(changed)}.",
+        status_code=409,
+    )
+
+
 _KIT_CHANGED = ("The index kit changed since this page was loaded. Nothing was assigned. "
                 "Reload the page.")
 
@@ -1216,31 +1248,20 @@ async def assign_indexes_bulk(
     # spec 2026-10-03 group A1, §1).
     target_ids = _parse_sample_ids(form.get("target_sample_ids", ""))
     if target_ids is None:
-        return Response("This page is out of date. Reload the page and drag again.", status_code=400)
+        return Response(STALE_PAGE_DROP, status_code=400)
     would_fill = run.samples[start_idx:start_idx + len(resolved_assignments)]
     if [s.id for s in would_fill] != target_ids:
-        return Response(
-            "The sample list changed since this page was loaded. Reload the page and drag again.",
-            status_code=409,
-        )
+        return Response(SAMPLE_LIST_CHANGED, status_code=409)
     # The page also names the index it showed in each of those rows. A row
     # whose index another tab has since assigned, replaced or cleared is
     # refused rather than overwritten, and nothing is assigned (batch 4,
     # item 16).
     shown = _shown_indexes(form.get("target_indexes", ""), len(would_fill))
     if shown is None:
-        return Response("This page is out of date. Reload the page and drag again.", status_code=400)
-    changed = [sample.sample_id for sample, row in zip(would_fill, shown, strict=True)
-               if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
+        return Response(STALE_PAGE_DROP, status_code=400)
+    changed = _rows_with_a_changed_index(would_fill, shown)
     if changed:
-        # What to do comes before the IDs: the page's error banner shows the
-        # first 300 characters, and ten 25-character LIMS sample IDs are 268
-        # of them (batch 4 review fix B).
-        return Response(
-            "Nothing was assigned. Reload the page and drag again. The index on these "
-            f"samples changed since this page was loaded: {name_list(changed)}.",
-            status_code=409,
-        )
+        return _changed_rows_refusal(changed, CHANGED_ROWS_DROP)
     refusal = _kit_swap_refusal([
         (run.samples[start_idx + offset], idx_type, kit)
         for offset, (idx_type, _index, kit) in enumerate(resolved_assignments)
@@ -1380,6 +1401,19 @@ async def assign_index_to_selected(
         return Response("sample_ids must be a list of sample IDs", status_code=400)
     if not isinstance(kit_id, str):
         return Response("kit_id must be a string", status_code=400)
+
+    # The page names the index it showed in each ticked row, in the order it
+    # sends the rows. A row another tab has since changed is refused instead
+    # of overwritten, and nothing is assigned (F8).
+    shown = _shown_indexes(form.get("target_indexes", ""), len(sample_ids))
+    if shown is None:
+        return Response(STALE_PAGE_DROP, status_code=400)
+    targets = [run.get_sample(sid) for sid in sample_ids]
+    if any(target is None for target in targets):
+        return Response(SAMPLE_LIST_CHANGED, status_code=409)
+    changed = _rows_with_a_changed_index(targets, shown)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_DROP)
 
     kit = None
     index_pair = None
@@ -1866,6 +1900,15 @@ async def assign_index(
     if not isinstance(kit_id, str):
         return Response("kit_id must be a string", status_code=400)
 
+    # The page names the index it showed in this row. A row another tab has
+    # since changed is refused instead of overwritten (F8).
+    shown = _shown_indexes(form.get("target_indexes", ""), 1)
+    if shown is None:
+        return Response(STALE_PAGE_DROP, status_code=400)
+    changed = _rows_with_a_changed_index([sample], shown)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_DROP)
+
     kit = None
     if index_pair_id:
         index_pair, kit, error = _find_index(ctx, "pair", index_pair_id, kit_id, kit_fingerprint)
@@ -1925,9 +1968,23 @@ async def clear_index(
     """POST /runs/{run_id}/samples/{sample_id}/clear-index — clear assigned index(es)."""
     run_id = run.id
     sample_id_path = sample_id
-    # The clear button uses GET-style query params even on POST (htmx default).
+    # The clear button uses GET-style query params even on POST (htmx default)
+    # and sends the index it showed in the body (hx-vals).
+    form = await request.form()
+
+    # The row names the index it showed. A row another tab has since changed
+    # is refused instead of cleared (F8). Before the half-of-a-pair refusal:
+    # a page that showed two single indexes where the other tab has since put
+    # a pair is out of date, which is the more useful thing to be told.
+    shown = _shown_indexes(form.get("target_indexes", ""), 1)
+    if shown is None:
+        return Response(STALE_PAGE_CLEAR, status_code=400)
 
     sample = run.get_sample(sample_id_path)
+    if sample:
+        changed = _rows_with_a_changed_index([sample], shown)
+        if changed:
+            return _changed_rows_refusal(changed, CHANGED_ROWS_CLEAR)
     # Clearing one half of a pair leaves the pair, and both its indexes,
     # on the sample, yet wipes its kit name and Override Cycles settings
     # and is audited as cleared; the row's one pair button clears both.

@@ -60,15 +60,22 @@ def _sample(ctx, sid):
     return ctx.run_repo.get_by_id(RUN_ID).get_sample(sid)
 
 
+# The rows the drop lands on, as the page shows them: _run gives S1 and S2
+# no index, and these drops are the first thing that touches them (F8).
+SHOWN_ONE = json.dumps([["", ""]])
+SHOWN_TWO = json.dumps([["", ""], ["", ""]])
+
+
 def _one(client, fingerprint, **index):
-    data = {"kit_id": index.pop("kit_id"), **index}
+    data = {"kit_id": index.pop("kit_id"), "target_indexes": SHOWN_ONE, **index}
     if fingerprint is not None:
         data["kit_fingerprint"] = fingerprint
     return client.post(f"/runs/{RUN_ID}/samples/s1/assign-index", data=data, headers=ORIGIN)
 
 
 def _selected(client, fingerprint, **index):
-    data = {"sample_ids": json.dumps(["s1", "s2"]), "kit_id": index.pop("kit_id"), **index}
+    data = {"sample_ids": json.dumps(["s1", "s2"]), "kit_id": index.pop("kit_id"),
+            "target_indexes": SHOWN_TWO, **index}
     if fingerprint is not None:
         data["kit_fingerprint"] = fingerprint
     return client.post(f"/runs/{RUN_ID}/samples/assign-index-to-selected", data=data,

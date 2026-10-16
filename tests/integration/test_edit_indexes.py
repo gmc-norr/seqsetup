@@ -7,6 +7,7 @@ opens both. They stay closed until it is clicked, so an index is not
 changed by accident. The change history folds away like "Add Samples".
 """
 
+import json
 import re
 
 import pytest
@@ -15,6 +16,15 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import RunStatus
 from .conftest import hold_edit_lock
+
+
+def _shown(ctx, run_id, sid) -> dict:
+    """What the row shows, as its clear button sends it (hx-vals): the
+    clear-index route compares it with the stored index and refuses a row
+    another tab has changed (F8)."""
+    sample = ctx.run_repo.get_by_id(run_id).get_sample(sid)
+    return {"target_indexes": json.dumps(
+        [[sample.index1_sequence or "", sample.index2_sequence or ""]])}
 
 
 def _origin() -> dict:
@@ -137,7 +147,8 @@ class TestClearButtons:
         run = _make_run(ctx, [_indexed("S1")])
         sid = run.samples[0].id
         resp = logged_in_client.post(
-            f"/runs/{run.id}/samples/{sid}/clear-index?index_type=i7", headers=_origin())
+            f"/runs/{run.id}/samples/{sid}/clear-index?index_type=i7",
+            data=_shown(ctx, run.id, sid), headers=_origin())
         assert resp.status_code == 200
         assert 'data-drop-zone-type="i7"' in resp.text
         assert _tag(resp.text, 'title="Clear i7 index"') == []
@@ -188,7 +199,8 @@ class TestClearButtons:
         _app, ctx, _db = fresh_app
         run = _make_run(ctx, [_paired("S1")])
         sid = run.samples[0].id
-        resp = logged_in_client.post(f"/runs/{run.id}/samples/{sid}/clear-index", headers=_origin())
+        resp = logged_in_client.post(f"/runs/{run.id}/samples/{sid}/clear-index",
+                                     data=_shown(ctx, run.id, sid), headers=_origin())
         assert resp.status_code == 200
         assert 'data-drop-zone-type="i7"' in resp.text
         assert 'data-drop-zone-type="i5"' in resp.text
@@ -203,7 +215,8 @@ class TestClearButtons:
         sid = run.samples[0].id
         before = ctx.run_repo.get_by_id(run.id).updated_at
         resp = logged_in_client.post(
-            f"/runs/{run.id}/samples/{sid}/clear-index?index_type={index_type}", headers=_origin())
+            f"/runs/{run.id}/samples/{sid}/clear-index?index_type={index_type}",
+            data=_shown(ctx, run.id, sid), headers=_origin())
         assert resp.status_code == 400
         assert "pair" in resp.text
         stored = ctx.run_repo.get_by_id(run.id)
