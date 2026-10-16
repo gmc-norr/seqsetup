@@ -276,9 +276,16 @@ class TestTheInvariantsTheLockRelies0n:
         from pathlib import Path
         root = Path(__file__).resolve().parents[2] / "src"
         offenders = []
+        # The handlers bind it to a local name (`repo = ctx.local_user_repo`),
+        # so looking only for "local_user_repo.save(" missed the shape a real
+        # regression takes -- break check L4 was green until this widened.
+        call = re.compile(r"(?:local_user_repo|\brepo)\s*\.\s*save\s*\(")
         for path in root.rglob("*.py"):
-            for number, line in enumerate(path.read_text().splitlines(), 1):
-                if re.search(r"local_user_repo\s*\.\s*save\s*\(", line):
+            text = path.read_text()
+            if "local_user_repo" not in text:
+                continue
+            for number, line in enumerate(text.splitlines(), 1):
+                if call.search(line):
                     offenders.append(f"{path.relative_to(root)}:{number}: {line.strip()}")
         assert offenders == [], (
             "shipped code writes a local user with the upserting save; use "
