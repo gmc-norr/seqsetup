@@ -18,6 +18,7 @@ import re
 from contextlib import contextmanager
 from typing import Annotated, Optional
 
+from bson import BSON
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import HTMLResponse, Response
 
@@ -468,15 +469,69 @@ _MAX_CYCLES = 600
 def _parse_run_cycles(form) -> RunCycles:
     """Read all four cycle counts, or raise ValueError naming the first one
     that is missing or not a whole number 0-600. Nothing is clamped or
-    defaulted: a count the user did not see must never be saved."""
+    defaulted: a count the user did not see must never be saved.
+
+    Read 1 must be at least 1. ``min="1"`` on the field never runs -- the
+    fieldset is not a ``<form>``, and htmx validates only forms -- so typing
+    0 was saved with a 200 and the run went Ready with ``Read1Cycles,0`` in
+    its sheet (outside review of f490536, F2). Read 2 = 0 is a single-end
+    run and stays allowed; so does an index of 0.
+    """
     values = {}
     for key, label in _CYCLE_FIELDS:
         raw = form.get(key)
         raw = raw.strip() if isinstance(raw, str) else ""
-        if not re.fullmatch(r"[0-9]{1,4}", raw) or int(raw) > _MAX_CYCLES:
-            raise ValueError(f"{label} cycles must be a whole number from 0 to {_MAX_CYCLES}.")
+        least = 1 if key == "read1_cycles" else 0
+        if not re.fullmatch(r"[0-9]{1,4}", raw) or not least <= int(raw) <= _MAX_CYCLES:
+            message = (f"{label} cycles must be a whole number from {least} "
+                       f"to {_MAX_CYCLES}.")
+            if key == "read1_cycles":
+                message = (f"{label} cycles must be a whole number from 1 to {_MAX_CYCLES}: "
+                           "a run with no Read 1 has nothing to sequence.")
+            raise ValueError(message)
         values[key] = int(raw)
     return RunCycles(**values)
+
+
+# MongoDB refuses a document over 16 MiB, and every export of a Ready run
+# lives inside the run document (the validation report's PDF as base64).
+# Measured by the verifier on real mongo:7: 96 different samples per lane on
+# an 8-lane flowcell is 18.9 MB, and the save failed with DocumentTooLarge
+# after the full export time -- a bare 500 in the error banner, no audit row,
+# and nothing saying what to change. The size is now measured before the
+# save. The margin covers the _id the repository adds and the updated_at and
+# updated_by that touch() writes after this check. (Outside review of
+# f490536, F6: the interim refusal. Storing the exports outside the run
+# document is a separate change, planned, not made here.)
+_MAX_RUN_DOCUMENT = 16 * 1024 * 1024
+_RUN_DOCUMENT_MARGIN = 64 * 1024
+
+
+class ReadyDocumentTooBig(Exception):
+    """Raised inside ``saving_run``, so nothing is saved."""
+
+    def __init__(self, size: int):
+        super().__init__("Ready document too big")
+        self.size = size
+
+
+def _ready_document_size(run: SequencingRun) -> int:
+    """The length of the BSON the repository would write for this run."""
+    doc = run.to_dict()
+    doc["_id"] = run.id
+    return len(BSON.encode(doc))
+
+
+def _ready_document_too_big_message(size: int) -> str:
+    return (
+        f"This run's Ready record would be {size / 1024 / 1024:.1f} MB, and the database "
+        f"stores at most {_MAX_RUN_DOCUMENT // 1024 // 1024} MB in one run. Nothing was "
+        "saved and the run is still a Draft. Most of that size is the check report's "
+        "per-lane pictures and index tables, which grow with the number of DIFFERENT "
+        "samples in each lane -- about 88 different samples per lane on an eight-lane "
+        "flowcell reaches the limit. Split the samples into more than one run, or put the "
+        "same samples on several lanes instead of different samples on each."
+    )
 
 
 class TypedOverrideCyclesRefused(Exception):
@@ -902,41 +957,70 @@ def update_status(
             )
             raise ConflictError(_SETTINGS_CHANGED_DURING_EXPORT)
 
-    with saving_run(run, ctx, request):
-        run.status = new_status
-        if new_status == RunStatus.READY:
-            run.generated_samplesheet_v2 = new_ss_v2
-            run.generated_json = new_json
-            # No v1 sheet when the checks that let the run through say it
-            # cannot carry their settings (spec 2026-10-05 group A3, §3).
-            run.samplesheet_v1_withheld = validation_result.v1_sheet_withheld
-            # The exact test versions the checks used (spec 2026-10-07 group A4, §3).
-            run.test_versions_used = list(validation_result.test_versions)
-            if new_ss_v1 is not None and not validation_result.v1_sheet_withheld:
-                run.generated_samplesheet_v1 = new_ss_v1
-            run.generated_validation_json = new_val_json
-            run.generated_validation_pdf = new_val_pdf
-            # Of the sheets just stored (the user's request, 2026-10-13).
-            run.sheet_targets = sheet_targets(
-                run.instrument_platform.value, new_i5_direction,
-                run.generated_samplesheet_v2, run.generated_samplesheet_v1,
-                has_i5=any(s.index2_sequence for s in run.samples),
-            )
-        elif new_status == RunStatus.DRAFT:
-            # READY→DRAFT puts the run back into the editable pool. Clear
-            # pre-generated exports so a subsequent re-promotion never
-            # adopts blobs from before the edit cycle that brought the
-            # run back to DRAFT. READY→ARCHIVED retains the exports —
-            # archived runs are read-only snapshots whose exports must
-            # remain accessible via the API surface.
-            run.generated_samplesheet_v2 = None
-            run.generated_samplesheet_v1 = None
-            run.samplesheet_v1_withheld = ""
-            run.test_versions_used = []
-            run.sheet_targets = {}
-            run.generated_json = None
-            run.generated_validation_json = None
-            run.generated_validation_pdf = None
+    # A Ready record that will not fit is refused here rather than by the
+    # driver with a bare 500 after the full export time (F6).
+    try:
+        with saving_run(run, ctx, request):
+            run.status = new_status
+            if new_status == RunStatus.READY:
+                run.generated_samplesheet_v2 = new_ss_v2
+                run.generated_json = new_json
+                # No v1 sheet when the checks that let the run through say it
+                # cannot carry their settings (spec 2026-10-05 group A3, §3).
+                run.samplesheet_v1_withheld = validation_result.v1_sheet_withheld
+                # The exact test versions the checks used (spec 2026-10-07 group A4, §3).
+                run.test_versions_used = list(validation_result.test_versions)
+                if new_ss_v1 is not None and not validation_result.v1_sheet_withheld:
+                    run.generated_samplesheet_v1 = new_ss_v1
+                run.generated_validation_json = new_val_json
+                run.generated_validation_pdf = new_val_pdf
+                # Of the sheets just stored (the user's request, 2026-10-13).
+                run.sheet_targets = sheet_targets(
+                    run.instrument_platform.value, new_i5_direction,
+                    run.generated_samplesheet_v2, run.generated_samplesheet_v1,
+                    has_i5=any(s.index2_sequence for s in run.samples),
+                )
+                # Everything the Ready run will carry is on it now: measure it
+                # before saving_run saves, and refuse rather than let the driver
+                # answer DocumentTooLarge with a bare 500 (F6).
+                document_size = _ready_document_size(run)
+                if document_size > _MAX_RUN_DOCUMENT - _RUN_DOCUMENT_MARGIN:
+                    raise ReadyDocumentTooBig(document_size)
+            elif new_status == RunStatus.DRAFT:
+                # READY→DRAFT puts the run back into the editable pool. Clear
+                # pre-generated exports so a subsequent re-promotion never
+                # adopts blobs from before the edit cycle that brought the
+                # run back to DRAFT. READY→ARCHIVED retains the exports —
+                # archived runs are read-only snapshots whose exports must
+                # remain accessible via the API surface.
+                run.generated_samplesheet_v2 = None
+                run.generated_samplesheet_v1 = None
+                run.samplesheet_v1_withheld = ""
+                run.test_versions_used = []
+                run.sheet_targets = {}
+                run.generated_json = None
+                run.generated_validation_json = None
+                run.generated_validation_pdf = None
+    except ReadyDocumentTooBig as too_big:
+        audit(
+            "run.status.denied",
+            actor=get_username(request),
+            target=run.id,
+            outcome="denied",
+            reason="ready_document_too_large",
+            attempted_status=new_status.value,
+            document_bytes=too_big.size,
+        )
+        return HTMLResponse(
+            templates.env.get_template("runs/_ready_refused.html").render(
+                run=run, messages=[_ready_document_too_big_message(too_big.size)],
+            ),
+            headers={
+                "Cache-Control": "no-store",
+                "HX-Retarget": "#ready-message",
+                "HX-Reswap": "innerHTML",
+            },
+        )
     if new_status == RunStatus.READY:
         edit_locks.release(ctx.edit_lock_repo, run.id)
     elif new_status == RunStatus.DRAFT:

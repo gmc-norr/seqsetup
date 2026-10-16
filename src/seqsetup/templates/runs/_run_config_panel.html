@@ -27,7 +27,10 @@
         {% if workflow_names|length > 1 or (workflow_names and workflow not in workflow_names) %}
         <div><dt>i5 workflow</dt><dd>{{ workflow }}{% if workflow not in workflow_names %} (not available){% endif %}</dd></div>
         {% endif %}
-        <div><dt>Cycles</dt><dd>Read 1: {{ cycles.read1_cycles }} · Index 1: {{ cycles.index1_cycles }} · Index 2: {{ cycles.index2_cycles }} · Read 2: {{ cycles.read2_cycles }}</dd></div>
+        {# "not set" rather than 150/10/10/150: this run really has no counts,
+           and showing numbers it does not have is what let them be saved
+           unseen (review F2). The Check refuses such a run. #}
+        <div><dt>Cycles</dt><dd>{% if cycles %}Read 1: {{ cycles.read1_cycles }} · Index 1: {{ cycles.index1_cycles }} · Index 2: {{ cycles.index2_cycles }} · Read 2: {{ cycles.read2_cycles }}{% else %}not set{% endif %}</dd></div>
         {% if run.run_description %}
         <div class="run-setup-wide"><dt>Description</dt><dd>{{ run.run_description }}</dd></div>
         {% endif %}

@@ -11,7 +11,9 @@
                       change, which can change the limit)
 #}
 <div class="cycle-total" id="cycle-total"{% if oob %} hx-swap-oob="true"{% endif %}>
-    {% if kit_max_cycles %}
+    {% if not cycles %}
+    <span>Total: not set ({{ run.reagent_cycles }}-cycle kit)</span>
+    {% elif kit_max_cycles %}
     <span>Total: {{ cycles.total_cycles }} / {{ kit_max_cycles }} max ({{ run.reagent_cycles }}-cycle kit)</span>
     {% if cycles.total_cycles > kit_max_cycles %}
     <span class="cycle-total-over">Too many cycles for this kit.</span>

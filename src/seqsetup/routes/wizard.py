@@ -87,7 +87,10 @@ def wizard_step1(
     current_reagent_kits = get_reagent_kits_for_flowcell(
         run.instrument_platform, run.flowcell_type
     )
-    cycles = run.run_cycles or RunCycles(150, 150, 10, 10)
+    # No default: a run with no counts showed 150/10/10/150, and pressing
+    # Continue would have saved those unseen (review F2). The panel says
+    # "not set" and the fields are empty, so Continue refuses.
+    cycles = run.run_cycles
     index_cycle_options = get_index_cycle_options()
     # A new run may start from a template instead (see run_templates.py).
     templates = (

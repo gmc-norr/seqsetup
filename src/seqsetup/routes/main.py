@@ -203,7 +203,10 @@ def edit_run(
     flowcell_info = flowcells.get(run.flowcell_type, {})
     flowcell_desc = flowcell_info.get("description", run.flowcell_type)
 
-    cycles = run.run_cycles or RunCycles(150, 150, 10, 10)
+    # No default: a run with no counts showed 150/10/10/150, and pressing
+    # Continue would have saved those unseen (review F2). The panel says
+    # "not set" and the fields are empty, so Continue refuses.
+    cycles = run.run_cycles
 
     return render(request, "runs/edit.html", {
         "run": run,

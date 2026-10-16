@@ -103,6 +103,12 @@ is one of these:
   marking it ready."*
 - **No samples.** *"Run has no samples; add samples before marking the run
   as ready."*
+- **No cycle counts, or no Read 1.** *"Run has no cycle counts; set them in
+  Run Setup before marking it ready."*, or *"Read 1 is 0 cycles; a run with
+  no Read 1 has nothing to sequence. Set Read 1 in Run Setup before marking
+  it ready."* A sheet with ``Read1Cycles,0``, or with an empty ``[Reads]``
+  section, is not a sheet to sequence from. Read 2 of 0 is a single-end run
+  and is fine.
 - **Sample(s) with no index assigned.**
 - **Too many cycles for the reagent kit.** The run's total cycles (Read 1 +
   Index 1 + Index 2 + Read 2) exceed what the kit and instrument allow.

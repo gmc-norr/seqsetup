@@ -44,6 +44,17 @@ the exports were being generated, so the Sample Sheet might not match what
 was checked. The run is still a Draft. Mark it Ready again."* Nothing is
 saved in either case.
 
+A very large run is refused too, for its size. Everything SeqSetup writes
+for a Ready run -- both Sample Sheets, the JSON, and the check report with
+its per-lane pictures and index tables -- is kept with the run, and a run
+record can hold at most 16 MB. The report's pictures and tables grow with
+the number of **different** samples in each lane, so about 88 different
+samples per lane on an eight-lane flowcell reaches the limit. Over it,
+**Mark Ready** refuses and says so, with the size it measured; nothing is
+saved and the run stays a Draft. Split the samples into more than one run,
+or put the same samples on several lanes instead of different samples on
+each -- identical lanes cost far less, because the report keeps one copy.
+
 Once every error is fixed, selecting **Mark Ready** again succeeds: the
 status badge changes to **Ready**, the run is locked against further
 edits, and its exports are generated:

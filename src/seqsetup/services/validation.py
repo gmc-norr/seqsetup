@@ -391,6 +391,27 @@ class ValidationService:
 
         errors.extend(cls._validate_run_text_hidden_characters(run))
 
+        # Prerequisite: cycle counts, with a Read 1 to sequence. Every cycle
+        # check below returns early when the run has none, and none of them
+        # looked at Read 1, so a run with no counts -- or with Read 1 = 0 --
+        # went Ready with an empty [Reads] section or Read1Cycles,0 in its
+        # sheet (outside review of f490536, F2). Read 2 = 0 is single-end.
+        if run.run_cycles is None:
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="prerequisite_run_cycles",
+                message="Run has no cycle counts; set them in Run Setup before marking "
+                        "it ready.",
+            ))
+        elif run.run_cycles.read1_cycles < 1:
+            errors.append(ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="prerequisite_run_cycles",
+                message=f"Read 1 is {run.run_cycles.read1_cycles} cycles; a run with no "
+                        "Read 1 has nothing to sequence. Set Read 1 in Run Setup before "
+                        "marking it ready.",
+            ))
+
         # A run setting, so checked before the sample checks below.
         errors.extend(cls._validate_cycles_fit_kit(run))
         errors.extend(cls._validate_instrument_enabled(run))
