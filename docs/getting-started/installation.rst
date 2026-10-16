@@ -22,14 +22,17 @@ Docker Compose is the recommended way to run a fully functional instance.
    cd seqsetup
 
 ``docker-compose.yml`` will not start without a ``.env`` file in the same
-directory -- five settings have no default, and Compose aborts immediately
-if any of them is unset.
+directory -- four settings have no default, and Compose aborts immediately
+if any of them is unset -- nor without a ``.env.db`` file, which holds the
+MongoDB root password. They are two files because the application container
+reads the whole of ``.env``, and it never needs the root password.
 
-1. Copy the template and open it in an editor:
+1. Copy both templates and open them in an editor:
 
    .. code-block:: bash
 
       cp .env.example .env
+      cp .env.db.example .env.db
 
 2. Fill in the required values:
 
@@ -43,20 +46,27 @@ if any of them is unset.
         - Signs the session cookie. Must be at least 32 characters; the app
           refuses to start with a shorter value. The template's own comment
           suggests generating one with Python's ``secrets.token_hex(32)``.
-      * - ``MONGO_ROOT_USER`` / ``MONGO_ROOT_PASSWORD``
-        - Root credentials for the MongoDB container itself, used only for
-          admin tasks. The template pre-fills the username (``root``); the
-          password has no default and must be set.
       * - ``MONGO_APP_USER`` / ``MONGO_APP_PASSWORD``
         - The credentials SeqSetup itself uses to read and write its
           database, created automatically on first start by
           ``docker/mongo-init.sh``. The template pre-fills the username
           (``seqsetup_app``); the password has no default and must be set.
+          Generate it with ``openssl rand -hex 24``: the application's
+          connection URI carries this password, and a URI cannot carry
+          ``: / ? # @ [ ]`` or a space unencoded -- and reads ``%`` followed
+          by two hex digits as an encoded character, so such a password would
+          be sent as something else. Compose cannot encode it for you.
+      * - ``MONGO_INITDB_ROOT_USERNAME`` /
+          ``MONGO_INITDB_ROOT_PASSWORD`` (in ``.env.db``)
+        - Root credentials for the MongoDB container itself, used only for
+          admin tasks and to create the user above. The template pre-fills
+          the username (``root``); the password has no default and must be
+          set. Any character is safe here -- it never goes into a URI.
 
    .. warning::
       Choose strong, unique values for both passwords and for the session
-      secret -- do not reuse a value from another system. ``.env`` is
-      gitignored; never commit it.
+      secret -- do not reuse a value from another system. ``.env`` and
+      ``.env.db`` are both gitignored; never commit either.
 
 3. Start the application and MongoDB:
 

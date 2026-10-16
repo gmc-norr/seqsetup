@@ -18,9 +18,11 @@ services:
       - "${SEQSETUP_PUBLISH_ADDRESS:-127.0.0.1}:5001:5001"
     environment:
       # Mongo connection uses authenticated credentials from .env (see env_file below).
+      # authSource is seqsetup, which is where docker/mongo-init.sh creates the app
+      # user: with authSource=admin the app could not sign in at all (review F4).
       # If you want to omit auth for a local-only dev run, override MONGODB_URI in
       # docker-compose.override.yml — do NOT remove auth from this base file.
-      - MONGODB_URI=mongodb://${MONGO_APP_USER:?must set in .env}:${MONGO_APP_PASSWORD:?must set in .env}@mongodb:27017/seqsetup?authSource=admin
+      - MONGODB_URI=mongodb://${MONGO_APP_USER:?must set in .env}:${MONGO_APP_PASSWORD:?must set in .env}@mongodb:27017/seqsetup?authSource=seqsetup
       - MONGODB_DATABASE=seqsetup
       # Session + secrets: set these in .env. The app fails closed if SEQSETUP_SESSION_SECRET
       # is too short, so an empty value here is rejected at startup.
@@ -33,6 +35,15 @@ services:
       # set it to 0 in .env if the app is ever reached without the proxy.
       - SEQSETUP_TRUST_FORWARDED_FOR=${SEQSETUP_TRUST_FORWARDED_FOR:-1}
       - SEQSETUP_LIMS_API_KEY=${SEQSETUP_LIMS_API_KEY:-}
+      # The root credential moved to .env.db, but an .env written before that
+      # still carries these two, and env_file hands every key in .env to this
+      # container. environment: wins over env_file:, so naming them empty here
+      # neutralises them whatever .env says -- without an allowlist, which
+      # would drop a TZ or an LDAP setting silently (review of the deploy
+      # batch, P1-3). Delete them from your .env as well; see
+      # docs/getting-started/deployment.rst, "Upgrading an existing deployment".
+      - MONGO_ROOT_USER=
+      - MONGO_ROOT_PASSWORD=
     env_file:
       - .env
     volumes:
@@ -55,13 +66,16 @@ services:
     # exposure when combined with unauthenticated Mongo. Use `docker compose
     # exec mongodb mongosh` for admin tasks instead.
     environment:
-      # Root credentials — created by Mongo itself from MONGO_INITDB_ROOT_*.
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:?must set in .env}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:?must set in .env}
       # App credentials — consumed by docker/mongo-init.sh to create the
       # least-privileged readWrite-on-seqsetup user.
       - MONGO_APP_USER=${MONGO_APP_USER:?must set in .env}
       - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD:?must set in .env}
+    env_file:
+      # The root credential lives here and NOWHERE else: the app service reads
+      # the whole of .env, so a MONGO_ROOT_* in .env would be handed to the app
+      # as well, which never needs it (review F12). Copy .env.db.example to
+      # .env.db and fill it in. Both files are gitignored.
+      - .env.db
     command: ["mongod", "--auth", "--bind_ip_all"]
     volumes:
       - mongo_data:/data/db
@@ -70,10 +84,23 @@ services:
       # run inside mongosh which has no process.env access.
       - ./docker/mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
+      # Signs in as the APP user, not a bare ping. The image's entrypoint
+      # SOURCES docker/mongo-init.sh as uid 999 and does not abort when that
+      # fails -- an unreadable file (a checkout umask of 027, 077 or 007
+      # strips other-read from a 755 file), an old key name in .env.db,
+      # anything. The container then exits 0, restarts, and the volume is
+      # initialised, so the script never runs again: mongod came up *healthy*
+      # with no app user and the app answered "Authentication failed" for
+      # ever, with one Permission denied line in the log as the only evidence.
+      # That state is now unhealthy, so `app` never starts and `docker compose
+      # ps` says which service is wrong (review of the deploy batch, P1-1 and
+      # P2-3). start_period covers the first start, while initdb is still
+      # running.
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$$MONGO_APP_USER\" --password \"$$MONGO_APP_PASSWORD\" --authenticationDatabase seqsetup --eval 'db.getSiblingDB(\"seqsetup\").runCommand({ping:1}).ok' | grep -q '^1$$'"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 40s
     restart: unless-stopped
 
 volumes:
