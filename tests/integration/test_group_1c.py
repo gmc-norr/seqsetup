@@ -14,7 +14,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
-from .conftest import disable_repos, run_version
+from .conftest import disable_repos, nothing_stored, run_version
 from .conftest import hold_edit_lock
 
 
@@ -324,7 +324,7 @@ class TestDisabledInstrumentBlocksMarkReady:
         assert (f"{NOVASEQ_X} is disabled by an administrator. Pick another instrument "
                 f"in Run Setup before marking the run ready.") in resp.text
         run = ctx.run_repo.get_by_id(run_id)
-        assert run.status == RunStatus.DRAFT and run.generated_samplesheet_v2 is None
+        assert run.status == RunStatus.DRAFT and nothing_stored(ctx, run)
 
     def test_enabling_again_allows_mark_ready(self, logged_in_client, fresh_app):
         ctx, run_id = self._setup(fresh_app, "f27-again")
@@ -378,7 +378,7 @@ class TestDisabledInstrumentBlocksMarkReady:
         assert resp.status_code == 409
         assert "was disabled by an administrator while the exports were being generated" in resp.text
         run = ctx.run_repo.get_by_id(run_id)
-        assert run.status == RunStatus.DRAFT and run.generated_samplesheet_v2 is None
+        assert run.status == RunStatus.DRAFT and nothing_stored(ctx, run)
         (event,) = ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied")
         assert event.details["reason"] == "instrument_disabled_during_export"
 

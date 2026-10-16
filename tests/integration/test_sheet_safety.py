@@ -14,7 +14,7 @@ from seqsetup.models.sequencing_run import (
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, nothing_stored, stored_export
 from .conftest import hold_edit_lock
 
 
@@ -66,7 +66,7 @@ class TestMarkReadyRefusesHiddenCharacters:
         assert "U+0009" in resp.text
         run = ctx.run_repo.get_by_id(run_id)
         assert run.status.value == "draft"
-        assert not run.generated_samplesheet_v2
+        assert nothing_stored(ctx, run)
 
     def test_nul_in_sample_project_is_refused(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
@@ -172,7 +172,7 @@ class TestExportGuardStopsBadSyncedNames:
             assert "Failed to generate exports" in resp.text
             run = ctx.run_repo.get_by_id(run_id)
             assert run.status.value == "draft"
-            assert run.generated_samplesheet_v2 is None
+            assert nothing_stored(ctx, run)
         finally:
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()
@@ -197,7 +197,7 @@ class TestExportGuardStopsBadSyncedNames:
             assert "Failed to generate exports" in resp.text
             run = ctx.run_repo.get_by_id(run_id)
             assert run.status.value == "draft"
-            assert run.generated_samplesheet_v2 is None
+            assert nothing_stored(ctx, run)
         finally:
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()
@@ -220,7 +220,7 @@ class TestExportGuardStopsBadSyncedNames:
             assert "Failed to generate exports" in resp.text
             run = ctx.run_repo.get_by_id(run_id)
             assert run.status.value == "draft"
-            assert run.generated_samplesheet_v2 is None
+            assert nothing_stored(ctx, run)
         finally:
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()
@@ -240,7 +240,7 @@ class TestExportGuardStopsBadSyncedNames:
             assert "HX-Retarget" not in resp.headers, resp.text[:400]
             run = ctx.run_repo.get_by_id(run_id)
             assert run.status.value == "ready"
-            assert "[GuardApp_Settings]" in run.generated_samplesheet_v2
+            assert "[GuardApp_Settings]" in stored_export(ctx, run, "samplesheet_v2")
         finally:
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()

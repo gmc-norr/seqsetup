@@ -953,8 +953,27 @@ def update_status(
                 kind=not_stored.kind,
             )
             return Response(
-                f"This run's files were not stored as they were written, so it is still a "
-                f"Draft. Nothing of it is served. Tell your SeqSetup administrator.",
+                "This run's files were not stored as they were written, so it is still a "
+                "Draft. Nothing of it is served. Tell your SeqSetup administrator.",
+                status_code=500,
+            )
+        except Exception:
+            # A write that failed for any other reason (the database went
+            # away mid-insert): the same answer, named in the log and in the
+            # audit trail rather than a bare 500 nobody can place.
+            logger.error("Run %s: its files could not be written; the run is still a Draft",
+                         run.id, exc_info=True)
+            audit(
+                "run.status.denied",
+                actor=get_username(request),
+                target=run.id,
+                outcome="denied",
+                reason="export_files_not_written",
+                attempted_status=new_status.value,
+            )
+            return Response(
+                "This run's files could not be stored, so it is still a Draft. Nothing of "
+                "it is served. Tell your SeqSetup administrator.",
                 status_code=500,
             )
 

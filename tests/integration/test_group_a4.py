@@ -6,7 +6,7 @@ import pytest
 
 from .test_sheet_followups import _SYNC_LOGGER, _Messages, _app_profile_yaml
 from .test_group_a3 import profiles  # noqa: F401 (a fixture: a test A3T, its BCLConvert profile, NovaSeq X)
-from .conftest import hold_edit_lock
+from .conftest import hold_edit_lock, nothing_stored, stored_export
 
 
 def _test_yaml(version: str, test: str = "WGS") -> str:
@@ -1018,7 +1018,7 @@ class TestTheSampleGetsTheVersionItAsks:
         run_id = _a3_draft(profiles, "a4-order", asked)
         resp, ready = _mark_ready(logged_in_client, profiles, run_id)
         assert ready, resp.text
-        sheet = profiles.run_repo.get_by_id(run_id).generated_samplesheet_v2
+        sheet = stored_export(profiles, run_id, "samplesheet_v2")
         assert ("CreateFastqForIndexReads,1" in sheet) == carried
 
     def test_two_versions_in_one_run(self, logged_in_client, profiles):
@@ -1027,7 +1027,7 @@ class TestTheSampleGetsTheVersionItAsks:
         run_id = _a3_draft(profiles, "a4-two", "1", "2")
         resp, ready = _mark_ready(logged_in_client, profiles, run_id)
         assert ready, resp.text
-        sheet = profiles.run_repo.get_by_id(run_id).generated_samplesheet_v2
+        sheet = stored_export(profiles, run_id, "samplesheet_v2")
         assert "S1," in sheet and "S2," in sheet
 
 
@@ -1044,7 +1044,7 @@ class TestANewerMatchDuringTheWriting:
         assert resp.status_code == 409
         assert PROFILES_CHANGED in html.unescape(resp.text)
         run = profiles.run_repo.get_by_id(run_id)
-        assert (run.status, run.generated_samplesheet_v2) == (RunStatus.DRAFT, None)
+        assert run.status == RunStatus.DRAFT and nothing_stored(profiles, run)
         assert "profiles_changed_during_export" in _denial_reasons(profiles)
 
 
@@ -1109,7 +1109,7 @@ class TestMarkReadySavesTheVersionsItUsed:
     def test_the_report_carries_them(self, logged_in_client, profiles):
         import json
         run_id = self._ready(logged_in_client, profiles, "1")
-        report = json.loads(profiles.run_repo.get_by_id(run_id).generated_validation_json)
+        report = json.loads(stored_export(profiles, run_id, "validation_json"))
         assert report["tests"] == [
             {"test": "A3T", "asked": "1", "version": "1.2.0", "file": "A3T_1.2.0.yaml"}]
 

@@ -135,7 +135,9 @@ def _stored_sheet(db, doc):
 
 def check_runs(db) -> tuple[str, int]:
     """Check every Ready/Archived run. Returns (report text, broken run count)."""
-    from seqsetup.models.sequencing_run import LEGACY_EXPORT_FIELDS
+    from seqsetup.models.sequencing_run import (
+        LEGACY_EXPORT_FIELDS, LEGACY_EXPORT_V2_ALIAS,
+    )
     from seqsetup.services.run_exports import ExportDamaged
 
     untranslated = untranslated_names(
@@ -147,7 +149,7 @@ def check_runs(db) -> tuple[str, int]:
     # documents; the legacy fields are projected for runs stored before they
     # moved out, and the one pre-rename name the model also reads.
     projection = {name: 1 for name in LEGACY_EXPORT_FIELDS.values()}
-    projection["generated_samplesheet"] = 1
+    projection[LEGACY_EXPORT_V2_ALIAS] = 1
     runs = db["runs"].find(
         {"status": {"$in": CHECKED_STATUSES}},
         {

@@ -315,3 +315,55 @@ def import_from_preview(client, run_id: str, worklist_id: str):
                        data={"worklist_id": worklist_id, "plan": plan.group(1) if plan else "",
                              "lanes": lanes},
                        headers={"Origin": "http://testserver"})
+
+
+def stored_export(ctx, run_or_id, kind: str):
+    """What a Ready run serves for ``kind``, read the one way the app reads
+    it (``services/run_exports.read_export``).
+
+    Mark Ready writes each file into its own record and the run carries only
+    the manifest, so a test cannot read ``run.generated_*`` to see what was
+    stored (docs/design/2026-10-16-export-files-own-records-design.md). This
+    helper works for either shape: a run stored before the files moved out is
+    read from its own document, as the app reads it.
+    """
+    from seqsetup.services.run_exports import read_export
+    run = run_or_id if hasattr(run_or_id, "exports") else ctx.run_repo.get_by_id(run_or_id)
+    return read_export(ctx, run, kind)
+
+
+def nothing_stored(ctx, run_or_id) -> bool:
+    """True when the run has no export of any kind -- a Draft, or a run whose
+    Mark Ready was refused. The manifest is empty AND its own document
+    carries no file either, so neither shape can hide one."""
+    from seqsetup.models.sequencing_run import EXPORT_KINDS
+    run = run_or_id if hasattr(run_or_id, "exports") else ctx.run_repo.get_by_id(run_or_id)
+    return not run.exports and not any(stored_export(ctx, run, kind) for kind in EXPORT_KINDS)
+
+
+def seed_stored_exports(ctx, run_id: str, **files) -> dict:
+    """Write ``files`` (kind=content) as Mark Ready does — each into its own
+    record — and return the manifest to put on the run.
+
+    Use this wherever a test used to seed ``generated_*`` on a Ready run: a
+    run stored by this release carries its files this way, so a seed that
+    sets the legacy fields tests only the older shape.
+    """
+    import hashlib
+    import uuid
+
+    from seqsetup.models.sequencing_run import EXPORT_KINDS
+
+    manifest = {}
+    for kind, content in files.items():
+        assert kind in EXPORT_KINDS, kind
+        raw = content.encode("utf-8") if isinstance(content, str) else content
+        file_id = uuid.uuid4().hex
+        sha256 = hashlib.sha256(raw).hexdigest()
+        ctx.run_export_repo.insert({
+            "_id": file_id, "run_id": run_id, "kind": kind, "content": content,
+            "sha256": sha256, "size": len(raw),
+            "created_at": "2026-10-16T00:00:00", "created_by": "seed",
+        })
+        manifest[kind] = {"id": file_id, "sha256": sha256, "size": len(raw)}
+    return manifest

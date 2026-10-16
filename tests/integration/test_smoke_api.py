@@ -16,6 +16,8 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
+from .conftest import seed_stored_exports
+
 
 def _seed_api_token(ctx, name: str = "test-token") -> str:
     """Create a token, store the hash, return the plaintext for use in tests."""
@@ -40,8 +42,10 @@ def _seed_ready_run(ctx, run_id: str = "api-ready-run", status: RunStatus = RunS
         flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8),
         status=status,
-        generated_samplesheet_v2="[Header]\nFileFormatVersion,2\n\n[Reads]\nRead1Cycles,151\n",
-        generated_json='{"run_name": "API Test Run"}',
+        exports=seed_stored_exports(
+            ctx, run_id,
+            samplesheet_v2="[Header]\nFileFormatVersion,2\n\n[Reads]\nRead1Cycles,151\n",
+            json='{"run_name": "API Test Run"}'),
     )
     run.add_sample(Sample(
         sample_id="S1",
@@ -114,8 +118,9 @@ class TestApiReadyOnly:
         for key in ("id", "run_name", "status", "instrument_platform", "sample_count"):
             assert key in item
         # Bulky/sensitive payloads MUST NOT appear in the list response.
-        for key in ("samples", "generated_samplesheet_v2", "generated_samplesheet_v1",
-                    "generated_json", "generated_validation_pdf"):
+        for key in ("samples", "exports", "generated_samplesheet_v2",
+                    "generated_samplesheet_v1", "generated_json",
+                    "generated_validation_pdf"):
             assert key not in item, f"{key} leaked into /api/runs response"
 
     def test_api_list_pagination_returns_requested_page(self, client, fresh_app):

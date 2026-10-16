@@ -17,6 +17,8 @@ from seqsetup.models.api_token import ApiToken
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
+from .conftest import seed_stored_exports
+
 SHEET = "[Header]\nFileFormatVersion,2\nRunName,Served <b>&amp; \"run\"</b>\n\n[Reads]\nRead1Cycles,151\n"
 JSON_TEXT = '{\n  "run_name": "<script>alert(1)</script>",\n  "samples": []\n}'
 PDF = b"%PDF-1.4\n" + bytes(range(256)) * 4
@@ -46,11 +48,15 @@ def _run(ctx, run_id, status=RunStatus.READY, updated=datetime(2026, 1, 10, 9, 0
 
 
 def _full(ctx, run_id, **kw):
-    """Every file stored, on an instrument that has a v1 sheet."""
+    """Every file stored, each in its own record, on an instrument that has a
+    v1 sheet -- the shape a run marked Ready by this release has."""
     return _run(ctx, run_id, instrument=InstrumentPlatform.NOVASEQ_6000, flowcell="S4",
-                generated_samplesheet_v2=SHEET, generated_samplesheet_v1=SHEET.replace("2", "1"),
-                generated_json=JSON_TEXT, generated_validation_json='{"errors": []}',
-                generated_validation_pdf=PDF, **kw)
+                exports=seed_stored_exports(
+                    ctx, run_id,
+                    samplesheet_v2=SHEET, samplesheet_v1=SHEET.replace("2", "1"),
+                    json=JSON_TEXT, validation_json='{"errors": []}',
+                    validation_pdf=PDF),
+                **kw)
 
 
 def _section(page, resource):
@@ -205,7 +211,8 @@ class TestOneRunsFiles:
         """A browser drops one newline right after <pre>'s start tag; the
         page writes one there so the file's own first newline survives."""
         _app, ctx, _db = fresh_app
-        run_id = _run(ctx, "newline-first", generated_samplesheet_v2="\n[Header]\nFileFormatVersion,2\n")
+        run_id = _run(ctx, "newline-first", exports=seed_stored_exports(
+            ctx, "newline-first", samplesheet_v2="\n[Header]\nFileFormatVersion,2\n"))
         section = _section(logged_in_client.get(f"/served-runs/{run_id}").text, "samplesheet-v2")
         assert _shown_text(section) == "\n[Header]\nFileFormatVersion,2\n"
 

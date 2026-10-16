@@ -7,6 +7,8 @@ import pytest
 from seqsetup.models.run_template import RunTemplate
 from seqsetup.models.sequencing_run import RunStatus
 
+from .conftest import nothing_stored, seed_stored_exports
+
 
 def _origin() -> dict:
     return {"Origin": "http://testserver"}
@@ -47,7 +49,7 @@ class TestCloneRun:
         new_run = ctx.run_repo.get_by_id(new_id)
         assert new_run.status == RunStatus.DRAFT
         assert new_run.samples == []
-        assert new_run.generated_samplesheet_v2 is None
+        assert nothing_stored(ctx, new_run)
 
     def test_duplicate_include_samples_copies_samples(
         self, logged_in_client, fresh_app
@@ -360,7 +362,7 @@ class TestCreateFromTemplate:
         # (review P3, 2026-10-15: only its ID was checked).
         assert [(s.sample_id, s.index1_sequence, s.index2_sequence, s.lanes)
                 for s in new_run.samples] == [("CTRL_POS", "ACGTACGT", "TTGGCCAA", [2])]
-        assert new_run.generated_samplesheet_v2 is None
+        assert nothing_stored(ctx, new_run)
 
     def test_from_template_refuses_stale_reference(
         self, logged_in_client, fresh_app, monkeypatch
@@ -432,7 +434,7 @@ class TestSafetyBoundaries:
         run_id = _create_run(logged_in_client)
         run = ctx.run_repo.get_by_id(run_id)
         run.status = RunStatus.ARCHIVED
-        run.generated_samplesheet_v2 = "snapshot"
+        run.exports = seed_stored_exports(ctx, run_id, samplesheet_v2="snapshot")
         ctx.run_repo.save(run)
 
         r = logged_in_client.post(
@@ -444,4 +446,4 @@ class TestSafetyBoundaries:
         new_id = r.headers["location"].rsplit("/", 1)[1]
         new_run = ctx.run_repo.get_by_id(new_id)
         assert new_run.status == RunStatus.DRAFT
-        assert new_run.generated_samplesheet_v2 is None
+        assert nothing_stored(ctx, new_run)

@@ -12,7 +12,7 @@ import pytest
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, nothing_stored, stored_export
 from .test_group_a3 import profiles  # noqa: F401 (fixture)
 from .test_group_1c import _pair
 from .test_served_runs import _full, _run, _section, _token
@@ -72,23 +72,25 @@ class TestMarkReadySavesTheTargets:
         run = _ready(logged_in_client, ctx, "target-run", instrument, flowcell, workflow)
         v2 = run.sheet_targets["samplesheet_v2"]
 
-        assert _column(_cell(run.generated_samplesheet_v2, "[BCLConvert_Data]", "Index2")) == v2_column
+        v2_sheet = stored_export(ctx, run, "samplesheet_v2")
+        assert _column(_cell(v2_sheet, "[BCLConvert_Data]", "Index2")) == v2_column
         assert v2 == {
             "instrument": instrument.value,
             "software": "BCL Convert",
-            "software_version": _settings(run.generated_samplesheet_v2, "[BCLConvert_Settings]")["SoftwareVersion"],
+            "software_version": _settings(v2_sheet, "[BCLConvert_Settings]")["SoftwareVersion"],
             "i5_workflow": run.i5_workflow or "Standard",
             "index2_column": v2_column,
             "needs_runinfo_reverse_mark": needs_mark,
         }
         assert v2["software_version"]
-        assert ("IndexOrientation,Forward\n" in run.generated_samplesheet_v2) == (v2_column == "forward")
+        assert ("IndexOrientation,Forward\n" in v2_sheet) == (v2_column == "forward")
 
         v1 = run.sheet_targets["samplesheet_v1"]
         if v1_column is None:
-            assert run.generated_samplesheet_v1 is None and v1 is None
+            assert "samplesheet_v1" not in run.exports and v1 is None
         else:
-            assert _column(_cell(run.generated_samplesheet_v1, "[Data]", "index2")) == v1_column
+            assert _column(_cell(stored_export(ctx, run, "samplesheet_v1"),
+                                 "[Data]", "index2")) == v1_column
             assert v1 == {
                 "instrument": instrument.value,
                 "software": "bcl2fastq",
@@ -104,7 +106,7 @@ class TestMarkReadySavesTheTargets:
         monkeypatch.setattr(SampleSheetV1Exporter, "withheld", classmethod(
             lambda cls, run, mismatches=None: ("S1 has OverrideCycles a v1 sheet cannot hold", ["S1"])))
         run = _ready(logged_in_client, ctx, "withheld", InstrumentPlatform.NOVASEQ_6000, "S4", "v1.0 reagents")
-        assert run.samplesheet_v1_withheld and run.generated_samplesheet_v1 is None
+        assert run.samplesheet_v1_withheld and "samplesheet_v1" not in run.exports
         assert run.sheet_targets["samplesheet_v1"] is None
         assert run.sheet_targets["samplesheet_v2"]["software"] == "BCL Convert"
 
@@ -264,7 +266,7 @@ class TestTheI5RuleMustHoldWhileTheExportsAreWritten:
         assert "i5 settings changed while the exports were being generated" in resp.text
         stored = ctx.run_repo.get_by_id(run.id)
         assert stored.status == RunStatus.DRAFT
-        assert stored.generated_samplesheet_v2 is None and stored.sheet_targets == {}
+        assert nothing_stored(ctx, stored) and stored.sheet_targets == {}
         # The one-sample run is asked about colour balance first (mark_ready answers it).
         reasons = [e.details["reason"] for e in ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied")]
         assert reasons.count("i5_settings_changed_during_export") == 1, reasons
@@ -289,10 +291,11 @@ class TestTheProfilePath:
         stored = profiles.run_repo.get_by_id(run.id)
         assert stored.status == RunStatus.READY, html.unescape(resp.text)[:400]
 
-        settings = _settings(stored.generated_samplesheet_v2, "[BCLConvert_Settings]")
+        sheet = stored_export(profiles, stored, "samplesheet_v2")
+        settings = _settings(sheet, "[BCLConvert_Settings]")
         v2 = stored.sheet_targets["samplesheet_v2"]
         assert v2["software_version"] == settings["SoftwareVersion"] == "4.3.6"
-        assert _cell(stored.generated_samplesheet_v2, "[BCLConvert_Data]", "Index2") == "TATAGCCTGA"
+        assert _cell(sheet, "[BCLConvert_Data]", "Index2") == "TATAGCCTGA"
         assert v2["index2_column"] == "forward" and v2["needs_runinfo_reverse_mark"] is True
 
     def test_a_run_with_no_i5_says_none(self, logged_in_client, profiles):

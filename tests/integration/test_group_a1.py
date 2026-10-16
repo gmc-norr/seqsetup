@@ -12,7 +12,7 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, Sequen
 from seqsetup.services import sample_api as sample_api_module
 from seqsetup.services.index_fill import build_fill_plan
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, stored_export
 from .conftest import hold_edit_lock, import_from_preview
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -211,7 +211,7 @@ class TestANewKitReplacesTheOldKitsSettings:
         assert resp.status_code == 200, resp.text[:400]
         run = _stored(ctx)
         assert run.status.value == "ready", resp.text[:400]
-        sheet = run.generated_samplesheet_v2
+        sheet = stored_export(ctx, run, "samplesheet_v2")
         assert override_cycles in sheet
         assert "U8Y" not in sheet and "I8N2" not in sheet
 

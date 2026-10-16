@@ -6,7 +6,7 @@ import html
 import pytest
 
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
-from .conftest import hold_edit_lock
+from .conftest import hold_edit_lock, nothing_stored, stored_export
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -229,7 +229,7 @@ class TestTheWriterWritesFromThePlanTheChecksPassed:
         assert PROFILES_CHANGED in html.unescape(resp.text)
         run = ctx.run_repo.get_by_id(run_id)
         assert run.status == RunStatus.DRAFT
-        assert run.generated_samplesheet_v2 is None
+        assert nothing_stored(ctx, run)
         assert "profiles_changed_during_export" in _denial_reasons(ctx)
 
     def test_a_deleted_profile(self, logged_in_client, profiles, monkeypatch):
@@ -415,14 +415,14 @@ class TestNoV1SheetWhenItCannotCarryTheSettings:
         _app, ctx, _db = fresh_app
         run = self._ready(logged_in_client, ctx, "a3-v1", mismatch_index1=0)
         assert run.status == RunStatus.READY
-        assert run.generated_samplesheet_v2
-        assert run.generated_samplesheet_v1 is None
+        assert stored_export(ctx, run, "samplesheet_v2")
+        assert "samplesheet_v1" not in run.exports
         assert run.samplesheet_v1_withheld == V1_REASON
 
     def test_a_plain_run_still_gets_its_v1_sheet(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run = self._ready(logged_in_client, ctx, "a3-v1-plain")
-        assert run.generated_samplesheet_v1 and run.samplesheet_v1_withheld == ""
+        assert stored_export(ctx, run, "samplesheet_v1") and run.samplesheet_v1_withheld == ""
 
     def test_the_export_panel_says_why(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
@@ -536,8 +536,8 @@ class TestTheV1DecisionOnTheProfilePath:
         mark_ready(logged_in_client, run.id, ORIGIN)
         run = miseq_profiles.run_repo.get_by_id(run.id)
         assert run.status == RunStatus.READY
-        assert run.generated_samplesheet_v2
-        assert run.generated_samplesheet_v1 is None
+        assert stored_export(miseq_profiles, run, "samplesheet_v2")
+        assert "samplesheet_v1" not in run.exports
         assert run.samplesheet_v1_withheld == V1_REASON
 
     def test_a_sync_during_the_writing_stores_no_v1_sheet(self, logged_in_client, miseq_profiles,
@@ -551,7 +551,7 @@ class TestTheV1DecisionOnTheProfilePath:
         assert resp.status_code == 409
         run = miseq_profiles.run_repo.get_by_id(run.id)
         assert run.status == RunStatus.DRAFT
-        assert run.generated_samplesheet_v1 is None and run.samplesheet_v1_withheld == ""
+        assert nothing_stored(miseq_profiles, run) and run.samplesheet_v1_withheld == ""
 
     def test_an_index_shorter_than_its_read_keeps_its_v1_sheet(self, logged_in_client,
                                                               miseq_profiles):
@@ -566,7 +566,7 @@ class TestTheV1DecisionOnTheProfilePath:
         mark_ready(logged_in_client, run.id, ORIGIN)
         run = miseq_profiles.run_repo.get_by_id(run.id)
         assert run.status == RunStatus.READY and run.samplesheet_v1_withheld == ""
-        lines = run.generated_samplesheet_v1.splitlines()
+        lines = stored_export(miseq_profiles, run, "samplesheet_v1").splitlines()
         header = lines[lines.index("[Data]") + 1].split(",")
         row = dict(zip(header, lines[lines.index("[Data]") + 2].split(",")))
         assert (row["index"], row["index2"]) == ("ATTACTCG", "TATAGCCT")

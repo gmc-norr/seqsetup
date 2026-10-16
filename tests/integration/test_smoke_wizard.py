@@ -9,7 +9,7 @@ Covers the core HTMX flows that build up a run from blank to ready:
 
 import pytest
 
-from .conftest import run_version
+from .conftest import nothing_stored, run_version, seed_stored_exports, stored_export
 
 
 def _origin() -> dict:
@@ -389,11 +389,11 @@ class TestBulkPasteSizeCap:
 
 
 class TestReadyToDraftClearsExports:
-    """READY → DRAFT puts the run back into the editable pool; pre-generated
-    exports must be dropped so a re-promotion never adopts pre-edit blobs.
+    """READY → DRAFT puts the run back into the editable pool; the stored
+    exports must be dropped so a re-promotion never adopts pre-edit files.
     READY → ARCHIVED retains them — archived runs serve those bytes."""
 
-    def test_ready_to_draft_clears_pregenerated_exports(
+    def test_ready_to_draft_clears_the_stored_exports(
         self, logged_in_client, fresh_app
     ):
         _app, ctx, _db = fresh_app
@@ -401,11 +401,9 @@ class TestReadyToDraftClearsExports:
         run = ctx.run_repo.get_by_id(run_id)
         from seqsetup.models.sequencing_run import RunStatus
         run.status = RunStatus.READY
-        run.generated_samplesheet_v2 = "stale-sheet"
-        run.generated_samplesheet_v1 = "stale-v1"
-        run.generated_json = "stale-json"
-        run.generated_validation_json = "stale-val"
-        run.generated_validation_pdf = b"stale-pdf"
+        run.exports = seed_stored_exports(
+            ctx, run_id, samplesheet_v2="stale-sheet", samplesheet_v1="stale-v1",
+            json="stale-json", validation_json="stale-val", validation_pdf=b"stale-pdf")
         ctx.run_repo.save(run)
 
         response = logged_in_client.post(
@@ -416,13 +414,28 @@ class TestReadyToDraftClearsExports:
 
         refreshed = ctx.run_repo.get_by_id(run_id)
         assert refreshed.status == RunStatus.DRAFT
-        assert refreshed.generated_samplesheet_v2 is None
-        assert refreshed.generated_samplesheet_v1 is None
-        assert refreshed.generated_json is None
-        assert refreshed.generated_validation_json is None
-        assert refreshed.generated_validation_pdf is None
+        assert nothing_stored(ctx, refreshed)
 
-    def test_ready_to_archived_retains_pregenerated_exports(
+    def test_ready_to_draft_leaves_the_file_records_in_place(
+        self, logged_in_client, fresh_app
+    ):
+        """The collection is insert-only: the files a run no longer points at
+        stay, so an archived run or a deleted run's copy that still names one
+        never loses it (the design, 2026-10-16)."""
+        _app, ctx, _db = fresh_app
+        run_id = _create_run(logged_in_client)
+        run = ctx.run_repo.get_by_id(run_id)
+        from seqsetup.models.sequencing_run import RunStatus
+        run.status = RunStatus.READY
+        run.exports = seed_stored_exports(ctx, run_id, samplesheet_v2="stale-sheet")
+        ctx.run_repo.save(run)
+        file_id = run.exports["samplesheet_v2"]["id"]
+
+        logged_in_client.post(f"/runs/{run_id}/status/draft", headers=_origin())
+
+        assert ctx.run_export_repo.get(file_id)["content"] == "stale-sheet"
+
+    def test_ready_to_archived_retains_the_stored_exports(
         self, logged_in_client, fresh_app
     ):
         _app, ctx, _db = fresh_app
@@ -430,8 +443,8 @@ class TestReadyToDraftClearsExports:
         run = ctx.run_repo.get_by_id(run_id)
         from seqsetup.models.sequencing_run import RunStatus
         run.status = RunStatus.READY
-        run.generated_samplesheet_v2 = "snapshot-sheet"
-        run.generated_json = "snapshot-json"
+        run.exports = seed_stored_exports(ctx, run_id, samplesheet_v2="snapshot-sheet",
+                                          json="snapshot-json")
         ctx.run_repo.save(run)
 
         response = logged_in_client.post(
@@ -442,8 +455,8 @@ class TestReadyToDraftClearsExports:
 
         refreshed = ctx.run_repo.get_by_id(run_id)
         assert refreshed.status == RunStatus.ARCHIVED
-        assert refreshed.generated_samplesheet_v2 == "snapshot-sheet"
-        assert refreshed.generated_json == "snapshot-json"
+        assert stored_export(ctx, refreshed, "samplesheet_v2") == "snapshot-sheet"
+        assert stored_export(ctx, refreshed, "json") == "snapshot-json"
 
 
 class TestBulkHandlersReachRoutes:

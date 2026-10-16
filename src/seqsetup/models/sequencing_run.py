@@ -60,6 +60,11 @@ LEGACY_EXPORT_FIELDS = {
     "validation_json": "generated_validation_json",
     "validation_pdf": "generated_validation_pdf",
 }
+# What the v2 sheet's field was called before it was renamed; from_dict
+# still reads it, and so does the operator's tool (tools/
+# check_broken_samplesheets.py), which must not spell it itself -- see
+# tests/unit/test_no_legacy_export_reads.py.
+LEGACY_EXPORT_V2_ALIAS = "generated_samplesheet"
 _EXPORT_ENTRY_KEYS = {"id", "sha256", "size"}
 _HEX32 = re.compile(r"\A[0-9a-f]{32}\Z")
 _HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
@@ -568,7 +573,8 @@ class SequencingRun:
             samples=[Sample.from_dict(s) for s in data.get("samples", [])],
             analyses=[Analysis.from_dict(a) for a in data.get("analyses", [])],
             exports=data.get("exports") or {},
-            generated_samplesheet_v2=data.get("generated_samplesheet_v2") or data.get("generated_samplesheet"),
+            generated_samplesheet_v2=(data.get("generated_samplesheet_v2")
+                                      or data.get(LEGACY_EXPORT_V2_ALIAS)),
             generated_samplesheet_v1=data.get("generated_samplesheet_v1"),
             samplesheet_v1_withheld=data.get("samplesheet_v1_withheld") or "",
             test_versions_used=list(data.get("test_versions_used") or []),

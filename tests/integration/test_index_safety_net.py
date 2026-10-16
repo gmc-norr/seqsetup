@@ -50,7 +50,7 @@ from tests.index_safety_net import (AS_ENTERED, I5_SHEET_DIRECTION, INDEX_LENGTH
                                     Expected, Sequences, data_sections, hamming,
                                     reverse_complement, usable)
 
-from .conftest import hold_edit_lock, mark_ready
+from .conftest import hold_edit_lock, mark_ready, nothing_stored
 from .test_served_runs import _token
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -1028,8 +1028,8 @@ class Net:
         assert back.status_code == 200, back.text[:300]
         stored = self.ctx.run_repo.get_by_id(self.run_id)
         assert stored.status == RunStatus.DRAFT, "the run did not go back to Draft"
-        assert stored.generated_samplesheet_v2 is None, (
-            "READY->DRAFT must clear the pre-generated sheets")
+        assert nothing_stored(self.ctx, stored), (
+            "READY->DRAFT must clear the stored sheets")
 
         row = next(one for one in self.rows()
                    if one["i7"] and one["sample_id"] not in self.one_index_group)

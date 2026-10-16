@@ -9,7 +9,7 @@ from seqsetup.data import instruments as instruments_module
 from seqsetup.models.instrument_definition import InstrumentDefinition, OnboardApplication
 from seqsetup.services.validation import clear_validation_cache
 
-from .conftest import disable_repos
+from .conftest import disable_repos, nothing_stored, stored_export
 from .test_sheet_safety import _assert_validation_passes, _seed_draft, _seed_synced_profile
 from .conftest import hold_edit_lock
 
@@ -36,7 +36,7 @@ class TestInvisibleCharacterStopsMarkReady:
         assert "If you cannot see it, delete the text and type it again." in resp.text
         stored = ctx.run_repo.get_by_id(run_id)
         assert stored.status.value == "draft"
-        assert not stored.generated_samplesheet_v2
+        assert nothing_stored(ctx, stored)
 
 
 _SYNC_LOGGER = logging.getLogger("seqsetup.services.github_sync")
@@ -168,7 +168,7 @@ class TestSyncRefusesRiskyValues:
             resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
             assert resp.status_code == 200, resp.text[:400]
-            lines = ctx.run_repo.get_by_id(run_id).generated_samplesheet_v2.split("\n")
+            lines = stored_export(ctx, run_id, "samplesheet_v2").split("\n")
             assert "SoftwareVersion,4.10" in lines
             assert "SoftwareVersion,4.1" not in lines
         finally:
@@ -238,7 +238,7 @@ class TestStoredProfileMismatchStopsMarkReady:
             assert "Failed to generate exports" in resp.text
             run = ctx.run_repo.get_by_id(run_id)
             assert run.status.value == "draft"
-            assert run.generated_samplesheet_v2 is None
+            assert nothing_stored(ctx, run)
         finally:
             instruments_module.clear_synced_instruments_cache()
             clear_validation_cache()
@@ -262,5 +262,5 @@ class TestStoredMismatchOfTheWrongKind:
 
         doc = ctx.run_repo.collection.find_one({"_id": run_id})
         assert doc["status"] == "draft"
-        assert not doc.get("generated_samplesheet_v2")
+        assert not doc.get("exports")
         assert doc["samples"][0]["barcode_mismatches_index1"] is True
