@@ -276,3 +276,56 @@ class TestFilesLeftByARefusedMarkReadyAreNamed:
                   if e.target == run_id
                   and e.details.get("reason") == "settings_changed_during_export"]
         assert sorted(row["export_files"]) == sorted(r["_id"] for r in left)
+
+    def test_a_write_that_fails_part_way_logs_what_it_already_inserted(
+            self, logged_in_client, fresh_app, monkeypatch, caplog):
+        """The line that logs a finished write is never reached then, so the
+        records already inserted would be findable only by querying the
+        collection (review 2, P3-2)."""
+        import logging
+        _app, ctx, _db = fresh_app
+        run_id = seed_run(ctx, "partly-written")
+        _fail_on(monkeypatch, ctx, "validation_pdf")
+
+        with caplog.at_level(logging.INFO, logger="seqsetup.services.run_exports"):
+            assert mark_ready(logged_in_client, run_id, ORIGIN).status_code == 500
+
+        left = records(ctx, run_id)
+        assert len(left) == 4, left
+        (line,) = [r.getMessage() for r in caplog.records if "export files" in r.getMessage()]
+        assert run_id in line and "a write that then failed" in line
+        for record in left:
+            assert record["_id"] in line, record["kind"]
+
+    def test_an_instrument_switched_off_during_the_write_names_the_files(
+            self, logged_in_client, fresh_app, monkeypatch):
+        """The refusal that re-reads the instrument from the database happens
+        after the files are written (review 2, P3-2)."""
+        from seqsetup.models.instrument_definition import InstrumentRecordError
+        _app, ctx, _db = fresh_app
+        run_id = seed_run(ctx, "instrument-record-broken")
+        real = ctx.instrument_definition_repo.get_by_name
+
+        def broken(name):
+            raise InstrumentRecordError("the stored record cannot be read")
+
+        def after_the_write(*args, **kwargs):
+            manifest = run_exports.write_exports(*args, **kwargs)
+            monkeypatch.setattr(ctx.instrument_definition_repo, "get_by_name", broken)
+            return manifest
+
+        from seqsetup.routes import runs as runs_module
+        monkeypatch.setattr(runs_module, "write_exports", after_the_write)
+
+        resp = mark_ready(logged_in_client, run_id, ORIGIN)
+
+        assert resp.status_code == 503, resp.text[:200]
+        assert ctx.run_repo.get_by_id(run_id).status == RunStatus.DRAFT
+        left = records(ctx, run_id)
+        assert len(left) == len(EXPORT_KINDS), left
+        (row,) = [e.details for e in
+                  ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied")
+                  if e.target == run_id
+                  and e.details.get("reason") == "synced_instruments_unusable"]
+        assert sorted(row["export_files"]) == sorted(r["_id"] for r in left)
+        assert real is not None

@@ -206,6 +206,19 @@ class TestARunStoredBeforeTheFilesMovedOut:
         run = _ready_run()
         assert read_export(ctx, run, "samplesheet_v2") is None
 
+    def test_a_field_holding_an_empty_file_counts_as_nothing_stored(self, ctx):
+        """As the readers treated it before the files moved out: each used
+        ``stored or generate``, so an empty stored value fell through to a
+        live export. A 0-byte Sample Sheet download reads as a file, not as
+        an error -- a lab would load it into bcl2fastq and get no samples
+        (review 2, P3-1)."""
+        run = _ready_run()
+        run.generated_json = ""
+        run.generated_samplesheet_v1 = ""
+        run.generated_validation_json = ""
+        for kind in ("json", "samplesheet_v1", "validation_json"):
+            assert read_export(ctx, run, kind) is None, kind
+
 
 class TestTheKindMustBeOneOfTheFive:
 

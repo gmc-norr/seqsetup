@@ -135,8 +135,11 @@ def read_export(ctx, run, kind: str, *, actor: str = "") -> Optional[Union[str, 
         raise ValueError(f"{kind!r} is not one of the export kinds {EXPORT_KINDS}")
 
     if not run.exports:
-        # A run stored before the files moved out of the run document.
-        return getattr(run, LEGACY_EXPORT_FIELDS[kind])
+        # A run stored before the files moved out of the run document. An
+        # empty value there is "nothing stored", as every reader treated it
+        # before (each used ``stored or generate``): a 0-byte download reads
+        # as a file, not as an error (review 2, P3-1).
+        return getattr(run, LEGACY_EXPORT_FIELDS[kind]) or None
 
     entry = run.exports.get(kind)
     if entry is None:
@@ -182,6 +185,20 @@ def export_file_too_big_message(kind: str, size: int) -> str:
     # No advice to change the run: splitting it costs another sequencing run,
     # and how samples go on lanes is the lab's design, not something to bend
     # to this limit (the user's decision, 2026-10-16).
+
+
+def _log_files_written(run_id: str, manifest: dict, why: str) -> None:
+    """Every file written, with the run id, always.
+
+    A Mark Ready refused after a file is written leaves it referenced by
+    nothing, and the collection is never pruned: this line is how an operator
+    finds what was left, whether the write finished or not (the spec's "Files
+    written by an attempt that then fails ... and logged with the run id";
+    review 1, P2-1)."""
+    if not manifest:
+        return
+    logger.info("Run %s: stored %d export files for %s: %s", run_id, len(manifest), why,
+                ", ".join(f"{kind}={entry['id']}" for kind, entry in manifest.items()))
 
 
 def _record(run_id: str, kind: str, content: Union[str, bytes], actor: str) -> tuple:
@@ -239,7 +256,14 @@ def write_exports(ctx, run, files: dict, *, actor: str = "") -> dict:
 
     manifest = {}
     for kind, record, raw in planned:
-        ctx.run_export_repo.insert(record)
+        try:
+            ctx.run_export_repo.insert(record)
+        except Exception:
+            # The records already inserted are referenced by nothing and are
+            # not removed (the collection is insert-only). Named here, since
+            # the line below is never reached (review 2, P3-2).
+            _log_files_written(run.id, manifest, "a write that then failed")
+            raise
         back = ctx.run_export_repo.get(record["_id"])
         if back is None:
             raise ExportFileNotStored(kind, "it was not there when it was read back")
@@ -252,11 +276,5 @@ def write_exports(ctx, run, files: dict, *, actor: str = "") -> dict:
                       f"not the {len(raw)} that were written")
         manifest[kind] = {"id": record["_id"], "sha256": record["sha256"],
                           "size": record["size"]}
-    # Logged with the run id, always: a Mark Ready that is refused after this
-    # point leaves these records referenced by nothing, and this line plus
-    # that refusal's own line are how an operator finds them (the spec's
-    # "Files written by an attempt that then fails ... and logged with the
-    # run id"; review 1, P2-1).
-    logger.info("Run %s: stored %d export files: %s", run.id, len(manifest),
-                ", ".join(f"{kind}={entry['id']}" for kind, entry in manifest.items()))
+    _log_files_written(run.id, manifest, "a Mark Ready in progress")
     return manifest

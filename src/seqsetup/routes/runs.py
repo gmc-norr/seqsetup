@@ -664,8 +664,21 @@ async def update_setup(
 
 # --- update_status: cross-status transitions (uses get_archivable_run) ---
 
+def _files_left(manifest: dict) -> dict:
+    """The files this Mark Ready already wrote, for a refusal's audit row.
+
+    A refusal after the files were written leaves them referenced by nothing,
+    and ``run_exports`` is never pruned, so each refusal names what it left
+    (the spec's "logged with the run id"; review 1, P2-1). Empty before the
+    write, and for every transition that writes nothing."""
+    if not manifest:
+        return {}
+    return {"export_files": [entry["id"] for entry in manifest.values()]}
+
+
 @contextmanager
-def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_status: RunStatus):
+def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_status: RunStatus,
+                                    written: Optional[dict] = None):
     """Mark Ready stops when the synced instrument records cannot be used:
     audit the refusal, then let the error reach its handler (spec 2026-10-04
     group A2, §5). Nothing has been saved at these points."""
@@ -679,20 +692,9 @@ def _denied_if_instruments_unusable(request: Request, run: SequencingRun, new_st
             outcome="denied",
             reason="synced_instruments_unusable",
             attempted_status=new_status.value,
+            **_files_left(written or {}),
         )
         raise
-
-
-def _files_left(manifest: dict) -> dict:
-    """The files this Mark Ready already wrote, for a refusal's audit row.
-
-    A refusal after the files were written leaves them referenced by nothing,
-    and ``run_exports`` is never pruned, so each refusal names what it left
-    (the spec's "logged with the run id"; review 1, P2-1). Empty before the
-    write, and for every transition that writes nothing."""
-    if not manifest:
-        return {}
-    return {"export_files": [entry["id"] for entry in manifest.values()]}
 
 
 def _refused_while_a_sync_is_writing(
@@ -1049,7 +1051,8 @@ def update_status(
         # The instrument may have been switched off while the exports were
         # being generated. Read the switch from the database, not the
         # in-process cache (spec 2026-09-28 group 1c, F27, review P2).
-        with _denied_if_instruments_unusable(request, run, new_status), reading_synced_records():
+        with _denied_if_instruments_unusable(
+                request, run, new_status, new_exports), reading_synced_records():
             definition = (
                 ctx.instrument_definition_repo.get_by_name(run.instrument_platform.value)
                 if ctx.instrument_definition_repo is not None else None
