@@ -21,12 +21,15 @@ class RunExportRepository:
 
     COLLECTION = "run_exports"
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, *, ensure_index: bool = True):
         self.collection = db[self.COLLECTION]
         # The app reads a file by its id only. The collection only grows and
         # is never pruned, so an operator looking up one run's files by hand
-        # must not make the database read every file.
-        self.collection.create_index("run_id")
+        # must not make the database read every file. A read-only caller
+        # (tools/check_broken_samplesheets.py) passes ensure_index=False: a
+        # login that can only read may not create one.
+        if ensure_index:
+            self.collection.create_index("run_id")
 
     def insert(self, doc: dict) -> None:
         """Insert one file record. Raises if its ``_id`` is already there."""

@@ -1,6 +1,7 @@
 """Tests for tools/check_broken_samplesheets.py (read-only server check)."""
 
 import mongomock
+import pymongo.errors
 
 from seqsetup.models.application_profile import ApplicationProfile
 from seqsetup.models.index import Index, IndexPair, IndexType
@@ -277,3 +278,35 @@ class TestCheckRuns:
         report, broken = check_runs(db)
         assert broken == 1
         assert "untranslated column(s): MyI7" in report
+
+
+class TestTheToolOnlyReads:
+    """The tool says it only reads, and an operator may run it with a database
+    login that can only read: reading the stored files must not create the
+    file store's index (review of the run_id index, 2026-10-17)."""
+
+    def _clean_db(self):
+        clean = _sheet("Sample_ID,Lane,Index,Index2\nS1,1,ACGT,TTGG\n")
+        return _FakeDb([
+            _run_doc("R1", "ready", clean, [{"sample_id": "S1", "lanes": [1]}]),
+            _run_doc("R2", "archived", clean, [{"sample_id": "S1", "lanes": [1]}]),
+        ])
+
+    def test_it_creates_no_index(self, monkeypatch):
+        db = self._clean_db()
+        calls = []
+        monkeypatch.setattr(mongomock.collection.Collection, "create_index",
+                            lambda self, *a, **k: calls.append(a))
+        check_runs(db)
+        assert calls == []
+
+    def test_a_login_that_cannot_create_an_index_finds_no_broken_run(self, monkeypatch):
+        db = self._clean_db()
+
+        def refused(self, *a, **k):
+            raise pymongo.errors.OperationFailure(
+                "not authorized on seqsetup to execute command { createIndexes: ... }")
+        monkeypatch.setattr(mongomock.collection.Collection, "create_index", refused)
+        report, broken = check_runs(db)
+        assert broken == 0
+        assert "No broken Sample Sheets found." in report

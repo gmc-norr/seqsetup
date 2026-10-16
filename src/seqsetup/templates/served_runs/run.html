@@ -32,7 +32,6 @@
   {% else %}
   <p class="text-sm text-slate-600">
     Each file exactly as the API hands it out: the copy stored when the run was marked Ready.
-    The check report is shown without its per-lane tables; its download is the whole file.
   </p>
   {% for f in files %}
   <section id="served-{{ f.resource }}" class="config-panel">

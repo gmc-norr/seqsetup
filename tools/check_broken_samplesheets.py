@@ -129,7 +129,9 @@ def _stored_sheet(db, doc):
     # make a run with (say) one over-long sample id look like an unreadable
     # record. The rows are checked from the raw sample dicts, as before.
     run = SequencingRun.from_dict({**doc, "samples": []})
-    ctx = SimpleNamespace(run_export_repo=RunExportRepository(db))
+    # ensure_index=False: this tool only reads, and may run with a login that
+    # can only read.
+    ctx = SimpleNamespace(run_export_repo=RunExportRepository(db, ensure_index=False))
     return read_export(ctx, run, "samplesheet_v2")
 
 

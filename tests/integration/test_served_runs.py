@@ -349,6 +349,11 @@ class TestTheCheckReportOnThePage:
                          headers={"Authorization": f"Bearer {_token(ctx)}"})
         assert api.text == REPORT
 
+    def test_a_page_with_nothing_left_out_says_nothing_is(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        page = logged_in_client.get(f"/served-runs/{_full(ctx, 'nothing-left-out')}").text
+        assert "per-lane tables" not in page
+
     def test_a_report_with_no_per_lane_tables_is_shown_exactly(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         report = '{"summary": {"error_count": 0}, "per_lane": {}}'
@@ -370,7 +375,7 @@ class TestTheCheckReportOnThePage:
         _app, ctx, _db = fresh_app
         disable_repos(ctx, "test_profile", "app_profile")
         run = SequencingRun(
-            id="real-report", run_name="Real report",
+            id="real-report", run_name="Rapport å ä ö — Ł",
             instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
             run_cycles=RunCycles(151, 151, 8, 8),
         )
@@ -386,6 +391,9 @@ class TestTheCheckReportOnThePage:
         assert '"distance_matrix"' in stored, "the checks wrote no per-lane table to leave out"
 
         shown = _shown_text(self._report_section(logged_in_client, run.id))
+        # The stored file up to its per-lane tables, closed: what the checks
+        # wrote, character for character.
+        assert shown == stored[:stored.index(',\n  "per_lane": ')] + "\n}"
         assert '"collision_count": 0' in shown
         assert '"per_lane":' not in shown
         assert '"distance_matrix":' not in shown and '"color_balance":' not in shown
