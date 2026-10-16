@@ -19,11 +19,26 @@ docs/design/2026-10-16-export-files-own-records-design.md
 """
 
 import hashlib
+import logging
+import uuid
 from typing import Optional, Union
 
+from bson import BSON
+
 from ..models.sequencing_run import EXPORT_KINDS, LEGACY_EXPORT_FIELDS
+from ..utils.clock import utcnow
 from .audit_log import audit
 from .samplesheet_v1_exporter import SampleSheetV1Exporter
+
+
+logger = logging.getLogger(__name__)
+
+# MongoDB refuses a document over 16 MiB. One file now has that whole budget
+# to itself, which is what removes the limit on a run as a whole; the margin
+# covers nothing in particular and is there so a record measured just under
+# the line cannot be refused by the server instead.
+MAX_EXPORT_FILE = 16 * 1024 * 1024
+EXPORT_FILE_MARGIN = 64 * 1024
 
 
 # What each file is called in a message to a person.
@@ -37,6 +52,27 @@ EXPORT_LABELS = {
 # The kinds every Ready run must name. The v1 sheet is required too when the
 # instrument writes one and Mark Ready did not record why it made none.
 _ALWAYS_REQUIRED = ("samplesheet_v2", "json", "validation_json", "validation_pdf")
+
+
+class ExportFileTooBig(Exception):
+    """One export file would not fit a MongoDB document. Raised before any
+    file is written, so nothing of the attempt is stored."""
+
+    def __init__(self, kind: str, size: int):
+        self.kind = kind
+        self.size = size
+        super().__init__(f"{kind} is {size} bytes")
+
+
+class ExportFileNotStored(Exception):
+    """A file was written but did not read back as the bytes that were
+    written. Mark Ready is refused: a run must never go Ready naming a file
+    that cannot be served."""
+
+    def __init__(self, kind: str, why: str):
+        self.kind = kind
+        self.why = why
+        super().__init__(f"{kind} did not read back: {why}")
 
 
 class ExportDamaged(Exception):
@@ -120,3 +156,72 @@ def read_export(ctx, run, kind: str, *, actor: str = "") -> Optional[Union[str, 
     if hashlib.sha256(raw).hexdigest() != entry["sha256"]:
         raise _damaged(run.id, kind, "its bytes are not the ones the run names", actor)
     return content
+
+
+def export_file_too_big_message(kind: str, size: int) -> str:
+    return (
+        f"This run's {EXPORT_LABELS[kind]} would be {size / 1024 / 1024:.1f} MB, and "
+        f"SeqSetup stores at most {MAX_EXPORT_FILE // 1024 // 1024} MB in one file. This "
+        "is a limit of SeqSetup, not a problem with the run. Nothing was saved and the "
+        "run is still a Draft. Tell your SeqSetup administrator."
+    )
+    # No advice to change the run: splitting it costs another sequencing run,
+    # and how samples go on lanes is the lab's design, not something to bend
+    # to this limit (the user's decision, 2026-10-16).
+
+
+def _record(run_id: str, kind: str, content: Union[str, bytes], actor: str) -> tuple:
+    raw = content.encode("utf-8") if isinstance(content, str) else bytes(content)
+    return {
+        "_id": uuid.uuid4().hex,
+        "run_id": run_id,
+        "kind": kind,
+        "content": content,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "size": len(raw),
+        "created_at": utcnow().isoformat(),
+        "created_by": actor,
+    }, raw
+
+
+def write_exports(ctx, run, files: dict, *, actor: str = "") -> dict:
+    """Write each of ``files`` (kind -> bytes or text, None to skip) into its
+    own record and return the manifest the run will carry.
+
+    Every record is measured first, so a file that cannot be stored refuses
+    the whole Mark Ready before anything at all is written. Each record is
+    then inserted and read straight back, and the bytes that came back are
+    hashed: a run must never go Ready naming a file that cannot be served.
+
+    Nothing here touches the run. Records of an attempt that then fails are
+    referenced by nothing and are left in place -- the collection is
+    insert-only, so no reader of an older manifest can lose a file
+    (docs/design/2026-10-16-export-files-own-records-design.md).
+    """
+    planned = []
+    for kind in EXPORT_KINDS:
+        content = files.get(kind)
+        if content is None:
+            continue
+        record, raw = _record(run.id, kind, content, actor)
+        size = len(BSON.encode(record))
+        if size > MAX_EXPORT_FILE - EXPORT_FILE_MARGIN:
+            raise ExportFileTooBig(kind, size)
+        planned.append((kind, record, raw))
+
+    manifest = {}
+    for kind, record, raw in planned:
+        ctx.run_export_repo.insert(record)
+        back = ctx.run_export_repo.get(record["_id"])
+        if back is None:
+            raise ExportFileNotStored(kind, "it was not there when it was read back")
+        content = back.get("content")
+        read = (content.encode("utf-8") if isinstance(content, str)
+                else bytes(content) if isinstance(content, (bytes, bytearray)) else None)
+        if read != raw:
+            raise ExportFileNotStored(
+                kind, f"{len(read) if read is not None else 'no'} bytes came back, "
+                      f"not the {len(raw)} that were written")
+        manifest[kind] = {"id": record["_id"], "sha256": record["sha256"],
+                          "size": record["size"]}
+    return manifest
