@@ -482,6 +482,13 @@ def _parse_run_cycles(form) -> RunCycles:
         raw = form.get(key)
         raw = raw.strip() if isinstance(raw, str) else ""
         least = 1 if key == "read1_cycles" else 0
+        if not raw:
+            # The fieldset posts on every change, so a run with no counts
+            # answers while the person is still typing the first one, and the
+            # index fields are a dropdown: "a whole number from 0 to 600"
+            # named nothing they can offer (review of 9fac120, P2-3).
+            raise ValueError(f"{label} cycles is not set. Set all four cycle counts; "
+                             "they are saved together.")
         if not re.fullmatch(r"[0-9]{1,4}", raw) or not least <= int(raw) <= _MAX_CYCLES:
             message = (f"{label} cycles must be a whole number from {least} "
                        f"to {_MAX_CYCLES}.")
@@ -1014,6 +1021,11 @@ def update_status(
         return HTMLResponse(
             templates.env.get_template("runs/_ready_refused.html").render(
                 run=run, messages=[_ready_document_too_big_message(too_big.size)],
+                # Not a validation refusal: no sample is marked, and the same
+                # run reports zero errors on the validation page (review of
+                # 9fac120, P2-1).
+                heading="Cannot mark ready: this run's exports are too large to store.",
+                sample_errors=False,
             ),
             headers={
                 "Cache-Control": "no-store",

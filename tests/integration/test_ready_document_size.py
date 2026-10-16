@@ -108,3 +108,45 @@ class TestMarkReadyRefusesADocumentThatWillNotFit:
 
         assert resp.status_code == 200, resp.text[:300]
         assert ctx.run_repo.get_by_id(run_id).status == RunStatus.READY
+
+
+class TestTheRefusalIsNotAValidationRefusal:
+    """A fresh review found the size refusal reusing the validation
+    refusal's panel, whose footer says samples with errors are marked in
+    the table and points at the validation page -- for a size refusal no
+    sample is marked and the same run reports zero errors."""
+
+    def test_it_does_not_send_the_person_to_a_page_with_no_errors(
+            self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run_id = _seed_run(ctx, "too-big-footer")
+        monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
+
+        resp = mark_ready(logged_in_client, run_id, ORIGIN)
+
+        assert "Samples with errors are marked in the table" not in resp.text, resp.text
+        assert "Open the validation page" not in resp.text, resp.text
+
+    def test_it_does_not_count_the_size_as_an_error_to_fix(
+            self, logged_in_client, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        disable_repos(ctx, "test_profile", "app_profile")
+        run_id = _seed_run(ctx, "too-big-count")
+        monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
+
+        resp = mark_ready(logged_in_client, run_id, ORIGIN)
+
+        assert "Cannot mark ready: 1 error to fix first" not in resp.text, resp.text
+
+
+class TestTheLimitItselfIsPinned:
+    """A fresh review pointed out that a negative margin -- which would let
+    the route accept a document MongoDB refuses, the exact 500-after-two-
+    minutes this fix exists to stop -- left every test green."""
+
+    def test_the_threshold_is_at_or_below_what_mongodb_accepts(self):
+        from seqsetup.routes.runs import _MAX_RUN_DOCUMENT, _RUN_DOCUMENT_MARGIN
+        assert _RUN_DOCUMENT_MARGIN > 0, "no margin for what touch() writes after the check"
+        assert _MAX_RUN_DOCUMENT <= 16 * 1024 * 1024, "above MongoDB's own document limit"
+        assert _MAX_RUN_DOCUMENT - _RUN_DOCUMENT_MARGIN < 16 * 1024 * 1024

@@ -97,10 +97,16 @@ def _run_steps(run, result) -> list[dict]:
     else:
         check_state, check_detail = "done", "No errors"
 
+    # The Setup step was keyed on the run name alone, so it said "done" for a
+    # run with no cycle counts, or with Read 1 = 0, which the Check refuses
+    # (review of 9fac120, P2-2).
+    has_cycles = bool(run.run_cycles) and run.run_cycles.read1_cycles >= 1
+    setup_done = named and has_cycles
     steps = [
         {"key": "setup", "label": "Setup", "href": "#run-config-panel",
-         "state": "done" if named else "todo",
-         "detail": f"{run.instrument_platform.value} · {run.flowcell_type}" if named else "Needs a name"},
+         "state": "done" if setup_done else "todo",
+         "detail": (f"{run.instrument_platform.value} · {run.flowcell_type}" if setup_done
+                    else "Needs a name" if not named else "Needs cycle counts")},
         {"key": "samples", "label": "Samples", "href": "#samples",
          "state": "done" if n else "todo",
          "detail": _plural(n, "sample") if n else "None yet"},

@@ -128,12 +128,16 @@ class TestTheCheckRefusesARunWithoutUsableCycles:
 
     def test_mark_ready_is_refused_for_a_run_with_no_cycles(
             self, logged_in_client, fresh_app):
+        """The refusal must NAME the missing counts: this fixture has other
+        errors too, so a test that only reads the status would pass with the
+        whole cycle prerequisite deleted (review of 9fac120, P3-3)."""
         _app, ctx, _db = fresh_app
         _run(ctx, cycles=None)
 
-        logged_in_client.post(f"/runs/{RUN}/status/ready", headers=ORIGIN)
+        resp = logged_in_client.post(f"/runs/{RUN}/status/ready", headers=ORIGIN)
 
         assert _stored(ctx).status == RunStatus.DRAFT, "a run with no cycles went Ready"
+        assert "no cycle counts" in resp.text, resp.text[:500]
 
 
 class TestNoPageShowsCyclesTheRunDoesNotHave:
@@ -201,3 +205,69 @@ class TestNoPageShowsCyclesTheRunDoesNotHave:
         assert resp.status_code == 400, resp.text[:300]
         assert "Read 1" in resp.text
         assert _stored(ctx).run_cycles is None
+
+
+class TestTheStepBarAgreesWithTheCheck:
+    """A fresh review found the Setup step saying "done" for a run with no
+    cycle counts, and for Read 1 = 0: the step is keyed on the run name
+    alone, so the one prerequisite the review added was not in it."""
+
+    def _setup_step(self, client):
+        page = client.get(f"/runs/{RUN}/step-bar")
+        assert page.status_code == 200, page.text[:200]
+        start = page.text.index('data-step="setup"')
+        return page.text[start:start + 500]
+
+    def test_no_cycles_is_not_a_done_setup(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, cycles=None)
+
+        step = self._setup_step(logged_in_client)
+
+        assert 'data-state="done"' not in step, step
+        assert "cycle" in step.lower(), step
+
+    def test_read_one_zero_is_not_a_done_setup(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, cycles=RunCycles(0, 151, 10, 10))
+
+        step = self._setup_step(logged_in_client)
+
+        assert 'data-state="done"' not in step, step
+
+    def test_control_a_run_with_counts_has_a_done_setup(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, cycles=RunCycles(151, 151, 10, 10))
+
+        step = self._setup_step(logged_in_client)
+
+        assert 'data-state="done"' in step, step
+
+
+class TestTheRefusalForAnUnsetCountSaysWhatToDo:
+    """The index fields are a dropdown of 8, 10, 12, 17 and 24, so "must be a
+    whole number from 0 to 600" named nothing the field can offer. And the
+    fieldset posts on every change, so a run with no counts answers while
+    the person is still typing Read 1: the message must say why."""
+
+    def test_an_unset_index_says_it_is_not_set(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx, cycles=None)
+
+        resp = _post_cycles(ctx, logged_in_client, read1="151", read2="151",
+                            index1="", index2="")
+
+        assert resp.status_code == 400
+        assert "is not set" in resp.text, resp.text
+        assert "all four" in resp.text, resp.text
+        assert "from 0 to 600" not in resp.text, resp.text
+
+    def test_control_an_out_of_range_index_still_says_the_range(
+            self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        _run(ctx)
+
+        resp = _post_cycles(ctx, logged_in_client, index1="900")
+
+        assert resp.status_code == 400
+        assert "from 0 to 600" in resp.text, resp.text
