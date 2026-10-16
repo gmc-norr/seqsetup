@@ -91,6 +91,20 @@ class TestTheDocsSayWhatThePageNeeds:
 
     @pytest.mark.parametrize("path", ["README.md", "docs/api-reference/runs.rst",
                                       "docs/development/contributing.rst"])
+    def test_it_does_not_call_the_page_a_source_of_truth(self, path):
+        """The exact claim F14 is about. Saying the page cannot be opened and
+        ALSO calling it the runtime source of truth is worse than either
+        alone, and a window that only looks for the true words cannot see the
+        false one next to them."""
+        text = (ROOT / path).read_text()
+        where = text.index("/api/docs")
+        around = text[max(0, where - 400):where + 400]
+        assert "source of truth" not in around.lower(), (
+            f"{path} still calls /api/docs a source of truth; the written reference "
+            f"is what readers have:\n{around}")
+
+    @pytest.mark.parametrize("path", ["README.md", "docs/api-reference/runs.rst",
+                                      "docs/development/contributing.rst"])
     def test_it_says_a_browser_cannot_open_it(self, path):
         text = (ROOT / path).read_text()
         where = text.index("/api/docs")
