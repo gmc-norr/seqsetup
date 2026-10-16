@@ -151,19 +151,20 @@ class TestAnEditDoesNotBringBackADeletedUser:
 
     def test_an_edit_racing_a_delete_does_not_recreate_the_account(
             self, fresh_app, logged_in_client, monkeypatch):
-        """End to end. It was red on main, where the two requests interleaved
-        freely. With _ADMIN_WRITE_LOCK the edit holds the lock across its load
-        and its write, so the delete cannot land in between and the forced
-        order times out -- which is the fix working, not the test failing.
-        The write itself is pinned by TestTheRepositoryWriteThatWillNotCreate
-        below (break checks L5, L6)."""
+        """End to end, and it really does force the order: the edit's write
+        waits for the delete. With _ADMIN_WRITE_LOCK the delete is blocked on
+        the lock, so the wait runs its 5 s out and the write then has nothing
+        to resurrect -- the lock alone closes this, which is why reverting
+        the route to save() reddens nothing (break check L4, recorded as
+        inert). The write itself is pinned by
+        TestTheRepositoryWriteThatWillNotCreate below (L5, L6)."""
         app, ctx, _db = fresh_app
         client_two = _second_admin(app, ctx)
         leaver = LocalUser(username="leaver", display_name="Leaver", role=UserRole.STANDARD)
         leaver.set_password("Leav3r-Passw0rd!")
         ctx.local_user_repo.save(leaver)
         repo = ctx.local_user_repo
-        real_get, real_save = repo.get_by_username, repo.save
+        real_get, real_update = repo.get_by_username, repo.update_existing
         loaded, deleted = threading.Event(), threading.Event()
 
         def get_then_signal(username):
@@ -172,15 +173,18 @@ class TestAnEditDoesNotBringBackADeletedUser:
                 loaded.set()
             return found
 
-        def save_after_the_delete(user):
+        def write_after_the_delete(user):
             # The edit writes only once the delete has finished: the exact
-            # order the upsert turns into a resurrection.
+            # order an upsert turns into a resurrection. Patched on the
+            # writer the route actually calls -- the first cut of this test
+            # patched save(), which edit_user no longer uses, so nothing was
+            # forced at all (review of e355460, P3-1).
             if user.username == "leaver":
                 deleted.wait(timeout=5)
-            return real_save(user)
+            return real_update(user)
 
         monkeypatch.setattr(repo, "get_by_username", get_then_signal)
-        monkeypatch.setattr(repo, "save", save_after_the_delete)
+        monkeypatch.setattr(repo, "update_existing", write_after_the_delete)
 
         def edit():
             return logged_in_client.post("/admin/users/leaver/edit", headers=ORIGIN, data={
@@ -258,3 +262,36 @@ class TestTheRepositoryWriteThatWillNotCreate:
         ctx.local_user_repo.save(user)
 
         assert ctx.local_user_repo.get_by_username("upserted") is not None
+
+
+class TestTheInvariantsTheLockRelies0n:
+    """Two things a later change could quietly undo, pinned here because
+    nothing else would notice (review of e355460, P3-3 and P3-4)."""
+
+    def test_no_code_writes_a_local_user_through_the_upserting_save(self):
+        """LocalUserRepository inherits BaseRepository.save, which upserts.
+        update_existing exists because that save can resurrect a deleted
+        account. Test seeding may use save; shipped code may not."""
+        import re
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2] / "src"
+        offenders = []
+        for path in root.rglob("*.py"):
+            for number, line in enumerate(path.read_text().splitlines(), 1):
+                if re.search(r"local_user_repo\s*\.\s*save\s*\(", line):
+                    offenders.append(f"{path.relative_to(root)}:{number}: {line.strip()}")
+        assert offenders == [], (
+            "shipped code writes a local user with the upserting save; use "
+            f"update_existing (an edit) or create (a new account):\n" + "\n".join(offenders))
+
+    def test_the_three_admin_write_handlers_are_plain_def(self):
+        """_ADMIN_WRITE_LOCK blocks the thread that holds it. Starlette runs a
+        plain ``def`` handler on a worker thread, so blocking is fine; an
+        ``async def`` one runs on the event loop that serves everyone, and
+        the block would stall every request."""
+        import inspect
+        from seqsetup.routes import local_users
+        for name in ("create_user", "edit_user", "delete_user"):
+            handler = getattr(local_users, name)
+            assert not inspect.iscoroutinefunction(handler), (
+                f"{name} is async def: _ADMIN_WRITE_LOCK would block the event loop")
