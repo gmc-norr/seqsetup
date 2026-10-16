@@ -210,3 +210,61 @@ def test_control_a_drop_on_the_ticked_rows_the_page_shows_is_saved(
 
     assert resp.value.status == 200, resp.value.text()[:300]
     assert _i7s(app_ctx, run_id) == [SEQS[0][0], SEQS[0][0]]
+
+
+@pytest.fixture
+def singles_run_id(app_ctx):
+    """A draft whose one sample holds an i7 and an i5 as single indexes, not
+    a pair, so the row draws a clear button for each half."""
+    t = datetime(2026, 1, 10, 9, 0, 0)
+    run = SequencingRun(
+        id="stale-singles-run", run_name="Stale singles run",
+        instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
+        run_cycles=RunCycles(151, 151, 8, 8), status=RunStatus.DRAFT,
+        created_at=t, updated_at=t,
+    )
+    sample = Sample(id="stale-singles-run-s1", sample_id="SG-01", lanes=[1])
+    sample.assign_index1(Index("solo-i7", SEQS[0][0], IndexType.I7))
+    sample.assign_index2(Index("solo-i5", SEQS[0][1], IndexType.I5))
+    run.add_sample(sample)
+    app_ctx.run_repo.save(run)
+    hold_edit_lock(app_ctx, run.id)
+    yield run.id
+    app_ctx.run_repo.collection.delete_one({"_id": run.id})
+
+
+@pytest.mark.browser
+def test_the_half_clear_button_on_an_index_another_tab_replaced(
+        logged_in_page, base_url, app_ctx, kit, singles_run_id):
+    """Clear i7 is the one button that carries both a query string
+    (?index_type=i7) and hx-vals: htmx puts hx-vals in the body for a POST,
+    so the route sees both. A stale half-clear must be refused too."""
+    page = logged_in_page
+    page.goto(f"{base_url}/runs/{singles_run_id}")
+    page.wait_for_load_state("networkidle")
+    _the_other_tab_assigns(app_ctx, singles_run_id, 1)
+
+    page.get_by_role("button", name="Edit indexes").click()
+    with page.expect_response(lambda r: "/clear-index" in r.url) as resp:
+        page.get_by_role("button", name="Clear i7 index of SG-01").click()
+
+    assert resp.value.status == 409, resp.value.text()[:300]
+    _sent_what_the_row_showed(resp, SEQS[0][0])
+    expect(page.locator("#error-banner")).to_contain_text("Nothing was cleared")
+    assert _i7s(app_ctx, singles_run_id) == [OTHER_TAB]
+
+
+@pytest.mark.browser
+def test_control_the_half_clear_button_on_the_index_the_page_shows(
+        logged_in_page, base_url, app_ctx, kit, singles_run_id):
+    page = logged_in_page
+    page.goto(f"{base_url}/runs/{singles_run_id}")
+    page.wait_for_load_state("networkidle")
+
+    page.get_by_role("button", name="Edit indexes").click()
+    with page.expect_response(lambda r: "/clear-index" in r.url) as resp:
+        page.get_by_role("button", name="Clear i7 index of SG-01").click()
+
+    assert resp.value.status == 200, resp.value.text()[:300]
+    stored = app_ctx.run_repo.get_by_id(singles_run_id).samples[0]
+    assert (stored.index1_sequence, stored.index2_sequence) == (None, SEQS[0][1])
