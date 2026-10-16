@@ -141,8 +141,8 @@ class TestF13ThePasswordSurvivesTheInitScript:
 
     @pytest.mark.parametrize("password", AWKWARD_PASSWORDS)
     def test_the_user_is_created_with_exactly_that_password(self, password, tmp_path):
-        node = shutil.which("node") or "/home/parlar_ai/.nvm/versions/node/v22.22.3/bin/node"
-        if not Path(node).exists():
+        node = shutil.which("node")
+        if not node:
             pytest.skip("node is needed to run the init script's JavaScript")
         # A stand-in mongosh that saves the --eval program instead of running it.
         stub = tmp_path / "bin" / "mongosh"
