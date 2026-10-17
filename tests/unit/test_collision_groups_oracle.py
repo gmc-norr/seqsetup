@@ -222,19 +222,23 @@ def generated_run(seed):
             sample.assign_index1(Index(name=f"i7-{k}", sequence=i7, index_type=IndexType.I7))
         if i5:
             sample.assign_index2(Index(name=f"i5-{k}", sequence=i5, index_type=IndexType.I5))
-        # Sometimes a typed OverrideCycles that masks part of an index, so the
-        # comparison runs over fewer cycles than the stored sequence.
-        if i7 and rng.random() < 0.15:
-            read = max(1, min(len(i7), run.run_cycles.index1_cycles) - rng.randint(0, 2))
-            mask = run.run_cycles.index1_cycles - read
-            part1 = f"I{read}N{mask}" if mask > 0 else f"I{read}"
-            if run.run_cycles.index2_cycles:
-                sample.override_cycles = (f"Y{run.run_cycles.read1_cycles};{part1};"
-                                          f"I{run.run_cycles.index2_cycles};"
-                                          f"Y{run.run_cycles.read2_cycles}")
-            else:
-                sample.override_cycles = (f"Y{run.run_cycles.read1_cycles};{part1};"
-                                          f"Y{run.run_cycles.read2_cycles}")
+        # Sometimes a typed OverrideCycles that masks part of an index, so
+        # the comparison runs over fewer cycles than the stored sequence.
+        # Either index, or both: two samples with ONE stored sequence read
+        # over different cycles are the case a key built from the stored
+        # sequence would get wrong.
+        if i7 and rng.random() < 0.20:
+            def _part(cycles, length):
+                read = max(1, min(length, cycles) - rng.randint(0, 2))
+                mask = cycles - read
+                return f"I{read}N{mask}" if mask > 0 else f"I{read}"
+
+            part1 = _part(run.run_cycles.index1_cycles, len(i7))
+            part2 = (_part(run.run_cycles.index2_cycles, len(i5))
+                     if i5 and rng.random() < 0.5
+                     else f"I{run.run_cycles.index2_cycles}")
+            sample.override_cycles = (f"Y{run.run_cycles.read1_cycles};{part1};"
+                                      f"{part2};Y{run.run_cycles.read2_cycles}")
         run.add_sample(sample)
     return run
 
@@ -308,38 +312,78 @@ class TestGroupedReportEqualsThePerPairScan:
             assert (result.error_count > 0) is (old_error_count > 0), f"seed {record['seed']}"
 
     def test_the_generator_plants_what_the_proof_needs(self, generated):
-        """A weakened generator would make the property test vacuous."""
-        with_collisions = sum(1 for r in generated if r["groups"])
-        assert with_collisions >= ORACLE_RUNS // 10, (
-            f"only {with_collisions}/{ORACLE_RUNS} generated runs collide at all")
+        """A weakened generator would make the property test vacuous.
 
-        shared = near = mixed_mismatches = masked = many_lanes = 0
+        The thresholds are about two thirds of what the generator as written
+        produces over its 600 fixed seeds, measured:
+
+            runs that collide at all                        424
+            runs with 3+ samples on one index                67
+            runs colliding across two different sequences   393
+            runs mixing per-sample mismatch numbers         564
+            runs with a typed OverrideCycles                471
+            ... of which the i5 is masked in                179
+            runs using more than 4 lanes                    323
+            runs with two samples on one read index         262
+            runs with two i7s 1 or 2 bases apart            303
+            runs with one stored index read over two
+                different cycle counts                      190
+            sample counts                               1..391
+        """
+        counts = dict.fromkeys(
+            ("collide", "shared3", "cross", "mixed", "masked", "masked_i5",
+             "many_lanes", "identical", "near", "one_stored_two_read"), 0)
         sizes = set()
         for record in generated:
             run, groups = record["run"], record["groups"]
             sizes.add(len(run.samples))
+            if groups:
+                counts["collide"] += 1
             # Several samples sharing one index — the case that made the
             # report explode.
             if any(not g.sample2_ids and len(g.sample1_ids) > 2 for g in groups):
-                shared += 1
+                counts["shared3"] += 1
             # Two different sequences within the tolerance.
             if any(g.sample2_ids and g.sequence1 != g.sequence2 for g in groups):
-                near += 1
+                counts["cross"] += 1
             # Per-sample mismatch numbers must differ inside a run, or
             # dropping them from the grouping key would go unnoticed.
             if len({s.barcode_mismatches_index1 for s in run.samples}) > 1:
-                mixed_mismatches += 1
-            if any(s.override_cycles for s in run.samples):
-                masked += 1
+                counts["mixed"] += 1
+            masked = [s for s in run.samples if s.override_cycles]
+            if masked:
+                counts["masked"] += 1
+            if any("N" in s.override_cycles.split(";")[2] for s in masked):
+                counts["masked_i5"] += 1
             if len({lane for s in run.samples for lane in s.lanes}) > 4:
-                many_lanes += 1
-        assert shared >= ORACLE_RUNS // 60, f"only {shared} runs have 3+ samples on one index"
-        assert near >= ORACLE_RUNS // 60, f"only {near} runs collide across two sequences"
-        assert mixed_mismatches >= ORACLE_RUNS // 2, (
-            f"only {mixed_mismatches} runs mix mismatch numbers")
-        assert masked >= ORACLE_RUNS // 3, (
-            f"only {masked} runs mask an index with OverrideCycles")
-        assert many_lanes >= ORACLE_RUNS // 60, f"only {many_lanes} runs use more than 4 lanes"
+                counts["many_lanes"] += 1
+
+            indexed = [s for s in run.samples if s.has_index]
+            read = [(effective_index_sequence(s, 1, run), effective_index_sequence(s, 2, run))
+                    for s in indexed]
+            if len(set(read)) < len(read):
+                counts["identical"] += 1
+            # One stored index pair read over two different cycle counts:
+            # the case a grouping key built from the STORED sequence would
+            # decide from one representative.
+            stored: dict[tuple, set] = {}
+            for sample, pair in zip(indexed, read):
+                stored.setdefault((sample.index1_sequence, sample.index2_sequence),
+                                  set()).add(pair)
+            if any(len(pairs) > 1 for pairs in stored.values()):
+                counts["one_stored_two_read"] += 1
+            # Near-duplicates: two i7s one or two bases apart.
+            if any(read[i] != read[j]
+                   and hamming_distance(read[i][0], read[j][0]) in (1, 2)
+                   for i in range(len(read)) for j in range(i + 1, len(read))):
+                counts["near"] += 1
+
+        floors = {"collide": 300, "shared3": 40, "cross": 250, "mixed": 400,
+                  "masked": 300, "masked_i5": 100, "many_lanes": 200,
+                  "identical": 180, "near": 250, "one_stored_two_read": 120}
+        short = {name: counts[name] for name, floor in floors.items()
+                 if counts[name] < floor}
+        assert not short, f"the generator plants too few of: {short} (floors {floors})"
         assert max(sizes) > 150, f"largest generated run is {max(sizes)} samples"
         assert min(sizes) == 1, f"smallest generated run is {min(sizes)} samples"
 

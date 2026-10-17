@@ -157,6 +157,31 @@ class TestAPairThatCollidesOnlyOverTheCyclesRead:
                    {"name": "B", "i7": "ATTACTCGCC", "override": self.MASK}, m7=0)
         assert _pairs(run) == {("a", "b")}
 
+    def test_the_key_holds_the_i5_cycles_read_not_the_stored_i5(self):
+        """A reads 8 of its i5, B reads all 10 of the SAME stored i5. They
+        are one barcode over A's 8 cycles, so they collide; but B, read over
+        10, is one base from C and does not. Grouping by the stored sequence
+        would put A and B together and let A's verdict speak for B."""
+        run = _run({"name": "A", "i7": "ATTACTCGAT", "i5": "TATAGCCTGA",
+                    "override": "Y151;I10;I8N2;Y151"},
+                   {"name": "B", "i7": "ATTACTCGAT", "i5": "TATAGCCTGA",
+                    "override": "Y151;I10;I10;Y151"},
+                   {"name": "C", "i7": "ATTACTCGAT", "i5": "TATAGCCTAA",
+                    "override": "Y151;I10;I10;Y151"},
+                   m7=0, m5=0)
+        assert _pairs(run) == {("a", "b"), ("a", "c")}
+
+    def test_the_key_holds_the_i7_cycles_read_not_the_stored_i7(self):
+        """The same for the i7."""
+        run = _run({"name": "A", "i7": "ATTACTCGAT", "i5": I5,
+                    "override": "Y151;I8N2;I10;Y151"},
+                   {"name": "B", "i7": "ATTACTCGAT", "i5": I5,
+                    "override": "Y151;I10;I10;Y151"},
+                   {"name": "C", "i7": "ATTACTCGTT", "i5": I5,
+                    "override": "Y151;I10;I10;Y151"},
+                   m7=0, m5=0)
+        assert _pairs(run) == {("a", "b"), ("a", "c")}
+
     def test_a_sample_whose_whole_i7_is_masked_away_is_left_out(self):
         """The old scan returned None for any pair whose effective i7 was
         empty; so must the grouped report."""
