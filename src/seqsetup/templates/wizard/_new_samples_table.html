@@ -9,7 +9,6 @@
    Inputs:
      run:          SequencingRun (used for run_id, run_cycles)
      samples:      list[Sample] — the NEW samples (filtered by caller)
-     index_kits:   list[IndexKit] | None — used only to derive show_i5_column
      context:      str — passed through to per-row HTMX endpoints
                           (typically "add_step2")
      existing_ids: str — comma-separated pre-wizard sample ids; survives
@@ -21,14 +20,6 @@
     <p>No new samples to display.</p>
 </div>
 {% else %}
-    {% set show_i5_column = True %}
-    {% if index_kits %}
-        {% set ns = namespace(any_non_single=False) %}
-        {% for kit in index_kits %}
-            {% if not kit.is_single() %}{% set ns.any_non_single = True %}{% endif %}
-        {% endfor %}
-        {% set show_i5_column = ns.any_non_single %}
-    {% endif %}
 <div id="sample-table" data-existing-ids="{{ existing_ids }}">
     <table class="sample-table">
         <thead>
@@ -39,7 +30,7 @@
                 <th>Worksheet</th>
                 <th>Index Kit</th>
                 <th>Index (i7)</th>
-                {% if show_i5_column %}<th>Index (i5)</th>{% endif %}
+                <th>Index (i5)</th>
                 <th class="actions-col"></th>
             </tr>
         </thead>
@@ -47,7 +38,7 @@
             {% for sample in samples %}
                 {% with sample=sample, run_id=run.id, run_cycles=run.run_cycles,
                         run_updated_at=run.updated_at,
-                        show_drop_zones=True, show_i5_column=show_i5_column,
+                        show_drop_zones=True,
                         num_lanes=1, show_bulk_actions=False,
                         context=context, editable=True, show_checkboxes=True %}
                 {% include "wizard/_sample_row.html" %}

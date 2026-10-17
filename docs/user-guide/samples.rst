@@ -256,7 +256,10 @@ Mark Ready, e.g. ``WGS 1 (1.2.3)``), Worksheet
 (from a worklist import, otherwise blank), assigned Index Kit and index
 names or sequences, Lanes, Override Cycles, and the two barcode-mismatch
 overrides (**MM i7** / **MM i5**). A sample with no index yet shows a drop
-target instead of an index cell -- see :doc:`index-assignment`. A row
+target instead of an index cell -- see :doc:`index-assignment`. The
+**Index (i5)** column is always there, even when every index kit stored is
+single-index: a sample can hold an i5 from a paste or a worklist, and the
+Sample Sheet writes it. A row
 tinted red and marked with a **!** is flagged by validation -- for any
 problem, not only a missing index -- so check :doc:`validation` for what
 it found before you rely on that row.
