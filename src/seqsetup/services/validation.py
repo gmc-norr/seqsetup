@@ -317,6 +317,9 @@ class ValidationService:
             # export states them rather than deriving them again, so the two
             # exports of one run cannot disagree (review F7).
             sheet_mismatches=dict(plan.mismatches) if plan else {},
+            lanes_without_samples=cls.lanes_without_samples(
+                run, get_lanes_for_flowcell(run.instrument_platform, run.flowcell_type,
+                                            instrument_config)),
         )
 
     @classmethod
@@ -459,6 +462,7 @@ class ValidationService:
         errors.extend(cls._validate_sample_text_hidden_characters(run))
         errors.extend(cls._validate_lane_assignments(run, total_lanes))
         errors.extend(cls._validate_no_lane_assignment(run))
+        errors.extend(cls._validate_lanes_without_samples(run, total_lanes))
         errors.extend(cls._validate_index_length_consistency(run, all_lanes))
         errors.extend(cls._validate_mixed_indexing(run, all_lanes))
         errors.extend(cls._validate_run_cycles_vs_index_length(run))
@@ -807,6 +811,45 @@ class ValidationService:
                         )
                     )
         return errors
+
+    @staticmethod
+    def lanes_without_samples(run: SequencingRun, total_lanes: int) -> list[int]:
+        """The flow cell's lanes that no sample is on. The Sample Sheet names
+        no sample on such a lane, so no read from it can be assigned to a
+        sample. A sample with no lane is on every lane. Mark Ready asks
+        before going on (design note
+        docs/design/2026-10-17-lanes-without-samples-design.md)."""
+        covered: set[int] = set()
+        for sample in run.samples:
+            if not sample.lanes:
+                return []
+            covered.update(sample.lanes)
+        if not covered:
+            return []
+        return [lane for lane in range(1, total_lanes + 1) if lane not in covered]
+
+    @classmethod
+    def _validate_lanes_without_samples(
+        cls,
+        run: SequencingRun,
+        total_lanes: int,
+    ) -> list[ConfigurationError]:
+        """A warning naming the lanes no sample is on."""
+        lanes = cls.lanes_without_samples(run, total_lanes)
+        if not lanes:
+            return []
+        if len(lanes) == 1:
+            message = (f"Lane {lanes[0]} has no samples: the Sample Sheet names no sample on "
+                       f"it, so no read from it can be assigned to a sample.")
+        else:
+            named = ", ".join(str(lane) for lane in lanes[:-1]) + f" and {lanes[-1]}"
+            message = (f"Lanes {named} have no samples: the Sample Sheet names no sample on "
+                       f"them, so no read from them can be assigned to a sample.")
+        return [ConfigurationError(
+            severity=ValidationSeverity.WARNING,
+            category="lanes_without_samples",
+            message=message,
+        )]
 
     @classmethod
     def _validate_no_lane_assignment(cls, run: SequencingRun) -> list[ConfigurationError]:

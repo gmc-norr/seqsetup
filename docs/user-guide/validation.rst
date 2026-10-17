@@ -23,7 +23,10 @@ have an index assigned, and -- only when there is at least one -- a badge
 for the number of errors. When any lane has a color balance warning or
 error, an amber **Color balance: N lane(s)** badge appears too -- with
 "· Mark Ready will ask" when a lane has a color balance *error* -- see
-`Color balance`_ below for what that counts. Up to ten error messages are
+`Color balance`_ below for what that counts. When a lane of the flowcell
+has no samples, an amber **Lanes without samples: 3, 4, ...** badge names
+those lanes, with "· Mark Ready will ask" (see
+:ref:`lanes-without-samples`). Up to ten error messages are
 listed directly underneath; beyond ten, the panel says how many more there
 are and points to the full validation page. Errors it finds are the same
 fixes needed to pass **Mark Ready** -- see :doc:`export`.

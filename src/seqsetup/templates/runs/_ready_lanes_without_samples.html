@@ -1,0 +1,37 @@
+{#
+   Mark-Ready question when a lane of the flow cell has no samples, swapped
+   into #ready-message (HX-Retarget). The run stays Draft until the
+   operator answers; routes/runs.py update_status accepts the answer only
+   while the run's updated_at and its empty lanes are what was shown here
+   (design note docs/design/2026-10-17-lanes-without-samples-design.md).
+
+   Asked after the color balance question (runs/_ready_color_balance.html),
+   so the form sends that answer back too: without it, answering this one
+   would bring the first back.
+
+   Inputs:
+     run:                  SequencingRun
+     lanes:                list[int] — the lanes no sample is on
+     lanes_value:          str — the same lanes, "3,4", sent back with the answer
+     color_balance_value:  str — the color balance lanes already answered, "" when none
+#}
+<div class="warning-message ready-confirm">
+    <p><strong>Lanes without samples</strong></p>
+    <p>{{ "Lane" if lanes | length == 1 else "Lanes" }} {{ lanes | join(", ") }}
+       {{ "has" if lanes | length == 1 else "have" }} no samples. The Sample Sheet names no
+       sample on {{ "it" if lanes | length == 1 else "them" }}, so no read from
+       {{ "it" if lanes | length == 1 else "them" }} can be assigned to a sample. Check the
+       Lanes column of the samples before going on.</p>
+    <form hx-post="/runs/{{ run.id }}/status/ready" data-after-row-saves="Mark Ready anyway"
+          hx-target="#run-status-bar"
+          hx-swap="outerHTML"
+          hx-disabled-elt="find button">
+        <input type="hidden" name="lanes_without_samples_confirmed_at" value="{{ run.updated_at.isoformat() }}">
+        <input type="hidden" name="lanes_without_samples" value="{{ lanes_value }}">
+        {% if color_balance_value %}
+        <input type="hidden" name="color_balance_confirmed_at" value="{{ run.updated_at.isoformat() }}">
+        <input type="hidden" name="color_balance_lanes" value="{{ color_balance_value }}">
+        {% endif %}
+        <button type="submit" class="btn btn-secondary btn-small">Mark Ready anyway</button>
+    </form>
+</div>

@@ -25,8 +25,9 @@ def _seed(app_ctx, run_id, i7, i5, test_id="WGS", indexed=True):
     pair = IndexPair(id=f"{run_id}-p", name="p",
                      index1=Index(name="i7", sequence=i7, index_type=IndexType.I7),
                      index2=Index(name="i5", sequence=i5, index_type=IndexType.I5)) if indexed else None
+    # Every lane of the 10B, so Mark Ready has no lane without samples to ask about.
     run.add_sample(Sample(id=f"{run_id}-s1", sample_id="RM-01", test_id=test_id, index_pair=pair,
-                          test_version="1" if test_id else "", lanes=[1]))
+                          test_version="1" if test_id else "", lanes=list(range(1, 9))))
     app_ctx.run_repo.save(run)
     hold_edit_lock(app_ctx, run.id)
     return run_id

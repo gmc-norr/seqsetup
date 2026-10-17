@@ -734,6 +734,9 @@ def update_status(
     ctx: AppContext = Depends(get_ctx),
     confirmed_at: Annotated[Optional[str], Form(alias="color_balance_confirmed_at")] = None,
     confirmed_lanes: Annotated[Optional[str], Form(alias="color_balance_lanes")] = None,
+    empty_confirmed_at: Annotated[
+        Optional[str], Form(alias="lanes_without_samples_confirmed_at")] = None,
+    empty_confirmed_lanes: Annotated[Optional[str], Form(alias="lanes_without_samples")] = None,
 ) -> Response:
     """POST /runs/{run_id}/status/{status} — transition run status.
 
@@ -767,6 +770,7 @@ def update_status(
         inputs_at_start = validation_inputs_version()
 
     color_balance_lanes: list[int] = []
+    empty_lanes: list[int] = []
     if new_status == RunStatus.READY:
         with _denied_if_instruments_unusable(request, run, new_status):
             validation_result = ValidationService.validate_run(
@@ -820,6 +824,42 @@ def update_status(
                 return HTMLResponse(
                     templates.env.get_template("runs/_ready_color_balance.html").render(
                         run=run, lanes=color_balance_lanes, lanes_value=shown,
+                    ),
+                    headers={
+                        "Cache-Control": "no-store",
+                        "HX-Retarget": "#ready-message",
+                        "HX-Reswap": "innerHTML",
+                    },
+                )
+
+        empty_lanes = validation_result.lanes_without_samples
+        if empty_lanes:
+            # The sheet names no sample on these lanes, so no read from them
+            # can be assigned to a sample. A lane may be left empty on
+            # purpose, so ask rather than refuse, as for color balance; the
+            # answer counts only for the run version and lanes shown (design
+            # note docs/design/2026-10-17-lanes-without-samples-design.md).
+            shown = ",".join(str(lane) for lane in empty_lanes)
+            confirmed = (
+                empty_confirmed_at == run.updated_at.isoformat()
+                and empty_confirmed_lanes == shown
+            )
+            if not confirmed:
+                audit(
+                    "run.status.denied",
+                    actor=get_username(request),
+                    target=run.id,
+                    outcome="denied",
+                    reason="lanes_without_samples_unconfirmed",
+                    attempted_status=new_status.value,
+                    lanes_without_samples=empty_lanes,
+                )
+                # Asked after the color balance question, so its form sends
+                # that answer back too.
+                return HTMLResponse(
+                    templates.env.get_template("runs/_ready_lanes_without_samples.html").render(
+                        run=run, lanes=empty_lanes, lanes_value=shown,
+                        color_balance_value=",".join(str(lane) for lane in color_balance_lanes),
                     ),
                     headers={
                         "Cache-Control": "no-store",
@@ -1189,6 +1229,7 @@ def update_status(
         from_status=previous_status,
         to_status=new_status.value,
         **({"color_balance_accepted_lanes": color_balance_lanes} if color_balance_lanes else {}),
+        **({"lanes_without_samples_accepted": empty_lanes} if empty_lanes else {}),
         # The exact test versions, kept after READY→DRAFT clears the run's
         # copy (spec 2026-10-07 group A4, §3).
         **({"test_versions": run.test_versions_used} if new_status == RunStatus.READY else {}),

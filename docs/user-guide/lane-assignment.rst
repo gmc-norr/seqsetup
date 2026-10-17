@@ -107,6 +107,24 @@ Ready** is refused until its lanes are picked.
    because lanes are assigned -- check the **Check** panel (or
    :doc:`validation`) before relying on it.
 
+.. _lanes-without-samples:
+
+Lanes without samples
+---------------------
+
+A lane of the flowcell that no sample is on gets no row in the Sample
+Sheet, so no read from it can be assigned to a sample. This happens most
+easily by leaving pasted samples in lane 1
+on a flowcell with more lanes, or by changing the flowcell after the
+samples are in: the samples keep their lanes, so samples put in both lanes
+of a ``1.5B`` are on lanes 1 and 2 only of a ``10B``.
+
+The **Check** panel shows an amber **Lanes without samples** badge naming
+those lanes, and the validation page lists them. **Mark Ready** asks
+before it goes on, under the status bar, and names the lanes; select
+**Mark Ready anyway** if the lanes are meant to be empty (see
+:doc:`export`). Otherwise put samples on them as above.
+
 Lanes in the exported Sample Sheet
 --------------------------------------
 

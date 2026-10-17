@@ -816,6 +816,14 @@ def test_ready_mark_ready(demo_page, base_url, demo):
     expect(question).to_be_visible()
     snap(page, "ready/mark-ready-color-balance", question, region=page.locator("#ready-message"))
     question.get_by_role("button", name="Mark Ready anyway").click()
+    # The four samples were pasted into lane 1, as a paste starts, so lanes
+    # 2-8 of the 10B have no samples and Mark Ready asks about them next
+    # (design note docs/design/2026-10-17-lanes-without-samples-design.md).
+    lanes_question = page.locator('#ready-message .ready-confirm:has-text("Lanes without samples")')
+    expect(lanes_question).to_be_visible()
+    snap(page, "ready/mark-ready-lanes-without-samples", lanes_question,
+         region=page.locator("#ready-message"))
+    lanes_question.get_by_role("button", name="Mark Ready anyway").click()
     page.wait_for_selector("#run-status-bar .run-status-badge.status-ready")
     snap(page, "ready/mark-ready", page.locator("#run-status-bar .run-status-badge"),
          region=page.locator("#run-status-bar"))
@@ -908,9 +916,12 @@ def test_archive_button(demo_page, base_url, demo):
     # ready, so this re-promotion is still a genuine, error-free
     # DRAFT->READY transition, not a repeat of a stale check.
     page.get_by_role("button", name="Mark Ready").click()
-    # Same four pairs, so the same color-balance errors as in
-    # test_ready_mark_ready: answer the question again (spec 2026-09-27, F13).
+    # Same four pairs in lane 1, so the same two questions as in
+    # test_ready_mark_ready: answer them again (spec 2026-09-27, F13; design
+    # note 2026-10-17-lanes-without-samples).
     page.locator("#ready-message .ready-confirm").get_by_role(
+        "button", name="Mark Ready anyway").click()
+    page.locator('#ready-message .ready-confirm:has-text("Lanes without samples")').get_by_role(
         "button", name="Mark Ready anyway").click()
     page.wait_for_selector("#run-status-bar .status-ready")
     snap(page, "archive/archive-button", page.get_by_role("button", name="Archive"),
@@ -1225,12 +1236,14 @@ def test_admin_audit_trail(demo_page, base_url, demo):
     # The times of day (the change history's, to the second) and the random
     # ID of the run made in the wizard differ per run; fixed examples keep
     # the picture the same (newest first, one per event).
+    # Two Mark Readys each asked twice (color balance, then the lanes
+    # without samples), so each left two run.status.denied rows.
     replace_text(table, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]{3,4}", [
-        "2026-03-10 10:17:04 CET", "2026-03-10 10:16:41 CET", "2026-03-10 10:16:38 CET",
-        "2026-03-10 10:15:52 CET", "2026-03-10 10:15:20 CET", "2026-03-10 10:15:17 CET",
-        "2026-03-10 10:11:30 CET"])
+        "2026-03-10 10:17:04 CET", "2026-03-10 10:16:41 CET", "2026-03-10 10:16:39 CET",
+        "2026-03-10 10:16:38 CET", "2026-03-10 10:15:52 CET", "2026-03-10 10:15:20 CET",
+        "2026-03-10 10:15:18 CET", "2026-03-10 10:15:17 CET", "2026-03-10 10:11:30 CET"])
     replace_text(table, r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                 ["3f2b8c1e-5a47-4d0e-9b6a-7c1d2e8f4a60"] * 6)
+                 ["3f2b8c1e-5a47-4d0e-9b6a-7c1d2e8f4a60"] * 8)
     snap(page, "admin/audit-trail", table, region=page.locator("#audit-page"))
 
 
