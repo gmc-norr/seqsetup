@@ -10,7 +10,10 @@ so under the shortened header its cells moved one column to the right.
 The user chose (2026-10-17) to always show the column.
 """
 
+import json
 import re
+
+import pytest
 
 from seqsetup.models.index import Index, IndexKit, IndexMode, IndexType
 from seqsetup.models.sample import Sample
@@ -82,10 +85,11 @@ class TestTheColumnIsShownWhenEveryKitIsSingleIndex:
         assert "<th>Index (i5)</th>" in _table(page)
         assert '<span class="assigned-index i5">TTTTGGGG...</span>' in _row(page, "dual")
 
-    def test_every_row_has_as_many_cells_as_the_header(self, logged_in_client, fresh_app):
+    @pytest.mark.parametrize("status", [RunStatus.DRAFT, RunStatus.READY])
+    def test_every_row_has_as_many_cells_as_the_header(self, logged_in_client, fresh_app, status):
         _app, ctx, _db = fresh_app
         _only_single_index_kits(ctx)
-        _run(ctx)
+        _run(ctx, status=status)
 
         page = logged_in_client.get("/runs/r").text
 
@@ -94,14 +98,17 @@ class TestTheColumnIsShownWhenEveryKitIsSingleIndex:
         assert _row_cells(page, "none") == header
 
     def test_a_row_redrawn_after_a_change_still_fits_the_header(self, logged_in_client, fresh_app):
+        """Clearing the i7 redraws the row in place (hx-swap outerHTML); the
+        row keeps its i5, and its cells stay under their headings."""
         _app, ctx, _db = fresh_app
         _only_single_index_kits(ctx)
         _run(ctx)
         header = _header_cells(logged_in_client.get("/runs/r").text)
 
         redrawn = logged_in_client.post(
-            "/runs/r/samples/dual/settings",
-            data={"barcode_mismatches_index1": "0", "target_setting": "1"}, headers=ORIGIN)
+            "/runs/r/samples/dual/clear-index?index_type=i7",
+            data={"target_indexes": json.dumps([["AAAACCCCGG", "TTTTGGGGCC"]])}, headers=ORIGIN)
 
         assert redrawn.status_code == 200
         assert _row_cells(redrawn.text, "dual") == header
+        assert '<span class="assigned-index i5">TTTTGGGG...</span>' in _row(redrawn.text, "dual")
