@@ -160,6 +160,7 @@ def _render_sample_row(
         "sample": sample,
         "run_id": run.id,
         "run_cycles": run.run_cycles,
+        "run_updated_at": run.updated_at,
         "show_drop_zones": show_drop_zones,
         "show_i5_column": True,
         "num_lanes": num_lanes,

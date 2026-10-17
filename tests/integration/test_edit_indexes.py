@@ -9,6 +9,7 @@ changed by accident. The change history folds away like "Add Samples".
 
 import json
 import re
+from datetime import datetime
 
 import pytest
 
@@ -251,7 +252,8 @@ class TestClearButtons:
         from seqsetup.templating import templates
 
         html = templates.env.get_template("wizard/_sample_row.html").render(
-            sample=_indexed("S1"), run_id="r1", run_cycles=None, show_drop_zones=True,
+            sample=_indexed("S1"), run_id="r1", run_cycles=None,
+            run_updated_at=datetime(2026, 10, 17, 12, 0, 0), show_drop_zones=True,
             show_i5_column=True, num_lanes=1, show_bulk_actions=False, context="add_step2",
             editable=True, show_checkboxes=None,
         )

@@ -46,6 +46,7 @@
         <tbody>
             {% for sample in samples %}
                 {% with sample=sample, run_id=run.id, run_cycles=run.run_cycles,
+                        run_updated_at=run.updated_at,
                         show_drop_zones=True, show_i5_column=show_i5_column,
                         num_lanes=1, show_bulk_actions=False,
                         context=context, editable=True, show_checkboxes=True %}
