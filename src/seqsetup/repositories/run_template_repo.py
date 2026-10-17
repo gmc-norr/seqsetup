@@ -17,8 +17,9 @@ class RunTemplateRepository(BaseRepository[RunTemplate]):
     def list_all_readable(self) -> tuple[list[RunTemplate], list[str]]:
         """Every template that can be read, and the ids of those that cannot.
 
-        One template this release cannot read -- one naming an instrument it
-        does not know (``models.sequencing_run.stored_platform``) -- must not
+        One template this release cannot read -- for example one naming an
+        instrument it does not know (``models.sequencing_run.stored_platform``)
+        -- must not
         take the Run Templates page or the New Run page down with it. The
         unreadable ids come back so the page can name them: one is never
         dropped silently (CLAUDE.md: never silently discard data). Each is

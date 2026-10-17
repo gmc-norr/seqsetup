@@ -78,10 +78,11 @@ class TestEveryReaderRefusesIt:
         assert "instrument this release does not know" in str(refused.value)
         assert repr(platform) in str(refused.value)
 
-    def test_a_listing_row(self, fresh_app):
+    @pytest.mark.parametrize("platform", [UNKNOWN, None])
+    def test_a_listing_row(self, fresh_app, platform):
         _app, ctx, db = fresh_app
         _run(ctx, "odd")
-        _name_platform(db, "runs", "odd", UNKNOWN)
+        _name_platform(db, "runs", "odd", platform)
 
         with pytest.raises(ValueError, match="instrument this release does not know"):
             RunListing.from_doc(db["runs"].find_one({"_id": "odd"}))
