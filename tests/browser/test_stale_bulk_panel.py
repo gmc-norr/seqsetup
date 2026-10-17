@@ -120,6 +120,63 @@ def test_a_test_apply_on_a_row_another_tab_changed_is_refused(
 
 
 @pytest.mark.browser
+def test_a_test_apply_sends_what_the_rows_showed(logged_in_page, base_url, app_ctx, run_id):
+    """Set test, not only Clear: both fill the same form, and only Apply
+    was covered by the Clear test."""
+    page = logged_in_page
+    _open_and_tick_both(page, base_url)
+    _the_other_tab(app_ctx, 1, test_id="EXOME", test_version="3")
+    before = _stored(app_ctx)
+
+    page.select_option("#bulk-test-id-input", "WGS")
+    page.fill("#bulk-test-version-input", "1")
+    answer = _click(page, "bulk-apply-testid", "/samples/set-test-id")
+
+    assert answer.status == 409
+    assert "target_tests" in answer.request.post_data, answer.request.post_data
+    expect(page.locator("#error-banner")).to_contain_text("SP-01")
+    assert _stored(app_ctx) == before
+
+
+@pytest.mark.browser
+def test_a_refused_row_value_is_not_sent_as_what_the_page_showed(
+        logged_in_page, base_url, app_ctx, run_id):
+    """A box shows what was typed even when the save was refused; what the
+    page *showed* is what the server last stored, which app.js keeps in the
+    box's defaultValue. Sending what the box shows would refuse an Apply
+    although nothing had changed."""
+    page = logged_in_page
+    _open_and_tick_both(page, base_url)
+
+    box = page.locator(f"#mismatch-i7-{RUN_ID}-s1")
+    box.fill("5")                          # 0, 1 or 2 only: refused, nothing stored
+    with page.expect_response(lambda r: r.url.endswith("/settings")) as refused:
+        box.press("Tab")
+    assert refused.value.status == 400
+    assert box.input_value() == "5"
+    page.fill("#bulk-mismatch-i5-input", "2")
+    answer = _click(page, "bulk-apply-mismatches", "/samples/set-mismatches")
+
+    assert answer.status == 200, answer.text()
+    assert "%5B%5B%221%22%2C%221%22%5D" in answer.request.post_data, answer.request.post_data
+    assert [row[:2] for row in _stored(app_ctx)] == [(1, 2), (1, 2)]
+
+
+@pytest.mark.browser
+def test_a_row_this_page_does_not_have_sends_nothing_at_all(
+        logged_in_page, base_url, app_ctx, run_id):
+    """Not "" and not ["", ""]: a sample really stored with no value would
+    match those, and the Apply would go through on a page that never showed
+    that row."""
+    page = logged_in_page
+    _open_and_tick_both(page, base_url)
+
+    assert page.evaluate("() => shownOverrideOfRow('no-such-row')") is None
+    assert page.evaluate("() => shownMismatchesOfRow('no-such-row')") is None
+    assert page.evaluate("() => shownTestOfRow('no-such-row')") is None
+
+
+@pytest.mark.browser
 def test_a_fresh_apply_still_works_for_all_three(logged_in_page, base_url, app_ctx, run_id):
     page = logged_in_page
     _open_and_tick_both(page, base_url)
