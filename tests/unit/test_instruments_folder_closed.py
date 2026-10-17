@@ -75,6 +75,7 @@ class TestAFolderSeqSetupMayNotEnter:
 class TestTheOtherCasesAreAsBefore:
 
     def test_a_readable_file_is_read_and_there_is_no_problem(self, project):
+        instruments._local_file_problem = "left from a start before"
         instruments._initialize_at_start()
         assert instruments._instruments
         assert instruments.local_instruments_problem() is None
