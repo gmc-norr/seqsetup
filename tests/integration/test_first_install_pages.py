@@ -22,7 +22,7 @@ class TestTheProfilesPageNamesTheMenuItem:
         assert "Admin &gt; Profiles" not in logged_in_client.get("/profiles").text
 
 
-CLOSED = ("SeqSetup may not look in /app/config (Permission denied), so "
+CLOSED = ("SeqSetup may not look in /app/config or a folder above it (Permission denied), so "
           "instruments.yaml was not read and no local instruments are loaded")
 
 
@@ -40,7 +40,9 @@ class TestTheInstrumentsPageSaysWhatWasRead:
     def test_the_page_says_how_to_put_it_right(self, logged_in_client, monkeypatch):
         monkeypatch.setattr(instruments, "_local_file_problem", CLOSED)
         page = logged_in_client.get("/admin/instruments").text
-        assert 'href="/admin/config-sync"' in page
+        # The admin menu always links Config Sync, so the box's own link is
+        # found by its text.
+        assert '<a href="/admin/config-sync" class="text-primary hover:underline">Sync instruments from GitHub</a>' in page
         assert "Installation" in page
 
     def test_a_file_that_was_read_keeps_the_note(self, logged_in_client, monkeypatch):

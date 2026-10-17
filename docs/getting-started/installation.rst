@@ -26,10 +26,12 @@ own rather than as you: the database container reads
 ``docker/mongo-init.sh``, and the application container reads ``config/``.
 On a server that keeps new files from other users -- ``umask`` prints
 ``0007``, ``0027`` or ``0077``, as on many hardened servers -- a fresh clone
-is readable by you alone, and the first start then goes wrong: MongoDB is set
-up without SeqSetup's database user, and SeqSetup loads no instruments. Make
-the two readable before the first start (neither holds a secret; the
-passwords are in ``.env`` and ``.env.db``, which stay yours alone):
+cannot be read by other users, and the first start then goes wrong: MongoDB
+is set up without SeqSetup's database user, and SeqSetup loads no
+instruments. Make the two readable before the first start, and again after
+each update of the checkout, since a ``git pull`` writes its files the same
+way. Neither holds a secret (the passwords go in ``.env`` and ``.env.db``,
+below):
 
 .. code-block:: bash
 
@@ -48,6 +50,11 @@ reads the whole of ``.env``, and it never needs the root password.
 
       cp .env.example .env
       cp .env.db.example .env.db
+      chmod 600 .env .env.db
+
+   The two will hold passwords. ``chmod 600`` keeps them to you: on a server
+   whose ``umask`` is ``0007`` or ``0027``, a copy can be read by your group
+   too.
 
 2. Fill in the required values:
 

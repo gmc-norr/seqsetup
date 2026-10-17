@@ -231,7 +231,8 @@ def _present(path: Path) -> bool:
         return False
     except PermissionError as e:
         raise LocalInstrumentsFolderClosed(
-            f"SeqSetup may not look in {path.parent} ({e.strerror}), so "
+            f"SeqSetup may not look in {path.parent} or a folder above it "
+            f"({e.strerror}), so "
             f"{path.name} was not read and no local instruments are loaded"
         ) from e
     return True

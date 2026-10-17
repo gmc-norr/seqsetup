@@ -247,6 +247,12 @@ Fill in the two environment files and start it:
 
    cp .env.example .env          # application settings and the app DB user
    cp .env.db.example .env.db    # the MongoDB root credential, mongod only
+   chmod 600 .env .env.db        # both hold passwords: yours alone
+
+   # The containers read these as users of their own; on a server whose
+   # umask keeps other users out, make them readable (see Installation).
+   chmod o+r docker/mongo-init.sh
+   chmod -R o+rX config
 
    # A session signing key, and passwords the URI and the env-file parser
    # both leave alone. Generate hex and nothing else -- see the comments in

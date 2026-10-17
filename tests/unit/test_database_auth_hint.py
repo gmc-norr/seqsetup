@@ -57,6 +57,7 @@ class TestARefusedPassword:
         assert "MONGO_APP_PASSWORD" in log
         assert "openssl rand -hex 24" in log
         assert "first start" in log
+        assert "a + as a space" in log
 
     def test_the_log_never_holds_the_password(self, connecting, caplog):
         log = connecting(18, caplog)

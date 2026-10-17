@@ -19,8 +19,8 @@
             None have been synced from GitHub, and the local configuration file was not read:
             {{ local_problem }}.
             <a href="/admin/config-sync" class="text-primary hover:underline">Sync instruments from GitHub</a>,
-            or make the <code>config</code> folder readable to SeqSetup's container
-            (see Installation in the documentation) and restart SeqSetup.
+            or make sure <code>config/instruments.yaml</code> is there and readable to
+            SeqSetup's container (see Installation in the documentation) and restart SeqSetup.
         </div>
     {% elif not synced_instruments %}
         <div class="bg-info-bg border border-primary rounded px-3 py-2">

@@ -80,8 +80,8 @@ def init_db() -> Database:
                 "Compose, MONGO_APP_PASSWORD in .env must be the password "
                 "docker/mongo-init.sh created the user with on the first start "
                 "(changing .env later does not change it), made only of letters and "
-                "digits (openssl rand -hex 24): the connection URI reads %%, @, :, / "
-                "and some other characters as something else.", e)
+                "digits (openssl rand -hex 24): the connection URI reads a %% and the "
+                "two characters after it as one other character, and a + as a space.", e)
         else:
             logger.error("Unexpected error connecting to MongoDB: %s", e)
         raise
