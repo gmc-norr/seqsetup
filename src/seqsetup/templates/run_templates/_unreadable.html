@@ -1,0 +1,13 @@
+{#
+   One plain line naming the template documents that could not be read, so
+   a template is never missing from a list without saying so (CLAUDE.md:
+   never silently discard data), as _dashboard_unreadable.html does for
+   runs. Each is logged at WARNING too; nothing is changed.
+
+   Inputs:
+     unreadable_template_ids: list[str] | None — template ids whose document raised
+#}
+{% if unreadable_template_ids %}
+{% set unreadable_count = unreadable_template_ids | length %}
+<p class="warning-message">{{ unreadable_count }} template{{ '' if unreadable_count == 1 else 's' }} could not be read and {{ 'is' if unreadable_count == 1 else 'are' }} not listed: {{ unreadable_template_ids | join(', ') }}. Nothing was changed. Ask an administrator to look at the template document{{ '' if unreadable_count == 1 else 's' }}.</p>
+{% endif %}

@@ -163,6 +163,26 @@ class InstrumentPlatform(Enum):
     NEXTSEQ_1000_2000 = "NextSeq 1000/2000"
 
 
+def stored_platform(data: dict, what: str) -> InstrumentPlatform:
+    """The instrument a stored run, listing row or template names.
+
+    One this release does not know, or none, is refused, never guessed: the
+    instrument decides the i5 direction and the sheet's settings, and a
+    document read as another instrument is written back as that one on its
+    next save. The document is then unreadable until an administrator
+    repairs it, and the lists name it (design note
+    docs/design/2026-10-17-unknown-platform-design.md).
+    """
+    raw = data.get("instrument_platform")
+    try:
+        return InstrumentPlatform(raw)
+    except ValueError:
+        raise ValueError(
+            f"{what} names an instrument this release does not know: {raw!r}. "
+            f"SeqSetup does not guess one; an administrator must repair the document."
+        ) from None
+
+
 class NovaSeqXFlowcell(Enum):
     """NovaSeq X flowcell types."""
 
@@ -522,10 +542,11 @@ class SequencingRun:
         elif updated_at is None:
             updated_at = utcnow()
 
-        # Defensive enum parsing: an unknown status or instrument_platform
-        # (e.g. from a renamed enum value in a future release, or a
-        # corrupted document) must not make an archived clinical run
-        # unloadable. Surface a warning and fall back to a safe value.
+        # Defensive enum parsing: an unknown status (e.g. from a renamed enum
+        # value in a future release, or a corrupted document) must not make
+        # an archived clinical run unloadable. Surface a warning and fall
+        # back to a safe value. An unknown instrument is refused instead
+        # (stored_platform): no instrument is a safe guess.
         raw_status = "archived" if data.get("status") == "complete" else data.get("status", "draft")
         try:
             status = RunStatus(raw_status)
@@ -542,16 +563,7 @@ class SequencingRun:
             # snapshot.
             status = RunStatus.DRAFT
 
-        raw_platform = data.get("instrument_platform", "NovaSeq X Series")
-        try:
-            platform = InstrumentPlatform(raw_platform)
-        except ValueError:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Unknown InstrumentPlatform %r in stored run %r — falling back to NOVASEQ_X",
-                raw_platform, data.get("_id") or data.get("id"),
-            )
-            platform = InstrumentPlatform.NOVASEQ_X
+        platform = stored_platform(data, f"Run {data.get('_id') or data.get('id')!r}")
 
         return cls(
             id=data.get("_id") or data["id"],

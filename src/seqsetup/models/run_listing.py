@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..utils.clock import utcnow
-from .sequencing_run import InstrumentPlatform, RunStatus, checked_sheet_targets
+from .sequencing_run import InstrumentPlatform, RunStatus, checked_sheet_targets, stored_platform
 
 
 logger = logging.getLogger(__name__)
@@ -106,9 +106,9 @@ class RunListing:
         """Build a row from a projected document.
 
         Reads every field exactly as ``SequencingRun.from_dict`` reads it —
-        the legacy ``"complete"`` status, the fallbacks for an unknown status
-        or instrument, the timestamps — so a listing never disagrees with the
-        page it links to.
+        the legacy ``"complete"`` status, the fallback for an unknown status,
+        the refusal of an unknown instrument, the timestamps — so a listing
+        never disagrees with the page it links to.
         """
         run_id = doc.get("_id") or doc["id"]
 
@@ -126,15 +126,7 @@ class RunListing:
             )
             status = RunStatus.DRAFT
 
-        raw_platform = doc.get("instrument_platform", "NovaSeq X Series")
-        try:
-            platform = InstrumentPlatform(raw_platform)
-        except ValueError:
-            logger.warning(
-                "Unknown InstrumentPlatform %r in stored run %r — falling back to NOVASEQ_X",
-                raw_platform, run_id,
-            )
-            platform = InstrumentPlatform.NOVASEQ_X
+        platform = stored_platform(doc, f"Run {run_id!r}")
 
         return cls(
             id=run_id,

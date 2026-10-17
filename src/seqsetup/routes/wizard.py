@@ -93,10 +93,10 @@ def wizard_step1(
     cycles = run.run_cycles
     index_cycle_options = get_index_cycle_options()
     # A new run may start from a template instead (see run_templates.py).
-    templates = (
-        sorted(ctx.run_template_repo.list_all(), key=lambda t: t.name.lower())
-        if new == "1" else []
+    readable, unreadable_templates = (
+        ctx.run_template_repo.list_all_readable() if new == "1" else ([], [])
     )
+    templates = sorted(readable, key=lambda t: t.name.lower())
 
     return render(request, "wizard/new_run_step1.html", {
         "run": run,
@@ -108,6 +108,7 @@ def wizard_step1(
         "kit_max_cycles": get_reagent_kit_max_cycles(run.instrument_platform, run.reagent_cycles),
         "i5_workflows": i5_workflow_names(run.instrument_platform.value),
         "is_new": new == "1",
+        "unreadable_template_ids": unreadable_templates,
         "templates": templates,
     })
 

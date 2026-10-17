@@ -12,7 +12,7 @@ from typing import Optional
 
 from .analysis import Analysis
 from .sample import Sample, checked_mismatches
-from .sequencing_run import InstrumentPlatform, RunCycles, checked_i5_workflow
+from .sequencing_run import InstrumentPlatform, RunCycles, checked_i5_workflow, stored_platform
 from ..utils.clock import utcnow
 
 
@@ -108,16 +108,7 @@ class RunTemplate:
         elif updated_at is None:
             updated_at = utcnow()
 
-        raw_platform = data.get("instrument_platform", "NovaSeq X Series")
-        try:
-            platform = InstrumentPlatform(raw_platform)
-        except ValueError:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Unknown InstrumentPlatform %r in stored template %r — falling back to NOVASEQ_X",
-                raw_platform, data.get("_id") or data.get("id"),
-            )
-            platform = InstrumentPlatform.NOVASEQ_X
+        platform = stored_platform(data, f"Template {data.get('_id') or data.get('id')!r}")
 
         return cls(
             id=data.get("_id") or data["id"],

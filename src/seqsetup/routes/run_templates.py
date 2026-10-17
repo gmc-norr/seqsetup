@@ -177,11 +177,11 @@ def _require_template_owner_or_admin(request: Request, template: RunTemplate) ->
 def list_templates(request: Request, ctx: AppContext = Depends(get_ctx)) -> Response:
     """GET /templates — org-wide template library: anyone may use a template;
     only its maker or an admin may rename or delete it."""
-    templates = sorted(
-        ctx.run_template_repo.list_all(),
-        key=lambda t: t.updated_at, reverse=True,
-    )
-    return render(request, "run_templates/list.html", {"templates": templates})
+    readable, unreadable = ctx.run_template_repo.list_all_readable()
+    templates = sorted(readable, key=lambda t: t.updated_at, reverse=True)
+    return render(request, "run_templates/list.html", {
+        "templates": templates, "unreadable_template_ids": unreadable,
+    })
 
 
 @router.post("/templates/{template_id}", response_class=Response)
