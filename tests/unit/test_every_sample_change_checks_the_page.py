@@ -50,18 +50,15 @@ def _changing_routes(source: str) -> dict:
 
 def _reads_a_shown_value(function) -> bool:
     """Whether the handler reads a target_* field: a parameter of that name
-    (a DELETE's hx-vals arrive as query parameters), or a string the code
-    itself uses. Its docstring and comments do not count."""
+    (a DELETE's hx-vals arrive as query parameters), or a string in its code
+    that is exactly such a name. A comment is not code, and a docstring that
+    mentions one among other words is not that name."""
     arguments = function.args.args + function.args.kwonlyargs
     if any(_SHOWN_VALUE_FIELD.match(argument.arg) for argument in arguments):
         return True
-    body = function.body
-    if (body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)
-            and isinstance(body[0].value.value, str)):
-        body = body[1:]
     return any(isinstance(node, ast.Constant) and isinstance(node.value, str)
                and _SHOWN_VALUE_FIELD.match(node.value)
-               for statement in body for node in ast.walk(statement))
+               for statement in function.body for node in ast.walk(statement))
 
 
 class TestEverySampleChangeChecksThePage:
