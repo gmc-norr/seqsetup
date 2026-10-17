@@ -349,8 +349,8 @@ without a version, or a version without a test, is refused. The panel's
 **Override Cycles** rows are covered in :doc:`lane-assignment` and
 :doc:`override-cycles`.
 
-Every row of the panel sends what the page was showing for the values it
-changes. If any ticked sample's values were changed in another tab (or by
+The panel's **Lanes**, **Mismatches**, **Override Cycles** and **Test ID**
+rows each send what the page was showing for the values they change. If any ticked sample's values were changed in another tab (or by
 someone else) since the page was loaded, nothing is saved and the page names
 them -- for example *"Nothing was saved. Reload the page and try again. The
 barcode mismatches on these samples changed since this page was loaded:

@@ -611,6 +611,33 @@ function toggleBulkLanes() {
     });
 }
 
+// A row's Override Cycles or mismatch box saves on blur, and clicking a
+// panel button is that blur: the save and the Apply would go out together,
+// and the Apply would say what the page knew before the save landed -- a
+// 409 on one tab where nobody else changed anything. So the two panel
+// actions whose value comes from a row box -- Mismatches and Override
+// Cycles, Apply and Clear/Auto alike -- wait for the row saves to be
+// answered first (F3 keeps them in unsentRowSettings and rowSettingSaves)
+// and read the boxes after that. Lanes and Test do not: they read a data-*
+// attribute on the row, which a row box's save cannot change. A save whose answer
+// never comes gives up after the same wait a row action gives it, and the
+// server refuses the Apply if it was stale after all. (First review of
+// step 2, Important 1.)
+function whenRowSavesAreAnswered(go) {
+    const settled = () => unsentRowSaves() === 0 && rowSettingSaves.size === 0;
+    if (settled()) {
+        go();
+        return;
+    }
+    const gaveUpAt = Date.now() + window.rowSaveWaitMs;
+    const timer = setInterval(function() {
+        if (settled() || Date.now() > gaveUpAt) {
+            clearInterval(timer);
+            go();
+        }
+    }, 50);
+}
+
 function applyBulkMismatchesForm() {
     const selectedSampleIds = getSelectedSampleIds();
     if (selectedSampleIds.length === 0) {
@@ -621,18 +648,20 @@ function applyBulkMismatchesForm() {
     const mismatchI7 = document.getElementById('bulk-mismatch-i7-input').value;
     const mismatchI5 = document.getElementById('bulk-mismatch-i5-input').value;
 
-    // Populate hidden form fields
-    document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
-    document.getElementById('bulk-mismatch-index1').value = mismatchI7;
-    document.getElementById('bulk-mismatch-index2').value = mismatchI5;
-    // Apply writes only the boxes that were filled in.
-    document.getElementById('bulk-mismatch-mode').value = 'apply';
-    // What each ticked row showed, in the same order the ids are sent.
-    document.getElementById('bulk-target-mismatches').value =
-        JSON.stringify(selectedSampleIds.map(shownMismatchesOfRow));
+    whenRowSavesAreAnswered(function() {
+        // Populate hidden form fields
+        document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
+        document.getElementById('bulk-mismatch-index1').value = mismatchI7;
+        document.getElementById('bulk-mismatch-index2').value = mismatchI5;
+        // Apply writes only the boxes that were filled in.
+        document.getElementById('bulk-mismatch-mode').value = 'apply';
+        // What each ticked row showed, in the same order the ids are sent.
+        document.getElementById('bulk-target-mismatches').value =
+            JSON.stringify(selectedSampleIds.map(shownMismatchesOfRow));
 
-    // Trigger HTMX form submission
-    htmx.trigger('#bulk-mismatches-form', 'submit');
+        // Trigger HTMX form submission
+        htmx.trigger('#bulk-mismatches-form', 'submit');
+    });
 }
 
 function clearBulkMismatchesForm() {
@@ -642,17 +671,19 @@ function clearBulkMismatchesForm() {
         return;
     }
 
-    // Populate hidden form fields with empty values to clear
-    document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
-    document.getElementById('bulk-mismatch-index1').value = '';
-    document.getElementById('bulk-mismatch-index2').value = '';
-    // Clear resets both columns; an empty box on Apply would leave them alone.
-    document.getElementById('bulk-mismatch-mode').value = 'clear';
-    document.getElementById('bulk-target-mismatches').value =
-        JSON.stringify(selectedSampleIds.map(shownMismatchesOfRow));
+    whenRowSavesAreAnswered(function() {
+        // Populate hidden form fields with empty values to clear
+        document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
+        document.getElementById('bulk-mismatch-index1').value = '';
+        document.getElementById('bulk-mismatch-index2').value = '';
+        // Clear resets both columns; an empty box on Apply would leave them alone.
+        document.getElementById('bulk-mismatch-mode').value = 'clear';
+        document.getElementById('bulk-target-mismatches').value =
+            JSON.stringify(selectedSampleIds.map(shownMismatchesOfRow));
 
-    // Trigger HTMX form submission
-    htmx.trigger('#bulk-mismatches-form', 'submit');
+        // Trigger HTMX form submission
+        htmx.trigger('#bulk-mismatches-form', 'submit');
+    });
 }
 
 function applyBulkOverrideCyclesForm() {
@@ -664,14 +695,16 @@ function applyBulkOverrideCyclesForm() {
 
     const overrideCycles = document.getElementById('bulk-override-cycles-input').value;
 
-    // Populate hidden form fields
-    document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
-    document.getElementById('bulk-override-cycles').value = overrideCycles;
-    document.getElementById('bulk-target-override-cycles').value =
-        JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
+    whenRowSavesAreAnswered(function() {
+        // Populate hidden form fields
+        document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
+        document.getElementById('bulk-override-cycles').value = overrideCycles;
+        document.getElementById('bulk-target-override-cycles').value =
+            JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
 
-    // Trigger HTMX form submission
-    htmx.trigger('#bulk-override-form', 'submit');
+        // Trigger HTMX form submission
+        htmx.trigger('#bulk-override-form', 'submit');
+    });
 }
 
 function clearBulkOverrideCyclesForm() {
@@ -681,14 +714,16 @@ function clearBulkOverrideCyclesForm() {
         return;
     }
 
-    // Populate hidden form fields with empty value to recalculate auto
-    document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
-    document.getElementById('bulk-override-cycles').value = '';
-    document.getElementById('bulk-target-override-cycles').value =
-        JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
+    whenRowSavesAreAnswered(function() {
+        // Populate hidden form fields with empty value to recalculate auto
+        document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
+        document.getElementById('bulk-override-cycles').value = '';
+        document.getElementById('bulk-target-override-cycles').value =
+            JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
 
-    // Trigger HTMX form submission
-    htmx.trigger('#bulk-override-form', 'submit');
+        // Trigger HTMX form submission
+        htmx.trigger('#bulk-override-form', 'submit');
+    });
 }
 
 function applyBulkTestIdForm() {

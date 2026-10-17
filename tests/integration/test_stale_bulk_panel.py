@@ -60,9 +60,18 @@ def _drop_sample(ctx, sid):
 
 
 def _shown(data, field, shown):
+    """Put ``shown`` in the form as the page would: a value to encode, a raw
+    string (the unreadable cases), or None -- the field is not sent at all."""
     if shown is not None:
         data[field] = shown if isinstance(shown, str) else json.dumps(shown)
     return data
+
+
+def _rows(shown):
+    """A list of rows as JSON, or a raw string left as it is."""
+    if shown is None or isinstance(shown, str):
+        return shown
+    return [list(row) if isinstance(row, (list, tuple)) else row for row in shown]
 
 
 # A new Sample's barcode mismatches default to 1 in both columns
@@ -73,13 +82,13 @@ DEFAULT_MM = ["1", "1"]
 def _mismatches(client, sids, i7="1", i5="2", shown=(DEFAULT_MM, DEFAULT_MM), mode="apply"):
     data = _shown({"sample_ids": json.dumps(sids), "mismatch_index1": i7,
                    "mismatch_index2": i5, "mode": mode},
-                  "target_mismatches", [list(row) for row in shown] if shown and not isinstance(shown, str) else shown)
+                  "target_mismatches", _rows(shown))
     return client.post(f"/runs/{RUN}/samples/set-mismatches", data=data, headers=ORIGIN)
 
 
 def _override(client, sids, value="Y151;I10;I10;Y151", shown=("", "")):
     data = _shown({"sample_ids": json.dumps(sids), "override_cycles": value},
-                  "target_override_cycles", list(shown) if shown and not isinstance(shown, str) else shown)
+                  "target_override_cycles", _rows(shown))
     return client.post(f"/runs/{RUN}/samples/set-override-cycles", data=data, headers=ORIGIN)
 
 
@@ -87,8 +96,7 @@ def _test_id(client, sids, test="WGS", version="1", shown=(["", ""], ["", ""]), 
     data = {"sample_ids": json.dumps(sids), "test_id": test, "test_version": version}
     if only_if is not None:
         data["only_if"] = only_if
-    _shown(data, "target_tests",
-           [list(row) for row in shown] if shown and not isinstance(shown, str) else shown)
+    _shown(data, "target_tests", _rows(shown))
     return client.post(f"/runs/{RUN}/samples/set-test-id", data=data, headers=ORIGIN)
 
 
@@ -340,6 +348,37 @@ class TestTestId:
 
         assert resp.status_code == 409, resp.text[:300]
         assert resp.text == GONE
+        assert _everything(ctx) == before
+
+
+class TestAStoredCarriageReturnStillMatches:
+    """A browser turns CR and CRLF into LF when it reads an attribute back,
+    so a stored test with a carriage return in it would never match what the
+    page sends and its row could never be given another test (first review
+    of step 2, Minor 4). No path stores one today; the LIMS import only
+    strips the ends."""
+
+    def test_a_test_with_a_carriage_return_is_not_called_changed(
+            self, logged_in_client, two_rows):
+        ctx = two_rows
+        # The version cannot hold one: the model refuses it. The test can.
+        _behind_the_page(ctx, "s1", test_id="A\r\nB", test_version="1")
+
+        resp = _test_id(logged_in_client, ["s1"], test="WGS", version="1",
+                        shown=[["A\nB", "1"]])
+
+        assert resp.status_code == 200, resp.text[:300]
+        assert _tests(ctx)[0] == ("PAT1", "WGS", "1")
+
+    def test_a_test_that_really_changed_is_still_refused(self, logged_in_client, two_rows):
+        ctx = two_rows
+        _behind_the_page(ctx, "s1", test_id="A\rC", test_version="1")
+        before = _everything(ctx)
+
+        resp = _test_id(logged_in_client, ["s1"], test="WGS", version="1",
+                        shown=[["A\nB", "1"]])
+
+        assert resp.status_code == 409, resp.text[:300]
         assert _everything(ctx) == before
 
 

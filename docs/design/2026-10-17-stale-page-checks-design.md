@@ -50,8 +50,8 @@ order. Missing, unreadable, or of the wrong length → 400, nothing written.
 | step | route | field sent | compared with | what the row carries |
 |---|---|---|---|---|
 | 1 | `POST …/samples/set-lanes` | `target_lanes`: `[[1,2], [1]]` | `sample.lanes` | `data-lanes="1,2"` |
-| 2 | `POST …/samples/set-mismatches` | `target_mismatches`: `[["1","2"], ["",""]]` | `barcode_mismatches_index1/2`, **only the column the request writes** | `data-mm1`, `data-mm2` |
-| 2 | `POST …/samples/set-override-cycles` | `target_override_cycles`: `["Y151;I8;I8;Y151", ""]` | `sample.override_cycles` ("" = None) | `data-override` |
+| 2 | `POST …/samples/set-mismatches` | `target_mismatches`: `[["1","2"], ["",""]]` | `barcode_mismatches_index1/2`, **only the column the request writes** | the two boxes' `defaultValue` |
+| 2 | `POST …/samples/set-override-cycles` | `target_override_cycles`: `["Y151;I8;I8;Y151", ""]` | `sample.override_cycles` ("" = None) | the box's `defaultValue` |
 | 2 | `POST …/samples/set-test-id` | `target_tests`: `[["T","1"], ["",""]]` | `test_id`, `test_version` | `data-test-id`, `data-test-version` |
 | 3 | `POST …/samples/bulk-delete` | `target_indexes` (F8's field) | `index1_sequence`, `index2_sequence` | `data-i7`, `data-i5` |
 | 3 | `DELETE …/samples/{id}` | `target_indexes` | the same | the same |
@@ -65,10 +65,18 @@ boxes use (spec 2026-10-07 group A4 §2): a fix box says what its samples lacked
 when the page was loaded, and sends no `target_tests`. The bulk panel sends
 `target_tests` and no `only_if`; a request with neither is refused.
 
-Step 4's box is F3's code (a row save keeps typing). The box keeps the stored
-value in its `defaultValue` — `app.js` writes it on every answer — so the shown
-value is read from `defaultValue` when the request is issued, not when it is
-queued. F3's queue, its `hx-swap="none"` and its waiting actions are untouched.
+A field whose row has a box of its own (the two mismatch columns and Override
+Cycles) is **not** carried in a `data-*` attribute: that box saves with
+`hx-swap="none"` (F3, a row save keeps typing), so the row is not redrawn and
+the attribute would go stale and refuse a page where nothing had changed. The
+page reads those from the box's `defaultValue`, which `app.js` sets to the
+stored value on every answer. And because clicking a panel button is what blurs
+a row box, the Mismatches and Override Cycles actions wait for the row's saves
+to be answered before they read the boxes (`whenRowSavesAreAnswered`); F3's
+queue, its `hx-swap="none"` and its waiting actions are untouched.
+
+Step 4's box is F3's code too: its shown value is read from `defaultValue` when
+the request is issued, not when it is queued.
 
 ## The message
 

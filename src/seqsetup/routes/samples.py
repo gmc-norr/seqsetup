@@ -643,12 +643,21 @@ def _rows_with_changed_override_cycles(samples, shown: list[str]) -> list[str]:
             if (sample.override_cycles or "") != row]
 
 
+def _as_an_attribute(text: str) -> str:
+    """Text as a browser reads it back out of an HTML attribute, where CR
+    and CRLF become LF. A stored test with a carriage return in it would
+    otherwise never match what the page sends back, and its row could never
+    be given another test (first review of step 2, Minor 4)."""
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _rows_with_changed_test(samples, shown: list[list[str]]) -> list[str]:
     """The Sample IDs of the rows whose stored test, or its version, is not
     the one the page says it showed. A test and its version are set
     together, so both are compared."""
     return [sample.sample_id for sample, row in zip(samples, shown, strict=True)
-            if [sample.test_id or "", sample.test_version or ""] != row]
+            if [_as_an_attribute(sample.test_id),
+                _as_an_attribute(sample.test_version)] != row]
 
 
 def _rows_with_changed_lanes(samples, shown: list[list[int]]) -> list[str]:

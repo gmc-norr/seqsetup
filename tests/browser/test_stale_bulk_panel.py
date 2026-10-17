@@ -199,7 +199,9 @@ def test_a_row_box_saved_first_does_not_make_the_panel_stale(
         logged_in_page, base_url, app_ctx, run_id):
     """A row's own MM box saves without redrawing the row (hx-swap="none",
     F3), so an attribute on the row would go stale: the panel reads the
-    box's defaultValue, which app.js sets to the stored value."""
+    box's defaultValue, which app.js sets to the stored value. The Apply
+    writes the same column the row box changed, so the comparison really
+    looks at it (first review of step 2, Important 2)."""
     page = logged_in_page
     page.goto(f"{base_url}/runs/{RUN_ID}")
     page.wait_for_load_state("networkidle")
@@ -211,8 +213,40 @@ def test_a_row_box_saved_first_does_not_make_the_panel_stale(
     page.wait_for_function("() => !document.querySelector('.htmx-request')")
     for n in (1, 2):
         page.locator(f"#sample-row-{RUN_ID}-s{n} .sample-checkbox").check()
+    page.fill("#bulk-mismatch-i7-input", "2")
     page.fill("#bulk-mismatch-i5-input", "2")
     answer = _click(page, "bulk-apply-mismatches", "/samples/set-mismatches")
 
     assert answer.status == 200, answer.text()
-    assert [row[:2] for row in _stored(app_ctx)] == [(0, 2), (1, 2)]
+    sent = answer.request.post_data
+    assert "%5B%5B%220%22%2C%221%22%5D" in sent, sent      # [["0","1"], …: the saved 0
+    assert [row[:2] for row in _stored(app_ctx)] == [(2, 2), (2, 2)]
+
+
+@pytest.mark.browser
+def test_an_apply_clicked_while_a_row_box_saves_waits_for_it(
+        logged_in_page, base_url, app_ctx, run_id):
+    """Clicking Apply is what blurs a row box, so the box's save and the
+    Apply would otherwise go out together and the Apply would say what the
+    page knew before the save landed -- a 409 on one tab where nobody else
+    changed anything. The panel waits for the row's saves first (first
+    review of step 2, Important 1)."""
+    page = logged_in_page
+    page.goto(f"{base_url}/runs/{RUN_ID}")
+    page.wait_for_load_state("networkidle")
+    page.route("**/settings", lambda route: (page.wait_for_timeout(400), route.continue_()))
+    seen = []
+    page.on("response", lambda r: seen.append(("settings answered", r.url))
+            if r.url.endswith("/settings") else None)
+    page.on("request", lambda r: seen.append(("apply sent", r.url))
+            if r.url.endswith("/set-mismatches") else None)
+
+    for n in (1, 2):
+        page.locator(f"#sample-row-{RUN_ID}-s{n} .sample-checkbox").check()
+    page.fill("#bulk-mismatch-i7-input", "2")
+    page.locator(f"#mismatch-i7-{RUN_ID}-s1").fill("0")   # saves on the click below
+    answer = _click(page, "bulk-apply-mismatches", "/samples/set-mismatches")
+
+    assert answer.status == 200, answer.text()
+    assert [what for what, _url in seen] == ["settings answered", "apply sent"], seen
+    assert [row[:2] for row in _stored(app_ctx)] == [(2, 1), (2, 1)]
