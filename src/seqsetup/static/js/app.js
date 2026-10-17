@@ -1265,11 +1265,14 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
 // (data-run-version, wizard/_sample_row.html: the run's updated_at, which
 // moves on with every save, written so that text order is time order), and
 // the page keeps the newest version it has shown for each row -- a row
-// drawn, or a box's save answered in it. A row drawn from an older one is
-// noted, asking for a reload, until the row is drawn again from one at
-// least as new. (Fresh review of 38ca108, P2; design note
+// drawn, or a box's save answered in it. The rows one answer draws from an
+// older version are noted together, asking for a reload; the note goes once
+// each of them is drawn again from a version at least as new, or is gone
+// from the page. (Fresh review of 38ca108, P2; design note
 // docs/design/2026-10-17-row-version-design.md.)
 const rowShownVersion = new Map();   // row id -> newest version shown
+const olderRowNotes = new Map();     // row id -> the note naming it
+const rowsLeftInNote = new Map();    // note -> how many of its rows it still names
 
 function runVersionOf(element) {
     const row = element.closest('tr[data-run-version]');
@@ -1282,38 +1285,51 @@ function rowShownAt(row, version) {
     if (newest === undefined || version > newest) rowShownVersion.set(row.id, version);
 }
 
+function unnoteOlderRow(rowId) {
+    const note = olderRowNotes.get(rowId);
+    if (!note) return;
+    olderRowNotes.delete(rowId);
+    const left = rowsLeftInNote.get(note) - 1;
+    if (left > 0) {
+        rowsLeftInNote.set(note, left);
+        return;
+    }
+    rowsLeftInNote.delete(note);
+    note.remove();
+}
+
 // False when the row was drawn from an older version than the page has
 // already shown for it.
 function rowDrawn(row) {
     const newest = rowShownVersion.get(row.id);
     if (newest !== undefined && row.dataset.runVersion < newest) return false;
     rowShownVersion.set(row.id, row.dataset.runVersion);
-    const notes = document.getElementById('row-setting-notes');
-    if (notes) {
-        for (const note of [...notes.children]) {
-            if (note.dataset.row === row.id) note.remove();
-        }
-    }
+    unnoteOlderRow(row.id);
     return true;
 }
 
-function noteOlderRows(rows) {
+// One note for the rows one answer drew older, naming the first few: a
+// whole table answered out of order would otherwise write a note per row.
+function noteOlderRows(drawn) {
+    const rows = drawn.filter(row => !olderRowNotes.has(row.id));
+    if (rows.length === 0) return;
+    const names = rows.slice(0, 3).map(rowSampleName).join(', ');
+    const message = rows.length === 1
+        ? `The row of ${names} was redrawn from before a change saved on this page, `
+            + 'and may show an older value: reload the page.'
+        : `The rows of ${names}${rows.length > 3 ? ` and ${rows.length - 3} more` : ''} `
+            + 'were redrawn from before a change saved on this page, and may show older '
+            + 'values: reload the page.';
     const notes = document.getElementById('row-setting-notes');
-    const messages = rows.map(row => `The row of ${rowSampleName(row)} was redrawn from `
-        + 'before a change saved on this page, and may show an older value: reload the page.');
     if (notes) {
-        rows.forEach(function(row, k) {
-            if ([...notes.children].some(note => note.dataset.row === row.id)) return;
-            const div = document.createElement('div');
-            div.className = 'error-message';
-            div.dataset.row = row.id;
-            div.textContent = messages[k];
-            notes.appendChild(div);
-        });
+        const div = document.createElement('div');
+        div.className = 'error-message';
+        div.textContent = message;
+        notes.appendChild(div);
+        for (const row of rows) olderRowNotes.set(row.id, div);
+        rowsLeftInNote.set(div, rows.length);
     }
-    showErrorToast(rows.length === 1 ? messages[0] : `${rows.length} sample rows were `
-        + 'redrawn from before a change saved on this page, and may show older values: '
-        + 'reload the page.');
+    showErrorToast(message);
 }
 
 for (const row of document.querySelectorAll('tr[data-run-version]')) rowDrawn(row);
@@ -1329,6 +1345,9 @@ new MutationObserver(function(records) {
                 if (row.isConnected && !rowDrawn(row)) older.push(row);
             }
         }
+    }
+    for (const rowId of [...olderRowNotes.keys()]) {
+        if (!document.getElementById(rowId)) unnoteOlderRow(rowId);  // the sample was deleted
     }
     if (older.length > 0) noteOlderRows(older);
 }).observe(document.body, {childList: true, subtree: true});

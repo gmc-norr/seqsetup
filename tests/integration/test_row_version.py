@@ -16,8 +16,6 @@ import pytest
 
 from .test_group_a1 import ORIGIN, RUN, _run, _stored
 
-ORIGIN = ORIGIN
-
 
 @pytest.fixture
 def two_rows(fresh_app):

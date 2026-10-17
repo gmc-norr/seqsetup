@@ -37,9 +37,12 @@ show what its Sample Sheet will hold.
   single-row answers (`_render_sample_row`) and both tables. A caller that
   left it out would fail to render, not draw a row without a version.
 - `app.js` keeps the newest version the page has shown for each row: a row
-  drawn (page load, any swap), or a box's save answered in it. A row drawn
-  from an older version is noted in `#row-setting-notes`, asking for a
-  reload, until the row is drawn again from one at least as new.
+  drawn (page load, any swap), or a box's save answered in it. The rows one
+  answer draws from an older version are named together in one note in
+  `#row-setting-notes` (the first three, then a count: a whole table
+  answered out of order would otherwise write a note per row), asking for a
+  reload. The note goes once each of its rows is drawn again from a version
+  at least as new, or is deleted.
 - A save's answer that finds its box replaced asks for a reload only when the
   redrawn row is older than the save.
 

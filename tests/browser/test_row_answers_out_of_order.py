@@ -133,36 +133,55 @@ class TestARowDrawnBeforeASaveAnsweredFirst:
         expect(i7).to_have_value("0")
         expect(notes).not_to_contain_text("MUT-01")
 
-    def test_a_table_drawn_before_the_save_asks_for_a_reload_for_that_row(
+    def test_a_table_drawn_before_two_saves_names_those_rows_in_one_note(
             self, logged_in_page, base_url, mutable_run_id, app_ctx):
         """A bulk Apply of lanes redraws the whole table, and does not wait
         for the rows' saves (only the panel's Mismatches and Override Cycles
-        do)."""
+        do). Rows 1 and 3 save their i7 mismatch; row 2 takes the Apply."""
         page = logged_in_page
         _open(page, base_url, mutable_run_id)
         _row(page, mutable_run_id, 2).locator(".sample-checkbox").check()
         page.locator('.bulk-lane-checkbox[value="2"]').check()
         saves = _hold(page, "**/samples/**/settings", reach_the_server=False)
         applies = _hold(page, "**/samples/set-lanes", reach_the_server=True)
-        i7 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index1"]')
-        _type(page, i7, "0")
-        _until_held(page, saves)
+        boxes = [_row(page, mutable_run_id, n).locator('input[name="barcode_mismatches_index1"]')
+                 for n in (1, 3)]
+        for n, box in enumerate(boxes, start=1):
+            _type(page, box, "0")
+            _until_held(page, saves, n)
         page.locator('[data-action="bulk-apply-lanes"]').click()
         _until_held(page, applies)          # the server stored the Apply
-        saves[0][0].continue_()             # ... and then the save
-        page.wait_for_function("""(id) => document.querySelector(
-            `#${id} input[name="barcode_mismatches_index1"]`).defaultValue === '0'""",
-            arg=f"sample-row-{mutable_run_id}-s1")
+        for n, (route, _) in enumerate(saves, start=1):
+            route.continue_()               # ... and then the saves, one at a time:
+            page.wait_for_function(         # two at once, one would be refused
+                f"() => rowSettingSaves.size === {len(saves) - n}")
         route, answer = applies[0]
         route.fulfill(response=answer)      # the Apply's answer comes last
         page.unroute("**/samples/**/settings")
         page.unroute("**/samples/set-lanes")
 
         expect(_row(page, mutable_run_id, 2).locator(".lanes-display")).to_contain_text("2")
-        expect(i7).to_have_value("1")
+        for box in boxes:
+            expect(box).to_have_value("1")
+        notes = page.locator("#row-setting-notes > div")
+        expect(notes).to_have_count(1)
+        expect(notes).to_contain_text("The rows of MUT-01, MUT-03 were redrawn")
+        expect(notes).not_to_contain_text("MUT-02")
+
+    def test_the_note_goes_with_the_deleted_sample(
+            self, logged_in_page, base_url, mutable_run_id, app_ctx):
+        page = logged_in_page
+        self._cross(page, base_url, mutable_run_id)
         notes = page.locator("#row-setting-notes")
         expect(notes).to_contain_text("MUT-01")
-        expect(notes).not_to_contain_text("MUT-02")
+
+        page.once("dialog", lambda dialog: dialog.accept())
+        with page.expect_response(lambda r: r.request.method == "DELETE" and r.status == 200):
+            _row(page, mutable_run_id).locator('button[title="Delete sample"]').click()
+        _handled(page)
+
+        expect(_row(page, mutable_run_id)).to_have_count(0)
+        expect(notes).to_be_empty()
 
 
 @pytest.mark.browser
@@ -188,6 +207,7 @@ class TestASaveAnsweredAfterARowDrawnLater:
         with page.expect_request_finished(_a_settings_request):
             route.fulfill(response=answer)  # the save's answer comes last
         page.unroute("**/samples/**/settings")
+        page.wait_for_function("() => rowSettingSaves.size === 0")  # and is handled
 
         assert _stored(app_ctx, mutable_run_id).override_cycles is None
         expect(override).to_have_value("")
