@@ -538,16 +538,28 @@ body {
     color: var(--text-muted);
 }
 
-/* The index cells show every base of the sequence and cut nothing: no
-   max-width, no overflow, no text-overflow. One line per sequence --
-   a DNA sequence split across two lines is easy to misread -- and
-   #sample-section scrolls sideways when the table grows wider than it
-   (later list #1, 2026-10-18). */
 .index-cell {
     font-family: monospace;
     font-size: 0.8rem;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+}
+
+/* The index is never cut, like the Sample ID above it: two 10-base indexes
+   can differ only after base 8, and the sample table is where a person
+   checks that each sample carries the index it should (later list #1,
+   2026-10-18). One line per sequence -- a DNA sequence split across two
+   lines is easy to misread -- so the table grows wider instead and the
+   page scrolls sideways.
+
+   Said out loud rather than left to "the rule above sets no max-width":
+   the positional .sample-table td:nth-child(2..4) rule carries the same
+   specificity as a class rule, so which one wins depends on which comes
+   later in this file. */
+.sample-table td.index-cell {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
 }
 
 .actions {

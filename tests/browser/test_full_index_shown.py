@@ -56,26 +56,62 @@ def _cell(page, run_id, n, which):
     return page.locator(f"#sample-row-{run_id}-s{n} .assigned-index.{which}")
 
 
-# The sequence span can be clipped by itself or by any box between it and
-# #sample-section, which is the one box allowed to hide content: it scrolls,
-# so what is outside it is one scroll away rather than gone. A max-width plus
-# overflow:hidden on the <td> cut the sequence while leaving the span's own
-# scrollWidth equal to its clientWidth, so checking the span alone missed it.
+# "Every base on the screen" has to survive more than a shorter string: the
+# span can be hidden, blanked or cut by CSS without the HTML changing at all.
+#
+# A box hides part of its content when it overflows its own client box AND
+# does not scroll in that direction -- a scroll container (overflow auto or
+# scroll) puts the rest one scroll away rather than taking it away. That is
+# why the walk goes all the way to <body> and asks each box what it does,
+# instead of stopping at #sample-section: measured, #sample-section does not
+# scroll on the run page (#main.main-content is the scroller), so stopping
+# there would have skipped a clip put on #sample-section itself.
 _CLIPPERS = """el => {
     const bad = [];
-    for (let n = el; n && n.id !== 'sample-section'; n = n.parentElement) {
-        if (n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1) {
-            bad.push(n.tagName.toLowerCase() + '.' + (n.className || '(none)'));
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+        const st = getComputedStyle(n);
+        const scrolls = o => o === 'auto' || o === 'scroll';
+        if (n.scrollWidth > n.clientWidth + 1 && !scrolls(st.overflowX)) {
+            bad.push(n.tagName.toLowerCase() + '.' + (n.className || '(none)') + ' (width)');
+        }
+        if (n.scrollHeight > n.clientHeight + 1 && !scrolls(st.overflowY)) {
+            bad.push(n.tagName.toLowerCase() + '.' + (n.className || '(none)') + ' (height)');
         }
     }
     return bad;
 }"""
 
+# The span may also be there, unclipped, and still unreadable: zero opacity,
+# a zero font size, ink the colour of the paper, a clip-path over it, or the
+# text pushed out of its box by an indent. to_be_visible() catches
+# display:none, visibility:hidden and a zero-size box; these catch the rest.
+_UNREADABLE = """el => {
+    const bad = [];
+    const st = getComputedStyle(el);
+    if (parseFloat(st.opacity) < 0.99) bad.push('opacity ' + st.opacity);
+    if (parseFloat(st.fontSize) < 8) bad.push('font-size ' + st.fontSize);
+    if (st.clipPath && st.clipPath !== 'none') bad.push('clip-path ' + st.clipPath);
+    if (st.textIndent && parseFloat(st.textIndent) !== 0) bad.push('text-indent ' + st.textIndent);
+    let bg = 'rgba(0, 0, 0, 0)';
+    for (let n = el; n && bg === 'rgba(0, 0, 0, 0)'; n = n.parentElement) {
+        bg = getComputedStyle(n).backgroundColor;
+    }
+    if (st.color === bg) bad.push('colour equals background ' + bg);
+    // The text's own box must fit inside the span's: a wider range means
+    // the span shows a part of the sequence, whatever its scrollWidth says.
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const t = r.getBoundingClientRect(), b = el.getBoundingClientRect();
+    if (t.width > b.width + 1 || t.left < b.left - 1 || t.right > b.right + 1) {
+        bad.push('text box ' + Math.round(t.width) + 'px in a ' + Math.round(b.width) + 'px span');
+    }
+    return bad;
+}"""
 
-def _clippers(cell):
-    """The boxes from the sequence span up to #sample-section that hide part
-    of their content. Empty means every base is on the screen."""
-    return cell.evaluate(_CLIPPERS)
+
+def _unreadable(cell):
+    """Every reason the sequence in ``cell`` cannot be read. Empty is good."""
+    return cell.evaluate(_CLIPPERS) + cell.evaluate(_UNREADABLE)
 
 
 @pytest.mark.browser
@@ -87,9 +123,10 @@ def test_every_base_is_on_the_screen(logged_in_page, base_url, long_index_run_id
     for n, (i7, i5) in enumerate(((I7_A, I5_A), (I7_B, I5_B)), start=1):
         for which, seq in (("i7", i7), ("i5", i5)):
             cell = _cell(page, long_index_run_id, n, which)
+            expect(cell).to_be_visible()
             expect(cell).to_have_text(seq)
-            clipped = _clippers(cell)
-            assert not clipped, f"sample {n} {which} sequence is clipped by {clipped}"
+            hidden = _unreadable(cell)
+            assert not hidden, f"sample {n} {which} sequence cannot be read: {hidden}"
 
 
 @pytest.mark.browser
