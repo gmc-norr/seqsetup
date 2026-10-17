@@ -98,6 +98,11 @@ lanes, says that no read from them can be assigned to a sample, and offers
 trail. A run with both is asked about color balance first, then about its
 lanes.
 
+.. figure:: /_static/screenshots/ready/mark-ready-lanes-without-samples.png
+   :alt: The "Lanes without samples" question under the status bar, naming lanes 2 to 8, with a "Mark Ready anyway" button.
+
+   The lanes question, outlined.
+
 A message Mark Ready shows stays under the status bar until the run's
 status changes; an error from a save that was refused stays in the red
 banner at the top of the page, even after the run becomes Ready -- read
