@@ -597,7 +597,8 @@ Application profiles and test profiles reach SeqSetup in exactly one way:
 synced in from a GitHub repository, from **Admin > Config Sync**. There is
 no form to create or edit a profile directly in the app -- write the YAML
 (the local files under ``config/profiles/`` in this repository are examples
-of the format to use), push it to your own repository, and sync.
+of the format to use), push it to your own repository, and sync. SeqSetup
+reads the repository without signing in to GitHub, so it must be public.
 
 .. figure:: /_static/screenshots/admin/config-sync.png
    :alt: The GitHub Config Sync form, with a repository URL and branch filled in and the Save Configuration button outlined.

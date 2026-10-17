@@ -638,7 +638,10 @@ Common issues:
 - MongoDB not reachable: Ensure the MongoDB container is running and the
   URI is correct
 - Port already in use: Change the port mapping in docker-compose.yml
-- Permission denied on config volume: Check file permissions
+- Permission denied on config volume, or Admin > Instruments says the local
+  configuration file was not read: the application container runs as a user
+  of its own, so ``config/`` must be readable by other users -- see
+  :doc:`installation`
 
 Cannot connect to MongoDB
 ~~~~~~~~~~~~~~~~~~~~~~~~~

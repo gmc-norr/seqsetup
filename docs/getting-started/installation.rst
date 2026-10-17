@@ -21,6 +21,21 @@ Docker Compose is the recommended way to run a fully functional instance.
    git clone <repository-url>
    cd seqsetup
 
+The two containers read two things from this checkout, each as a user of its
+own rather than as you: the database container reads
+``docker/mongo-init.sh``, and the application container reads ``config/``.
+On a server that keeps new files from other users -- ``umask`` prints
+``0007``, ``0027`` or ``0077``, as on many hardened servers -- a fresh clone
+is readable by you alone, and the first start then goes wrong: MongoDB is set
+up without SeqSetup's database user, and SeqSetup loads no instruments. Make
+the two readable before the first start (neither holds a secret; the
+passwords are in ``.env`` and ``.env.db``, which stay yours alone):
+
+.. code-block:: bash
+
+   chmod o+r docker/mongo-init.sh
+   chmod -R o+rX config
+
 ``docker-compose.yml`` will not start without a ``.env`` file in the same
 directory -- four settings have no default, and Compose aborts immediately
 if any of them is unset -- nor without a ``.env.db`` file, which holds the
@@ -78,6 +93,25 @@ The application will be available at ``http://localhost:5001``.
 
 No admin account exists yet at this point -- see
 :ref:`docker-admin-bootstrap` below before you try to log in.
+
+.. note::
+   If the first start stops with ``dependency failed to start: container
+   ... mongodb ... is unhealthy``, and ``docker compose logs mongodb`` shows
+   ``mongo-init.sh: Permission denied``, the ``chmod`` above was missed.
+   MongoDB sets itself up once, on its first start, so making the file
+   readable now is not enough: the database has to be set up again. On a
+   first install nothing is stored in it yet, so remove it and start again:
+
+   .. code-block:: bash
+
+      chmod o+r docker/mongo-init.sh
+      chmod -R o+rX config
+      docker compose down -v
+      docker compose up --build -d
+
+   .. warning::
+      ``docker compose down -v`` deletes the database and every run in it.
+      Use it only on a first install.
 
 To run in the background:
 
