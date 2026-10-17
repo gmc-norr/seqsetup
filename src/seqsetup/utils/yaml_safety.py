@@ -83,9 +83,16 @@ class DuplicateKeyError(ValueError):
 
 
 class _UniqueKeySafeLoader(_NoAnchorSafeLoader):
-    """``_NoAnchorSafeLoader`` that also refuses a key given twice in one mapping."""
+    """``_NoAnchorSafeLoader`` that also refuses a key given twice in one mapping.
+
+    The mapping is flattened first, so a merge key (``<<``, which needs no
+    anchor when written inline) cannot hide a repeat, and a key that a merge
+    and the mapping both give counts as given twice.
+    """
 
     def construct_mapping(self, node, deep=False):
+        if isinstance(node, yaml.MappingNode):
+            self.flatten_mapping(node)
         seen: set[str] = set()
         for key_node, _value_node in node.value:
             if isinstance(key_node, yaml.ScalarNode):

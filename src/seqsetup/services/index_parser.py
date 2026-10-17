@@ -66,7 +66,7 @@ def _names(names: list) -> str:
 
 def _repeated(names: list) -> RepeatedNames:
     return RepeatedNames(
-        f"The file gives {_names(names)} twice in one list, so nothing was saved: the "
+        f"The file gives {_names(list(dict.fromkeys(names)))} twice in one list, so nothing was saved: the "
         f"second would replace the first without a word. Give each index its own name."
     )
 
@@ -289,9 +289,9 @@ class IndexParser:
             data = safe_load_unique_keys(content)
         except DuplicateKeyError as repeated:
             raise RepeatedNames(
-                f"The file gives {_quoted(repeated.key)} twice in one section (line "
-                f"{repeated.line}), so nothing was saved: the second would replace the "
-                f"first without a word. Give each index its own name."
+                f"The file gives the key {_quoted(repeated.key)} twice in one section "
+                f"(line {repeated.line}), so nothing was saved: the second would replace "
+                f"the first without a word."
             ) from None
 
         if not data:
@@ -414,14 +414,35 @@ class IndexParser:
                     f"The file's {label} list ({keys}) is not written as name: sequence "
                     f"lines, so nothing was saved."
                 )
-            not_text = [name for name, seq in indexes.items()
-                        if not isinstance(name, str) or not isinstance(seq, str)]
-            if not_text:
+            names_not_text = [name for name in indexes if not isinstance(name, str)]
+            if names_not_text:
                 raise IndexNamesNotText(
-                    f"YAML does not read these {label} names, or their sequences, as text: "
-                    f"{_names(not_text)}. Nothing was saved. Put each name in quotes, for "
-                    f"example '012': ACGTACGT (unquoted, 012 is read as the number 10)."
+                    f"YAML does not read these {label} names as text, so nothing was saved: "
+                    f"it read them as {_names(names_not_text)}. A name made only of digits "
+                    f"(012 is read as the number 10), or one of yes, no, true, false, on, "
+                    f"off or null, is not text to YAML. Put each such name in quotes, for "
+                    f"example '012': ACGTACGT."
                 )
+            sequences_not_text = [name for name, seq in indexes.items() if not isinstance(seq, str)]
+            if sequences_not_text:
+                raise IndexNamesNotText(
+                    f"These {label} indexes have a sequence that is empty or not text, so "
+                    f"nothing was saved: {_names(sequences_not_text)}. Write each sequence "
+                    f"out, for example A: ACGTACGT."
+                )
+        # A name with spaces around it is the same name to anyone reading the
+        # panel, so it is kept without them and counts as a repeat.
+        repeated: list[str] = []
+        for indexes in (i7_indexes, i5_indexes):
+            stripped: dict[str, str] = {}
+            for name, seq in indexes.items():
+                if name.strip() in stripped:
+                    repeated.append(name.strip())
+                stripped[name.strip()] = seq
+            indexes.clear()
+            indexes.update(stripped)
+        if repeated:
+            raise _repeated(repeated)
 
         # Auto-detect mode if not specified
         if index_mode is None:
@@ -504,7 +525,7 @@ class IndexParser:
 
             elif current_section == "Indices":
                 if len(parts) >= 3:
-                    name, seq, index_num = parts[0], parts[1], parts[2]
+                    name, seq, index_num = parts[0].strip(), parts[1].strip(), parts[2].strip()
                     if index_num == "1":
                         if name in i7_indexes:
                             repeated.append(name)

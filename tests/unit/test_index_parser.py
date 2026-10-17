@@ -701,15 +701,62 @@ class TestARepeatedNameIsRefused:
     def test_anywhere_in_a_seqsetup_yaml(self):
         content = "name: Kit\nversion: '1.0'\nversion: '2.0'\nindex_mode: single\ni7_indexes:\n  - name: A\n    sequence: ACGTACGT\n"
 
-        with pytest.raises(RepeatedNames, match="'version'"):
+        with pytest.raises(RepeatedNames) as refused:
             IndexParser.parse_from_content(content, "kit.yaml", index_mode=IndexMode.SINGLE)
 
+        assert "the key 'version'" in str(refused.value)
+        assert "index its own name" not in str(refused.value)
+
+    @pytest.mark.parametrize("filename", ["kit", "kit.txt"])
+    def test_in_a_yaml_file_without_a_yaml_name(self, filename):
+        content = "Name: Old kit\nIndexSequences:\n  i7Index1:\n    A: ACGTACGT\n    A: CCCCCCCC\n  i5Index2:\n    A: TTGTACGT\n"
+
+        with pytest.raises(RepeatedNames, match="'A'"):
+            IndexParser.parse_from_content(content, filename, index_mode=IndexMode.UNIQUE_DUAL)
+
+    @pytest.mark.parametrize("merge", ["{<<: {A: ACGTACGT, A: CCCCCCCC}}", "{<<: [{A: ACGTACGT}, {A: CCCCCCCC}]}"])
+    def test_a_merge_key_does_not_hide_one(self, merge):
+        content = f"Name: Old kit\nIndexSequences:\n  i7Index1: {merge}\n  i5Index2:\n    A: TTGTACGT\n"
+
+        with pytest.raises(RepeatedNames, match="'A'"):
+            IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
+
     @pytest.mark.parametrize("mode", [IndexMode.UNIQUE_DUAL, IndexMode.COMBINATORIAL, IndexMode.SINGLE])
-    def test_in_a_tsv_list(self, mode):
-        content = _illumina_tsv({"A": "ACGTACGT"}, {"A": "TTGTACGT"}) + "\nA\tCCCCCCCC\t1"
+    @pytest.mark.parametrize("index_number", ["1", "2"])
+    def test_in_a_tsv_list(self, mode, index_number):
+        content = _illumina_tsv({"A": "ACGTACGT"}, {"A": "TTGTACGT"}) + f"\nA\tCCCCCCCC\t{index_number}"
 
         with pytest.raises(RepeatedNames, match="'A'"):
             IndexParser.parse_from_content(content, "old.tsv", index_mode=mode)
+
+    def test_a_name_given_three_times_is_named_once(self):
+        content = _illumina_tsv({"A": "ACGTACGT"}, {"A": "TTGTACGT"}) + "\nA\tCCCCCCCC\t1\nA\tGGGGGGGG\t1"
+
+        with pytest.raises(RepeatedNames) as refused:
+            IndexParser.parse_from_content(content, "old.tsv", index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert str(refused.value).count("'A'") == 1
+
+    def test_spaces_around_a_tsv_name_do_not_make_another_name(self):
+        content = _illumina_tsv({"A": "ACGTACGT"}, {"A": "TTGTACGT"}) + "\nA \tCCCCCCCC\t1"
+
+        with pytest.raises(RepeatedNames, match="'A'"):
+            IndexParser.parse_from_content(content, "old.tsv", index_mode=IndexMode.SINGLE)
+
+    def test_spaces_around_a_yaml_name_do_not_make_another_name(self):
+        content = "Name: Old kit\nIndexSequences:\n  i7Index1:\n    A: ACGTACGT\n    'A ': CCCCCCCC\n"
+
+        with pytest.raises(RepeatedNames, match="'A'"):
+            IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.SINGLE)
+
+    @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
+    def test_a_name_with_spaces_around_it_is_kept_without_them(self, make, filename):
+        content = make({"A": "ACGTACGT"}, {"A": "TTGTACGT"}).replace("A:", "'A ':", 1) if filename.endswith(".yaml") \
+            else make({"A": "ACGTACGT"}, {"A": "TTGTACGT"}).replace("A\t", "A \t", 1)
+
+        kit = IndexParser.parse_from_content(content, filename, index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert [(p.name, p.index1.name, p.index2.name) for p in kit.index_pairs] == [("A", "A", "A")]
 
     def test_one_name_for_an_i7_and_an_i5_is_not_repeated(self):
         kit = IndexParser.parse_from_content(_illumina_tsv({"A": "ACGTACGT"}, {"A": "TTGTACGT"}), "old.tsv",
@@ -730,6 +777,26 @@ class TestIndexNamesMustBeText:
 
         with pytest.raises(IndexNamesNotText, match="quote"):
             IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
+
+    @pytest.mark.parametrize("mode", [IndexMode.UNIQUE_DUAL, IndexMode.COMBINATORIAL, IndexMode.SINGLE])
+    def test_in_every_mode_saying_what_yaml_read(self, mode):
+        content = "Name: Old kit\nIndexSequences:\n  i7Index1:\n    yes: ACGTACGT\n  i5Index2:\n    A: TTGTACGT\n"
+
+        with pytest.raises(IndexNamesNotText) as refused:
+            IndexParser.parse_from_content(content, "old.yaml", index_mode=mode)
+
+        message = str(refused.value)
+        assert "True" in message and "yes" in message and "quote" in message
+
+    @pytest.mark.parametrize("value", ["", "12345678"])
+    def test_a_sequence_that_is_not_text_is_named_as_a_sequence(self, value):
+        content = f"Name: Old kit\nIndexSequences:\n  i7Index1:\n    A: {value}\n  i5Index2:\n    A: TTGTACGT\n"
+
+        with pytest.raises(IndexNamesNotText) as refused:
+            IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
+
+        message = str(refused.value)
+        assert "sequence" in message and "'A'" in message and "name in quotes" not in message
 
     def test_a_list_instead_of_names_is_refused(self):
         content = "Name: Old kit\nIndexSequences:\n  i7Index1:\n    - ACGTACGT\n  i5Index2:\n    A: TTGTACGT\n"

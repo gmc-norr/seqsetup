@@ -77,3 +77,13 @@ class TestAKitFileIsNotPairedByAGuess:
         assert ctx.index_kit_repo.list_all() == []
         (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
         assert (row.outcome, row.details["reason"]) == ("failure", "repeated_names")
+
+    def test_a_name_that_is_not_text_is_refused_and_audited(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+
+        resp = _upload(logged_in_client, SAME_NAMES.replace(b"D701:", b"012:"))
+
+        assert "HX-Redirect" not in resp.headers and "quote" in resp.text
+        assert ctx.index_kit_repo.list_all() == []
+        (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
+        assert (row.outcome, row.details["reason"]) == ("failure", "index_names_not_text")
