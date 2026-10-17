@@ -45,7 +45,30 @@ Before a kit is saved, SeqSetup checks, in order:
    A file that looks binary is rejected outright: index kits must be plain
    text.
 3. **Parsing** -- a file that fails to parse in the selected format is
-   rejected with a generic "check the format and try again" message. A kit
+   rejected with a generic "check the format and try again" message. In
+   **Unique Dual** mode an Illumina YAML or TSV file, which lists its i7 and
+   i5 indexes apart, is paired by name: an i7 only with the i5 of the same
+   name. A file whose names do not pair up is refused and the indexes left
+   without a partner are named (*"The file's i7 and i5 indexes do not pair
+   up by name, so nothing was saved. ... No i5 has the same name as these
+   i7: 'D701', 'D702'. No i7 has the same name as these i5: 'D501',
+   'D502'. If any i7 may go with any i5, upload the kit as Combinatorial.
+   ..."*); a file with no i5 at all is told to upload as **Single** if the
+   kit is i7 only. SeqSetup once guessed pairs from names that look alike
+   -- ``D701`` with ``D501`` -- and so saved a combinatorial kit as fixed
+   pairs, offering a sample an i5 its tube does not have. It cannot tell a
+   combinatorial kit whose i7 and i5 happen to share names (``1`` to ``8``
+   on both sides) from one of fixed pairs, so pick the mode the kit really
+   is. In any mode, a name given twice in one list of a YAML or TSV file is
+   refused, naming it: only the second entry was kept, so the first index
+   vanished and its name carried the other's sequence. Spaces around a
+   name are dropped, so ``D701`` and ``D701 `` are one name given twice. A
+   key given twice anywhere in a YAML file is refused the same way. An
+   Illumina YAML
+   file whose index names YAML does not read as text -- an unquoted ``012``
+   is the number 10, ``yes`` is true -- is refused too; quote such names.
+   So is one whose sequence is empty or not text. A
+   kit
    name or version made only of dots (``.``, ``..``) is refused at this step
    too, whether it came from the form or from the file: the name and the
    version are the kit's place in the URL of its own detail, download and

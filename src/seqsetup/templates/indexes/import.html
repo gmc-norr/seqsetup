@@ -102,9 +102,10 @@
     <details class="bg-slate-50 border rounded-lg p-4">
         <summary class="font-medium cursor-pointer">File format help</summary>
         <div class="mt-3 space-y-2 text-sm text-slate-700">
-            <p><strong>YAML</strong>: structured with <code>kit_name</code>, <code>kit_version</code>, <code>index_mode</code>, <code>indexes</code> or <code>index_pairs</code> sections.</p>
-            <p><strong>CSV/TSV</strong>: header row with columns like <code>name, sequence</code> (single) or <code>name, i7_sequence, i5_sequence</code> (dual) or <code>i7_name, i7_sequence, i5_name, i5_sequence</code> (combinatorial).</p>
-            <p>See the project documentation for examples.</p>
+            <p><strong>YAML</strong>: SeqSetup's own format, as <strong>Download YAML</strong> writes it (<code>name</code>, <code>version</code>, then <code>index_pairs</code> or <code>i7_indexes</code> / <code>i5_indexes</code>; the <strong>Index mode</strong> picked above is used, not the file's <code>index_mode</code>, which must still be one of the three), or Illumina's (<code>Name</code>, <code>Version</code>, <code>IndexSequences</code> with <code>i7Index1</code> and <code>i5Index2</code>; quote a name made only of digits, such as <code>'012'</code>).</p>
+            <p><strong>CSV</strong>: a header row <code>name,index,index2</code>, one pair per row (leave out <code>index2</code> for Single); or, for Combinatorial, an <code>[i7]</code> and an <code>[i5]</code> section (in lower case), each with <code>name,sequence</code>.</p>
+            <p><strong>TSV</strong>: Illumina's <code>[IndexKit]</code> and <code>[Indices]</code> sections, separated by tabs; each index line is its name, its sequence, and 1 (i7) or 2 (i5).</p>
+            <p>In Unique Dual mode, an Illumina YAML or TSV file's i7 and i5 are paired only when they have the same name. A file whose names do not pair up is refused, naming them: upload it as Combinatorial, or as a CSV with each pair on one row. A name given twice in one list is refused too; spaces around a name do not make it another name. SeqSetup cannot tell a combinatorial kit whose i7 and i5 happen to share names from one of fixed pairs: pick the mode the kit really is.</p>
         </div>
     </details>
 

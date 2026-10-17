@@ -8,9 +8,99 @@ from typing import Optional
 
 import yaml
 
-from ..utils.yaml_safety import safe_load_strict
+from ..utils.yaml_safety import DuplicateKeyError, safe_load_strict, safe_load_unique_keys
 
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
+
+
+class KitFileRefused(ValueError):
+    """A kit file refused for a fault of its own, which the upload route
+    shows in full and audits under ``reason``."""
+
+    reason = "kit_file_refused"
+
+
+class UnpairedIndexes(KitFileRefused):
+    """A Unique Dual kit file whose i7 and i5 indexes do not pair up by name.
+
+    An Illumina YAML or TSV file lists its i7 and i5 indexes apart; an i7 is
+    paired only with the i5 of the same name. Pairs were once guessed from
+    names that look alike (D701 with D501, -A with -B, _A with _B), so a
+    combinatorial kit was saved as fixed pairs and a sample could be given an
+    i5 its tube does not have.
+    """
+
+    reason = "unpaired_indexes"
+
+
+class RepeatedNames(KitFileRefused):
+    """A kit file that gives one name twice in one list. Only the second
+    entry was kept: the first index vanished and its name carried the
+    other's sequence."""
+
+    reason = "repeated_names"
+
+
+class IndexNamesNotText(KitFileRefused):
+    """An Illumina YAML file whose index names or sequences YAML does not
+    read as text: an unquoted 012 is the number 10 and yes is true, so two
+    names written differently could be taken as one."""
+
+    reason = "index_names_not_text"
+
+
+_UNPAIRED_SHOWN = 10
+_NAME_SHOWN = 40
+
+
+def _quoted(name) -> str:
+    text = str(name)
+    return f"'{text[:_NAME_SHOWN]}…'" if len(text) > _NAME_SHOWN else f"'{text}'"
+
+
+def _names(names: list) -> str:
+    shown = ", ".join(_quoted(name) for name in names[:_UNPAIRED_SHOWN])
+    more = len(names) - _UNPAIRED_SHOWN
+    return f"{shown} and {more} more" if more > 0 else shown
+
+
+def _repeated(names: list) -> RepeatedNames:
+    return RepeatedNames(
+        f"The file gives {_names(list(dict.fromkeys(names)))} twice in one list, so nothing was saved: the "
+        f"second would replace the first without a word. Give each index its own name."
+    )
+
+
+def _pairs_by_same_name(kit_name: str, i7_indexes: dict, i5_indexes: dict) -> list[IndexPair]:
+    """Pair each i7 with the i5 of the same name, or raise UnpairedIndexes
+    naming every index left without one. Nothing is guessed or dropped."""
+    if i7_indexes and not i5_indexes:
+        raise UnpairedIndexes(
+            "The file has no i5 indexes, so it is not a Unique Dual kit and nothing was "
+            "saved. If the kit is i7 only, upload it as Single; otherwise check the file's "
+            "i5 list (i5Index2 in YAML, IndexNumber 2 in TSV)."
+        )
+    no_i5 = [name for name in i7_indexes if name not in i5_indexes]
+    no_i7 = [name for name in i5_indexes if name not in i7_indexes]
+    if no_i5 or no_i7:
+        parts = ["The file's i7 and i5 indexes do not pair up by name, so nothing was saved. "
+                 "In Unique Dual mode an i7 is paired only with the i5 of the same name."]
+        if no_i5:
+            parts.append(f"No i5 has the same name as these i7: {_names(no_i5)}.")
+        if no_i7:
+            parts.append(f"No i7 has the same name as these i5: {_names(no_i7)}.")
+        parts.append("If any i7 may go with any i5, upload the kit as Combinatorial. For fixed "
+                     "pairs, upload a CSV with each pair's i7 and i5 on one row (name,index,index2).")
+        raise UnpairedIndexes(" ".join(parts))
+    return [
+        IndexPair(
+            id=f"{kit_name}_{name}",
+            name=name,
+            index1=Index(name=name, sequence=seq, index_type=IndexType.I7),
+            index2=Index(name=name, sequence=i5_indexes[name], index_type=IndexType.I5),
+        )
+        for name, seq in i7_indexes.items()
+    ]
 
 
 # Semantic version pattern: X.Y.Z or X.Y (where X, Y, Z are non-negative integers)
@@ -195,7 +285,14 @@ class IndexParser:
              i7Index1:
                D701: "ATTACTCG"
         """
-        data = safe_load_strict(content)
+        try:
+            data = safe_load_unique_keys(content)
+        except DuplicateKeyError as repeated:
+            raise RepeatedNames(
+                f"The file gives the key {_quoted(repeated.key)} twice in one section "
+                f"(line {repeated.line}), so nothing was saved: the second would replace "
+                f"the first without a word."
+            ) from None
 
         if not data:
             raise ValueError("Empty or invalid YAML content")
@@ -310,6 +407,42 @@ class IndexParser:
         index_seqs = data.get("IndexSequences", {})
         i7_indexes = index_seqs.get("i7Index1", {}) or index_seqs.get("Index1", {})
         i5_indexes = index_seqs.get("i5Index2", {}) or index_seqs.get("Index2", {})
+        for label, keys, indexes in (("i7", "i7Index1 or Index1", i7_indexes),
+                                     ("i5", "i5Index2 or Index2", i5_indexes)):
+            if not isinstance(indexes, dict):
+                raise IndexNamesNotText(
+                    f"The file's {label} list ({keys}) is not written as name: sequence "
+                    f"lines, so nothing was saved."
+                )
+            names_not_text = [name for name in indexes if not isinstance(name, str)]
+            if names_not_text:
+                raise IndexNamesNotText(
+                    f"YAML does not read these {label} names as text, so nothing was saved: "
+                    f"it read them as {_names(names_not_text)}. A name made only of digits "
+                    f"(012 is read as the number 10), or one of yes, no, true, false, on, "
+                    f"off or null, is not text to YAML. Put each such name in quotes, for "
+                    f"example '012': ACGTACGT."
+                )
+            sequences_not_text = [name for name, seq in indexes.items() if not isinstance(seq, str)]
+            if sequences_not_text:
+                raise IndexNamesNotText(
+                    f"These {label} indexes have a sequence that is empty or not text, so "
+                    f"nothing was saved: {_names(sequences_not_text)}. Write each sequence "
+                    f"out, for example A: ACGTACGT."
+                )
+        # A name with spaces around it is the same name to anyone reading the
+        # panel, so it is kept without them and counts as a repeat.
+        repeated: list[str] = []
+        for indexes in (i7_indexes, i5_indexes):
+            stripped: dict[str, str] = {}
+            for name, seq in indexes.items():
+                if name.strip() in stripped:
+                    repeated.append(name.strip())
+                stripped[name.strip()] = seq
+            indexes.clear()
+            indexes.update(stripped)
+        if repeated:
+            raise _repeated(repeated)
 
         # Auto-detect mode if not specified
         if index_mode is None:
@@ -336,35 +469,7 @@ class IndexParser:
             for name, seq in i7_indexes.items():
                 kit.i7_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I7))
         else:
-            # Build index pairs for unique_dual mode
-            for i7_name, i7_seq in i7_indexes.items():
-                index1 = Index(name=i7_name, sequence=i7_seq, index_type=IndexType.I7)
-
-                # Try to find matching i5 index
-                index2 = None
-                potential_i5_names = [
-                    i7_name,
-                    i7_name.replace("D7", "D5"),
-                    i7_name.replace("-A", "-B"),
-                    i7_name.replace("_A", "_B"),
-                ]
-
-                for i5_name in potential_i5_names:
-                    if i5_name in i5_indexes:
-                        index2 = Index(
-                            name=i5_name,
-                            sequence=i5_indexes[i5_name],
-                            index_type=IndexType.I5,
-                        )
-                        break
-
-                pair = IndexPair(
-                    id=f"{kit.name}_{i7_name}",
-                    name=i7_name,
-                    index1=index1,
-                    index2=index2,
-                )
-                kit.index_pairs.append(pair)
+            kit.index_pairs.extend(_pairs_by_same_name(kit.name, i7_indexes, i5_indexes))
 
         return kit
 
@@ -395,6 +500,7 @@ class IndexParser:
         kit_name = default_name
         kit_version = "1.0"
         kit_description = ""
+        repeated: list[str] = []
 
         for line in lines:
             line = line.strip()
@@ -419,11 +525,18 @@ class IndexParser:
 
             elif current_section == "Indices":
                 if len(parts) >= 3:
-                    name, seq, index_num = parts[0], parts[1], parts[2]
+                    name, seq, index_num = parts[0].strip(), parts[1].strip(), parts[2].strip()
                     if index_num == "1":
+                        if name in i7_indexes:
+                            repeated.append(name)
                         i7_indexes[name] = seq
                     elif index_num == "2":
+                        if name in i5_indexes:
+                            repeated.append(name)
                         i5_indexes[name] = seq
+
+        if repeated:
+            raise _repeated(repeated)
 
         # Auto-detect mode if not specified
         if index_mode is None:
@@ -450,23 +563,7 @@ class IndexParser:
             for name, seq in i7_indexes.items():
                 kit.i7_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I7))
         else:
-            # Build index pairs for unique_dual mode
-            for name, seq in i7_indexes.items():
-                index1 = Index(name=name, sequence=seq, index_type=IndexType.I7)
-                index2 = None
-                if name in i5_indexes:
-                    index2 = Index(
-                        name=name, sequence=i5_indexes[name], index_type=IndexType.I5
-                    )
-
-                kit.index_pairs.append(
-                    IndexPair(
-                        id=f"{kit.name}_{name}",
-                        name=name,
-                        index1=index1,
-                        index2=index2,
-                    )
-                )
+            kit.index_pairs.extend(_pairs_by_same_name(kit.name, i7_indexes, i5_indexes))
 
         return kit
 
