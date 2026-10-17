@@ -1,15 +1,19 @@
 """Repository for SequencingRun database operations."""
 
 import logging
+import re
 from datetime import datetime
+from typing import Optional
 
 from ..data.instruments import get_default_cycles
+from ..models.run_listing import RunListing
 from ..models.sequencing_run import (
     InstrumentPlatform,
     RunCycles,
     RunStatus,
     SequencingRun,
 )
+from ..utils.clock import utcnow
 from .base import BaseRepository, ConflictError
 
 
@@ -61,6 +65,117 @@ class RunRepository(BaseRepository[SequencingRun]):
         docs = self.collection.find({"status": status})
         return [SequencingRun.from_dict(doc) for doc in docs]
 
+    # ----------------------------------------------------------------
+    # Listings: a row at a time, never a whole run
+    # (docs/design/2026-10-17-listing-summaries-design.md)
+    # ----------------------------------------------------------------
+
+    def _listing_pipeline(
+        self,
+        match: Optional[dict] = None,
+        *,
+        newest_first: bool = False,
+        limit: Optional[int] = None,
+        skip: int = 0,
+        with_sample_ids: bool = False,
+    ) -> list[dict]:
+        """The stages that build listing rows in the database.
+
+        The sort key is the stored ``updated_at``, or now when a document has
+        none — which is what ``SequencingRun.from_dict`` gives such a run, so
+        the order is the one the whole-run listings produced.
+        """
+        projection = RunListing.projection(with_sample_ids=with_sample_ids)
+        projection["_listing_sort"] = {"$ifNull": ["$updated_at", utcnow().isoformat()]}
+        pipeline: list[dict] = []
+        if match is not None:
+            pipeline.append({"$match": match})
+        pipeline.append({"$project": projection})
+        if newest_first:
+            pipeline.append({"$sort": {"_listing_sort": -1}})
+        if skip:
+            pipeline.append({"$skip": skip})
+        if limit is not None:
+            pipeline.append({"$limit": limit})
+        return pipeline
+
+    def list_summaries(
+        self,
+        status: Optional[str] = None,
+        *,
+        newest_first: bool = False,
+        limit: Optional[int] = None,
+        skip: int = 0,
+    ) -> list[RunListing]:
+        """Listing rows, without loading a single sample.
+
+        Raises on a document whose row cannot be built, exactly as
+        ``list_by_status`` does: this serves ``GET /api/runs`` and
+        ``/served-runs``, where a quietly shortened list would change what an
+        external clinical consumer receives.
+
+        ``status`` is matched as stored, so the legacy ``"complete"`` is not
+        an ``"archived"`` run here — again exactly as ``list_by_status``.
+        """
+        pipeline = self._listing_pipeline(
+            {"status": status} if status is not None else None,
+            newest_first=newest_first, limit=limit, skip=skip,
+        )
+        return [RunListing.from_doc(doc) for doc in self.collection.aggregate(pipeline)]
+
+    def list_readable_summaries(self) -> tuple[list[RunListing], list[str]]:
+        """Every run as a listing row, and the ids of the ones that do not
+        read — the dashboard's pair, matching ``list_all_readable``.
+
+        A row that cannot be built is named, never dropped (CLAUDE.md: never
+        silently discard data). A row reads none of the samples, so a run
+        whose samples cannot be read is listed here and fails when it is
+        opened, which is the one behaviour this change alters (see the design
+        note).
+        """
+        listings: list[RunListing] = []
+        unreadable: list[str] = []
+        for doc in self.collection.aggregate(self._listing_pipeline()):
+            try:
+                listings.append(RunListing.from_doc(doc))
+            except Exception as exc:
+                run_id = str(doc.get("_id") or "") or "(a run document with no id)"
+                logger.warning("Run %s could not be listed: %s", run_id, exc)
+                unreadable.append(run_id)
+        return listings, unreadable
+
+    def search_summaries(self, query: str) -> tuple[list[RunListing], dict[str, list[str]]]:
+        """Runs whose name, or any sample ID, contains ``query`` (ignoring
+        case), newest first, and for each the sample IDs that matched.
+
+        The match is made in the database, over a projection that reads one
+        field of each sample — ``sample_id``, the field it matches on — and
+        nothing else. ``query`` is escaped, so it is a plain substring as it
+        was when the search ran in Python.
+        """
+        pattern = re.escape(query)
+        match = {"$or": [
+            {"run_name": {"$regex": pattern, "$options": "i"}},
+            {"samples.sample_id": {"$regex": pattern, "$options": "i"}},
+        ]}
+        pipeline = self._listing_pipeline(match, newest_first=True, with_sample_ids=True)
+        listings: list[RunListing] = []
+        matched: dict[str, list[str]] = {}
+        lowered = query.lower()
+        for doc in self.collection.aggregate(pipeline):
+            listing = RunListing.from_doc(doc)
+            listings.append(listing)
+            matched[listing.id] = [
+                sample.get("sample_id") for sample in (doc.get("samples") or [])
+                if lowered in (sample.get("sample_id") or "").lower()
+            ]
+        return listings, matched
+
+    def count_summaries(self, status: Optional[str] = None) -> int:
+        """How many runs a listing of ``status`` would have, counted in the
+        database — no document is read."""
+        return self.collection.count_documents({"status": status} if status is not None else {})
+
     def save(self, run: SequencingRun) -> None:
         """Insert or update a run with optimistic-locking on updated_at.
 
@@ -76,6 +191,7 @@ class RunRepository(BaseRepository[SequencingRun]):
         updated_at so the next save of the same instance still has a valid
         version token.
         """
+        self._refuse_a_listing(run, "saved")
         item_id = self._get_id(run)
         doc = run.to_dict()
         doc["_id"] = item_id
@@ -107,6 +223,21 @@ class RunRepository(BaseRepository[SequencingRun]):
                 f"Refresh to see the latest version and reapply your changes."
             )
         run._loaded_updated_at = run.updated_at
+
+    @staticmethod
+    def _refuse_a_listing(run, what: str) -> None:
+        """A listing row is not a run and must never be written as one.
+
+        ``RunListing`` holds no samples and no export manifest, so writing
+        one back would erase a Ready run's stored Sample Sheet. The guard is
+        here, in the repository, so no caller has to remember
+        (docs/design/2026-10-17-listing-summaries-design.md).
+        """
+        if not isinstance(run, SequencingRun):
+            raise TypeError(
+                f"{type(run).__name__} is not a SequencingRun and cannot be {what}; "
+                f"a listing row holds no samples and no export manifest"
+            )
 
     def mark_changed(self, run_id: str, when: datetime, by: str) -> bool:
         """Move a Draft's stored version (``updated_at``) on without changing
@@ -142,6 +273,7 @@ class RunRepository(BaseRepository[SequencingRun]):
         a run without being told where its copy is (spec 2026-09-28 group 2a,
         F16). Which runs may be deleted, and by whom, stays in the route.
         """
+        self._refuse_a_listing(run, "deleted")
         if run._loaded_updated_at is None:
             raise ValueError(
                 f"Run {run.id} was never loaded; refusing to delete it without a version check"

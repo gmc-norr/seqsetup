@@ -45,7 +45,7 @@ def dashboard(
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """GET / — full dashboard page (default tab: draft)."""
-    runs, unreadable = ctx.run_repo.list_all_readable()
+    runs, unreadable = ctx.run_repo.list_readable_summaries()
     return render(
         request,
         "dashboard.html",
@@ -62,28 +62,13 @@ def dashboard_tab(
     """GET /dashboard/tab/{tab} — HTMX fragment swap for tab buttons."""
     if tab not in _VALID_TABS:
         tab = "draft"
-    runs, unreadable = ctx.run_repo.list_all_readable()
+    runs, unreadable = ctx.run_repo.list_readable_summaries()
     return render(
         request,
         "dashboard.html",
         {"runs": runs, "unreadable_run_ids": unreadable, "active_tab": tab},
         block_name="dashboard_content",
     )
-
-
-def _search_runs(runs: list[SequencingRun], query: str) -> tuple[list[SequencingRun], dict[str, list[str]]]:
-    """Runs whose name, or any sample ID, contains ``query`` (ignoring
-    case), newest first, and for each run the sample IDs that matched."""
-    q = query.lower()
-    found: list[SequencingRun] = []
-    matched: dict[str, list[str]] = {}
-    for run in runs:
-        samples = [s.sample_id for s in run.samples if q in (s.sample_id or "").lower()]
-        if samples or q in (run.run_name or "").lower():
-            found.append(run)
-            matched[run.id] = samples
-    found.sort(key=lambda r: r.updated_at, reverse=True)
-    return found, matched
 
 
 @router.get("/dashboard/search", response_class=HTMLResponse)
@@ -95,10 +80,13 @@ def dashboard_search(
     """GET /dashboard/search?q= — runs whose name or a sample ID contains q,
     in every status. Read-only. An empty query gives back the tabs."""
     query = sanitize_string(q, 256)
-    runs, unreadable = ctx.run_repo.list_all_readable()
+    runs, unreadable = ctx.run_repo.list_readable_summaries()
     search = None
     if query:
-        found, matched = _search_runs(runs, query)
+        # Matched in the database, over a projection that reads one field of
+        # each sample — the one it matches on (docs/design/
+        # 2026-10-17-listing-summaries-design.md).
+        found, matched = ctx.run_repo.search_summaries(query)
         search = {"query": query, "runs": found, "matched": matched}
     return render(
         request,
@@ -139,7 +127,7 @@ def archive_run(
         target=run.id,
         from_status=previous_status,
     )
-    runs, unreadable = ctx.run_repo.list_all_readable()
+    runs, unreadable = ctx.run_repo.list_readable_summaries()
     return render(
         request,
         "dashboard.html",
@@ -230,7 +218,7 @@ def delete_run(
         kept_copy=copy is not None,
         **copy_detail,
     )
-    runs, unreadable = ctx.run_repo.list_all_readable()
+    runs, unreadable = ctx.run_repo.list_readable_summaries()
     return render(
         request,
         "dashboard.html",

@@ -113,13 +113,18 @@ _SWAGGER_INIT_JS = """window.onload = function() {
 
 
 def _run_summary(run) -> RunSummary:
-    """Convert a domain SequencingRun dataclass into the API DTO.
+    """Convert a run — or a ``RunListing`` row — into the API DTO.
 
     Deliberately omits samples, generated exports, and PDF bytes — those
     are only returned by the explicit per-run endpoints. A token-holder
     that just wants to enumerate runs shouldn't bulk-dump finalized
-    clinical payloads in a single request.
+    clinical payloads in a single request. The list endpoint hands in
+    listing rows, which never held them in the first place
+    (docs/design/2026-10-17-listing-summaries-design.md).
     """
+    count = getattr(run, "sample_count", None)
+    if count is None:
+        count = len(run.samples) if run.samples else 0
     return RunSummary(
         id=run.id,
         run_name=run.run_name,
@@ -129,7 +134,7 @@ def _run_summary(run) -> RunSummary:
         created_at=as_utc(run.created_at),
         updated_at=as_utc(run.updated_at),
         created_by=run.created_by,
-        sample_count=len(run.samples) if run.samples else 0,
+        sample_count=count,
         target=run.sheet_targets or None,
     )
 
@@ -288,11 +293,13 @@ def create_api_app(ctx: AppContext) -> FastAPI:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid status. Only 'ready' and 'archived' are allowed via API.",
             )
-        runs = ctx.run_repo.list_by_status(status_filter)
-        # Deterministic ordering — newest first by updated_at.
-        runs.sort(key=lambda r: r.updated_at or r.created_at, reverse=True)
-        total = len(runs)
-        page = runs[offset:offset + limit]
+        # Listing rows, not whole runs, with the order, the offset and the
+        # limit done in the database — the limit used to be applied after
+        # every run had been loaded (docs/design/
+        # 2026-10-17-listing-summaries-design.md).
+        total = ctx.run_repo.count_summaries(status_filter)
+        page = ctx.run_repo.list_summaries(
+            status_filter, newest_first=True, limit=limit, skip=offset)
         audit(
             "api.runs.listed",
             actor=api_actor(token),

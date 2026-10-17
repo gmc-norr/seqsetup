@@ -169,9 +169,11 @@ def _served_files(ctx, run, actor: str = "") -> list[ServedFile]:
 def served_runs(request: Request, status: str = "ready", ctx: AppContext = Depends(get_ctx)) -> Response:
     if status not in _STATUSES:
         raise HTTPException(status_code=400, detail=_BAD_STATUS)
-    runs = ctx.run_repo.list_by_status(status)
-    # The API's order: newest change first (api/app.py list_runs).
-    runs.sort(key=lambda r: r.updated_at or r.created_at, reverse=True)
+    # Listing rows, not whole runs: the page shows a name, an instrument, a
+    # flow cell, a sample count and a date (docs/design/
+    # 2026-10-17-listing-summaries-design.md). The API's order: newest change
+    # first (api/app.py list_runs), done in the database.
+    runs = ctx.run_repo.list_summaries(status, newest_first=True)
     return render(request, "served_runs/list.html", {"runs": runs, "status": status})
 
 
