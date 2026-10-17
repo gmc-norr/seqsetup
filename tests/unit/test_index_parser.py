@@ -3,7 +3,8 @@
 import pytest
 
 from seqsetup.models.index import IndexMode
-from seqsetup.services.index_parser import IndexParser, UnpairedIndexes
+from seqsetup.services.index_parser import (IndexNamesNotText, IndexParser, RepeatedNames,
+                                            UnpairedIndexes)
 
 
 class TestIndexParser:
@@ -604,27 +605,20 @@ class TestUniqueDualPairsOnlyByTheSameName:
     -A -> -B, _A -> _B, as substrings): a guessed pair puts an i5 in the
     Sample Sheet that the sample's tube does not have."""
 
+    @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
     @pytest.mark.parametrize("i7, i5", [
         (I7, I5),
         ({"Index01-A": "ATTACTCG"}, {"Index01-B": "TATAGCCT"}),
         ({"Index01_A": "ATTACTCG"}, {"Index01_B": "TATAGCCT"}),
         ({"AD7X": "ATTACTCG"}, {"AD5X": "TATAGCCT"}),
     ])
-    def test_a_yaml_file_with_names_that_only_look_alike_is_refused(self, i7, i5):
+    def test_names_that_only_look_alike_are_refused(self, make, filename, i7, i5):
         with pytest.raises(UnpairedIndexes) as refused:
-            IndexParser.parse_from_content(_illumina_yaml(i7, i5), "old.yaml",
-                                           index_mode=IndexMode.UNIQUE_DUAL)
+            IndexParser.parse_from_content(make(i7, i5), filename, index_mode=IndexMode.UNIQUE_DUAL)
 
         message = str(refused.value)
-        assert all(name in message for name in [*i7, *i5])
+        assert all(f"'{name}'" in message for name in [*i7, *i5])
         assert "Combinatorial" in message
-
-    def test_a_tsv_file_with_names_that_do_not_match_is_refused(self):
-        with pytest.raises(UnpairedIndexes) as refused:
-            IndexParser.parse_from_content(_illumina_tsv(I7, I5), "old.tsv",
-                                           index_mode=IndexMode.UNIQUE_DUAL)
-
-        assert all(name in str(refused.value) for name in [*I7, *I5])
 
     @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
     def test_an_i5_left_over_is_refused_not_dropped(self, make, filename):
@@ -644,8 +638,8 @@ class TestUniqueDualPairsOnlyByTheSameName:
         assert "D702" in str(refused.value) and "D703" in str(refused.value)
 
     @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
-    def test_the_same_names_pair(self, make, filename):
-        i5 = {"D701": "TATAGCCT", "D702": "ATAGAGGC", "D703": "CCTATCCT"}
+    def test_the_same_names_pair_in_the_i7_order(self, make, filename):
+        i5 = {"D703": "CCTATCCT", "D701": "TATAGCCT", "D702": "ATAGAGGC"}
 
         kit = IndexParser.parse_from_content(make(I7, i5), filename, index_mode=IndexMode.UNIQUE_DUAL)
 
@@ -672,3 +666,80 @@ class TestUniqueDualPairsOnlyByTheSameName:
 
         message = str(refused.value)
         assert "D710" in message and "D711" not in message and "and 4 more" in message
+
+    @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
+    def test_a_file_with_no_i5_is_told_to_upload_as_single(self, make, filename):
+        with pytest.raises(UnpairedIndexes) as refused:
+            IndexParser.parse_from_content(make(I7, {}), filename, index_mode=IndexMode.UNIQUE_DUAL)
+
+        message = str(refused.value)
+        assert "no i5" in message and "Single" in message and "Combinatorial" not in message
+
+    def test_a_very_long_name_is_cut_in_the_message(self):
+        long_name = "D7" + "X" * 300
+
+        with pytest.raises(UnpairedIndexes) as refused:
+            IndexParser.parse_from_content(_illumina_yaml({long_name: "ATTACTCG"}, {"D501": "TATAGCCT"}),
+                                           "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert long_name not in str(refused.value) and long_name[:40] in str(refused.value)
+
+
+class TestARepeatedNameIsRefused:
+    """A name given twice in one list of a kit file once kept only the
+    second entry: the first index vanished, and its name carried the other's
+    sequence. The file is refused, naming it."""
+
+    def test_in_a_yaml_list(self):
+        content = "Name: Old kit\nIndexSequences:\n  i7Index1:\n    A: ACGTACGT\n    A: CCCCCCCC\n  i5Index2:\n    A: TTGTACGT\n"
+
+        with pytest.raises(RepeatedNames) as refused:
+            IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert "'A'" in str(refused.value) and "line 5" in str(refused.value)
+
+    def test_anywhere_in_a_seqsetup_yaml(self):
+        content = "name: Kit\nversion: '1.0'\nversion: '2.0'\nindex_mode: single\ni7_indexes:\n  - name: A\n    sequence: ACGTACGT\n"
+
+        with pytest.raises(RepeatedNames, match="'version'"):
+            IndexParser.parse_from_content(content, "kit.yaml", index_mode=IndexMode.SINGLE)
+
+    @pytest.mark.parametrize("mode", [IndexMode.UNIQUE_DUAL, IndexMode.COMBINATORIAL, IndexMode.SINGLE])
+    def test_in_a_tsv_list(self, mode):
+        content = _illumina_tsv({"A": "ACGTACGT"}, {"A": "TTGTACGT"}) + "\nA\tCCCCCCCC\t1"
+
+        with pytest.raises(RepeatedNames, match="'A'"):
+            IndexParser.parse_from_content(content, "old.tsv", index_mode=mode)
+
+    def test_one_name_for_an_i7_and_an_i5_is_not_repeated(self):
+        kit = IndexParser.parse_from_content(_illumina_tsv({"A": "ACGTACGT"}, {"A": "TTGTACGT"}), "old.tsv",
+                                             index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert [p.name for p in kit.index_pairs] == ["A"]
+
+
+class TestIndexNamesMustBeText:
+    """YAML reads an unquoted 012 as the number 10 and yes as true, so two
+    names written differently could be taken as one. An Illumina YAML file
+    whose index names or sequences are not text is refused."""
+
+    @pytest.mark.parametrize("i7_key, i5_key", [("012", "10"), ("yes", "1"), ("1", "'1'")])
+    def test_a_name_that_is_not_text_is_refused(self, i7_key, i5_key):
+        content = (f"Name: Old kit\nIndexSequences:\n  i7Index1:\n    {i7_key}: ACGTACGT\n"
+                   f"  i5Index2:\n    {i5_key}: TTGTACGT\n")
+
+        with pytest.raises(IndexNamesNotText, match="quote"):
+            IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
+
+    def test_a_list_instead_of_names_is_refused(self):
+        content = "Name: Old kit\nIndexSequences:\n  i7Index1:\n    - ACGTACGT\n  i5Index2:\n    A: TTGTACGT\n"
+
+        with pytest.raises(IndexNamesNotText, match="i7Index1"):
+            IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
+
+    def test_quoted_names_are_read(self):
+        content = "Name: Old kit\nIndexSequences:\n  i7Index1:\n    '012': ACGTACGT\n  i5Index2:\n    '012': TTGTACGT\n"
+
+        kit = IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert [p.name for p in kit.index_pairs] == ["012"]

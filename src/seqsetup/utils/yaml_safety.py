@@ -67,3 +67,35 @@ def safe_load_strict(text):
     parse failures — callers that already catch that keep working.
     """
     return yaml.load(text, Loader=_NoAnchorSafeLoader)
+
+
+class DuplicateKeyError(ValueError):
+    """Raised when one YAML mapping gives the same key twice.
+
+    PyYAML keeps the last value without a word, so the first is lost.
+    ``key`` is the key as written and ``line`` its 1-based line.
+    """
+
+    def __init__(self, key: str, line: int):
+        super().__init__(f"The key {key!r} is given twice in one mapping (line {line}).")
+        self.key = key
+        self.line = line
+
+
+class _UniqueKeySafeLoader(_NoAnchorSafeLoader):
+    """``_NoAnchorSafeLoader`` that also refuses a key given twice in one mapping."""
+
+    def construct_mapping(self, node, deep=False):
+        seen: set[str] = set()
+        for key_node, _value_node in node.value:
+            if isinstance(key_node, yaml.ScalarNode):
+                if key_node.value in seen:
+                    raise DuplicateKeyError(key_node.value, key_node.start_mark.line + 1)
+                seen.add(key_node.value)
+        return super().construct_mapping(node, deep=deep)
+
+
+def safe_load_unique_keys(text):
+    """``safe_load_strict`` that also raises :class:`DuplicateKeyError` when a
+    mapping gives a key twice, instead of keeping the last value."""
+    return yaml.load(text, Loader=_UniqueKeySafeLoader)

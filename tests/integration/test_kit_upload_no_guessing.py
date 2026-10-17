@@ -65,3 +65,15 @@ class TestAKitFileIsNotPairedByAGuess:
             ("D701", "ATTACTCG", "TATAGCCT"),
             ("D702", "TCCGGAGA", "ATAGAGGC"),
         ]
+
+    def test_a_name_given_twice_is_refused_and_named(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        repeated = SAME_NAMES.replace(b"    D702: TCCGGAGA\n", b"    D701: TCCGGAGA\n")
+
+        resp = _upload(logged_in_client, repeated)
+
+        assert "HX-Redirect" not in resp.headers
+        assert "D701" in resp.text and "twice" in resp.text
+        assert ctx.index_kit_repo.list_all() == []
+        (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
+        assert (row.outcome, row.details["reason"]) == ("failure", "repeated_names")

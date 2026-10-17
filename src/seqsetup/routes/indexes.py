@@ -27,7 +27,7 @@ from ..context import AppContext
 from ..models.index import IndexMode
 from ..services.audit_log import audit
 from ..services.index_kit_yaml_exporter import IndexKitYamlExporter
-from ..services.index_parser import IndexParser, UnpairedIndexes
+from ..services.index_parser import IndexParser, KitFileRefused
 from ..services.index_validator import IndexValidator
 from ..services.validation import clear_validation_cache
 from ..templating import render
@@ -232,15 +232,15 @@ async def upload_index_kit(
         # color-balance outcomes; invalidate validation cache so any future
         # validate_run() recomputes against the new kit set.
         clear_validation_cache()
-    except UnpairedIndexes as refused:
+    except KitFileRefused as refused:
         # The file's own fault, said in full: which indexes do not pair up
-        # and what to upload instead.
+        # or are named twice, and what to upload instead.
         audit(
             "index_kit.upload",
             actor=get_username(request),
             target=index_file.filename or "",
             outcome="failure",
-            reason="unpaired_indexes",
+            reason=refused.reason,
         )
         return _error_fragment(request, str(refused))
     except Exception:
