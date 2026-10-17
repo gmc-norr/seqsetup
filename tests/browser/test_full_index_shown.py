@@ -56,6 +56,28 @@ def _cell(page, run_id, n, which):
     return page.locator(f"#sample-row-{run_id}-s{n} .assigned-index.{which}")
 
 
+# The sequence span can be clipped by itself or by any box between it and
+# #sample-section, which is the one box allowed to hide content: it scrolls,
+# so what is outside it is one scroll away rather than gone. A max-width plus
+# overflow:hidden on the <td> cut the sequence while leaving the span's own
+# scrollWidth equal to its clientWidth, so checking the span alone missed it.
+_CLIPPERS = """el => {
+    const bad = [];
+    for (let n = el; n && n.id !== 'sample-section'; n = n.parentElement) {
+        if (n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1) {
+            bad.push(n.tagName.toLowerCase() + '.' + (n.className || '(none)'));
+        }
+    }
+    return bad;
+}"""
+
+
+def _clippers(cell):
+    """The boxes from the sequence span up to #sample-section that hide part
+    of their content. Empty means every base is on the screen."""
+    return cell.evaluate(_CLIPPERS)
+
+
 @pytest.mark.browser
 def test_every_base_is_on_the_screen(logged_in_page, base_url, long_index_run_id):
     page = logged_in_page
@@ -66,10 +88,8 @@ def test_every_base_is_on_the_screen(logged_in_page, base_url, long_index_run_id
         for which, seq in (("i7", i7), ("i5", i5)):
             cell = _cell(page, long_index_run_id, n, which)
             expect(cell).to_have_text(seq)
-            clipped = cell.evaluate(
-                "el => el.scrollWidth > el.clientWidth + 1"
-                " || el.scrollHeight > el.clientHeight + 1")
-            assert not clipped, f"sample {n} {which} cell clips its sequence"
+            clipped = _clippers(cell)
+            assert not clipped, f"sample {n} {which} sequence is clipped by {clipped}"
 
 
 @pytest.mark.browser
