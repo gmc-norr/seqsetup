@@ -1,9 +1,11 @@
 """Mark Ready refuses a run whose sample text holds a line break.
 
-Drives the real sample-edit route and the real Mark Ready route. Without
-the check, a sample name holding a whole fake ``[Data]`` section reached the
-frozen Sample Sheet v1 of a READY run, and a sample ID cut to end in a
-newline split its v2 row in two.
+Puts the text in the stored run and drives the real Mark Ready route. No
+page edits a sample's name or project (the route that could was removed,
+2026-10-17), but a LIMS worklist can carry a line break. Without the check,
+a sample name holding a whole fake ``[Data]`` section reached the frozen
+Sample Sheet v1 of a READY run, and a sample ID cut to end in a newline split
+its v2 row in two.
 """
 
 from seqsetup.models.index import Index, IndexPair, IndexType
@@ -56,6 +58,14 @@ def _seed_miseq_draft(ctx, run_id: str) -> tuple[str, str]:
     return run.id, sample.id
 
 
+def _store(ctx, run_id: str, sample_id: str, **text) -> None:
+    run = ctx.run_repo.get_by_id(run_id)
+    sample = run.get_sample(sample_id)
+    for field, value in text.items():
+        setattr(sample, field, value)
+    ctx.run_repo.save(run)
+
+
 class TestMarkReadyRefusesLineBreaks:
     """A line break in sample text keeps the run in DRAFT, with no sheet."""
 
@@ -64,11 +74,7 @@ class TestMarkReadyRefusesLineBreaks:
     ):
         _app, ctx, _db = fresh_app
         run_id, sample_id = _seed_miseq_draft(ctx, "lb-name")
-        assert logged_in_client.post(
-            f"/runs/{run_id}/samples/{sample_id}",
-            data={"sample_name": FAKE_SECTION},
-            headers=ORIGIN,
-        ).status_code == 200
+        _store(ctx, run_id, sample_id, sample_name=FAKE_SECTION)
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
@@ -81,46 +87,19 @@ class TestMarkReadyRefusesLineBreaks:
     def test_project_with_line_break_is_refused(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id, sample_id = _seed_miseq_draft(ctx, "lb-project")
-        assert logged_in_client.post(
-            f"/runs/{run_id}/samples/{sample_id}",
-            data={"project": "P1\r\nP2"},
-            headers=ORIGIN,
-        ).status_code == 200
+        _store(ctx, run_id, sample_id, project="P1\r\nP2")
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
         assert resp.headers.get("HX-Retarget") == "#ready-message"
         assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
 
-    def test_sample_id_that_a_cut_would_end_in_newline_is_refused(
-        self, logged_in_client, fresh_app
-    ):
-        """The route cut this to 255 A's and a line break, which only Mark
-        Ready then caught. It is refused at the rename now: too long, never
-        cut (spec 2026-10-14 long sample text)."""
-        _app, ctx, _db = fresh_app
-        run_id, sample_id = _seed_miseq_draft(ctx, "lb-id")
-        before = ctx.run_repo.get_by_id(run_id).get_sample(sample_id).sample_id
-        resp = logged_in_client.post(
-            f"/runs/{run_id}/samples/{sample_id}",
-            data={"sample_id": "A" * 255 + "\nEVIL,GGGGGGGG,GGGGGGGG"},
-            headers=ORIGIN,
-        )
-
-        assert resp.status_code == 400
-        assert "longer than 256 characters" in resp.text
-        assert ctx.run_repo.get_by_id(run_id).get_sample(sample_id).sample_id == before
-
     def test_plain_sample_text_is_made_ready_with_one_data_section(
         self, logged_in_client, fresh_app
     ):
         _app, ctx, _db = fresh_app
         run_id, sample_id = _seed_miseq_draft(ctx, "lb-control")
-        assert logged_in_client.post(
-            f"/runs/{run_id}/samples/{sample_id}",
-            data={"sample_name": "Tube 2, rack A", "project": "Proj-7"},
-            headers=ORIGIN,
-        ).status_code == 200
+        _store(ctx, run_id, sample_id, sample_name="Tube 2, rack A", project="Proj-7")
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 

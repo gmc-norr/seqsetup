@@ -869,8 +869,12 @@ class Net:
         chosen = self.rng.sample(self.rows(), min(3, len(self.rows())))
         for row in chosen:
             new = f"{row['sample_id']}-R"
-            answer = self._post(f"/samples/{row['row_id']}", sample_id=new)
-            assert answer.status_code == 200, answer.text[:300]
+            # In the stored run: no page or route renames a sample (the route
+            # that could was removed, 2026-10-17). Kept as a step so the
+            # names the later steps and the sheets carry stay as they were.
+            run = self.ctx.run_repo.get_by_id(self.run_id)
+            run.get_sample(row["row_id"]).sample_id = new
+            self.ctx.run_repo.save(run)
             self.expected.rename(row["sample_id"], new, "rename a sample")
             if row["sample_id"] in self.one_index_group:
                 # The samples that share one index are named by sample ID, so
@@ -1075,9 +1079,12 @@ class Net:
         row = next(one for one in rows
                    if one["sample_id"] not in self.one_index_group)
         new = f"{row['sample_id']}-C"
-        answer = self.client.post(f"/runs/{copy_id}/samples/{row['row_id']}",
-                                  data={"sample_id": new}, headers=ORIGIN)
-        assert answer.status_code == 200, answer.text[:300]
+        # In the stored run: no page renames a sample (the route that could
+        # was removed, 2026-10-17). The copy's sheets are still made by the
+        # real Mark Ready route.
+        run = self.ctx.run_repo.get_by_id(copy_id)
+        run.get_sample(row["row_id"]).sample_id = new
+        self.ctx.run_repo.save(run)
         copy_expected.rename(row["sample_id"], new, "an edit on the copy")
 
     def duplicate(self) -> str:

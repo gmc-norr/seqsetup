@@ -65,21 +65,6 @@ class TestAddingOneSample:
         assert [s["sample_id"] for s in _stored(ctx)["samples"]] == [FULL]
 
 
-class TestRenamingASample:
-
-    @pytest.mark.parametrize("field", ["sample_id", "sample_name", "project"])
-    def test_a_long_value_is_400(self, logged_in_client, fresh_app, field):
-        _app, ctx, _db = fresh_app
-        _run(ctx, ["PAT1"])
-        before = _stored(ctx)
-
-        resp = logged_in_client.post(f"/runs/{RUN}/samples/s1", data={field: LONG}, headers=ORIGIN)
-
-        assert resp.status_code == 400, resp.text[:300]
-        assert resp.text == f"The {LABELS[field]} is longer than 256 characters. Nothing was saved."
-        assert _stored(ctx) == before
-
-
 class TestSettingATestOnSelectedSamples:
 
     def test_a_long_test_is_400(self, logged_in_client, fresh_app):

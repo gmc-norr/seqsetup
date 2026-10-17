@@ -148,71 +148,31 @@ class TestEditingRequiresDraftStatus:
         assert response.status_code == 403
 
 
-class TestUpdateSamplePartialUpdate:
-    """POST /runs/{run_id}/samples/{sample_id} is a partial-update endpoint.
-    Per CLAUDE.md, a field NOT present in the form must NOT be silently
-    blanked — the legacy behaviour would wipe sibling fields whenever a
-    future per-field input was added to the row."""
+class TestNoRouteRenamesASample:
+    """There is no route that changes a sample's ID, name or project. The one
+    there was (update_sample) was sent by no page and checked nothing a page
+    showed, so it was removed (the user's decision, 2026-10-17;
+    docs/design/2026-10-17-stale-page-checks-design.md)."""
 
-    def _setup_sample(self, logged_in_client, fresh_app):
+    def test_a_rename_post_is_not_a_route_and_changes_nothing(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         run_id = _create_run(logged_in_client)
-        response = logged_in_client.post(
+        assert logged_in_client.post(
             f"/runs/{run_id}/samples",
             data={"sample_id": "S001", "sample_name": "Patient A", "project": "P-42"},
             headers=_origin(),
-        )
-        assert response.status_code == 200
-        run = ctx.run_repo.get_by_id(run_id)
-        assert run.samples[0].sample_name == "Patient A"
-        assert run.samples[0].project == "P-42"
-        return ctx, run_id, run.samples[0].id
+        ).status_code == 200
+        before = ctx.run_repo.get_by_id(run_id).to_dict()
+        sample_uuid = before["samples"][0]["id"]
 
-    def test_post_only_sample_id_preserves_name_and_project(
-        self, logged_in_client, fresh_app
-    ):
-        ctx, run_id, sample_uuid = self._setup_sample(logged_in_client, fresh_app)
-        # Submit a form that ONLY changes sample_id — sample_name/project
-        # must remain. (Mirrors a future per-field input on just sample_id.)
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/{sample_uuid}",
-            data={"sample_id": "S002"},
+            data={"sample_id": "S002", "sample_name": "Patient B", "project": "P-43"},
             headers=_origin(),
         )
-        assert response.status_code == 200
-        run = ctx.run_repo.get_by_id(run_id)
-        s = next(s for s in run.samples if s.id == sample_uuid)
-        assert s.sample_id == "S002"
-        assert s.sample_name == "Patient A", "sample_name must be preserved"
-        assert s.project == "P-42", "project must be preserved"
 
-    def test_post_only_sample_name_preserves_sample_id_and_project(
-        self, logged_in_client, fresh_app
-    ):
-        ctx, run_id, sample_uuid = self._setup_sample(logged_in_client, fresh_app)
-        response = logged_in_client.post(
-            f"/runs/{run_id}/samples/{sample_uuid}",
-            data={"sample_name": "Patient B"},
-            headers=_origin(),
-        )
-        assert response.status_code == 200
-        run = ctx.run_repo.get_by_id(run_id)
-        s = next(s for s in run.samples if s.id == sample_uuid)
-        assert s.sample_id == "S001", "sample_id must be preserved"
-        assert s.sample_name == "Patient B"
-        assert s.project == "P-42"
-
-    def test_post_with_blank_sample_id_is_rejected(self, logged_in_client, fresh_app):
-        ctx, run_id, sample_uuid = self._setup_sample(logged_in_client, fresh_app)
-        response = logged_in_client.post(
-            f"/runs/{run_id}/samples/{sample_uuid}",
-            data={"sample_id": "   "},
-            headers=_origin(),
-        )
-        assert response.status_code == 400
-        run = ctx.run_repo.get_by_id(run_id)
-        s = next(s for s in run.samples if s.id == sample_uuid)
-        assert s.sample_id == "S001"  # untouched
+        assert response.status_code == 405
+        assert ctx.run_repo.get_by_id(run_id).to_dict() == before
 
 
 class TestUpdateSampleSettingsPartialUpdate:

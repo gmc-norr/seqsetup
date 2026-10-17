@@ -42,6 +42,16 @@ threaded through F3's per-row typing queue.
 `POST /runs/{run_id}/samples/{sample_id}` (`update_sample`) is left exactly as it
 is: no page sends it — only tests do.
 
+*Later the same day*, after the four steps were merged, the user decided the
+three questions they left: `update_sample` is **removed** (a check on it would
+guard nothing, since a hand-made request can claim any shown value, and no
+page sends it); a unit test
+(`tests/unit/test_every_sample_change_checks_the_page.py`) now fails on any
+route in `routes/samples.py` that can change samples without reading a
+`target_*` field, unless it is listed there with its reason; and a refused
+stale change is **not** written to the audit log, as F8's refusals are not —
+nothing changed, so there is nothing to trace.
+
 ## Per route: what is sent, what is compared
 
 Every field is JSON, a list with one entry per entry in `sample_ids`, in the same
