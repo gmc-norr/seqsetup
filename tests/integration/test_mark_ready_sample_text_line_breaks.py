@@ -2,7 +2,8 @@
 
 Puts the text in the stored run and drives the real Mark Ready route. No
 page edits a sample's name or project (the route that could was removed,
-2026-10-17), but a LIMS worklist can carry a line break. Without the check,
+2026-10-17), but the single-sample add trims only the ends of what it is
+given, so a line break inside the text gets in. Without the check,
 a sample name holding a whole fake ``[Data]`` section reached the frozen
 Sample Sheet v1 of a READY run, and a sample ID cut to end in a newline split
 its v2 row in two.
@@ -63,6 +64,7 @@ def _store(ctx, run_id: str, sample_id: str, **text) -> None:
     sample = run.get_sample(sample_id)
     for field, value in text.items():
         setattr(sample, field, value)
+    run.touch(updated_by="test")  # as a real change would: the checks' memo is keyed on it
     ctx.run_repo.save(run)
 
 

@@ -40,7 +40,7 @@ refuses changes that touch nothing the other tab touched, and it would have to b
 threaded through F3's per-row typing queue.
 
 `POST /runs/{run_id}/samples/{sample_id}` (`update_sample`) is left exactly as it
-is: no page sends it — only tests do.
+is: no page sends it — only tests do. (Superseded below: it was removed.)
 
 *Later the same day*, after the four steps were merged, the user decided the
 three questions they left: `update_sample` is **removed** (a check on it would

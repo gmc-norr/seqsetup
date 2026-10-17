@@ -935,8 +935,6 @@ async def add_bulk_samples(
     return _render_sample_section(run, request, ctx, messages=messages or None)
 
 
-# Registered before POST /runs/{run_id}/samples/{sample_id}, which would
-# otherwise take "preview" as a sample id.
 @router.post("/runs/{run_id}/samples/preview", response_class=HTMLResponse)
 async def preview_paste(
     request: Request,

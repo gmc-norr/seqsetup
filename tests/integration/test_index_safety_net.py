@@ -874,6 +874,7 @@ class Net:
             # names the later steps and the sheets carry stay as they were.
             run = self.ctx.run_repo.get_by_id(self.run_id)
             run.get_sample(row["row_id"]).sample_id = new
+            run.touch(updated_by="test")  # as a real change would
             self.ctx.run_repo.save(run)
             self.expected.rename(row["sample_id"], new, "rename a sample")
             if row["sample_id"] in self.one_index_group:
@@ -1084,6 +1085,7 @@ class Net:
         # real Mark Ready route.
         run = self.ctx.run_repo.get_by_id(copy_id)
         run.get_sample(row["row_id"]).sample_id = new
+        run.touch(updated_by="test")  # as a real change would
         self.ctx.run_repo.save(run)
         copy_expected.rename(row["sample_id"], new, "an edit on the copy")
 

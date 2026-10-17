@@ -75,6 +75,7 @@ class TestMarkReadyRefusesHiddenCharacters:
         # Put straight in the stored run: no page edits a project.
         run = ctx.run_repo.get_by_id(run_id)
         run.samples[0].project = "P\x00Q"
+        run.touch(updated_by="test")  # as a real change would: the checks' memo is keyed on it
         ctx.run_repo.save(run)
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
