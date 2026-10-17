@@ -44,6 +44,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
+from .page_shows import shown_override_cycles, shown_tests
 from .conftest import run_version
 from .conftest import hold_edit_lock
 
@@ -253,7 +254,8 @@ class TestSetTestIdNeedsItsField:
 
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/set-test-id",
-            data={"sample_ids": json.dumps(["s1"]), "test_id": "WGS", "test_version": "2"},
+            data={"sample_ids": json.dumps(["s1"]), "test_id": "WGS", "test_version": "2",
+                  "target_tests": shown_tests(logged_in_client, RUN_ID, ["s1"])},
             headers=ORIGIN)
 
         assert response.status_code == 200
@@ -266,7 +268,8 @@ class TestSetTestIdNeedsItsField:
 
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/set-test-id",
-            data={"sample_ids": json.dumps(["s1"]), "test_id": "", "test_version": ""},
+            data={"sample_ids": json.dumps(["s1"]), "test_id": "", "test_version": "",
+                  "target_tests": shown_tests(logged_in_client, RUN_ID, ["s1"])},
             headers=ORIGIN)
 
         assert response.status_code == 200
@@ -320,7 +323,9 @@ class TestSetOverrideCyclesNeedsItsField:
 
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/set-override-cycles",
-            data={"sample_ids": json.dumps(["s1"]), "override_cycles": ""},
+            data={"sample_ids": json.dumps(["s1"]), "override_cycles": "",
+                  "target_override_cycles": shown_override_cycles(
+                      logged_in_client, RUN_ID, ["s1"])},
             headers=ORIGIN)
 
         assert response.status_code == 200
@@ -332,7 +337,9 @@ class TestSetOverrideCyclesNeedsItsField:
 
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/set-override-cycles",
-            data={"sample_ids": json.dumps(["s1"]), "override_cycles": UMI_OVERRIDE},
+            data={"sample_ids": json.dumps(["s1"]), "override_cycles": UMI_OVERRIDE,
+                  "target_override_cycles": shown_override_cycles(
+                      logged_in_client, RUN_ID, ["s1"])},
             headers=ORIGIN)
 
         assert response.status_code == 200

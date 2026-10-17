@@ -14,6 +14,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
+from .page_shows import shown_mismatches
 from .conftest import disable_repos, nothing_stored, run_version
 from .conftest import hold_edit_lock
 
@@ -138,7 +139,9 @@ class TestMismatchLimit:
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/set-mismatches",
             data={"sample_ids": json.dumps([s.id for s in run.samples]),
-                  "mismatch_index1": "0", "mismatch_index2": "", "mode": "apply"},
+                  "mismatch_index1": "0", "mismatch_index2": "", "mode": "apply",
+                  "target_mismatches": shown_mismatches(
+                      logged_in_client, run.id, [s.id for s in run.samples])},
             headers=ORIGIN,
         )
 
@@ -152,7 +155,9 @@ class TestMismatchLimit:
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/set-mismatches",
             data={"sample_ids": json.dumps([s.id for s in run.samples]),
-                  "mismatch_index1": "", "mismatch_index2": "0", "mode": "apply"},
+                  "mismatch_index1": "", "mismatch_index2": "0", "mode": "apply",
+                  "target_mismatches": shown_mismatches(
+                      logged_in_client, run.id, [s.id for s in run.samples])},
             headers=ORIGIN,
         )
 
@@ -183,7 +188,9 @@ class TestMismatchLimit:
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/set-mismatches",
             data={"sample_ids": json.dumps([s.id for s in run.samples]),
-                  "mismatch_index1": "", "mismatch_index2": "", "mode": "clear"},
+                  "mismatch_index1": "", "mismatch_index2": "", "mode": "clear",
+                  "target_mismatches": shown_mismatches(
+                      logged_in_client, run.id, [s.id for s in run.samples])},
             headers=ORIGIN,
         )
 

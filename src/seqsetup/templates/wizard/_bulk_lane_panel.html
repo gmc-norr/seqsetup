@@ -30,8 +30,9 @@
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-sample-ids">
         <input type="hidden" name="lanes" id="bulk-lanes">
-        {# The lanes each ticked row showed, in the same order: the route
-           refuses the Apply when one has moved in another tab. #}
+        {# What each ticked row showed, in the same order the ids are sent:
+           the route refuses the action when one has moved in another tab
+           (docs/design/2026-10-17-stale-page-checks-design.md). #}
         <input type="hidden" name="target_lanes" id="bulk-target-lanes">
     </form>
     <form id="bulk-mismatches-form" style="display: none;"
@@ -42,6 +43,7 @@
         <input type="hidden" name="mismatch_index1" id="bulk-mismatch-index1">
         <input type="hidden" name="mismatch_index2" id="bulk-mismatch-index2">
         <input type="hidden" name="mode" id="bulk-mismatch-mode" value="apply">
+        <input type="hidden" name="target_mismatches" id="bulk-target-mismatches">
     </form>
     <form id="bulk-override-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-override-cycles"
@@ -49,6 +51,7 @@
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-override-sample-ids">
         <input type="hidden" name="override_cycles" id="bulk-override-cycles">
+        <input type="hidden" name="target_override_cycles" id="bulk-target-override-cycles">
     </form>
     <form id="bulk-test-id-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/set-test-id"
@@ -57,6 +60,7 @@
         <input type="hidden" name="sample_ids" id="bulk-test-id-sample-ids">
         <input type="hidden" name="test_id" id="bulk-test-id">
         <input type="hidden" name="test_version" id="bulk-test-version">
+        <input type="hidden" name="target_tests" id="bulk-target-tests">
     </form>
     <form id="bulk-delete-form" style="display: none;"
           hx-post="/runs/{{ run.id }}/samples/bulk-delete"

@@ -9,6 +9,7 @@ Covers the core HTMX flows that build up a run from blank to ready:
 
 import pytest
 
+from .page_shows import shown_mismatches, shown_override_cycles, shown_tests
 from .conftest import nothing_stored, run_version, seed_stored_exports, stored_export
 
 
@@ -488,7 +489,8 @@ class TestBulkHandlersReachRoutes:
         import json
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/set-test-id",
-            data={"sample_ids": json.dumps(ids), "test_id": "WGS", "test_version": "1"},
+            data={"sample_ids": json.dumps(ids), "test_id": "WGS", "test_version": "1",
+                  "target_tests": shown_tests(logged_in_client, run_id, ids)},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -504,6 +506,7 @@ class TestBulkHandlersReachRoutes:
                 "sample_ids": json.dumps(ids),
                 "mismatch_index1": "0",
                 "mismatch_index2": "2",
+                "target_mismatches": shown_mismatches(logged_in_client, run_id, ids),
             },
             headers=_origin(),
         )
@@ -557,6 +560,7 @@ class TestBulkHandlersReachRoutes:
             data={
                 "sample_ids": json.dumps(ids),
                 "override_cycles": "Y151;I8N2;I8N2;Y151",
+                "target_override_cycles": shown_override_cycles(logged_in_client, run_id, ids),
             },
             headers=_origin(),
         )
@@ -579,6 +583,7 @@ class TestBulkHandlersReachRoutes:
             data={
                 "sample_ids": json.dumps(ids),
                 "override_cycles": "Y*;I8N2;I8N2;Y*",
+                "target_override_cycles": shown_override_cycles(logged_in_client, run_id, ids),
             },
             headers=_origin(),
         )

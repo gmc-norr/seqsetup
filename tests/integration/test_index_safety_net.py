@@ -50,6 +50,7 @@ from tests.index_safety_net import (AS_ENTERED, I5_SHEET_DIRECTION, INDEX_LENGTH
                                     Expected, Sequences, data_sections, hamming,
                                     reverse_complement, usable)
 
+from .page_shows import shown_mismatches, shown_override_cycles, shown_tests
 from .conftest import hold_edit_lock, mark_ready, nothing_stored
 from .test_served_runs import _token
 
@@ -159,7 +160,7 @@ def _seeds() -> list[int]:
 _ROW = re.compile(
     r'<tr id="sample-row-(?P<row_id>[^"]+)"[^>]*'
     r'data-i7="(?P<i7>[^"]*)" data-i5="(?P<i5>[^"]*)"\s*'
-    r'data-lanes="(?P<shown_lanes>[^"]*)">(?P<body>.*?)</tr>',
+    r'data-lanes="(?P<shown_lanes>[^"]*)"[^>]*>(?P<body>.*?)</tr>',
     re.S,
 )
 _SHOWN_ID = re.compile(r'<td class="sample-id-cell" title="[^"]*">([^<]*)</td>')
@@ -907,6 +908,8 @@ class Net:
         rows = self.rows()
         answer = self._post("/samples/set-test-id",
                             sample_ids=json.dumps([row["row_id"] for row in rows]),
+                            target_tests=shown_tests(self.client, self.run_id,
+                                                     [row["row_id"] for row in rows]),
                             test_id=TEST_ID, test_version=TEST_VERSION)
         assert answer.status_code == 200, answer.text[:300]
         self.expected.note("set the test")
@@ -923,6 +926,8 @@ class Net:
         chosen = self.rng.sample(self.rows(), max(1, len(self.rows()) // 4))
         answer = self._post("/samples/set-mismatches",
                             sample_ids=json.dumps([row["row_id"] for row in chosen]),
+                            target_mismatches=shown_mismatches(
+                                self.client, self.run_id, [row["row_id"] for row in chosen]),
                             mismatch_index1="1", mismatch_index2="1")
         assert answer.status_code == 200, answer.text[:300]
         self.expected.note("set the barcode mismatches")
@@ -933,6 +938,8 @@ class Net:
         chosen = self.rng.sample(self.rows(), max(1, len(self.rows()) // 4))
         answer = self._post("/samples/set-override-cycles",
                             sample_ids=json.dumps([row["row_id"] for row in chosen]),
+                            target_override_cycles=shown_override_cycles(
+                                self.client, self.run_id, [row["row_id"] for row in chosen]),
                             override_cycles=f"Y151;I{INDEX_LENGTH};I{INDEX_LENGTH};Y151")
         assert answer.status_code == 200, answer.text[:300]
         self.expected.note("set the override cycles")

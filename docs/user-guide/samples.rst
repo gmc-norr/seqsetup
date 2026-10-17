@@ -349,6 +349,18 @@ without a version, or a version without a test, is refused. The panel's
 **Override Cycles** rows are covered in :doc:`lane-assignment` and
 :doc:`override-cycles`.
 
+Every row of the panel sends what the page was showing for the values it
+changes. If any ticked sample's values were changed in another tab (or by
+someone else) since the page was loaded, nothing is saved and the page names
+them -- for example *"Nothing was saved. Reload the page and try again. The
+barcode mismatches on these samples changed since this page was loaded:
+PAT2."* **Mismatches** **Apply** only checks the column it is about to
+write, so a blank i5 box is not refused because someone else set an i5.
+If one of the ticked samples has been deleted since the page was loaded,
+nothing is saved either: *"The sample list changed since this page was
+loaded. Reload the page and try again."* Reload the page in both cases; the
+table then shows the values as they are now.
+
 Removing a sample
 --------------------
 

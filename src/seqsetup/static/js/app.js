@@ -146,6 +146,32 @@ function shownLanesOfRow(sampleId) {
     return raw ? raw.split(',').map(Number) : [];
 }
 
+// The barcode mismatches and the Override Cycles a row shows, as the server
+// compares them with the stored ones. Read from the boxes, not from the row:
+// a box saves without redrawing its row (hx-swap="none", F3), and app.js
+// puts the stored value in its defaultValue on every answer, so the box --
+// not an attribute written when the row was last drawn -- is what this page
+// knows is stored. A box that is not there sends null, which the server
+// refuses (400) rather than reading as "nothing was set".
+function shownMismatchesOfRow(sampleId) {
+    const i7 = document.getElementById(`mismatch-i7-${sampleId}`);
+    const i5 = document.getElementById(`mismatch-i5-${sampleId}`);
+    return (i7 && i5) ? [i7.defaultValue, i5.defaultValue] : null;
+}
+
+function shownOverrideOfRow(sampleId) {
+    const box = document.getElementById(`override-cycles-${sampleId}`);
+    return box ? box.defaultValue : null;
+}
+
+// The test and its version a row shows: the Test cell is text, so these come
+// from the row (data-test-id / data-test-version), which is redrawn whenever
+// they change.
+function shownTestOfRow(sampleId) {
+    const row = document.getElementById(`sample-row-${sampleId}`);
+    return row ? [row.dataset.testId || '', row.dataset.testVersion || ''] : null;
+}
+
 function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     event.preventDefault();
 
@@ -601,6 +627,9 @@ function applyBulkMismatchesForm() {
     document.getElementById('bulk-mismatch-index2').value = mismatchI5;
     // Apply writes only the boxes that were filled in.
     document.getElementById('bulk-mismatch-mode').value = 'apply';
+    // What each ticked row showed, in the same order the ids are sent.
+    document.getElementById('bulk-target-mismatches').value =
+        JSON.stringify(selectedSampleIds.map(shownMismatchesOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-mismatches-form', 'submit');
@@ -619,6 +648,8 @@ function clearBulkMismatchesForm() {
     document.getElementById('bulk-mismatch-index2').value = '';
     // Clear resets both columns; an empty box on Apply would leave them alone.
     document.getElementById('bulk-mismatch-mode').value = 'clear';
+    document.getElementById('bulk-target-mismatches').value =
+        JSON.stringify(selectedSampleIds.map(shownMismatchesOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-mismatches-form', 'submit');
@@ -636,6 +667,8 @@ function applyBulkOverrideCyclesForm() {
     // Populate hidden form fields
     document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-override-cycles').value = overrideCycles;
+    document.getElementById('bulk-target-override-cycles').value =
+        JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-override-form', 'submit');
@@ -651,6 +684,8 @@ function clearBulkOverrideCyclesForm() {
     // Populate hidden form fields with empty value to recalculate auto
     document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-override-cycles').value = '';
+    document.getElementById('bulk-target-override-cycles').value =
+        JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-override-form', 'submit');
@@ -671,6 +706,8 @@ function applyBulkTestIdForm() {
     document.getElementById('bulk-test-id-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-test-id').value = testId;
     document.getElementById('bulk-test-version').value = testVersion;
+    document.getElementById('bulk-target-tests').value =
+        JSON.stringify(selectedSampleIds.map(shownTestOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-test-id-form', 'submit');
@@ -687,6 +724,8 @@ function clearBulkTestIdForm() {
     document.getElementById('bulk-test-id-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-test-id').value = '';
     document.getElementById('bulk-test-version').value = '';
+    document.getElementById('bulk-target-tests').value =
+        JSON.stringify(selectedSampleIds.map(shownTestOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-test-id-form', 'submit');

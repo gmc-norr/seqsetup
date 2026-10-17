@@ -111,6 +111,15 @@ bulk-action panel above the table:
 Select **Auto** instead of **Apply** to drop whatever is stored for the
 ticked samples and go back to the calculated value described above.
 
+Both **Apply** and **Auto** send the Override Cycles the page was showing
+for each ticked sample. If any of them was changed in another tab (or by
+someone else) since the page was loaded, nothing is saved and the page names
+the samples: *"Nothing was saved. Reload the page and try again. The
+Override Cycles on these samples changed since this page was loaded:
+PAT2."* This matters most for **Auto**, which rewrites every ticked sample's
+value: without the check it would quietly drop a UMI read someone had just
+typed. Reload the page; the table then shows the values as they are now.
+
 The ``*`` wildcard
 --------------------
 

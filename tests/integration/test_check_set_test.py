@@ -11,6 +11,7 @@ import re
 
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .page_shows import shown_tests
 from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -63,7 +64,8 @@ class TestSetTestFromCheck:
         ids = _fix_ids(logged_in_client.get(f"/runs/{run_id}/validate-panel").text)
         r = logged_in_client.post(
             f"/runs/{run_id}/samples/set-test-id",
-            data={"sample_ids": json.dumps(ids), "test_id": "RNA", "test_version": "1"},
+            data={"sample_ids": json.dumps(ids), "test_id": "RNA", "test_version": "1",
+                  "target_tests": shown_tests(logged_in_client, run_id, ids)},
             headers=ORIGIN,
         )
         assert r.status_code == 200
