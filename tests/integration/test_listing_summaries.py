@@ -139,6 +139,22 @@ class TestTheListingsShowTheSameThing:
         html = logged_in_client.get("/dashboard/search?q=PAT004-003").text
         assert "PAT004-003" in html
 
+    @pytest.mark.parametrize("query", [".*", ".", "PAT00[0-9]", "Run+", "(", "a|b", "^Run"])
+    def test_a_query_is_a_plain_substring_not_a_regular_expression(
+            self, seeded, logged_in_client, query):
+        """The search ran in Python over `q in name`; it runs in the database
+        now, and the query must still be taken literally — and never make the
+        page fail, whatever punctuation someone types."""
+        _app, ctx, _db = seeded
+        runs, _ = ctx.run_repo.list_all_readable()
+        expected = {run.id for run in runs
+                    if query.lower() in (run.run_name or "").lower()
+                    or any(query.lower() in (s.sample_id or "").lower()
+                           for s in run.samples)}
+        response = logged_in_client.get("/dashboard/search", params={"q": query})
+        assert response.status_code == 200, query
+        assert set(_order(response.text)) == expected, query
+
     @pytest.mark.parametrize("status", ["ready", "archived"])
     def test_served_runs_lists_the_same_runs_in_the_same_order(self, seeded, logged_in_client, status):
         _app, ctx, _db = seeded
@@ -163,6 +179,14 @@ class TestTheListingsShowTheSameThing:
         got = logged_in_client.get(f"/api/runs?status={status}&limit=50",
                                    headers=_bearer(ctx)).json()
         assert got == expected
+        # _run_summary builds both sides above, so the counts and names are
+        # also asserted against the runs themselves.
+        assert [item["id"] for item in got["items"]] == [run.id for run in runs]
+        assert [item["run_name"] for item in got["items"]] == [run.run_name for run in runs]
+        assert ([item["sample_count"] for item in got["items"]]
+                == [len(run.samples) for run in runs])
+        assert any(item["sample_count"] > 0 for item in got["items"]), (
+            "the fixture must have a run with samples, or the count proves nothing")
 
     def test_the_api_pages_as_it_did(self, seeded, logged_in_client):
         _app, ctx, _db = seeded
