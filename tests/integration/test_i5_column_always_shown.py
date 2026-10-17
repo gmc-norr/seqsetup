@@ -73,7 +73,7 @@ class TestTheColumnIsShownWhenEveryKitIsSingleIndex:
         page = logged_in_client.get("/runs/r").text
 
         assert "<th>Index (i5)</th>" in _table(page)
-        assert '<span class="assigned-index i5">TTTTGGGG...</span>' in _row(page, "dual")
+        assert '<span class="assigned-index i5">TTTTGGGGCC</span>' in _row(page, "dual")
 
     def test_a_ready_run_shows_its_stored_i5(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
@@ -83,7 +83,7 @@ class TestTheColumnIsShownWhenEveryKitIsSingleIndex:
         page = logged_in_client.get("/runs/r").text
 
         assert "<th>Index (i5)</th>" in _table(page)
-        assert '<span class="assigned-index i5">TTTTGGGG...</span>' in _row(page, "dual")
+        assert '<span class="assigned-index i5">TTTTGGGGCC</span>' in _row(page, "dual")
 
     @pytest.mark.parametrize("status", [RunStatus.DRAFT, RunStatus.READY])
     def test_every_row_has_as_many_cells_as_the_header(self, logged_in_client, fresh_app, status):
@@ -111,4 +111,4 @@ class TestTheColumnIsShownWhenEveryKitIsSingleIndex:
 
         assert redrawn.status_code == 200
         assert _row_cells(redrawn.text, "dual") == header
-        assert '<span class="assigned-index i5">TTTTGGGG...</span>' in _row(redrawn.text, "dual")
+        assert '<span class="assigned-index i5">TTTTGGGGCC</span>' in _row(redrawn.text, "dual")

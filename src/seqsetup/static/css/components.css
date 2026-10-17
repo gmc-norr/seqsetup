@@ -538,6 +538,11 @@ body {
     color: var(--text-muted);
 }
 
+/* The index cells show every base of the sequence and cut nothing: no
+   max-width, no overflow, no text-overflow. One line per sequence --
+   a DNA sequence split across two lines is easy to misread -- and
+   #sample-section scrolls sideways when the table grows wider than it
+   (later list #1, 2026-10-18). */
 .index-cell {
     font-family: monospace;
     font-size: 0.8rem;
