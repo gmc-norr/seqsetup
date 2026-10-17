@@ -277,3 +277,64 @@ class TestASummaryCannotBeSaved:
         listing = repo.list_summaries("ready")[0]
         with pytest.raises(dataclasses.FrozenInstanceError):
             listing.run_name = "changed"
+
+
+class TestTheOrderIsTheStoredTimeAsText:
+    """SeqSetup always writes an ISO string, but a direct database write may
+    leave a real BSON date. The database sorts every date before every
+    string, so without a text sort key such a run jumps to the front of
+    every page — and of every API page, which moves the boundaries a paging
+    client reads."""
+
+    @pytest.fixture
+    def dated(self):
+        import datetime
+        db = mongomock.MongoClient()["dated"]
+        repository = RunRepository(db)
+        for k, when in enumerate(("2026-01-01T00:00:00", "2020-01-01T00:00:00")):
+            run = _run(k)
+            repository.save(run)
+            db.runs.update_one({"_id": run.id}, {"$set": {"updated_at": when}})
+        old = _run(9)
+        repository.save(old)
+        db.runs.update_one({"_id": old.id},
+                           {"$set": {"updated_at": datetime.datetime(2021, 1, 1)}})
+        return repository
+
+    def test_a_stored_date_keeps_its_place(self, dated):
+        order = [listing.id for listing in dated.list_summaries("ready", newest_first=True)]
+        assert order == ["r0", "r9", "r1"], (
+            "2026 first, then the 2021 date, then 2020 — a date sorting first "
+            "would mean the sort key was not text")
+
+    def test_the_row_still_carries_the_date(self, dated):
+        (row,) = [x for x in dated.list_summaries("ready") if x.id == "r9"]
+        assert row.updated_at.year == 2021
+
+
+class TestARowIsNeverListedWithNoReasonGiven:
+    """The database picks the rows with a regular expression; the "Samples:"
+    hint under a row must be found with the same pattern. Two rules disagree
+    on a handful of letters — a long s folds to S for a regular expression
+    but not for str.lower() — and the row would then be listed with nothing
+    to show for it."""
+
+    @pytest.fixture
+    def folded(self):
+        from seqsetup.models.sample import Sample
+        db = mongomock.MongoClient()["folded"]
+        repository = RunRepository(db)
+        run = SequencingRun(id="fold", run_name="Nothing to see", flowcell_type="10B")
+        run.add_sample(Sample(sample_id="PATıSTANBUL", lanes=[1]))
+        run.add_sample(Sample(sample_id="MEAſURE-1", lanes=[1]))
+        run.status = RunStatus.READY
+        repository.save(run)
+        return repository
+
+    @pytest.mark.parametrize("query", ["meas", "MEAS"])
+    def test_the_hint_names_the_sample_the_row_was_picked_for(self, folded, query):
+        listings, matched = folded.search_summaries(query)
+        assert [listing.id for listing in listings] == ["fold"], (
+            f"{query!r} should pick the run whose sample folds to it")
+        assert matched["fold"] == ["MEAſURE-1"], (
+            "a row picked by the database's pattern must say which sample matched")
