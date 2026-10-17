@@ -254,7 +254,7 @@ class TestClearButtons:
         html = templates.env.get_template("wizard/_sample_row.html").render(
             sample=_indexed("S1"), run_id="r1", run_cycles=None,
             run_updated_at=datetime(2026, 10, 17, 12, 0, 0), show_drop_zones=True,
-            show_i5_column=True, num_lanes=1, show_bulk_actions=False, context="add_step2",
+            num_lanes=1, show_bulk_actions=False, context="add_step2",
             editable=True, show_checkboxes=None,
         )
         buttons = _tag(html, 'class="btn-tiny btn-clear"')

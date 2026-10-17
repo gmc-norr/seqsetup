@@ -4,7 +4,6 @@
    Inputs:
      run:                SequencingRun
      show_drop_zones:    bool
-     index_kits:         list[IndexKit] | None
      num_lanes:          int (default 1)
      show_bulk_actions:  bool (default True)
      context:            str (default "")
@@ -16,15 +15,6 @@
     <p>No samples added yet. Use the paste function above to add samples.</p>
 </div>
 {% else %}
-    {# Determine if any kit is non-single — if all kits are single, hide i5 column #}
-    {% set show_i5_column = True %}
-    {% if index_kits %}
-        {% set ns = namespace(any_non_single=False) %}
-        {% for kit in index_kits %}
-            {% if not kit.is_single() %}{% set ns.any_non_single = True %}{% endif %}
-        {% endfor %}
-        {% set show_i5_column = ns.any_non_single %}
-    {% endif %}
     {% set effective_bulk_actions = show_bulk_actions and editable %}
 <div id="sample-table">
     {% if effective_bulk_actions %}
@@ -42,7 +32,7 @@
                 {% if show_drop_zones %}
                     <th>Index Kit</th>
                     <th>Index (i7)</th>
-                    {% if show_i5_column %}<th>Index (i5)</th>{% endif %}
+                    <th>Index (i5)</th>
                     {% if show_bulk_actions %}
                     <th>Lanes</th>
                     <th>Override Cycles</th>
@@ -59,7 +49,7 @@
             {% for sample in run.samples %}
                 {% with sample=sample, run_id=run.id, run_cycles=run.run_cycles,
                         run_updated_at=run.updated_at,
-                        show_drop_zones=show_drop_zones, show_i5_column=show_i5_column,
+                        show_drop_zones=show_drop_zones,
                         num_lanes=num_lanes, show_bulk_actions=show_bulk_actions,
                         context=context, editable=editable, show_checkboxes=None %}
                 {% include "wizard/_sample_row.html" %}
