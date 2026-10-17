@@ -62,11 +62,17 @@ def _lanes(ctx):
     return [(s.sample_id, s.lanes) for s in _stored(ctx).samples]
 
 
+def _everything(ctx):
+    """The whole stored run. A refusal writes nothing at all -- not the
+    lanes, and not run.touch()'s updated_at either."""
+    return _stored(ctx).to_dict()
+
+
 class TestAnApplyOnChangedLanesIsRefused:
     def test_a_row_another_tab_moved_refuses_the_whole_apply(self, logged_in_client, two_rows):
         ctx = two_rows
         _set_lanes_behind_the_page(ctx, "s2", [3])
-        before = _lanes(ctx)
+        before = _everything(ctx)
 
         resp = _apply(logged_in_client, ["s1", "s2"], [2])
 
@@ -74,7 +80,7 @@ class TestAnApplyOnChangedLanesIsRefused:
         assert resp.text == (
             "Nothing was saved. Reload the page and try again. The lanes on these "
             "samples changed since this page was loaded: PAT2.")
-        assert _lanes(ctx) == before, "a refused Apply must save nothing, not even PAT1"
+        assert _everything(ctx) == before, "a refused Apply must save nothing, not even PAT1"
 
     def test_the_order_of_the_stored_lanes_counts(self, logged_in_client, two_rows):
         ctx = two_rows
@@ -129,13 +135,13 @@ class TestAnApplyOnChangedLanesIsRefused:
     def test_an_apply_that_sends_no_readable_shown_lanes_is_refused(
             self, logged_in_client, two_rows, shown):
         ctx = two_rows
-        before = _lanes(ctx)
+        before = _everything(ctx)
 
         resp = _apply(logged_in_client, ["s1", "s2"], [2], shown=shown)
 
         assert resp.status_code == 400, resp.text[:300]
         assert resp.text == STALE
-        assert _lanes(ctx) == before
+        assert _everything(ctx) == before
 
     def test_a_ticked_sample_the_run_no_longer_has_is_refused(self, logged_in_client, two_rows):
         ctx = two_rows
@@ -143,13 +149,27 @@ class TestAnApplyOnChangedLanesIsRefused:
         run.remove_sample("s2")
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)
-        before = _lanes(ctx)
+        before = _everything(ctx)
 
         resp = _apply(logged_in_client, ["s1", "s2"], [2])
 
         assert resp.status_code == 409, resp.text[:300]
         assert resp.text == GONE
-        assert _lanes(ctx) == before
+        assert _everything(ctx) == before
+
+    def test_a_redrawn_single_row_carries_its_lanes_too(self, logged_in_client, two_rows):
+        """A row redrawn on its own (an index drop or clear, a settings box)
+        comes from the same template: without data-lanes on it, every later
+        Apply would be refused until the page was reloaded."""
+        ctx = two_rows
+
+        row = logged_in_client.post(
+            f"/runs/{RUN}/samples/s1/settings", data={"override_cycles": ""},
+            headers=ORIGIN)
+
+        assert row.status_code == 200, row.text[:300]
+        assert 'data-lanes="1"' in row.text
+        assert _lanes(ctx)[0] == ("PAT1", [1])
 
     def test_the_lanes_the_page_shows_are_the_stored_ones(self, logged_in_client, two_rows):
         """The row carries what the server would compare, so a page that

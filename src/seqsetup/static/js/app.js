@@ -135,11 +135,14 @@ function shownIndexOfRow(sampleId) {
 // The lanes a row shows, as the server compares them with the stored ones:
 // data-lanes of #sample-row-<id> (wizard/_sample_row.html). Sent with the
 // lane panel's Apply so the server can refuse a row another tab has moved
-// instead of overwriting it. A row this page does not have reads as [],
-// which the server refuses: no sample is stored with no lane.
+// instead of overwriting it. A row this page does not have sends null, which
+// the server refuses (400): an older sample can be stored with no lane, so
+// [] would match one and let the Apply through on a page that never showed
+// it (first review of step 1, Minor 1).
 function shownLanesOfRow(sampleId) {
     const row = document.getElementById(`sample-row-${sampleId}`);
-    const raw = (row && row.dataset.lanes) || '';
+    if (!row) return null;
+    const raw = row.dataset.lanes || '';
     return raw ? raw.split(',').map(Number) : [];
 }
 

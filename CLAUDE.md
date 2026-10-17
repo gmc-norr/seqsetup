@@ -79,8 +79,8 @@ a model or service layer where it cannot be forgotten.
   lock is held per user, so two tabs of one person both pass it, and
   `get_editable_run` reloads the run on every request, so `RunRepository.save`'s
   version check only catches a write landing inside one request. Every action
-  that changes samples therefore sends what the page showed **for the field it
-  changes**, one entry per targeted row in the order the rows are sent; the route
+  that changes samples must therefore send what the page showed **for the field
+  it changes**, one entry per targeted row in the order the rows are sent; the route
   compares each with the stored value **before it writes anything** and refuses
   409 with nothing written, naming the samples (`_changed_rows_refusal`), when one
   has moved. A request that sends no shown value is refused 400
@@ -88,8 +88,10 @@ a model or service layer where it cannot be forgotten.
   the HTML), and a targeted sample the run no longer has is refused 409
   (`_targets_or_refusal`) — never skipped without a word. Covered so far: the four
   index routes (`target_indexes`, from `data-i7`/`data-i5`; outside review of
-  f490536, F8) and the lane panel's Apply (`target_lanes`, from `data-lanes`). See
-  `docs/design/2026-10-17-stale-page-checks-design.md`.
+  f490536, F8) and the lane panel's Apply (`target_lanes`, from `data-lanes`).
+  The rest of the bulk panel, the deletes and the per-row boxes are steps 2 to 4
+  of `docs/design/2026-10-17-stale-page-checks-design.md` and are not built yet:
+  until they are, a stale page can still overwrite them without a word.
 - **Partial updates update only what was submitted.** Handlers serving per-field HTMX inputs (e.g. `update_sample_settings`, `update_sample`) MUST check `field in form` before writing — defaulting missing fields to empty and writing them back silently destroys sibling values.
 - **Several indexes dropped at once fill the rows in panel order.** `assign_indexes_bulk` sorts the dropped indexes into the kit's own list order (`_panel_position`, the order the index panel shows them) before it fills rows, and `app.js` sends them in that order (`inPanelOrder`, which the keyboard's one-index assign also uses); click order once gave the first sample the last-clicked index, a swap no check can see. A drop mixing index kinds or kits has no one order and is refused.
 - **A kit's name and version mean one content.** `IndexKit.fingerprint()` is a sha256 of everything in the kit but its description, comments, owner and source, which reach no sample or sheet. Every index chip carries it (`data-kit-fingerprint`), `app.js` sends it with every drop and keyboard assign, and `_find_index` in `routes/samples.py` refuses (409) a drop whose fingerprint is not the stored kit's, or that sends none; the fill's plan signature holds it too. A sync refuses a kit file that keeps a stored synced kit's name and version with another fingerprint, and every file of a name and version two files give (`_refuse_changed_or_repeated_kits` in `services/github_sync.py`); the stored kit stays. A kit whose file left the repository is removed, so a later sync can bring its name and version back changed, as an upload after a delete can; a page loaded before still cannot assign from it. A drop from a page loaded before its kit changed once gave the sample sequences its chip never showed.

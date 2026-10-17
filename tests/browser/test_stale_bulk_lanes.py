@@ -96,6 +96,20 @@ def test_the_page_sends_the_lanes_each_ticked_row_shows(
 
 
 @pytest.mark.browser
+def test_a_row_this_page_does_not_have_sends_no_lanes_at_all(
+        logged_in_page, base_url, app_ctx, run_id):
+    """A ticked id with no row on the page must not read as "no lanes": a
+    sample stored with no lane would then match, and its Apply would go
+    through on a page that never showed it. No lanes at all is refused."""
+    page = logged_in_page
+    _open_and_tick_both(page, base_url)
+
+    shown = page.evaluate("() => shownLanesOfRow('no-such-row')")
+
+    assert shown is None
+
+
+@pytest.mark.browser
 def test_two_applies_in_a_row_are_both_saved(logged_in_page, base_url, app_ctx, run_id):
     """The answer re-renders the rows, so the page's own change does not
     make the next Apply stale."""
