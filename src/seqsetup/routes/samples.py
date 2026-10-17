@@ -2327,13 +2327,16 @@ async def update_sample_settings(
                 return _changed_rows_refusal(
                     [sample.sample_id], CHANGED_ROWS_SAVE, boxes[moved[0]][1])
 
+        # The write is driven by the same ``written`` the comparison used, so
+        # a setting added to ``boxes`` is compared and written together and a
+        # setting that is not in ``boxes`` cannot be written at all (first
+        # review of step 4, Minor 1).
+        values = {"override_cycles": final_override,
+                  "barcode_mismatches_index1": bmi1,
+                  "barcode_mismatches_index2": bmi2}
         with saving_run(run, ctx, request):
-            if has_override:
-                sample.override_cycles = final_override
-            if has_bmi1:
-                sample.barcode_mismatches_index1 = bmi1
-            if has_bmi2:
-                sample.barcode_mismatches_index2 = bmi2
+            for name in written:
+                setattr(sample, name, values[name])
     except ValueError as exc:
         # Sample model rejected an invariant violation (e.g. malformed
         # override_cycles characters). Surface as a 400 so the run is not

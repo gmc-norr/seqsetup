@@ -87,6 +87,13 @@ queue, its `hx-swap="none"`, its notes and its waiting actions are untouched,
 and all 35 of its tests stay green — three of them now spell out the new field
 in the request bodies they pin.
 
+One flow of F3's now ends in a refusal where it used to end in a silent
+overwrite: a save whose answer comes back after its row was redrawn stores a
+value the redrawn box does not show, and F3 already says "reload the page". The
+next edit of that box is now refused, with "changed since this page was loaded"
+— which is true of the page, though what changed was the person's own lost
+save. Nothing is written, and the advice is the same advice F3 already gave.
+
 One box saves at a time, so one shown value: a request that writes more than
 one setting must have shown the same value in each, or it is refused. No page
 and no test sends one.

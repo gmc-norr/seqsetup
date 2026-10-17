@@ -184,7 +184,13 @@
     {%- if show_bulk_actions %}
         <td class="lane-cell"><span class="lanes-display">{{ sample.lanes_display }}</span></td>
         {%- if editable %}
-            {#- Each box saves on its own and its answer replaces nothing
+            {#- app.js turns data-row-setting into two things: the name in a
+                note about a save that was lost, and the box's target_setting
+                -- what the page showed for it, which the route compares with
+                what is stored before it writes (design note 2026-10-17, step
+                4). It is not only a label.
+
+                Each box saves on its own and its answer replaces nothing
                 (hx-swap none): app.js puts the stored value in the box while
                 it still shows what was sent, so what is being typed there or
                 in the next box, and the row's tick, stay; the saves of one

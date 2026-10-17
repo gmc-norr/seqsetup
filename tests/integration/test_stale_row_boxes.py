@@ -182,9 +182,11 @@ class TestWhatIsRefusedAndWhatIsNot:
         assert resp.text == "Sample not found"
 
     def test_a_bad_value_is_still_refused_for_what_it_is(self, logged_in_client, two_rows):
-        """The box's own refusals come first: a page that is out of date and
-        a value out of range are two different things to put right."""
+        """The box's own refusals come first, even when the page is out of
+        date as well: a value out of range is the thing to put right, and
+        it is put right in the box that is open."""
         ctx = two_rows
+        _behind_the_page(ctx, "s1", barcode_mismatches_index1=2)
         before = _everything(ctx)
 
         resp = _save(logged_in_client, "barcode_mismatches_index1", "5", shown="1")

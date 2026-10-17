@@ -86,7 +86,8 @@ a model or service layer where it cannot be forgotten.
   has moved. A request that sends no shown value is refused 400
   (no real client sends one: `/js/app.js?v=<content hash>` cannot be stale against
   the HTML), and a targeted sample the run no longer has is refused 409
-  (`_targets_or_refusal`) — never skipped without a word. Covered so far: the four
+  (`_targets_or_refusal`; the per-row box route answers its own 404 "Sample not
+  found") — never skipped without a word. Covered so far: the four
   index routes (`target_indexes`, from `data-i7`/`data-i5`; outside review of
   f490536, F8), the lane panel's Apply (`target_lanes`, from `data-lanes`) and
   the rest of the bulk panel — `set-mismatches` (`target_mismatches`, the two

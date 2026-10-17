@@ -61,7 +61,11 @@ class TestMismatchLimit:
 
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
-            data={"barcode_mismatches_index1": value}, headers=ORIGIN,
+            data={"barcode_mismatches_index1": value,
+                  "target_setting": shown_setting(logged_in_client, run.id,
+                                                  run.samples[0].id,
+                                                  "barcode_mismatches_index1")},
+            headers=ORIGIN,
         )
 
         assert resp.status_code == 400
@@ -110,7 +114,11 @@ class TestMismatchLimit:
 
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
-            data={"barcode_mismatches_index2": "1e"}, headers=ORIGIN,
+            data={"barcode_mismatches_index2": "1e",
+                  "target_setting": shown_setting(logged_in_client, run.id,
+                                                  run.samples[0].id,
+                                                  "barcode_mismatches_index2")},
+            headers=ORIGIN,
         )
 
         assert resp.status_code == 400

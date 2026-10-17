@@ -68,7 +68,10 @@ class TestATypedIndexPartIsRefused:
         run = _indexed_draft(ctx, "a3-typed-row")
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
-            data={"override_cycles": value}, headers=ORIGIN,
+            data={"override_cycles": value,
+                  "target_setting": shown_setting(logged_in_client, run.id,
+                                                  run.samples[0].id, "override_cycles")},
+            headers=ORIGIN,
         )
         assert resp.status_code == 400
         assert f"{rule} Nothing was saved." in html.unescape(resp.text)

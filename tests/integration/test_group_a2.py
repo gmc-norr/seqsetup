@@ -291,7 +291,10 @@ class TestATypedIndex2MaskedFirstIsRefused:
         run = _indexed_draft(ctx, "a2-typed-row", platform)
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
-            data={"override_cycles": "Y151;I8N2;N2I8;Y151"}, headers=ORIGIN,
+            data={"override_cycles": "Y151;I8N2;N2I8;Y151",
+                  "target_setting": shown_setting(logged_in_client, run.id,
+                                                  run.samples[0].id, "override_cycles")},
+            headers=ORIGIN,
         )
         assert resp.status_code == 400
         assert f"{INDEX2_ORDER_RULE} Nothing was saved." in html.unescape(resp.text)
