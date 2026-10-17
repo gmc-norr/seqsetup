@@ -1,5 +1,6 @@
-"""Every section the v2 Sample Sheet writer can write is named as Illumina
-names it.
+"""Every section the v2 Sample Sheet writer names in its own code, and every
+section a shipped profile writes, is named as Illumina names it. (A lab's own
+profile writes its ApplicationName as it is; that is not checked here.)
 
 docs/design/2026-10-17-rna-section-spelling-design.md. The DRAGEN RNA
 section is [DragenRna_Settings] / [DragenRna_Data] in Illumina's NovaSeq X
