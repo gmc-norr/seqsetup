@@ -113,6 +113,13 @@ compares every pair. That is option B in the F5 plan and is deliberately out of
 scope — rewriting the comparison is the one change that could silently stop
 finding a collision.
 
+A run with no collisions at all is therefore neither faster nor slower.
+Measured on an idle machine, three runs each, all indexes different:
+1,000 samples x 8 lanes before 32.6 / 32.1 / 32.0 s, after 32.1 / 32.7 /
+32.5 s; 600 x 8 before 11.5 / 11.5 / 11.4 s, after 11.6 / 11.5 / 11.5 s.
+(The figure in the first commit's message, "33.6 s against 51.7 s", was taken
+while the test suite was running and is noise, not a speed-up.)
+
 The number of findings is still O(groups^2) when nearly every index collides
 with nearly every other (short indexes with a tolerance of 2, say). That is no
 worse than today and the measured, ordinary case — one shared index — collapses
