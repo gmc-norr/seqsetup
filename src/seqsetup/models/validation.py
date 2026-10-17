@@ -263,6 +263,147 @@ class IndexCollision:
         )
 
 
+#: How many sample names a collision finding's message and the validation
+#: page list for one side of a collision. The rest are counted, never
+#: dropped without a word (docs/design/
+#: 2026-10-17-collision-report-grouped-design.md).
+MAX_LISTED_SAMPLE_NAMES = 5
+
+
+def _names_text(names: list[str]) -> str:
+    """At most MAX_LISTED_SAMPLE_NAMES names, then the exact remainder."""
+    shown = names[:MAX_LISTED_SAMPLE_NAMES]
+    rest = len(names) - len(shown)
+    return ", ".join(shown) + (f" and {rest} more" if rest else "")
+
+
+@dataclass
+class IndexCollisionGroup:
+    """One index-collision finding in one lane.
+
+    Either **one set** of samples whose read indexes are identical
+    (``sample2_ids`` empty: every pair inside ``sample1_ids`` collides), or
+    **two sets** whose indexes are within the run's mismatch tolerance
+    (every ``sample1_ids`` x ``sample2_ids`` pair collides). Every colliding
+    (sample, sample, lane) triple the check found is derivable that way —
+    the id lists are complete; only the *message* lists a few names and
+    counts the rest.
+
+    The distances and thresholds are those of any pair the finding stands
+    for: all the samples on one side share the sequences AND the mismatch
+    numbers the comparison reads, so one pair decides them all (docs/design/
+    2026-10-17-collision-report-grouped-design.md).
+    """
+
+    lane: int
+    index_type: str  # "i7" or "i7+i5"
+    sequence1: str
+    sequence2: str
+    hamming_distance: int  # an "i7+i5" finding: the two distances summed
+    mismatch_threshold: int  # an "i7+i5" finding: the two limits summed
+    sample1_ids: list[str] = field(default_factory=list)  # internal UUIDs
+    sample1_names: list[str] = field(default_factory=list)  # display names
+    sample2_ids: list[str] = field(default_factory=list)
+    sample2_names: list[str] = field(default_factory=list)
+    # Each index's own distance and limit; an "i7+i5" finding stands only
+    # when both distances are within their limits (the user's decision,
+    # 2026-10-13). None for an "i7" (single-index) finding.
+    i7_distance: Optional[int] = None
+    i7_threshold: Optional[int] = None
+    i5_distance: Optional[int] = None
+    i5_threshold: Optional[int] = None
+
+    def __post_init__(self):
+        # The id and name lists are parallel: the report's "N samples" and
+        # the names beside it must be the same N, and errors_by_sample marks
+        # a row per id. A mismatch would otherwise surface as a ValueError
+        # out of collision_description.
+        for ids, names, which in ((self.sample1_ids, self.sample1_names, 1),
+                                  (self.sample2_ids, self.sample2_names, 2)):
+            if len(ids) != len(names):
+                raise ValueError(
+                    f"IndexCollisionGroup sample{which}_ids has {len(ids)} ids "
+                    f"but sample{which}_names has {len(names)} names")
+        if self.sample2_ids and not self.sample1_ids:
+            raise ValueError("IndexCollisionGroup has a second set but no first set")
+
+    @property
+    def shares_one_index(self) -> bool:
+        """True when this is one set of samples on the same index."""
+        return not self.sample2_ids
+
+    @property
+    def sample_ids(self) -> list[str]:
+        """Every sample this finding names, first set then second."""
+        return self.sample1_ids + self.sample2_ids
+
+    @property
+    def sample_names(self) -> list[str]:
+        return self.sample1_names + self.sample2_names
+
+    @property
+    def sample_count(self) -> int:
+        return len(self.sample1_ids) + len(self.sample2_ids)
+
+    @property
+    def pair_count(self) -> int:
+        """How many colliding sample pairs this one finding stands for.
+
+        Nothing in the application shows it: a page that printed "44,850"
+        beside "1 error" would be the problem this change removes. It states
+        what the finding means, and the tests that prove every pair is still
+        derivable use it.
+        """
+        first = len(self.sample1_ids)
+        if self.shares_one_index:
+            return first * (first - 1) // 2
+        return first * len(self.sample2_ids)
+
+    @property
+    def examples1(self) -> str:
+        """The first set's names, capped (the rest counted)."""
+        return _names_text(self.sample1_names)
+
+    @property
+    def examples2(self) -> str:
+        return _names_text(self.sample2_names)
+
+    @property
+    def rule_description(self) -> str:
+        """Which distances put this finding inside the tolerance."""
+        if self.i5_distance is not None:
+            return (f"i7 distance {self.i7_distance} <= {self.i7_threshold} and "
+                    f"i5 distance {self.i5_distance} <= {self.i5_threshold}")
+        return f"distance {self.hamming_distance} <= threshold {self.mismatch_threshold}"
+
+    @property
+    def collision_description(self) -> str:
+        """One sentence. A finding standing for exactly two samples reads as
+        it did before the report was grouped."""
+        if self.sample_count == 2:
+            if self.shares_one_index:
+                name1, name2 = self.sample1_names
+            else:
+                (name1,), (name2,) = self.sample1_names, self.sample2_names
+            side1 = f"{name1} ({self.sequence1})"
+            side2 = f"{name2} ({self.sequence2})"
+        elif self.shares_one_index:
+            return (f"{self.index_type} collision in lane {self.lane}: "
+                    f"{self.sample_count} samples share {self.sequence1} "
+                    f"({self.examples1}) - {self.rule_description}")
+        else:
+            side1 = self._side(len(self.sample1_ids), self.sequence1, self.examples1)
+            side2 = self._side(len(self.sample2_ids), self.sequence2, self.examples2)
+        return (f"{self.index_type} collision in lane {self.lane}: "
+                f"{side1} vs {side2} - {self.rule_description}")
+
+    @staticmethod
+    def _side(count: int, sequence: str, examples: str) -> str:
+        if count == 1:
+            return f"{examples} ({sequence})"
+        return f"{count} samples with {sequence} ({examples})"
+
+
 @dataclass
 class IndexDistanceMatrix:
     """Matrix of index distances for heatmap visualization."""
@@ -291,7 +432,7 @@ class ValidationResult:
     """Complete validation result for a run."""
 
     duplicate_sample_ids: list[str]  # Error messages
-    index_collisions: list[IndexCollision]
+    index_collision_groups: list[IndexCollisionGroup]
     distance_matrices: dict[int, IndexDistanceMatrix]  # Lane -> matrix
     dark_cycle_errors: list[DarkCycleError] = field(default_factory=list)
     dark_cycle_samples: list[SampleDarkCycleInfo] = field(default_factory=list)  # Per-sample dark cycle info
@@ -328,7 +469,7 @@ class ValidationResult:
         """Check if there are any validation errors."""
         return (
             len(self.duplicate_sample_ids) > 0
-            or len(self.index_collisions) > 0
+            or len(self.index_collision_groups) > 0
             or len(self.dark_cycle_errors) > 0
             or len(self.application_errors) > 0
             or any(e.severity == ValidationSeverity.ERROR for e in self.configuration_errors)
@@ -339,7 +480,7 @@ class ValidationResult:
         """Total number of errors."""
         return (
             len(self.duplicate_sample_ids)
-            + len(self.index_collisions)
+            + len(self.index_collision_groups)
             + len(self.dark_cycle_errors)
             + len(self.application_errors)
             + sum(1 for e in self.configuration_errors if e.severity == ValidationSeverity.ERROR)

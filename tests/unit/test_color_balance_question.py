@@ -17,7 +17,7 @@ ERROR = PositionColorBalance(position=1, a_count=1)              # A: channel 2 
 
 
 def _result(color_balance):
-    return ValidationResult(duplicate_sample_ids=[], index_collisions=[], distance_matrices={},
+    return ValidationResult(duplicate_sample_ids=[], index_collision_groups=[], distance_matrices={},
                             color_balance=color_balance)
 
 

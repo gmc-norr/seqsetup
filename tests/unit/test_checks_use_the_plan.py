@@ -62,7 +62,7 @@ class TestTheMismatchNumbersTheChecksUse:
         a, b = _pair()
         a.barcode_mismatches_index1 = b.barcode_mismatches_index1 = None
         result = _validate(_run(a, b), [profile, _dragen("GermX")], _wgs()[1])
-        assert [(c.hamming_distance, c.mismatch_threshold) for c in result.index_collisions] == [
+        assert [(c.hamming_distance, c.mismatch_threshold) for c in result.index_collision_groups] == [
             (3, 4)]
 
     def test_the_run_number_is_not_used_on_the_profile_path(self):
@@ -71,7 +71,7 @@ class TestTheMismatchNumbersTheChecksUse:
         a.barcode_mismatches_index1 = b.barcode_mismatches_index1 = None
         run = _run(a, b)
         assert run.barcode_mismatches_index1 == 1
-        assert len(_validate(run, [profile, _dragen("GermX")], _wgs()[1]).index_collisions) == 1
+        assert len(_validate(run, [profile, _dragen("GermX")], _wgs()[1]).index_collision_groups) == 1
 
     def test_a_settings_only_profile_with_0_checks_at_0_and_warns(self):
         profile = _app("BCLX", settings={"SoftwareVersion": "4.3.6",
@@ -80,7 +80,7 @@ class TestTheMismatchNumbersTheChecksUse:
                        fields=BCL_FIELDS[:5], data={})
         a, b = _pair(i7_b="ACGTACGTAA")   # distance 1: collides at 1, not at 0
         result = _validate(_run(a, b), [profile, _dragen("GermX")], _wgs()[1])
-        assert result.index_collisions == []
+        assert result.index_collision_groups == []
         (warning,) = _of(result, "mismatch_number_not_in_sheet")
         assert warning.severity == ValidationSeverity.WARNING
         assert warning.sample_names == ["A", "B"]
@@ -97,7 +97,7 @@ class TestTheMismatchNumbersTheChecksUse:
         a, b = _pair()
         a.barcode_mismatches_index1 = b.barcode_mismatches_index1 = None
         clear_validation_cache()
-        assert ValidationService.validate_run(_run(a, b)).index_collisions == []
+        assert ValidationService.validate_run(_run(a, b)).index_collision_groups == []
 
 
 class TestTheFingerprint:

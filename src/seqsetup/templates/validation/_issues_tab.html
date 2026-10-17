@@ -1,33 +1,19 @@
 {#
    Issues tab content — full content of the validation page's "Issues" tab.
-   Inputs: result: ValidationResult
-#}
-{# Pre-compute the error + warning lists using namespace() for safe mutation #}
-{% set ns = namespace(errors=[], warnings=[]) %}
-{% for sample_id in result.duplicate_sample_ids %}
-    {% set ns.errors = ns.errors + [('duplicate', sample_id)] %}
-{% endfor %}
-{% for collision in result.index_collisions %}
-    {% set ns.errors = ns.errors + [('collision', collision)] %}
-{% endfor %}
-{% for dark_err in result.dark_cycle_errors %}
-    {% set ns.errors = ns.errors + [('dark_cycle', dark_err)] %}
-{% endfor %}
-{% for app_err in result.application_errors %}
-    {% set ns.errors = ns.errors + [('application', app_err)] %}
-{% endfor %}
-{% for cfg_err in result.configuration_errors %}
-    {% if cfg_err.severity.value == 'error' %}
-        {% set ns.errors = ns.errors + [('config', cfg_err)] %}
-    {% endif %}
-{% endfor %}
-{% for cfg_err in result.configuration_errors %}
-    {% if cfg_err.severity.value == 'warning' %}
-        {% set ns.warnings = ns.warnings + [('config_warning', cfg_err)] %}
-    {% endif %}
-{% endfor %}
 
-{% if not ns.errors and not ns.warnings %}
+   Inputs: result: ValidationResult
+
+   The two lists are built in Python — validation_summary.issue_rows, reached
+   through the `issue_rows` filter — and not here: this template used to grow
+   them inside a Jinja loop with a namespace, which copies the whole list on
+   every error and made a large report quadratic. The filter keeps that saving
+   while leaving the template self-sufficient: a caller cannot leave the lists
+   out, and Jinja's Undefined is falsy, so a missing list would have rendered
+   the all-clear panel for a run full of errors (docs/design/
+   2026-10-17-collision-report-grouped-design.md).
+#}
+{% set issue_errors, issue_warnings = result | issue_rows %}
+{% if not issue_errors and not issue_warnings %}
 <div class="issues-tab-content">
     <div class="validation-ok">
         <span class="status-icon ok">&#10003;</span>
@@ -35,17 +21,17 @@
     </div>
 </div>
 {% else %}
-<div class="issues-tab-content{% if ns.errors %} has-errors{% endif %}">
-    {% if ns.errors %}
-    <h3>Errors ({{ ns.errors|length }})</h3>
+<div class="issues-tab-content{% if issue_errors %} has-errors{% endif %}">
+    {% if issue_errors %}
+    <h3>Errors ({{ issue_errors|length }})</h3>
     <div class="validation-error-list">
-        {% for err_type, err in ns.errors %}
+        {% for err_type, err in issue_errors %}
             <div class="validation-error-item">
                 {% if err_type == 'duplicate' %}
                     <span class="error-type">Duplicate ID: </span>
                     <span>{{ err }}</span>
                 {% elif err_type == 'collision' %}
-                    {% with collision=err %}{% include "validation/_collision_detail.html" %}{% endwith %}
+                    {% with group=err %}{% include "validation/_collision_detail.html" %}{% endwith %}
                 {% elif err_type == 'dark_cycle' %}
                     {% with error=err %}{% include "validation/_dark_cycle_detail.html" %}{% endwith %}
                 {% elif err_type == 'application' %}
@@ -57,10 +43,10 @@
         {% endfor %}
     </div>
     {% endif %}
-    {% if ns.warnings %}
-    <h3 style="margin-top: 1rem;">Warnings ({{ ns.warnings|length }})</h3>
+    {% if issue_warnings %}
+    <h3 style="margin-top: 1rem;">Warnings ({{ issue_warnings|length }})</h3>
     <div class="validation-warning-list">
-        {% for err_type, err in ns.warnings %}
+        {% for err_type, err in issue_warnings %}
             <div class="validation-warning-item">
                 {% if err_type == 'config_warning' %}
                     {% with error=err %}{% include "validation/_configuration_error_detail.html" %}{% endwith %}

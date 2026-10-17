@@ -2,7 +2,9 @@
    API Exports: the runs GET /api/runs lists, in its order.
 
    Inputs:
-     runs:   list[SequencingRun] — Ready or Archived, newest change first
+     runs:   list[RunListing] — Ready or Archived, newest change first;
+             a listing row, not a whole run (docs/design/
+             2026-10-17-listing-summaries-design.md)
      status: "ready" | "archived"
 #}
 {% extends "_app_shell.html" %}
@@ -51,7 +53,7 @@
         <td class="border px-2 py-1">{{ run.run_name or "Untitled run" }}</td>
         <td class="border px-2 py-1">{{ run.instrument_platform.value }}</td>
         <td class="border px-2 py-1">{{ run.flowcell_type }}</td>
-        <td class="border px-2 py-1">{{ run.samples | length }}</td>
+        <td class="border px-2 py-1">{{ run.sample_count }}</td>
         <td class="border px-2 py-1">{{ (run.updated_at or run.created_at) | localtime }}</td>
         <td class="border px-2 py-1"><a class="text-primary underline" href="/served-runs/{{ run.id }}">See files</a></td>
       </tr>

@@ -30,6 +30,7 @@ from jinja2_fragments.fastapi import Jinja2Blocks
 from starlette.requests import Request
 
 from .services import edit_locks
+from .services.validation_summary import issue_rows
 from .services.versioned_tests import versions_used_text
 from .utils.clock import local_time
 
@@ -99,6 +100,11 @@ templates.env.filters["localtime"] = local_time
 templates.env.globals["edit_lock_beat_seconds"] = edit_locks.BEAT_SECONDS
 # The test versions a run's checks used (spec 2026-10-07 group A4, §3).
 templates.env.filters["versions_used"] = versions_used_text
+# The validation page's Issues tab rows, built in Python but reached from
+# the template, so no caller can leave them out: Jinja's Undefined is falsy,
+# and a missing list would render the page's all-clear for a run with errors
+# (docs/design/2026-10-17-collision-report-grouped-design.md).
+templates.env.filters["issue_rows"] = issue_rows
 
 
 def render(

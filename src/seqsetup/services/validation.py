@@ -199,8 +199,11 @@ class ValidationService:
             )
         mismatches = plan.mismatches if plan else None
 
-        # Index collision validation (delegated)
-        collisions = IndexCollisionValidator.validate_index_collisions(
+        # Index collision validation (delegated). The grouped form: one
+        # finding per set of samples sharing one read index, not one object
+        # per colliding pair (docs/design/
+        # 2026-10-17-collision-report-grouped-design.md).
+        collision_groups = IndexCollisionValidator.validate_index_collision_groups(
             run, instrument_config, mismatches)
 
         distance_matrices = (
@@ -293,7 +296,7 @@ class ValidationService:
 
         return ValidationResult(
             duplicate_sample_ids=duplicate_errors,
-            index_collisions=collisions,
+            index_collision_groups=collision_groups,
             distance_matrices=distance_matrices,
             dark_cycle_errors=dark_cycle_errors,
             dark_cycle_samples=dark_cycle_samples,
@@ -1250,6 +1253,7 @@ class ValidationService:
 
     # Re-export for backward compatibility
     validate_index_collisions = IndexCollisionValidator.validate_index_collisions
+    validate_index_collision_groups = IndexCollisionValidator.validate_index_collision_groups
     calculate_index_distances = IndexCollisionValidator.calculate_index_distances
     validate_dark_cycles = ColorAnalysisValidator.validate_dark_cycles
     build_dark_cycle_info = ColorAnalysisValidator.build_dark_cycle_info

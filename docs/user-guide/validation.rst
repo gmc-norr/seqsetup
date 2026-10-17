@@ -78,6 +78,17 @@ when both indexes collide; standalone ``bcl-convert`` 3.10.5 and later is
 stricter -- it stops when either index is too similar -- so convert these
 runs with DRAGEN.
 
+Collisions are reported **by group, not by pair**. When several samples in
+a lane end up on the same index -- after a bulk assignment, a pasted column
+filled down, or a worklist that repeats one -- that is one error saying how
+many samples share it, with its sequences and the first few sample names
+("and N more" counts the rest). Two *different* sequences that are within
+the tolerance of each other are one error naming both sets. The error count
+on the Check panel and in the Mark Ready refusal therefore counts these
+findings, not the pairs behind them: three samples on one index is one
+error, not three. Every sample a finding names is still marked in the
+sample table, and the run is still refused at Mark Ready.
+
 .. figure:: /_static/screenshots/check/validation-issues.png
    :alt: The validation page's Issues tab, listing index collision and other errors in red.
 

@@ -146,17 +146,39 @@ class TestAWorklist:
 
 class TestARunHoldingALongValue:
     """Only a run saved before the cuts (2026-05-25) can hold one. By the
-    user's choice it is not cut on load: the dashboard names it as a run it
-    could not read."""
+    user's choice it is not cut on load: the run cannot be opened.
 
-    def test_the_dashboard_names_it(self, logged_in_client, fresh_app):
-        _app, ctx, db = fresh_app
-        _run(ctx, ["PAT1"])
+    Since 2026-10-17 the dashboard reads only the fields it shows and never
+    looks at a sample, so such a run is *listed* — by its name, with its
+    sample count — and the refusal happens when it is opened
+    (docs/design/2026-10-17-listing-summaries-design.md). The value is still
+    never cut, which is the guarantee this file is about."""
+
+    def _stored_long(self, db):
         doc = db["runs"].find_one({"_id": RUN})
         doc["samples"][0]["sample_id"] = LONG
         db["runs"].replace_one({"_id": RUN}, doc)
 
+    def test_the_dashboard_lists_it_without_reading_the_long_value(
+            self, logged_in_client, fresh_app):
+        _app, ctx, db = fresh_app
+        _run(ctx, ["PAT1"])
+        self._stored_long(db)
+
         resp = logged_in_client.get("/")
 
         assert resp.status_code == 200
-        assert f"could not be read and is not listed: {RUN}." in resp.text
+        assert f'id="run-item-{RUN}"' in resp.text
+        assert "could not be read and is not listed" not in resp.text
+        assert LONG not in resp.text, "the long value is never shown, only counted"
+
+    def test_opening_it_still_fails_and_the_value_is_never_cut(
+            self, logged_in_client, fresh_app):
+        _app, ctx, db = fresh_app
+        _run(ctx, ["PAT1"])
+        self._stored_long(db)
+
+        with pytest.raises(ValueError):
+            logged_in_client.get(f"/runs/{RUN}")
+
+        assert db["runs"].find_one({"_id": RUN})["samples"][0]["sample_id"] == LONG

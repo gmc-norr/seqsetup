@@ -16,7 +16,7 @@ from seqsetup.models.validation import (
     ColorBalanceStatus,
     ConfigurationError,
     DarkCycleError,
-    IndexCollision,
+    IndexCollisionGroup,
     IndexColorBalance,
     IndexDistanceMatrix,
     LaneColorBalance,
@@ -72,7 +72,7 @@ def empty_validation_result():
     """Create an empty validation result (no errors)."""
     return ValidationResult(
         duplicate_sample_ids=[],
-        index_collisions=[],
+        index_collision_groups=[],
         distance_matrices={},
     )
 
@@ -80,17 +80,17 @@ def empty_validation_result():
 @pytest.fixture
 def validation_result_with_errors():
     """Create a validation result with various errors."""
-    collision = IndexCollision(
-        sample1_id="s1",
-        sample1_name="S001",
-        sample2_id="s2",
-        sample2_name="S002",
+    collision = IndexCollisionGroup(
         lane=1,
         index_type="i7",
         sequence1="ATTACTCG",
         sequence2="ATTACTCA",
         hamming_distance=1,
         mismatch_threshold=1,
+        sample1_ids=["s1"],
+        sample1_names=["S001"],
+        sample2_ids=["s2"],
+        sample2_names=["S002"],
     )
 
     dark_error = DarkCycleError(
@@ -140,7 +140,7 @@ def validation_result_with_errors():
 
     return ValidationResult(
         duplicate_sample_ids=["Duplicate sample ID: S001"],
-        index_collisions=[collision],
+        index_collision_groups=[collision],
         distance_matrices={1: matrix},
         dark_cycle_errors=[dark_error],
         dark_cycle_samples=[dark_sample],
@@ -191,7 +191,8 @@ class TestValidationReportJSON:
         c = collisions[0]
         assert c["lane"] == 1
         assert c["index_type"] == "i7"
-        assert c["sample1_name"] == "S001"
+        assert c["sample1_names"] == ["S001"] and c["sample1_count"] == 1
+        assert c["sample2_names"] == ["S002"] and c["sample2_count"] == 1
         assert c["hamming_distance"] == 1
 
     def test_export_dark_cycle_details(self, basic_run, validation_result_with_errors):
@@ -254,7 +255,7 @@ class TestValidationReportPDF:
         # Should be larger than empty report due to heatmaps and tables
         empty_result = ValidationReportPDF.export(
             basic_run,
-            ValidationResult(duplicate_sample_ids=[], index_collisions=[], distance_matrices={}),
+            ValidationResult(duplicate_sample_ids=[], index_collision_groups=[], distance_matrices={}),
         )
         assert len(result) > len(empty_result)
 
@@ -318,7 +319,7 @@ def message_result(payload: str, severity: ValidationSeverity) -> ValidationResu
     """A result whose only message echoes ``payload``, as a validator would."""
     return ValidationResult(
         duplicate_sample_ids=[],
-        index_collisions=[],
+        index_collision_groups=[],
         distance_matrices={},
         configuration_errors=[
             ConfigurationError(

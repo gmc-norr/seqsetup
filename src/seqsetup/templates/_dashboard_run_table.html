@@ -2,7 +2,9 @@
    Dashboard run table — used by a status tab and by search results.
 
    Inputs:
-     table_runs:  list[SequencingRun], in display order
+     table_runs:  list[RunListing], in display order — a listing row, not a
+                  whole run: it reads none of the samples, only how many
+                  there are (docs/design/2026-10-17-listing-summaries-design.md)
      show_status: bool — search results mix statuses, so each row shows
                   its status badge
      matched:     dict[run id, list[str]] — search results only: the sample
@@ -37,7 +39,7 @@
         {% endif %}
         <span>{{ run.instrument_platform.value }}</span>
         <span>{{ run.flowcell_type or "—" }}</span>
-        <span>{{ run.samples|length }}</span>
+        <span>{{ run.sample_count }}</span>
         <span class="truncate">{{ run.created_by or "—" }}</span>
         <span class="truncate">{{ run.updated_by or "—" }}</span>
         <span>{{ run.updated_at | localtime }}</span>
@@ -58,7 +60,7 @@
                     hx-target="#dashboard"
                     hx-swap="outerHTML"
                     hx-confirm="Archive this run?">Archive</button>
-            {% elif run.status.value == 'draft' and not run.samples and (not run.was_ready or (user and user.is_admin)) %}
+            {% elif run.status.value == 'draft' and run.sample_count == 0 and (not run.was_ready or (user and user.is_admin)) %}
             <button class="btn btn-danger btn-small"
                     hx-delete="/runs/{{ run.id }}"
                     hx-target="#dashboard"

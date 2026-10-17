@@ -742,7 +742,7 @@ class TestValidateRun:
 
         result = ValidationService.validate_run(run)
         assert hasattr(result, "duplicate_sample_ids")
-        assert hasattr(result, "index_collisions")
+        assert hasattr(result, "index_collision_groups")
         assert hasattr(result, "distance_matrices")
 
     def test_has_errors_property(self):

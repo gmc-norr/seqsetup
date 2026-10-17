@@ -168,12 +168,22 @@ Validation Models
 -----------------
 
 **ValidationResult**
-   Complete validation output including duplicate sample IDs, index collisions,
-   distance matrices, dark cycle errors, and color balance analysis.
+   Complete validation output including duplicate sample IDs, index collision
+   groups, distance matrices, dark cycle errors, and color balance analysis.
+
+**IndexCollisionGroup**
+   One index-collision finding in one lane: either a set of samples whose read
+   indexes are identical, or two such sets whose indexes are within the run's
+   mismatch tolerance. It carries the Hamming distances and thresholds, and
+   every member's id and name, so every colliding pair of samples is derivable
+   from it. ``ValidationResult.index_collision_groups`` holds these, one per
+   finding rather than one per colliding pair.
 
 **IndexCollision**
-   A collision between two indexes in the same lane, with Hamming distance and
-   mismatch threshold.
+   One colliding pair of samples in one lane, with Hamming distance and
+   mismatch threshold. The per-pair form, returned by
+   ``IndexCollisionValidator.validate_index_collisions``; the report uses
+   ``IndexCollisionGroup``.
 
 **IndexDistanceMatrix**
    Pairwise Hamming distances between all indexes in a lane (i7, i5, and combined).
