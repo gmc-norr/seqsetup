@@ -160,7 +160,8 @@ Performs comprehensive run validation:
 
 - **Duplicate sample IDs** -- Detects non-unique identifiers
 - **Index collisions** -- Per-lane Hamming distance checking against mismatch
-  thresholds
+  thresholds, reported one finding per group of samples sharing an index
+  rather than one per colliding pair
 - **Dark cycle detection** -- Identifies indexes starting with two dark bases
   (two-color SBS instruments)
 - **Color balance analysis** -- Per-position signal distribution across fluorescence

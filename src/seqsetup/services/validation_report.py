@@ -72,7 +72,7 @@ class ValidationReportJSON:
             "summary": {
                 "error_count": result.error_count,
                 "warning_count": result.warning_count,
-                "collision_count": len(result.index_collisions),
+                "collision_count": len(result.index_collision_groups),
                 "dark_cycle_error_count": len(result.dark_cycle_errors),
                 "color_balance_issue_count": result.color_balance_issue_count,
                 "application_error_count": len(result.application_errors),
@@ -81,22 +81,29 @@ class ValidationReportJSON:
             },
             "errors": {
                 "duplicate_sample_ids": result.duplicate_sample_ids,
+                # One row per grouped finding (docs/design/
+                # 2026-10-17-collision-report-grouped-design.md). The name
+                # lists are complete, not capped as the on-screen message
+                # is: a Ready run has no collision, so this row is only
+                # ever written for a run nobody can mark Ready.
                 "index_collisions": [
                     {
-                        "lane": c.lane,
-                        "index_type": c.index_type,
-                        "sample1_name": c.sample1_name,
-                        "sample2_name": c.sample2_name,
-                        "sequence1": c.sequence1,
-                        "sequence2": c.sequence2,
-                        "hamming_distance": c.hamming_distance,
-                        "mismatch_threshold": c.mismatch_threshold,
-                        "i7_distance": c.i7_distance,
-                        "i7_threshold": c.i7_threshold,
-                        "i5_distance": c.i5_distance,
-                        "i5_threshold": c.i5_threshold,
+                        "lane": g.lane,
+                        "index_type": g.index_type,
+                        "sample1_count": len(g.sample1_ids),
+                        "sample1_names": list(g.sample1_names),
+                        "sample2_count": len(g.sample2_ids),
+                        "sample2_names": list(g.sample2_names),
+                        "sequence1": g.sequence1,
+                        "sequence2": g.sequence2,
+                        "hamming_distance": g.hamming_distance,
+                        "mismatch_threshold": g.mismatch_threshold,
+                        "i7_distance": g.i7_distance,
+                        "i7_threshold": g.i7_threshold,
+                        "i5_distance": g.i5_distance,
+                        "i5_threshold": g.i5_threshold,
                     }
-                    for c in result.index_collisions
+                    for g in result.index_collision_groups
                 ],
                 "dark_cycle_errors": [
                     {
@@ -228,7 +235,7 @@ class ValidationReportPDF:
             ["Category", "Count"],
             ["Errors", str(result.error_count)],
             ["Warnings", str(result.warning_count)],
-            ["Index Collisions", str(len(result.index_collisions))],
+            ["Index Collisions", str(len(result.index_collision_groups))],
             ["Dark Cycle Errors", str(len(result.dark_cycle_errors))],
             ["Application Errors", str(len(result.application_errors))],
             ["Configuration Issues", str(len(result.configuration_errors))],

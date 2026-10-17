@@ -12,10 +12,17 @@ from ..models.sequencing_run import SequencingRun
 from ..models.validation import ValidationResult, ValidationSeverity
 
 
+#: How many index-collision messages one sample's row carries. A sample can
+#: be within the tolerance of many different sequences; the rest are counted
+#: in one line, never dropped without a word (docs/design/
+#: 2026-10-17-collision-report-grouped-design.md).
+MAX_SAMPLE_ERROR_MESSAGES = 20
+
+
 def error_messages(result: ValidationResult) -> list[str]:
     """Every blocking error as one sentence; one per ``result.error_count``."""
     msgs = list(result.duplicate_sample_ids)
-    msgs.extend(c.collision_description for c in result.index_collisions)
+    msgs.extend(g.collision_description for g in result.index_collision_groups)
     msgs.extend(e.description for e in result.dark_cycle_errors)
     msgs.extend(e.detail for e in result.application_errors)
     msgs.extend(
@@ -65,9 +72,24 @@ def errors_by_sample(run: SequencingRun, result: ValidationResult) -> dict[str, 
             for sid in ids:
                 by_id[sid].append(msg)
 
-    for c in result.index_collisions:
-        by_id[c.sample1_id].append(c.collision_description)
-        by_id[c.sample2_id].append(c.collision_description)
+    # Every sample a collision finding names is marked — the whole
+    # membership, not only the names its message lists. A sample in more
+    # findings than MAX_SAMPLE_ERROR_MESSAGES keeps the first of them and
+    # one line saying exactly how many more there are.
+    collisions_by_id: dict[str, list[str]] = defaultdict(list)
+    for group in result.index_collision_groups:
+        description = group.collision_description
+        for sid in group.sample_ids:
+            collisions_by_id[sid].append(description)
+    for sid, descriptions in collisions_by_id.items():
+        kept = list(dict.fromkeys(descriptions))
+        if len(kept) > MAX_SAMPLE_ERROR_MESSAGES:
+            hidden = len(kept) - MAX_SAMPLE_ERROR_MESSAGES
+            kept = kept[:MAX_SAMPLE_ERROR_MESSAGES] + [
+                f"and {hidden} more index collisions on this sample - "
+                f"open the validation page."
+            ]
+        by_id[sid].extend(kept)
     for e in result.dark_cycle_errors:
         by_id[e.sample_id].append(e.description)
     for e in result.application_errors:
@@ -82,3 +104,27 @@ def errors_by_sample(run: SequencingRun, result: ValidationResult) -> dict[str, 
     # A sample named twice by one error (e.g. in two collisions with the
     # same text) lists that message once.
     return {sid: list(dict.fromkeys(msgs)) for sid, msgs in by_id.items()}
+
+
+def issue_rows(result: ValidationResult) -> tuple[list[tuple], list[tuple]]:
+    """The Issues tab's error and warning rows, as (kind, item) pairs.
+
+    Built here rather than in the template: the Jinja version grew its list
+    with ``ns.errors = ns.errors + [...]`` inside a loop, which copies the
+    whole list on every error and made a large report quadratic
+    (docs/design/2026-10-17-collision-report-grouped-design.md).
+
+    ``errors`` has one row per ``result.error_count``, in the same order as
+    ``error_messages``.
+    """
+    errors: list[tuple] = [("duplicate", message) for message in result.duplicate_sample_ids]
+    errors += [("collision", group) for group in result.index_collision_groups]
+    errors += [("dark_cycle", error) for error in result.dark_cycle_errors]
+    errors += [("application", error) for error in result.application_errors]
+    errors += [("config", error) for error in result.configuration_errors
+               if error.severity == ValidationSeverity.ERROR]
+    warnings: list[tuple] = [
+        ("config_warning", error) for error in result.configuration_errors
+        if error.severity == ValidationSeverity.WARNING
+    ]
+    return errors, warnings

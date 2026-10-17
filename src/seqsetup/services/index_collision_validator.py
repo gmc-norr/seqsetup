@@ -7,8 +7,12 @@ from typing import Optional
 from ..data.instruments import get_lanes_for_flowcell
 from ..models.sample import Sample
 from ..models.sequencing_run import SequencingRun
-from ..models.validation import IndexCollision, IndexDistanceMatrix
-from .validation_utils import effective_index_sequence, hamming_distance
+from ..models.validation import IndexCollision, IndexCollisionGroup, IndexDistanceMatrix
+from .validation_utils import (
+    effective_index_sequence,
+    group_samples_by_lane,
+    hamming_distance,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -86,6 +90,14 @@ class IndexCollisionValidator:
 
         Returns:
             List of IndexCollision objects describing each collision
+
+        This is the per-pair form. It is O(pairs) in its OUTPUT as well as
+        its work, which one shared index turns into millions of objects, so
+        nothing in the application calls it: the production path is
+        ``validate_index_collision_groups`` below, which reports one finding
+        per group. This form is kept because it is the plainest statement of
+        the comparison and the collision-rule unit tests drive it
+        (docs/design/2026-10-17-collision-report-grouped-design.md).
         """
         collisions = []
 
@@ -117,6 +129,148 @@ class IndexCollisionValidator:
             collisions.extend(lane_collisions)
 
         return collisions
+
+    @classmethod
+    def _collision_key(
+        cls,
+        sample: Sample,
+        run: SequencingRun,
+        mismatches: Optional[dict] = None,
+    ) -> tuple:
+        """Everything ``_check_sample_pair_collision`` reads about a sample
+        except its id and name, which it only puts in the report.
+
+        Two samples with the same key are therefore interchangeable for the
+        comparison: one call on a representative decides the verdict for
+        every pair across two groups. The key is
+        (effective i7, effective i5, the sample's own effective mismatch
+        number for index 1, and for index 2 — None when it has no i5, which
+        makes the index-2 number unreadable by the i7-only rule).
+
+        ``_effective_mismatches`` takes the LARGER of two samples' numbers,
+        so holding each sample's own number in the key is enough.
+        """
+        i7_seq = effective_index_sequence(sample, 1, run)
+        i5_seq = effective_index_sequence(sample, 2, run)
+        m_i7 = cls._effective_mismatches(sample, sample, run, 1, mismatches)
+        m_i5 = cls._effective_mismatches(sample, sample, run, 2, mismatches) if i5_seq else None
+        return (i7_seq, i5_seq, m_i7, m_i5)
+
+    @classmethod
+    def validate_index_collision_groups(
+        cls,
+        run: SequencingRun,
+        instrument_config=None,
+        mismatches: Optional[dict] = None,
+    ) -> list[IndexCollisionGroup]:
+        """Detect index collisions within each lane, reported by group.
+
+        The comparison is unchanged — ``_check_sample_pair_collision`` still
+        decides every collision. What changes is what is collected: one
+        finding per set of samples sharing one read index, and one per pair
+        of such sets that is within the run's mismatch tolerance, instead of
+        one object per colliding pair (docs/design/
+        2026-10-17-collision-report-grouped-design.md).
+
+        Groups are never merged by chaining: collisions within a tolerance
+        are not transitive, so each pair of groups is reported on its own.
+
+        Args:
+            run: Sequencing run to validate
+            instrument_config: Optional InstrumentConfig for DB overrides
+            mismatches: Optional sheet-plan mismatch numbers (see
+                _effective_mismatches)
+
+        Returns:
+            List of IndexCollisionGroup findings, every colliding
+            (sample, sample, lane) triple derivable from them.
+        """
+        lane_samples = group_samples_by_lane(run, instrument_config=instrument_config)
+
+        findings: list[IndexCollisionGroup] = []
+        for lane in sorted(lane_samples):
+            # Samples without an index took no part in the per-pair scan.
+            indexed = [s for s in lane_samples[lane] if s.has_index]
+            findings.extend(cls._lane_collision_groups(indexed, lane, run, mismatches))
+        return findings
+
+    @classmethod
+    def _lane_collision_groups(
+        cls,
+        samples: list[Sample],
+        lane: int,
+        run: SequencingRun,
+        mismatches: Optional[dict] = None,
+    ) -> list[IndexCollisionGroup]:
+        """The findings for one lane. See validate_index_collision_groups."""
+        # First-seen order, so the report is deterministic.
+        groups: dict[tuple, list[Sample]] = {}
+        for sample in samples:
+            groups.setdefault(cls._collision_key(sample, run, mismatches), []).append(sample)
+
+        # A sample whose effective i7 is empty collided with nothing in the
+        # per-pair scan (it returned None for every such pair), so its group
+        # takes no part here.
+        taking_part = [(key, members) for key, members in groups.items() if key[0]]
+
+        findings: list[IndexCollisionGroup] = []
+        for key, members in taking_part:
+            if len(members) < 2:
+                continue
+            # Identical sequences: distance 0 on both indexes, which is
+            # within every tolerance, so every pair inside the group
+            # collides. The representative pair supplies the numbers.
+            collision = cls._check_sample_pair_collision(
+                members[0], members[1], lane, run, mismatches)
+            if collision is None:  # pragma: no cover - identical indexes always collide
+                raise AssertionError(
+                    f"lane {lane}: {members[0].id} and {members[1].id} hold the same "
+                    f"read index {key[0]!r}/{key[1]!r} and the same mismatch numbers "
+                    f"but the comparison does not call them a collision")
+            findings.append(cls._group_from(collision, members, []))
+
+        # One call per pair of groups. A lane of all-different indexes has
+        # one group per sample, so this is the same number of comparisons
+        # the per-pair scan made; the locals keep it that fast.
+        compare = cls._check_sample_pair_collision
+        build = cls._group_from
+        for i in range(len(taking_part)):
+            first = taking_part[i][1]
+            representative = first[0]
+            for j in range(i + 1, len(taking_part)):
+                second = taking_part[j][1]
+                collision = compare(representative, second[0], lane, run, mismatches)
+                if collision:
+                    findings.append(build(collision, first, second))
+        return findings
+
+    @staticmethod
+    def _group_from(
+        collision: IndexCollision,
+        first: list[Sample],
+        second: list[Sample],
+    ) -> IndexCollisionGroup:
+        """One finding, from the representative pair's collision and the two
+        groups it stands for."""
+        def name(sample: Sample) -> str:
+            return sample.sample_id or sample.sample_name or sample.id
+
+        return IndexCollisionGroup(
+            lane=collision.lane,
+            index_type=collision.index_type,
+            sequence1=collision.sequence1,
+            sequence2=collision.sequence2,
+            hamming_distance=collision.hamming_distance,
+            mismatch_threshold=collision.mismatch_threshold,
+            sample1_ids=[s.id for s in first],
+            sample1_names=[name(s) for s in first],
+            sample2_ids=[s.id for s in second],
+            sample2_names=[name(s) for s in second],
+            i7_distance=collision.i7_distance,
+            i7_threshold=collision.i7_threshold,
+            i5_distance=collision.i5_distance,
+            i5_threshold=collision.i5_threshold,
+        )
 
     @classmethod
     def calculate_index_distances(

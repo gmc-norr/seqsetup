@@ -104,7 +104,7 @@ class TestTheReviewCases:
         run = _run(a, b, c, cycles=RunCycles(151, 151, 10, 0))
         clear_validation_cache()
         result = ValidationService.validate_run(run)
-        assert result.index_collisions == []
+        assert result.index_collision_groups == []
         categories = [e.category for e in result.configuration_errors]
         assert "duplicate_index_pair" not in categories
         assert "index_length_mismatch" not in categories

@@ -1189,7 +1189,7 @@ class TestTheValidationPageShowsTheTests:
         from seqsetup.services.versioned_tests import versions_used_text
         tests = [{"test": t, "asked": "1", "version": "1.2.3", "file": f"TestProfile_{t}<b>.yaml"}
                  for t in ("WGS", "WES", "RNA")]
-        result = ValidationResult(duplicate_sample_ids=[], index_collisions=[], distance_matrices={},
+        result = ValidationResult(duplicate_sample_ids=[], index_collision_groups=[], distance_matrices={},
                                   test_versions=tests)
         run = SequencingRun(run_name="pdf", instrument_platform=InstrumentPlatform.NOVASEQ_X,
                             flowcell_type="10B")

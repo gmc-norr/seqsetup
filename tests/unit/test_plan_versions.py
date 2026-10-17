@@ -184,7 +184,7 @@ class TestTheTestsLineInThePDF:
     @staticmethod
     def _result(count):
         from seqsetup.models.validation import ValidationResult
-        result = ValidationResult(duplicate_sample_ids=[], index_collisions=[],
+        result = ValidationResult(duplicate_sample_ids=[], index_collision_groups=[],
                                   distance_matrices={})
         result.test_versions = [
             {"test": f"T{i:03d}", "asked": "1", "version": "1.0.0",

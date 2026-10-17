@@ -383,6 +383,6 @@ class TestTheResultNamesTheDirection:
         assert rows.index(["i5 workflow", "Read-first"]) == rows.index(["Flowcell", "—"]) + 1
 
     def test_a_result_built_elsewhere_reads_none(self):
-        result = ValidationResult(duplicate_sample_ids=[], index_collisions=[], distance_matrices={})
+        result = ValidationResult(duplicate_sample_ids=[], index_collision_groups=[], distance_matrices={})
         report = ValidationReportJSON._build_report(_run("MiSeq"), result)
         assert (report["i5_workflow"], report["i5_read_orientation"]) == ("none", "none")
