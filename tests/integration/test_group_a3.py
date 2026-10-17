@@ -6,6 +6,7 @@ import html
 import pytest
 
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
+from .page_shows import shown_setting
 from .conftest import hold_edit_lock, nothing_stored, stored_export
 
 
@@ -92,7 +93,10 @@ class TestATypedIndexPartIsRefused:
         run = _indexed_draft(ctx, "a3-typed-ok")
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
-            data={"override_cycles": value}, headers=ORIGIN,
+            data={"override_cycles": value,
+                  "target_setting": shown_setting(logged_in_client, run.id,
+                                                  run.samples[0].id, "override_cycles")},
+            headers=ORIGIN,
         )
         assert resp.status_code == 200
         assert ctx.run_repo.get_by_id(run.id).samples[0].override_cycles == value

@@ -287,7 +287,14 @@ a mistyped ``1e``, is refused with a message in the banner, and nothing is
 saved. The bulk **Mismatches** row below works the same way.
 
 Each of these three fields saves independently -- changing one does not
-touch the others on that row. For a sample that already has an index,
+touch the others on that row. Each also sends the value the page was
+showing for that box. If another tab (or someone else) changed that one
+value since this page drew it, nothing is saved and the page says so --
+*"Nothing was saved. Reload the page and try again. The barcode mismatches
+on these samples changed since this page was loaded: PAT1."* What you typed
+stays on screen, as it does after any refused edit; reload the page to see
+what is stored. A change to the *other* boxes on the row, or to another
+row, is not that box's business and does not stop it saving. For a sample that already has an index,
 clearing Override Cycles back to blank does not leave it empty: SeqSetup
 recalculates it from the sample's index and the run's cycle configuration.
 An Override Cycles value you type is checked immediately: anything other

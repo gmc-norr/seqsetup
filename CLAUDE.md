@@ -99,9 +99,14 @@ a model or service layer where it cannot be forgotten.
   as the index routes (the row's `x` sends it in the query string: htmx 2 puts a
   DELETE's `hx-vals` there) and refuse a row whose index has moved, or a sample
   the run no longer has, rather than deleting it or answering as if it had. The
-  per-row Override Cycles and MM boxes are step 4 of
-  `docs/design/2026-10-17-stale-page-checks-design.md` and are not built yet:
-  until they are, a stale page can still overwrite a row box without a word.
+  per-row Override Cycles and MM boxes send `target_setting`, the box's own
+  `defaultValue`, added in `htmx:configRequest` so a save waiting in the row's
+  queue names what the save before it stored — and the box takes that stored
+  value in an `htmx:afterRequest` listener, which htmx fires before it resumes
+  the row's queue (F3's own XHR listener runs later still and does the rest).
+  All four steps are built: `docs/design/2026-10-17-stale-page-checks-design.md`.
+  `POST /runs/{id}/samples/{sample_id}` (`update_sample`) is the one mutation
+  left out, deliberately: no page sends it, only tests.
 - **Partial updates update only what was submitted.** Handlers serving per-field HTMX inputs (e.g. `update_sample_settings`, `update_sample`) MUST check `field in form` before writing — defaulting missing fields to empty and writing them back silently destroys sibling values.
 - **Several indexes dropped at once fill the rows in panel order.** `assign_indexes_bulk` sorts the dropped indexes into the kit's own list order (`_panel_position`, the order the index panel shows them) before it fills rows, and `app.js` sends them in that order (`inPanelOrder`, which the keyboard's one-index assign also uses); click order once gave the first sample the last-clicked index, a swap no check can see. A drop mixing index kinds or kits has no one order and is refused.
 - **A kit's name and version mean one content.** `IndexKit.fingerprint()` is a sha256 of everything in the kit but its description, comments, owner and source, which reach no sample or sheet. Every index chip carries it (`data-kit-fingerprint`), `app.js` sends it with every drop and keyboard assign, and `_find_index` in `routes/samples.py` refuses (409) a drop whose fingerprint is not the stored kit's, or that sends none; the fill's plan signature holds it too. A sync refuses a kit file that keeps a stored synced kit's name and version with another fingerprint, and every file of a name and version two files give (`_refuse_changed_or_repeated_kits` in `services/github_sync.py`); the stored kit stays. A kit whose file left the repository is removed, so a later sync can bring its name and version back changed, as an upload after a delete can; a page loaded before still cannot assign from it. A drop from a page loaded before its kit changed once gave the sample sequences its chip never showed.

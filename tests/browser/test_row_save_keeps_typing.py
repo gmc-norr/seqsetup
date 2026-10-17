@@ -326,7 +326,11 @@ class TestACorrectionTypedWhileTheBoxSaves:
         page.keyboard.press(key)            # before the first answer
         _handled(page)
 
-        assert sent == ["barcode_mismatches_index1=0", "barcode_mismatches_index1=1"], sent
+        # Each save also names what the page showed for that box, and the
+        # second names what the first stored -- the row's queue sends it
+        # after the first answer (design note 2026-10-17, step 4).
+        assert sent == ["barcode_mismatches_index1=0&target_setting=1",
+                        "barcode_mismatches_index1=1&target_setting=0"], sent
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 1
         assert i7.input_value() == "1"
 
@@ -365,7 +369,7 @@ class TestARowRedrawnWhileASaveIsOnItsWay:
         with page.expect_response(_a_settings_answer):
             pass                            # the held i7 save is answered
         _handled(page)
-        assert sent == ["barcode_mismatches_index1=0"], sent
+        assert sent == ["barcode_mismatches_index1=0&target_setting=1"], sent
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index2 == 1, (
             "the banner says the i5 change was not saved, but it was")
 

@@ -2304,6 +2304,29 @@ async def update_sample_settings(
                     calculated_for=(sample.sample_id or sample.id) if calculated else None,
                     problem=problem,
                 ))
+        # What the page showed in this box -- its defaultValue, which app.js
+        # sets to the stored value on every answer. A box another tab has
+        # changed is refused instead of overwritten, with nothing saved
+        # (design note 2026-10-17, step 4). One box saves at a time, so one
+        # value: a request writing more than one setting must have shown the
+        # same thing in each, or it is refused.
+        boxes = {
+            "override_cycles": (sample.override_cycles or "", "Override Cycles"),
+            "barcode_mismatches_index1": (_mismatch_text(sample.barcode_mismatches_index1),
+                                          "barcode mismatches"),
+            "barcode_mismatches_index2": (_mismatch_text(sample.barcode_mismatches_index2),
+                                          "barcode mismatches"),
+        }
+        written = [name for name in boxes if name in form]
+        if written:
+            shown = form.get("target_setting")
+            if not isinstance(shown, str):
+                return Response(STALE_PAGE_SAVE, status_code=400)
+            moved = [name for name in written if boxes[name][0] != shown]
+            if moved:
+                return _changed_rows_refusal(
+                    [sample.sample_id], CHANGED_ROWS_SAVE, boxes[moved[0]][1])
+
         with saving_run(run, ctx, request):
             if has_override:
                 sample.override_cycles = final_override

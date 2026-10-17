@@ -14,7 +14,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
-from .page_shows import shown_mismatches
+from .page_shows import shown_mismatches, shown_setting
 from .conftest import disable_repos, nothing_stored, run_version
 from .conftest import hold_edit_lock
 
@@ -75,7 +75,11 @@ class TestMismatchLimit:
 
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
-            data={"barcode_mismatches_index1": value}, headers=ORIGIN,
+            data={"barcode_mismatches_index1": value,
+                  "target_setting": shown_setting(logged_in_client, run.id,
+                                                  run.samples[0].id,
+                                                  "barcode_mismatches_index1")},
+            headers=ORIGIN,
         )
 
         assert resp.status_code == 200

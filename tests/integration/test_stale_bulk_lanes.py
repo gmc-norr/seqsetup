@@ -164,8 +164,8 @@ class TestAnApplyOnChangedLanesIsRefused:
         ctx = two_rows
 
         row = logged_in_client.post(
-            f"/runs/{RUN}/samples/s1/settings", data={"override_cycles": ""},
-            headers=ORIGIN)
+            f"/runs/{RUN}/samples/s1/settings",
+            data={"override_cycles": "", "target_setting": ""}, headers=ORIGIN)
 
         assert row.status_code == 200, row.text[:300]
         assert 'data-lanes="1"' in row.text

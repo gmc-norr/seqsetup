@@ -63,6 +63,17 @@ def shown_indexes(client, run_id: str, sample_ids) -> str:
                        for sid in sample_ids])
 
 
+_BOXES = {"override_cycles": "override-cycles-{}",
+          "barcode_mismatches_index1": "mismatch-i7-{}",
+          "barcode_mismatches_index2": "mismatch-i5-{}"}
+
+
+def shown_setting(client, run_id: str, sample_id: str, field: str) -> str:
+    """What one row box shows: the value the settings route compares with
+    (the box's defaultValue on a freshly drawn page)."""
+    return _box(_page(client, run_id), _BOXES[field].format(sample_id))
+
+
 def shown_tests(client, run_id: str, sample_ids) -> str:
     text = _page(client, run_id)
     return json.dumps([[_attr(_row_attrs(text, sid), "data-test-id"),

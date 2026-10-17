@@ -18,6 +18,7 @@ from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.routes import samples as samples_module
 from seqsetup.utils.clock import utcnow
 
+from .page_shows import shown_setting
 from .test_edit_lock import ADMIN, OPERATOR, ORIGIN, _draft, _edit, _holder, two  # noqa: F401
 
 
@@ -38,8 +39,12 @@ def _meanwhile(monkeypatch, action):
 
 def _late_save(admin, ctx, run_id):
     sample = ctx.run_repo.get_by_id(run_id).samples[0]
+    # target_setting: what the box showed, as the row sends it (design note
+    # 2026-10-17, step 4).
+    shown = shown_setting(admin, run_id, sample.id, "barcode_mismatches_index1")
     return admin.post(f"/runs/{run_id}/samples/{sample.id}/settings",
-                      data={"barcode_mismatches_index1": "2"}, headers=ORIGIN)
+                      data={"barcode_mismatches_index1": "2",
+                            "target_setting": shown}, headers=ORIGIN)
 
 
 def _mismatch(ctx, run_id):
@@ -177,9 +182,13 @@ class TestTheGuardLoadsTheRunBeforeCheckingTheLock:
                                          headers=ORIGIN).status_code
             return real(*a, **k)
 
+        # Read before the monkeypatch: loading the page would spend the
+        # one take-over this test arms.
+        shown = shown_setting(admin, run_id, sample.id, "barcode_mismatches_index1")
         monkeypatch.setattr(ctx.run_repo, "get_by_id", taken_over_first)
         resp = admin.post(f"/runs/{run_id}/samples/{sample.id}/settings",
-                          data={"barcode_mismatches_index1": "2"}, headers=ORIGIN)
+                          data={"barcode_mismatches_index1": "2",
+                                "target_setting": shown}, headers=ORIGIN)
         monkeypatch.undo()
 
         assert seen["status"] == 200

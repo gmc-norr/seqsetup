@@ -55,7 +55,7 @@ order. Missing, unreadable, or of the wrong length → 400, nothing written.
 | 2 | `POST …/samples/set-test-id` | `target_tests`: `[["T","1"], ["",""]]` | `test_id`, `test_version` | `data-test-id`, `data-test-version` |
 | 3 | `POST …/samples/bulk-delete` | `target_indexes` (F8's field) | `index1_sequence`, `index2_sequence` | `data-i7`, `data-i5` |
 | 3 | `DELETE …/samples/{id}` | `target_indexes` | the same | the same |
-| 4 | `POST …/samples/{id}/settings` | `target_setting`: the one box's value | the one field the box posts | the box's `defaultValue` |
+| 4 | `POST …/samples/{id}/settings` | `target_setting`: the one box's value | each field the request writes | the box's `defaultValue` |
 
 Mismatch "Apply" leaves a blank box's column alone, so it compares only the
 column it is about to write; "Clear" writes both, so it compares both.
@@ -76,7 +76,20 @@ to be answered before they read the boxes (`whenRowSavesAreAnswered`); F3's
 queue, its `hx-swap="none"` and its waiting actions are untouched.
 
 Step 4's box is F3's code too: its shown value is read from `defaultValue` when
-the request is issued, not when it is queued.
+the request is issued, not when it is queued (an `htmx:configRequest`
+listener). That alone is not enough — htmx resumes the row's queue inside the
+same load handler that fires `htmx:afterRequest`, and F3's XHR listener, which
+sets `defaultValue`, runs later still, so a correction typed while the first
+save was on its way would have named the value from before that save and been
+refused on one tab. So the box also takes the stored value in an
+`htmx:afterRequest` listener, which runs before the queue is resumed. F3's
+queue, its `hx-swap="none"`, its notes and its waiting actions are untouched,
+and all 35 of its tests stay green — three of them now spell out the new field
+in the request bodies they pin.
+
+One box saves at a time, so one shown value: a request that writes more than
+one setting must have shown the same value in each, or it is refused. No page
+and no test sends one.
 
 ## The message
 

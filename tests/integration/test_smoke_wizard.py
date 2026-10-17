@@ -9,7 +9,7 @@ Covers the core HTMX flows that build up a run from blank to ready:
 
 import pytest
 
-from .page_shows import shown_indexes, shown_mismatches, shown_override_cycles, shown_tests
+from .page_shows import shown_indexes, shown_mismatches, shown_override_cycles, shown_setting, shown_tests
 from .conftest import nothing_stored, run_version, seed_stored_exports, stored_export
 
 
@@ -246,7 +246,9 @@ class TestUpdateSampleSettingsPartialUpdate:
         ctx, run_id, sample_uuid = self._setup_with_index(logged_in_client, fresh_app)
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/{sample_uuid}/settings",
-            data={"override_cycles": "Y151;I8N2;I8N2;Y151"},
+            data={"override_cycles": "Y151;I8N2;I8N2;Y151",
+                  "target_setting": shown_setting(logged_in_client, run_id, sample_uuid,
+                                                  "override_cycles")},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -262,7 +264,9 @@ class TestUpdateSampleSettingsPartialUpdate:
         ctx, run_id, sample_uuid = self._setup_with_index(logged_in_client, fresh_app)
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/{sample_uuid}/settings",
-            data={"barcode_mismatches_index1": "1"},
+            data={"barcode_mismatches_index1": "1",
+                  "target_setting": shown_setting(logged_in_client, run_id, sample_uuid,
+                                                  "barcode_mismatches_index1")},
             headers=_origin(),
         )
         assert response.status_code == 200

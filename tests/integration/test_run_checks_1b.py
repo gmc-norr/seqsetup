@@ -6,7 +6,7 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 
-from .page_shows import shown_override_cycles
+from .page_shows import shown_override_cycles, shown_setting
 from .conftest import disable_repos, nothing_stored
 from .conftest import hold_edit_lock
 
@@ -88,7 +88,10 @@ class TestOverrideCyclesRefusedAtSave:
 
         resp = logged_in_client.post(
             f"/runs/{run_id}/samples/{sample_id}/settings",
-            data={"override_cycles": "Y151;I8N2;I8N2;Y151"}, headers=ORIGIN,
+            data={"override_cycles": "Y151;I8N2;I8N2;Y151",
+                  "target_setting": shown_setting(logged_in_client, run_id, sample_id,
+                                                  "override_cycles")},
+            headers=ORIGIN,
         )
 
         assert resp.status_code == 200

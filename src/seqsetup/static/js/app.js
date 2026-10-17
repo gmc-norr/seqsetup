@@ -1140,6 +1140,34 @@ document.body.addEventListener('htmx:trigger', function(event) {
     }
 });
 
+// Each row box says what the page showed for it: its defaultValue, which is
+// the value the server last stored (set on every answer below). Added when
+// the request is issued, not when it is queued -- the row's saves queue
+// (hx-sync), so a save waiting its turn must say what the one before it
+// stored, or it would be refused for a change its own page had just made.
+document.body.addEventListener('htmx:configRequest', function(event) {
+    const box = event.detail.elt;
+    if (!(box instanceof Element) || !box.matches('[data-row-setting]')) return;
+    event.detail.parameters.set('target_setting', box.defaultValue);
+});
+
+// ... and the stored value must reach the box before that queued save is
+// issued. htmx fires afterRequest inside its load handler and resumes the
+// row's queue only after it, while the XHR's own listener below runs later
+// still -- so the box takes the stored value here as well, early enough for
+// the next save in the row's queue to name it. The listener below still
+// does the rest (what the box shows, the notes, a box that is gone).
+document.body.addEventListener('htmx:afterRequest', function(event) {
+    const box = event.target;
+    const xhr = event.detail && event.detail.xhr;
+    if (!xhr || !(box instanceof Element) || !box.matches('[data-row-setting]')) return;
+    if (xhr.status < 200 || xhr.status >= 300) return;
+    const answer = document.createElement('template');
+    answer.innerHTML = xhr.responseText || '';
+    const answered = answer.content.getElementById(box.id);
+    if (answered) box.defaultValue = answered.getAttribute('value') || '';
+});
+
 document.body.addEventListener('htmx:confirm', function(event) {
     const element = event.target;
     if (!(element instanceof Element) || !element.matches('[data-after-row-saves]')) return;
