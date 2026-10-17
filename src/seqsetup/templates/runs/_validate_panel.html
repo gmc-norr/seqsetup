@@ -7,8 +7,10 @@
      validation_result:  ValidationResult (pre-computed by the handler)
      sample_errors:      dict[sample id, list[str]] — validation_summary.errors_by_sample;
                          app.js marks those rows in the sample table
-     error_lines:        list[str] — validation_summary.error_messages; the
-                         first 10 are listed, the rest counted
+     error_lines:        list[str] — validation_summary.error_messages; each
+                         different message once with how many times
+                         (grouped_messages), the first 10 listed and every
+                         error behind the rest counted
      waiting:            bool — validation_summary.waiting_for_samples: no
                          samples is the only error, so Check has not been
                          reached yet and is shown in grey, not as an error
@@ -80,13 +82,16 @@
         <p id="check-tests-live" class="text-sm text-slate-600">These checks use today's synced profiles. This run's Sample Sheet was written with the test versions in the Test ID column.</p>
         {% endif %}
         {% if error_lines %}
+        {% set error_groups = error_lines | grouped_messages %}
         <ul class="validate-error-list">
-            {%- for line in error_lines[:10] %}
-            <li>{{ line }}</li>
+            {%- for line, times in error_groups[:10] %}
+            <li>{{ line }}{% if times > 1 %} ({{ times }} times){% endif %}</li>
             {%- endfor %}
         </ul>
-        {% if error_lines | length > 10 %}
-        <p class="validate-error-more">and {{ error_lines | length - 10 }} more on the validation page.</p>
+        {% if error_groups | length > 10 %}
+        {% set hidden = namespace(errors=0) %}
+        {% for _line, times in error_groups[10:] %}{% set hidden.errors = hidden.errors + times %}{% endfor %}
+        <p class="validate-error-more">and {{ hidden.errors }} more on the validation page.</p>
         {% endif %}
         {% endif %}
         {% if fix_test_ids and test_profiles %}
