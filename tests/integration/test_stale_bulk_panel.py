@@ -351,6 +351,54 @@ class TestTestId:
         assert _everything(ctx) == before
 
 
+class TestEachRowsShownValueIsMatchedToThatRow:
+    """The entries are read in the order the ids are sent, not as a set:
+    reading PAT1's value against PAT2's row would refuse a page that is
+    right, and let through one that is not. Step 1 pins this for the lanes;
+    the panel's other three need it as much (first review of step 3, I-1)."""
+
+    def test_mismatches(self, logged_in_client, two_rows):
+        ctx = two_rows
+        _behind_the_page(ctx, "s1", barcode_mismatches_index1=0)
+        _behind_the_page(ctx, "s2", barcode_mismatches_index1=2)
+
+        swapped = _mismatches(logged_in_client, ["s1", "s2"], i7="1", i5="",
+                              shown=[["2", "1"], ["0", "1"]])
+        assert swapped.status_code == 409, swapped.text[:300]
+
+        right = _mismatches(logged_in_client, ["s1", "s2"], i7="1", i5="",
+                            shown=[["0", "1"], ["2", "1"]])
+        assert right.status_code == 200, right.text[:300]
+        assert [row[1] for row in _mm(ctx)] == [1, 1]
+
+    def test_override_cycles(self, logged_in_client, two_rows):
+        ctx = two_rows
+        _behind_the_page(ctx, "s1", override_cycles="Y151;I10;I10;Y151")
+        _behind_the_page(ctx, "s2", override_cycles="Y150N1;I10;I10;Y151")
+
+        swapped = _override(logged_in_client, ["s1", "s2"],
+                            shown=("Y150N1;I10;I10;Y151", "Y151;I10;I10;Y151"))
+        assert swapped.status_code == 409, swapped.text[:300]
+
+        right = _override(logged_in_client, ["s1", "s2"],
+                          shown=("Y151;I10;I10;Y151", "Y150N1;I10;I10;Y151"))
+        assert right.status_code == 200, right.text[:300]
+
+    def test_tests(self, logged_in_client, two_rows):
+        ctx = two_rows
+        _behind_the_page(ctx, "s1", test_id="WGS", test_version="1")
+        _behind_the_page(ctx, "s2", test_id="EXOME", test_version="2")
+
+        swapped = _test_id(logged_in_client, ["s1", "s2"], test="RNA", version="3",
+                           shown=[["EXOME", "2"], ["WGS", "1"]])
+        assert swapped.status_code == 409, swapped.text[:300]
+
+        right = _test_id(logged_in_client, ["s1", "s2"], test="RNA", version="3",
+                         shown=[["WGS", "1"], ["EXOME", "2"]])
+        assert right.status_code == 200, right.text[:300]
+        assert _tests(ctx) == [("PAT1", "RNA", "3"), ("PAT2", "RNA", "3")]
+
+
 class TestAStoredCarriageReturnStillMatches:
     """A browser turns CR and CRLF into LF when it reads an attribute back,
     so a stored test with a carriage return in it would never match what the

@@ -380,5 +380,5 @@ else) since the page was loaded, nothing is deleted and the page names them:
 *"Nothing was deleted. Reload the page and try again. The index on these
 samples changed since this page was loaded: PAT2."* If one of them has already
 been deleted, nothing is deleted either: *"The sample list changed since this
-page was loaded. Reload the page and try again."* Reload the page and look
-again before deleting.
+page was loaded. Nothing was deleted. Reload the page and try again."* Reload
+the page and look again before deleting.

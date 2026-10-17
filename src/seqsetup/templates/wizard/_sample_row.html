@@ -268,11 +268,15 @@
     <td class="worksheet-cell" title="{{ sample.worksheet_id or '' }}">{{ sample.worksheet_id or '-' }}</td>
     {%- if editable %}
         <td class="actions">
+            {#- The same route, so the same target: this branch is not on any
+                page today (nothing renders a row with show_drop_zones off but
+                the answer to update_sample, which no page posts), and a
+                half-fixed button is a trap for whoever revives it. #}
             <button type="button" class="btn-tiny btn-danger"
                     title="Delete sample"
                     hx-delete="/runs/{{ run_id }}/samples/{{ sample.id }}"
                     hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
-                    hx-target="#sample-row-{{ sample.id }}"
+                    hx-target="#sample-section"
                     hx-swap="outerHTML"
                     hx-confirm="Delete this sample?">&times;</button>
         </td>

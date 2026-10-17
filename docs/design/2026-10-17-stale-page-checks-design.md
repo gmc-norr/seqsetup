@@ -88,7 +88,15 @@ F8's shape, because the error banner shows the first 300 characters and ten
 - 400 (no shown value): `This page is out of date. Nothing was saved. Reload the
   page and try again.`
 - 409 (a targeted sample is gone): `The sample list changed since this page was
-  loaded. Reload the page and try again.`
+  loaded. Reload the page and try again.` — the two deletes add `Nothing was
+  deleted.` before the last sentence: after a Delete Selected of five rows, the
+  shared sentence alone does not say whether the other four went (first review
+  of step 3, Minor 2).
+
+The deletes compare the **index only**, not the lanes, test, Override Cycles or
+mismatches: the sample's identity is its row id (a uuid4) and no page renames a
+Sample ID, so the person always deletes the sample they clicked. The index is
+what tells them the row is not the one they looked at.
 
 ## What proves it
 

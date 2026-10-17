@@ -582,15 +582,20 @@ SAMPLE_LIST_CHANGED_SAVE = ("The sample list changed since this page was loaded.
 STALE_PAGE_DELETE = ("This page is out of date. Nothing was deleted. "
                      "Reload the page and try again.")
 CHANGED_ROWS_DELETE = "Nothing was deleted. Reload the page and try again."
+SAMPLE_LIST_CHANGED_DELETE = ("The sample list changed since this page was loaded. "
+                              "Nothing was deleted. Reload the page and try again.")
 
 
-def _targets_or_refusal(run, sample_ids: list[str]):
+def _targets_or_refusal(run, sample_ids: list[str], refusal: str = SAMPLE_LIST_CHANGED_SAVE):
     """(the targeted samples, None), or (None, a 409) when the run no longer
     has one of them. Skipping it silently told the person their change was
-    made to a sample that is not there any more."""
+    made to a sample that is not there any more. The deletes pass their own
+    wording: after a Delete Selected of five rows, "the sample list changed"
+    alone does not say whether the other four went (first review of step 3,
+    Minor 2)."""
     targets = [run.get_sample(sid) for sid in sample_ids]
     if any(target is None for target in targets):
-        return None, Response(SAMPLE_LIST_CHANGED_SAVE, status_code=409)
+        return None, Response(refusal, status_code=409)
     return targets, None
 
 
@@ -1948,7 +1953,7 @@ async def delete_samples_bulk(
     # clear routes take it (F8). A row another tab has since indexed, or a
     # sample the run no longer has, refuses the whole delete -- a delete
     # cannot be put right by doing it again (design note 2026-10-17, step 3).
-    targets, refusal = _targets_or_refusal(run, sample_ids)
+    targets, refusal = _targets_or_refusal(run, sample_ids, SAMPLE_LIST_CHANGED_DELETE)
     if refusal:
         return refusal
     shown = _shown_indexes(form.get("target_indexes", ""), len(sample_ids))
@@ -2008,7 +2013,7 @@ def delete_sample(
     """
     run_id = run.id
 
-    targets, refusal = _targets_or_refusal(run, [sample_id])
+    targets, refusal = _targets_or_refusal(run, [sample_id], SAMPLE_LIST_CHANGED_DELETE)
     if refusal:
         return refusal
     shown = _shown_indexes(target_indexes, 1)
