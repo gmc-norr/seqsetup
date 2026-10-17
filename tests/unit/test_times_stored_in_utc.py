@@ -50,7 +50,7 @@ class TestStoredTimesAreUtc:
         assert_utc_now(run.updated_at)
 
     def test_a_run_read_back_without_times(self):
-        run = SequencingRun.from_dict({"id": "r1", "run_name": "R"})
+        run = SequencingRun.from_dict({"id": "r1", "instrument_platform": "NovaSeq X Series", "run_name": "R"})
         assert_utc_now(run.created_at)
         assert_utc_now(run.updated_at)
 

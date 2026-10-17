@@ -56,8 +56,12 @@ The list itself reads only what it shows -- a name, a status, who changed
 it and when, and how many samples there are. So a run whose **samples** are
 the part SeqSetup cannot read is still listed, with its name and its sample
 count: the list never looks at a sample. Opening that run still fails, and
-the failure names it. A run whose name, status or dates cannot be read is
-the case the line above the list is for.
+the failure names it. A run whose name, status, instrument or dates cannot
+be read is the case the line above the list is for. That includes a run
+whose record names an instrument this version of SeqSetup does not know, or
+none: SeqSetup never opens it as another instrument, because the instrument
+decides the i5 direction and the Sample Sheet's settings, and saving it
+would write the other instrument into the record.
 
 If every run stored is one SeqSetup cannot read, the dashboard shows that
 line and the three tabs with their counts at zero. It never says "No Runs

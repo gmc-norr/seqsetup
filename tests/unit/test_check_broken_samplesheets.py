@@ -63,6 +63,7 @@ def _FakeDb(runs, app_profiles=()):
 def _run_doc(name, status, sheet, samples):
     return {
         "_id": f"id-{name}",
+        "instrument_platform": "NovaSeq X Series",
         "run_name": name,
         "status": status,
         "generated_samplesheet_v2": sheet,

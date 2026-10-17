@@ -535,6 +535,7 @@ class TestSampleIndexMutations:
         pdf_bytes = b"%PDF-test-content"
         data = {
             "id": "test-id",
+            "instrument_platform": "NovaSeq X Series",
             "run_name": "Test",
             "generated_samplesheet_v2": "v2 content",
             "generated_samplesheet_v1": "v1 content",
@@ -553,6 +554,7 @@ class TestSampleIndexMutations:
         """Test that old generated_samplesheet field name still works."""
         data = {
             "id": "test-id",
+            "instrument_platform": "NovaSeq X Series",
             "run_name": "Test",
             "generated_samplesheet": "old v2 content",  # Old field name
         }
@@ -561,7 +563,7 @@ class TestSampleIndexMutations:
 
     def test_from_dict_generated_fields_missing(self):
         """Test from_dict when generated fields are absent (old data)."""
-        data = {"id": "test-id"}
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series"}
         run = SequencingRun.from_dict(data)
         assert run.generated_samplesheet_v2 is None
         assert run.generated_samplesheet_v1 is None
@@ -637,7 +639,7 @@ class TestSampleIndexMutations:
 
     def test_from_dict_ignores_legacy_validation_approved(self):
         """from_dict silently drops the legacy validation_approved field from old documents."""
-        data = {"id": "test-id", "validation_approved": True}
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series", "validation_approved": True}
         run = SequencingRun.from_dict(data)
         assert not hasattr(run, "validation_approved")
 
@@ -699,7 +701,7 @@ class TestSampleIndexMutations:
 
     def test_from_dict_complete_status_mapped_to_archived(self):
         """Old 'complete' status is migrated to 'archived'."""
-        data = {"id": "test-id", "status": "complete"}
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series", "status": "complete"}
         run = SequencingRun.from_dict(data)
         assert run.status == RunStatus.ARCHIVED
 
@@ -710,21 +712,22 @@ class TestSampleIndexMutations:
         of the API + export pipeline (which only expose Ready/Archived)
         until an admin re-examines it. ARCHIVED would silently elevate a
         corrupted record into the API surface."""
-        data = {"id": "test-id", "status": "renamed_in_future_version"}
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series", "status": "renamed_in_future_version"}
         run = SequencingRun.from_dict(data)
         assert run.status == RunStatus.DRAFT
 
-    def test_from_dict_unknown_platform_falls_back_safely(self):
-        """An unknown instrument_platform must not crash from_dict."""
+    def test_from_dict_refuses_an_unknown_platform(self):
+        """An unknown instrument_platform is refused, not read as NovaSeq X:
+        the instrument decides the i5 direction and the sheet's settings
+        (docs/design/2026-10-17-unknown-platform-design.md)."""
         data = {"id": "test-id", "instrument_platform": "NovaSeq Z Hypothetical"}
-        run = SequencingRun.from_dict(data)
-        # The run loads with the default platform; surfaced as a warning, not a crash.
-        assert run is not None
+        with pytest.raises(ValueError, match="instrument this release does not know"):
+            SequencingRun.from_dict(data)
 
     def test_from_dict_datetime_objects_preserved(self):
         """from_dict handles datetime objects (not just strings)."""
         now = datetime(2025, 6, 15, 10, 30, 0)
-        data = {"id": "test-id", "created_at": now, "updated_at": now}
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series", "created_at": now, "updated_at": now}
         run = SequencingRun.from_dict(data)
         # datetime objects are passed through as-is (not re-parsed)
         assert run.created_at == now
@@ -732,7 +735,7 @@ class TestSampleIndexMutations:
 
     def test_from_dict_missing_timestamps_default_to_now(self):
         """from_dict creates datetime.now() when timestamps are absent."""
-        data = {"id": "test-id"}
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series"}
         run = SequencingRun.from_dict(data)
         assert isinstance(run.created_at, datetime)
         assert isinstance(run.updated_at, datetime)

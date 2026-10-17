@@ -39,6 +39,11 @@ Managing templates
 instrument platform, how many samples it will pre-load (none, for a
 template saved here), and who last changed it.
 
+A template whose stored record names an instrument this version of
+SeqSetup does not know, or none, is not listed: a line above the list names
+it, and so does the New Run page, which does not offer it. Nothing is
+changed; send its id to your administrator, who has to repair the record.
+
 Any signed-in user can create a template and start a run from any template.
 Only the person who made a template, or an administrator, can delete it; the
 **Delete** button shows only for them.
