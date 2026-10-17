@@ -163,7 +163,16 @@ class RunRepository(BaseRepository[SequencingRun]):
         matched: dict[str, list[str]] = {}
         lowered = query.lower()
         for doc in self.collection.aggregate(pipeline):
-            listing = RunListing.from_doc(doc)
+            try:
+                listing = RunListing.from_doc(doc)
+            except Exception as exc:
+                # A row that cannot be built is left out of the results, as
+                # it was when the search ran over list_all_readable. It is
+                # not lost: the search page lists every unreadable run id
+                # above the results, from list_readable_summaries.
+                run_id = str(doc.get("_id") or "") or "(a run document with no id)"
+                logger.warning("Run %s could not be listed: %s", run_id, exc)
+                continue
             listings.append(listing)
             matched[listing.id] = [
                 sample.get("sample_id") for sample in (doc.get("samples") or [])

@@ -246,6 +246,17 @@ class TestWhatTheSummaryCanAndCannotSee:
         got = logged_in_client.get("/api/runs", headers=_bearer(ctx)).json()
         assert "run-003" in [item["id"] for item in got["items"]]
 
+    def test_the_search_still_answers_and_names_the_run_it_cannot_read(
+            self, seeded, logged_in_client):
+        """The results leave it out, as they did when the search ran over
+        the readable runs — and the line above them names it."""
+        _app, _ctx, db = seeded
+        self._break_summary_field(db, "run-003")
+        response = logged_in_client.get("/dashboard/search?q=Run")
+        assert response.status_code == 200
+        assert "run-003" not in _order(response.text)
+        assert "run-003" in response.text
+
     def test_a_run_whose_summary_field_does_not_read_is_named_on_the_dashboard(
             self, seeded, logged_in_client):
         _app, _ctx, db = seeded

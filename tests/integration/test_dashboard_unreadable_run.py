@@ -13,6 +13,12 @@ each run id it could not read: never silently hidden (CLAUDE.md: never
 silently discard data), logged at WARNING for the administrator who has to
 repair the document, and nothing in the database is touched.
 
+Since 2026-10-17 the listings read only the fields they show, so "a run
+this release cannot read" means one whose *name, status or dates* cannot be
+read; a document whose samples alone are bad is listed, and fails when it
+is opened (docs/design/2026-10-17-listing-summaries-design.md). ``_make_unreadable``
+below therefore breaks both.
+
 The archive and delete handlers render the same listing after they have
 written, and that is where it matters most: on the old code, archiving a
 good Ready run while one unreadable document was stored STORED the new
@@ -63,12 +69,22 @@ def _run(ctx, run_id, name, status=RunStatus.DRAFT, sample_id="PAT-1", with_samp
 
 
 def _make_unreadable(db, run_id):
-    """Store a barcode-mismatch count as 1.0 on one sample, the way a direct
-    database write or an older release leaves it. Sample.from_dict refuses a
-    value that is not a whole number, so the whole run document stops
-    loading."""
+    """Store a document this release cannot read, the way a direct database
+    write or an older release leaves one: a barcode-mismatch count of 1.0 on
+    one sample (Sample.from_dict refuses a value that is not a whole number)
+    AND a created_at that is not a date.
+
+    Both are needed since 2026-10-17: a listing reads only the fields it
+    shows and never looks at a sample, so a document whose *samples* alone
+    cannot be read is listed, and only its page fails (docs/design/
+    2026-10-17-listing-summaries-design.md, and
+    tests/integration/test_listing_summaries.py, which pins that half). The
+    run below must be one no listing can read, which is what the rest of
+    this file is about.
+    """
     doc = db["runs"].find_one({"_id": run_id})
     doc["samples"][0]["barcode_mismatches_index1"] = 1.0
+    doc["created_at"] = "not-a-date"
     db["runs"].replace_one({"_id": run_id}, doc)
     with pytest.raises(ValueError):
         SequencingRun.from_dict(db["runs"].find_one({"_id": run_id}))
