@@ -2,7 +2,8 @@
 
 import pytest
 
-from seqsetup.services.index_parser import IndexParser
+from seqsetup.models.index import IndexMode
+from seqsetup.services.index_parser import IndexParser, UnpairedIndexes
 
 
 class TestIndexParser:
@@ -97,8 +98,9 @@ IndexSequences:
         assert kit.description == "Test index kit"
         assert len(kit.index_pairs) == 2
 
-    def test_parse_yaml_d7_d5_convention(self):
-        """Test that D7xx to D5xx naming convention works."""
+    def test_parse_yaml_does_not_pair_d7_with_d5(self):
+        """D701 and D501 are not one pair because their names look alike:
+        the guess once made fixed pairs of a combinatorial kit."""
         yaml_content = """
 Name: Test Kit
 IndexSequences:
@@ -108,13 +110,10 @@ IndexSequences:
     D501: "TATAGCCT"
 """
 
-        kit = IndexParser._parse_yaml(yaml_content)
+        with pytest.raises(UnpairedIndexes) as refused:
+            IndexParser._parse_yaml(yaml_content)
 
-        # D701 should match with D501 via naming convention
-        d701 = kit.get_index_pair_by_name("D701")
-        assert d701 is not None
-        assert d701.index1.sequence == "ATTACTCG"
-        assert d701.index2.sequence == "TATAGCCT"
+        assert "D701" in str(refused.value) and "D501" in str(refused.value)
 
     def test_parse_from_content_csv(self):
         """Test parsing from content with filename hint."""
@@ -578,3 +577,98 @@ class TestSemanticVersionValidation:
         assert normalize_version("1.0") == "1.0"
         assert normalize_version("1.2.3") == "1.2.3"
         assert normalize_version("  2  ") == "2.0"
+
+
+def _illumina_yaml(i7: dict, i5: dict) -> str:
+    lines = ["Name: Old kit", 'Version: "1.0"', "IndexSequences:", "  i7Index1:"]
+    lines += [f"    {name}: {seq}" for name, seq in i7.items()]
+    lines += ["  i5Index2:"] + [f"    {name}: {seq}" for name, seq in i5.items()]
+    return "\n".join(lines) + "\n"
+
+
+def _illumina_tsv(i7: dict, i5: dict) -> str:
+    lines = ["[IndexKit]", "Name\tOld kit", "Version\t1.0", "", "[Indices]", "Name\tSequence\tIndexNumber"]
+    lines += [f"{name}\t{seq}\t1" for name, seq in i7.items()]
+    lines += [f"{name}\t{seq}\t2" for name, seq in i5.items()]
+    return "\n".join(lines)
+
+
+I7 = {"D701": "ATTACTCG", "D702": "TCCGGAGA", "D703": "CGCTCATT"}
+I5 = {"D501": "TATAGCCT", "D502": "ATAGAGGC", "D503": "CCTATCCT"}
+
+
+class TestUniqueDualPairsOnlyByTheSameName:
+    """An Illumina YAML or TSV kit file uploaded as Unique Dual pairs an i7
+    only with the i5 of the same name. A file whose names do not pair up is
+    refused, naming them, instead of pairs guessed from the names (D7 -> D5,
+    -A -> -B, _A -> _B, as substrings): a guessed pair puts an i5 in the
+    Sample Sheet that the sample's tube does not have."""
+
+    @pytest.mark.parametrize("i7, i5", [
+        (I7, I5),
+        ({"Index01-A": "ATTACTCG"}, {"Index01-B": "TATAGCCT"}),
+        ({"Index01_A": "ATTACTCG"}, {"Index01_B": "TATAGCCT"}),
+        ({"AD7X": "ATTACTCG"}, {"AD5X": "TATAGCCT"}),
+    ])
+    def test_a_yaml_file_with_names_that_only_look_alike_is_refused(self, i7, i5):
+        with pytest.raises(UnpairedIndexes) as refused:
+            IndexParser.parse_from_content(_illumina_yaml(i7, i5), "old.yaml",
+                                           index_mode=IndexMode.UNIQUE_DUAL)
+
+        message = str(refused.value)
+        assert all(name in message for name in [*i7, *i5])
+        assert "Combinatorial" in message
+
+    def test_a_tsv_file_with_names_that_do_not_match_is_refused(self):
+        with pytest.raises(UnpairedIndexes) as refused:
+            IndexParser.parse_from_content(_illumina_tsv(I7, I5), "old.tsv",
+                                           index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert all(name in str(refused.value) for name in [*I7, *I5])
+
+    @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
+    def test_an_i5_left_over_is_refused_not_dropped(self, make, filename):
+        i5 = {"D701": "TATAGCCT", "D702": "ATAGAGGC", "D703": "CCTATCCT", "D704": "GGCTCTGA"}
+
+        with pytest.raises(UnpairedIndexes) as refused:
+            IndexParser.parse_from_content(make(I7, i5), filename, index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert "D704" in str(refused.value)
+
+    @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
+    def test_an_i7_with_no_i5_of_its_name_is_refused(self, make, filename):
+        with pytest.raises(UnpairedIndexes) as refused:
+            IndexParser.parse_from_content(make(I7, {"D701": "TATAGCCT"}), filename,
+                                           index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert "D702" in str(refused.value) and "D703" in str(refused.value)
+
+    @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
+    def test_the_same_names_pair(self, make, filename):
+        i5 = {"D701": "TATAGCCT", "D702": "ATAGAGGC", "D703": "CCTATCCT"}
+
+        kit = IndexParser.parse_from_content(make(I7, i5), filename, index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert [(p.name, p.index1.sequence, p.index2.sequence) for p in kit.index_pairs] == [
+            ("D701", "ATTACTCG", "TATAGCCT"),
+            ("D702", "TCCGGAGA", "ATAGAGGC"),
+            ("D703", "CGCTCATT", "CCTATCCT"),
+        ]
+
+    @pytest.mark.parametrize("make, filename", [(_illumina_yaml, "old.yaml"), (_illumina_tsv, "old.tsv")])
+    def test_the_same_file_as_combinatorial_keeps_every_index(self, make, filename):
+        kit = IndexParser.parse_from_content(make(I7, I5), filename, index_mode=IndexMode.COMBINATORIAL)
+
+        assert [i.name for i in kit.i7_indexes] == list(I7)
+        assert [i.name for i in kit.i5_indexes] == list(I5)
+        assert kit.index_pairs == []
+
+    def test_a_long_list_names_ten_and_counts_the_rest(self):
+        i7 = {f"D7{n:02d}": "ATTACTCG" for n in range(1, 15)}
+
+        with pytest.raises(UnpairedIndexes) as refused:
+            IndexParser.parse_from_content(_illumina_yaml(i7, {"X": "TATAGCCT"}), "old.yaml",
+                                           index_mode=IndexMode.UNIQUE_DUAL)
+
+        message = str(refused.value)
+        assert "D710" in message and "D711" not in message and "and 4 more" in message

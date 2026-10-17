@@ -13,6 +13,52 @@ from ..utils.yaml_safety import safe_load_strict
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 
 
+class UnpairedIndexes(ValueError):
+    """A Unique Dual kit file whose i7 and i5 indexes do not pair up by name.
+
+    An Illumina YAML or TSV file lists its i7 and i5 indexes apart; an i7 is
+    paired only with the i5 of the same name. Pairs were once guessed from
+    names that look alike (D701 with D501, -A with -B, _A with _B), so a
+    combinatorial kit was saved as fixed pairs and a sample could be given an
+    i5 its tube does not have. The upload route shows the message.
+    """
+
+
+_UNPAIRED_SHOWN = 10
+
+
+def _names(names: list[str]) -> str:
+    shown = ", ".join(str(name) for name in names[:_UNPAIRED_SHOWN])
+    more = len(names) - _UNPAIRED_SHOWN
+    return f"{shown} and {more} more" if more > 0 else shown
+
+
+def _pairs_by_same_name(kit_name: str, i7_indexes: dict, i5_indexes: dict) -> list[IndexPair]:
+    """Pair each i7 with the i5 of the same name, or raise UnpairedIndexes
+    naming every index left without one. Nothing is guessed or dropped."""
+    no_i5 = [name for name in i7_indexes if name not in i5_indexes]
+    no_i7 = [name for name in i5_indexes if name not in i7_indexes]
+    if no_i5 or no_i7:
+        parts = ["The file's i7 and i5 indexes do not pair up by name, so nothing was saved. "
+                 "In Unique Dual mode an i7 is paired only with the i5 of the same name."]
+        if no_i5:
+            parts.append(f"No i5 named like these i7: {_names(no_i5)}.")
+        if no_i7:
+            parts.append(f"No i7 named like these i5: {_names(no_i7)}.")
+        parts.append("If any i7 may go with any i5, upload the kit as Combinatorial. For fixed "
+                     "pairs, upload a CSV with each pair's i7 and i5 on one row (name,index,index2).")
+        raise UnpairedIndexes(" ".join(parts))
+    return [
+        IndexPair(
+            id=f"{kit_name}_{name}",
+            name=name,
+            index1=Index(name=name, sequence=seq, index_type=IndexType.I7),
+            index2=Index(name=name, sequence=i5_indexes[name], index_type=IndexType.I5),
+        )
+        for name, seq in i7_indexes.items()
+    ]
+
+
 # Semantic version pattern: X.Y.Z or X.Y (where X, Y, Z are non-negative integers)
 SEMVER_PATTERN = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?$")
 
@@ -336,35 +382,7 @@ class IndexParser:
             for name, seq in i7_indexes.items():
                 kit.i7_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I7))
         else:
-            # Build index pairs for unique_dual mode
-            for i7_name, i7_seq in i7_indexes.items():
-                index1 = Index(name=i7_name, sequence=i7_seq, index_type=IndexType.I7)
-
-                # Try to find matching i5 index
-                index2 = None
-                potential_i5_names = [
-                    i7_name,
-                    i7_name.replace("D7", "D5"),
-                    i7_name.replace("-A", "-B"),
-                    i7_name.replace("_A", "_B"),
-                ]
-
-                for i5_name in potential_i5_names:
-                    if i5_name in i5_indexes:
-                        index2 = Index(
-                            name=i5_name,
-                            sequence=i5_indexes[i5_name],
-                            index_type=IndexType.I5,
-                        )
-                        break
-
-                pair = IndexPair(
-                    id=f"{kit.name}_{i7_name}",
-                    name=i7_name,
-                    index1=index1,
-                    index2=index2,
-                )
-                kit.index_pairs.append(pair)
+            kit.index_pairs.extend(_pairs_by_same_name(kit.name, i7_indexes, i5_indexes))
 
         return kit
 
@@ -450,23 +468,7 @@ class IndexParser:
             for name, seq in i7_indexes.items():
                 kit.i7_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I7))
         else:
-            # Build index pairs for unique_dual mode
-            for name, seq in i7_indexes.items():
-                index1 = Index(name=name, sequence=seq, index_type=IndexType.I7)
-                index2 = None
-                if name in i5_indexes:
-                    index2 = Index(
-                        name=name, sequence=i5_indexes[name], index_type=IndexType.I5
-                    )
-
-                kit.index_pairs.append(
-                    IndexPair(
-                        id=f"{kit.name}_{name}",
-                        name=name,
-                        index1=index1,
-                        index2=index2,
-                    )
-                )
+            kit.index_pairs.extend(_pairs_by_same_name(kit.name, i7_indexes, i5_indexes))
 
         return kit
 

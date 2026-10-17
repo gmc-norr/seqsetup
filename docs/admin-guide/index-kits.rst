@@ -45,7 +45,17 @@ Before a kit is saved, SeqSetup checks, in order:
    A file that looks binary is rejected outright: index kits must be plain
    text.
 3. **Parsing** -- a file that fails to parse in the selected format is
-   rejected with a generic "check the format and try again" message. A kit
+   rejected with a generic "check the format and try again" message. In
+   **Unique Dual** mode an Illumina YAML or TSV file, which lists its i7 and
+   i5 indexes apart, is paired by name: an i7 only with the i5 of the same
+   name. A file whose names do not pair up is refused and the indexes left
+   without a partner are named (*"The file's i7 and i5 indexes do not pair
+   up by name, so nothing was saved. ... No i5 named like these i7: D701,
+   D702. No i7 named like these i5: D501, D502. If any i7 may go with any
+   i5, upload the kit as Combinatorial. ..."*). SeqSetup once guessed pairs
+   from names that look alike -- ``D701`` with ``D501`` -- and so saved a
+   combinatorial kit as fixed pairs, offering a sample an i5 its tube does
+   not have. A kit
    name or version made only of dots (``.``, ``..``) is refused at this step
    too, whether it came from the form or from the file: the name and the
    version are the kit's place in the URL of its own detail, download and
