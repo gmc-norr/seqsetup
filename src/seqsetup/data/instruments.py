@@ -10,7 +10,7 @@ When the synced records cannot be used, every lookup raises
 SyncedInstrumentsUnusable; the local file is never used instead (spec
 2026-10-04 group A2, §5).
 
-To sync instruments from GitHub, configure the repository in Admin > Profiles.
+To sync instruments from GitHub, configure the repository in Admin > Config Sync.
 """
 
 import logging
@@ -199,18 +199,42 @@ def _find_config_path() -> Path:
     project_root = module_dir.parent.parent.parent
     config_path = project_root / "config" / "instruments.yaml"
 
-    if config_path.exists():
+    if _present(config_path):
         return config_path
 
     # Fallback: check current working directory
     cwd_config = Path.cwd() / "config" / "instruments.yaml"
-    if cwd_config.exists():
+    if _present(cwd_config):
         return cwd_config
 
     raise FileNotFoundError(
         f"Could not find instruments.yaml config file. "
         f"Searched: {config_path}, {cwd_config}"
     )
+
+
+class LocalInstrumentsFolderClosed(PermissionError):
+    """SeqSetup may not look in the folder of the local instruments file.
+
+    ``Path.exists`` reads that as "no file". In Docker it means the checkout
+    keeps other users out (a umask of 007, 027 or 077) and the app container,
+    which runs as another user, cannot enter the mounted config/ folder
+    (practice deploy 2026-10-17)."""
+
+
+def _present(path: Path) -> bool:
+    """Whether ``path`` exists. A folder on the way that SeqSetup may not
+    enter raises LocalInstrumentsFolderClosed instead of reading as absent."""
+    try:
+        path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except PermissionError as e:
+        raise LocalInstrumentsFolderClosed(
+            f"SeqSetup may not look in {path.parent} ({e.strerror}), so "
+            f"{path.name} was not read and no local instruments are loaded"
+        ) from e
+    return True
 
 
 class InstrumentConfigError(ValueError):
@@ -266,9 +290,20 @@ def load_checked_instrument_file(path: Path) -> dict:
 # use instead of resolving the path a second time.
 _loaded_config_path: Optional[Path] = None
 
+# Why no local instruments file was read at start: not found, or in a folder
+# SeqSetup may not look in. None when one was read. Admin > Instruments shows
+# it, so the page does not say a file is in use that was never read.
+_local_file_problem: Optional[str] = None
+
+
+def local_instruments_problem() -> Optional[str]:
+    """Why the local instruments file was not read at start, or None."""
+    return _local_file_problem
+
 
 def log_instruments_file() -> None:
-    """Log the instruments file that was read, at INFO.
+    """Log the instruments file that was read, at INFO, or why none was, at
+    WARNING.
 
     ``app.py`` calls this after ``setup_log_capture``: the file is read when
     this module is imported, which is before the capture handler exists, so
@@ -276,6 +311,8 @@ def log_instruments_file() -> None:
     """
     if _loaded_config_path is not None:
         logger.info("Reading instruments from %s", _loaded_config_path)
+    if _local_file_problem is not None:
+        logger.warning("No local instruments file was read: %s", _local_file_problem)
 
 
 def _load_config() -> dict:
@@ -297,28 +334,33 @@ _index_cycle_options: list = []
 
 def _initialize_config():
     """Initialize configuration from YAML file."""
-    global _config, _instruments, _default_cycles, _index_cycle_options
+    global _config, _instruments, _default_cycles, _index_cycle_options, _local_file_problem
 
     _config = _load_config()
     _instruments = _config.get("instruments", {})
     _default_cycles = _config.get("default_cycles", {})
     _index_cycle_options = _config.get("index_cycle_options", [8, 10, 12, 17, 24])
+    _local_file_problem = None
 
 
 def _initialize_at_start() -> None:
-    """At import. A missing file loads no local instruments, as before; a
-    file with errors raises InstrumentConfigError, so SeqSetup does not start
-    (spec 2026-09-29 Sample Sheet follow-ups, §4)."""
-    global _instruments, _default_cycles, _index_cycle_options
+    """At import. A missing file, or one in a folder SeqSetup may not look
+    in, loads no local instruments and keeps the reason
+    (local_instruments_problem); a file with errors raises
+    InstrumentConfigError, so SeqSetup does not start (spec 2026-09-29
+    Sample Sheet follow-ups, §4), and so does a file it can see but not
+    open."""
+    global _instruments, _default_cycles, _index_cycle_options, _local_file_problem
     try:
         _initialize_config()
-    except FileNotFoundError as e:
+    except (FileNotFoundError, LocalInstrumentsFolderClosed) as e:
         # Allow module to load even if config is missing (for testing)
         import warnings
         warnings.warn(f"Instrument config not found: {e}")
         _instruments = {}
         _default_cycles = {}
         _index_cycle_options = [8, 10, 12, 17, 24]
+        _local_file_problem = str(e)
 
 
 # Initialize on module load
