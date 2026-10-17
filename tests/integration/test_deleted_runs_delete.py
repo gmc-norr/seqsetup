@@ -16,6 +16,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.models.user import UserRole
 
+from .page_shows import shown_indexes
 from .conftest import disable_repos, nothing_stored, seed_stored_exports
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -283,7 +284,12 @@ class TestWhatTheCopyHolds:
         assert (run.status, run.was_ready) == (RunStatus.DRAFT, True)
         assert nothing_stored(ctx, run)
         sample = run.samples[0].id
-        assert logged_in_client.delete(f"/runs/{run_id}/samples/{sample}", headers=HX).status_code == 200
+        # target_indexes: the index the row showed, as its x button sends
+        # it (design note 2026-10-17, step 3).
+        shown = shown_indexes(logged_in_client, run_id, [sample])
+        assert logged_in_client.delete(
+            f"/runs/{run_id}/samples/{sample}?target_indexes={shown}",
+            headers=HX).status_code == 200
         assert logged_in_client.delete(f"/runs/{run_id}", headers=HX).status_code == 200
         (copy,) = _copies(db, run_id)
         assert copy["state"] == "completed"

@@ -59,7 +59,10 @@ def _set_lanes(client, run_id, sample_ids, chosen_kit_header=None):
         headers["X-Selected-Kit"] = chosen_kit_header
     return client.post(
         f"/runs/{run_id}/samples/set-lanes",
-        data={"sample_ids": json.dumps(sample_ids), "lanes": json.dumps([1])},
+        # target_lanes: what the page showed for each ticked row (design
+        # note 2026-10-17); every KC sample sits on lane 1.
+        data={"sample_ids": json.dumps(sample_ids), "lanes": json.dumps([1]),
+              "target_lanes": json.dumps([[1]] * len(sample_ids))},
         headers=headers,
     )
 

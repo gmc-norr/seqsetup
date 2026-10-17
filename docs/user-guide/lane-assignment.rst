@@ -65,6 +65,17 @@ one first. **Apply** with no lane number ticked is refused, and nothing is
 saved (*"Tick at least one lane. Nothing was saved."*): it once saved the
 samples with no lane without a word.
 
+**Apply** also sends the lanes each ticked row was showing. If any of those
+samples' lanes were changed in another tab (or by someone else) since the
+page was loaded, nothing is saved and the page names them: *"Nothing was
+saved. Reload the page and try again. The lanes on these samples changed
+since this page was loaded: PAT2."* If one of the ticked samples has been
+deleted since the page was loaded, nothing is saved either: *"The sample
+list changed since this page was loaded. Reload the page and try again."*
+Reload the page; the table then shows the lanes as they are now, and you
+can see what to change. The index assignments are checked the same way (see
+:doc:`index-assignment`).
+
 .. _every-lane:
 
 Putting samples in every lane

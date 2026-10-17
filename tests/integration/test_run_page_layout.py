@@ -68,7 +68,8 @@ def test_a_section_redraw_leaves_check_alone(logged_in_client, fresh_app):
     run_id = _run(ctx, "redraw")
     resp = logged_in_client.post(
         f"/runs/{run_id}/samples/set-lanes",
-        data={"sample_ids": f'["{run_id}-s1"]', "lanes": "[1]"},
+        data={"sample_ids": f'["{run_id}-s1"]', "lanes": "[1]",
+              "target_lanes": "[[1]]"},
         headers={"Origin": "http://testserver", "HX-Request": "true"},
     )
     assert resp.status_code == 200

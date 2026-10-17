@@ -9,6 +9,7 @@ Covers the core HTMX flows that build up a run from blank to ready:
 
 import pytest
 
+from .page_shows import shown_indexes, shown_mismatches, shown_override_cycles, shown_setting, shown_tests
 from .conftest import nothing_stored, run_version, seed_stored_exports, stored_export
 
 
@@ -245,7 +246,9 @@ class TestUpdateSampleSettingsPartialUpdate:
         ctx, run_id, sample_uuid = self._setup_with_index(logged_in_client, fresh_app)
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/{sample_uuid}/settings",
-            data={"override_cycles": "Y151;I8N2;I8N2;Y151"},
+            data={"override_cycles": "Y151;I8N2;I8N2;Y151",
+                  "target_setting": shown_setting(logged_in_client, run_id, sample_uuid,
+                                                  "override_cycles")},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -261,7 +264,9 @@ class TestUpdateSampleSettingsPartialUpdate:
         ctx, run_id, sample_uuid = self._setup_with_index(logged_in_client, fresh_app)
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/{sample_uuid}/settings",
-            data={"barcode_mismatches_index1": "1"},
+            data={"barcode_mismatches_index1": "1",
+                  "target_setting": shown_setting(logged_in_client, run_id, sample_uuid,
+                                                  "barcode_mismatches_index1")},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -488,7 +493,8 @@ class TestBulkHandlersReachRoutes:
         import json
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/set-test-id",
-            data={"sample_ids": json.dumps(ids), "test_id": "WGS", "test_version": "1"},
+            data={"sample_ids": json.dumps(ids), "test_id": "WGS", "test_version": "1",
+                  "target_tests": shown_tests(logged_in_client, run_id, ids)},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -504,6 +510,7 @@ class TestBulkHandlersReachRoutes:
                 "sample_ids": json.dumps(ids),
                 "mismatch_index1": "0",
                 "mismatch_index2": "2",
+                "target_mismatches": shown_mismatches(logged_in_client, run_id, ids),
             },
             headers=_origin(),
         )
@@ -518,7 +525,8 @@ class TestBulkHandlersReachRoutes:
         import json
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/bulk-delete",
-            data={"sample_ids": json.dumps([ids[0]])},
+            data={"sample_ids": json.dumps([ids[0]]),
+                  "target_indexes": shown_indexes(logged_in_client, run_id, [ids[0]])},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -538,7 +546,11 @@ class TestBulkHandlersReachRoutes:
         import json
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/set-lanes",
-            data={"sample_ids": json.dumps(ids), "lanes": json.dumps([1, 2])},
+            # target_lanes: the lanes the page showed for each ticked row,
+            # as the panel sends them (design note 2026-10-17).
+            data={"sample_ids": json.dumps(ids), "lanes": json.dumps([1, 2]),
+                  "target_lanes": json.dumps(
+                      [ctx.run_repo.get_by_id(run_id).get_sample(sid).lanes for sid in ids])},
             headers=_origin(),
         )
         assert response.status_code == 200
@@ -553,6 +565,7 @@ class TestBulkHandlersReachRoutes:
             data={
                 "sample_ids": json.dumps(ids),
                 "override_cycles": "Y151;I8N2;I8N2;Y151",
+                "target_override_cycles": shown_override_cycles(logged_in_client, run_id, ids),
             },
             headers=_origin(),
         )
@@ -575,6 +588,7 @@ class TestBulkHandlersReachRoutes:
             data={
                 "sample_ids": json.dumps(ids),
                 "override_cycles": "Y*;I8N2;I8N2;Y*",
+                "target_override_cycles": shown_override_cycles(logged_in_client, run_id, ids),
             },
             headers=_origin(),
         )

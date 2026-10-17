@@ -132,6 +132,46 @@ function shownIndexOfRow(sampleId) {
     return [(row && row.dataset.i7) || '', (row && row.dataset.i5) || ''];
 }
 
+// The lanes a row shows, as the server compares them with the stored ones:
+// data-lanes of #sample-row-<id> (wizard/_sample_row.html). Sent with the
+// lane panel's Apply so the server can refuse a row another tab has moved
+// instead of overwriting it. A row this page does not have sends null, which
+// the server refuses (400): an older sample can be stored with no lane, so
+// [] would match one and let the Apply through on a page that never showed
+// it (first review of step 1, Minor 1).
+function shownLanesOfRow(sampleId) {
+    const row = document.getElementById(`sample-row-${sampleId}`);
+    if (!row) return null;
+    const raw = row.dataset.lanes || '';
+    return raw ? raw.split(',').map(Number) : [];
+}
+
+// The barcode mismatches and the Override Cycles a row shows, as the server
+// compares them with the stored ones. Read from the boxes, not from the row:
+// a box saves without redrawing its row (hx-swap="none", F3), and app.js
+// puts the stored value in its defaultValue on every answer, so the box --
+// not an attribute written when the row was last drawn -- is what this page
+// knows is stored. A box that is not there sends null, which the server
+// refuses (400) rather than reading as "nothing was set".
+function shownMismatchesOfRow(sampleId) {
+    const i7 = document.getElementById(`mismatch-i7-${sampleId}`);
+    const i5 = document.getElementById(`mismatch-i5-${sampleId}`);
+    return (i7 && i5) ? [i7.defaultValue, i5.defaultValue] : null;
+}
+
+function shownOverrideOfRow(sampleId) {
+    const box = document.getElementById(`override-cycles-${sampleId}`);
+    return box ? box.defaultValue : null;
+}
+
+// The test and its version a row shows: the Test cell is text, so these come
+// from the row (data-test-id / data-test-version), which is redrawn whenever
+// they change.
+function shownTestOfRow(sampleId) {
+    const row = document.getElementById(`sample-row-${sampleId}`);
+    return row ? [row.dataset.testId || '', row.dataset.testVersion || ''] : null;
+}
+
 function handleIndexDrop(event, sampleId, runId, dropZoneType) {
     event.preventDefault();
 
@@ -549,6 +589,9 @@ function applyBulkLanesForm() {
     // the server refuses: a sample is never saved with no lane.
     document.getElementById('bulk-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-lanes').value = JSON.stringify(lanes);
+    // What each ticked row showed, in the same order the ids are sent.
+    document.getElementById('bulk-target-lanes').value =
+        JSON.stringify(selectedSampleIds.map(shownLanesOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-lanes-form', 'submit');
@@ -568,6 +611,33 @@ function toggleBulkLanes() {
     });
 }
 
+// A row's Override Cycles or mismatch box saves on blur, and clicking a
+// panel button is that blur: the save and the Apply would go out together,
+// and the Apply would say what the page knew before the save landed -- a
+// 409 on one tab where nobody else changed anything. So the two panel
+// actions whose value comes from a row box -- Mismatches and Override
+// Cycles, Apply and Clear/Auto alike -- wait for the row saves to be
+// answered first (F3 keeps them in unsentRowSettings and rowSettingSaves)
+// and read the boxes after that. Lanes and Test do not: they read a data-*
+// attribute on the row, which a row box's save cannot change. A save whose answer
+// never comes gives up after the same wait a row action gives it, and the
+// server refuses the Apply if it was stale after all. (First review of
+// step 2, Important 1.)
+function whenRowSavesAreAnswered(go) {
+    const settled = () => unsentRowSaves() === 0 && rowSettingSaves.size === 0;
+    if (settled()) {
+        go();
+        return;
+    }
+    const gaveUpAt = Date.now() + window.rowSaveWaitMs;
+    const timer = setInterval(function() {
+        if (settled() || Date.now() > gaveUpAt) {
+            clearInterval(timer);
+            go();
+        }
+    }, 50);
+}
+
 function applyBulkMismatchesForm() {
     const selectedSampleIds = getSelectedSampleIds();
     if (selectedSampleIds.length === 0) {
@@ -578,15 +648,20 @@ function applyBulkMismatchesForm() {
     const mismatchI7 = document.getElementById('bulk-mismatch-i7-input').value;
     const mismatchI5 = document.getElementById('bulk-mismatch-i5-input').value;
 
-    // Populate hidden form fields
-    document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
-    document.getElementById('bulk-mismatch-index1').value = mismatchI7;
-    document.getElementById('bulk-mismatch-index2').value = mismatchI5;
-    // Apply writes only the boxes that were filled in.
-    document.getElementById('bulk-mismatch-mode').value = 'apply';
+    whenRowSavesAreAnswered(function() {
+        // Populate hidden form fields
+        document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
+        document.getElementById('bulk-mismatch-index1').value = mismatchI7;
+        document.getElementById('bulk-mismatch-index2').value = mismatchI5;
+        // Apply writes only the boxes that were filled in.
+        document.getElementById('bulk-mismatch-mode').value = 'apply';
+        // What each ticked row showed, in the same order the ids are sent.
+        document.getElementById('bulk-target-mismatches').value =
+            JSON.stringify(selectedSampleIds.map(shownMismatchesOfRow));
 
-    // Trigger HTMX form submission
-    htmx.trigger('#bulk-mismatches-form', 'submit');
+        // Trigger HTMX form submission
+        htmx.trigger('#bulk-mismatches-form', 'submit');
+    });
 }
 
 function clearBulkMismatchesForm() {
@@ -596,15 +671,19 @@ function clearBulkMismatchesForm() {
         return;
     }
 
-    // Populate hidden form fields with empty values to clear
-    document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
-    document.getElementById('bulk-mismatch-index1').value = '';
-    document.getElementById('bulk-mismatch-index2').value = '';
-    // Clear resets both columns; an empty box on Apply would leave them alone.
-    document.getElementById('bulk-mismatch-mode').value = 'clear';
+    whenRowSavesAreAnswered(function() {
+        // Populate hidden form fields with empty values to clear
+        document.getElementById('bulk-mismatch-sample-ids').value = JSON.stringify(selectedSampleIds);
+        document.getElementById('bulk-mismatch-index1').value = '';
+        document.getElementById('bulk-mismatch-index2').value = '';
+        // Clear resets both columns; an empty box on Apply would leave them alone.
+        document.getElementById('bulk-mismatch-mode').value = 'clear';
+        document.getElementById('bulk-target-mismatches').value =
+            JSON.stringify(selectedSampleIds.map(shownMismatchesOfRow));
 
-    // Trigger HTMX form submission
-    htmx.trigger('#bulk-mismatches-form', 'submit');
+        // Trigger HTMX form submission
+        htmx.trigger('#bulk-mismatches-form', 'submit');
+    });
 }
 
 function applyBulkOverrideCyclesForm() {
@@ -616,12 +695,16 @@ function applyBulkOverrideCyclesForm() {
 
     const overrideCycles = document.getElementById('bulk-override-cycles-input').value;
 
-    // Populate hidden form fields
-    document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
-    document.getElementById('bulk-override-cycles').value = overrideCycles;
+    whenRowSavesAreAnswered(function() {
+        // Populate hidden form fields
+        document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
+        document.getElementById('bulk-override-cycles').value = overrideCycles;
+        document.getElementById('bulk-target-override-cycles').value =
+            JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
 
-    // Trigger HTMX form submission
-    htmx.trigger('#bulk-override-form', 'submit');
+        // Trigger HTMX form submission
+        htmx.trigger('#bulk-override-form', 'submit');
+    });
 }
 
 function clearBulkOverrideCyclesForm() {
@@ -631,12 +714,16 @@ function clearBulkOverrideCyclesForm() {
         return;
     }
 
-    // Populate hidden form fields with empty value to recalculate auto
-    document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
-    document.getElementById('bulk-override-cycles').value = '';
+    whenRowSavesAreAnswered(function() {
+        // Populate hidden form fields with empty value to recalculate auto
+        document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
+        document.getElementById('bulk-override-cycles').value = '';
+        document.getElementById('bulk-target-override-cycles').value =
+            JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
 
-    // Trigger HTMX form submission
-    htmx.trigger('#bulk-override-form', 'submit');
+        // Trigger HTMX form submission
+        htmx.trigger('#bulk-override-form', 'submit');
+    });
 }
 
 function applyBulkTestIdForm() {
@@ -654,6 +741,8 @@ function applyBulkTestIdForm() {
     document.getElementById('bulk-test-id-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-test-id').value = testId;
     document.getElementById('bulk-test-version').value = testVersion;
+    document.getElementById('bulk-target-tests').value =
+        JSON.stringify(selectedSampleIds.map(shownTestOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-test-id-form', 'submit');
@@ -670,6 +759,8 @@ function clearBulkTestIdForm() {
     document.getElementById('bulk-test-id-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-test-id').value = '';
     document.getElementById('bulk-test-version').value = '';
+    document.getElementById('bulk-target-tests').value =
+        JSON.stringify(selectedSampleIds.map(shownTestOfRow));
 
     // Trigger HTMX form submission
     htmx.trigger('#bulk-test-id-form', 'submit');
@@ -682,8 +773,12 @@ function applyBulkDeleteForm() {
         return;
     }
 
-    // Populate hidden form field
+    // Populate hidden form field, and the index each ticked row shows: the
+    // route refuses the delete when one has moved in another tab, or when
+    // the run no longer has one of the samples.
     document.getElementById('bulk-delete-sample-ids').value = JSON.stringify(selectedSampleIds);
+    document.getElementById('bulk-delete-target-indexes').value =
+        JSON.stringify(selectedSampleIds.map(shownIndexOfRow));
 
     // Trigger HTMX form submission (will show confirm dialog from hx-confirm)
     htmx.trigger('#bulk-delete-form', 'submit');
@@ -1043,6 +1138,34 @@ document.body.addEventListener('htmx:trigger', function(event) {
     if (box instanceof Element && box.matches('[data-row-setting]')) {
         unsentRowSettings.set(box, (unsentRowSettings.get(box) || 0) + 1);
     }
+});
+
+// Each row box says what the page showed for it: its defaultValue, which is
+// the value the server last stored (set on every answer below). Added when
+// the request is issued, not when it is queued -- the row's saves queue
+// (hx-sync), so a save waiting its turn must say what the one before it
+// stored, or it would be refused for a change its own page had just made.
+document.body.addEventListener('htmx:configRequest', function(event) {
+    const box = event.detail.elt;
+    if (!(box instanceof Element) || !box.matches('[data-row-setting]')) return;
+    event.detail.parameters.set('target_setting', box.defaultValue);
+});
+
+// ... and the stored value must reach the box before that queued save is
+// issued. htmx fires afterRequest inside its load handler and resumes the
+// row's queue only after it, while the XHR's own listener below runs later
+// still -- so the box takes the stored value here as well, early enough for
+// the next save in the row's queue to name it. The listener below still
+// does the rest (what the box shows, the notes, a box that is gone).
+document.body.addEventListener('htmx:afterRequest', function(event) {
+    const box = event.target;
+    const xhr = event.detail && event.detail.xhr;
+    if (!xhr || !(box instanceof Element) || !box.matches('[data-row-setting]')) return;
+    if (xhr.status < 200 || xhr.status >= 300) return;
+    const answer = document.createElement('template');
+    answer.innerHTML = xhr.responseText || '';
+    const answered = answer.content.getElementById(box.id);
+    if (answered) box.defaultValue = answered.getAttribute('value') || '';
 });
 
 document.body.addEventListener('htmx:confirm', function(event) {

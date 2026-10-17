@@ -5,6 +5,7 @@ build the workflow-coverage tests on top of it. If this fails, the fixture
 needs surgery before the other tests are worth writing.
 """
 
+import json
 from .conftest import hold_edit_lock
 
 
@@ -615,11 +616,13 @@ def test_sample_delete_emits_audit(logged_in_client, fresh_app, monkeypatch):
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
 
+    # target_indexes: the index the row showed, as its x button sends it
+    # (design note 2026-10-17, step 3). The sample has none.
     response = logged_in_client.delete(
-        f"/runs/{run.id}/samples/{sample.id}",
+        f"/runs/{run.id}/samples/{sample.id}?target_indexes=" + json.dumps([["", ""]]),
         headers={"Origin": "http://testserver"},
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text[:300]
     assert any(c.get("event") == "sample.deleted" for c in captured), (
         f"Expected sample.deleted in audit; got events: {[c.get('event') for c in captured]}"
     )

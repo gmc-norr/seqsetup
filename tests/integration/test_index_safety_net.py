@@ -50,6 +50,7 @@ from tests.index_safety_net import (AS_ENTERED, I5_SHEET_DIRECTION, INDEX_LENGTH
                                     Expected, Sequences, data_sections, hamming,
                                     reverse_complement, usable)
 
+from .page_shows import shown_mismatches, shown_override_cycles, shown_tests
 from .conftest import hold_edit_lock, mark_ready, nothing_stored
 from .test_served_runs import _token
 
@@ -158,7 +159,8 @@ def _seeds() -> list[int]:
 
 _ROW = re.compile(
     r'<tr id="sample-row-(?P<row_id>[^"]+)"[^>]*'
-    r'data-i7="(?P<i7>[^"]*)" data-i5="(?P<i5>[^"]*)">(?P<body>.*?)</tr>',
+    r'data-i7="(?P<i7>[^"]*)" data-i5="(?P<i5>[^"]*)"\s*'
+    r'data-lanes="(?P<shown_lanes>[^"]*)"[^>]*>(?P<body>.*?)</tr>',
     re.S,
 )
 _SHOWN_ID = re.compile(r'<td class="sample-id-cell" title="[^"]*">([^<]*)</td>')
@@ -192,6 +194,10 @@ def page_rows(client, run_id: str) -> list[dict]:
             "i5": found.group("i5"),
             "lanes": [] if not lanes or lanes.group(1) == "All"
                      else lanes.group(1).split(","),
+            # data-lanes: the stored lane list, in its stored order, which
+            # the lane panel's Apply sends back (design note 2026-10-17).
+            "shown_lanes": [int(lane) for lane in found.group("shown_lanes").split(",")
+                            if lane],
         })
     return rows
 
@@ -374,6 +380,14 @@ class Net:
         by_id = {row["row_id"]: row for row in self.rows()}
         return json.dumps([[by_id[rid]["i7"] if rid in by_id else "",
                             by_id[rid]["i5"] if rid in by_id else ""]
+                           for rid in row_ids])
+
+    def _shown_lanes(self, row_ids: list[str]) -> str:
+        """The lanes the page shows in each of those rows, as the lane
+        panel's Apply sends them: the route refuses a row whose lanes have
+        moved since the page was drawn (design note 2026-10-17)."""
+        by_id = {row["row_id"]: row for row in self.rows()}
+        return json.dumps([by_id[rid]["shown_lanes"] if rid in by_id else []
                            for rid in row_ids])
 
     def _some_lanes(self, how_many: int) -> list[int]:
@@ -606,6 +620,7 @@ class Net:
             lane = [offset + 1]
             answer = self._post("/samples/set-lanes",
                                 sample_ids=json.dumps([row["row_id"]]),
+                                target_lanes=self._shown_lanes([row["row_id"]]),
                                 lanes=json.dumps(lane))
             assert answer.status_code == 200, answer.text[:300]
             self.expected.set_lanes(row["sample_id"], lane, "set lanes on a subset")
@@ -656,6 +671,7 @@ class Net:
             lane = [offset + 1]
             answer = self._post("/samples/set-lanes",
                                 sample_ids=json.dumps([row["row_id"]]),
+                                target_lanes=self._shown_lanes([row["row_id"]]),
                                 lanes=json.dumps(lane))
             assert answer.status_code == 200, answer.text[:300]
             self.expected.set_lanes(row["sample_id"], lane, "set lanes on a subset")
@@ -841,6 +857,7 @@ class Net:
         lanes = self._some_lanes(min(self.lanes, self.rng.choice([2, 3])))
         answer = self._post("/samples/set-lanes",
                             sample_ids=json.dumps([row["row_id"] for row in chosen]),
+                            target_lanes=self._shown_lanes([row["row_id"] for row in chosen]),
                             lanes=json.dumps(lanes))
         assert answer.status_code == 200, answer.text[:300]
         for row in chosen:
@@ -869,6 +886,7 @@ class Net:
         free = [row for row in rows if row["sample_id"] not in self.one_index_group]
         chosen = self.rng.sample(free, min(2, len(free)))
         answer = self._post("/samples/bulk-delete",
+                            target_indexes=self._shown([row["row_id"] for row in chosen]),
                             sample_ids=json.dumps([row["row_id"] for row in chosen]))
         assert answer.status_code == 200, answer.text[:300]
         for row in chosen:
@@ -881,7 +899,8 @@ class Net:
                 if row["sample_id"] not in self.one_index_group]
         row = self.rng.choice(free)
         answer = self.client.delete(
-            f"/runs/{self.run_id}/samples/{row['row_id']}", headers=ORIGIN)
+            f"/runs/{self.run_id}/samples/{row['row_id']}"
+            f"?target_indexes={self._shown([row['row_id']])}", headers=ORIGIN)
         assert answer.status_code == 200, answer.text[:300]
         self.expected.remove(row["sample_id"], "delete one sample by hand")
 
@@ -891,6 +910,8 @@ class Net:
         rows = self.rows()
         answer = self._post("/samples/set-test-id",
                             sample_ids=json.dumps([row["row_id"] for row in rows]),
+                            target_tests=shown_tests(self.client, self.run_id,
+                                                     [row["row_id"] for row in rows]),
                             test_id=TEST_ID, test_version=TEST_VERSION)
         assert answer.status_code == 200, answer.text[:300]
         self.expected.note("set the test")
@@ -907,6 +928,8 @@ class Net:
         chosen = self.rng.sample(self.rows(), max(1, len(self.rows()) // 4))
         answer = self._post("/samples/set-mismatches",
                             sample_ids=json.dumps([row["row_id"] for row in chosen]),
+                            target_mismatches=shown_mismatches(
+                                self.client, self.run_id, [row["row_id"] for row in chosen]),
                             mismatch_index1="1", mismatch_index2="1")
         assert answer.status_code == 200, answer.text[:300]
         self.expected.note("set the barcode mismatches")
@@ -917,6 +940,8 @@ class Net:
         chosen = self.rng.sample(self.rows(), max(1, len(self.rows()) // 4))
         answer = self._post("/samples/set-override-cycles",
                             sample_ids=json.dumps([row["row_id"] for row in chosen]),
+                            target_override_cycles=shown_override_cycles(
+                                self.client, self.run_id, [row["row_id"] for row in chosen]),
                             override_cycles=f"Y151;I{INDEX_LENGTH};I{INDEX_LENGTH};Y151")
         assert answer.status_code == 200, answer.text[:300]
         self.expected.note("set the override cycles")

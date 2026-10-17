@@ -287,7 +287,14 @@ a mistyped ``1e``, is refused with a message in the banner, and nothing is
 saved. The bulk **Mismatches** row below works the same way.
 
 Each of these three fields saves independently -- changing one does not
-touch the others on that row. For a sample that already has an index,
+touch the others on that row. Each also sends the value the page was
+showing for that box. If another tab (or someone else) changed that one
+value since this page drew it, nothing is saved and the page says so --
+*"Nothing was saved. Reload the page and try again. The barcode mismatches
+on these samples changed since this page was loaded: PAT1."* What you typed
+stays on screen, as it does after any refused edit; reload the page to see
+what is stored. A change to the *other* boxes on the row, or to another
+row, is not that box's business and does not stop it saving. For a sample that already has an index,
 clearing Override Cycles back to blank does not leave it empty: SeqSetup
 recalculates it from the sample's index and the run's cycle configuration.
 An Override Cycles value you type is checked immediately: anything other
@@ -349,6 +356,18 @@ without a version, or a version without a test, is refused. The panel's
 **Override Cycles** rows are covered in :doc:`lane-assignment` and
 :doc:`override-cycles`.
 
+The panel's **Lanes**, **Mismatches**, **Override Cycles** and **Test ID**
+rows each send what the page was showing for the values they change. If any ticked sample's values were changed in another tab (or by
+someone else) since the page was loaded, nothing is saved and the page names
+them -- for example *"Nothing was saved. Reload the page and try again. The
+barcode mismatches on these samples changed since this page was loaded:
+PAT2."* **Mismatches** **Apply** only checks the column it is about to
+write, so a blank i5 box is not refused because someone else set an i5.
+If one of the ticked samples has been deleted since the page was loaded,
+nothing is saved either: *"The sample list changed since this page was
+loaded. Reload the page and try again."* Reload the page in both cases; the
+table then shows the values as they are now.
+
 Removing a sample
 --------------------
 
@@ -360,3 +379,13 @@ To remove several samples at once, tick their checkboxes and select
 **Delete Selected** in the bulk-action panel above the table. It deletes
 every ticked sample in one action, after the same kind of confirmation
 prompt -- just as irreversible as the per-row button.
+
+Because a delete cannot be undone, both check that the page is up to date
+first. Each sends the index the row was showing, and if any of those samples
+was given, or had replaced or cleared, an index in another tab (or by someone
+else) since the page was loaded, nothing is deleted and the page names them:
+*"Nothing was deleted. Reload the page and try again. The index on these
+samples changed since this page was loaded: PAT2."* If one of them has already
+been deleted, nothing is deleted either: *"The sample list changed since this
+page was loaded. Nothing was deleted. Reload the page and try again."* Reload
+the page and look again before deleting.

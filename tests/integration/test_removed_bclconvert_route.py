@@ -18,6 +18,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 from seqsetup.models.sample import Sample
+from .page_shows import shown_setting
 from .conftest import hold_edit_lock
 
 
@@ -100,7 +101,10 @@ class TestTheFieldsItSetAreUnchanged:
 
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/s1/settings",
-            data={"barcode_mismatches_index1": "2"}, headers=ORIGIN)
+            data={"barcode_mismatches_index1": "2",
+                  "target_setting": shown_setting(logged_in_client, RUN_ID, "s1",
+                                                  "barcode_mismatches_index1")},
+            headers=ORIGIN)
 
         assert response.status_code == 200
         assert ctx.run_repo.get_by_id(RUN_ID).get_sample("s1").barcode_mismatches_index1 == 2

@@ -75,6 +75,39 @@ a model or service layer where it cannot be forgotten.
 - Repositories contain **no business logic** — they are thin data access layers.
 - Models are **self-validating on every assignment, not just construction**, for any non-trivial invariant they declare. `Sample.__setattr__` enforces `barcode_mismatches_*` (clamp 0–2, the values BCL Convert accepts), `index*_cycles` (clamp >=1), `lanes` (filter to positive non-bool ints, each kept once, in first-seen order — a lane twice would put the sample's row in the sheet twice), `sample_id` (refused when its text is made only of zeros, whether it arrives as a string or as the JSON number `0` — a LIMS may use 0 for an empty well), `override_cycles` (regex), the sample text in `SAMPLE_TEXT_LABELS` (refused over 256, never cut; also on load, so a stored longer value makes its run unreadable), `index_kit_name` (256-char cap), and `description` (4096). `SequencingRun.__setattr__` clamps `run_name` (256, no CR/LF), `run_description` (4096), and `barcode_mismatches_*`. When adding a model field whose validity is anything more than "any string of any length", enforce it in `__setattr__` (or a property setter) so the rule survives direct attribute writes from route handlers — `__post_init__` alone is insufficient. Routes still call `sanitize_string` at the boundary for trim semantics and visible 400s on oversize input; the model is the load-bearing backstop.
 - **Validation cache coherence:** `ValidationService` memoizes results by `(run.id, run.updated_at, _VALIDATION_INPUT_VERSION)` — the version counter is bumped by `clear_validation_cache()`. Any mutation that changes validation *inputs* without bumping `run.updated_at` (GitHub config sync, index-kit save/delete, instrument enable/disable, etc.) MUST call `clear_validation_cache()`. See `services/validation.py` and existing call sites in `services/github_sync.py`, `routes/indexes.py`, `routes/admin/instruments.py`.
+- **A change from a page that is out of date is refused, not applied.** The edit
+  lock is held per user, so two tabs of one person both pass it, and
+  `get_editable_run` reloads the run on every request, so `RunRepository.save`'s
+  version check only catches a write landing inside one request. Every action
+  that changes samples must therefore send what the page showed **for the field
+  it changes**, one entry per targeted row in the order the rows are sent; the route
+  compares each with the stored value **before it writes anything** and refuses
+  409 with nothing written, naming the samples (`_changed_rows_refusal`), when one
+  has moved. A request that sends no shown value is refused 400
+  (no real client sends one: `/js/app.js?v=<content hash>` cannot be stale against
+  the HTML), and a targeted sample the run no longer has is refused 409
+  (`_targets_or_refusal`; the per-row box route answers its own 404 "Sample not
+  found") — never skipped without a word. Covered so far: the four
+  index routes (`target_indexes`, from `data-i7`/`data-i5`; outside review of
+  f490536, F8), the lane panel's Apply (`target_lanes`, from `data-lanes`) and
+  the rest of the bulk panel — `set-mismatches` (`target_mismatches`, the two
+  boxes' `defaultValue`, and only the column the request writes is compared),
+  `set-override-cycles` (`target_override_cycles`) and `set-test-id`
+  (`target_tests`, from `data-test-id`/`data-test-version`; the Check page's fix
+  boxes keep their own `only_if` check instead and send none). A field whose row
+  box saves without redrawing the row (F3) is read from the box, never from a
+  `data-*` that would be stale. The two deletes take the same `target_indexes`
+  as the index routes (the row's `x` sends it in the query string: htmx 2 puts a
+  DELETE's `hx-vals` there) and refuse a row whose index has moved, or a sample
+  the run no longer has, rather than deleting it or answering as if it had. The
+  per-row Override Cycles and MM boxes send `target_setting`, the box's own
+  `defaultValue`, added in `htmx:configRequest` so a save waiting in the row's
+  queue names what the save before it stored — and the box takes that stored
+  value in an `htmx:afterRequest` listener, which htmx fires before it resumes
+  the row's queue (F3's own XHR listener runs later still and does the rest).
+  All four steps are built: `docs/design/2026-10-17-stale-page-checks-design.md`.
+  `POST /runs/{id}/samples/{sample_id}` (`update_sample`) is the one mutation
+  left out, deliberately: no page sends it, only tests.
 - **Partial updates update only what was submitted.** Handlers serving per-field HTMX inputs (e.g. `update_sample_settings`, `update_sample`) MUST check `field in form` before writing — defaulting missing fields to empty and writing them back silently destroys sibling values.
 - **Several indexes dropped at once fill the rows in panel order.** `assign_indexes_bulk` sorts the dropped indexes into the kit's own list order (`_panel_position`, the order the index panel shows them) before it fills rows, and `app.js` sends them in that order (`inPanelOrder`, which the keyboard's one-index assign also uses); click order once gave the first sample the last-clicked index, a swap no check can see. A drop mixing index kinds or kits has no one order and is refused.
 - **A kit's name and version mean one content.** `IndexKit.fingerprint()` is a sha256 of everything in the kit but its description, comments, owner and source, which reach no sample or sheet. Every index chip carries it (`data-kit-fingerprint`), `app.js` sends it with every drop and keyboard assign, and `_find_index` in `routes/samples.py` refuses (409) a drop whose fingerprint is not the stored kit's, or that sends none; the fill's plan signature holds it too. A sync refuses a kit file that keeps a stored synced kit's name and version with another fingerprint, and every file of a name and version two files give (`_refuse_changed_or_repeated_kits` in `services/github_sync.py`); the stored kit stays. A kit whose file left the repository is removed, so a later sync can bring its name and version back changed, as an upload after a delete can; a page loaded before still cannot assign from it. A drop from a page loaded before its kit changed once gave the sample sequences its chip never showed.

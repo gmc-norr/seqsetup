@@ -16,6 +16,7 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.cycle_calculator import CycleCalculator
+from .page_shows import shown_override_cycles
 from .conftest import hold_edit_lock, run_version
 
 ORIGIN = {"Origin": "http://testserver", "HX-Request": "true"}
@@ -49,8 +50,12 @@ def _make_run(ctx, samples: int = 1, read1_pattern=None) -> None:
 
 
 def _type(client, sample_ids, value):
+    # target_override_cycles: what the page showed in those rows, as the
+    # bulk panel sends it (design note 2026-10-17).
     resp = client.post(f"/runs/{RUN_ID}/samples/set-override-cycles", headers=ORIGIN,
-                       data={"sample_ids": json.dumps(sample_ids), "override_cycles": value})
+                       data={"sample_ids": json.dumps(sample_ids), "override_cycles": value,
+                             "target_override_cycles": shown_override_cycles(
+                                 client, RUN_ID, sample_ids)})
     assert resp.status_code == 200, resp.text
 
 

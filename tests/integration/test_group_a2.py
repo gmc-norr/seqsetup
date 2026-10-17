@@ -10,6 +10,7 @@ import pytest
 from seqsetup.models.run_template import RunTemplate
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
+from .page_shows import shown_setting
 from .conftest import nothing_stored, run_version
 from .conftest import hold_edit_lock
 
@@ -290,7 +291,10 @@ class TestATypedIndex2MaskedFirstIsRefused:
         run = _indexed_draft(ctx, "a2-typed-row", platform)
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
-            data={"override_cycles": "Y151;I8N2;N2I8;Y151"}, headers=ORIGIN,
+            data={"override_cycles": "Y151;I8N2;N2I8;Y151",
+                  "target_setting": shown_setting(logged_in_client, run.id,
+                                                  run.samples[0].id, "override_cycles")},
+            headers=ORIGIN,
         )
         assert resp.status_code == 400
         assert f"{INDEX2_ORDER_RULE} Nothing was saved." in html.unescape(resp.text)
@@ -315,9 +319,12 @@ class TestATypedIndex2MaskedFirstIsRefused:
         run = _indexed_draft(ctx, "a2-typed-ok")
         resp = logged_in_client.post(
             f"/runs/{run.id}/samples/{run.samples[0].id}/settings",
-            data={"override_cycles": value}, headers=ORIGIN,
+            data={"override_cycles": value,
+                  "target_setting": shown_setting(logged_in_client, run.id,
+                                                  run.samples[0].id, "override_cycles")},
+            headers=ORIGIN,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text[:300]
         assert ctx.run_repo.get_by_id(run.id).samples[0].override_cycles == value
 
     @pytest.mark.parametrize("platform", PLATFORMS)

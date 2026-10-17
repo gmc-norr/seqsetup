@@ -604,11 +604,17 @@ def _tests_of(ctx, run_id):
 def _set_test(client, run_id, ids, test, version=None, only_if=None):
     import json
     from .test_paste_preview import ORIGIN
-    data = {"sample_ids": json.dumps([f"id-{i}" for i in ids]), "test_id": test}
+    from .page_shows import shown_tests
+    row_ids = [f"id-{i}" for i in ids]
+    data = {"sample_ids": json.dumps(row_ids), "test_id": test}
     if version is not None:
         data["test_version"] = version
     if only_if is not None:
         data["only_if"] = only_if
+    else:
+        # The bulk panel sends no only_if and names the test and version it
+        # showed in each ticked row instead (design note 2026-10-17, step 2).
+        data["target_tests"] = shown_tests(client, run_id, row_ids)
     return client.post(f"/runs/{run_id}/samples/set-test-id", data=data, headers=ORIGIN)
 
 
@@ -747,7 +753,11 @@ class TestAFixBoxFromAnOldPage:
         assert r.status_code == 200
         assert _tests_of(ctx, run_id)["S1"] == ("WGS", "1")
 
-    def test_a_sample_removed_since_is_not_a_change(self, logged_in_client, fresh_app):
+    def test_a_sample_removed_since_is_refused(self, logged_in_client, fresh_app):
+        """It used to be saved for the samples that were left, without a
+        word. A box naming a sample the run no longer has is a box from a
+        page that is out of date, so nothing is saved (design note
+        2026-10-17, step 2; before it: 200, and S2 became WGS 1)."""
         _app, ctx, _db = fresh_app
         run_id = self._run(ctx)
         run = ctx.run_repo.get_by_id(run_id)
@@ -755,8 +765,10 @@ class TestAFixBoxFromAnOldPage:
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)
         r = _set_test(logged_in_client, run_id, ["S2", "S4"], "WGS", "1", only_if="no_version")
-        assert r.status_code == 200
-        assert _tests_of(ctx, run_id) == {"S1": ("", ""), "S2": ("WGS", "1")}
+        assert (r.status_code, r.text) == (409, (
+            "The sample list changed since this page was loaded. "
+            "Reload the page and try again."))
+        assert _tests_of(ctx, run_id) == {"S1": ("", ""), "S2": ("WGS", "")}
 
     def test_another_only_if_is_a_400(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app

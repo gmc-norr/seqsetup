@@ -51,8 +51,22 @@
    send it (hx-vals) and app.js sends it with every single-row assign: the
    server refuses a clear of an index another tab has changed (F8). #}
 {% set shown_indexes = [[sample.index1_sequence or '', sample.index2_sequence or '']] | tojson %}
+{# data-lanes: the lanes this row shows, which the lane panel's Apply sends
+   back for each ticked row (target_lanes), so the server can refuse a row
+   whose lanes changed in another tab. The stored list, in its stored order,
+   not .lanes-display, which sorts them and writes "All" for none (design
+   note docs/design/2026-10-17-stale-page-checks-design.md).
+
+   data-test-id / data-test-version: the same for the panel's Set test
+   (target_tests) -- the stored values, not the Test cell's text, which adds
+   the version a Ready run's checks used. The Override Cycles and mismatch
+   values are NOT here: their boxes save without redrawing the row
+   (hx-swap="none", F3), so an attribute would go stale and refuse a page
+   that is right; app.js reads those from the boxes themselves. #}
 <tr id="sample-row-{{ sample.id }}" class="{{ row_class }}"
-    data-i7="{{ sample.index1_sequence or '' }}" data-i5="{{ sample.index2_sequence or '' }}">
+    data-i7="{{ sample.index1_sequence or '' }}" data-i5="{{ sample.index2_sequence or '' }}"
+    data-lanes="{{ sample.lanes | join(',') }}"
+    data-test-id="{{ sample.test_id or '' }}" data-test-version="{{ sample.test_version or '' }}">
 {%- if effective_checkboxes %}
     <td class="checkbox-cell">
         <input type="checkbox" class="sample-checkbox"
@@ -170,7 +184,13 @@
     {%- if show_bulk_actions %}
         <td class="lane-cell"><span class="lanes-display">{{ sample.lanes_display }}</span></td>
         {%- if editable %}
-            {#- Each box saves on its own and its answer replaces nothing
+            {#- app.js turns data-row-setting into two things: the name in a
+                note about a save that was lost, and the box's target_setting
+                -- what the page showed for it, which the route compares with
+                what is stored before it writes (design note 2026-10-17, step
+                4). It is not only a label.
+
+                Each box saves on its own and its answer replaces nothing
                 (hx-swap none): app.js puts the stored value in the box while
                 it still shows what was sent, so what is being typed there or
                 in the next box, and the row's tick, stay; the saves of one
@@ -230,12 +250,20 @@
         {%- endif %}
     {%- endif %}
     {%- if editable %}
-        {% set delete_target = '#sample-row-' ~ sample.id if context == 'add_step2' else '#sample-table' %}
+        {#- The route answers with the whole #sample-section, so that is what
+            the button replaces: targeting #sample-table swapped a section in
+            where the table was and nested a second #sample-section inside the
+            first -- two paste forms, two index panels, two of every id, and
+            the kit dropdown then drove the wrong list (design note
+            2026-10-17, step 3). target_indexes: the index this row shows, as
+            the clear button sends it (F8); a DELETE carries it in the query
+            string (htmx 2 methodsThatUseUrlParams). #}
         <td class="actions">
             <button type="button" class="btn-tiny btn-danger"
                     title="Delete sample"
                     hx-delete="/runs/{{ run_id }}/samples/{{ sample.id }}{{ ctx_param }}"
-                    hx-target="{{ delete_target }}"
+                    hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
+                    hx-target="{{ '#sample-row-' ~ sample.id if context == 'add_step2' else '#sample-section' }}"
                     hx-swap="outerHTML"
                     hx-confirm="Delete this sample?">&times;</button>
         </td>
@@ -246,10 +274,15 @@
     <td class="worksheet-cell" title="{{ sample.worksheet_id or '' }}">{{ sample.worksheet_id or '-' }}</td>
     {%- if editable %}
         <td class="actions">
+            {#- The same route, so the same target: this branch is not on any
+                page today (nothing renders a row with show_drop_zones off but
+                the answer to update_sample, which no page posts), and a
+                half-fixed button is a trap for whoever revives it. #}
             <button type="button" class="btn-tiny btn-danger"
                     title="Delete sample"
                     hx-delete="/runs/{{ run_id }}/samples/{{ sample.id }}"
-                    hx-target="#sample-row-{{ sample.id }}"
+                    hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
+                    hx-target="#sample-section"
                     hx-swap="outerHTML"
                     hx-confirm="Delete this sample?">&times;</button>
         </td>

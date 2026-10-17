@@ -486,18 +486,12 @@ def _parse_sample_ids(raw: str) -> Optional[list[str]]:
     return parsed
 
 
-def _shown_indexes(raw, count: int) -> Optional[list[list[str]]]:
-    """What a multi-index drop says the page showed in each of the ``count``
-    rows it fills: [i7, i5] per row, or None when the field is missing, empty
-    or unreadable -- the field is required, so all three are refused.
-
-    The sequences are compared with the stored ones before anything is
-    assigned, so a row whose index another tab changed is refused instead of
-    overwritten (batch 4, item 16). A request without the field would
-    overwrite that index instead, and no real client sends one: app.js is
-    served as /js/app.js?v=<content hash>, so a browser cannot hold a
-    pre-change script against post-change HTML (batch 4 review fix A).
-    """
+def _shown_pairs(raw, count: int) -> Optional[list[list[str]]]:
+    """What a bulk action says the page showed in each of the ``count`` rows
+    it changes, where the field has two parts: [a, b] per row, or None when
+    the field is missing, empty or unreadable -- the field is required, so
+    all three are refused. Used for the index pair, the two barcode
+    mismatch columns and the test with its version."""
     if not raw or not isinstance(raw, str):
         return None
     try:
@@ -511,6 +505,37 @@ def _shown_indexes(raw, count: int) -> Optional[list[list[str]]]:
                 or not all(isinstance(cell, str) for cell in row)):
             return None
     return parsed
+
+
+def _shown_strings(raw, count: int) -> Optional[list[str]]:
+    """The same for a field with one part per row (Override Cycles): a
+    string per row, "" for a row that showed nothing."""
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list) or len(parsed) != count:
+        return None
+    if not all(isinstance(cell, str) for cell in parsed):
+        return None
+    return parsed
+
+
+def _shown_indexes(raw, count: int) -> Optional[list[list[str]]]:
+    """What a multi-index drop says the page showed in each of the ``count``
+    rows it fills: [i7, i5] per row, or None when the field is missing, empty
+    or unreadable -- the field is required, so all three are refused.
+
+    The sequences are compared with the stored ones before anything is
+    assigned, so a row whose index another tab changed is refused instead of
+    overwritten (batch 4, item 16). A request without the field would
+    overwrite that index instead, and no real client sends one: app.js is
+    served as /js/app.js?v=<content hash>, so a browser cannot hold a
+    pre-change script against post-change HTML (batch 4 review fix A).
+    """
+    return _shown_pairs(raw, count)
 
 
 # The three single-row routes take the same field, and refuse the same two
@@ -534,15 +559,122 @@ def _rows_with_a_changed_index(samples, shown: list[list[str]]) -> list[str]:
             if [sample.index1_sequence or "", sample.index2_sequence or ""] != row]
 
 
-def _changed_rows_refusal(changed: list[str], nothing_was: str) -> Response:
+def _changed_rows_refusal(changed: list[str], nothing_was: str, what: str = "index") -> Response:
     # What to do comes before the IDs: the page's error banner shows the
     # first 300 characters, and ten 25-character LIMS sample IDs are 268
     # of them (batch 4 review fix B).
     return Response(
-        f"{nothing_was} The index on these samples changed since this page "
+        f"{nothing_was} The {what} on these samples changed since this page "
         f"was loaded: {name_list(changed)}.",
         status_code=409,
     )
+
+
+# The bulk panel's actions say what the page showed for the field they
+# change, and are refused the same two ways as the index routes above
+# (design note docs/design/2026-10-17-stale-page-checks-design.md).
+STALE_PAGE_SAVE = ("This page is out of date. Nothing was saved. "
+                   "Reload the page and try again.")
+CHANGED_ROWS_SAVE = "Nothing was saved. Reload the page and try again."
+SAMPLE_LIST_CHANGED_SAVE = ("The sample list changed since this page was loaded. "
+                            "Reload the page and try again.")
+# A delete is the one action that cannot be put right by doing it again.
+STALE_PAGE_DELETE = ("This page is out of date. Nothing was deleted. "
+                     "Reload the page and try again.")
+CHANGED_ROWS_DELETE = "Nothing was deleted. Reload the page and try again."
+SAMPLE_LIST_CHANGED_DELETE = ("The sample list changed since this page was loaded. "
+                              "Nothing was deleted. Reload the page and try again.")
+
+
+def _targets_or_refusal(run, sample_ids: list[str], refusal: str = SAMPLE_LIST_CHANGED_SAVE):
+    """(the targeted samples, None), or (None, a 409) when the run no longer
+    has one of them. Skipping it silently told the person their change was
+    made to a sample that is not there any more. The deletes pass their own
+    wording: after a Delete Selected of five rows, "the sample list changed"
+    alone does not say whether the other four went (first review of step 3,
+    Minor 2)."""
+    targets = [run.get_sample(sid) for sid in sample_ids]
+    if any(target is None for target in targets):
+        return None, Response(refusal, status_code=409)
+    return targets, None
+
+
+def _shown_lanes(raw, count: int) -> Optional[list[list[int]]]:
+    """The lanes a lane Apply says the page showed in each of the ``count``
+    rows it changes: a list of lane numbers per row, or None when the field
+    is missing, empty or unreadable -- the field is required, so all three
+    are refused.
+
+    Compared with the stored lanes before anything is written, so a row
+    another tab has moved is refused instead of overwritten. A request
+    without the field would overwrite those lanes, and no real client sends
+    one: app.js is served as /js/app.js?v=<content hash>, so a browser
+    cannot hold a pre-change script against post-change HTML.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list) or len(parsed) != count:
+        return None
+    for row in parsed:
+        if not isinstance(row, list) or not all(
+                isinstance(lane, int) and not isinstance(lane, bool) for lane in row):
+            return None
+    return parsed
+
+
+def _mismatch_text(value) -> str:
+    """A barcode mismatch column as its box shows it: "" for the default."""
+    return "" if value is None else str(value)
+
+
+def _rows_with_changed_mismatches(samples, shown: list[list[str]], *,
+                                  index1: bool, index2: bool) -> list[str]:
+    """The Sample IDs of the rows whose stored barcode mismatches are not the
+    ones the page says it showed -- in the columns this request writes only.
+    Apply leaves a blank box's column alone, so a change there is not this
+    request's business and refusing it would stop work nobody overwrites."""
+    changed = []
+    for sample, row in zip(samples, shown, strict=True):
+        if ((index1 and _mismatch_text(sample.barcode_mismatches_index1) != row[0])
+                or (index2 and _mismatch_text(sample.barcode_mismatches_index2) != row[1])):
+            changed.append(sample.sample_id)
+    return changed
+
+
+def _rows_with_changed_override_cycles(samples, shown: list[str]) -> list[str]:
+    """The Sample IDs of the rows whose stored Override Cycles is not the one
+    the page says it showed ("" for Auto)."""
+    return [sample.sample_id for sample, row in zip(samples, shown, strict=True)
+            if (sample.override_cycles or "") != row]
+
+
+def _as_an_attribute(text: str) -> str:
+    """Text as a browser reads it back out of an HTML attribute, where CR
+    and CRLF become LF. A stored test with a carriage return in it would
+    otherwise never match what the page sends back, and its row could never
+    be given another test (first review of step 2, Minor 4)."""
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _rows_with_changed_test(samples, shown: list[list[str]]) -> list[str]:
+    """The Sample IDs of the rows whose stored test, or its version, is not
+    the one the page says it showed. A test and its version are set
+    together, so both are compared."""
+    return [sample.sample_id for sample, row in zip(samples, shown, strict=True)
+            if [_as_an_attribute(sample.test_id),
+                _as_an_attribute(sample.test_version)] != row]
+
+
+def _rows_with_changed_lanes(samples, shown: list[list[int]]) -> list[str]:
+    """The Sample IDs of the rows whose stored lanes are not the ones the
+    page says it showed. Order counts: the stored order is the order the
+    row shows and the order the sheet writes."""
+    return [sample.sample_id for sample, row in zip(samples, shown, strict=True)
+            if list(sample.lanes) != row]
 
 
 _KIT_CHANGED = ("The index kit changed since this page was loaded. Nothing was assigned. "
@@ -1509,6 +1641,19 @@ async def set_lanes_bulk(
     if not normalized_lanes:
         return Response("Tick at least one lane. Nothing was saved.", status_code=400)
 
+    # The panel names the lanes it showed in each ticked row. A row another
+    # tab has since moved, or a sample the run no longer has, refuses the
+    # whole Apply with nothing written (design note 2026-10-17, step 1).
+    targets, refusal = _targets_or_refusal(run, sample_ids)
+    if refusal:
+        return refusal
+    shown = _shown_lanes(form.get("target_lanes", ""), len(sample_ids))
+    if shown is None:
+        return Response(STALE_PAGE_SAVE, status_code=400)
+    changed = _rows_with_changed_lanes(targets, shown)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_SAVE, "lanes")
+
     selected_ids = {str(sample_id) for sample_id in sample_ids}
 
     with saving_run(run, ctx, request):
@@ -1565,6 +1710,20 @@ async def set_mismatches_bulk(
                 "reset both to the default (the BCL Convert profile's, else the run's). "
                 "Nothing was saved."
             ))
+
+    # The panel names the mismatches it showed in each ticked row, and the
+    # columns this request writes are compared with the stored ones before
+    # anything is written (design note 2026-10-17, step 2).
+    targets, refusal = _targets_or_refusal(run, sample_ids)
+    if refusal:
+        return refusal
+    shown = _shown_pairs(form.get("target_mismatches", ""), len(sample_ids))
+    if shown is None:
+        return Response(STALE_PAGE_SAVE, status_code=400)
+    changed = _rows_with_changed_mismatches(
+        targets, shown, index1=write_index1, index2=write_index2)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_SAVE, "barcode mismatches")
 
     with saving_run(run, ctx, request):
         for sample in run.samples:
@@ -1655,6 +1814,20 @@ async def set_override_cycles_bulk(
             name, value = failing[0]
             raise HTTPException(status_code=400, detail=_override_cycles_refusal(
                 value, run.run_cycles, calculated_for=name, more=len(failing) - 1))
+        # What the panel showed in each ticked row, compared before
+        # anything is written: Auto rewrites every ticked sample's value, so
+        # a stale Apply would wipe a UMI read another tab had just typed
+        # (design note 2026-10-17, step 2).
+        targets, refusal = _targets_or_refusal(run, sample_ids)
+        if refusal:
+            return refusal
+        shown = _shown_strings(form.get("target_override_cycles", ""), len(sample_ids))
+        if shown is None:
+            return Response(STALE_PAGE_SAVE, status_code=400)
+        stale = _rows_with_changed_override_cycles(targets, shown)
+        if stale:
+            return _changed_rows_refusal(stale, CHANGED_ROWS_SAVE, "Override Cycles")
+
         with saving_run(run, ctx, request):
             for sample in run.samples:
                 if sample.id in finals:
@@ -1713,6 +1886,10 @@ async def set_test_id_bulk(
     if problem:
         return Response(problem, status_code=400)
 
+    targets, refusal = _targets_or_refusal(run, sample_ids)
+    if refusal:
+        return refusal
+
     # A box from a page that is out of date must not change a sample someone
     # has changed since: it could give that sample another test.
     changed = [
@@ -1727,6 +1904,16 @@ async def set_test_id_bulk(
             f"Reload the page and try again.",
             status_code=409,
         )
+
+    # The bulk panel sends no only_if and names the test and version it
+    # showed in each ticked row instead (design note 2026-10-17, step 2).
+    if not only_if:
+        shown = _shown_pairs(form.get("target_tests", ""), len(sample_ids))
+        if shown is None:
+            return Response(STALE_PAGE_SAVE, status_code=400)
+        moved = _rows_with_changed_test(targets, shown)
+        if moved:
+            return _changed_rows_refusal(moved, CHANGED_ROWS_SAVE, "test")
 
     with saving_run(run, ctx, request):
         for sample in run.samples:
@@ -1761,6 +1948,20 @@ async def delete_samples_bulk(
     sample_ids = _parse_sample_ids(sample_ids_json)
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
+
+    # The panel names the index each ticked row showed, as the assign and
+    # clear routes take it (F8). A row another tab has since indexed, or a
+    # sample the run no longer has, refuses the whole delete -- a delete
+    # cannot be put right by doing it again (design note 2026-10-17, step 3).
+    targets, refusal = _targets_or_refusal(run, sample_ids, SAMPLE_LIST_CHANGED_DELETE)
+    if refusal:
+        return refusal
+    shown = _shown_indexes(form.get("target_indexes", ""), len(sample_ids))
+    if shown is None:
+        return Response(STALE_PAGE_DELETE, status_code=400)
+    changed = _rows_with_a_changed_index(targets, shown)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_DELETE)
 
     deleted_ids = [sid for sid in sample_ids if run.get_sample(str(sid))]
     with saving_run(run, ctx, request):
@@ -1799,9 +2000,28 @@ def delete_sample(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
     context: str = "",
+    target_indexes: str = "",
 ) -> Response:
-    """DELETE /runs/{run_id}/samples/{sample_id} — delete a single sample."""
+    """DELETE /runs/{run_id}/samples/{sample_id} — delete a single sample.
+
+    ``target_indexes`` is the index the row showed, as the clear button
+    sends it (F8); a DELETE carries its hx-vals in the query string, so it
+    is a query parameter here. A row another tab has since indexed, or a
+    sample the run no longer has, is refused instead of deleted -- the
+    second used to answer as if a sample had been deleted, and touched the
+    run (design note 2026-10-17, step 3).
+    """
     run_id = run.id
+
+    targets, refusal = _targets_or_refusal(run, [sample_id], SAMPLE_LIST_CHANGED_DELETE)
+    if refusal:
+        return refusal
+    shown = _shown_indexes(target_indexes, 1)
+    if shown is None:
+        return Response(STALE_PAGE_DELETE, status_code=400)
+    changed = _rows_with_a_changed_index(targets, shown)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_DELETE)
 
     with saving_run(run, ctx, request):
         run.remove_sample(sample_id)
@@ -2084,13 +2304,39 @@ async def update_sample_settings(
                     calculated_for=(sample.sample_id or sample.id) if calculated else None,
                     problem=problem,
                 ))
+        # What the page showed in this box -- its defaultValue, which app.js
+        # sets to the stored value on every answer. A box another tab has
+        # changed is refused instead of overwritten, with nothing saved
+        # (design note 2026-10-17, step 4). One box saves at a time, so one
+        # value: a request writing more than one setting must have shown the
+        # same thing in each, or it is refused.
+        boxes = {
+            "override_cycles": (sample.override_cycles or "", "Override Cycles"),
+            "barcode_mismatches_index1": (_mismatch_text(sample.barcode_mismatches_index1),
+                                          "barcode mismatches"),
+            "barcode_mismatches_index2": (_mismatch_text(sample.barcode_mismatches_index2),
+                                          "barcode mismatches"),
+        }
+        written = [name for name in boxes if name in form]
+        if written:
+            shown = form.get("target_setting")
+            if not isinstance(shown, str):
+                return Response(STALE_PAGE_SAVE, status_code=400)
+            moved = [name for name in written if boxes[name][0] != shown]
+            if moved:
+                return _changed_rows_refusal(
+                    [sample.sample_id], CHANGED_ROWS_SAVE, boxes[moved[0]][1])
+
+        # The write is driven by the same ``written`` the comparison used, so
+        # a setting added to ``boxes`` is compared and written together and a
+        # setting that is not in ``boxes`` cannot be written at all (first
+        # review of step 4, Minor 1).
+        values = {"override_cycles": final_override,
+                  "barcode_mismatches_index1": bmi1,
+                  "barcode_mismatches_index2": bmi2}
         with saving_run(run, ctx, request):
-            if has_override:
-                sample.override_cycles = final_override
-            if has_bmi1:
-                sample.barcode_mismatches_index1 = bmi1
-            if has_bmi2:
-                sample.barcode_mismatches_index2 = bmi2
+            for name in written:
+                setattr(sample, name, values[name])
     except ValueError as exc:
         # Sample model rejected an invariant violation (e.g. malformed
         # override_cycles characters). Surface as a 400 so the run is not

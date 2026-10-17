@@ -12,6 +12,7 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, Sequen
 from seqsetup.services import sample_api as sample_api_module
 from seqsetup.services.index_fill import build_fill_plan
 
+from .page_shows import shown_indexes
 from .conftest import disable_repos, mark_ready, stored_export
 from .conftest import hold_edit_lock, import_from_preview
 
@@ -313,7 +314,10 @@ class TestMultiIndexDropFillsOnlyTheRowsShown:
         _app, ctx, _db = fresh_app
         kit = _pair_kit(ctx, "K", DROP_PAIRS)
         _run(ctx, ["PAT1", "PAT2", "PAT3", "PAT4"])
-        assert logged_in_client.delete(f"/runs/{RUN}/samples/s2", headers=ORIGIN).status_code == 200
+        shown = shown_indexes(logged_in_client, RUN, ["s2"])
+        assert logged_in_client.delete(
+            f"/runs/{RUN}/samples/s2?target_indexes={shown}",
+            headers=ORIGIN).status_code == 200
         before = _stored(ctx).to_dict()
 
         resp = _drop(logged_in_client, kit, "s1", 3, ["s1", "s2", "s3"])
