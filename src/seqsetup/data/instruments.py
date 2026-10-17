@@ -356,7 +356,7 @@ def _initialize_at_start() -> None:
     except (FileNotFoundError, LocalInstrumentsFolderClosed) as e:
         # Allow module to load even if config is missing (for testing)
         import warnings
-        warnings.warn(f"Instrument config not found: {e}")
+        warnings.warn(f"Instrument config not read: {e}")
         _instruments = {}
         _default_cycles = {}
         _index_cycle_options = [8, 10, 12, 17, 24]
