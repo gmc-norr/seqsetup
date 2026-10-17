@@ -20,7 +20,11 @@ from pydantic.functional_validators import BeforeValidator
 from starlette.responses import HTMLResponse, Response
 
 from ...context import AppContext
-from ...data.instruments import clear_synced_instruments_cache, reading_synced_records
+from ...data.instruments import (
+    clear_synced_instruments_cache,
+    local_instruments_problem,
+    reading_synced_records,
+)
 from ...forms.validators import strip_and_truncate
 from ...services.audit_log import audit
 from ...services.validation import clear_validation_cache
@@ -155,4 +159,7 @@ def _page_ctx(synced: list, message: str = "") -> dict:
         "two_color": two_color,
         "four_color": four_color,
         "message": message,
+        # Why the local instruments file was not read, so the page does not
+        # say it is in use when it was never read (practice deploy 2026-10-17).
+        "local_problem": local_instruments_problem(),
     }

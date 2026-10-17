@@ -1,7 +1,9 @@
 {#
    Mark-Ready refusal, swapped into #ready-message (HX-Retarget).
 
-   Every blocking error is listed; none is hidden behind "(+ N more)".
+   Every blocking error is listed; none is hidden behind "(+ N more)". A
+   message repeated once per sample is listed once, with how many times
+   (grouped_messages); the heading counts every error.
    Messages are autoescaped: they can contain sample IDs.
 
    Inputs:
@@ -16,8 +18,8 @@
 <div class="error-message ready-refused">
     <p><strong>{% if heading %}{{ heading }}{% else %}Cannot mark ready: {{ messages | length }} error{{ '' if messages | length == 1 else 's' }} to fix first.{% endif %}</strong></p>
     <ul>
-        {%- for message in messages %}
-        <li>{{ message }}</li>
+        {%- for message, times in messages | grouped_messages %}
+        <li>{{ message }}{% if times > 1 %} ({{ times }} times){% endif %}</li>
         {%- endfor %}
     </ul>
     {%- if sample_errors is not defined or sample_errors %}

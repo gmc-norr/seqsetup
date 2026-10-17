@@ -5,7 +5,7 @@ ApplicationName: BCLConvert
 ApplicationType: Dragen
 
 Settings:
-  SoftwareVersion: 4.1.23
+  SoftwareVersion: 4.3.6
   FastqCompressionFormat: gzip
 
 Data:

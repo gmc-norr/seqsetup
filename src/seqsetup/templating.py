@@ -30,7 +30,7 @@ from jinja2_fragments.fastapi import Jinja2Blocks
 from starlette.requests import Request
 
 from .services import edit_locks
-from .services.validation_summary import issue_rows
+from .services.validation_summary import grouped_messages, issue_rows
 from .services.versioned_tests import versions_used_text
 from .utils.clock import local_time
 
@@ -105,6 +105,9 @@ templates.env.filters["versions_used"] = versions_used_text
 # and a missing list would render the page's all-clear for a run with errors
 # (docs/design/2026-10-17-collision-report-grouped-design.md).
 templates.env.filters["issue_rows"] = issue_rows
+# A message repeated once per sample, listed once with its count by the
+# Mark Ready refusal and the Check panel (practice deploy 2026-10-17).
+templates.env.filters["grouped_messages"] = grouped_messages
 
 
 def render(

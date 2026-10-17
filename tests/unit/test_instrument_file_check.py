@@ -127,11 +127,13 @@ class TestStartAndReload:
         saved = (
             instruments_module._config, instruments_module._instruments,
             instruments_module._default_cycles, instruments_module._index_cycle_options,
+            instruments_module._local_file_problem,
         )
         yield
         (
             instruments_module._config, instruments_module._instruments,
             instruments_module._default_cycles, instruments_module._index_cycle_options,
+            instruments_module._local_file_problem,
         ) = saved
 
     @staticmethod
@@ -152,7 +154,7 @@ class TestStartAndReload:
 
     def test_a_missing_file_at_start_loads_no_instruments(self, monkeypatch, keep_loaded_config):
         monkeypatch.setattr(instruments_module, "_find_config_path", self._missing)
-        with pytest.warns(UserWarning, match="Instrument config not found"):
+        with pytest.warns(UserWarning, match="Instrument config not read"):
             instruments_module._initialize_at_start()
         assert instruments_module._instruments == {}
 

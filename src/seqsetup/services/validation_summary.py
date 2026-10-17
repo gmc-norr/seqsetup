@@ -6,7 +6,7 @@ the validation PDF and the run page's row marks all use these, so they
 always list the same errors.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from ..models.sequencing_run import SequencingRun
 from ..models.validation import ValidationResult, ValidationSeverity
@@ -45,6 +45,19 @@ def waiting_for_samples(run: SequencingRun, result: ValidationResult) -> bool:
         if e.severity == ValidationSeverity.ERROR and e.category == "prerequisite_no_samples"
     )
     return result.error_count == no_samples
+
+
+def grouped_messages(messages: list[str]) -> list[tuple[str, int]]:
+    """Each different message once, in the order first seen, with how many
+    times it appears.
+
+    An application profile problem is one error per sample that uses the
+    profile, and its message names no sample, so a run of 8 samples said
+    one problem 8 times over. The Mark Ready refusal and the Check panel
+    list each message once with its count; the number of errors they give
+    is still every error (practice deploy 2026-10-17).
+    """
+    return list(Counter(messages).items())
 
 
 def errors_by_sample(run: SequencingRun, result: ValidationResult) -> dict[str, list[str]]:

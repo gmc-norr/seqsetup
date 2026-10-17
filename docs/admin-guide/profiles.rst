@@ -329,7 +329,7 @@ Example DRAGEN Profile
    ApplicationName: DragenGermline
 
    Settings:
-     SoftwareVersion: 4.1.23
+     SoftwareVersion: 4.3.6
      AppVersion: 1.2.1
      MapAlignOutFormat: bam
      KeepFastq: true
@@ -354,7 +354,7 @@ This generates sample sheet sections like:
 .. code-block:: text
 
    [DragenGermline_Settings]
-   SoftwareVersion,4.1.23
+   SoftwareVersion,4.3.6
    AppVersion,1.2.1
    MapAlignOutFormat,bam
    KeepFastq,true
@@ -597,7 +597,8 @@ Application profiles and test profiles reach SeqSetup in exactly one way:
 synced in from a GitHub repository, from **Admin > Config Sync**. There is
 no form to create or edit a profile directly in the app -- write the YAML
 (the local files under ``config/profiles/`` in this repository are examples
-of the format to use), push it to your own repository, and sync.
+of the format to use), push it to your own repository, and sync. SeqSetup
+reads the repository without signing in to GitHub, so it must be public.
 
 .. figure:: /_static/screenshots/admin/config-sync.png
    :alt: The GitHub Config Sync form, with a repository URL and branch filled in and the Save Configuration button outlined.
