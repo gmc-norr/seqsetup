@@ -108,7 +108,8 @@ def _fail_save(monkeypatch, repo, when=lambda item: True):
 
 
 def _wgs_draft(ctx, run_id):
-    return _indexed_draft(ctx, run_id, test_id="WGS", test_version="1")
+    """On every lane of its 10B flow cell, so Mark Ready asks nothing."""
+    return _indexed_draft(ctx, run_id, test_id="WGS", test_version="1", lanes=range(1, 9))
 
 
 def _reasons(ctx):

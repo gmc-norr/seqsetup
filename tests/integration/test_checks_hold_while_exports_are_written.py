@@ -26,7 +26,9 @@ class TestTheReportsCheckMustPassToo:
         disable_repos(ctx, "test_profile", "app_profile")
         run = SequencingRun(id="late-error", run_name="Late error", instrument_platform=InstrumentPlatform.NOVASEQ_X,
                             flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
-        run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
+        # Every lane of the 10B, so Mark Ready asks nothing (lanes without samples).
+        run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"),
+                              lanes=list(range(1, 9))))
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)
 

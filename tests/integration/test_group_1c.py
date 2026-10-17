@@ -225,14 +225,18 @@ def _sync(ctx, names=(NOVASEQ_X, MISEQ_I100), disabled=()) -> None:
 
 def _clean_run(ctx, run_id: str, platform=InstrumentPlatform.NOVASEQ_X, flowcell: str = "10B",
                status: RunStatus = RunStatus.DRAFT) -> SequencingRun:
-    """One indexed sample in lane 1 with no blocking error and, on NovaSeq X,
-    no color-balance error: i7 CCCCCCCC lights both channels, and the
-    instrument reads i5 GGGGGGGG reverse-complemented, as CCCCCCCC."""
+    """One indexed sample on every lane of its flow cell, so Mark Ready has
+    no lane without samples to ask about, with no blocking error and, on
+    NovaSeq X, no color-balance error: i7 CCCCCCCC lights both channels,
+    and the instrument reads i5 GGGGGGGG reverse-complemented, as CCCCCCCC."""
     run = SequencingRun(
         id=run_id, run_name="Group 1c", instrument_platform=platform,
         flowcell_type=flowcell, run_cycles=RunCycles(151, 151, 10, 10), status=status,
     )
-    run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
+    # The shipped lane counts, written out: some tests store instrument
+    # records that cannot be read before they build the run.
+    lanes = list(range(1, {"10B": 8, "5M": 1, "S4": 4}[flowcell] + 1))
+    run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=lanes))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
     return run

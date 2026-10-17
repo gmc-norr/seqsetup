@@ -31,12 +31,12 @@ INDEX2_ORDER_RULE = (
 def _indexed_draft(ctx, run_id: str, override: str = "", i7: str = "ATTACTCG",
                    i5: str = "TATAGCCT", cycles: RunCycles = RunCycles(151, 151, 10, 10),
                    index1_cycles=None, test_id: str = "",
-                   test_version: str = "1") -> SequencingRun:
+                   test_version: str = "1", lanes=(1,)) -> SequencingRun:
     from seqsetup.models.index import Index, IndexPair, IndexType
     from seqsetup.models.sample import Sample
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=NOVASEQ_X,
                         flowcell_type="10B", run_cycles=cycles)
-    run.add_sample(Sample(sample_id="S1", lanes=[1], override_cycles=override or None,
+    run.add_sample(Sample(sample_id="S1", lanes=list(lanes), override_cycles=override or None,
                           index1_cycles=index1_cycles, test_id=test_id,
                           test_version=test_version if test_id else "",
                           index_pair=IndexPair(

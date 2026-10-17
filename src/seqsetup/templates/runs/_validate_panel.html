@@ -32,6 +32,7 @@
 {% set error_count = validation_result.error_count %}
 {% set color_balance_issues = validation_result.color_balance_issue_count if validation_result.color_balance_enabled else 0 %}
 {% set color_balance_asks = validation_result.color_balance_error_lanes | length > 0 %}
+{% set empty_lanes = validation_result.lanes_without_samples %}
 {% set has_samples = run.has_samples %}
 {% set all_have_indexes = run.all_samples_have_indexes if has_samples else False %}
 {% set samples_with_indexes = run.samples|selectattr('has_index')|list|length %}
@@ -39,7 +40,7 @@
     {% set status_cls = 'waiting' %}
 {% elif error_count > 0 or not has_samples %}
     {% set status_cls = 'has-errors' %}
-{% elif not all_have_indexes or color_balance_issues > 0 %}
+{% elif not all_have_indexes or color_balance_issues > 0 or empty_lanes %}
     {% set status_cls = 'has-warnings' %}
 {% else %}
     {% set status_cls = 'ok' %}
@@ -73,6 +74,10 @@
             {% endif %}
             {% if color_balance_issues > 0 %}
                 <span class="status-warning">Color balance: {{ color_balance_issues }} lane(s){% if color_balance_asks %} · Mark Ready will ask{% endif %}</span>
+            {% endif %}
+            {% if empty_lanes %}
+                {# The lanes no sample is on (design note 2026-10-17-lanes-without-samples). #}
+                <span class="status-warning">Lanes without samples: {{ empty_lanes | join(", ") }} · Mark Ready will ask</span>
             {% endif %}
         </div>
         {% if run.status.value != 'draft' and run.test_versions_used %}

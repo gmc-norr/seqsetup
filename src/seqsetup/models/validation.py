@@ -463,6 +463,10 @@ class ValidationResult:
     # column carries, resolved in services/sheet_plan.py. Empty when there
     # is no plan (review F7).
     sheet_mismatches: dict = field(default_factory=dict)
+    # The flow cell's lanes that no sample is on: Mark Ready asks before
+    # going on, as for a color balance error (design note
+    # docs/design/2026-10-17-lanes-without-samples-design.md).
+    lanes_without_samples: list[int] = field(default_factory=list)
 
     @property
     def has_errors(self) -> bool:

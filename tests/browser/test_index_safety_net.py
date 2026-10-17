@@ -333,13 +333,16 @@ def test_no_sample_gets_another_samples_index_on_the_page(
     expected.assert_no_lane_shares_an_index()
 
     # -- Mark Ready, then read the sheet the Export panel downloads. A run of
-    # few samples over several lanes gets the colour-balance question; answer
-    # it the way its button does.
+    # few samples over several lanes gets the colour-balance question, and
+    # the lanes no sample is on get one of their own; answer each the way
+    # its button does.
     with page.expect_response(lambda r: r.url.endswith("/status/ready")):
         page.get_by_role("button", name="Mark Ready").click()
     page.wait_for_load_state("networkidle")
-    question = page.locator("#ready-message .ready-confirm")
-    if question.count():
+    for _question in range(2):
+        question = page.locator("#ready-message .ready-confirm")
+        if not question.count():
+            break
         with page.expect_response(lambda r: r.url.endswith("/status/ready")):
             question.get_by_role("button", name="Mark Ready anyway").click()
         page.wait_for_load_state("networkidle")

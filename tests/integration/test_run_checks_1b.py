@@ -26,6 +26,8 @@ def _pair(i7: str, i5: str, name: str = "p1") -> IndexPair:
 # channels; NovaSeq X reads i5 as its reverse complement, so i5 GGGGGGGG is
 # read as CCCCCCCC (i5 CCCCCCCC would be read GGGGGGGG: a dark-cycle error).
 CLEAN_PAIR = ("CCCCCCCC", "GGGGGGGG")
+# Every lane of the 10B: no lane without samples for Mark Ready to ask about.
+EVERY_LANE = tuple(range(1, 9))
 
 # Five pairs that give lane 1 color balance WARNINGS and no errors: at every
 # index position exactly one of the five reads T and the other four read A, so
@@ -195,7 +197,7 @@ class TestReadyMessageSlot:
     def test_success_empties_the_ready_slot(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
         disable_repos(ctx, "test_profile", "app_profile")
-        run_id = _seed(ctx, "slot-ok", pairs=(CLEAN_PAIR,))
+        run_id = _seed(ctx, "slot-ok", pairs=(CLEAN_PAIR,), lanes=EVERY_LANE)
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
@@ -215,6 +217,17 @@ def _question_fields(html: str) -> dict:
     return dict(re.findall(r'name="(color_balance_[a-z_]+)" value="([^"]*)"', html))
 
 
+def _answer_lanes(client, run_id, resp):
+    """`_seed` puts samples in lane 1 only, so after color balance Mark
+    Ready asks about lanes 2-8, which have no samples (design note
+    2026-10-17-lanes-without-samples). Answer it as its form does; that
+    form sends the color balance answer back too."""
+    assert "Lanes without samples" in resp.text, resp.text[:400]
+    fields = dict(re.findall(
+        r'name="((?:color_balance|lanes_without_samples)[a-z_]*)" value="([^"]*)"', resp.text))
+    return client.post(f"/runs/{run_id}/status/ready", data=fields, headers=ORIGIN)
+
+
 def _events(ctx, prefix):
     return ctx.audit_event_repo.search(limit=50, event_prefix=prefix)
 
@@ -224,10 +237,10 @@ class TestColorBalanceQuestion:
     answer counts only for the run and lanes that were shown (F13). `_seed`
     puts samples in lane 1 only, so the error lanes are [1]."""
 
-    def _setup(self, fresh_app, run_id, pairs=(("ATTACTCG", "TATAGCCT"),)):
+    def _setup(self, fresh_app, run_id, pairs=(("ATTACTCG", "TATAGCCT"),), lanes=(1,)):
         _app, ctx, _db = fresh_app
         disable_repos(ctx, "test_profile", "app_profile")
-        return ctx, _seed(ctx, run_id, pairs=pairs)
+        return ctx, _seed(ctx, run_id, pairs=pairs, lanes=lanes)
 
     def test_error_lanes_ask_and_stay_draft(self, logged_in_client, fresh_app):
         ctx, run_id = self._setup(fresh_app, "cb-ask")
@@ -249,11 +262,13 @@ class TestColorBalanceQuestion:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready",
                                      data=_question_fields(question.text), headers=ORIGIN)
+        resp = _answer_lanes(logged_in_client, run_id, resp)
 
         assert "HX-Retarget" not in resp.headers, resp.text[:400]
         assert ctx.run_repo.get_by_id(run_id).status.value == "ready"
         (event,) = _events(ctx, "run.status.changed")
         assert event.details["color_balance_accepted_lanes"] == [1]
+        assert event.details["lanes_without_samples_accepted"] == [2, 3, 4, 5, 6, 7, 8]
 
     def test_answer_for_an_older_version_asks_again(self, logged_in_client, fresh_app):
         ctx, run_id = self._setup(fresh_app, "cb-stale")
@@ -277,7 +292,7 @@ class TestColorBalanceQuestion:
         assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
 
     def test_no_error_lanes_do_not_ask(self, logged_in_client, fresh_app):
-        ctx, run_id = self._setup(fresh_app, "cb-none", pairs=(CLEAN_PAIR,))
+        ctx, run_id = self._setup(fresh_app, "cb-none", pairs=(CLEAN_PAIR,), lanes=EVERY_LANE)
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
@@ -300,7 +315,8 @@ class TestColorBalanceQuestion:
         assert "Mark Ready will ask" in panel
 
     def test_check_panel_has_no_badge_at_all_for_a_clean_run(self, logged_in_client, fresh_app):
-        ctx, run_id = self._setup(fresh_app, "cb-panel-clean", pairs=(CLEAN_PAIR,))
+        ctx, run_id = self._setup(fresh_app, "cb-panel-clean", pairs=(CLEAN_PAIR,),
+                                  lanes=EVERY_LANE)
 
         panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
 
@@ -310,7 +326,7 @@ class TestColorBalanceQuestion:
     def test_warnings_only_do_not_ask(self, logged_in_client, fresh_app):
         """The spec's boundary: a channel under 25 % is a Warning, and a
         Warning must not make Mark Ready ask."""
-        ctx, run_id = self._setup(fresh_app, "cb-warn", pairs=WARNING_PAIRS)
+        ctx, run_id = self._setup(fresh_app, "cb-warn", pairs=WARNING_PAIRS, lanes=EVERY_LANE)
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 
@@ -324,17 +340,19 @@ class TestColorBalanceQuestion:
 
         panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
 
-        assert "Color balance: 1 lane(s)" in panel
-        assert "Mark Ready will ask" not in panel
+        # Lanes 2-8 have no samples, which has a question of its own.
+        assert "Color balance: 1 lane(s)</span>" in panel
 
     def test_archiving_neither_asks_nor_records_lanes(self, logged_in_client, fresh_app):
         """READY->ARCHIVED must not inherit the Ready transition's question or
         its audit details, even for a run whose lanes had color balance errors."""
         ctx, run_id = self._setup(fresh_app, "cb-archive")
         question = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
-        assert logged_in_client.post(f"/runs/{run_id}/status/ready",
-                                     data=_question_fields(question.text),
-                                     headers=ORIGIN).status_code == 200
+        lanes_question = logged_in_client.post(f"/runs/{run_id}/status/ready",
+                                               data=_question_fields(question.text),
+                                               headers=ORIGIN)
+        assert _answer_lanes(logged_in_client, run_id, lanes_question).status_code == 200
+        assert ctx.run_repo.get_by_id(run_id).status.value == "ready"
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/archived", headers=ORIGIN)
 
@@ -344,6 +362,7 @@ class TestColorBalanceQuestion:
                     if e.details.get("to_status") == "archived"]
         assert len(archived) == 1
         assert "color_balance_accepted_lanes" not in archived[0].details
+        assert "lanes_without_samples_accepted" not in archived[0].details
 
 
 class TestCycleTotalLine:

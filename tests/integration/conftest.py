@@ -281,20 +281,23 @@ def page_run_version(client, run_id: str) -> str:
 
 
 def mark_ready(client, run_id: str, headers: dict):
-    """POST Mark Ready; if the color-balance question comes back, answer it
-    the way its form does. Returns the last response. For tests about
-    something else that happen to use a one-sample two-color run."""
+    """POST Mark Ready; if a question comes back -- color balance errors,
+    then lanes without samples -- answer it the way its form does. Returns
+    the last response. For tests about something else that happen to use a
+    one-sample two-color run, or samples on some lanes only."""
     resp = client.post(f"/runs/{run_id}/status/ready", headers=headers)
-    if "Mark Ready anyway" not in resp.text:
-        return resp
-    fields = dict(re.findall(r'name="(color_balance_[a-z_]+)" value="([^"]*)"', resp.text))
-    answered = client.post(f"/runs/{run_id}/status/ready", data=fields, headers=headers)
+    for _question in range(2):
+        if "Mark Ready anyway" not in resp.text:
+            return resp
+        fields = dict(re.findall(
+            r'name="((?:color_balance|lanes_without_samples)[a-z_]*)" value="([^"]*)"', resp.text))
+        resp = client.post(f"/runs/{run_id}/status/ready", data=fields, headers=headers)
     # Re-asking is also a 200, so a caller that only checks the status code
     # would pass on a run that stayed Draft. Fail here instead.
-    assert "Mark Ready anyway" not in answered.text, (
-        "the color-balance answer was not accepted; the question came back"
+    assert "Mark Ready anyway" not in resp.text, (
+        "the answer to Mark Ready's question was not accepted; the question came back"
     )
-    return answered
+    return resp
 
 
 def import_from_preview(client, run_id: str, worklist_id: str):
