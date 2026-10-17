@@ -329,7 +329,7 @@ Example DRAGEN Profile
    ApplicationName: DragenGermline
 
    Settings:
-     SoftwareVersion: 4.1.23
+     SoftwareVersion: 4.3.6
      AppVersion: 1.2.1
      MapAlignOutFormat: bam
      KeepFastq: true
@@ -354,7 +354,7 @@ This generates sample sheet sections like:
 .. code-block:: text
 
    [DragenGermline_Settings]
-   SoftwareVersion,4.1.23
+   SoftwareVersion,4.3.6
    AppVersion,1.2.1
    MapAlignOutFormat,bam
    KeepFastq,true

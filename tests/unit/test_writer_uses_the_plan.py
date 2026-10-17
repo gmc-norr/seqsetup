@@ -25,7 +25,9 @@ from .test_sheet_plan import _app, _dragen, _repos, _run, _sample, _test, _wgs
 
 SHIPPED = Path(__file__).resolve().parents[2] / "config" / "profiles"
 
-# The sheet main (9be63ce) writes for this run with the shipped profiles.
+# The sheet main (9be63ce) writes for this run with the shipped profiles --
+# with SoftwareVersion 4.3.6, which the shipped profiles ask since they were
+# made to fit the shipped instruments (tests/unit/test_shipped_examples_fit.py).
 TODAY = """[Header]
 FileFormatVersion,2
 RunName,A3-today
@@ -42,7 +44,7 @@ Index2Cycles,10
 [BCLConvert_Settings]
 NoLaneSplitting,false
 CreateFastqForIndexReads,0
-SoftwareVersion,4.1.23
+SoftwareVersion,4.3.6
 FastqCompressionFormat,gzip
 
 [BCLConvert_Data]
@@ -53,7 +55,7 @@ S2,1,TGCATGCAAC,CCAATTGGTT,Y151;I10;I10;Y151,1,1,,
 S2,2,TGCATGCAAC,CCAATTGGTT,Y151;I10;I10;Y151,1,1,,
 
 [DragenGermline_Settings]
-SoftwareVersion,4.1.23
+SoftwareVersion,4.3.6
 AppVersion,1.2.1
 MapAlignOutFormat,bam
 KeepFastq,True
