@@ -886,6 +886,7 @@ class Net:
         free = [row for row in rows if row["sample_id"] not in self.one_index_group]
         chosen = self.rng.sample(free, min(2, len(free)))
         answer = self._post("/samples/bulk-delete",
+                            target_indexes=self._shown([row["row_id"] for row in chosen]),
                             sample_ids=json.dumps([row["row_id"] for row in chosen]))
         assert answer.status_code == 200, answer.text[:300]
         for row in chosen:
@@ -898,7 +899,8 @@ class Net:
                 if row["sample_id"] not in self.one_index_group]
         row = self.rng.choice(free)
         answer = self.client.delete(
-            f"/runs/{self.run_id}/samples/{row['row_id']}", headers=ORIGIN)
+            f"/runs/{self.run_id}/samples/{row['row_id']}"
+            f"?target_indexes={self._shown([row['row_id']])}", headers=ORIGIN)
         assert answer.status_code == 200, answer.text[:300]
         self.expected.remove(row["sample_id"], "delete one sample by hand")
 

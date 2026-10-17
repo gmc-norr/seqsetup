@@ -9,7 +9,7 @@ Covers the core HTMX flows that build up a run from blank to ready:
 
 import pytest
 
-from .page_shows import shown_mismatches, shown_override_cycles, shown_tests
+from .page_shows import shown_indexes, shown_mismatches, shown_override_cycles, shown_tests
 from .conftest import nothing_stored, run_version, seed_stored_exports, stored_export
 
 
@@ -521,7 +521,8 @@ class TestBulkHandlersReachRoutes:
         import json
         response = logged_in_client.post(
             f"/runs/{run_id}/samples/bulk-delete",
-            data={"sample_ids": json.dumps([ids[0]])},
+            data={"sample_ids": json.dumps([ids[0]]),
+                  "target_indexes": shown_indexes(logged_in_client, run_id, [ids[0]])},
             headers=_origin(),
         )
         assert response.status_code == 200

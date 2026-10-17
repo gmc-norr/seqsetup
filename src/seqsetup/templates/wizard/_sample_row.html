@@ -244,12 +244,20 @@
         {%- endif %}
     {%- endif %}
     {%- if editable %}
-        {% set delete_target = '#sample-row-' ~ sample.id if context == 'add_step2' else '#sample-table' %}
+        {#- The route answers with the whole #sample-section, so that is what
+            the button replaces: targeting #sample-table swapped a section in
+            where the table was and nested a second #sample-section inside the
+            first -- two paste forms, two index panels, two of every id, and
+            the kit dropdown then drove the wrong list (design note
+            2026-10-17, step 3). target_indexes: the index this row shows, as
+            the clear button sends it (F8); a DELETE carries it in the query
+            string (htmx 2 methodsThatUseUrlParams). #}
         <td class="actions">
             <button type="button" class="btn-tiny btn-danger"
                     title="Delete sample"
                     hx-delete="/runs/{{ run_id }}/samples/{{ sample.id }}{{ ctx_param }}"
-                    hx-target="{{ delete_target }}"
+                    hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
+                    hx-target="{{ '#sample-row-' ~ sample.id if context == 'add_step2' else '#sample-section' }}"
                     hx-swap="outerHTML"
                     hx-confirm="Delete this sample?">&times;</button>
         </td>
@@ -263,6 +271,7 @@
             <button type="button" class="btn-tiny btn-danger"
                     title="Delete sample"
                     hx-delete="/runs/{{ run_id }}/samples/{{ sample.id }}"
+                    hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
                     hx-target="#sample-row-{{ sample.id }}"
                     hx-swap="outerHTML"
                     hx-confirm="Delete this sample?">&times;</button>

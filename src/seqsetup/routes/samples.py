@@ -578,6 +578,10 @@ STALE_PAGE_SAVE = ("This page is out of date. Nothing was saved. "
 CHANGED_ROWS_SAVE = "Nothing was saved. Reload the page and try again."
 SAMPLE_LIST_CHANGED_SAVE = ("The sample list changed since this page was loaded. "
                             "Reload the page and try again.")
+# A delete is the one action that cannot be put right by doing it again.
+STALE_PAGE_DELETE = ("This page is out of date. Nothing was deleted. "
+                     "Reload the page and try again.")
+CHANGED_ROWS_DELETE = "Nothing was deleted. Reload the page and try again."
 
 
 def _targets_or_refusal(run, sample_ids: list[str]):
@@ -1940,6 +1944,20 @@ async def delete_samples_bulk(
     if sample_ids is None:
         return Response("sample_ids must be a list of sample IDs", status_code=400)
 
+    # The panel names the index each ticked row showed, as the assign and
+    # clear routes take it (F8). A row another tab has since indexed, or a
+    # sample the run no longer has, refuses the whole delete -- a delete
+    # cannot be put right by doing it again (design note 2026-10-17, step 3).
+    targets, refusal = _targets_or_refusal(run, sample_ids)
+    if refusal:
+        return refusal
+    shown = _shown_indexes(form.get("target_indexes", ""), len(sample_ids))
+    if shown is None:
+        return Response(STALE_PAGE_DELETE, status_code=400)
+    changed = _rows_with_a_changed_index(targets, shown)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_DELETE)
+
     deleted_ids = [sid for sid in sample_ids if run.get_sample(str(sid))]
     with saving_run(run, ctx, request):
         for sample_id in sample_ids:
@@ -1977,9 +1995,28 @@ def delete_sample(
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
     context: str = "",
+    target_indexes: str = "",
 ) -> Response:
-    """DELETE /runs/{run_id}/samples/{sample_id} — delete a single sample."""
+    """DELETE /runs/{run_id}/samples/{sample_id} — delete a single sample.
+
+    ``target_indexes`` is the index the row showed, as the clear button
+    sends it (F8); a DELETE carries its hx-vals in the query string, so it
+    is a query parameter here. A row another tab has since indexed, or a
+    sample the run no longer has, is refused instead of deleted -- the
+    second used to answer as if a sample had been deleted, and touched the
+    run (design note 2026-10-17, step 3).
+    """
     run_id = run.id
+
+    targets, refusal = _targets_or_refusal(run, [sample_id])
+    if refusal:
+        return refusal
+    shown = _shown_indexes(target_indexes, 1)
+    if shown is None:
+        return Response(STALE_PAGE_DELETE, status_code=400)
+    changed = _rows_with_a_changed_index(targets, shown)
+    if changed:
+        return _changed_rows_refusal(changed, CHANGED_ROWS_DELETE)
 
     with saving_run(run, ctx, request):
         run.remove_sample(sample_id)

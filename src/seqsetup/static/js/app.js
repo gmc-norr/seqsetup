@@ -773,8 +773,12 @@ function applyBulkDeleteForm() {
         return;
     }
 
-    // Populate hidden form field
+    // Populate hidden form field, and the index each ticked row shows: the
+    // route refuses the delete when one has moved in another tab, or when
+    // the run no longer has one of the samples.
     document.getElementById('bulk-delete-sample-ids').value = JSON.stringify(selectedSampleIds);
+    document.getElementById('bulk-delete-target-indexes').value =
+        JSON.stringify(selectedSampleIds.map(shownIndexOfRow));
 
     // Trigger HTMX form submission (will show confirm dialog from hx-confirm)
     htmx.trigger('#bulk-delete-form', 'submit');

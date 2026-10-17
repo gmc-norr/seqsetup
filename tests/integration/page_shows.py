@@ -55,6 +55,14 @@ def shown_override_cycles(client, run_id: str, sample_ids) -> str:
     return json.dumps([_box(text, f"override-cycles-{sid}") for sid in sample_ids])
 
 
+def shown_indexes(client, run_id: str, sample_ids) -> str:
+    """What the assign, clear and delete routes take: [i7, i5] per row."""
+    text = _page(client, run_id)
+    return json.dumps([[_attr(_row_attrs(text, sid), "data-i7"),
+                        _attr(_row_attrs(text, sid), "data-i5")]
+                       for sid in sample_ids])
+
+
 def shown_tests(client, run_id: str, sample_ids) -> str:
     text = _page(client, run_id)
     return json.dumps([[_attr(_row_attrs(text, sid), "data-test-id"),

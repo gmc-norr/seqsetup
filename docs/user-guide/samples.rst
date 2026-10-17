@@ -372,3 +372,13 @@ To remove several samples at once, tick their checkboxes and select
 **Delete Selected** in the bulk-action panel above the table. It deletes
 every ticked sample in one action, after the same kind of confirmation
 prompt -- just as irreversible as the per-row button.
+
+Because a delete cannot be undone, both check that the page is up to date
+first. Each sends the index the row was showing, and if any of those samples
+was given, or had replaced or cleared, an index in another tab (or by someone
+else) since the page was loaded, nothing is deleted and the page names them:
+*"Nothing was deleted. Reload the page and try again. The index on these
+samples changed since this page was loaded: PAT2."* If one of them has already
+been deleted, nothing is deleted either: *"The sample list changed since this
+page was loaded. Reload the page and try again."* Reload the page and look
+again before deleting.
