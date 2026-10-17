@@ -72,12 +72,11 @@ class TestMarkReadyRefusesHiddenCharacters:
         _app, ctx, _db = fresh_app
         disable_repos(ctx, "test_profile", "app_profile")
         run_id = _seed_draft(ctx, "hc-project")
-        sample_id = ctx.run_repo.get_by_id(run_id).samples[0].id
-        assert logged_in_client.post(
-            f"/runs/{run_id}/samples/{sample_id}",
-            data={"project": "P\x00Q"},
-            headers=ORIGIN,
-        ).status_code == 200
+        # Put straight in the stored run: no page edits a project.
+        run = ctx.run_repo.get_by_id(run_id)
+        run.samples[0].project = "P\x00Q"
+        run.touch(updated_by="test")  # as a real change would: the checks' memo is keyed on it
+        ctx.run_repo.save(run)
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
 

@@ -935,8 +935,6 @@ async def add_bulk_samples(
     return _render_sample_section(run, request, ctx, messages=messages or None)
 
 
-# Registered before POST /runs/{run_id}/samples/{sample_id}, which would
-# otherwise take "preview" as a sample id.
 @router.post("/runs/{run_id}/samples/preview", response_class=HTMLResponse)
 async def preview_paste(
     request: Request,
@@ -2033,67 +2031,6 @@ def delete_sample(
     )
 
     return _render_sample_section(run, request, ctx)
-
-
-@router.post("/runs/{run_id}/samples/{sample_id}", response_class=HTMLResponse)
-async def update_sample(
-    request: Request,
-    sample_id: str,
-    run: SequencingRun = Depends(get_editable_run),
-    ctx: AppContext = Depends(get_ctx),
-) -> Response:
-    """POST /runs/{run_id}/samples/{sample_id} — update an existing sample.
-
-    Partial update: each row input posts only its own field (HTMX default
-    include behaviour). The handler updates exactly what was submitted —
-    a key NOT present in the form is left untouched. Without the
-    ``in form`` guards below, a request that posts only ``sample_id``
-    would silently wipe ``sample_name`` and ``project`` on that row.
-    """
-    run_id = run.id
-    sample_id_path = sample_id
-    form = await request.form()
-
-    has_sample_id = "sample_id" in form
-    has_sample_name = "sample_name" in form
-    has_project = "project" in form
-    for field in ("sample_id", "sample_name", "project"):
-        if refusal := _too_long(field, form.get(field, "")):
-            return Response(refusal, status_code=400)
-
-    # Reject blank sample_id when it IS being updated — blanking it would
-    # silently break demultiplexing for that sample.
-    sample_id_field: str | None = None
-    if has_sample_id:
-        raw = form.get("sample_id", "")
-        if not raw or not raw.strip():
-            return Response("sample_id is required", status_code=400)
-        sample_id_field = sanitize_string(raw, 256)
-        if is_zero_only(sample_id_field):
-            return Response(f"{ZERO_SAMPLE_ID_RULE}.", status_code=400)
-
-    sample_name = sanitize_string(form.get("sample_name", ""), 256) if has_sample_name else None
-    project = sanitize_string(form.get("project", ""), 256) if has_project else None
-
-    sample = run.get_sample(sample_id_path)
-
-    if sample:
-        with saving_run(run, ctx, request):
-            if has_sample_id and sample_id_field is not None:
-                sample.sample_id = sample_id_field
-            if has_sample_name:
-                sample.sample_name = sample_name
-            if has_project:
-                sample.project = project
-        audit(
-            "sample.updated",
-            actor=get_username(request),
-            target=run_id,
-            sample_id=sample.id,
-        )
-        return _render_sample_row(request, sample, run, show_drop_zones=False)
-
-    return Response("")
 
 
 @router.post("/runs/{run_id}/samples/{sample_id}/assign-index", response_class=HTMLResponse)

@@ -46,18 +46,6 @@ class TestManualEntry:
         assert "only of zeros" in resp.text
         assert _stored(ctx).to_dict() == before
 
-    def test_renaming_a_sample_to_zero_is_400(self, logged_in_client, fresh_app):
-        _app, ctx, _db = fresh_app
-        _run(ctx, ["PAT1"])
-        before = _stored(ctx).to_dict()
-
-        resp = logged_in_client.post(
-            f"/runs/{RUN}/samples/s1", data={"sample_id": "0"}, headers=ORIGIN)
-
-        assert resp.status_code == 400, resp.text[:300]
-        assert "only of zeros" in resp.text
-        assert _stored(ctx).to_dict() == before
-
 
 class TestPaste:
     def test_the_whole_paste_is_refused_and_the_banner_names_the_row(
