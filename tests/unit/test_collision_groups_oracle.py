@@ -35,7 +35,11 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services.index_collision_validator import IndexCollisionValidator
 from seqsetup.services.validation import ValidationService, clear_validation_cache
-from seqsetup.services.validation_utils import effective_index_sequence, hamming_distance
+from seqsetup.services.validation_utils import (
+    effective_index_sequence,
+    hamming_distance,
+    reverse_complement,
+)
 
 
 #: Generated runs per sweep. Kept small enough that this file stays a few
@@ -243,6 +247,23 @@ def generated_run(seed):
     return run
 
 
+def generated_plan_mismatches(seed, run):
+    """The sheet-plan mismatch numbers for a generated run, or None.
+
+    ``services/sheet_plan`` hands the check a {(sample id, 1 or 2): number}
+    dict when the application profiles are there, and ``_effective_mismatches``
+    prefers it over the sample's own number. It is the one input to the
+    grouping key that is keyed by sample id rather than read off the sample,
+    so about two runs in five carry one.
+    """
+    rng = random.Random(f"plan-{seed}")
+    if rng.random() >= 0.4:
+        return None
+    return {(sample.id, index_num): rng.choice([0, 1, 2])
+            for sample in run.samples for index_num in (1, 2)
+            if rng.random() < 0.5}
+
+
 # --------------------------------------------------------------------------
 # The property.
 # --------------------------------------------------------------------------
@@ -257,12 +278,14 @@ def generated():
     records = []
     for seed in range(ORACLE_RUNS):
         run = generated_run(seed)
-        groups = IndexCollisionValidator.validate_index_collision_groups(run)
+        mismatches = generated_plan_mismatches(seed, run)
+        groups = IndexCollisionValidator.validate_index_collision_groups(
+            run, None, mismatches)
         expanded, produced = triples_from_groups(groups)
         records.append({
-            "seed": seed, "run": run, "groups": groups,
+            "seed": seed, "run": run, "groups": groups, "mismatches": mismatches,
             "expanded": expanded, "produced": produced,
-            "expected": oracle_triples(run),
+            "expected": oracle_triples(run, None, mismatches),
         })
     return records
 
@@ -305,9 +328,11 @@ class TestGroupedReportEqualsThePerPairScan:
         for record in generated[:FULL_VALIDATE_RUNS]:
             clear_validation_cache()
             result = ValidationService.validate_run(record["run"])
+            # validate_run gets no profiles here, so it plans no sheet and
+            # passes no mismatch dict: compare against the no-plan oracle.
             old_error_count = (result.error_count
                                - len(result.index_collision_groups)
-                               + len(record["expected"]))
+                               + len(oracle_triples(record["run"])))
             assert result.has_errors is (old_error_count > 0), f"seed {record['seed']}"
             assert (result.error_count > 0) is (old_error_count > 0), f"seed {record['seed']}"
 
@@ -331,8 +356,9 @@ class TestGroupedReportEqualsThePerPairScan:
             sample counts                               1..391
         """
         counts = dict.fromkeys(
-            ("collide", "shared3", "cross", "mixed", "masked", "masked_i5",
-             "many_lanes", "identical", "near", "one_stored_two_read"), 0)
+            ("collide", "shared3", "cross", "mixed", "mixed_i5", "masked",
+             "masked_i5", "many_lanes", "identical", "near",
+             "one_stored_two_read", "plan"), 0)
         sizes = set()
         for record in generated:
             run, groups = record["run"], record["groups"]
@@ -350,6 +376,10 @@ class TestGroupedReportEqualsThePerPairScan:
             # dropping them from the grouping key would go unnoticed.
             if len({s.barcode_mismatches_index1 for s in run.samples}) > 1:
                 counts["mixed"] += 1
+            if len({s.barcode_mismatches_index2 for s in run.samples}) > 1:
+                counts["mixed_i5"] += 1
+            if record["mismatches"]:
+                counts["plan"] += 1
             masked = [s for s in run.samples if s.override_cycles]
             if masked:
                 counts["masked"] += 1
@@ -379,8 +409,9 @@ class TestGroupedReportEqualsThePerPairScan:
                 counts["near"] += 1
 
         floors = {"collide": 300, "shared3": 40, "cross": 250, "mixed": 400,
-                  "masked": 300, "masked_i5": 100, "many_lanes": 200,
-                  "identical": 180, "near": 250, "one_stored_two_read": 120}
+                  "mixed_i5": 400, "masked": 300, "masked_i5": 100,
+                  "many_lanes": 200, "identical": 180, "near": 250,
+                  "one_stored_two_read": 120, "plan": 150}
         short = {name: counts[name] for name, floor in floors.items()
                  if counts[name] < floor}
         assert not short, f"the generator plants too few of: {short} (floors {floors})"
@@ -393,25 +424,56 @@ class TestTheI5ReadDirectionIsNotPartOfTheComparison:
     direction is applied". In the code at 7c95e76 the collision check does
     NOT apply it: ``effective_index_sequence`` truncates to the cycles read
     and nothing reverse-complements an i5 (only colour analysis and the two
-    sheet writers do). Pinned here so grouping cannot start applying it, and
-    so the next reader is not misled.
+    sheet writers do). Pinned here both ways, so a check that started
+    reverse-complementing one side of a comparison would fail:
+
+    - two samples whose stored i5s are IDENTICAL collide, in every workflow
+      (reverse-complementing one side would pull them apart);
+    - two samples whose stored i5s are each other's reverse complement do
+      NOT collide, in every workflow (reverse-complementing one side would
+      make them identical).
     """
 
-    def _run(self, workflow):
+    I7 = "ATTACTCG"
+    I5 = "TATAGCCT"
+    I5_REVERSE_COMPLEMENT = "AGGCTATA"
+
+    def _run(self, workflow, i5_of_second):
         run = SequencingRun(
             id=f"dir-{workflow}", run_name="Direction",
             instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
             run_cycles=RunCycles(151, 151, 8, 8), i5_workflow=workflow,
             barcode_mismatches_index1=1, barcode_mismatches_index2=1)
-        for n, i5 in enumerate(("TATAGCCT", "AGGCTATA"), start=1):  # one is the other's RC
+        for n, i5 in enumerate((self.I5, i5_of_second), start=1):
             sample = Sample(id=f"d{n}", sample_id=f"D{n}", lanes=[1])
-            sample.assign_index1(Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7))
+            sample.assign_index1(Index(name="i7", sequence=self.I7, index_type=IndexType.I7))
             sample.assign_index2(Index(name=f"i5-{n}", sequence=i5, index_type=IndexType.I5))
             run.add_sample(sample)
         return run
 
     @pytest.mark.parametrize("workflow", ["", "BCLConvert", "DRAGEN"])
-    def test_the_same_samples_collide_whatever_the_workflow(self, workflow):
-        groups = IndexCollisionValidator.validate_index_collision_groups(self._run(workflow))
+    def test_one_stored_i5_on_both_samples_collides_in_every_workflow(self, workflow):
+        run = self._run(workflow, self.I5)
+        groups = IndexCollisionValidator.validate_index_collision_groups(run)
         expanded, _ = triples_from_groups(groups)
-        assert expanded == oracle_triples(self._run(workflow))
+        assert expanded == {("d1", "d2", 1)}
+        assert expanded == oracle_triples(run)
+
+    @pytest.mark.parametrize("workflow", ["", "BCLConvert", "DRAGEN"])
+    def test_an_i5_against_its_reverse_complement_does_not_collide(self, workflow):
+        run = self._run(workflow, self.I5_REVERSE_COMPLEMENT)
+        assert reverse_complement(self.I5) == self.I5_REVERSE_COMPLEMENT
+        groups = IndexCollisionValidator.validate_index_collision_groups(run)
+        expanded, _ = triples_from_groups(groups)
+        assert expanded == set()
+        assert expanded == oracle_triples(run)
+
+    @pytest.mark.parametrize("workflow", ["", "BCLConvert", "DRAGEN"])
+    def test_the_sequence_the_check_compares_is_the_stored_one(self, workflow):
+        """What a grouping key that applied the direction would break."""
+        run = self._run(workflow, self.I5_REVERSE_COMPLEMENT)
+        first, second = run.samples
+        assert effective_index_sequence(first, 2, run) == self.I5
+        assert effective_index_sequence(second, 2, run) == self.I5_REVERSE_COMPLEMENT
+        keys = {IndexCollisionValidator._collision_key(s, run) for s in run.samples}
+        assert len(keys) == 2

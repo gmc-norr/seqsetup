@@ -16,7 +16,7 @@ import pytest
 from seqsetup.models.index import Index, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
-from seqsetup.models.validation import MAX_LISTED_SAMPLE_NAMES
+from seqsetup.models.validation import MAX_LISTED_SAMPLE_NAMES, IndexCollisionGroup
 from seqsetup.services.index_collision_validator import IndexCollisionValidator
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 from seqsetup.services.validation_report import ValidationReportJSON
@@ -334,6 +334,16 @@ class TestTheSurfacesStaySmall:
         assert f"{300 - MAX_LISTED_SAMPLE_NAMES} more" in html
         assert "300" in html
 
+    def test_one_sample_a_side_reads_as_a_name_on_the_page(self):
+        """The ordinary collision — one sample against one — reads as it did
+        before the report was grouped, not as "1 sample (A) vs 1 sample (B)"."""
+        run = _run({"name": "A", "i7": "ATTACTCGAT", "i5": I5},
+                   {"name": "B", "i7": "ATTACTCGCC", "i5": I5}, m7=1, m5=1)
+        html = templates.env.get_template("validation/_collision_detail.html").render(
+            group=_groups(run)[0])
+        assert "1 sample" not in html
+        assert "A" in html and "B" in html and " vs " in html
+
     def test_the_issues_tab_list_is_built_in_python(self):
         source = (TEMPLATES / "validation" / "_issues_tab.html").read_text()
         assert "{% set ns.errors" not in source, (
@@ -357,10 +367,49 @@ class TestTheSurfacesStaySmall:
         clear_validation_cache()
         result = ValidationService.validate_run(run)
         errors, warnings = issue_rows(result)
-        html = templates.env.get_template("validation/_issues_tab.html").render(
-            result=result, issue_errors=errors, issue_warnings=warnings)
+        html = templates.env.get_template("validation/_issues_tab.html").render(result=result)
         assert html.count('class="validation-error-item"') == len(errors)
         assert f"Errors ({len(errors)})" in html
+
+    def test_the_issues_tab_builds_its_own_rows(self):
+        """The tab takes only the result. A caller cannot leave the rows out:
+        Jinja's Undefined is falsy, so a forgotten list would have rendered
+        the all-clear panel for a run full of errors."""
+        run = _run(*[{"name": f"S{k:03d}", "i7": "ATTACTCGAT", "i5": I5} for k in range(5)])
+        clear_validation_cache()
+        result = ValidationService.validate_run(run)
+        assert result.error_count > 0
+        html = templates.env.get_template("validation/_issues_tab.html").render(result=result)
+        assert "No validation issues detected" not in html
+        source = (TEMPLATES / "validation" / "_issues_tab.html").read_text()
+        assert "| issue_rows" in source
+
+
+class TestTheFindingChecksItself:
+    """CLAUDE.md: a model enforces the invariants it declares."""
+
+    def _group(self, **changes):
+        fields = dict(lane=1, index_type="i7", sequence1="ATTACTCGAT",
+                      sequence2="ATTACTCGAT", hamming_distance=0, mismatch_threshold=0,
+                      sample1_ids=["a", "b"], sample1_names=["A", "B"])
+        fields.update(changes)
+        return IndexCollisionGroup(**fields)
+
+    def test_a_whole_finding_is_accepted(self):
+        assert self._group().sample_count == 2
+
+    def test_a_name_missing_from_the_first_set_is_refused(self):
+        with pytest.raises(ValueError, match="sample1_ids has 2 ids"):
+            self._group(sample1_names=["A"])
+
+    def test_a_name_missing_from_the_second_set_is_refused(self):
+        with pytest.raises(ValueError, match="sample2_ids has 1 id"):
+            self._group(sample2_ids=["c"], sample2_names=[])
+
+    def test_a_second_set_with_no_first_set_is_refused(self):
+        with pytest.raises(ValueError, match="no first set"):
+            self._group(sample1_ids=[], sample1_names=[],
+                        sample2_ids=["c"], sample2_names=["C"])
 
 
 class TestTheReport:

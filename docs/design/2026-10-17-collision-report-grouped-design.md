@@ -88,20 +88,27 @@ scan returned `None` for every pair involving one.
 - Sample names inside a message are capped at `MAX_LISTED_SAMPLE_NAMES` (5) and
   the text then says "and N more" with the exact remainder. A finding standing
   for exactly two samples keeps today's wording ("A (SEQ) vs B (SEQ) - rule"),
-  so the ordinary small case reads as it always did.
+  so the ordinary small case reads as it always did in the Mark Ready refusal,
+  the Check panel and the PDF.
 - `errors_by_sample` marks every sample a finding names — the whole membership,
   not just the examples — and caps the messages on one sample at
   `MAX_SAMPLE_ERROR_MESSAGES` (20), adding one line with the exact number of
   further collision findings for that sample.
-- The Issues tab's list is built in Python (`validation_summary.issue_rows`)
-  and passed in; the template only renders it.
+- The Issues tab's list is built in Python (`validation_summary.issue_rows`),
+  but the template reaches it through the `issue_rows` Jinja filter rather than
+  taking it from its caller: Jinja's `Undefined` is falsy, so a caller that
+  forgot the lists would have rendered the page's all-clear panel for a run
+  full of errors.
 - `_collision_detail.html` lists at most `MAX_LISTED_SAMPLE_NAMES` names per
-  side and says how many are not shown.
+  side and says how many are not shown. A side holding one sample is written
+  as its name, so an ordinary collision still reads "Lane 1: A vs B"; two or
+  more samples on one index read as "Lane 1: N samples share one index — ...",
+  which is the change the page does make.
 - The validation report JSON keeps its `errors.index_collisions` key; each row
-  now carries `sample1_names` / `sample2_names` (capped) and
-  `sample1_count` / `sample2_count` instead of two single names. A **Ready run
-  has no collision**, so every stored validation report is unchanged except its
-  timestamp.
+  now carries `sample1_names` / `sample2_names` — **in full, not capped**, the
+  report being the complete record — and `sample1_count` / `sample2_count`
+  instead of two single names. A **Ready run has no collision**, so every
+  stored validation report is unchanged except its timestamp.
 - `IndexCollisionValidator.validate_index_collisions` (the per-pair form) is
   **kept** as the low-level API the collision-rule unit tests drive. Nothing in
   `src/` calls it; `validate_index_collision_groups` is the production path.
@@ -132,9 +139,16 @@ to one finding per lane.
   triples expanded from the grouped report equals an independent per-pair
   oracle's set, exactly, and `error_count > 0` agrees.
 - `tests/unit/test_collision_groups.py` — the planted corpus (a pair that
-  collides only because of the tolerance, and one only after the i5 direction
-  is applied, per index mode and tolerance), the grouping keys, the caps, and
-  the "no chaining" rule.
+  collides only because of the tolerance, and one only over the cycles the
+  OverrideCycles reads, per index mode and tolerance), the grouping keys, the
+  caps, the "no chaining" rule and the finding's own invariants.
+- `tests/unit/test_collision_groups_oracle.py` also pins that the check does
+  **not** apply the i5 read direction: two samples on one stored i5 collide in
+  every workflow, and an i5 against its own reverse complement does not. The
+  F5 plan spoke of "a pair that collides only after the i5 direction is
+  applied"; the code has never done that — `effective_index_sequence` truncates
+  to the cycles read, and only colour analysis and the two sheet writers
+  reverse-complement an i5.
 - `tests/integration/test_collision_report_size.py` — the asserted ceilings at
   300 x 1 and 1,000 x 8.
 - `tests/unit/test_validation.py` and `tests/unit/test_collision_rule.py` still

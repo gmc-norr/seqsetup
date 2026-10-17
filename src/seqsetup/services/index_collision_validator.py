@@ -222,6 +222,12 @@ class IndexCollisionValidator:
             # collides. The representative pair supplies the numbers.
             collision = cls._check_sample_pair_collision(
                 members[0], members[1], lane, run, mismatches)
+            # Unreachable: both distances are 0 here and every mismatch
+            # number is clamped to 0-2 (Sample/SequencingRun.__setattr__ and
+            # the sheet plan's is_allowed_mismatch), so 0 <= 2*m always. If
+            # it ever did fire, the key and the comparison would disagree and
+            # nothing in the report could be trusted — stopping loudly beats
+            # reporting a set of findings built on a broken assumption.
             if collision is None:  # pragma: no cover - identical indexes always collide
                 raise AssertionError(
                     f"lane {lane}: {members[0].id} and {members[1].id} hold the same "

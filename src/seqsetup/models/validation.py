@@ -313,6 +313,20 @@ class IndexCollisionGroup:
     i5_distance: Optional[int] = None
     i5_threshold: Optional[int] = None
 
+    def __post_init__(self):
+        # The id and name lists are parallel: the report's "N samples" and
+        # the names beside it must be the same N, and errors_by_sample marks
+        # a row per id. A mismatch would otherwise surface as a ValueError
+        # out of collision_description.
+        for ids, names, which in ((self.sample1_ids, self.sample1_names, 1),
+                                  (self.sample2_ids, self.sample2_names, 2)):
+            if len(ids) != len(names):
+                raise ValueError(
+                    f"IndexCollisionGroup sample{which}_ids has {len(ids)} ids "
+                    f"but sample{which}_names has {len(names)} names")
+        if self.sample2_ids and not self.sample1_ids:
+            raise ValueError("IndexCollisionGroup has a second set but no first set")
+
     @property
     def shares_one_index(self) -> bool:
         """True when this is one set of samples on the same index."""
@@ -333,7 +347,13 @@ class IndexCollisionGroup:
 
     @property
     def pair_count(self) -> int:
-        """How many colliding sample pairs this one finding stands for."""
+        """How many colliding sample pairs this one finding stands for.
+
+        Nothing in the application shows it: a page that printed "44,850"
+        beside "1 error" would be the problem this change removes. It states
+        what the finding means, and the tests that prove every pair is still
+        derivable use it.
+        """
         first = len(self.sample1_ids)
         if self.shares_one_index:
             return first * (first - 1) // 2

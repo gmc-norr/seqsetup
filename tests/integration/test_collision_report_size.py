@@ -26,9 +26,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import RunCycles, SequencingRun
 from seqsetup.services.index_collision_validator import IndexCollisionValidator
 from seqsetup.services.validation import ValidationService, clear_validation_cache
-from seqsetup.services.validation_summary import (
-    error_messages, errors_by_sample, issue_rows,
-)
+from seqsetup.services.validation_summary import error_messages, errors_by_sample
 from seqsetup.templating import templates
 
 MIB = 1024 * 1024
@@ -100,11 +98,10 @@ def test_one_shared_index_stays_small_on_every_surface(n, lanes, counted):
         f"{len(panel.encode()) / MIB:.1f} MiB")
     assert len(by_sample) == n, "every sample is still marked"
 
-    errors, warnings = issue_rows(result)
     started = time.perf_counter()
-    issues = templates.env.get_template("validation/_issues_tab.html").render(
-        result=result, issue_errors=errors, issue_warnings=warnings)
+    issues = templates.env.get_template("validation/_issues_tab.html").render(result=result)
     issues_seconds = time.perf_counter() - started
+    assert "No validation issues detected" not in issues
     assert len(issues.encode()) <= max_issues * MIB, (
         f"{n} x {lanes}: the Issues tab is {len(issues.encode()) / MIB:.1f} MiB")
     assert issues_seconds <= max_seconds, (

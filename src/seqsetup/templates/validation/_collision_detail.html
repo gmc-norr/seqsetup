@@ -13,9 +13,10 @@
     <span class="collision-sample">{{ group.sample_count }} sample{{ '' if group.sample_count == 1 else 's' }} share one index</span>
     <span class="collision-samples"> &mdash; {{ group.examples1 }}</span>
     {% else %}
-    <span class="collision-sample">{{ group.sample1_ids | length }} sample{{ '' if group.sample1_ids | length == 1 else 's' }} ({{ group.examples1 }})</span>
+    {# One sample a side is the ordinary case and reads as it always did. #}
+    <span class="collision-sample">{% if group.sample1_ids | length == 1 %}{{ group.examples1 }}{% else %}{{ group.sample1_ids | length }} samples ({{ group.examples1 }}){% endif %}</span>
     <span class="collision-vs"> vs </span>
-    <span class="collision-sample">{{ group.sample2_ids | length }} sample{{ '' if group.sample2_ids | length == 1 else 's' }} ({{ group.examples2 }})</span>
+    <span class="collision-sample">{% if group.sample2_ids | length == 1 %}{{ group.examples2 }}{% else %}{{ group.sample2_ids | length }} samples ({{ group.examples2 }}){% endif %}</span>
     {% endif %}
     <div class="collision-sequences">
         <span class="collision-index-type">{{ group.index_type }}: </span>

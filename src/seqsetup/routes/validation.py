@@ -17,7 +17,6 @@ from starlette.responses import HTMLResponse, Response
 from ..context import AppContext
 from ..models.validation import ColorBalanceStatus
 from ..services.validation import ValidationService
-from ..services.validation_summary import issue_rows
 from ..templating import render, templates
 from .dependencies import get_ctx
 
@@ -314,10 +313,8 @@ def _build_dark_cycles_ctx(result):
 def _render_tab_contents(run_id, result):
     """Pre-render each tab's body to an HTML string for Jinja2 |safe interpolation."""
     env = templates.env
-    issue_errors, issue_warnings = issue_rows(result)
     return {
-        "issues_html": env.get_template("validation/_issues_tab.html").render(
-            result=result, issue_errors=issue_errors, issue_warnings=issue_warnings),
+        "issues_html": env.get_template("validation/_issues_tab.html").render(result=result),
         "heatmaps_html": env.get_template("validation/_heatmaps_tab.html").render(
             lanes=_build_heatmap_lanes(result),
         ),
