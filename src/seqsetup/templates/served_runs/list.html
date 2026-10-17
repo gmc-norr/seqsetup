@@ -2,7 +2,9 @@
    API Exports: the runs GET /api/runs lists, in its order.
 
    Inputs:
-     runs:   list[SequencingRun] — Ready or Archived, newest change first
+     runs:   list[RunListing] — Ready or Archived, newest change first;
+             a listing row, not a whole run (docs/design/
+             2026-10-17-listing-summaries-design.md)
      status: "ready" | "archived"
 #}
 {% extends "_app_shell.html" %}

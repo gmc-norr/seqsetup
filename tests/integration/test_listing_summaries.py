@@ -136,8 +136,10 @@ class TestTheListingsShowTheSameThing:
             assert _order(html) == expected, query
 
     def test_the_search_still_names_the_samples_that_matched(self, seeded, logged_in_client):
+        """The hint under the row, not the echoed query in the heading."""
         html = logged_in_client.get("/dashboard/search?q=PAT004-003").text
-        assert "PAT004-003" in html
+        row = _rows(html)["run-004"]
+        assert "Sample: PAT004-003" in " ".join(row), row
 
     @pytest.mark.parametrize("query", [".*", ".", "PAT00[0-9]", "Run+", "(", "a|b", "^Run"])
     def test_a_query_is_a_plain_substring_not_a_regular_expression(
@@ -333,3 +335,104 @@ class TestNoRouteLoadsWholeRuns:
         response = logged_in_client.get("/api/runs", headers=_bearer(ctx))
         assert response.status_code == 200
         assert response.json()["total"] == 3
+
+
+class TestADocumentNoListingCanRead:
+    """A listing reads eleven fields and a count. Each of them, stored as
+    something this release refuses, must name the run — never take the page
+    down, and never be quietly replaced with something made up."""
+
+    BROKEN = {
+        "samples is not a list": {"samples": "not-a-list"},
+        "samples is an object": {"samples": {"a": 1}},
+        "samples is a number": {"samples": 7},
+        "created_at is not a date": {"created_at": "not-a-date"},
+        "updated_at is a number": {"updated_at": 12345},
+        "sheet_targets is malformed": {"sheet_targets": {"samplesheet_v2": {"software": "x"}}},
+        "sheet_targets names a column that does not exist": {"sheet_targets": {
+            "samplesheet_v2": {"instrument": "NovaSeq X Series", "software": "BCL Convert",
+                               "software_version": "4.3", "i5_workflow": "w",
+                               "index2_column": "banana",
+                               "needs_runinfo_reverse_mark": False},
+            "samplesheet_v1": None}},
+    }
+
+    @pytest.fixture(params=sorted(BROKEN), ids=sorted(BROKEN))
+    def broken(self, seeded, request):
+        _app, _ctx, db = seeded
+        db.runs.update_one({"_id": "run-003"}, {"$set": self.BROKEN[request.param]})
+        return "run-003"
+
+    @pytest.mark.parametrize("url", ["/", "/dashboard/tab/ready", "/dashboard/tab/draft",
+                                     "/dashboard/search?q=Run"])
+    def test_the_page_still_answers_and_names_it(self, broken, logged_in_client, url):
+        response = logged_in_client.get(url)
+        assert response.status_code == 200, url
+        assert broken not in _order(response.text), f"{url} listed a run it cannot read"
+        assert broken in response.text, f"{url} did not name the run it could not read"
+
+    def test_the_api_exports_page_fails_as_it_did_before(self, broken, logged_in_client):
+        """/served-runs built whole runs with list_by_status, which raised on
+        such a document; it builds rows with list_summaries, which raises on
+        the same document. Unchanged, and deliberately so: the page shows
+        what the API serves, and the API does not shorten its list."""
+        with pytest.raises(Exception):
+            logged_in_client.get("/served-runs")
+
+    def test_the_api_list_fails_loudly(self, broken, seeded, logged_in_client):
+        _app, ctx, _db = seeded
+        with pytest.raises(Exception):
+            logged_in_client.get("/api/runs", headers=_bearer(ctx))
+
+    def test_archiving_another_run_still_answers_200(self, broken, seeded, logged_in_client):
+        """The handler writes first and then renders the listing. On the old
+        code a listing that raised left the run archived behind an error
+        page, and the user could not tell."""
+        _app, ctx, _db = seeded
+        response = logged_in_client.post("/runs/run-004/archive", headers=ORIGIN)
+        assert response.status_code == 200, response.text[:300]
+        assert ctx.run_repo.get_by_id("run-004").status == RunStatus.ARCHIVED
+        assert broken in response.text
+
+    def test_deleting_another_run_still_answers_200(self, broken, seeded, logged_in_client):
+        """A delete cannot be undone, so this is the worse half."""
+        _app, ctx, _db = seeded
+        response = logged_in_client.delete("/runs/run-001", headers=ORIGIN)
+        assert response.status_code == 200, response.text[:300]
+        assert ctx.run_repo.get_by_id("run-001") is None
+        assert broken in response.text
+
+    def test_nothing_was_written(self, broken, seeded, logged_in_client):
+        _app, _ctx, db = seeded
+        before = {doc["_id"]: bson.encode(doc) for doc in db.runs.find()}
+        for url in ("/", "/dashboard/tab/ready", "/dashboard/search?q=Run"):
+            assert logged_in_client.get(url).status_code == 200
+        assert {doc["_id"]: bson.encode(doc) for doc in db.runs.find()} == before
+
+
+class TestARowNeverOutgrowsTheRunItNames:
+    """CLAUDE.md: bound every string at every ingest point. A row showing a
+    longer name than the run's own page would be two names for one run."""
+
+    def test_a_long_stored_name_is_bounded_the_way_the_run_bounds_it(
+            self, seeded, logged_in_client):
+        _app, ctx, db = seeded
+        db.runs.update_one({"_id": "run-003"},
+                           {"$set": {"run_name": "N" * 10_000, "created_by": "C" * 1000,
+                                     "flowcell_type": "F" * 1000}})
+        whole = ctx.run_repo.get_by_id("run-003")
+        (row,) = [r for r in ctx.run_repo.list_summaries("ready") if r.id == "run-003"]
+        assert len(row.run_name) == len(whole.run_name) == 256
+        assert len(row.created_by) == len(whole.created_by) == 256
+        assert len(row.flowcell_type) == len(whole.flowcell_type) == 256
+
+        got = logged_in_client.get("/api/runs", headers=_bearer(ctx)).json()
+        (item,) = [i for i in got["items"] if i["id"] == "run-003"]
+        assert len(item["run_name"]) == 256
+
+    def test_a_name_with_line_breaks_is_flattened_as_the_run_flattens_it(self, seeded):
+        _app, ctx, db = seeded
+        db.runs.update_one({"_id": "run-003"}, {"$set": {"run_name": "two\r\nlines"}})
+        whole = ctx.run_repo.get_by_id("run-003")
+        (row,) = [r for r in ctx.run_repo.list_summaries("ready") if r.id == "run-003"]
+        assert row.run_name == whole.run_name == "two  lines"

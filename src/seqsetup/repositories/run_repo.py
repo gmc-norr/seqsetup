@@ -86,16 +86,28 @@ class RunRepository(BaseRepository[SequencingRun]):
         the order is the one the whole-run listings produced.
         """
         projection = RunListing.projection(with_sample_ids=with_sample_ids)
-        projection["_listing_sort"] = {"$ifNull": ["$updated_at", utcnow().isoformat()]}
+        # The key is the stored updated_at as text, or now when a document
+        # has none — which is what SequencingRun.from_dict gives such a run,
+        # so the order is the one the whole-run listings produced. $toString
+        # keeps a document written outside SeqSetup, holding a real BSON
+        # date, in its place: BSON sorts every date before every string, so
+        # without it such a run would jump to the front of every page.
+        projection["_listing_sort"] = {
+            "$ifNull": [{"$toString": "$updated_at"}, utcnow().isoformat()]}
         pipeline: list[dict] = []
         if match is not None:
             pipeline.append({"$match": match})
         pipeline.append({"$project": projection})
         if newest_first:
-            pipeline.append({"$sort": {"_listing_sort": -1}})
-        if skip:
+            # The id breaks a tie, so a page boundary is the same on every
+            # request; the whole-run listings leaned on Python's stable sort
+            # for that, which a database sort does not promise.
+            pipeline.append({"$sort": {"_listing_sort": -1, "_id": 1}})
+        if skip > 0:
             pipeline.append({"$skip": skip})
-        if limit is not None:
+        # A $limit of 0 or less is an error on a real server, and "no limit"
+        # is what the callers mean by it.
+        if limit is not None and limit > 0:
             pipeline.append({"$limit": limit})
         return pipeline
 
@@ -158,10 +170,15 @@ class RunRepository(BaseRepository[SequencingRun]):
             {"run_name": {"$regex": pattern, "$options": "i"}},
             {"samples.sample_id": {"$regex": pattern, "$options": "i"}},
         ]}
+        # The hint under a row names the sample IDs that matched, and it is
+        # found with the same pattern the database matched rows with — a
+        # second rule ("q.lower() in id.lower()") disagrees with a regular
+        # expression's case folding on a handful of letters, and the row
+        # would then be listed with no reason given.
+        matches = re.compile(pattern, re.IGNORECASE).search
         pipeline = self._listing_pipeline(match, newest_first=True, with_sample_ids=True)
         listings: list[RunListing] = []
         matched: dict[str, list[str]] = {}
-        lowered = query.lower()
         for doc in self.collection.aggregate(pipeline):
             try:
                 listing = RunListing.from_doc(doc)
@@ -176,7 +193,7 @@ class RunRepository(BaseRepository[SequencingRun]):
             listings.append(listing)
             matched[listing.id] = [
                 sample.get("sample_id") for sample in (doc.get("samples") or [])
-                if lowered in (sample.get("sample_id") or "").lower()
+                if matches(sample.get("sample_id") or "")
             ]
         return listings, matched
 

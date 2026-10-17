@@ -287,6 +287,11 @@ def create_api_app(ctx: AppContext) -> FastAPI:
         Note: the parameter is named ``status_filter`` internally to avoid
         shadowing the imported ``fastapi.status`` enum, but the query
         parameter is exposed as ``?status=`` via Query(alias=...).
+
+        ``total`` is counted in the database alongside the page rather than
+        taken from one loaded list, so a run marked Ready or archived
+        between the two queries can make it one out of step with the pages.
+        Treat it as the size of the result set at the moment it was counted.
         """
         if status_filter not in ("ready", "archived"):
             raise HTTPException(

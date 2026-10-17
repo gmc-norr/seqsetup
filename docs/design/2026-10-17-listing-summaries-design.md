@@ -57,11 +57,33 @@ projection against the model's own field names, so a new field on
 
 ### Reading a document the same way the run does
 
-`RunListing.from_doc` mirrors `SequencingRun.from_dict` exactly for the fields
-it reads: `"complete"` still means archived, an unknown status still falls back
-to DRAFT with a warning, an unknown instrument still falls back to NovaSeq X
-with a warning, a missing or non-string timestamp still becomes `utcnow()`.
-A listing must not disagree with the page it links to.
+`RunListing.from_doc` mirrors `SequencingRun.from_dict` for the fields it
+reads: `"complete"` still means archived, an unknown status still falls back to
+DRAFT with a warning, an unknown instrument still falls back to NovaSeq X with
+a warning, a missing timestamp still becomes now, a Ready or Archived run is
+`was_ready` whatever the stored field says, `run_name` is still flattened and
+cut at 256 and `created_by` / `updated_by` / `flowcell_type` at 256, and
+`sheet_targets` still goes through `checked_sheet_targets` — the API's run list
+and the API Exports page read every key of it. A listing must not disagree with
+the page it links to, and must not serve a value the run model refuses.
+
+It is **stricter** than `from_dict` in one place: a stored timestamp that is
+neither text nor a date is refused rather than passed through. `from_dict`
+passes it on and the page then fails on it; a row that quietly showed the
+current time as a run's last change would state a time nobody made.
+
+`sample_count` is counted in the database, and the expression never hands
+`$size` anything but an array: `$size` refuses a non-array, and that aborts the
+**whole aggregation**, so one document whose `samples` is a string would take
+every listing down — the failure `list_all_readable` exists to prevent, and the
+one that let `archive_run` and `delete_run` write and then fail while rendering.
+Such a document comes back with a null count, which `from_doc` refuses, so the
+run is named on the dashboard like any other it cannot read.
+
+The sort key is `{"$toString": "$updated_at"}`, not the raw field: BSON sorts
+every date before every string, so a document written outside SeqSetup holding
+a real date would otherwise jump to the front of every page. The run id breaks
+a tie, so a page boundary is the same on every request.
 
 ### Two methods, as today
 
@@ -90,14 +112,19 @@ not read the samples cannot see a bad **sample**.
   Opening it still fails exactly as it does today.
 
 This is recorded because it is a change, not an accident:
-`tests/integration/test_listing_behaviour.py` pins both halves.
+`tests/integration/test_listing_summaries.py` pins both halves, and
+`tests/integration/test_dashboard_unreadable_run.py` now corrupts a field the
+listing reads as well as a sample, so it still exercises "a run no listing can
+read".
 
 ## What proves it
 
 1. `tests/unit/test_listings_read_only_what_they_show.py` — the projection of
    every listing, asserted against `SequencingRun`'s own field names.
 2. The API's limit is applied in the database: with 50 Ready runs,
-   `GET /api/runs?limit=1` builds exactly one `RunListing` (counted, not timed).
+   `GET /api/runs?limit=1` builds exactly one `RunListing` — counted by
+   patching `RunListing.from_doc`, not timed
+   (`tests/integration/test_listing_summaries.py`).
 3. Nothing can be erased: every listing over a Ready run leaves the stored
    document byte-identical, and `run_repo.save(a RunListing)` raises `TypeError`
    — a guard in the repository, so it cannot be forgotten.
@@ -106,5 +133,14 @@ This is recorded because it is a change, not an accident:
    a run with no samples), compared field by field against the old code's
    output.
 5. Asserted ceilings on the bytes read and the objects built.
-6. Once, by hand, against a real `mongo:7`: mongomock is not MongoDB, so the
-   projection and the `$size` aggregation are run against both and compared.
+6. Once, by hand, against a real `mongo:7`: mongomock is not MongoDB, so every
+   listing is run against both and compared row by row — the projection, the
+   `$size` / `$isArray` / `$cond` count, `$toString` in the sort, `$skip` and
+   `$limit`, `count_documents`, and the `$regex` match including Swedish
+   letters, a Turkish dotless i and ß, where a database's case folding could
+   differ from Python's.
+
+Not fixed, and worth knowing: `total` is now counted in a second query, so a
+run marked Ready between the count and the page can leave it one out of step.
+It is the size of the result set at the moment it was counted, and the
+endpoint's docstring says so.

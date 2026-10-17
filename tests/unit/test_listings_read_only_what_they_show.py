@@ -32,6 +32,19 @@ ALLOWED_FIELDS = {
 #: and no other.
 SEARCH_EXTRA = {"samples.sample_id"}
 
+#: A projection may also compute a value. Each computed output is named
+#: here with exactly the stored fields its expression may read, because an
+#: expression is the other way a big field gets into a listing:
+#: ``{"all_samples": {"$ifNull": ["$samples", []]}}`` returns every sample
+#: while naming none. A new computed output, or an old one reading a new
+#: field, fails this file until it is written down here.
+COMPUTED = {
+    # the number of samples, never the samples
+    "sample_count": {"samples"},
+    # the sort key: the stored time as text
+    "_listing_sort": {"updated_at"},
+}
+
 
 class SpyCollection:
     """Records every find/aggregate, then does it."""
@@ -76,33 +89,72 @@ def repo():
     return repository
 
 
-def _read_fields(pipeline_or_projection):
-    """The document fields a projection or pipeline asks for."""
+def _referenced(value) -> set:
+    """Every "$field" a computed projection expression reads.
+
+    A field let in by name is obvious; one let in by expression —
+    ``{"all_samples": {"$ifNull": ["$samples", []]}}`` — is not, and reads
+    just as many bytes.
+    """
+    found = set()
+    if isinstance(value, str) and value.startswith("$") and not value.startswith("$$"):
+        found.add(value[1:])
+    elif isinstance(value, dict):
+        for key, inner in value.items():
+            if not key.startswith("$"):
+                found.add(key)
+            found |= _referenced(inner)
+    elif isinstance(value, (list, tuple)):
+        for inner in value:
+            found |= _referenced(inner)
+    return found
+
+
+def _projections(pipeline_or_projection):
+    """Every projection in a pipeline, or the one passed to find()."""
     if isinstance(pipeline_or_projection, list):
-        asked = set()
-        for stage in pipeline_or_projection:
-            for key, value in stage.get("$project", {}).items():
-                if isinstance(value, dict):
-                    continue  # computed, e.g. sample_count from $size
-                asked.add(key)
-        return asked
-    return {key for key, value in (pipeline_or_projection or {}).items()
-            if not isinstance(value, dict)}
+        return [stage["$project"] for stage in pipeline_or_projection if "$project" in stage]
+    return [pipeline_or_projection or {}]
+
+
+def _returned_fields(projection):
+    """The stored fields a projection sends back, named one by one."""
+    return {key for key, value in projection.items() if not isinstance(value, (dict, list))}
+
+
+def _computed_reads(projection):
+    """Each computed output and the stored fields its expression reads."""
+    return {key: _referenced(value) for key, value in projection.items()
+            if isinstance(value, (dict, list))}
 
 
 def _asked_by(repo, call):
+    """The fields a listing sends back, after checking what it computes.
+
+    A computed output must be one COMPUTED names, reading no more than
+    COMPUTED allows it — so a big field cannot be smuggled in through an
+    expression that names none of it.
+    """
     call()
-    asked = set()
+    found = []
     for _args, kwargs in repo.collection.finds:
         projection = kwargs.get("projection")
         if projection is None and len(_args) > 1:
             projection = _args[1]
         assert projection is not None, "a listing must project, not read whole documents"
-        asked |= _read_fields(projection)
+        found.extend(_projections(projection))
     for pipeline in repo.collection.aggregates:
-        asked |= _read_fields(pipeline)
-    assert asked, "the listing read nothing at all"
-    return asked
+        found.extend(_projections(pipeline))
+    assert found, "the listing read nothing at all"
+
+    returned = set()
+    for projection in found:
+        returned |= _returned_fields(projection)
+        for name, reads in _computed_reads(projection).items():
+            assert name in COMPUTED, f"a computed projection {name!r} nobody wrote down"
+            assert reads <= COMPUTED[name], (
+                f"{name!r} reads {sorted(reads - COMPUTED[name])}, which it may not")
+    return returned
 
 
 class TestTheAllowListIsAboutTheRealModel:
@@ -142,6 +194,31 @@ class TestNoListingReadsASample:
         assert repo.collection.aggregates == []
 
 
+class TestTheGuardItselfCatchesSmuggling:
+    """A field let in by expression reads as many bytes as one let in by
+    name; the guard above must see both."""
+
+    def _asked(self, repo, projection):
+        repo.collection.aggregates.clear()
+        repo.collection.finds.clear()
+        list(repo.collection.aggregate([{"$project": projection}]))
+        return _asked_by(repo, lambda: None)
+
+    def test_a_field_let_in_by_name_is_caught(self, repo):
+        asked = self._asked(repo, {"run_name": 1, "samples": 1})
+        assert "samples" in asked, "a named field must show up"
+
+    @pytest.mark.parametrize("projection", [
+        {"all_samples": {"$ifNull": ["$samples", []]}},
+        {"first_sample": {"$arrayElemAt": [{"$ifNull": ["$samples", []]}, 0]}},
+        {"stored_sheet": {"$ifNull": ["$generated_samplesheet_v2", ""]}},
+        {"sample_count": {"$concat": ["$run_description", "x"]}},
+    ])
+    def test_a_field_let_in_by_expression_is_caught(self, repo, projection):
+        with pytest.raises(AssertionError):
+            self._asked(repo, projection)
+
+
 class TestTheDatabaseDoesTheWork:
 
     def test_the_status_filter_is_a_query(self, repo):
@@ -154,7 +231,7 @@ class TestTheDatabaseDoesTheWork:
         stages = [stage for pipeline in repo.collection.aggregates for stage in pipeline]
         assert {"$limit": 1} in stages
         assert {"$skip": 2} in stages
-        assert {"$sort": {"_listing_sort": -1}} in stages
+        assert {"$sort": {"_listing_sort": -1, "_id": 1}} in stages
         # The sort key is the stored updated_at, or now when there is none —
         # what SequencingRun.from_dict gives such a run, so the order does
         # not change.
