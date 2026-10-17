@@ -278,7 +278,8 @@ class TestColorBalanceQuestion:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", data=fields, headers=ORIGIN)
 
-        assert "Mark Ready anyway" in resp.text
+        # This question, not the lanes one that follows an accepted answer.
+        assert "Color balance errors" in resp.text, resp.text[:400]
         assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
 
     def test_answer_for_other_lanes_asks_again(self, logged_in_client, fresh_app):
@@ -288,7 +289,7 @@ class TestColorBalanceQuestion:
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", data=fields, headers=ORIGIN)
 
-        assert "Mark Ready anyway" in resp.text
+        assert "Color balance errors" in resp.text, resp.text[:400]
         assert ctx.run_repo.get_by_id(run_id).status.value == "draft"
 
     def test_no_error_lanes_do_not_ask(self, logged_in_client, fresh_app):
@@ -312,7 +313,8 @@ class TestColorBalanceQuestion:
 
         panel = logged_in_client.get(f"/runs/{run_id}/validate-panel").text
 
-        assert "Mark Ready will ask" in panel
+        # Its own badge: the lanes without samples badge says it too.
+        assert "Color balance: 1 lane(s) · Mark Ready will ask" in panel
 
     def test_check_panel_has_no_badge_at_all_for_a_clean_run(self, logged_in_client, fresh_app):
         ctx, run_id = self._setup(fresh_app, "cb-panel-clean", pairs=(CLEAN_PAIR,),

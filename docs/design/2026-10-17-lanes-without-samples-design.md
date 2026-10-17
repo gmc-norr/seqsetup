@@ -38,7 +38,12 @@ unnoticed.
   the `run.status.changed` row as `lanes_without_samples_accepted`. The
   question's form carries the color balance answer too, so a run asked both
   is not asked the first again.
-- The Sample Sheet does not change.
+- The Check panel says "Mark Ready will ask" only on a Draft, for this
+  badge and the color balance one: a Ready run's panel, whose checks run
+  live, still names the lanes.
+- The Sample Sheet does not change. The validation report written at Mark
+  Ready (JSON and PDF) carries the new warning, so its warning count is one
+  higher for such a run.
 
 ## Tests
 

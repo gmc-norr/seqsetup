@@ -270,6 +270,20 @@ class TestWithAColorBalanceQuestion:
         assert event.details["color_balance_accepted_lanes"] == [1, 2]
         assert event.details["lanes_without_samples_accepted"] == [3, 4, 5, 6, 7, 8]
 
+    def test_a_ready_runs_panel_names_the_lanes_but_asks_nothing(
+            self, logged_in_client, fresh_app):
+        """Its checks run live, so the badges stay; only a Draft is asked."""
+        _app, ctx, _db = fresh_app
+        _draft(ctx, "ready-panel", EIGHT_LANES, s1_lanes=[1], s2_lanes=[2])
+        mark_ready(logged_in_client, "ready-panel", ORIGIN)
+        assert ctx.run_repo.get_by_id("ready-panel").status == RunStatus.READY
+
+        panel = html.unescape(logged_in_client.get("/runs/ready-panel/validate-panel").text)
+
+        assert "Lanes without samples: 3, 4, 5, 6, 7, 8" in panel
+        assert "Color balance: " in panel
+        assert "Mark Ready will ask" not in panel
+
     def test_the_test_helper_answers_both(self, logged_in_client, fresh_app):
         """conftest.mark_ready answers whichever questions come back, for
         tests about something else."""

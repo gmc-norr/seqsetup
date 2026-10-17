@@ -31,7 +31,8 @@
 #}
 {% set error_count = validation_result.error_count %}
 {% set color_balance_issues = validation_result.color_balance_issue_count if validation_result.color_balance_enabled else 0 %}
-{% set color_balance_asks = validation_result.color_balance_error_lanes | length > 0 %}
+{# Mark Ready asks only about a Draft; a Ready run's panel still names the lanes. #}
+{% set color_balance_asks = validation_result.color_balance_error_lanes | length > 0 and run.status.value == 'draft' %}
 {% set empty_lanes = validation_result.lanes_without_samples %}
 {% set has_samples = run.has_samples %}
 {% set all_have_indexes = run.all_samples_have_indexes if has_samples else False %}
@@ -77,7 +78,7 @@
             {% endif %}
             {% if empty_lanes %}
                 {# The lanes no sample is on (design note 2026-10-17-lanes-without-samples). #}
-                <span class="status-warning">Lanes without samples: {{ empty_lanes | join(", ") }} · Mark Ready will ask</span>
+                <span class="status-warning">Lanes without samples: {{ empty_lanes | join(", ") }}{% if run.status.value == 'draft' %} · Mark Ready will ask{% endif %}</span>
             {% endif %}
         </div>
         {% if run.status.value != 'draft' and run.test_versions_used %}
