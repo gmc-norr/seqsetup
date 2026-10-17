@@ -982,7 +982,8 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
 // and Mark Ready (data-after-row-saves) wait for the saves, leaving the page
 // asks first, and a note names a save lost to a redraw. An answer that comes
 // back for a replaced box, having stored another value than the redrawn row
-// shows, asks for a reload. (Outside review of f490536, F3.) A refused save
+// shows, asks for a reload when that row was drawn before the save was
+// stored (data-run-version, below). (Outside review of f490536, F3.) A refused save
 // leaves what was typed on screen, as every refused edit does.
 //
 // A waiting action is not done at all when one of the saves it waited for
@@ -1013,11 +1014,13 @@ const rowSavesNotStored = new Map();    // box id -> name, changes not stored
 // shorten it.
 window.rowSaveWaitMs = 15000;
 
-function rowSettingName(box) {
-    const row = box.closest('tr');
+function rowSampleName(row) {
     const cell = row && row.querySelector('.sample-id-cell');
-    const sample = cell ? cell.title : '';  // the text may carry the Check's badge
-    return `${box.dataset.rowSetting} of ${sample || 'a sample'}`;
+    return (cell && cell.title) || 'a sample';  // the text may carry the Check's badge
+}
+
+function rowSettingName(box) {
+    return `${box.dataset.rowSetting} of ${rowSampleName(box.closest('tr'))}`;
 }
 
 function quotedSetting(value) {
@@ -1228,14 +1231,18 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
         const answered = answer.content.getElementById(box.id);
         if (!answered) return;
         const stored = answered.getAttribute('value') || '';
+        const version = runVersionOf(answered);
         if (box.isConnected) {
             box.defaultValue = stored;
             if (box.value === sent) box.value = stored;
             clearRowSettingNotes(box);
+            rowShownAt(box.closest('tr'), version);
             return;
         }
+        // A row drawn after this save was stored shows it, or a later
+        // change: only one drawn before it can show an older value.
         const shown = document.getElementById(box.id);
-        if (shown && shown.defaultValue !== stored) {
+        if (shown && runVersionOf(shown) < version && shown.defaultValue !== stored) {
             noteRowSettingProblem(box, `${rowSettingName(box)} was saved as ${quotedSetting(stored)} `
                 + 'while its row was being redrawn, and the row may show an older value: '
                 + 'reload the page.');
@@ -1249,6 +1256,82 @@ document.body.addEventListener('htmx:beforeSend', function(event) {
         sendWhatWaitsForRowSaves();
     });
 });
+
+// Two answers about one sample row can come back in the other order than
+// the server stored them: an index clear stored first and answered last
+// puts back a row drawn from before a box's save that was answered in
+// between, and the screen shows the old value while the database holds
+// the new one. Every row says which version of the run it was drawn from
+// (data-run-version, wizard/_sample_row.html: the run's updated_at, which
+// moves on with every save, written so that text order is time order), and
+// the page keeps the newest version it has shown for each row -- a row
+// drawn, or a box's save answered in it. A row drawn from an older one is
+// noted, asking for a reload, until the row is drawn again from one at
+// least as new. (Fresh review of 38ca108, P2; design note
+// docs/design/2026-10-17-row-version-design.md.)
+const rowShownVersion = new Map();   // row id -> newest version shown
+
+function runVersionOf(element) {
+    const row = element.closest('tr[data-run-version]');
+    return row ? row.dataset.runVersion : '';
+}
+
+function rowShownAt(row, version) {
+    if (!row || !version) return;
+    const newest = rowShownVersion.get(row.id);
+    if (newest === undefined || version > newest) rowShownVersion.set(row.id, version);
+}
+
+// False when the row was drawn from an older version than the page has
+// already shown for it.
+function rowDrawn(row) {
+    const newest = rowShownVersion.get(row.id);
+    if (newest !== undefined && row.dataset.runVersion < newest) return false;
+    rowShownVersion.set(row.id, row.dataset.runVersion);
+    const notes = document.getElementById('row-setting-notes');
+    if (notes) {
+        for (const note of [...notes.children]) {
+            if (note.dataset.row === row.id) note.remove();
+        }
+    }
+    return true;
+}
+
+function noteOlderRows(rows) {
+    const notes = document.getElementById('row-setting-notes');
+    const messages = rows.map(row => `The row of ${rowSampleName(row)} was redrawn from `
+        + 'before a change saved on this page, and may show an older value: reload the page.');
+    if (notes) {
+        rows.forEach(function(row, k) {
+            if ([...notes.children].some(note => note.dataset.row === row.id)) return;
+            const div = document.createElement('div');
+            div.className = 'error-message';
+            div.dataset.row = row.id;
+            div.textContent = messages[k];
+            notes.appendChild(div);
+        });
+    }
+    showErrorToast(rows.length === 1 ? messages[0] : `${rows.length} sample rows were `
+        + 'redrawn from before a change saved on this page, and may show older values: '
+        + 'reload the page.');
+}
+
+for (const row of document.querySelectorAll('tr[data-run-version]')) rowDrawn(row);
+
+new MutationObserver(function(records) {
+    const older = [];
+    for (const record of records) {
+        for (const node of record.addedNodes) {
+            if (!(node instanceof Element)) continue;
+            const rows = node.matches('tr[data-run-version]')
+                ? [node] : node.querySelectorAll('tr[data-run-version]');
+            for (const row of rows) {
+                if (row.isConnected && !rowDrawn(row)) older.push(row);
+            }
+        }
+    }
+    if (older.length > 0) noteOlderRows(older);
+}).observe(document.body, {childList: true, subtree: true});
 
 document.addEventListener('input', function(event) {
     const filter = event.target.closest('.index-filter-input');

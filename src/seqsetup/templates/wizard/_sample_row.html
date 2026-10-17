@@ -62,8 +62,16 @@
    the version a Ready run's checks used. The Override Cycles and mismatch
    values are NOT here: their boxes save without redrawing the row
    (hx-swap="none", F3), so an attribute would go stale and refuse a page
-   that is right; app.js reads those from the boxes themselves. #}
+   that is right; app.js reads those from the boxes themselves.
+
+   data-run-version: the version of the run this row was drawn from, its
+   updated_at, written to the microsecond so that two compare as text.
+   Two answers about one row can come back in the other order than the
+   server stored them; app.js keeps the newest version the page has shown
+   for each row, and a row drawn from an older one asks for a reload
+   (design note docs/design/2026-10-17-row-version-design.md). #}
 <tr id="sample-row-{{ sample.id }}" class="{{ row_class }}"
+    data-run-version="{{ run_updated_at.isoformat(timespec='microseconds') }}"
     data-i7="{{ sample.index1_sequence or '' }}" data-i5="{{ sample.index2_sequence or '' }}"
     data-lanes="{{ sample.lanes | join(',') }}"
     data-test-id="{{ sample.test_id or '' }}" data-test-version="{{ sample.test_version or '' }}">
