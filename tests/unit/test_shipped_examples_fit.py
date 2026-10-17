@@ -14,15 +14,26 @@ import yaml
 CONFIG = Path(__file__).resolve().parents[2] / "config"
 PROFILES = sorted((CONFIG / "profiles" / "application_profiles").rglob("*.yaml"))
 INSTRUMENTS = sorted((CONFIG / "instruments").glob("*.yaml"))
+# The local fallback file holds every instrument under one ``instruments:`` key.
+LOCAL = CONFIG / "instruments.yaml"
+
+# The onboard applications as Illumina's NovaSeq X and NextSeq 1000/2000 sample
+# sheet version histories name their sections (help.connected.illumina.com,
+# 2026-10-17; docs/design/2026-10-17-rna-section-spelling-design.md).
+ILLUMINA_APPS = {"BCLConvert", "DragenGermline", "DragenSomatic", "DragenRna",
+                 "DragenEnrichment", "DragenMethylation"}
 
 
 def _offered() -> dict[str, dict[str, str]]:
-    """Application name -> {instrument file: the version it offers}."""
+    """Application name -> {instrument: the version it offers}, from the
+    synced-format files and the local fallback file alike."""
+    entries = [(path.name, yaml.safe_load(path.read_text()) or {}) for path in INSTRUMENTS]
+    entries += [(f"instruments.yaml: {name}", entry)
+                for name, entry in (yaml.safe_load(LOCAL.read_text())["instruments"]).items()]
     offered: dict[str, dict[str, str]] = {}
-    for path in INSTRUMENTS:
-        apps = (yaml.safe_load(path.read_text()) or {}).get("onboard_applications") or {}
-        for app, settings in apps.items():
-            offered.setdefault(app, {})[path.name] = str(settings["software_version"])
+    for where, entry in entries:
+        for app, settings in (entry.get("onboard_applications") or {}).items():
+            offered.setdefault(app, {})[where] = str(settings["software_version"])
     return offered
 
 
@@ -30,6 +41,8 @@ class TestTheShippedExamplesFitTogether:
 
     def test_there_are_examples_to_check(self):
         assert PROFILES and INSTRUMENTS
+        assert any(where.startswith("instruments.yaml: ")
+                   for found in _offered().values() for where in found)
 
     def test_every_instrument_that_offers_a_profiles_application_offers_its_version(self):
         offered = _offered()
@@ -42,6 +55,11 @@ class TestTheShippedExamplesFitTogether:
                 if has != version:
                     misfits.append(f"{path.name} asks {app} {version}; {instrument} offers {has}")
         assert not misfits, misfits
+
+    def test_every_application_an_instrument_offers_is_spelled_as_illumina_spells_it(self):
+        misspelled = {app: sorted(where) for app, where in _offered().items()
+                      if app not in ILLUMINA_APPS}
+        assert not misspelled, misspelled
 
     def test_every_profiles_application_is_offered_by_an_instrument(self):
         """Spelled as the instruments spell it: the RNA example was DragenRna
