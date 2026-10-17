@@ -43,12 +43,10 @@ class TestTheShippedExamplesFitTogether:
                     misfits.append(f"{path.name} asks {app} {version}; {instrument} offers {has}")
         assert not misfits, misfits
 
-    def test_only_the_rna_profile_names_an_application_no_instrument_offers(self):
-        """The RNA example is spelled DragenRna in its profile (and in the
-        Sample Sheet section a profile writes) and DragenRNA in the instrument
-        files. Which spelling the instrument reads is an open question, not
-        settled by this test: it pins that this is the only such case, so a
-        new one is seen."""
+    def test_every_profiles_application_is_offered_by_an_instrument(self):
+        """Spelled as the instruments spell it: the RNA example was DragenRna
+        in its profile and DragenRNA in the instrument files, so it could
+        never pass (docs/design/2026-10-17-rna-section-spelling-design.md)."""
         offered = _offered()
         unoffered = {yaml.safe_load(p.read_text())["ApplicationName"] for p in PROFILES} - set(offered)
-        assert unoffered == {"DragenRna"}
+        assert not unoffered, sorted(unoffered)

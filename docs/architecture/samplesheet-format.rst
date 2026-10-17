@@ -99,7 +99,7 @@ supplied; the running application always supplies both (``startup.py``,
 ``routes/runs.py``, ``routes/export.py``). Without them, ``export()``
 falls back to a hardcoded ``[BCLConvert_Settings]`` / ``[BCLConvert_Data]``
 pair and, for each configured DRAGEN onboard analysis, a matching
-``DragenGermline``, ``DragenSomatic`` or ``DragenRNA`` section pair
+``DragenGermline``, ``DragenSomatic`` or ``DragenRna`` section pair
 (``_write_bclconvert_settings``, ``_write_bclconvert_data``,
 ``_write_dragen_sections``) -- this path exists in the exporter but the
 running application never calls it.

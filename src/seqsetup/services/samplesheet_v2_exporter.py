@@ -331,14 +331,14 @@ class SampleSheetV2Exporter:
     @classmethod
     def _write_dragen_rna(cls, output: TextIO, analysis):
         """Write DRAGEN RNA settings and data sections."""
-        output.write("[DragenRNA_Settings]\n")
+        output.write("[DragenRna_Settings]\n")
 
         if analysis.reference_genome:
             output.write(f"ReferenceGenomeDir,{cls._escape_csv(analysis.reference_genome)}\n")
 
         output.write("\n")
 
-        output.write("[DragenRNA_Data]\n")
+        output.write("[DragenRna_Data]\n")
         output.write("Sample_ID\n")
         for sample_id in analysis.sample_ids:
             output.write(f"{cls._escape_identifier(sample_id)}\n")

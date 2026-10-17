@@ -100,7 +100,7 @@ instruments:
         software_version: "4.3.6"
       DragenSomatic:
         software_version: "4.3.6"
-      DragenRNA:
+      DragenRna:
         software_version: "4.3.6"
       DragenEnrichment:
         software_version: "4.3.6"
