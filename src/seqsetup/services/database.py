@@ -8,7 +8,7 @@ from typing import Optional
 import yaml
 from pymongo import MongoClient
 from pymongo.database import Database
-from pymongo.errors import ConnectionFailure
+from pymongo.errors import ConnectionFailure, OperationFailure
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,19 @@ def init_db() -> Database:
     except ConnectionFailure as e:
         _client = None
         logger.error("Failed to connect to MongoDB: %s", e)
+        raise
+    except OperationFailure as e:
+        _client = None
+        if e.code == 18:  # AuthenticationFailed: say where to look (practice deploy 2026-10-17)
+            logger.error(
+                "MongoDB refused SeqSetup's user name or password: %s With Docker "
+                "Compose, MONGO_APP_PASSWORD in .env must be the password "
+                "docker/mongo-init.sh created the user with on the first start "
+                "(changing .env later does not change it), made only of letters and "
+                "digits (openssl rand -hex 24): the connection URI reads %%, @, :, / "
+                "and some other characters as something else.", e)
+        else:
+            logger.error("Unexpected error connecting to MongoDB: %s", e)
         raise
     except Exception as e:
         _client = None
