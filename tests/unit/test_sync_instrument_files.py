@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from seqsetup.input_rules.instruments import duplicate_instruments
+from seqsetup.input_rules.problems import problem_line
 from seqsetup.services.github_sync import GitHubSyncError, GitHubSyncService
 
 from .test_i5_workflows import BAD, _yaml
@@ -137,10 +138,14 @@ class TestRefusedFiles:
         ("instruments: {}\n", "instruments: must have at least 1 item(s)"),
     ])
     def test_a_file_that_gives_no_instrument(self, text, says):
-        instruments, refused = _fetch(_service({ROOT: {"x.yaml": text}}))
+        """The refusal names the file and its first problem; the sync's list
+        of problems has every one."""
+        service = _service({ROOT: {"x.yaml": text}})
+        instruments, refused = _fetch(service)
         assert instruments == []
-        (problem,) = refused
-        assert problem.startswith(f"{ROOT}/x.yaml:") and says in problem
+        (refusal,) = refused
+        assert refusal.startswith(f"{ROOT}/x.yaml:")
+        assert any(says in problem_line(p) for p in service.input_problems)
 
     def test_a_subfolder_that_cannot_be_listed(self):
         instruments, refused = _fetch(_service(

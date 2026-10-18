@@ -156,7 +156,7 @@ class TestEveryKindOfProblemHasAPlace:
 
         assert sorted((p.path, p.message) for p in result.problems) == [
             (("flowcells", "10B", "lanes"), "must be at most 8"),
-            (("limits", 300), "must be at least 1"),
+            (("limits", "300"), "must be at least 1"),
         ]
 
     def test_a_building_block_gives_its_own_message(self):
@@ -274,3 +274,38 @@ class TestBuildingBlocks:
 
     def test_the_storage_limit(self):
         assert STORAGE_MAX_INT == 2**63 - 1
+
+
+class TestAMapKeyIsNamedAsText:
+    """A number in a problem's path is only ever a list item ("item 1"): a
+    map key read as a number is named as written (limits > 300, not
+    "item 301"), whichever step found the problem."""
+
+    def test_in_a_rulebook_s_problem(self):
+        problem = _only(_check(GOOD + "limits:\n  300: 700\n"))
+
+        assert problem.path == ("limits", "300")
+        assert problem_line(problem) == "f.yaml:11:8: limits > 300: must be at most 600"
+
+    def test_in_a_cross_check_s_problem(self):
+        result = _check(GOOD + "limits:\n  300: 320\n",
+                        cross_checks=[lambda v: [Finding(("limits", 300), "is wrong")]])
+
+        assert _only(result).path == ("limits", "300")
+
+    def test_a_list_item_stays_a_number(self):
+        problem = _only(_check(GOOD.replace("side: forward", "side: back")))
+
+        assert problem.path == ("workflows", 0, "side")
+
+
+class TestTheCapOfProblemsPerFile:
+
+    def test_warnings_past_the_cap_do_not_refuse_the_file(self):
+        many = [Finding(("name",), "is short")] * 1500
+
+        result = _check(GOOD, warnings=lambda v: many)
+
+        assert result.ok and result.value is not None
+        assert "500 more" in result.problems[-1].message
+        assert result.problems[-1].level == "warning"

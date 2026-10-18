@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 
-from .audit_log import audit, redact_url
+from .audit_log import audit, audit_text, redact_url
 from ..input_rules.problems import AUDIT_BUDGET, bounded_report
 from .github_sync import STAYS_PAUSED, GitHubSyncService
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
@@ -112,7 +112,7 @@ class ProfileSyncScheduler:
         success, message, count = result
         # The message and problems, cut to fit an audit row: details over
         # 64 KiB would be dropped whole.
-        report = bounded_report(message, getattr(result, "problems", []), AUDIT_BUDGET)
+        report = bounded_report(message, getattr(result, "problems", []), AUDIT_BUDGET, clean=audit_text)
 
         if success:
             logger.info(f"Scheduled sync completed: {message}")

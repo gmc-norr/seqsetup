@@ -38,6 +38,20 @@ class TestARecord:
         bson.encode({"p": problem_record(_problem(1))})
 
 
+class TestEveryRecordCanBeStored:
+    """A path or text MongoDB cannot hold (a number past 64 bits, half a
+    character) once stopped a sync after it had written the reference data,
+    with no audit row."""
+
+    def test_a_record_mongodb_could_not_hold_is_made_storable(self):
+        problem = InputProblem("f\ud800.yaml", 1, 1, ("a", 2**70, "b\ud800"), "m\ud800")
+
+        report = bounded_report("message \ud800", [problem], 32 * 1024)
+
+        bson.encode({"details": report})
+        assert report["problems_left_out"] == 0
+
+
 class TestASmallReport:
 
     def test_keeps_everything(self):

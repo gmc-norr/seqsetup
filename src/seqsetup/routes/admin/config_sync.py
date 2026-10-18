@@ -19,7 +19,7 @@ from starlette.responses import HTMLResponse, Response
 from ...context import AppContext
 from ...input_rules.problems import AUDIT_BUDGET, bounded_report, path_text
 from ...forms.validators import clamp, strip_and_truncate
-from ...services.audit_log import audit
+from ...services.audit_log import audit, audit_text
 from ...services.github_sync import GitHubSyncError, GitHubSyncService, paused_page_message
 from ...templating import render
 from ..dependencies import get_ctx, require_admin_dep
@@ -185,7 +185,7 @@ def trigger_manual_sync(
         target="github_sync",
         outcome="success" if success else "failure",
         items_synced=count,
-        **bounded_report(message, getattr(result, "problems", []), AUDIT_BUDGET),
+        **bounded_report(message, getattr(result, "problems", []), AUDIT_BUDGET, clean=audit_text),
     )
     # Bust the synced-instruments cache so the new sync is visible to the
     # instruments page immediately. The lazy import matches the existing

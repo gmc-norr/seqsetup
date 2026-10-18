@@ -13,7 +13,6 @@ from pathlib import Path
 
 import yaml
 
-from seqsetup.input_rules.base import ILLUMINA_APPLICATION_NAMES
 from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
@@ -24,7 +23,8 @@ from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 # NovaSeq X and NextSeq 1000/2000 (help.connected.illumina.com, 2026-10-17).
 ILLUMINA = {"Header", "Reads", "Cloud_Settings", "Cloud_Data"} | {
     f"{app}_{part}"
-    for app in ILLUMINA_APPLICATION_NAMES
+    for app in ("BCLConvert", "DragenGermline", "DragenSomatic", "DragenRna",
+                "DragenEnrichment", "DragenMethylation")
     for part in ("Settings", "Data")
 }
 

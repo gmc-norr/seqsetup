@@ -168,6 +168,14 @@ def _clean_address(token: str) -> str:
     return cleaned
 
 
+def audit_text(value: str) -> str:
+    """What audit() keeps of a text under a key that is neither secret nor
+    an address (see ``_clean_value``). A report cut to fit an audit row is
+    cleaned with this before it is measured: an address made
+    ``[address removed]`` can grow it past the row's limit."""
+    return scrub_log_message(redact_url_secrets(value))
+
+
 def _clean_value(value, key: str = ""):
     """Clean one value of an event, walking dicts and lists.
 
@@ -189,7 +197,7 @@ def _clean_value(value, key: str = ""):
         return "***"
     if _ADDRESS_KEY_RE.fullmatch(name):
         return redact_url(value)
-    return scrub_log_message(redact_url_secrets(value))
+    return audit_text(value)
 
 
 def audit(

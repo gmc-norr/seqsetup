@@ -167,6 +167,10 @@ def _instrument_findings(instrument: InstrumentRules, at: tuple, *, needs_name: 
         elif instrument.color_balance_enabled and value is None:
             found.append(Finding(
                 (*at, key), "is required when colour balance is on (color_balance_enabled: true)"))
+        elif instrument.color_balance_enabled and isinstance(value, (list, dict)) and not value:
+            # An empty list once switched the dark-cycle check off unseen.
+            found.append(Finding(
+                (*at, key), "must not be empty when colour balance is on (color_balance_enabled: true)"))
         elif present and value is None:
             found.append(Finding((*at, key), "needs a value"))
     if instrument.chemistry_type == "2-color" and instrument.base_colors is not None:

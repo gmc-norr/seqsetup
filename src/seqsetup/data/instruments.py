@@ -22,7 +22,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
-import yaml
 from pymongo.errors import PyMongoError
 
 if TYPE_CHECKING:
@@ -943,8 +942,9 @@ def get_lanes_for_flowcell(platform: InstrumentPlatform, flowcell_type: str, ins
 def get_reagent_kit_max_cycles(platform: InstrumentPlatform, reagent_kit: int) -> Optional[int]:
     """Most cycles (all reads together) this instrument's reagent kit allows,
     from ``reagent_kit_max_cycles`` in its config; None when no number is
-    given for the kit. The sync validator checks synced numbers; a malformed
-    value in the fallback YAML is logged and treated as no number."""
+    given for the kit. The input rules check the numbers of both instrument
+    files before they are kept; a malformed value is still logged and treated
+    as no number."""
     name = _platform_to_name(platform)
     limits = (get_instrument_config(name) or {}).get("reagent_kit_max_cycles")
     if not limits:

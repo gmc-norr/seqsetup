@@ -378,10 +378,12 @@ Checking settings before a sync
 
 ``pixi run check-settings <folder>`` checks a settings folder with the rules
 the sync uses, with no database, no network and no running SeqSetup -- for
-example on every change to your settings repository. It reads every
-``.yaml`` file under the folder's ``instruments/`` (``--instruments <path>``
-names another), and ``--local-instruments <file>`` also checks a local
-instruments file. It prints one problem per line, *"instruments/miseq.yaml:30:5:
+example on every change to your settings repository. It reads what the sync
+reads: every ``.yaml`` and ``.yml`` file in the folder's ``instruments/`` and
+the folders below it, but not a link (``--instruments <path>`` names another
+folder inside the settings folder). An ``instruments/`` folder that is not
+there, or holds no instrument file, is an error. ``--local-instruments
+<file>`` also checks a local instruments file. It prints one problem per line, *"instruments/miseq.yaml:30:5:
 flowcells > v2 Standard > lane: is not a key this file can have (check
 the spelling)"* for a ``lane:`` written under the flow cell's ``lanes:``, marks warnings, and ends with a failure when there is an error.
 ``pixi run check-settings --schema <dir>`` writes a JSON Schema for each kind
@@ -401,8 +403,8 @@ its whole file. When anything is refused:
   their **Enabled** switches, stay as they were;
 - application profiles, test profiles and index kits are synced as usual;
 - the sync reports that it failed, on the Config Sync page and in its
-  stored status, naming each refused file and its problem, and says what
-  it did sync. The page lists every problem with its file, line and place,
+  stored status, naming each refused file and its first problem, and says
+  what it did sync. The page lists every problem with its file, line and place,
   warnings too, and the sync's audit row carries them; a very long list is
   cut there and on the page, which say how many are not shown
   (``pixi run check-settings`` lists them, up to 1,000 per file).

@@ -48,8 +48,8 @@
             {% endfor %}
             </tbody>
         </table>
-        {% if sync_problems_left_out %}<div>{{ sync_problems_left_out }} more problems are not shown here; <code>pixi run check-settings</code> on the settings folder lists them.</div>{% endif %}
         {% endif %}
+        {% if sync_problems_left_out %}<div>{{ sync_problems_left_out }} {% if sync_problems %}more {% endif %}problems are not shown here; <code>pixi run check-settings</code> on the settings folder lists them.</div>{% endif %}
     </div>
 
     {# Config form #}

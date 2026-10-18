@@ -20,11 +20,12 @@ from typing import Any, Optional
 
 import yaml
 
-from .problems import InputProblem
+from .problems import InputProblem, key_text
 
 MAX_PROBLEMS_PER_FILE = 1000
 
 _WHOLE_NUMBER = re.compile(r"-?(0|[1-9][0-9]*)")
+_HALF_CHARACTER = re.compile("[\ud800-\udfff]")
 _YAML = "tag:yaml.org,2002:"
 
 _PLAIN_DIGITS = (
@@ -41,6 +42,10 @@ _ALIAS = "a YAML alias (*name) is not allowed"
 _MERGE = "a merge key (<<) is not allowed"
 _KEY_NOT_PLAIN = "a key must be a plain value, not a list or a map"
 _MORE_THAN_ONE = "the file holds more than one YAML document"
+_HALF = "holds half of a character (a \\uD800-\\uDFFF escape): write the whole character"
+_TOO_LONG = "is too long a number to read"
+_CONTROL = "a control character (such as a form feed or NUL) a YAML file cannot hold: remove it"
+_TOO_DEEP = "the file nests lists and maps too deep to read"
 
 # A fixed explanation per kind of parser error, chosen by the parser's own
 # wording but never repeating it: that text can quote the line, and the line
@@ -68,15 +73,14 @@ _SYNTAX_OTHER = "the file is not valid YAML here"
 class Locations:
     """Where each key, value and list item came from: (line, column), both
     counted from 1. A path is looked up by the text of its items, so a map key
-    read as the number 300 is found as 300 or "300" (Pydantic names it as
-    text)."""
+    read as the number 300 is found as 300 or "300"."""
 
     _keys: dict = field(default_factory=dict)
     _values: dict = field(default_factory=dict)
 
     @staticmethod
     def _id(path) -> tuple:
-        return tuple(str(item) for item in path)
+        return tuple(key_text(item) for item in path)
 
     def key(self, path) -> Optional[tuple[int, int]]:
         return self._keys.get(self._id(path))
@@ -115,7 +119,8 @@ class _Problems:
             self.left_out += 1
             return
         line, column = (mark.line + 1, mark.column + 1) if mark is not None else (1, 1)
-        self.found.append(InputProblem(self.file, line, column, tuple(path), message))
+        path = tuple(item if isinstance(item, int) else key_text(item) for item in path)
+        self.found.append(InputProblem(self.file, line, column, path, message))
 
     def all(self) -> list[InputProblem]:
         if not self.left_out:
@@ -188,7 +193,7 @@ class _Builder:
             if key is _REFUSED:
                 self.build(value_node, (*path, key_node.value))
                 continue
-            key_path = (*path, key)
+            key_path = (*path, key_text(key))
             if key in first_line:
                 self.problems.add(
                     key_node.start_mark, key_path,
@@ -201,6 +206,9 @@ class _Builder:
         return built
 
     def scalar(self, node, path):
+        if _HALF_CHARACTER.search(node.value):
+            self.problems.add(node.start_mark, path, _HALF)
+            return _REFUSED
         if node.style is not None:
             return node.value
         tag = node.tag
@@ -215,7 +223,12 @@ class _Builder:
             return _REFUSED
         if tag == _YAML + "int":
             if _WHOLE_NUMBER.fullmatch(node.value):
-                return int(node.value)
+                try:
+                    return int(node.value)
+                except ValueError:
+                    # Past Python's limit on digits; no setting comes near it.
+                    self.problems.add(node.start_mark, path, _TOO_LONG)
+                    return _REFUSED
             self._refuse(node, path, _PLAIN_DIGITS)
             return _REFUSED
         if tag == _YAML + "float":
@@ -242,13 +255,35 @@ def _syntax_message(error: yaml.YAMLError) -> str:
     return _SYNTAX_OTHER
 
 
+class _At:
+    """A place in the text, counted from 0 as PyYAML's marks are."""
+
+    def __init__(self, text: str, position: int):
+        self.line = text.count("\n", 0, position)
+        self.column = position - (text.rfind("\n", 0, position) + 1)
+
+
 def read_yaml(text: str, file: str, values_safe: bool = False) -> ReadResult:
     """Read one YAML document. ``values_safe`` lets a message quote the value
-    it is about; leave it False for a file that can hold a secret."""
+    it is about; leave it False for a file that can hold a secret.
+
+    Every file gives problems, never an exception: a control character, a
+    number past Python's digit limit or lists nested past its recursion limit
+    once stopped start-up with a traceback and the settings command part way."""
     problems = _Problems(file)
-    composer = _Composer(text, problems)
+    try:
+        composer = _Composer(text, problems)
+    except yaml.reader.ReaderError as error:
+        problems.add(_At(text, error.position), (), _CONTROL)
+        return ReadResult(None, Locations(), problems.all())
     try:
         node = composer.get_single_node()
+    except yaml.reader.ReaderError as error:
+        problems.add(_At(text, error.position), (), _CONTROL)
+        return ReadResult(None, Locations(), problems.all())
+    except RecursionError:
+        problems.add(None, (), _TOO_DEEP)
+        return ReadResult(None, Locations(), problems.all())
     except yaml.composer.ComposerError as error:
         said = f"{getattr(error, 'context', '')} {getattr(error, 'problem', '')}"
         if "single document" in said:
@@ -263,6 +298,10 @@ def read_yaml(text: str, file: str, values_safe: bool = False) -> ReadResult:
         composer.dispose()
 
     builder = _Builder(problems, values_safe)
-    data = builder.build(node) if node is not None else None
+    try:
+        data = builder.build(node) if node is not None else None
+    except RecursionError:
+        problems.add(None, (), _TOO_DEEP)
+        return ReadResult(None, Locations(), problems.all())
     found = problems.all()
     return ReadResult(None if found else data, builder.locations, found)

@@ -133,6 +133,12 @@ and adds:
 - **What is kept.** The decoded value goes on through the pipeline. The text of
   each scalar as written is kept apart from it, for messages only (see
   "Sensitive inputs").
+- **Half a character is refused.** A quoted `"\ud800"` reads as half of a
+  character, text MongoDB cannot store; in a key it once stopped a sync after
+  the reference data was written (review of the build, below).
+- **Every file gives problems, never an exception.** A control character (a form
+  feed, NUL), a number past Python's digit limit and lists nested past its
+  recursion limit each become a problem with its place.
 
 **CSV and TSV** readers (built in the kit and paste steps) return rows with their
 line numbers, and refuse a column name given twice before any row is read.
@@ -171,7 +177,10 @@ validate_default=True)`:
 - **A guard test** imports every model in `input_rules` and fails when one does
   not derive from `StrictRules`, loosens its config, loosens a single field
   (`Field(strict=False)` or any other per-field override of the strict
-  settings), has a `float` field, or uses a `Literal` with a non-text value.
+  settings), has a `float` field, uses a `Literal` with a non-text value, takes
+  `Any`, or has a validator that runs before the type check
+  (`BeforeValidator`, `PlainValidator`, `WrapValidator`, or a field or model
+  validator in any mode but `after`: `BeforeValidator(int)` reads `"012"` as 12).
 
 **Rules relating several keys** (the colour fields depend on `chemistry_type` and
 `color_balance_enabled`; a reagent kit limit names a kit some flow cell offers)
@@ -206,6 +215,9 @@ YAML syntax error; two unfinished lists on one line differ only by column).
   suffix); the value's line for a bad value; the item's line for a list item; for
   a missing key, the line of the mapping it is missing from (line 1 for the top
   level); for a cross-key check, the path it names. A test covers each kind.
+- **Paths.** A map key is always text in a problem's path and a list index is a
+  number, shown "item 1": a map key read as a number once read as a list item
+  (`default_cycles > item 301` for the key `300`).
 - **Messages** say the key path as written (`flowcells > 10B > lane`) and a plain
   sentence per error type: an unknown key "is not a key this file can have
   (check the spelling)"; a missing key "is required"; text given a number "must
@@ -266,6 +278,13 @@ whose `lanes` is not a number), so:
 - limits shared with the models (256 characters, the plain-name rule) are
   imported from one place.
 
+Open after step 1: two rules exist in both layers, the kit limit (the model's
+`checked_kit_cycle_limits`; the rulebook's `KIT_CYCLES` and its cross-check) and
+a workflow named twice ignoring case (the model's `_i5_workflows_problems`;
+`_instrument_findings`). The model needs them for stored records and the
+rulebook for a file's lines; moving each into one pure function both call is
+left for the profiles step.
+
 **Rules that need more than one file or the stored data stay outside the
 rulebooks:** two instrument files for one instrument (`_duplicate_instruments`),
 a profile version given twice (`_refuse_repeated_app_versions`), tests differing
@@ -280,7 +299,10 @@ stay in the sync.
 - **Configuration sync.** The sync returns its result with its problems, so each
   caller (a sync started by hand, or by the scheduler) has exactly that sync's
   problems. Each refused file gets its list. The sync status keeps today's
-  message and adds a `problems` list (`{file, line, path, message, level}`);
+  message, which names each refused file and its first problem only, and adds
+  a `problems` list (`{file, line, path, message, level}`) that has them all; a
+  message holding every problem was once cut before the refusals after it and
+  "Mark Ready stays paused", which the scheduler reads;
   Admin > Configuration sync shows it as a table. As today, a refused file keeps
   the stored records it would have replaced. Warnings are shown there too, not
   only logged.
@@ -291,7 +313,9 @@ stay in the sync.
   **everything** it holds, today's message included: the sync status keeps at
   most 1 MiB of problems, an audit row at most 32 KiB of details in all. What does
   not fit is left out from the end, and both always keep the outcome, the number
-  of problems and the number left out. The page says how many are not shown and
+  of problems and the number left out. An audit row's report is measured as
+  `audit()` keeps it, each web address in it already made `[address removed]`,
+  which can make a text three times longer. The page says how many are not shown and
   that the settings command lists them (up to the per-file cap).
 - **The audit trail.** Every sync's audit row carries its problems, within that
   budget, whether the sync was started by hand or by the scheduler (today a
@@ -308,7 +332,12 @@ stay in the sync.
 
 - checks a settings folder laid out as the sync reads it (the shipped `config/`
   is the example; options name other paths), with the same rulebooks and the same
-  database-free cross-file checks the sync uses;
+  database-free cross-file checks the sync uses, and reads the files the sync
+  reads: every name ending `.yaml` or `.yml` in the folder and those below it,
+  never a link (GitHub lists one as a link and the sync skips it);
+- fails when the instrument folder is not there or holds no instrument file,
+  rather than pass having checked nothing; `--instruments` names a folder inside
+  the settings folder;
 - prints one problem per line, `file:line:column: path: message` (the column
   where it is known), warnings marked, every problem it collected (up to the
   per-file cap, then the count of the rest);
@@ -527,3 +556,23 @@ the column of a syntax error (P2); the one named exception to "facts are written
 out" (P3). It also confirmed that all 27 shipped YAML files read the same under
 the new spelling rules, that the eight added `has_dragen_onboard: false` values
 change nothing, and the cycle ranges.
+
+A fresh review of the built step 1 (`95af352`) gave one P1, four P2 and nine
+P3, all confirmed: a problem record MongoDB could not store (a key past 64 bits
+or half a character) stopped the sync after it had written the reference data,
+with no audit row and, when scheduled, no finish time (P1); a map key read as a
+number shown as a list item (P2); a control character, a very long number or
+deep nesting escaping as an exception (P2); an empty colour list passing with
+colour balance on, which switched the dark-cycle check off (P2); the settings
+command passing having checked nothing, and reading files the sync does not
+(P2); past the cap, warnings refusing a file; the audit report growing past its
+row when addresses are cleaned; the sync message holding every problem; the page
+hiding the count when no problem fitted; four loopholes in the guard test; the
+converter and the `index_cycle_options` upper bound untested; the Illumina names
+in the tests taken from `src`; stale text (P3). All are fixed with a test each,
+except two left as they are: the two rules kept in both layers (see "The domain
+models stay a backstop"), and the `samplesheet_versions` default, which the
+rulebook states and the model applies (the converters pass only the keys a file
+writes; `test_samplesheet_versions_is_the_one_named_exception` holds the result
+to `[2]`). Break row N27 also showed the size check inside `bounded_report`'s
+loop untested; a test now counts how often the whole report is measured.

@@ -17,7 +17,7 @@ from ..utils.yaml_safety import safe_load_strict
 from ..data.instruments import clear_synced_instruments_cache
 from ..models.application_profile import ApplicationProfile
 from ..models.index import IndexKit
-from ..models.instrument_definition import InstrumentDefinition, InstrumentRecordError
+from ..models.instrument_definition import InstrumentDefinition
 from ..models.test_profile import TestProfile
 from ..repositories.application_profile_repo import ApplicationProfileRepository
 from ..repositories.index_kit_repo import IndexKitRepository
@@ -863,7 +863,14 @@ class GitHubSyncService:
                     self.input_problems.extend(result.problems)
                     errors = [p for p in result.problems if p.level == "error"]
                     if errors:
-                        raise InstrumentFileRefused("; ".join(problem_line(p) for p in errors))
+                        for error in errors:
+                            logger.error(f"Instrument file {problem_line(error)}")
+                        # The first problem only: all of them once filled the
+                        # message, and the cut to fit the store dropped the
+                        # refusals after them and STAYS_PAUSED.
+                        more = (" (and more problems in this file: see the list of problems)"
+                                if len(errors) > 1 else "")
+                        raise InstrumentFileRefused(problem_line(errors[0]) + more)
                     for warning in result.problems:
                         logger.warning(f"Instrument file {problem_line(warning)}")
                     parsed = definitions_from(result.value, item_name)

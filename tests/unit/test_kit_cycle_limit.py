@@ -128,7 +128,7 @@ class TestInstrumentFileValidation:
     def test_label_no_flowcell_offers_is_a_warning(self):
         result = _checked(_instrument_yaml(reagent_kit_max_cycles={30: 60}))
         assert result.ok
-        assert any(p.level == "warning" and p.path == ("reagent_kit_max_cycles", 30)
+        assert any(p.level == "warning" and p.path == ("reagent_kit_max_cycles", "30")
                    for p in result.problems)
 
 

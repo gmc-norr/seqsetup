@@ -254,6 +254,18 @@ class TestTheColourFields:
             result = _synced(_without(ONE, key))
             assert ((key,), "is required when colour balance is on (color_balance_enabled: true)") in _errors(result), key
 
+    @pytest.mark.parametrize("key, written", [
+        ("dye_channels", '["Blue", "Green"]'), ("channel1_bases", '["A", "C"]'), ("channel2_bases", '["C", "T"]'),
+    ])
+    def test_an_empty_list_is_not_the_fact_with_colour_balance_on(self, key, written):
+        """An empty list once switched the dark-cycle check off with no word."""
+        assert f"{key}: {written}" in ONE
+
+        result = _synced(ONE.replace(f"{key}: {written}", f"{key}: []"))
+
+        assert _errors(result) == [
+            ((key,), "must not be empty when colour balance is on (color_balance_enabled: true)")]
+
     def test_none_is_needed_with_colour_balance_off(self):
         text = ONE.replace("color_balance_enabled: true", "color_balance_enabled: false")
         for key in COLOUR_KEYS:
@@ -289,14 +301,14 @@ class TestReagentKitMaxCycles:
     def test_a_limit_below_its_kit(self):
         error = _only(_synced(ONE + "reagent_kit_max_cycles:\n  300: 299\n"))
 
-        assert error.path == ("reagent_kit_max_cycles", 300)
+        assert error.path == ("reagent_kit_max_cycles", "300")
         assert error.line == len(ONE.splitlines()) + 2
 
     def test_a_kit_no_flow_cell_offers_is_a_warning(self):
         result = _synced(ONE + "reagent_kit_max_cycles:\n  600: 620\n")
 
         assert _errors(result) == []
-        assert [p.path for p in result.problems] == [("reagent_kit_max_cycles", 600)]
+        assert [p.path for p in result.problems] == [("reagent_kit_max_cycles", "600")]
 
 
 class TestDocumentShapes:
@@ -378,7 +390,9 @@ class TestTheLocalFile:
 
         assert _errors(self._local(text)) == []
 
-    @pytest.mark.parametrize("options, says", [("[]", "at least 1"), ("[0, 8]", "at least 1"), ("[8, 8]", "twice")])
+    @pytest.mark.parametrize("options, says", [
+        ("[]", "at least 1"), ("[0, 8]", "at least 1"), ("[8, 601]", "at most 600"), ("[8, 8]", "twice"),
+    ])
     def test_index_cycle_options(self, options, says):
         text = _without(LOCAL.read_text(), "index_cycle_options") + f"index_cycle_options: {options}\n"
 
@@ -430,6 +444,23 @@ class TestValuesSurviveConversionAndStorage:
         assert stored.flowcells[0].reads == 2**63 - 1
         assert stored.flowcells[0].reagent_kits == [1, 2000]
         assert stored.reagent_kit_max_cycles == {2000: 2400, 1: 1}
+
+
+class TestTheSyncStoresWhatTheFileSays:
+    """What the sync builds from a checked file is what the model builds from
+    the file read plainly: a key the file leaves out is not filled in by the
+    rulebook (a 4-color file's colour fields stay unset)."""
+
+    @staticmethod
+    def _comparable(instrument):
+        return {k: v for k, v in instrument.to_dict().items() if k not in ("id", "synced_at")}
+
+    @pytest.mark.parametrize("path", SYNCED, ids=lambda p: p.name)
+    def test_a_shipped_file(self, path):
+        (checked,) = definitions_from(_synced(path.read_text(), path.name).value, path.name)
+        plain = InstrumentDefinition.from_yaml(yaml.safe_load(path.read_text()), path.name)
+
+        assert self._comparable(checked) == self._comparable(plain)
 
 
 class TestTheEightLocalEntriesThatGainedHasDragenOnboard:

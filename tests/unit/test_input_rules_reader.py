@@ -249,3 +249,69 @@ class TestAProblemCapPerFile:
 
         assert len(result.problems) == MAX_PROBLEMS_PER_FILE + 1
         assert "500 more" in result.problems[-1].message
+
+
+class TestAPathNamesEveryMapKeyAsText:
+    """A number in a problem's path is only ever a list item, shown as
+    "item 1": a map key read as a number is named as written
+    (default_cycles > 300, not "item 301")."""
+
+    def test_a_number_key_is_text_and_a_list_item_a_number(self):
+        (problem,) = _read("limits:\n  300: [0x10]\n").problems
+
+        assert problem.path == ("limits", "300", 0)
+
+    def test_true_false_and_null_keys_are_named_as_written(self):
+        result = _read("true: 0x10\nfalse: 0x10\nnull: 0x10\n")
+
+        assert [p.path for p in result.problems] == [("true",), ("false",), ("null",)]
+
+    def test_a_key_too_large_to_store_is_still_named(self):
+        (problem,) = _read("99999999999999999999: 0x10\n").problems
+
+        assert problem.path == ("99999999999999999999",)
+
+
+class TestHalfACharacterIsRefused:
+    """A quoted "\\ud800" reads as half of a character: text MongoDB cannot
+    store. Such a key once stopped a sync after it had written the reference
+    data, leaving no audit row."""
+
+    def test_in_a_value(self):
+        (problem,) = _read('a: "\\ud800"\n').problems
+
+        assert problem.path == ("a",)
+        assert "character" in problem.message
+
+    @pytest.mark.parametrize("values_safe", [False, True])
+    def test_in_a_key_and_the_problem_can_be_stored(self, values_safe):
+        (problem,) = _read('"x\\ud800": 1\n', values_safe=values_safe).problems
+
+        assert "character" in problem.message
+        problem.path[0].encode("utf-8")
+        problem.message.encode("utf-8")
+
+
+class TestAFileTheParserCannotTakeIn:
+    """Each of these once escaped as Python's own error: a traceback at
+    start-up, a settings command that stopped at that file, a sync problem
+    with no line and no place in the list of problems."""
+
+    @pytest.mark.parametrize("character", ["\x0c", "\x00", "\x9f"])
+    def test_a_control_character(self, character):
+        (problem,) = _read(f"a: 1\nb: x{character}y\n").problems
+
+        assert problem.line == 2
+        assert "character" in problem.message
+        assert character not in problem.message
+
+    def test_a_number_too_long_to_read(self):
+        (problem,) = _read("a: " + "9" * 5000 + "\n", values_safe=True).problems
+
+        assert problem.path == ("a",)
+        assert "9" * 50 not in problem.message
+
+    def test_a_file_nested_too_deep(self):
+        (problem,) = _read("a: " + "[" * 3000 + "]" * 3000 + "\n").problems
+
+        assert "deep" in problem.message

@@ -14,8 +14,9 @@ spelled, anchors or the rules relating several keys. This command is.
 
 import argparse
 import json
+import os
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .instruments import (
     InstrumentRules,
@@ -78,6 +79,19 @@ def _read(path: Path, shown: str, tally: _Tally):
         return None
 
 
+def _instrument_files(folder: Path) -> list[Path]:
+    """The files the sync reads: every name ending .yaml or .yml, in every
+    folder below, but never a link -- GitHub lists one as a link and the sync
+    skips it, so a file read through one would be checked here only."""
+    found = []
+    for root, _folders, names in os.walk(folder):
+        for name in names:
+            path = Path(root) / name
+            if name.endswith((".yaml", ".yml")) and not path.is_symlink() and path.is_file():
+                found.append(path)
+    return sorted(found)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="check-settings",
@@ -101,11 +115,22 @@ def main(argv=None) -> int:
     if not args.folder.is_dir():
         print(f"{args.folder} is not a folder", file=sys.stderr)
         return 2
+    inside = PurePosixPath(args.instruments)
+    if inside.is_absolute() or ".." in inside.parts:
+        print(f"--instruments names a folder inside {args.folder}, as the sync reads it", file=sys.stderr)
+        return 2
 
     tally = _Tally()
     definitions = []
     instruments = args.folder / args.instruments
-    paths = sorted(p for p in instruments.rglob("*") if p.suffix in (".yaml", ".yml") and p.is_file())
+    shown_folder = f"{inside.as_posix().rstrip('/')}/"
+    paths = _instrument_files(instruments) if instruments.is_dir() else []
+    if not instruments.is_dir():
+        print(f"{shown_folder}: is not there (name the folder with --instruments)")
+        tally.errors += 1
+    elif not paths:
+        print(f"{shown_folder}: holds no instrument file (.yaml or .yml)")
+        tally.errors += 1
     for path in paths:
         shown = path.relative_to(args.folder).as_posix()
         tally.files += 1
@@ -117,7 +142,7 @@ def main(argv=None) -> int:
         if result.ok:
             definitions += definitions_from(result.value, path.name)
     for problem in duplicate_instruments(definitions):
-        print(f"{args.instruments.rstrip('/')}/: {problem}")
+        print(f"{shown_folder}: {problem}")
         tally.errors += 1
 
     if args.local_instruments is not None:

@@ -13,7 +13,7 @@ from typing import Any, Callable, Iterable, Optional
 
 from pydantic import BaseModel, ValidationError
 
-from .problems import InputProblem
+from .problems import InputProblem, key_text
 from .reader import MAX_PROBLEMS_PER_FILE, Locations, read_yaml
 
 FURTHER_CHECKS = "Further checks run once these problems are fixed."
@@ -93,19 +93,20 @@ def check_data(
     try:
         value = rulebook.model_validate(data)
     except ValidationError as error:
-        problems = [_from_pydantic(item, locations, file, retired_keys or {})
+        problems = [_from_pydantic(item, data, locations, file, retired_keys or {})
                     for item in error.errors(include_url=False)]
         return _result(None, problems, FURTHER_CHECKS, rulebook, sensitive)
 
     problems = [
-        _from_finding(finding, locations, file, "error")
+        _from_finding(finding, data, locations, file, "error")
         for check in cross_checks
         for finding in check(value)
     ]
     if problems:
         return _result(None, problems, "", rulebook, sensitive)
     if warnings is not None:
-        problems = [_from_finding(finding, locations, file, "warning") for finding in warnings(value)]
+        problems = [_from_finding(finding, data, locations, file, "warning")
+                    for finding in warnings(value)]
     return _result(value, problems, "", rulebook, sensitive)
 
 
@@ -114,10 +115,13 @@ def _result(value, problems, note, rulebook, sensitive) -> CheckResult:
         known = _field_names(rulebook)
         problems = [_masked(problem, known) for problem in problems]
     if len(problems) > MAX_PROBLEMS_PER_FILE:
-        left_out = len(problems) - MAX_PROBLEMS_PER_FILE
+        rest = problems[MAX_PROBLEMS_PER_FILE:]
         last = problems[MAX_PROBLEMS_PER_FILE - 1]
+        # The line for the rest is an error only when one of them is: past
+        # the cap, warnings alone once refused a good file.
+        level = "error" if any(problem.level == "error" for problem in rest) else "warning"
         problems = problems[:MAX_PROBLEMS_PER_FILE] + [InputProblem(
-            last.file, last.line, last.column, (), f"and {left_out} more problems not listed")]
+            last.file, last.line, last.column, (), f"and {len(rest)} more problems not listed", level)]
     return CheckResult(value, problems, note if problems else "")
 
 
@@ -160,12 +164,44 @@ def _place(locations: Locations, path: tuple, prefer_key: bool) -> tuple[int, in
     return (1, 1)
 
 
-def _from_finding(finding: Finding, locations: Locations, file: str, level: str) -> InputProblem:
-    line, column = _place(locations, tuple(finding.path), prefer_key=True)
-    return InputProblem(file, line, column, tuple(finding.path), finding.message, level)
+def _path_in(data, path) -> tuple:
+    """``path`` as a problem names it: a list index stays a number and every
+    map key becomes text, so a number in a path is only ever a list item.
+    Pydantic and the cross-key checks give a map key read as a number as a
+    number; the data tells the two apart."""
+    named = []
+    at = data
+    for item in path:
+        if isinstance(at, list) and isinstance(item, int) and not isinstance(item, bool):
+            named.append(item)
+            at = at[item] if 0 <= item < len(at) else None
+        else:
+            named.append(key_text(item))
+            at = _member(at, item)
+    return tuple(named)
 
 
-def _from_pydantic(item: dict, locations: Locations, file: str, retired_keys: dict) -> InputProblem:
+def _member(at, key):
+    if not isinstance(at, dict):
+        return None
+    try:
+        if key in at:
+            return at[key]
+    except TypeError:
+        return None
+    # Pydantic names a whole-number key past 64 bits as text.
+    if isinstance(key, str) and key.lstrip("-").isdigit():
+        return at.get(int(key))
+    return None
+
+
+def _from_finding(finding: Finding, data, locations: Locations, file: str, level: str) -> InputProblem:
+    path = _path_in(data, finding.path)
+    line, column = _place(locations, path, prefer_key=True)
+    return InputProblem(file, line, column, path, finding.message, level)
+
+
+def _from_pydantic(item: dict, data, locations: Locations, file: str, retired_keys: dict) -> InputProblem:
     loc = tuple(item["loc"])
     kind = item["type"]
     if loc and loc[-1] == "[key]":
@@ -183,7 +219,7 @@ def _from_pydantic(item: dict, locations: Locations, file: str, retired_keys: di
     message = _message(item)
     if kind == "extra_forbidden" and loc and loc[-1] in retired_keys:
         message = retired_keys[loc[-1]]
-    return InputProblem(file, line, column, path, message)
+    return InputProblem(file, line, column, _path_in(data, path), message)
 
 
 _NO_VALUE = object()

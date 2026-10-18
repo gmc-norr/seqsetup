@@ -10,6 +10,7 @@ alone.
 from pathlib import Path
 
 import bson
+import pytest
 
 from seqsetup.models.audit_event import MAX_DETAILS_BYTES
 from seqsetup.services.scheduler import ProfileSyncScheduler
@@ -69,6 +70,25 @@ class TestTheSyncAnswersWithItsProblems:
         assert result.problems == []
 
 
+class TestTheMessageKeepsEveryRefusal:
+    """A refused instrument file once put every one of its problems (up to
+    1,000) in the sync's message, so the cut to fit the store dropped what
+    came after: the kit and profile refusals, and "Mark Ready stays paused",
+    which the scheduler reads to wait its interval. The message names the
+    file and its first problem; the list of problems has them all."""
+
+    def test_a_file_with_many_problems_gives_one_short_line(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        junk = "".join(f"k{i}: 1\n" for i in range(300))
+
+        ok, message, _count = _service(ctx, monkeypatch, {"nx.yaml": GOOD + junk}).sync()
+
+        assert not ok
+        assert message.count("instruments/nx.yaml:") == 1
+        assert "and more problems in this file: see the list of problems" in message
+        assert "k0: is not a key" in message and "k1: is not a key" not in message
+
+
 class TestTheSyncPage:
 
     def test_lists_each_problem_with_its_file_line_and_place(self, logged_in_client, fresh_app, monkeypatch):
@@ -82,6 +102,18 @@ class TestTheSyncPage:
         assert "instruments/nx.yaml" in table
         assert f">{TYPO_LINE}<" in table
         assert "lane" in table and "is not a key this file can have" in table
+
+    def test_says_how_many_are_not_shown_when_none_fit(self, logged_in_client, fresh_app):
+        _app, ctx, _db = fresh_app
+        config = ctx.profile_sync_config_repo.get()
+        config.last_sync_status = "error"
+        config.last_sync_problems = []
+        config.last_sync_problem_count = config.last_sync_problems_left_out = 7
+        ctx.profile_sync_config_repo.save(config)
+
+        page = logged_in_client.get("/admin/config-sync").text
+
+        assert "7 problems are not shown here" in page
 
     def test_shows_a_warning_from_a_good_sync(self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -120,9 +152,43 @@ class TestEverySyncsAuditRow:
         assert row.details["problems"][0]["line"] == TYPO_LINE
 
 
+class TestAKeyNoStoreCanHold:
+    """A key past MongoDB's 64 bits, or half a character, once stopped the
+    sync after it had written the reference data: a sync started by hand
+    left no audit row, and a scheduled one no finish time, so the scheduler
+    synced again on every check."""
+
+    JUNK = [
+        "reagent_kit_max_cycles: {99999999999999999999: 0x10}\n",
+        'reagent_kit_max_cycles: {"\\ud800": 1, "\\ud800": 2}\n',
+    ]
+
+    @pytest.mark.parametrize("junk", JUNK)
+    def test_a_sync_started_by_hand(self, logged_in_client, fresh_app, monkeypatch, junk):
+        _app, ctx, _db = fresh_app
+        _service(ctx, monkeypatch, {"nx.yaml": GOOD + junk})
+
+        logged_in_client.post("/admin/config-sync/sync", headers=ORIGIN)
+
+        config = ctx.profile_sync_config_repo.get()
+        assert config.last_sync_status == "error"
+        assert config.last_sync_problem_count >= 1
+        (row,) = _audit_rows(ctx, "config_sync.triggered")
+        assert row.details["problem_count"] >= 1
+
+    @pytest.mark.parametrize("junk", JUNK)
+    def test_a_sync_started_by_the_scheduler(self, fresh_app, monkeypatch, junk):
+        _app, ctx, _db = fresh_app
+        _scheduled(ctx, _service(ctx, monkeypatch, {"nx.yaml": GOOD + junk}))
+
+        assert ctx.profile_sync_config_repo.get().last_sync_at is not None
+        (row,) = _audit_rows(ctx, "config_sync.scheduled.completed")
+        assert row.details["problem_count"] >= 1
+
+
 class TestALongReportStillFits:
-    """Five files of 1,500 long unknown keys each: about 1.3 MB of message and
-    7,500 problems, cut at 1,000 per file."""
+    """Five files of 1,500 long unknown keys each: 7,500 problems, cut at
+    1,000 per file (and once about 1.3 MB of message)."""
 
     @staticmethod
     def _files():
@@ -139,7 +205,23 @@ class TestALongReportStillFits:
         assert config.last_sync_problems_left_out == 5 * 1001 - len(config.last_sync_problems)
         stored = {"m": config.last_sync_message, "p": config.last_sync_problems}
         assert len(bson.encode(stored)) <= 1024 * 1024
-        assert config.last_sync_message.endswith("[cut: the list of problems has the rest]")
+        assert all(config.last_sync_message.count(f"instruments/f{n}.yaml:") == 1 for n in range(5))
+        assert "[cut:" not in config.last_sync_message
+
+    def test_an_audit_row_keeps_its_details_after_addresses_are_cleaned(
+            self, logged_in_client, fresh_app, monkeypatch):
+        """audit() writes each web address in a text as "[address removed]",
+        so 2,000 keys of "x://[ x://[ ..." once grew a report cut to its
+        budget past the row's limit, and the row kept no details at all."""
+        _app, ctx, _db = fresh_app
+        junk = "".join(f"{'x://[ ' * 30}{i}: 1\n" for i in range(2000))
+        _service(ctx, monkeypatch, {"nx.yaml": GOOD + junk})
+
+        logged_in_client.post("/admin/config-sync/sync", headers=ORIGIN)
+
+        (row,) = _audit_rows(ctx, "config_sync.triggered")
+        assert "details_omitted" not in row.details
+        assert row.details["problem_count"] == 1001
 
     def test_both_audit_rows_keep_their_details(self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
