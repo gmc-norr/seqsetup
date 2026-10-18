@@ -30,6 +30,27 @@ def _run(ctx, run_id, status):
     return run
 
 
+def _status_bar(page: str) -> str:
+    """Just the status bar, by counting ``<div``/``</div>`` from its own tag to
+    the one that closes it. Asserting on the whole page let the note added to
+    the sample section satisfy a test about the status bar (break row A2)."""
+    start = page.index('id="run-status-bar"')
+    start = page.rindex("<div", 0, start)
+    depth, i = 0, start
+    while True:
+        opened = page.find("<div", i)
+        closed = page.find("</div>", i)
+        assert closed != -1, "the status bar is never closed"
+        if opened != -1 and opened < closed:
+            depth += 1
+            i = opened + 4
+            continue
+        depth -= 1
+        i = closed + 6
+        if depth == 0:
+            return page[start:i]
+
+
 def _form_tag(page: str, action: str) -> str:
     """The opening ``<form>`` tag of the form that posts to ``action``.
 
@@ -62,10 +83,10 @@ class TestAnArchivedRunOffersNoDeadButton:
         _app, ctx, _db = fresh_app
         _run(ctx, "arc", RunStatus.ARCHIVED)
 
-        page = logged_in_client.get("/runs/arc").text
+        bar = _status_bar(logged_in_client.get("/runs/arc").text)
 
-        assert ">Archived<" in page
-        assert "cannot be changed" in page
+        assert ">Archived<" in bar
+        assert "cannot be changed or returned to Draft" in bar, bar
 
     def test_the_route_still_refuses_archived_to_draft(self, logged_in_client, fresh_app):
         _app, ctx, db = fresh_app
