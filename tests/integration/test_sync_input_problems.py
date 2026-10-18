@@ -13,6 +13,7 @@ import bson
 import pytest
 
 from seqsetup.models.audit_event import MAX_DETAILS_BYTES
+from seqsetup.services.github_sync import GitHubSyncError
 from seqsetup.services.scheduler import ProfileSyncScheduler
 
 from .test_group_a4 import _fake_github, _test_yaml
@@ -224,6 +225,25 @@ class TestALongReportStillFits:
             (row,) = _audit_rows(ctx, prefix)
             assert "details_omitted" not in row.details, prefix
             assert row.details["problem_count"] == 1001
+
+    def test_a_long_message_is_cut_where_it_is_stored(self, fresh_app, monkeypatch):
+        """A refused file now gives one line, but an error's own text can be
+        any length, and the status shares one MongoDB document with the
+        settings."""
+        _app, ctx, _db = fresh_app
+        service = _service(ctx, monkeypatch, {"nx.yaml": GOOD})
+
+        def fails(_url):
+            raise GitHubSyncError("word " * 60_000)
+
+        monkeypatch.setattr(service, "_parse_repo_url", fails)
+        ok, message, _count = service.sync()
+
+        assert not ok
+        stored = ctx.profile_sync_config_repo.get().last_sync_message
+        assert stored.endswith("[cut: the list of problems has the rest]")
+        assert len(stored.encode("utf-8")) <= 1024 * 1024 // 4
+        assert message == f"Sync failed: {stored}"
 
     def test_both_audit_rows_keep_their_details(self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
