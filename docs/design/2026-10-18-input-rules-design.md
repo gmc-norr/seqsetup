@@ -638,6 +638,19 @@ on `58510df` (probed with the old validator, 2026-10-18):
   specifier, both accepted today);
 - `SoftwareVersion` written as a whole number (`SoftwareVersion: 4`).
 
+The fresh review of `b21ea6f` found more, each accepted on `bd8c87f` (probed
+2026-10-18, the old sync's `safe_load_strict` and `from_yaml`):
+
+- a `SoftwareVersion` that is empty (`''`), true/false, or holds another
+  character (`4.3.6+abc`);
+- a list or map where text belongs (`TestType: [a]` was stored as a list,
+  `ApplicationType: {a: b}` as a map);
+- a whole number past 64 bits in `Settings` or `Data`, which passed the old
+  check and stopped the sync's save after it had deleted the stored profiles;
+- a `Settings`, `Data`, `DataFields` or `Translate` name over 256 characters;
+- a `Dragen` profile naming an Illumina application in another case
+  (`dragengermline`).
+
 The shipped profiles pass unchanged, and the settings command is run on the
 lab's settings repository before merging, as in step 1.
 
