@@ -54,15 +54,23 @@ def check_yaml(
     cross_checks: Iterable[CrossCheck] = (),
     warnings: Optional[CrossCheck] = None,
     sensitive: bool = False,
+    retired_keys: Optional[dict[str, str]] = None,
 ) -> CheckResult:
     """Check one YAML file against ``rulebook``. A ``sensitive`` file (one that
     can hold a secret) never has a value quoted, and a key name the rulebook
     does not define is kept only as "an unknown key"."""
     read = read_yaml(text, file, values_safe=not sensitive)
     if read.problems:
-        return _result(None, read.problems, FURTHER_CHECKS, rulebook, sensitive)
+        return reader_refusal(read.problems, rulebook, sensitive)
     return check_data(read.data, read.locations, file, rulebook,
-                      cross_checks=cross_checks, warnings=warnings, sensitive=sensitive)
+                      cross_checks=cross_checks, warnings=warnings, sensitive=sensitive,
+                      retired_keys=retired_keys)
+
+
+def reader_refusal(problems, rulebook: type[BaseModel], sensitive: bool = False) -> CheckResult:
+    """The answer for a file the reader refused: its problems, and the note
+    that the rulebook runs once they are fixed."""
+    return _result(None, problems, FURTHER_CHECKS, rulebook, sensitive)
 
 
 def check_data(
@@ -74,15 +82,19 @@ def check_data(
     cross_checks: Iterable[CrossCheck] = (),
     warnings: Optional[CrossCheck] = None,
     sensitive: bool = False,
+    retired_keys: Optional[dict[str, str]] = None,
 ) -> CheckResult:
-    """Check data already read (with its locations) against ``rulebook``."""
+    """Check data already read (with its locations) against ``rulebook``.
+    ``retired_keys`` gives a key that is no longer read its own message
+    instead of the unknown-key one."""
     if data is None:
         empty = InputProblem(file, 1, 1, (), "the file is empty")
         return _result(None, [empty], "", rulebook, sensitive)
     try:
         value = rulebook.model_validate(data)
     except ValidationError as error:
-        problems = [_from_pydantic(item, locations, file) for item in error.errors(include_url=False)]
+        problems = [_from_pydantic(item, locations, file, retired_keys or {})
+                    for item in error.errors(include_url=False)]
         return _result(None, problems, FURTHER_CHECKS, rulebook, sensitive)
 
     problems = [
@@ -153,7 +165,7 @@ def _from_finding(finding: Finding, locations: Locations, file: str, level: str)
     return InputProblem(file, line, column, tuple(finding.path), finding.message, level)
 
 
-def _from_pydantic(item: dict, locations: Locations, file: str) -> InputProblem:
+def _from_pydantic(item: dict, locations: Locations, file: str, retired_keys: dict) -> InputProblem:
     loc = tuple(item["loc"])
     kind = item["type"]
     if loc and loc[-1] == "[key]":
@@ -168,7 +180,10 @@ def _from_pydantic(item: dict, locations: Locations, file: str) -> InputProblem:
     else:
         path = loc
         line, column = _place(locations, path, prefer_key=False)
-    return InputProblem(file, line, column, path, _message(item))
+    message = _message(item)
+    if kind == "extra_forbidden" and loc and loc[-1] in retired_keys:
+        message = retired_keys[loc[-1]]
+    return InputProblem(file, line, column, path, message)
 
 
 _NO_VALUE = object()

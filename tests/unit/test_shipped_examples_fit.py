@@ -11,17 +11,17 @@ from pathlib import Path
 
 import yaml
 
+from seqsetup.input_rules.base import ILLUMINA_APPLICATION_NAMES
+
 CONFIG = Path(__file__).resolve().parents[2] / "config"
 PROFILES = sorted((CONFIG / "profiles" / "application_profiles").rglob("*.yaml"))
 INSTRUMENTS = sorted((CONFIG / "instruments").glob("*.yaml"))
 # The local fallback file holds every instrument under one ``instruments:`` key.
 LOCAL = CONFIG / "instruments.yaml"
 
-# The onboard applications as Illumina's NovaSeq X and NextSeq 1000/2000 sample
-# sheet version histories name their sections (help.connected.illumina.com,
-# 2026-10-17; docs/design/2026-10-17-rna-section-spelling-design.md).
-ILLUMINA_APPS = {"BCLConvert", "DragenGermline", "DragenSomatic", "DragenRna",
-                 "DragenEnrichment", "DragenMethylation"}
+# The onboard applications as Illumina names their sections (the list and its
+# source are in seqsetup.input_rules.base).
+ILLUMINA_APPS = set(ILLUMINA_APPLICATION_NAMES)
 
 
 def _offered() -> dict[str, dict[str, str]]:

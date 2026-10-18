@@ -53,6 +53,29 @@ Text256 = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 Label = Annotated[str, StringConstraints(max_length=4096)]
 
 
+# The onboard applications as Illumina's NovaSeq X and NextSeq 1000/2000
+# sample sheet version histories name their sections
+# (help.connected.illumina.com, 2026-10-17;
+# docs/design/2026-10-17-rna-section-spelling-design.md). An application
+# Illumina adds is added here, with its source, before a file may name it.
+ILLUMINA_APPLICATION_NAMES = (
+    "BCLConvert", "DragenGermline", "DragenSomatic", "DragenRna",
+    "DragenEnrichment", "DragenMethylation",
+)
+
+
+def _illumina_application(value: str) -> str:
+    if value not in ILLUMINA_APPLICATION_NAMES:
+        raise ValueError(
+            "is not one of Illumina's application names ("
+            + ", ".join(ILLUMINA_APPLICATION_NAMES) + ")"
+        )
+    return value
+
+
+IlluminaApplicationName = Annotated[str, AfterValidator(_illumina_application)]
+
+
 def whole(low: int, high: int = STORAGE_MAX_INT):
     """A whole number from ``low`` to ``high``. Every whole number in a
     rulebook has a range: the narrowest its consumers accept unchanged."""
