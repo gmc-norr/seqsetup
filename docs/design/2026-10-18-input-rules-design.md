@@ -122,6 +122,10 @@ and adds:
   - null: `~`, `null` and an empty value are refused where the rulebook does not
     allow a missing value, with "write a value";
   - a date or time (`2026-10-18`) is refused: "put it in quotes".
+- **No explicit tags.** A value written with a tag (`!!int "012"`, `!!bool "yes"`,
+  `!!float`, `!!str`, `!!binary`, `!!set`, `!!omap`, `!!pairs`, `!!timestamp`, a
+  bare `!` or a local `!tag`) is refused, so a tag cannot bring back a spelling
+  the rules above refuse. No shipped file uses one.
 - **Keys given twice are refused after they are read, not only as written.** Two
   keys that read as one value (`10:` and `012:`, `1:` and `1.0:`, `1:` and
   `true:`) are refused as one key given twice. Every repeat in the file is
@@ -147,7 +151,11 @@ validate_default=True)`:
   a model's fields only; a field that is a map (`dict[str, ...]`) accepts any
   key unless the rulebook says which keys it may have. Every such map in a
   rulebook states its key rule.
-- `strict=True`: no conversion between str, int, float and bool.
+- `strict=True`: no conversion between str, int and bool. Strict mode still
+  turns a whole number into a float (9007199254740993 becomes
+  9007199254740992.0), so **no rulebook has a `float` field**. When a later step
+  needs a decimal number, it is read as text and parsed as a `Decimal` with a
+  stated precision and range, never as a float.
 - `validate_default=True`: a default is checked like a written value.
 - **No `Literal` of numbers and no `set`.** Strict mode still matches `true` and
   `2.0` against `Literal[1, 2]`. A choice among numbers is a strict whole number
@@ -161,25 +169,38 @@ validate_default=True)`:
   `tests/unit/test_dragen_section_names.py:26`, moved into `src/` with a comment
   saying where the names come from and how to add one).
 - **A guard test** imports every model in `input_rules` and fails when one does
-  not derive from `StrictRules`, loosens its config, or uses a `Literal` with a
-  non-text value.
+  not derive from `StrictRules`, loosens its config, loosens a single field
+  (`Field(strict=False)` or any other per-field override of the strict
+  settings), has a `float` field, or uses a `Literal` with a non-text value.
 
 **Rules relating several keys** (the colour fields depend on `chemistry_type` and
 `color_balance_enabled`; a reagent kit limit names a kit some flow cell offers)
 are not Pydantic model validators, which stop at the first failure and give no
-key. Each is a separate check function that runs after field validation, on the
-fields it needs, and returns problems with an explicit path. Every such check
-runs, so independent problems are all reported.
+key. Each is a separate check function that returns problems with an explicit
+path. **They run only on a fully checked result:** when field validation fails,
+Pydantic gives back the errors and no partial result, so the cross-key checks
+do not run, and the file's answer says that further checks run once these
+problems are fixed. When field validation passes, every cross-key check runs, so
+independent cross-key problems are all reported together. No check ever reads
+the raw data.
 
 ### 3. Problems
 
-`InputProblem(file, line, path, message, level)`, with `level` `"error"` or
-`"warning"`.
+`InputProblem(file, line, column, path, message, level)`, with `level`
+`"error"` or `"warning"`, and `column` where the reader knows it (always for a
+YAML syntax error; two unfinished lists on one line differ only by column).
 
-- **Every independently discoverable problem is reported**: all reader problems
-  of a file; all field errors of a rulebook (Pydantic gives them together); every
-  cross-key check whose fields passed. A cross-key check whose fields failed does
-  not run (it would only repeat them).
+- **What is reported**: all reader problems of a file; else all field errors of
+  a rulebook (Pydantic gives them together); else all cross-key problems (see
+  "Rules relating several keys"). Each stage runs only when the one before
+  found nothing, and the answer says so.
+- **A cap per file.** A file stops collecting at 1000 problems and adds one
+  saying how many more it found, so a broken or hostile file cannot fill the
+  memory or the stores below.
+- **YAML syntax errors** get a fixed explanation per kind of parser error (a list
+  or map not closed, a tab, an unexpected character, ...), with the line and
+  column; unknown kinds get "the file is not valid YAML here". PyYAML's own text
+  is never shown (see "Sensitive inputs").
 - **Locations.** Pydantic's error location is mapped to the location map: a
   mapping key's line for an unknown key or a bad map key (Pydantic's `[key]`
   suffix); the value's line for a bad value; the item's line for a list item; for
@@ -204,21 +225,27 @@ The database settings file can hold a connection string with a password, and
   shown, logged or audited as is**;
 - a value may be quoted in a message only when the input type marks it safe to
   show; the database settings file marks none of its values safe;
+- **a key name can be a secret too**: Pydantic puts an unknown key's name in the
+  error location (a connection string written as a key comes back whole). In a
+  sensitive input, a path shows only the names the rulebook itself defines; any
+  other key or map key is shown as "an unknown key" with its line and column;
 - keeping the original text of a scalar (above) does not make it safe to show.
 
 ### 4. Values survive conversion
 
 - **Every number's range is the narrowest range its downstream code accepts
-  without changing it.** Where the app clamps a value (`RunCycles` clamps cycle
-  counts to 0-1000, `models/sequencing_run.py:245`; the cycle fields of a run are
-  refused above 600, `routes/runs.py:476`), the rulebook refuses what would be
-  clamped or refused later, so an accepted file never turns into another value
-  on the way. Step 1 lists every number in the instrument rulebook with the code
-  that consumes it and its range.
+  without changing it, storage included.** Where the app clamps a value
+  (`RunCycles` clamps cycle counts to 0-1000, `models/sequencing_run.py:245`; the
+  cycle fields of a run are refused above 600, `routes/runs.py:476`), the
+  rulebook refuses what would be clamped or refused later. MongoDB stores a
+  whole number in 64 bits, so no range goes past 2^63 - 1 (a larger `reads`
+  passes the model and then fails to save). Step 1 lists every number in the
+  instrument rulebook with the code that consumes it, its storage, and its range.
 - **A round-trip test** converts checked files, including values at each range's
-  edges, into the domain objects and compares every field with the checked
-  value. Normalisation that is meant (for example a sequence uppercased) is named
-  in the test.
+  edges, into the domain objects, **saves them as the app does (`to_dict`, BSON
+  encoding), reads them back (`from_dict`)**, and compares every field with the
+  checked value. Normalisation that is meant (for example a sequence uppercased)
+  is named in the test.
 - **The checked result is not changed after it is checked.** `frozen=True` is
   shallow: a list or map inside a checked model can still be changed. The
   converter copies what it needs into the domain objects, and no code keeps or
@@ -257,13 +284,20 @@ stay in the sync.
   Admin > Configuration sync shows it as a table. As today, a refused file keeps
   the stored records it would have replaced. Warnings are shown there too, not
   only logged.
-- **The audit trail.** Every sync's audit row carries its problems, whether the
-  sync was started by hand or by the scheduler (today a manual sync's row has the
-  outcome and count only: `routes/admin/config_sync.py:171-177`). An audit row's
-  details are dropped whole above 64 KiB (`models/audit_event.py`,
-  `MAX_DETAILS_BYTES`), so the problems put in a row are cut to fit well under
-  that size, counted in encoded bytes, and the row always keeps the outcome, the
-  number of problems and the number left out. The sync page shows them all.
+- **Bounded stores.** The sync status is one MongoDB document (16 MiB at most) and
+  an audit row's details are dropped whole above 64 KiB (`models/audit_event.py`,
+  `MAX_DETAILS_BYTES`); a long enough report fills either (100,000 unknown keys
+  come to about 17 MB). So each store gets a budget in encoded bytes for
+  **everything** it holds, today's message included: the sync status keeps at
+  most 1 MiB of problems, an audit row at most 32 KiB of details in all. What does
+  not fit is left out from the end, and both always keep the outcome, the number
+  of problems and the number left out. The page says how many are not shown and
+  that the settings command lists them (up to the per-file cap).
+- **The audit trail.** Every sync's audit row carries its problems, within that
+  budget, whether the sync was started by hand or by the scheduler (today a
+  manual sync's row has the outcome and count only:
+  `routes/admin/config_sync.py:171-177`; a scheduled sync's row carries the whole
+  message, which alone can pass 64 KiB and lose the row's details).
 - **Start-up.** A local file with an error stops start-up with every problem and
   its line (`InstrumentConfigError`, today naming the field but not the line).
 - **The settings command** (below).
@@ -275,7 +309,9 @@ stay in the sync.
 - checks a settings folder laid out as the sync reads it (the shipped `config/`
   is the example; options name other paths), with the same rulebooks and the same
   database-free cross-file checks the sync uses;
-- prints one problem per line, `file:line: path: message`, warnings marked;
+- prints one problem per line, `file:line:column: path: message` (the column
+  where it is known), warnings marked, every problem it collected (up to the
+  per-file cap, then the count of the rest);
 - exits 1 when there is an error, 0 otherwise;
 - needs no database, no network and no running app, and ships in the Docker
   image, so the lab's settings repository can run it on every change;
@@ -310,8 +346,12 @@ locations kept.
 
 ### The instrument rulebook
 
-**Rule: a fact that changes a sheet or a check must be written out. Any other
-default is documented in the admin guide and tested.**
+**Rule: a fact that changes a sheet or a check must be written out.** There is
+one named exception: `samplesheet_versions`, which may be left out and then means
+`[2]` (the admin guide's documented default; 9 of the 11 shipped synced files
+leave it out). A new exception must be named here, documented in the admin guide
+and tested. Labels (`sbs_chemistry`, `error_tendencies`, a flow cell's `reads` and
+`description`) may be left out.
 
 | Key | Required | Rule |
 |---|---|---|
@@ -331,7 +371,7 @@ default is documented in the admin guide and tested.**
 | `flowcells` | yes, at least one | map of a name to `{lanes, reagent_kits, reads, description}` |
 | `flowcells > * > lanes` | yes (today defaults to 1) | whole number, range set by its consumers (see below) |
 | `flowcells > * > reagent_kits` | yes | non-empty list of distinct whole numbers, range set by its consumers |
-| `flowcells > * > reads` | no | whole number, 0 or more |
+| `flowcells > * > reads` | no | whole number, 0 to 2^63 - 1 (storage) |
 | `flowcells > * > description` | no | label |
 | `reagent_kit_max_cycles` | no | today's rules (`instrument_validator.py:234-268`): a map of a kit label (a whole number) to the most cycles allowed (a whole number, at least the label); a label no flow cell offers is a warning |
 | `i5_read_orientation`, `samplesheet_v2_i5_orientation` at the top level (`OLD_I5_KEYS`) | refused | with today's message (`_refuse_bad_i5_facts`), not the generic unknown-key one |
@@ -341,10 +381,11 @@ Every other key is refused.
 **The local file's cycle sections** — neither is checked today:
 
 - `default_cycles`: a map of a reagent kit's cycles (a whole number) to
-  `{read1, read2, index1, index2}`, each a whole number within what a run's cycle
-  fields accept (`routes/runs.py:476-500`: 0 to 600; Read 2 = 0 is a single-end
-  run). Read 1 must be at least 1 unless the build finds a supported use of 0, and
-  records the evidence.
+  `{read1, read2, index1, index2}`: `read1` 1 to 600; `read2`, `index1` and
+  `index2` 0 to 600 (`routes/runs.py:476-500`; Read 2 = 0 is a single-end run).
+  The outside review confirmed these survive the route's parser, the cycle
+  calculator and a new run unchanged. Code that tolerates Read 1 = 0 is not a
+  supported workflow, so Read 1 stays at least 1.
 - `index_cycle_options`: a non-empty list of distinct whole numbers, each one an
   index cycle count a run accepts.
 
@@ -385,15 +426,21 @@ the rulebook uses that range (section 4).
 - Red tests first, for every rule: an unknown key refused with its line, also
   nested in a flow cell; a key given twice, also two spellings of one key
   (`10:` / `012:`); each refused value spelling (`012`, `0x10`, `1:20`, `1_000`,
-  `1.10`, `yes`, `~`, a date); an anchor; `[true, 2.0]` for
+  `1.10`, `yes`, `~`, a date); each explicit tag (`!!int "012"`, `!!bool "yes"`,
+  `!!binary`, `!!set`); an anchor; `[true, 2.0]` for
   `samplesheet_versions`; each required key; the colour-field rule; the
   multi-instrument wrapper (an extra key, a `name` that differs from its map
   key); each number at and past its range's edges; the local file's two cycle
   sections.
 - A test per location kind (mapping key, value, list item, map key, missing key,
-  cross-key check).
-- The guard test, the round-trip test, the drift test, the command's isolation
-  test, the audit size test (many long problems still leave a row with counts).
+  cross-key check), and syntax errors that differ only by column.
+- The guard test (including a per-field `strict=False` and a `float` field), the
+  round-trip test through BSON and back, the drift test, the command's isolation
+  test, the store-budget tests (a report far over each budget, with a long
+  message, still leaves the sync status under its budget and an audit row with
+  its details and counts), the per-file cap, and a sensitive-input test (a
+  credential written as an unknown key never appears in a message, log or audit
+  row).
 - The shipped instrument files and the shipped local file pass through the new
   reader (today's tests load them with plain `yaml.safe_load`).
 - The existing instrument tests (about 100) keep passing; any changed test keeps
@@ -454,3 +501,14 @@ wrapper (P2); error locations and stopping at the first cross-key failure (P2);
 the audit trail's 64 KiB limit (P2); the settings command importing the sync
 (P2); adapters for pasted samples and LIMS worklists (P2); messages that can
 quote a password (P2); the wording on defaults, and `Data` for `Settings` (P3).
+
+A second round on `4436058` gave one P1, six P2 and one P3, all confirmed and
+folded in: explicit YAML tags bringing back refused spellings (P1); cross-key
+checks with no partial result to run on (P2); float conversion and per-field
+strictness overrides (P2); the 64-bit storage limit and a round trip through
+BSON (P2); byte budgets for the whole audit row and the sync status, which a
+long report fills (P2); unknown key names carrying a secret into a message (P2);
+the column of a syntax error (P2); the one named exception to "facts are written
+out" (P3). It also confirmed that all 27 shipped YAML files read the same under
+the new spelling rules, that the eight added `has_dragen_onboard: false` values
+change nothing, and the cycle ranges.
