@@ -76,7 +76,14 @@ ERRORS = {
     "a connection failure echoes the uri": ConnectionFailure(f"no server for {URI}"),
     "an error echoes only the credentials": RuntimeError(
         f"handshake failed for {USER}:{PASSWORD}@mongodb:27017"),
+    # Not the configured URI at all -- a replica-set member, a redirect, a
+    # wrapper repeating a string from elsewhere. Scrubbing by the configured
+    # user and password alone would leave this one whole.
+    "an error echoes another connection string": RuntimeError(
+        "no server for mongodb://other_user:0th3r-s3cr3t@member2:27017/x"),
 }
+
+OTHER_PASSWORD = "0th3r-s3cr3t"
 
 
 class TestTheLogNeverHoldsTheCredentials:
@@ -107,6 +114,30 @@ class TestTheLogNeverHoldsTheCredentials:
         assert "MONGO_APP_PASSWORD" in log
         assert "openssl rand -hex 24" in log
 
+    def test_another_connection_strings_credentials_go_too(self, connecting, caplog):
+        """Scrubbing by the configured user and password alone would leave a
+        URI from somewhere else whole (break row B5)."""
+        log = connecting(ERRORS["an error echoes another connection string"], caplog)
+
+        assert OTHER_PASSWORD not in log, log
+        assert "other_user" not in log, log
+        assert "member2:27017" in log, log
+
+    def test_a_percent_escaped_password_goes_in_either_form(self, monkeypatch, caplog):
+        """A URI escapes a password; a server or a wrapper may echo it
+        unescaped. Both forms are scrubbed (break row B11)."""
+        escaped, plain = "s3cret%41word", "s3cretAword"
+        monkeypatch.setattr(database, "_client", None)
+        monkeypatch.setattr(database, "_db", None)
+        monkeypatch.setenv("MONGODB_URI", f"mongodb://{USER}:{escaped}@mongodb:27017/s")
+        monkeypatch.setattr(database, "MongoClient",
+                            _Raises(ConnectionFailure(f"refused for {plain} and {escaped}")))
+        with caplog.at_level(logging.DEBUG, logger=database.logger.name):
+            with pytest.raises(ConnectionFailure):
+                database.init_db()
+
+        assert escaped not in caplog.text and plain not in caplog.text, caplog.text
+
     def test_what_is_left_of_a_message_is_still_useful(self, connecting, caplog):
         log = connecting(ConnectionFailure("connection refused by mongodb:27017"), caplog)
 
@@ -133,6 +164,21 @@ class TestAMalformedConfigFileKeepsItsSecret:
             yaml.safe_load(self.BROKEN)
 
         assert PASSWORD in str(broken.value)
+
+    def test_the_refusal_repeats_nothing_of_a_message_that_quotes_the_line(self):
+        """``_load_config`` reads the file as a stream, and PyYAML then names
+        the file and the place without quoting it -- so this is a guard, not a
+        live leak. It is tested against the error that *does* carry the line
+        (string input), so the rule holds whichever way the file is loaded
+        (break row B10)."""
+        with pytest.raises(yaml.YAMLError) as broken:
+            yaml.safe_load(self.BROKEN)
+        assert PASSWORD in str(broken.value), "the premise"
+
+        refusal = str(database._yaml_refusal(broken.value))
+
+        assert PASSWORD not in refusal and USER not in refusal, refusal
+        assert "line 2" in refusal and "YAML" in refusal, refusal
 
     def test_the_refusal_names_the_file_and_the_place_only(self, monkeypatch, tmp_path):
         path = self._config(monkeypatch, tmp_path, self.BROKEN)

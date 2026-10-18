@@ -64,10 +64,36 @@ def _safe(error: BaseException, uri: str) -> str:
     (2026-10-18 batch, step 8).
     """
     text = str(error)
+    # The configured credentials, in either form, wherever they appear.
     for secret in _credentials(uri):
         text = text.replace(secret, "***")
+    # And the credential part of ANY connection string in the message, which
+    # may be one SeqSetup was never configured with -- a replica-set member,
+    # a redirect, a wrapper repeating a string from elsewhere.
     text = _URI_CREDENTIALS.sub(r"\1***@", text)
     return f"{type(error).__name__}: {text}"
+
+
+def _yaml_refusal(broken: Exception) -> ValueError:
+    """What to raise for a ``config/mongodb.yaml`` that is not YAML: the file
+    and the place, never the message.
+
+    PyYAML's message quotes the line it stumbled on, and that line holds the
+    connection string -- password included. Measured: it does so for YAML
+    given as a *string*, and not for YAML given as an open file, which is how
+    this function reads it. So this is a guard rather than a live leak: it
+    makes the rule hold whichever way the file is loaded, because reading the
+    text first (``yaml.safe_load(f.read())``) is a small-looking change that
+    would otherwise put the password in the message.
+    """
+    mark = getattr(broken, "problem_mark", None) or getattr(broken, "context_mark", None)
+    where = (f" at line {mark.line + 1}, column {mark.column + 1}"
+             if mark is not None else "")
+    return ValueError(
+        f"{CONFIG_PATH} could not be read as YAML{where}: "
+        f"{type(broken).__name__}. The message is not repeated here: it can "
+        f"quote the line, and that line holds the connection string."
+    )
 
 
 def _load_config() -> dict:
@@ -86,19 +112,7 @@ def _load_config() -> dict:
             try:
                 config = yaml.safe_load(f)
             except yaml.YAMLError as broken:
-                # PyYAML quotes the line it stumbled on, and that line holds
-                # the URI -- password included. Name the file and the place
-                # instead, and never the text (2026-10-18 batch, step 8).
-                mark = getattr(broken, "problem_mark", None) or getattr(
-                    broken, "context_mark", None)
-                where = (f" at line {mark.line + 1}, column {mark.column + 1}"
-                         if mark is not None else "")
-                raise ValueError(
-                    f"{CONFIG_PATH} could not be read as YAML"
-                    f"{where}: {type(broken).__name__}. The message is not "
-                    f"repeated here because it would quote the line, and that "
-                    f"line holds the connection string."
-                ) from None
+                raise _yaml_refusal(broken) from None
             return (config or {}).get("mongodb", {})
 
     # Default configuration
