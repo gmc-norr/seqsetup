@@ -300,6 +300,32 @@ class TestEveryBoundAtItsEdge:
         assert written(value) == [(("Settings", "FastqCompressionFormat"), says)]
 
 
+class TestAValueIsNeverQuoted:
+    """A profile may hold a pipeline's address or key, so no message quotes a
+    value, though the reader quotes one in an instrument file (the fresh
+    review of b21ea6f, P3 7). The values are spellings the reader refuses:
+    a key of digits with a leading 0, in hex, or with a decimal point."""
+
+    SECRETS = ["0731554455", "0x5EC2E7", "31554455.0731"]
+
+    @pytest.mark.parametrize("secret", SECRETS)
+    def test_in_an_application_profile(self, secret):
+        result = _app(APP.replace("FastqCompressionFormat: gzip", f"FastqCompressionFormat: {secret}"))
+
+        assert [p.path for p in result.problems] == [("Settings", "FastqCompressionFormat")]
+        assert secret not in problem_line(result.problems[0])
+
+    @pytest.mark.parametrize("key", ["TestName", "Description"])
+    @pytest.mark.parametrize("secret", SECRETS)
+    def test_in_a_test_profile(self, key, secret):
+        old = next(row for row in TEST.splitlines() if row.startswith(f"{key}:"))
+
+        result = _test(TEST.replace(old, f"{key}: {secret}"))
+
+        assert [p.path for p in result.problems] == [(key,)]
+        assert secret not in problem_line(result.problems[0])
+
+
 class TestSheetValues:
     """Settings and Data keys are open, but each is a plain name and each
     value is text, a whole number or true/false."""
