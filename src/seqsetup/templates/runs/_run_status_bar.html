@@ -59,16 +59,21 @@
                 </button>
             </form>
         {% elif status_value == 'ready' %}
+            {# Return to Draft asks nothing: marking the run Ready again undoes
+               it. Archive cannot be undone -- ARCHIVED is terminal in
+               check_status_transition -- so it asks first. #}
             <form hx-post="/runs/{{ run.id }}/status/draft" hx-target="#run-status-bar" hx-swap="outerHTML">
                 <button type="submit" class="btn btn-secondary btn-small">Return to Draft</button>
             </form>
-            <form hx-post="/runs/{{ run.id }}/status/archived" hx-target="#run-status-bar" hx-swap="outerHTML">
+            <form hx-post="/runs/{{ run.id }}/status/archived" hx-target="#run-status-bar" hx-swap="outerHTML"
+                  hx-confirm="Archive this run? An archived run cannot be changed and cannot be returned to Draft. To sequence it again you would have to build a new run.">
                 <button type="submit" class="btn btn-secondary btn-small">Archive</button>
             </form>
         {% elif status_value == 'archived' %}
-            <form hx-post="/runs/{{ run.id }}/status/draft" hx-target="#run-status-bar" hx-swap="outerHTML">
-                <button type="submit" class="btn btn-secondary btn-small">Reset to Draft</button>
-            </form>
+            {# No button at all. ARCHIVED is terminal, so Reset to Draft could
+               only ever be refused by the route -- an action offered that
+               cannot work (later list #4, 2026-10-18). #}
+            <span class="edit-lock-note">An archived run cannot be changed or returned to Draft</span>
         {% endif %}
     </div>
     {% if status_value == 'draft' and edit_lock and edit_lock.mine %}

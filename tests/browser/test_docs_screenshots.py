@@ -990,8 +990,17 @@ def test_history_change_history(demo_page, base_url, demo):
     # run's whole life, start to finish, including its "created" entry.
     page.goto(f"{base_url}/runs/{_CLEAN_RUN['id']}")
     assert page.locator("#run-status-bar .status-ready").count() == 1
+    # Archive asks first (hx-confirm, later list #4): archiving cannot be
+    # undone. The dialog cannot be screenshotted; capture its wording and
+    # accept it so the transition goes through.
+    messages = []
+    page.on("dialog", lambda d: (messages.append(d.message), d.accept()))
     page.get_by_role("button", name="Archive").click()
     page.wait_for_selector("#run-status-bar .status-archived")
+    assert messages == [
+        "Archive this run? An archived run cannot be changed and cannot be "
+        "returned to Draft. To sequence it again you would have to build a new run."
+    ]
 
     panel = page.locator(".run-history-panel")
     # The history is folded away; opening the fold (hx-trigger="toggle
