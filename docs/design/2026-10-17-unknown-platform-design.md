@@ -48,6 +48,10 @@ template lists name it.
   with it (`docs/design/2026-10-17-listing-summaries-design.md`), and
   `/admin/deleted-runs`, only for a run with a copy whose delete never
   finished, whose existence `services/deleted_runs.py` checks by loading it.
+  *(Half closed on 2026-10-18: the deleted-runs **list** asks
+  `RunRepository.exists` instead of loading the run, so it opens. Following a
+  row to `/admin/deleted-runs/{copy_id}` still fails when that copy's own
+  embedded run cannot be read.)*
 - An unknown run *status* still falls back to Draft, as before; it keeps a
   run out of the API and the exports.
 
