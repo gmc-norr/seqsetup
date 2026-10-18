@@ -514,3 +514,47 @@ class TestMessagesKeepTheOldDetail:
         (error,) = check_application_profile_data(data, "app.yaml").problems
         assert error.path == ("Settings", "FastqCompressionFormat")
         assert error.message.startswith("is a number with a decimal point")
+
+
+class TestTheRunCheckTakesAStoredWholeNumberVersion:
+    """A profile stored before SoftwareVersion had to be text can hold 4.
+    Beside "4.3.6" in another profile of the same application, the run check
+    sorted the two and stopped with TypeError: '<' not supported between
+    instances of 'str' and 'int' (sol's review of step 2's design, P2-1)."""
+
+    def test_the_two_versions_are_reported_not_a_crash(self):
+        from seqsetup.models.application_profile import ApplicationProfile
+        from seqsetup.models.sample import Sample
+        from seqsetup.models.sequencing_run import InstrumentPlatform, SequencingRun
+        from seqsetup.models.test_profile import ApplicationProfileReference
+        from seqsetup.services.application_profile_validator import ApplicationProfileValidator
+
+        def stored_app(name, version):
+            return ApplicationProfile(name=name, version="1.0.0", application_type="Dragen",
+                                      application_name="DragenGermline",
+                                      settings={"SoftwareVersion": version})
+
+        def stored_test(test, app):
+            return StoredTestProfile(test_type=test, version="1.0.0", application_profiles=[
+                ApplicationProfileReference(profile_name=app, profile_version="1.0.0")])
+
+        class Tests:
+            profiles = [stored_test("A", "OldApp"), stored_test("B", "NewApp")]
+
+            def list_by_test_type(self, test):
+                return [p for p in self.profiles if p.test_type == test]
+
+        class Apps:
+            profiles = {"OldApp": stored_app("OldApp", 4), "NewApp": stored_app("NewApp", "4.3.6")}
+
+            def get_by_name_version(self, name, version):
+                return self.profiles.get(name)
+
+        run = SequencingRun(instrument_platform=InstrumentPlatform.NOVASEQ_X, samples=[
+            Sample(sample_id="S1", test_id="A", test_version="1.0.0"),
+            Sample(sample_id="S2", test_id="B", test_version="1.0.0")])
+
+        errors = ApplicationProfileValidator.validate_application_profiles(run, Tests(), Apps())
+
+        mixed = [e for e in errors if "4 (from OldApp)" in e.detail and "4.3.6 (from NewApp)" in e.detail]
+        assert len(mixed) == 1
