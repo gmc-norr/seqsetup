@@ -76,3 +76,22 @@ class TestALongReport:
 
         kept = [problem_from_record(r) for r in report["problems"]]
         assert kept == problems[:len(kept)]
+
+    def test_a_long_list_is_measured_in_one_pass(self, monkeypatch):
+        """A broken settings repository can give 1,000 problems per file.
+        Adding them all and taking them off again one at a time measures the
+        whole report once per problem taken off: a sync would stall for
+        minutes before storing its status."""
+        from seqsetup.input_rules import problems as module
+
+        measure = module._encoded_size
+        whole = []
+        monkeypatch.setattr(module, "_encoded_size", lambda value: (
+            whole.append(1) if isinstance(value, dict) and "problem_count" in value else None,
+            measure(value))[1])
+        problems = [_problem(n, key_length=256) for n in range(2000)]
+
+        report = bounded_report("", problems, self.BUDGET)
+
+        assert report["problems_left_out"] > 1000
+        assert len(whole) <= 2
