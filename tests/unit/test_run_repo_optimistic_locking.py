@@ -123,6 +123,7 @@ class TestModelLoadCapturesLockToken:
     def test_from_dict_sets_loaded_updated_at(self):
         data = {
             "id": "run-1",
+            "status": "draft",
             "instrument_platform": "NovaSeq X Series",
             "updated_at": "2026-05-01T10:00:00",
         }
@@ -132,7 +133,8 @@ class TestModelLoadCapturesLockToken:
 
     def test_touch_does_not_mutate_loaded_token(self):
         run = SequencingRun.from_dict(
-            {"id": "run-1", "instrument_platform": "NovaSeq X Series", "updated_at": "2026-05-01T10:00:00"}
+            {"id": "run-1", "status": "draft", "instrument_platform": "NovaSeq X Series",
+             "updated_at": "2026-05-01T10:00:00"}
         )
         loaded = run._loaded_updated_at
         run.touch(updated_by="alice")
@@ -143,6 +145,7 @@ class TestModelLoadCapturesLockToken:
     def test_to_dict_does_not_emit_loaded_updated_at(self):
         """The lock token is runtime-only state; it must not be persisted."""
         run = SequencingRun.from_dict(
-            {"id": "run-1", "instrument_platform": "NovaSeq X Series", "updated_at": "2026-05-01T10:00:00"}
+            {"id": "run-1", "status": "draft", "instrument_platform": "NovaSeq X Series",
+             "updated_at": "2026-05-01T10:00:00"}
         )
         assert "_loaded_updated_at" not in run.to_dict()

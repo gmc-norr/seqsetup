@@ -15,15 +15,13 @@ already has a ``RunSummary``: the JSON object the API returns. Two types of
 one name in one request path is how a wrong field gets served.
 """
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..utils.clock import utcnow
-from .sequencing_run import InstrumentPlatform, RunStatus, checked_sheet_targets, stored_platform
+from .sequencing_run import (InstrumentPlatform, RunStatus, checked_sheet_targets,
+                             stored_platform, stored_status)
 
-
-logger = logging.getLogger(__name__)
 
 
 def _time(value) -> datetime:
@@ -106,9 +104,9 @@ class RunListing:
         """Build a row from a projected document.
 
         Reads every field exactly as ``SequencingRun.from_dict`` reads it —
-        the legacy ``"complete"`` status, the fallback for an unknown status,
-        the refusal of an unknown instrument, the timestamps — so a listing
-        never disagrees with the page it links to.
+        the legacy ``"complete"`` status, the refusal of an unknown status or
+        instrument, the timestamps — so a listing never disagrees with the
+        page it links to.
         """
         run_id = doc.get("_id") or doc["id"]
 
@@ -116,16 +114,7 @@ class RunListing:
         if count is None and "sample_count" in doc:
             raise ValueError(f"run {run_id}: samples is stored as something that is not a list")
 
-        raw_status = "archived" if doc.get("status") == "complete" else doc.get("status", "draft")
-        try:
-            status = RunStatus(raw_status)
-        except ValueError:
-            logger.warning(
-                "Unknown RunStatus %r in stored run %r — falling back to DRAFT",
-                raw_status, run_id,
-            )
-            status = RunStatus.DRAFT
-
+        status = stored_status(doc, f"Run {run_id!r}")
         platform = stored_platform(doc, f"Run {run_id!r}")
 
         return cls(

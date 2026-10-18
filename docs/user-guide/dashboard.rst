@@ -63,6 +63,15 @@ none: SeqSetup never opens it as another instrument, because the instrument
 decides the i5 direction and the Sample Sheet's settings, and saving it
 would write the other instrument into the record.
 
+A run whose record names a **status** this version does not know, or none, is
+the same case. SeqSetup never reads it as a Draft: a Draft can be edited, and
+the first save would write ``draft`` into the record -- so a Ready run whose
+status was damaged would lose the only evidence of what it had been, which is
+what an administrator needs to repair it. Such a run cannot be opened, edited,
+marked Ready or archived, and the API refuses to serve its files. ``complete``,
+the status an early version wrote for an archived run, is still read as
+Archived.
+
 If every run stored is one SeqSetup cannot read, the dashboard shows that
 line and the three tabs with their counts at zero. It never says "No Runs
 Yet": there are runs, and the line above the tabs says how many could not
