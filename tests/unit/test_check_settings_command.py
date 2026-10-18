@@ -30,7 +30,8 @@ def _run(*args, probe=False):
             "from seqsetup.input_rules import cli\n"
             f"status = cli.main({list(args)!r})\n"
             "loaded = [m for m in ('seqsetup.data.instruments', 'seqsetup.services.github_sync',"
-            " 'seqsetup.startup', 'pymongo.mongo_client') if m in sys.modules]\n"
+            " 'seqsetup.startup', 'pymongo.mongo_client', 'seqsetup.services.sheet_plan',"
+            " 'seqsetup.services.cycle_calculator') if m in sys.modules]\n"
             "print('LOADED', loaded)\n"
             "sys.exit(status)\n"
         )
@@ -40,9 +41,22 @@ def _run(*args, probe=False):
     return subprocess.run(command, capture_output=True, text=True, env=env, timeout=120)
 
 
-def _folder(tmp_path, files: dict) -> Path:
+PROFILES = {
+    "profiles/application_profiles/BCLConvertNextera.yaml":
+        (CONFIG / "profiles" / "application_profiles" / "dragen" / "BCLConvertNextera.yaml").read_text(),
+    "profiles/test_profiles/Wgs.yaml": (CONFIG / "profiles" / "test_profiles" / "Wgs.yaml").read_text(),
+}
+
+
+def _folder(tmp_path, files: dict, profiles: bool = True) -> Path:
+    """A settings folder with ``files`` in instruments/ and, unless told
+    otherwise, one good application profile and one good test profile."""
     for name, text in files.items():
         path = tmp_path / "instruments" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    for name, text in (PROFILES if profiles else {}).items():
+        path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
     return tmp_path
@@ -55,7 +69,7 @@ class TestTheShippedSettings:
 
         assert done.returncode == 0, done.stdout + done.stderr
         assert done.stdout == ""
-        assert "12 files checked, no errors" in done.stderr
+        assert "19 files checked, no errors" in done.stderr
 
 
 class TestAFolderWithProblems:
@@ -70,7 +84,7 @@ class TestAFolderWithProblems:
         assert done.stdout.splitlines() == [
             f"instruments/sub/bad.yaml:{line}:1: lane: is not a key this file can have (check the spelling)"
         ]
-        assert "2 files checked, 1 error" in done.stderr
+        assert "4 files checked, 1 error" in done.stderr
 
     def test_two_files_for_one_instrument(self, tmp_path):
         folder = _folder(tmp_path, {"a.yaml": GOOD, "b.yaml": GOOD})
@@ -113,13 +127,16 @@ class TestItReadsWhatTheSyncReads:
     never reads, tells the lab its settings are fine when they are not."""
 
     def test_a_settings_folder_with_no_instrument_folder_fails(self, tmp_path):
-        done = _run(str(tmp_path))
+        done = _run(str(_folder(tmp_path, {})))
 
         assert done.returncode == 1
-        assert done.stdout.splitlines() == ["instruments/: is not there (name the folder with --instruments)"]
-        assert "0 files checked, 1 error" in done.stderr
+        assert done.stdout.splitlines() == [
+            "instruments/: is not there (name the folder with --instruments, "
+            "or say --no-instruments when the sync does not read instruments)"]
+        assert "2 files checked, 1 error" in done.stderr
 
     def test_an_instrument_folder_with_no_instrument_file_fails(self, tmp_path):
+        _folder(tmp_path, {})
         (tmp_path / "instruments").mkdir()
         (tmp_path / "instruments" / "README.md").write_text("notes\n")
 
@@ -140,7 +157,7 @@ class TestItReadsWhatTheSyncReads:
         assert done.returncode == 1
         assert done.stdout.splitlines() == [
             "instruments/b.yaml:1:1: the file: must be a map of keys and values"]
-        assert "2 files checked, 1 error" in done.stderr
+        assert "4 files checked, 1 error" in done.stderr
 
     def test_a_link_to_a_folder_is_skipped_as_the_sync_skips_it(self, tmp_path):
         """GitHub lists a link to a folder as a link, which the sync skips."""
@@ -151,7 +168,7 @@ class TestItReadsWhatTheSyncReads:
         done = _run(str(folder))
 
         assert done.returncode == 0, done.stdout
-        assert "1 files checked, no errors" in done.stderr
+        assert "3 files checked, no errors" in done.stderr
 
     def test_a_file_named_just_dot_yaml_is_read_as_the_sync_reads_it(self, tmp_path):
         folder = _folder(tmp_path, {".yaml": GOOD + "lane: 2\n"})
@@ -177,7 +194,73 @@ class TestItReadsWhatTheSyncReads:
         assert done.returncode == 1
         assert [line.split(":")[0] for line in done.stdout.splitlines()] == [
             "instruments/a.yaml", "instruments/b.yaml"]
-        assert "2 files checked, 2 errors" in done.stderr
+        assert "4 files checked, 2 errors" in done.stderr
+
+
+class TestProfiles:
+    """The command checks both profile folders with the rules the sync uses
+    (docs/design/2026-10-18-input-rules-design.md, step 2)."""
+
+    def test_a_refused_test_profile_is_named_with_its_line(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        wgs = folder / "profiles" / "test_profiles" / "Wgs.yaml"
+        wgs.write_text(wgs.read_text().replace("TestType: WGS", "TestType: 5"))
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert done.stdout.splitlines() == [
+            "profiles/test_profiles/Wgs.yaml:2:11: TestType: must be text: put it in quotes"]
+
+    def test_an_unknown_key_in_an_application_profile(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        app = folder / "profiles" / "application_profiles" / "BCLConvertNextera.yaml"
+        app.write_text(app.read_text() + "Setings:\n  X: 1\n")
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert "profiles/application_profiles/BCLConvertNextera.yaml:" in done.stdout
+        assert "Setings: is not a key this file can have" in done.stdout
+
+    def test_a_profile_ending_in_capitals_is_read_as_the_sync_reads_it(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        (folder / "profiles" / "test_profiles" / "Other.YAML").write_text("TestType: 5\n")
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert "profiles/test_profiles/Other.YAML:" in done.stdout
+
+    def test_two_files_for_one_test_and_version(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        (folder / "profiles" / "test_profiles" / "sub").mkdir()
+        (folder / "profiles" / "test_profiles" / "sub" / "Wgs.yaml").write_text(
+            PROFILES["profiles/test_profiles/Wgs.yaml"])
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert done.stdout.splitlines() == [
+            "profiles/test_profiles/: WGS 1.0.0 is in profiles/test_profiles/Wgs.yaml and "
+            "profiles/test_profiles/sub/Wgs.yaml"]
+
+    def test_a_missing_profile_folder_fails(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD}, profiles=False)
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert done.stdout.splitlines() == [
+            "profiles/application_profiles/: is not there (name the folder with --application-profiles)",
+            "profiles/test_profiles/: is not there (name the folder with --test-profiles)",
+        ]
+
+    def test_a_lab_that_does_not_sync_instruments(self, tmp_path):
+        done = _run(str(_folder(tmp_path, {})), "--no-instruments")
+
+        assert done.returncode == 0, done.stdout
+        assert "2 files checked, no errors" in done.stderr
 
 
 class TestItNeedsNoApp:
@@ -196,8 +279,9 @@ class TestJsonSchemas:
 
         assert done.returncode == 0, done.stderr
         written = sorted(p.name for p in tmp_path.iterdir())
-        assert written == ["instrument.schema.json", "instruments-file.schema.json",
-                           "local-instruments.schema.json"]
+        assert written == ["application-profile.schema.json", "instrument.schema.json",
+                           "instruments-file.schema.json", "local-instruments.schema.json",
+                           "test-profile.schema.json"]
         for name in written:
             schema = json.loads((tmp_path / name).read_text())
             assert schema["additionalProperties"] is False, name

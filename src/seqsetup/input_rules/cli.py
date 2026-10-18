@@ -4,8 +4,9 @@ the configuration sync uses, with no database, no network and no running app
 
 A lab runs it on its settings repository before a sync, or on every change.
 It prints one problem per line, ``file:line:column: place: problem``, warnings
-marked, and exits 1 when there is an error. It checks instrument files; each
-later step of the input rules adds its files here.
+marked, and exits 1 when there is an error. It checks instrument files and
+application and test profiles; each later step of the input rules adds its
+files here.
 
 ``--schema <dir>`` writes a JSON Schema per document for editors. A schema is
 a help, not the authority: it cannot express keys given twice, how a value is
@@ -28,6 +29,17 @@ from .instruments import (
     duplicate_instruments,
 )
 from .problems import problem_line
+from .profiles import (
+    ApplicationProfileRules,
+    TestProfileRules,
+    build_application_profile,
+    build_test_profile,
+    check_application_profile_file,
+    check_test_profile_file,
+    differing_only_in_capitals,
+    repeated_app_versions,
+    repeated_test_versions,
+)
 
 SCHEMAS = {
     "instrument.schema.json": (InstrumentRules, "A synced instrument file holding one instrument."),
@@ -35,6 +47,8 @@ SCHEMAS = {
         InstrumentsFileRules, "A synced instrument file holding several instruments."),
     "local-instruments.schema.json": (
         LocalInstrumentsFileRules, "The local instruments file (config/instruments.yaml)."),
+    "application-profile.schema.json": (ApplicationProfileRules, "An application profile."),
+    "test-profile.schema.json": (TestProfileRules, "A test profile."),
 }
 _NOT_THE_AUTHORITY = (
     " A help for editors, not the authority: keys given twice, how a value is "
@@ -82,9 +96,10 @@ def _read(path: Path, shown: str, tally: _Tally):
         return None
 
 
-def _instrument_files(folder: Path) -> list[Path]:
-    """The files the sync reads: every name ending .yaml or .yml, in every
-    folder below. GitHub lists a link to a folder as a link, which the sync
+def _settings_files(folder: Path, any_case: bool = False) -> list[Path]:
+    """The files the sync reads: every name ending .yaml or .yml (in any
+    case for profiles, ``any_case``, as the sync takes it), in every folder
+    below. GitHub lists a link to a folder as a link, which the sync
     skips, and a link to anything else as a file whose text is the link's
     target path, which the sync reads and refuses; ``_read`` reads it so."""
     found = []
@@ -93,9 +108,40 @@ def _instrument_files(folder: Path) -> list[Path]:
     for root, _folders, names in os.walk(folder):
         for name in names:
             path = Path(root) / name
-            if name.endswith((".yaml", ".yml")) and (path.is_symlink() or path.is_file()):
+            ending = name.lower() if any_case else name
+            if ending.endswith((".yaml", ".yml")) and (path.is_symlink() or path.is_file()):
                 found.append(path)
     return sorted(found)
+
+
+def _check_folder(settings: Path, inside: PurePosixPath, option: str, kind: str, check, build,
+                  tally: _Tally, any_case: bool = False, hint: str = "") -> tuple[list, list[str], str]:
+    """Check every file of one folder: (what each good file gives, its path
+    as the sync names it, the folder as shown)."""
+    folder = settings / inside
+    shown_folder = f"{inside.as_posix().rstrip('/')}/"
+    if not folder.is_dir():
+        print(f"{shown_folder}: is not there (name the folder with {option}{hint})")
+        tally.errors += 1
+        return [], [], shown_folder
+    paths = _settings_files(folder, any_case)
+    if not paths:
+        print(f"{shown_folder}: holds no {kind} file (.yaml or .yml)")
+        tally.errors += 1
+    built, where = [], []
+    for path in paths:
+        shown = path.relative_to(settings).as_posix()
+        tally.files += 1
+        text = _read(path, shown, tally)
+        if text is None:
+            continue
+        result = check(text, shown)
+        tally.report(result.problems)
+        if result.ok:
+            made = build(result.value, path.name)
+            built += made if isinstance(made, list) else [made]
+            where += [shown] * (len(made) if isinstance(made, list) else 1)
+    return built, where, shown_folder
 
 
 def main(argv=None) -> int:
@@ -107,6 +153,13 @@ def main(argv=None) -> int:
                         help="the settings folder, laid out as the sync reads it")
     parser.add_argument("--instruments", default="instruments",
                         help="the instrument folder inside FOLDER (default: instruments)")
+    parser.add_argument("--no-instruments", action="store_true",
+                        help="the sync does not read instruments: do not check an instrument folder")
+    parser.add_argument("--application-profiles", default="profiles/application_profiles",
+                        help="the application profile folder inside FOLDER "
+                             "(default: profiles/application_profiles)")
+    parser.add_argument("--test-profiles", default="profiles/test_profiles",
+                        help="the test profile folder inside FOLDER (default: profiles/test_profiles)")
     parser.add_argument("--local-instruments", type=Path,
                         help="also check a local instruments file, such as config/instruments.yaml")
     parser.add_argument("--schema", type=Path,
@@ -121,34 +174,38 @@ def main(argv=None) -> int:
     if not args.folder.is_dir():
         print(f"{args.folder} is not a folder", file=sys.stderr)
         return 2
-    inside = PurePosixPath(args.instruments)
-    if inside.is_absolute() or ".." in inside.parts:
-        print(f"--instruments names a folder inside {args.folder}, as the sync reads it", file=sys.stderr)
-        return 2
+    folders = {}
+    for option, value in (("--instruments", args.instruments),
+                          ("--application-profiles", args.application_profiles),
+                          ("--test-profiles", args.test_profiles)):
+        inside = PurePosixPath(value)
+        if inside.is_absolute() or ".." in inside.parts:
+            print(f"{option} names a folder inside {args.folder}, as the sync reads it", file=sys.stderr)
+            return 2
+        folders[option] = inside
 
     tally = _Tally()
-    definitions = []
-    instruments = args.folder / args.instruments
-    shown_folder = f"{inside.as_posix().rstrip('/')}/"
-    paths = _instrument_files(instruments) if instruments.is_dir() else []
-    if not instruments.is_dir():
-        print(f"{shown_folder}: is not there (name the folder with --instruments)")
+    if not args.no_instruments:
+        definitions, _where, shown = _check_folder(
+            args.folder, folders["--instruments"], "--instruments", "instrument",
+            check_synced_instrument_file, definitions_from, tally,
+            hint=", or say --no-instruments when the sync does not read instruments")
+        for problem in duplicate_instruments(definitions):
+            print(f"{shown}: {problem}")
+            tally.errors += 1
+
+    apps, app_paths, shown = _check_folder(
+        args.folder, folders["--application-profiles"], "--application-profiles", "profile",
+        check_application_profile_file, build_application_profile, tally, any_case=True)
+    for problem in repeated_app_versions(apps, app_paths):
+        print(f"{shown}: {problem}; a profile name and version may be in one file only")
         tally.errors += 1
-    elif not paths:
-        print(f"{shown_folder}: holds no instrument file (.yaml or .yml)")
-        tally.errors += 1
-    for path in paths:
-        shown = path.relative_to(args.folder).as_posix()
-        tally.files += 1
-        text = _read(path, shown, tally)
-        if text is None:
-            continue
-        result = check_synced_instrument_file(text, shown)
-        tally.report(result.problems)
-        if result.ok:
-            definitions += definitions_from(result.value, path.name)
-    for problem in duplicate_instruments(definitions):
-        print(f"{shown_folder}: {problem}")
+
+    tests, test_paths, shown = _check_folder(
+        args.folder, folders["--test-profiles"], "--test-profiles", "profile",
+        check_test_profile_file, build_test_profile, tally, any_case=True)
+    for problem in repeated_test_versions(tests, test_paths) + differing_only_in_capitals(tests, test_paths):
+        print(f"{shown}: {problem}")
         tally.errors += 1
 
     if args.local_instruments is not None:
