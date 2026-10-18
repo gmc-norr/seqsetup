@@ -354,3 +354,107 @@ class TestEveryRefusalIsAKitFileRefusal:
     def test_it_is_a_kit_file_refused_with_its_own_reason(self, cls):
         assert issubclass(cls, KitFileRefused)
         assert cls.reason != KitFileRefused.reason
+
+
+class TestAColumnTheParserDoesNotReadIsRefused:
+    """A CSV header that looks like an index or a lane but is not a column the
+    kit parser reads was ignored, so a Single upload of a file whose i5 column
+    is called ``Index 2`` dropped the i5 and said nothing -- the refusal the
+    ``index2`` spelling gets. The sample paste has refused such a column by
+    name since ``32ae40e``; the kit parser now does too."""
+
+    @pytest.mark.parametrize("column", ["Index 2", "I5", "index_2", "Lane", "Barcode"])
+    def test_a_column_that_looks_like_an_index_or_a_lane_is_refused(self, column):
+        content = f"name,index,{column}\nA1,ATTACTCG,TATAGCCT\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+
+        assert column in str(refused.value), str(refused.value)
+
+    @pytest.mark.parametrize("column", ["plate", "Description", "Owner"])
+    def test_a_column_that_looks_like_neither_is_still_ignored(self, column):
+        content = f"name,index,{column}\nA1,ATTACTCG,anything\n"
+
+        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+
+        assert [i.name for i in kit.i7_indexes] == ["A1"]
+
+    def test_a_column_in_a_combinatorial_section_is_refused(self):
+        content = "[i7]\nname,sequence,Index 2\nA1,ATTACTCG,TATAGCCT\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv",
+                                           index_mode=IndexMode.COMBINATORIAL)
+
+        assert "Index 2" in str(refused.value), str(refused.value)
+
+    def test_a_row_with_more_cells_than_the_header_is_refused_by_line(self):
+        content = "name,index\nA1,ATTACTCG\nA2,TCCGGAGA,TATAGCCT\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+
+        assert "line 3" in str(refused.value), str(refused.value)
+
+    def test_a_row_with_more_empty_cells_than_the_header_is_not_a_row(self):
+        content = "name,index\nA1,ATTACTCG\n,,\nA2,TCCGGAGA\n"
+
+        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+
+        assert [i.name for i in kit.i7_indexes] == ["A1", "A2"]
+
+
+class TestALineOutsideASectionIsRefused:
+    """``process_section`` kept the lines before the first ``[i7]`` and read
+    them as part of it, so an ``[IndexKit]`` preamble became the i7 section's
+    header and the refusal named a good index instead of the culprit."""
+
+    def test_a_line_before_the_first_section_is_named(self):
+        content = "stray,line\n[i7]\nname,sequence\nA1,ATTACTCG\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv",
+                                           index_mode=IndexMode.COMBINATORIAL)
+
+        assert "line 1" in str(refused.value), str(refused.value)
+
+    def test_an_index_kit_preamble_names_the_preamble_not_the_header(self):
+        content = ("[IndexKit]\nName,Old kit\n[i7]\nname,sequence\nA1,ATTACTCG\n"
+                   "[i5]\nname,sequence\nB1,TATAGCCT\n")
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv",
+                                           index_mode=IndexMode.COMBINATORIAL)
+
+        message = str(refused.value)
+        assert "line 2" in message and "line 5" not in message, message
+
+
+class TestTheTsvHeaderLineIsReadHoweverItIsSpelled:
+    """Skipping only a third cell spelled exactly ``IndexNumber`` refused a
+    file whose header says ``Index Number`` -- and called the admin's own
+    header "not an index"."""
+
+    @pytest.mark.parametrize("header", [
+        "Name\tSequence\tIndexNumber",
+        "Name\tSequence\tIndex Number",
+        "name\tsequence\tindex_number",
+        "Name\tSequence",
+        "Index Name\tSeq\tNum",
+    ])
+    def test_a_header_with_no_sequence_in_it_is_the_header(self, header):
+        content = (f"[IndexKit]\nName\tOld kit\n\n[Indices]\n{header}\n"
+                   "A1\tATTACTCG\t1\n")
+
+        kit = IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+
+        assert [i.name for i in kit.i7_indexes] == ["A1"]
+
+    def test_a_first_line_that_carries_a_sequence_is_not_a_header(self):
+        content = "[IndexKit]\nName\tOld kit\n\n[Indices]\nA1\tATTACTCG\n"
+
+        with pytest.raises(IncompleteIndexRows) as refused:
+            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+
+        assert "line 5" in str(refused.value), str(refused.value)

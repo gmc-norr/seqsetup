@@ -107,7 +107,41 @@ def _names(names: list) -> str:
     return f"{shown} and {more} more" if more > 0 else shown
 
 
+class ColumnsNotRead(KitFileRefused):
+    """A kit file with a column whose name looks like an index or a lane but
+    is not one the parser reads, or a row with a cell under no column name.
+
+    Such a column was ignored: a file whose i5 column is called "Index 2"
+    uploaded as Single dropped the i5 and said nothing. The sample paste has
+    refused an unread index-looking column by name since 32ae40e.
+    """
+
+    reason = "columns_not_read"
+
+
 _LINES_SHOWN = 10
+
+# The names the simple CSV reader looks for, in the order it looks (the
+# lookups below are built from these, so a name added here is read).
+_CSV_NAME_COLUMNS = ("name", "Name", "Sample_ID", "sample_id")
+_CSV_I7_NAME_COLUMNS = ("i7_name", "I7_Name", "i7_index_name")
+_CSV_I5_NAME_COLUMNS = ("i5_name", "I5_Name", "i5_index_name")
+_CSV_I7_COLUMNS = ("index", "Index", "i7", "Index1", "index1", "sequence", "Sequence")
+_CSV_I5_COLUMNS = ("index2", "Index2", "i5", "Index_2")
+_CSV_WELL_COLUMNS = ("well", "Well", "well_position", "Well_Position")
+_SIMPLE_CSV_COLUMNS = frozenset(
+    _CSV_NAME_COLUMNS + _CSV_I7_NAME_COLUMNS + _CSV_I5_NAME_COLUMNS
+    + _CSV_I7_COLUMNS + _CSV_I5_COLUMNS + _CSV_WELL_COLUMNS)
+_SECTION_CSV_COLUMNS = frozenset(("name", "Name", "sequence", "Sequence") + _CSV_WELL_COLUMNS)
+
+# Same rule as services/sample_parser.py: a header name holding "index" or
+# "barcode", or a word starting i7, i5 or lane, is about an index or a lane.
+_INDEX_OR_LANE_TEXT = ("index", "barcode")
+_INDEX_OR_LANE_WORD = re.compile(r"^(i7|i5|lane)")
+
+# A cell of four or more bases is a sequence, so the line carrying it is an
+# index line and not a section header however the header is spelled.
+_LOOKS_LIKE_DNA = re.compile(r"^[ACGTN]{4,}\Z")
 
 _SINGLE_ADVICE = ("Upload the kit as Unique Dual (each i7 paired with the i5 of the same "
                   "name) or as Combinatorial (any i7 with any i5), or take the i5 data "
@@ -118,6 +152,40 @@ def _lines(numbers: list[int]) -> str:
     shown = ", ".join(f"line {n}" for n in numbers[:_LINES_SHOWN])
     more = len(numbers) - _LINES_SHOWN
     return f"{shown} and {more} more" if more > 0 else shown
+
+
+def _looks_like_index_or_lane(name: str) -> bool:
+    name = name.lower()
+    return (any(text in name for text in _INDEX_OR_LANE_TEXT)
+            or any(_INDEX_OR_LANE_WORD.match(word) for word in re.split(r"[^a-z0-9]+", name)))
+
+
+def _columns_not_read(header, read: frozenset) -> None:
+    """Refuse a header whose name looks like an index or a lane but is not one
+    the reader looks for: such a column was ignored without a word."""
+    unread = [name for name in header or []
+              if name and name not in read and _looks_like_index_or_lane(name)]
+    if unread:
+        quoted = ", ".join(f'"{name}"' for name in unread)
+        raise ColumnsNotRead(
+            f"The file has a column named {quoted}, which looks like an index or a lane "
+            f"but is not a column this format reads, so nothing was saved: it would have "
+            f"been ignored without a word. Name an i7 column index and an i5 column "
+            f"index2 (an [i7]/[i5] section's column is sequence), or take the column out."
+        )
+
+
+def _cells_with_no_column(numbered) -> None:
+    """Refuse rows that carry a cell under no column name (more cells than the
+    header), naming their lines: that cell was dropped unseen."""
+    bad = [lineno for lineno, row in numbered
+           if any(str(extra).strip() for extra in (row.get(None) or []))]
+    if bad:
+        raise ColumnsNotRead(
+            f"These rows have more cells than the header has columns, so nothing was "
+            f"saved: {_lines(bad)}. A cell under no column name was dropped unseen; give "
+            f"the column a header name or take the cell out."
+        )
 
 
 def _i5_in_single(where: str) -> I5DataInSingleKit:
@@ -146,21 +214,27 @@ def _cell(row: dict, *names: str) -> str:
 
 
 def _csv_name(row: dict) -> str:
-    return _cell(row, "name", "Name", "Sample_ID", "sample_id")
+    return _cell(row, *_CSV_NAME_COLUMNS)
 
 
 def _csv_i7(row: dict) -> str:
-    return _cell(row, "index", "Index", "i7", "Index1", "index1", "sequence", "Sequence")
+    return _cell(row, *_CSV_I7_COLUMNS)
 
 
 def _csv_i5(row: dict) -> str:
-    return _cell(row, "index2", "Index2", "i5", "Index_2")
+    return _cell(row, *_CSV_I5_COLUMNS)
 
 
 def _row_has_content(row: dict) -> bool:
     """True when any cell of the row holds something. A row with nothing in it
     is a blank line, not a dropped index."""
-    return any(str(value).strip() for value in row.values() if value)
+    # A row with more cells than the header puts the rest in one list under
+    # the restkey: [""] is not content, and counting it as content refused a
+    # row of only separators that used to upload (review of 3be7a45, P2-3).
+    flat = []
+    for value in row.values():
+        flat.extend(value if isinstance(value, list) else [value])
+    return any(str(value).strip() for value in flat if value)
 
 
 def _text_or_refuse(data: dict) -> None:
@@ -684,6 +758,8 @@ class IndexParser:
         kit_description = ""
         repeated: list[str] = []
         incomplete: list[int] = []
+        # The header line is only ever the section's first content line.
+        seen_index_line = False
 
         for lineno, line in enumerate(lines, start=1):
             line = line.strip()
@@ -692,6 +768,7 @@ class IndexParser:
 
             if line.startswith("["):
                 current_section = line.strip("[]")
+                seen_index_line = False
                 continue
 
             parts = line.split("\t")
@@ -708,15 +785,24 @@ class IndexParser:
 
             elif current_section == "Indices":
                 cells = [part.strip() for part in parts]
-                # The section's own header line, which carries no index.
-                if len(cells) >= 3 and cells[2].lower() == "indexnumber":
+                is_index_line = len(cells) >= 3 and cells[2] in ("1", "2")
+                # The section's own first line is its header when it carries
+                # no sequence, however it spells its columns ("IndexNumber",
+                # "Index Number", or only Name and Sequence): matching one
+                # exact spelling refused a file whose header read otherwise
+                # (review of 3be7a45, P2-5).
+                if not is_index_line and not seen_index_line and not any(
+                        _LOOKS_LIKE_DNA.match(cell.upper()) for cell in cells):
+                    seen_index_line = True
                     continue
                 # A short line, or one whose index number is neither 1 nor 2,
                 # was dropped without a word: the kit then held fewer indexes
                 # than the file listed.
-                if len(cells) < 3 or cells[2] not in ("1", "2"):
+                if not is_index_line:
                     incomplete.append(lineno)
+                    seen_index_line = True
                     continue
+                seen_index_line = True
                 name, seq, index_num = cells[0], cells[1], cells[2]
                 if index_num == "1":
                     if name in i7_indexes:
@@ -810,6 +896,9 @@ class IndexParser:
         reader = csv.DictReader(StringIO(content))
         numbered = [(reader.line_num + line_offset, row) for row in reader]
         rows = [row for _lineno, row in numbered]
+
+        _columns_not_read(reader.fieldnames, _SIMPLE_CSV_COLUMNS)
+        _cells_with_no_column(numbered)
 
         incomplete = [lineno for lineno, row in numbered
                       if _row_has_content(row) and not (_csv_name(row) and _csv_i7(row))]
@@ -954,14 +1043,24 @@ class IndexParser:
         # is refused by the line it is on.
         section_lines: list[tuple[int, str]] = []
         incomplete: list[int] = []
+        outside: list[int] = []
 
         def process_section():
             nonlocal section_lines
-            if not section_lines or current_section is None:
+            if not section_lines:
+                return
+            if current_section is None:
+                # Lines before the first [i7] belong to no section. They were
+                # kept and read as the next section's own, so an [IndexKit]
+                # preamble became its header and the refusal named a good
+                # index instead of the stray lines (review of 3be7a45, P2-4).
+                outside.extend(lineno for lineno, _text in section_lines)
+                section_lines = []
                 return
 
             numbers = [lineno for lineno, _text in section_lines]
             reader = csv.DictReader(StringIO("\n".join(text for _n, text in section_lines)))
+            _columns_not_read(reader.fieldnames, _SECTION_CSV_COLUMNS)
 
             for row in reader:
                 # line_num counts the lines of this section read so far, the
@@ -1002,6 +1101,13 @@ class IndexParser:
         # Process last section
         process_section()
 
+        if outside:
+            raise ColumnsNotRead(
+                f"These lines are before the file's first [i7] section, so they belong to "
+                f"no section and nothing was saved: {_lines(outside)}. An [i7] or [i5] "
+                f"file holds only those two sections; such a line was read as part of the "
+                f"next section or dropped."
+            )
         if incomplete:
             raise _incomplete_csv_rows(incomplete)
 

@@ -75,8 +75,7 @@ Before a kit is saved, SeqSetup checks, in order:
    delete links, so such a kit would be listed and usable but could never be
    deleted.
 
-   Nothing in a file is dropped quietly: four more faults refuse the whole
-   file, with nothing saved.
+   Six more faults refuse the whole file, with nothing saved.
 
    * **i5 data with Single picked.** A Single kit saves the i7 indexes
      only, so a file's ``index2`` column, ``i5Index2`` or ``Index2`` list,
@@ -100,6 +99,26 @@ Before a kit is saved, SeqSetup checks, in order:
    * **A SeqSetup-format name YAML does not read as text.** The same
      refusal the Illumina format already made: an unquoted ``012`` is the
      number 10, so quote such a name (``name: '012'``).
+   * **A column the format does not read.** A CSV header whose name looks
+     like an index or a lane but is not a column the format reads --
+     ``Index 2``, ``I5``, ``index_2``, ``Lane`` -- was ignored, so a file
+     whose i5 column is spelled one of those uploaded as Single lost the i5
+     without a word. Name an i7 column ``index`` and an i5 column
+     ``index2`` (in an ``[i7]`` or ``[i5]`` section, ``sequence``). A row
+     with more cells than the header has columns is refused the same way:
+     that cell was under no column name. A column whose name looks like
+     neither an index nor a lane -- ``plate``, ``Description`` -- is still
+     ignored.
+   * **A line in an ``[i7]``/``[i5]`` CSV that is in no section.** Lines
+     before the first ``[i7]`` were read as part of it, so an
+     ``[IndexKit]`` preamble became its header. They are named instead.
+
+   Three things are still dropped quietly, and are known: a TSV
+   ``[IndexKit]`` key the reader does not use (``AdapterRead1`` among them),
+   a TSV section other than ``[IndexKit]`` and ``[Indices]`` (Illumina's own
+   templates carry a ``[Resources]`` section, which is why these are not
+   refused), and a fourth column in ``[Indices]``. Check a TSV kit's
+   adapters and defaults on its detail page after uploading it.
 4. **Field validation** -- the kit name is required; the version must be a
    valid semantic version; adapter sequences, and every i7/i5 sequence, must
    be DNA (``A``, ``C``, ``G``, ``T``, ``N`` only); every index pair needs a

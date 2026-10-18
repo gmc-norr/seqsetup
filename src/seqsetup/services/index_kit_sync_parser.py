@@ -12,6 +12,12 @@ from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 logger = logging.getLogger(__name__)
 
 
+class KitListsNotRead(ValueError):
+    """A synced kit file holding an index list its own ``index_mode`` does not
+    read. Raised out of ``parse`` rather than turned into None, so the sync's
+    refusal carries this message to the config-sync page."""
+
+
 class IndexKitSyncParser:
     """Parse index kit YAML files from GitHub sync format.
 
@@ -74,6 +80,8 @@ class IndexKitSyncParser:
                 logger.warning(f"Empty YAML content in {source_file}")
                 return None
             return cls._parse_kit(data, source_file)
+        except KitListsNotRead:
+            raise
         except DuplicateKeyError as repeated:
             # Raised, not returned as None: the sync's caller puts the message
             # in the file's refusal, so the config-sync page says which key and
@@ -131,6 +139,27 @@ class IndexKitSyncParser:
             created_by="github_sync",
             source="github",
         )
+
+        # A mode reads some of the three index lists and not the others, so a
+        # list it does not read went nowhere and the sync reported success: a
+        # file saying index_mode: single with an i5_indexes list synced as an
+        # i7-only kit, and samples were then demultiplexed on the i7 alone
+        # (review of 3be7a45, P1-1). Refused before anything is read, naming
+        # the list and the mode; github_sync's per-file refusal then names
+        # the file and keeps the kit of that name and version already stored.
+        read = {IndexMode.UNIQUE_DUAL: ("index_pairs",),
+                IndexMode.COMBINATORIAL: ("i7_indexes", "i5_indexes"),
+                IndexMode.SINGLE: ("i7_indexes",)}[index_mode]
+        unread = [key for key in ("index_pairs", "i7_indexes", "i5_indexes")
+                  if key not in read and data.get(key)]
+        if unread:
+            raise KitListsNotRead(
+                f"index_mode is {index_mode.value}, which reads "
+                f"{' and '.join(read)}, so this file's "
+                f"{' and '.join(unread)} would have been dropped without a word and "
+                f"nothing was read from it: give the file the mode its lists are for, "
+                f"or take the unread {'list' if len(unread) == 1 else 'lists'} out"
+            )
 
         # Parse indexes based on mode
         if index_mode == IndexMode.UNIQUE_DUAL:
