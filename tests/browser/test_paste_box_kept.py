@@ -221,3 +221,31 @@ def test_the_check_panels_set_test_keeps_the_paste_box(logged_in_page, base_url,
     _assert_one_section(page)
     assert [s.test_id for s in app_ctx.run_repo.get_by_id(paste_box_run_id).samples] == [
         "WGS", "WGS"]
+
+
+@pytest.mark.browser
+def test_the_check_panels_set_version_keeps_the_paste_box(logged_in_page, base_url,
+                                                          paste_box_run_id, app_ctx):
+    """The per-test version box is the second form in that panel posting
+    set-test-id; it has to keep the paste box too (break row P12)."""
+    page = logged_in_page
+    run = app_ctx.run_repo.get_by_id(paste_box_run_id)
+    for sample in run.samples:
+        sample.test_id = "WGS"
+        sample.test_version = ""
+    app_ctx.run_repo.save(run)
+
+    _open_with_typed_paste(page, base_url, paste_box_run_id)
+    version_form = page.locator('form.validate-fix:has(input[name="only_if"][value="no_version"])')
+    expect(version_form).to_have_count(1)
+    version_form.locator('input[name="test_version"]').fill("2")
+    with page.expect_response(lambda r: r.url.endswith("/samples/set-test-id")) as got:
+        version_form.locator('button[type="submit"]').click()
+    assert got.value.status == 200, got.value.status
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+
+    _assert_paste_box_survived(page)
+    _assert_one_section(page)
+    assert [s.test_version for s in app_ctx.run_repo.get_by_id(paste_box_run_id).samples] == [
+        "2", "2"]
