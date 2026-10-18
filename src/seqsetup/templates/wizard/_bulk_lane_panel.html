@@ -14,11 +14,17 @@
        and pull that one element out of the answer with hx-select, because
        #sample-section holds the paste box: swapping the whole section threw
        away a worklist someone had pasted and not yet added, with its lane
-       ticks and its open fold (later list #5, 2026-10-18).
+       ticks and its open fold (2026-10-18 batch, step 5).
        hx-select is what makes this safe. Targeting #sample-table *without*
        it swapped the whole section in where the table was and nested a
        second #sample-section inside the first — two paste forms, two index
        panels, two of every id (test_bulk_lane_panel_swap.py).
+       What makes the NARROW swap safe is that these four write only lanes,
+       the two barcode_mismatches_*, override_cycles and test_id/version —
+       nothing outside #sample-table depends on any of those. The index
+       panel and the has_unindexed wrapper live outside it, so an action
+       that changed a sample's index must redraw the whole section and must
+       NOT be copied from these four.
      - bulk-delete returns wizard/_sample_table.html directly (just the
        table), so it targets #sample-table and needs no hx-select.
    app.js globals (applyBulkLanesForm() etc.) read the visible inputs,

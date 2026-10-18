@@ -102,11 +102,15 @@
         {% endif %}
         {% if fix_test_ids and test_profiles %}
         {# hx-select is set here because this form sits inside the fieldset,
-           whose hx-select (.validate-panel-content) it would otherwise inherit. #}
+           whose hx-select (.validate-panel-content) it would otherwise
+           inherit. It names #sample-table, not #sample-section: the route
+           answers with the whole section, which holds the paste box, and
+           swapping that destroyed a worklist someone had pasted and not yet
+           added -- the same loss the bulk panel had (review of 7a2a931). #}
         <form class="validate-fix"
               hx-post="/runs/{{ run.id }}/samples/set-test-id"
-              hx-target="#sample-section"
-              hx-select="#sample-section"
+              hx-target="#sample-table"
+              hx-select="#sample-table"
               hx-swap="outerHTML"
               hx-disabled-elt="find button">
             <input type="hidden" name="sample_ids" value='{{ fix_test_ids | tojson }}'>
@@ -131,8 +135,8 @@
         {% for test, ids in (fix_versions or []) if test_profiles %}
         <form class="validate-fix"
               hx-post="/runs/{{ run.id }}/samples/set-test-id"
-              hx-target="#sample-section"
-              hx-select="#sample-section"
+              hx-target="#sample-table"
+              hx-select="#sample-table"
               hx-swap="outerHTML"
               hx-disabled-elt="find button">
             <input type="hidden" name="sample_ids" value='{{ ids | tojson }}'>

@@ -183,8 +183,9 @@ def test_adding_the_pasted_samples_still_clears_the_box(logged_in_page, base_url
 def test_delete_selected_still_redraws_the_table(logged_in_page, base_url,
                                                  paste_box_run_id, app_ctx):
     """bulk-delete returns the table itself, so it must NOT take an hx-select:
-    one naming the section would match nothing in that answer and the deleted
-    rows would stay on the screen (break row P10)."""
+    one naming the section matches nothing in that answer, and htmx then swaps
+    *nothing* in -- the whole table disappears from the page (break row P10).
+    Hence the check that the section and the table are both still there."""
     page = logged_in_page
     _open_with_typed_paste(page, base_url, paste_box_run_id)
     page.on("dialog", lambda d: d.accept())
@@ -197,3 +198,26 @@ def test_delete_selected_still_redraws_the_table(logged_in_page, base_url,
     expect(page.locator("tr.sample-row")).to_have_count(0)
     _assert_one_section(page)
     assert app_ctx.run_repo.get_by_id(paste_box_run_id).samples == []
+
+
+@pytest.mark.browser
+def test_the_check_panels_set_test_keeps_the_paste_box(logged_in_page, base_url,
+                                                       paste_box_run_id, app_ctx):
+    """The Check panel's fix boxes post the same set-test-id route and swapped
+    the whole section too, so they destroyed the same typed worklist one panel
+    below the bulk panel (review of 7a2a931, P2-1)."""
+    page = logged_in_page
+    _open_with_typed_paste(page, base_url, paste_box_run_id)
+
+    page.locator("#fix-test-id").select_option("WGS")
+    page.locator('form.validate-fix input[name="test_version"]').first.fill("1")
+    with page.expect_response(lambda r: r.url.endswith("/samples/set-test-id")) as got:
+        page.locator('form.validate-fix button:has-text("Set test")').click()
+    assert got.value.status == 200, got.value.status
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+
+    _assert_paste_box_survived(page)
+    _assert_one_section(page)
+    assert [s.test_id for s in app_ctx.run_repo.get_by_id(paste_box_run_id).samples] == [
+        "WGS", "WGS"]
