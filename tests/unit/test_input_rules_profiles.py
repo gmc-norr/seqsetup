@@ -256,6 +256,50 @@ class TestVersions:
         assert (("TestType",), "must be text: put it in quotes") in _errors(_test(TEST.replace("TestType: WGS", "TestType: 5")))
 
 
+class TestEveryBoundAtItsEdge:
+    """Each length and range is taken at its edge and refused one past it
+    (the fresh review of b21ea6f, P3 2): a whole number past 64 bits once
+    passed the check and stopped the sync's save after it had deleted the
+    stored profiles."""
+
+    @pytest.mark.parametrize("old, key", [
+        ("ApplicationProfileName: BCLConvertTest", ("ApplicationProfileName",)),
+        ("ApplicationType: Dragen", ("ApplicationType",)),
+    ])
+    def test_text_in_an_application_profile(self, old, key):
+        name = key[0]
+
+        assert _errors(_app(APP.replace(old, f"{name}: " + "a" * 256))) == []
+        assert _errors(_app(APP.replace(old, f"{name}: " + "a" * 257))) == [
+            (key, "must be at most 256 characters")]
+
+    @pytest.mark.parametrize("old, key, most", [
+        ("TestType: WGS", ("TestType",), 256),
+        ("TestName: WGS", ("TestName",), 256),
+        ("Description: Whole Genome Sequencing", ("Description",), 4096),
+        ("  - ApplicationProfileName: BCLConvertTest",
+         ("ApplicationProfiles", 0, "ApplicationProfileName"), 256),
+    ])
+    def test_text_in_a_test_profile(self, old, key, most):
+        start = old[:old.index(":") + 2]
+
+        assert _errors(_test(TEST.replace(old, start + "a" * most))) == []
+        assert _errors(_test(TEST.replace(old, start + "a" * (most + 1)))) == [
+            (key, f"must be at most {most} characters")]
+
+    @pytest.mark.parametrize("value, says", [
+        (2**63, "must be at most 9223372036854775807"),
+        (-2**63 - 1, "must be at least -9223372036854775808"),
+    ])
+    def test_a_whole_number_in_the_sheet(self, value, says):
+        def written(number):
+            return _errors(_app(APP.replace("FastqCompressionFormat: gzip",
+                                            f"FastqCompressionFormat: {number}")))
+
+        assert written(2**63 - 1) == [] and written(-2**63) == []
+        assert written(value) == [(("Settings", "FastqCompressionFormat"), says)]
+
+
 class TestSheetValues:
     """Settings and Data keys are open, but each is a plain name and each
     value is text, a whole number or true/false."""
