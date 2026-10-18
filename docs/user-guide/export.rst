@@ -378,21 +378,23 @@ A Ready run's status bar also offers **Archive**:
 
    The Archive button, outlined.
 
+Archiving cannot be undone, so the button asks first: *"Archive this run?
+An archived run cannot be changed and cannot be returned to Draft. To
+sequence it again you would have to build a new run."* Nothing happens
+until you accept.
+
 Archiving keeps the run's stored exports -- unlike Return to
 Draft, nothing is discarded, and every download from the previous section
 keeps working exactly as it did while the run was Ready. The Export panel
 itself looks no different on an Archived run -- the same buttons, all
 still enabled, as in the Ready screenshot above. What changes is the
-status bar and the transitions on offer: instead of **Return to Draft**
-and **Archive**, an Archived run's status bar shows a single **Reset to
-Draft** button.
+status bar: instead of **Return to Draft** and **Archive**, an Archived
+run's status bar shows no button at all, and says *"An archived run cannot
+be changed or returned to Draft"*.
 
 .. warning::
-   Archived is a dead end. The status bar still shows a button in its
-   place, but selecting it is refused outright, with an error banner and
-   toast reporting the rejection -- nothing about the run changes.
-   Double-check a run before archiving it: once archived, the only way to
-   sequence it again is to build a new run.
+   Archived is a dead end. Double-check a run before archiving it: once
+   archived, the only way to sequence it again is to build a new run.
 
 Archiving does not touch the run's :doc:`Change History <change-history>`.
 An administrator can still delete an Archived run (see :doc:`dashboard`); a

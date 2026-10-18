@@ -26,7 +26,9 @@ buttons on the right depend on the run's status:
 
 - **Edit** (Draft) or **Open** (Ready/Archived) -- go to the run.
 - **Duplicate** -- start a new Draft copying this run's configuration.
-- **Archive** -- Ready runs only.
+- **Archive** -- Ready runs only. It asks first, naming the run: an
+  archived run cannot be changed or returned to Draft, so the only way to
+  sequence it again is to build a new run.
 - **Delete** -- an empty Draft (no samples yet), or an Archived run if you
   are an administrator. An empty Draft that was Ready once -- sent back to
   Draft and emptied -- can only be deleted by an administrator.
