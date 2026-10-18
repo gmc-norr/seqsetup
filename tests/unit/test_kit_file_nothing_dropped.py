@@ -363,7 +363,11 @@ class TestAColumnTheParserDoesNotReadIsRefused:
     ``index2`` spelling gets. The sample paste has refused such a column by
     name since ``32ae40e``; the kit parser now does too."""
 
-    @pytest.mark.parametrize("column", ["Index 2", "I5", "index_2", "Lane", "Barcode"])
+    # "Index 2", "I5" and "index_2" are the i5 column spelled differently and
+    # are read as it (see TestAColumnIsReadHoweverItIsSpelled), so in a Single
+    # upload they are refused as i5 data -- never ignored. These are the names
+    # the format cannot place at all.
+    @pytest.mark.parametrize("column", ["Lane", "Barcode", "I7_Index_ID", "Index_Plate"])
     def test_a_column_that_looks_like_an_index_or_a_lane_is_refused(self, column):
         content = f"name,index,{column}\nA1,ATTACTCG,TATAGCCT\n"
 
@@ -371,6 +375,16 @@ class TestAColumnTheParserDoesNotReadIsRefused:
             IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
 
         assert column in str(refused.value), str(refused.value)
+
+    @pytest.mark.parametrize("column", ["Index 2", "I5", "index_2"])
+    def test_an_i5_column_spelled_differently_is_read_not_ignored(self, column):
+        content = f"name,index,{column}\nA1,ATTACTCG,TATAGCCT\n"
+
+        kit = IndexParser.parse_from_content(content, "k.csv",
+                                             index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert [(p.index1.sequence, p.index2.sequence) for p in kit.index_pairs] == [
+            ("ATTACTCG", "TATAGCCT")]
 
     @pytest.mark.parametrize("column", ["plate", "Description", "Owner"])
     def test_a_column_that_looks_like_neither_is_still_ignored(self, column):
@@ -469,3 +483,136 @@ class TestTheTsvHeaderLineIsReadHoweverItIsSpelled:
             IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
 
         assert "line 5" in str(refused.value), str(refused.value)
+
+
+class TestAColumnIsReadHoweverItIsSpelled:
+    """``row.get("index")`` matched the header text exactly, so a file whose
+    column is called ``INDEX`` or ``Index_2`` in the other letter case was
+    read as having no such column -- ignored, and then refused as an unread
+    index-looking column. The sample paste matches a header on
+    ``col.lower().strip()``; the kit reader now does too, so the file is read
+    rather than turned away."""
+
+    @pytest.mark.parametrize("i7_column", ["index", "INDEX", "Index", " index ", "SEQUENCE"])
+    @pytest.mark.parametrize("i5_column", ["index2", "INDEX2", "Index_2", "index_2", "i5"])
+    def test_the_columns_are_read_in_any_case_or_spacing(self, i7_column, i5_column):
+        content = f"name,{i7_column},{i5_column}\nA1,ATTACTCG,TATAGCCT\n"
+
+        kit = IndexParser.parse_from_content(content, "k.csv",
+                                             index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert [(p.index1.sequence, p.index2.sequence) for p in kit.index_pairs] == [
+            ("ATTACTCG", "TATAGCCT")]
+
+    def test_two_columns_for_one_slot_are_refused_naming_both(self):
+        content = "name,index,INDEX\nA1,ATTACTCG,TCCGGAGA\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+
+        message = str(refused.value)
+        assert "index" in message and "INDEX" in message, message
+
+    def test_a_byte_order_mark_does_not_hide_the_first_column(self):
+        content = "﻿name,index\nA1,ATTACTCG\n"
+
+        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+
+        assert [i.name for i in kit.i7_indexes] == ["A1"]
+
+
+class TestASectionHeaderIsReadWithAStraySeparator:
+    """A spreadsheet writes ``[i7]`` as ``[i7],`` or ``"[i7]"`` when the sheet
+    has more than one column, and ``line.lower() == "[i7]"`` then read the
+    header as a line of the section."""
+
+    @pytest.mark.parametrize("marker", ["[i7]", "[i7],", '"[i7]"', "[i7] ,,"])
+    def test_the_section_is_still_a_section(self, marker):
+        content = (f"{marker}\nname,sequence\nA1,ATTACTCG\n"
+                   f"{marker.replace('i7', 'i5')}\nname,sequence\nB1,TATAGCCT\n")
+
+        kit = IndexParser.parse_from_content(content, "k.csv",
+                                             index_mode=IndexMode.COMBINATORIAL)
+
+        assert ([i.name for i in kit.i7_indexes], [i.name for i in kit.i5_indexes]) == (
+            ["A1"], ["B1"])
+
+    def test_a_section_row_with_a_cell_under_no_column_is_refused(self):
+        content = "[i7]\nname,sequence\nA1,ATTACTCG,TATAGCCT\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv",
+                                           index_mode=IndexMode.COMBINATORIAL)
+
+        assert "line 3" in str(refused.value), str(refused.value)
+
+
+class TestATsvLineInNoSectionOrAnUnreadSectionIsRefused:
+    """``_parse_tsv`` had no branch for any section but [IndexKit] and
+    [Indices], so a line before the first section, between the two, or under a
+    section header spelled [Indexes] vanished while the file's other lines kept
+    the kit valid -- indexes gone, nothing said."""
+
+    def test_a_line_before_the_first_section_is_named(self):
+        content = "Old kit\tnotes\n[IndexKit]\nName\tOld kit\n\n[Indices]\nA1\tATTACTCG\t1\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+
+        assert "line 1" in str(refused.value), str(refused.value)
+
+    def test_a_misspelled_indices_section_is_named_with_its_lines(self):
+        content = ("[IndexKit]\nName\tOld kit\n\n[Indexes]\n"
+                   "Name\tSequence\tIndexNumber\nA1\tATTACTCG\t1\n\n[Indices]\n"
+                   "Name\tSequence\tIndexNumber\nB1\tTCCGGAGA\t1\n")
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+
+        message = str(refused.value)
+        assert "Indexes" in message and "line 5" in message, message
+
+    def test_a_file_with_only_the_two_sections_it_reads_is_read(self):
+        kit = IndexParser.parse_from_content(_illumina_tsv(I7, I5), "k.tsv",
+                                             index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert [p.name for p in kit.index_pairs] == list(I7)
+
+
+class TestASyncFormatListTheModeDoesNotReadIsRefused:
+    """The upload path refused a list a Single kit does not read but kept the
+    pairs of a Combinatorial upload and the i7 list of a Unique Dual one, both
+    of which the panel never shows. The sync refuses every such list; the
+    upload now does the same."""
+
+    @pytest.mark.parametrize("mode, extra, unread", [
+        (IndexMode.COMBINATORIAL, "index_pairs:\n  - name: P1\n    index1:\n"
+                                  "      name: A1\n      sequence: ATTACTCG\n", "index_pairs"),
+        (IndexMode.UNIQUE_DUAL, "i7_indexes:\n  - name: Z9\n    sequence: CGCTCATT\n",
+         "i7_indexes"),
+    ])
+    def test_the_unread_list_is_named(self, mode, extra, unread):
+        base = ("name: Old kit\ni7_indexes:\n  - name: A1\n    sequence: ATTACTCG\n"
+                "i5_indexes:\n  - name: B1\n    sequence: TATAGCCT\n"
+                if mode == IndexMode.COMBINATORIAL else
+                "name: Old kit\nindex_pairs:\n  - name: P1\n    index1:\n"
+                "      name: A1\n      sequence: ATTACTCG\n    index2:\n"
+                "      name: A1\n      sequence: TATAGCCT\n")
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(base + extra, "sync.yaml", index_mode=mode)
+
+        assert unread in str(refused.value), str(refused.value)
+
+    @pytest.mark.parametrize("mode, content", [
+        (IndexMode.COMBINATORIAL, "name: K\ni7_indexes:\n  - name: A1\n    sequence: ATTACTCG\n"
+                                  "i5_indexes:\n  - name: B1\n    sequence: TATAGCCT\n"),
+        (IndexMode.UNIQUE_DUAL, "name: K\nindex_pairs:\n  - name: P1\n    index1:\n"
+                                "      name: A1\n      sequence: ATTACTCG\n    index2:\n"
+                                "      name: A1\n      sequence: TATAGCCT\n"),
+        (IndexMode.SINGLE, "name: K\ni7_indexes:\n  - name: A1\n    sequence: ATTACTCG\n"),
+    ])
+    def test_a_file_whose_lists_match_its_mode_is_read(self, mode, content):
+        kit = IndexParser.parse_from_content(content, "sync.yaml", index_mode=mode)
+
+        assert _sequences(kit) >= {"ATTACTCG"}
