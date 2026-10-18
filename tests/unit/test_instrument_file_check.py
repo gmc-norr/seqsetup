@@ -50,37 +50,37 @@ class TestShippedFile:
 
 
 class TestBrokenInstrument:
-    """Each problem names the instrument and, where the check can tell, the field."""
+    """Each problem names the instrument, the field and its line
+    (docs/design/2026-10-18-input-rules-design.md)."""
 
     def test_a_bad_i5_orientation(self, tmp_path):
         workflows = [{"name": "Standard", "i5_read_orientation": "forwards"}]
         path = _file(tmp_path, _shipped(MiSeq=_entry("MiSeq", i5_workflows=workflows)))
-        assert _problems(path) == (
-            STOPS + "MiSeq: i5_workflows: i5_read_orientation must be forward or "
-            "reverse-complement (got: 'forwards')"
-        )
+        message = _problems(path)
+        assert message.startswith(STOPS + "instruments.yaml:")
+        assert ("instruments > MiSeq > i5_workflows > item 1 > i5_read_orientation: "
+                "must be one of: 'forward' or 'reverse-complement'") in message
 
     def test_an_entry_that_is_not_a_mapping(self, tmp_path):
         path = _file(tmp_path, _shipped(MiSeq="forward"))
-        assert _problems(path) == STOPS + "MiSeq: must be a mapping"
+        assert "instruments > MiSeq: must be a map of keys and values" in _problems(path)
 
     def test_a_bad_flowcell(self, tmp_path):
         entry = _entry("MiSeq")
         flowcell = next(iter(entry["flowcells"]))
         entry["flowcells"][flowcell]["lanes"] = 0
         path = _file(tmp_path, _shipped(MiSeq=entry))
-        assert _problems(path) == (
-            STOPS + f"MiSeq: flowcells.{flowcell}.lanes: Must be a positive integer (got: '0')"
-        )
+        assert f"instruments > MiSeq > flowcells > {flowcell} > lanes: must be at least 1" in _problems(path)
 
     @pytest.mark.parametrize("field,value", [
         pytest.param("channel1_bases", 42, id="bases-number"),
     ])
-    def test_a_value_the_check_cannot_read(self, tmp_path, field, value):
-        # validate_instrument_yaml raises TypeError on these (Astra review P8).
+    def test_a_value_the_old_check_could_not_read(self, tmp_path, field, value):
+        # validate_instrument_yaml raised TypeError on these (Astra review P8);
+        # the rulebook names the field and what it must be.
         name = "NovaSeq X Series"
         path = _file(tmp_path, _shipped(**{name: _entry(name, **{field: value})}))
-        assert _problems(path).startswith(STOPS + f"{name}: could not be checked: ")
+        assert f"instruments > {name} > {field}: must be a list" in _problems(path)
 
     def test_every_problem_is_listed(self, tmp_path):
         path = _file(tmp_path, _shipped(
@@ -88,31 +88,49 @@ class TestBrokenInstrument:
             MiniSeq=_entry("MiniSeq", runinfo_marks_i5_reversed="y"),
         ))
         message = _problems(path)
-        assert "MiSeq: i5_workflows: " in message
-        assert "MiniSeq: runinfo_marks_i5_reversed: " in message
+        assert "instruments > MiSeq > i5_workflows: " in message
+        assert "instruments > MiniSeq > runinfo_marks_i5_reversed: " in message
+
+    def test_a_problem_names_its_line(self, tmp_path):
+        text = SHIPPED.read_text().replace("index_cycle_options:", "index_cycle_option:")
+        line = text.splitlines().index(next(r for r in text.splitlines() if r.startswith("index_cycle_option:"))) + 1
+        message = _problems(_file(tmp_path, text))
+        assert f"instruments.yaml:{line}:1: index_cycle_option: is not a key this file can have" in message
+        assert "index_cycle_options: is required" in message
 
 
 class TestBrokenFile:
     """A file that cannot be read as instruments stops the start, naming the file."""
 
     def test_yaml_that_cannot_be_read(self, tmp_path):
-        assert _problems(_file(tmp_path, "instruments: [unclosed\n")).startswith(
-            STOPS + "cannot be read as YAML: "
-        )
+        message = _problems(_file(tmp_path, "instruments: [unclosed\n"))
+        assert message.startswith(STOPS + "instruments.yaml:2:1: the file: ")
+        assert "not closed" in message
 
-    @pytest.mark.parametrize("text", [
-        pytest.param("", id="empty"),
-        pytest.param("- MiSeq\n", id="list"),
-    ])
-    def test_a_top_level_that_is_not_a_mapping(self, tmp_path, text):
-        assert _problems(_file(tmp_path, text)) == STOPS + "must be a mapping at the top level"
+    def test_an_empty_file(self, tmp_path):
+        assert _problems(_file(tmp_path, "")) == STOPS + "instruments.yaml:1:1: the file: the file is empty"
+
+    def test_a_top_level_that_is_not_a_mapping(self, tmp_path):
+        assert _problems(_file(tmp_path, "- MiSeq\n")) == (
+            STOPS + "instruments.yaml:1:1: the file: must be a map of keys and values")
 
     def test_instruments_that_is_not_a_mapping(self, tmp_path):
-        path = _file(tmp_path, {"instruments": ["MiSeq"]})
-        assert _problems(path) == STOPS + "'instruments' must be a mapping"
+        path = _file(tmp_path, {**yaml.safe_load(SHIPPED.read_text()), "instruments": ["MiSeq"]})
+        assert "instruments: must be a map of keys and values" in _problems(path)
+
+    def test_an_anchor_is_refused(self, tmp_path):
+        text = SHIPPED.read_text().replace("index_cycle_options:", "index_cycle_options: &x")
+        assert "a YAML anchor (&name) is not allowed" in _problems(_file(tmp_path, text))
+
+    def test_a_folder_where_the_file_should_be(self, tmp_path):
+        path = tmp_path / "instruments.yaml"
+        path.mkdir()
+        message = _problems(path)
+        assert message.startswith(STOPS)
+        assert "cannot be read" in message
 
     def test_warnings_do_not_stop_it(self, tmp_path):
-        # Every local entry lacks `version`, which the check only warns about.
+        # Every local entry lacks `version`, which only a synced file must state.
         data = yaml.safe_load(SHIPPED.read_text())
         assert all("version" not in entry for entry in data["instruments"].values())
         assert load_checked_instrument_file(_file(tmp_path, data)) == data
@@ -120,7 +138,7 @@ class TestBrokenFile:
 
 class TestStartAndReload:
     """The app reads the file through the check. A missing file at start still
-    loads no instruments, and reload_config() still raises for one."""
+    loads no instruments; one it can see but not read stops the start."""
 
     # _loaded_config_path is in the list because it was not: a test here
     # left it naming a tmp_path file, and the next app start in the same
@@ -161,7 +179,13 @@ class TestStartAndReload:
             instruments_module._initialize_at_start()
         assert instruments_module._instruments == {}
 
-    def test_reload_with_a_missing_file_raises(self, monkeypatch, keep_loaded_config):
-        monkeypatch.setattr(instruments_module, "_find_config_path", self._missing)
-        with pytest.raises(FileNotFoundError):
-            instruments_module.reload_config()
+    def test_reload_config_is_gone(self):
+        # It had no caller and did not clear the validation cache.
+        assert not hasattr(instruments_module, "reload_config")
+
+    def test_a_folder_on_the_way_that_loops_stops_the_start(self, tmp_path, monkeypatch,
+                                                            keep_loaded_config):
+        loop = tmp_path / "loop"
+        loop.symlink_to(loop)
+        with pytest.raises(InstrumentConfigError, match="cannot be read"):
+            instruments_module._present(loop / "instruments.yaml")

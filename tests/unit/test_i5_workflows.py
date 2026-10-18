@@ -36,6 +36,11 @@ def _yaml(**changes) -> dict:
         "samplesheet_name": "MiSeqi100Series",
         "version": "1.0.0",
         "chemistry_type": "4-color",
+        # Written out, as a fact that changes a sheet or a check must be
+        # (docs/design/2026-10-18-input-rules-design.md).
+        "has_dragen_onboard": False,
+        "color_balance_enabled": False,
+        "onboard_applications": {"BCLConvert": {"software_version": "4.3.6"}},
         "flowcells": {"5M": {"lanes": 1, "reads": 5000000, "reagent_kits": [100]}},
         "i5_workflows": [_workflow("Index-first", FORWARD), _workflow("Read-first", REVERSED)],
         "runinfo_marks_i5_reversed": True,
@@ -128,7 +133,9 @@ class TestTheRules:
         path.write_text(yaml.safe_dump(data))
         with pytest.raises(InstrumentConfigError) as exc:
             load_checked_instrument_file(path)
-        assert f"MiSeq i100 Series: {field}: " in str(exc.value)
+        # The rulebook names the path down to the field (the input rules
+        # design, 2026-10-18), not "name: field:" as the old validator did.
+        assert f"instruments > MiSeq i100 Series > {field}" in str(exc.value)
 
     def test_the_old_keys_point_to_the_new_ones(self):
         result = validate_instrument_yaml(_yaml(i5_read_orientation=FORWARD), "i100.yaml")
