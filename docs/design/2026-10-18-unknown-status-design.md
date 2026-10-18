@@ -43,12 +43,23 @@ dashboard names it.
   `stored_platform` call they already shared.
 - The legacy `"complete"` -> `ARCHIVED` mapping stays: SeqSetup wrote that value.
 - **A missing status is refused too.** Every version of `to_dict` in this
-  repository's history writes `"status": self.status.value` -- checked over every
-  commit that ever touched `models/sequencing_run.py`, back to the first
-  (`66251be`) -- so only a document changed outside SeqSetup lacks the field.
+  repository's history writes `"status": self.status.value` -- all 27 of them,
+  across both paths the file has had, back to the initial commit (`da2a859`) --
+  and `RunStatus` never had another member. Only `RunRepository` writes the
+  `runs` collection, and only through `to_dict()` (plus `mark_changed`, which
+  does not touch `status`), with no upsert anywhere. So only a document changed
+  outside SeqSetup lacks the field.
 - The dashboard, its tabs and its search already name a run they cannot list
   (`list_readable_summaries`); opening one fails, as for any damaged run, and
-  nothing is written.
+  nothing is written. Measured: every collection but `web_sessions` (the auth
+  middleware's `last_seen_at`) is byte-identical after a refused request, so no
+  audit row either.
+- `/admin/deleted-runs` fails for every administrator while such a run has a
+  copy whose delete never finished, because `services/deleted_runs.py` checks
+  whether the run still exists by loading it -- the same hole the unknown-
+  instrument note records, and what the `fix/deleted-runs-damaged` branch of
+  this batch closes. `/served-runs` does **not** fail: it lists by status, so a
+  damaged status is outside both of its queries.
 
 ## What the API does
 
@@ -59,11 +70,22 @@ the API was asked for. `/api/runs` therefore answers 200 with the other runs
 rather than failing.
 
 That is deliberate and not a regression: under the old fallback the run was read
-as a Draft and equally absent. What changed is everything else -- the dashboard
-names it, and each per-run endpoint (`/api/runs/{id}/samplesheet-v2`,
-`samplesheet-v1`, `json`, `validation-report`, `validation-pdf`) loads the run by
-id and now refuses it with the message naming the value, instead of serving a
-file from a run read as a Draft.
+as a Draft and equally absent. Nor is the omission new in kind -- a readable
+`"complete"` run is omitted from `?status=archived` for the same reason, since
+the filter matches the stored string.
+
+What changed is everything else -- the dashboard names it, and each per-run
+endpoint (`/api/runs/{id}/samplesheet-v2`, `samplesheet-v1`, `json`,
+`validation-report`, `validation-pdf`) loads the run by id and now refuses it,
+instead of serving a file from a run read as a Draft.
+
+**What the caller sees is a bare 500**, with the message naming the run and the
+value in the log only -- the same as for an unknown instrument
+(`stored_platform`), since both raise a plain `ValueError`. That is weaker than
+the precedent `CLAUDE.md` sets for a damaged stored export (`ExportDamaged`: a
+500 that names the file, audited, never "try again"). Giving a damaged stored
+*document* the same treatment -- its own exception, a named 500, an audit row --
+would cover the instrument case too and is left for the human to decide.
 
 Making the list itself fail would need a second query per request, for runs
 outside the requested status, and would let a damaged draft-ish document block

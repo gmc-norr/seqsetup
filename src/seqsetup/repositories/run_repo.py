@@ -126,8 +126,12 @@ class RunRepository(BaseRepository[SequencingRun]):
         ``/served-runs``, where a quietly shortened list would change what an
         external clinical consumer receives.
 
-        ``status`` is matched as stored, so the legacy ``"complete"`` is not
-        an ``"archived"`` run here — again exactly as ``list_by_status``.
+        ``status`` is matched as stored, so a document the filter does not
+        match is not in the set asked for and is never read — the legacy
+        ``"complete"`` is not an ``"archived"`` run here, and neither is a
+        status this release cannot read (which every per-run endpoint refuses
+        on its own, docs/design/2026-10-18-unknown-status-design.md). Again
+        exactly as ``list_by_status``.
         """
         pipeline = self._listing_pipeline(
             {"status": status} if status is not None else None,
