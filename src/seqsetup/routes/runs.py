@@ -65,7 +65,8 @@ from ..templating import render, templates
 from ..services import edit_locks
 from ..services.edit_locks import EditLockRefused
 from .dependencies import get_archivable_run, get_ctx, get_editable_run, require_edit_lock, saving_run
-from .utils import check_status_transition, get_username, sanitize_string, selected_kit_id
+from .utils import (check_status_transition, get_username, sanitize_string,
+                    selected_kit_id, setup_panel_context)
 
 
 logger = logging.getLogger(__name__)
@@ -1258,19 +1259,13 @@ def update_status(
     )
     ready_html = templates.env.get_template("runs/_ready_message.html").render(oob=True)
     # The setup panel too: its Edit setup link is shown only to whoever holds
-    # the draft's edit lock, so a Ready run kept offering it until a reload --
-    # a link to a page where every save is then refused -- and a run just
-    # returned to Draft was missing it (2026-10-18 batch, step 6).
-    flowcells = get_flowcells_for_instrument(run.instrument_platform)
+    # the draft's edit lock, so a Ready run kept offering it until a reload.
+    # Following it only bounced -- routes/wizard.py redirects a non-Draft run
+    # away from the setup page -- but the page offered a step it could not
+    # take (2026-10-18 batch, step 6). The context comes from the one builder
+    # the run page uses, so the two renderings cannot drift.
     config_html = templates.env.get_template("runs/_run_config_panel.html").render(
-        run=run,
-        flowcell_desc=flowcells.get(run.flowcell_type, {}).get(
-            "description", run.flowcell_type),
-        cycles=run.run_cycles,
-        i5_workflows=i5_workflow_names(run.instrument_platform.value),
-        is_editable=is_editable,
-        oob=True,
-    )
+        **setup_panel_context(run, is_editable=is_editable, oob=True))
     return HTMLResponse(
         status_html + export_html + section_html + ready_html + config_html,
         headers={"Cache-Control": "no-store"})

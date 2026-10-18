@@ -23,7 +23,7 @@ from ..services.versioned_tests import offered_tests
 from ..services.validation_summary import error_messages, errors_by_sample, waiting_for_samples
 from ..templating import render
 from .dependencies import get_ctx
-from .utils import get_username
+from .utils import get_username, setup_panel_context
 
 
 router = APIRouter(tags=["main"])
@@ -204,16 +204,6 @@ def edit_run(
     validation_result = _validate_for_panel(run, ctx)
     has_v1 = SampleSheetV1Exporter.supports(run.instrument_platform)
 
-    # Resolve flowcell description for the Jinja2 template.
-    flowcells = get_flowcells_for_instrument(run.instrument_platform)
-    flowcell_info = flowcells.get(run.flowcell_type, {})
-    flowcell_desc = flowcell_info.get("description", run.flowcell_type)
-
-    # No default: a run with no counts showed 150/10/10/150, and pressing
-    # Continue would have saved those unseen (review F2). The panel says
-    # "not set" and the fields are empty, so Continue refuses.
-    cycles = run.run_cycles
-
     return render(request, "runs/edit.html", {
         "run": run,
         "index_kits": index_kits,
@@ -230,7 +220,10 @@ def edit_run(
         "fix_versions": _samples_without_version(run, is_editable),
         "steps": _run_steps(run, validation_result),
         "has_v1": has_v1,
-        "flowcell_desc": flowcell_desc,
-        "cycles": cycles,
-        "i5_workflows": i5_workflow_names(run.instrument_platform.value),
+        # The setup panel's own context, from the one builder the status
+        # answer uses too (routes/runs.py: update_status), so the panel the
+        # page draws and the panel that answer sends cannot drift. "cycles"
+        # has no default: a run with no counts showed 150/10/10/150, and
+        # pressing Continue would have saved those unseen (review F2).
+        **setup_panel_context(run, is_editable=is_editable),
     })

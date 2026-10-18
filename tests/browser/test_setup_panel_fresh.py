@@ -62,12 +62,15 @@ def test_edit_setup_goes_and_comes_back_with_the_status(logged_in_page, base_url
     page.wait_for_load_state("networkidle")
     panel = page.locator("#run-config-panel")
     expect(panel.get_by_text("Edit setup")).to_be_visible()
+    page.evaluate("() => { window.__panelSentinel = 'set'; }")
 
     page.get_by_role("button", name="Mark Ready").click()
     _answer_any_questions(page)
     page.wait_for_selector("#run-status-bar .status-ready")
 
-    # One panel, and no Edit setup in it -- without a reload.
+    # One panel, and no Edit setup in it. The sentinel proves this is a swap:
+    # a reload would wipe it (a comment claiming "no reload" is not evidence).
+    assert page.evaluate("() => window.__panelSentinel") == "set"
     expect(page.locator("#run-config-panel")).to_have_count(1)
     expect(page.locator("#run-config-panel").get_by_text("Edit setup")).to_have_count(0)
     expect(page.locator("#run-config-panel")).to_contain_text("NovaSeq X Series")
@@ -75,5 +78,12 @@ def test_edit_setup_goes_and_comes_back_with_the_status(logged_in_page, base_url
     page.get_by_role("button", name="Return to Draft").click()
     page.wait_for_selector("#run-status-bar .status-draft")
 
+    assert page.evaluate("() => window.__panelSentinel") == "set"
     expect(page.locator("#run-config-panel")).to_have_count(1)
     expect(page.locator("#run-config-panel").get_by_text("Edit setup")).to_be_visible()
+
+    # Alpine re-initialises the swapped node (it has no htmx:afterSwap hook in
+    # this project, only Alpine's own mutation observer): the panel's UUID
+    # Copy button still answers.
+    page.locator("#run-config-panel .uuid-copy-btn").click()
+    expect(page.locator("#run-config-panel .uuid-copy-btn")).not_to_have_text("Copy")

@@ -70,6 +70,31 @@ def check_status_transition(current: RunStatus, target: RunStatus) -> Response |
     return None
 
 
+def setup_panel_context(run, *, is_editable: bool, oob: bool = False) -> dict:
+    """What ``runs/_run_config_panel.html`` needs, in one place.
+
+    The run page (``routes/main.py``) and the status answer
+    (``routes/runs.py``: ``update_status``) both render that panel. Building
+    its context twice by hand is the condition that put the two out of step
+    in the first place -- the page knew the run was Ready and the panel did
+    not -- so both read it from here.
+    """
+    from ..data.instruments import get_flowcells_for_instrument, i5_workflow_names
+
+    flowcells = get_flowcells_for_instrument(run.instrument_platform)
+    return {
+        "run": run,
+        "flowcell_desc": flowcells.get(run.flowcell_type, {}).get(
+            "description", run.flowcell_type),
+        # No default: a run with no counts showed 150/10/10/150, and pressing
+        # Continue would have saved those unseen (review F2).
+        "cycles": run.run_cycles,
+        "i5_workflows": i5_workflow_names(run.instrument_platform.value),
+        "is_editable": is_editable,
+        "oob": oob,
+    }
+
+
 def sanitize_filename(name: str, default: str = "export") -> str:
     """Sanitize a filename for use in Content-Disposition headers.
 

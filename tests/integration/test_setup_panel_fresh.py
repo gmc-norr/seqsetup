@@ -4,9 +4,10 @@
 section and the ready-message slot, but not ``#run-config-panel``. That panel
 shows an **Edit setup** link whenever the viewer holds the draft's edit lock,
 and the run's "Updated" time. So after **Mark Ready** the page still offered
-Edit setup on a Ready run -- a link that leads to the setup page, where every
-save is refused because the run is no longer a Draft -- and after **Return to
-Draft** the link was missing until a reload.
+Edit setup on a Ready run -- following it only bounced, since
+``routes/wizard.py`` redirects a non-Draft run away from the setup page, but
+the page offered a step it could not take -- and after **Return to Draft** the
+link was missing until a reload.
 
 The response now refreshes that panel out of band too, as it does the other
 four.
@@ -127,7 +128,7 @@ class TestTheSetupPanelFollowsTheStatus:
         assert "NovaSeq X Series" in panel
         assert "10B" in panel
         assert "Read 1: 151" in panel and "Index 1: 8" in panel
-        assert "UUID" in panel and "r" in panel
+        assert '<span class="uuid-value" title="r">r</span>' in panel
 
     def test_the_page_itself_sends_no_oob_panel(self, logged_in_client, fresh_app):
         """The panel is only out of band in a status answer; the full page
