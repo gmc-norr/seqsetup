@@ -177,3 +177,23 @@ def test_adding_the_pasted_samples_still_clears_the_box(logged_in_page, base_url
     run = app_ctx.run_repo.get_by_id(paste_box_run_id)
     assert sorted(s.sample_id for s in run.samples) == [
         "KEEP-01", "KEEP-02", "PASTED-01", "PASTED-02"]
+
+
+@pytest.mark.browser
+def test_delete_selected_still_redraws_the_table(logged_in_page, base_url,
+                                                 paste_box_run_id, app_ctx):
+    """bulk-delete returns the table itself, so it must NOT take an hx-select:
+    one naming the section would match nothing in that answer and the deleted
+    rows would stay on the screen (break row P10)."""
+    page = logged_in_page
+    _open_with_typed_paste(page, base_url, paste_box_run_id)
+    page.on("dialog", lambda d: d.accept())
+
+    with page.expect_response(lambda r: r.url.endswith("/samples/bulk-delete")) as got:
+        page.locator('[data-action="bulk-delete"]').click()
+    assert got.value.status == 200, got.value.status
+    page.wait_for_load_state("networkidle")
+
+    expect(page.locator("tr.sample-row")).to_have_count(0)
+    _assert_one_section(page)
+    assert app_ctx.run_repo.get_by_id(paste_box_run_id).samples == []
