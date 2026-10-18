@@ -74,6 +74,32 @@ Before a kit is saved, SeqSetup checks, in order:
    version are the kit's place in the URL of its own detail, download and
    delete links, so such a kit would be listed and usable but could never be
    deleted.
+
+   Nothing in a file is dropped quietly: four more faults refuse the whole
+   file, with nothing saved.
+
+   * **i5 data with Single picked.** A Single kit saves the i7 indexes
+     only, so a file's ``index2`` column, ``i5Index2`` or ``Index2`` list,
+     ``IndexNumber 2`` lines, ``[i5]`` section or ``i5_indexes`` list went
+     nowhere -- or into a kit whose panel never shows them. The file is
+     refused naming where the i5 data is: upload it as **Unique Dual** or
+     **Combinatorial**, or take the i5 data out. A SeqSetup-format file that
+     lists ``index_pairs`` is refused the same way, since a Single kit never
+     reads the pairs.
+   * **A row that is not an index.** A CSV row with content but no name or
+     no i7 sequence, and a TSV ``[Indices]`` line that is not a name, a
+     sequence and 1 (i7) or 2 (i5), were dropped without a word, so the kit
+     held fewer indexes than the file listed. Such lines are now named
+     (*"These rows have content but no index name or no i7 sequence, so
+     nothing was saved: line 3, line 7."*), as a pasted worklist's are.
+     A blank line is still a blank line.
+   * **Two keys for one list.** An Illumina YAML that gives both
+     ``i7Index1`` and ``Index1``, or both ``i5Index2`` and ``Index2``, had
+     one read and every index in the other dropped. Both keys are named;
+     keep one.
+   * **A SeqSetup-format name YAML does not read as text.** The same
+     refusal the Illumina format already made: an unquoted ``012`` is the
+     number 10, so quote such a name (``name: '012'``).
 4. **Field validation** -- the kit name is required; the version must be a
    valid semantic version; adapter sequences, and every i7/i5 sequence, must
    be DNA (``A``, ``C``, ``G``, ``T``, ``N`` only); every index pair needs a
@@ -92,7 +118,9 @@ Before a kit is saved, SeqSetup checks, in order:
    :doc:`/user-guide/override-cycles`). A slot with no indexes
    is not checked. The same check runs on a kit synced from GitHub (see
    :doc:`profiles`): a kit file that fails it is refused and not stored,
-   and the sync names the file and why.
+   and the sync names the file and why. A synced kit file that gives one key
+   twice is refused the same way -- YAML would keep the last value and lose
+   the first -- and the stored kit of that name and version stays as it was.
 5. **Name + version clash** -- a kit with the same name and version already
    present is rejected rather than silently overwritten. A kit deleted
    and then uploaded again under its name and version is stored, even

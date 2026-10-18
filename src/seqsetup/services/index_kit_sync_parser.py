@@ -5,7 +5,7 @@ from typing import Optional
 
 import yaml
 
-from ..utils.yaml_safety import safe_load_strict
+from ..utils.yaml_safety import DuplicateKeyError, safe_load_unique_keys
 
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 
@@ -69,11 +69,21 @@ class IndexKitSyncParser:
             IndexKit if parsing succeeds, None otherwise
         """
         try:
-            data = safe_load_strict(yaml_content)
+            data = safe_load_unique_keys(yaml_content)
             if not data:
                 logger.warning(f"Empty YAML content in {source_file}")
                 return None
             return cls._parse_kit(data, source_file)
+        except DuplicateKeyError as repeated:
+            # Raised, not returned as None: the sync's caller puts the message
+            # in the file's refusal, so the config-sync page says which key and
+            # which line. PyYAML would keep the last value without a word and
+            # the first index would be gone.
+            raise ValueError(
+                f"the key {repeated.key!r} is given twice in one mapping "
+                f"(line {repeated.line}), so nothing was read from this file: the "
+                f"second would replace the first without a word"
+            ) from None
         except yaml.YAMLError as e:
             logger.warning(f"Failed to parse YAML from {source_file}: {e}")
             return None
