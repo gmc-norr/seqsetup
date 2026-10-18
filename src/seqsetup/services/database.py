@@ -128,7 +128,7 @@ def _load_config() -> dict:
                 config = yaml.safe_load(f)
             except yaml.YAMLError as broken:
                 raise _yaml_refusal(broken) from None
-            return (config or {}).get("mongodb", {})
+            return config.get("mongodb", {})
 
     # Default configuration
     return {

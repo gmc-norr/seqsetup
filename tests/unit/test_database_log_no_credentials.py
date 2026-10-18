@@ -218,6 +218,14 @@ class TestAMalformedConfigFileKeepsItsSecret:
         assert PASSWORD not in message and USER not in message, message
         assert str(path) in message and "line 2" in message, message
 
+    def test_an_empty_config_file_still_stops_start_up(self, monkeypatch, tmp_path):
+        """An empty file is a broken one: it must not quietly turn into the
+        localhost default, which is what a file that does not exist means."""
+        self._config(monkeypatch, tmp_path, "")
+
+        with pytest.raises(AttributeError):
+            database._load_config()
+
     def test_a_readable_config_file_still_reads(self, monkeypatch, tmp_path):
         self._config(monkeypatch, tmp_path,
                      f'mongodb:\n  uri: "{URI}"\n  database: seqsetup\n')
