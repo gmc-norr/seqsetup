@@ -385,7 +385,12 @@ settings folder). A link to a folder is skipped, as the sync skips it. A link
 to a file is refused, as the sync refuses it: GitHub serves the link's target
 path, not the file it points to, so put the file itself in the folder. An ``instruments/`` folder that is not
 there, or holds no instrument file, is an error. ``--local-instruments
-<file>`` also checks a local instruments file. It prints one problem per line, *"instruments/miseq.yaml:30:5:
+<file>`` also checks a local instruments file. It checks the application and
+test profiles too, in ``profiles/application_profiles/`` and
+``profiles/test_profiles/`` (``--application-profiles``, ``--test-profiles``
+name others), reading a ``.yaml`` or ``.yml`` ending in any case as the sync
+does for profiles (see :doc:`profiles`). A lab whose sync does not read
+instruments adds ``--no-instruments``. It prints one problem per line, *"instruments/miseq.yaml:30:5:
 flowcells > v2 Standard > lane: is not a key this file can have (check
 the spelling)"* for a ``lane:`` written under the flow cell's ``lanes:``, marks warnings, and ends with a failure when there is an error.
 ``pixi run check-settings --schema <dir>`` writes a JSON Schema for each kind
