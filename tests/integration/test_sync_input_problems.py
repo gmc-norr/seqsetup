@@ -211,17 +211,19 @@ class TestALongReportStillFits:
     def test_an_audit_row_keeps_its_details_after_addresses_are_cleaned(
             self, logged_in_client, fresh_app, monkeypatch):
         """audit() writes each web address in a text as "[address removed]",
-        so 2,000 keys of "x://[ x://[ ..." once grew a report cut to its
-        budget past the row's limit, and the row kept no details at all."""
+        so 2,000 keys of "//[ //[ ..." once grew a report cut to its budget
+        past the row's limit, and the row kept no details at all."""
         _app, ctx, _db = fresh_app
-        junk = "".join(f"{'x://[ ' * 30}{i}: 1\n" for i in range(2000))
-        _service(ctx, monkeypatch, {"nx.yaml": GOOD + junk})
+        junk = "".join(f"{'//[ ' * 40}{i}: 1\n" for i in range(2000))
+        service = _service(ctx, monkeypatch, {"nx.yaml": GOOD + junk})
 
         logged_in_client.post("/admin/config-sync/sync", headers=ORIGIN)
+        _scheduled(ctx, service)
 
-        (row,) = _audit_rows(ctx, "config_sync.triggered")
-        assert "details_omitted" not in row.details
-        assert row.details["problem_count"] == 1001
+        for prefix in ("config_sync.triggered", "config_sync.scheduled.completed"):
+            (row,) = _audit_rows(ctx, prefix)
+            assert "details_omitted" not in row.details, prefix
+            assert row.details["problem_count"] == 1001
 
     def test_both_audit_rows_keep_their_details(self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
