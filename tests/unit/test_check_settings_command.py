@@ -170,6 +170,39 @@ class TestItReadsWhatTheSyncReads:
         assert done.returncode == 0, done.stdout
         assert "3 files checked, no errors" in done.stderr
 
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root reads a folder of mode 000")
+    def test_a_sub_folder_that_cannot_be_read_fails(self, tmp_path):
+        """A folder skipped without a word would leave its files unchecked
+        while the command said it found no errors (the fresh review of
+        b21ea6f, P3 8)."""
+        folder = _folder(tmp_path, {"a.yaml": GOOD})
+        locked = folder / "profiles" / "test_profiles" / "locked"
+        locked.mkdir()
+        (locked / "Bad.yaml").write_text("TestType: 5\n")
+        locked.chmod(0)
+        try:
+            done = _run(str(folder))
+        finally:
+            locked.chmod(0o755)
+
+        assert done.returncode == 1
+        assert done.stdout.splitlines() == [
+            "profiles/test_profiles/locked/: could not be read, so its files were not checked"]
+
+    def test_a_git_submodule_is_not_read_as_the_sync_does_not_read_it(self, tmp_path):
+        """GitHub lists a submodule as one entry with no download link, never
+        the files inside it (the fresh review of b21ea6f, P3 8)."""
+        folder = _folder(tmp_path, {"a.yaml": GOOD})
+        shared = folder / "profiles" / "test_profiles" / "shared"
+        shared.mkdir()
+        (shared / ".git").write_text("gitdir: ../../../.git/modules/shared\n")
+        (shared / "Bad.yaml").write_text("TestType: 5\n")
+
+        done = _run(str(folder))
+
+        assert done.returncode == 0, done.stdout
+        assert "3 files checked, no errors" in done.stderr
+
     def test_a_file_named_just_dot_yaml_is_read_as_the_sync_reads_it(self, tmp_path):
         folder = _folder(tmp_path, {".yaml": GOOD + "lane: 2\n"})
 

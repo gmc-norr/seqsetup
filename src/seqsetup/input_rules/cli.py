@@ -96,22 +96,25 @@ def _read(path: Path, shown: str, tally: _Tally):
         return None
 
 
-def _settings_files(folder: Path, any_case: bool = False) -> list[Path]:
+def _settings_files(folder: Path, any_case: bool = False) -> tuple[list[Path], list[Path]]:
     """The files the sync reads: every name ending .yaml or .yml (in any
     case for profiles, ``any_case``, as the sync takes it), in every folder
-    below. GitHub lists a link to a folder as a link, which the sync
-    skips, and a link to anything else as a file whose text is the link's
-    target path, which the sync reads and refuses; ``_read`` reads it so."""
-    found = []
+    below; and the folders that could not be read. GitHub lists a link to a
+    folder as a link, which the sync skips, and a link to anything else as a
+    file whose text is the link's target path, which the sync reads and
+    refuses; ``_read`` reads it so. It lists a git submodule as one entry
+    with no download link, never the files inside it."""
+    found, unread = [], []
     # os.walk lists a link to a folder among the folders and does not go
     # into it; every other link is among the names.
-    for root, _folders, names in os.walk(folder):
+    for root, folders, names in os.walk(folder, onerror=lambda error: unread.append(Path(error.filename))):
+        folders[:] = [name for name in folders if not os.path.lexists(Path(root) / name / ".git")]
         for name in names:
             path = Path(root) / name
             ending = name.lower() if any_case else name
             if ending.endswith((".yaml", ".yml")) and (path.is_symlink() or path.is_file()):
                 found.append(path)
-    return sorted(found)
+    return sorted(found), sorted(unread)
 
 
 def _check_folder(settings: Path, inside: PurePosixPath, option: str, kind: str, check, build,
@@ -124,8 +127,11 @@ def _check_folder(settings: Path, inside: PurePosixPath, option: str, kind: str,
         print(f"{shown_folder}: is not there (name the folder with {option}{hint})")
         tally.errors += 1
         return [], [], shown_folder
-    paths = _settings_files(folder, any_case)
-    if not paths:
+    paths, unread = _settings_files(folder, any_case)
+    for path in unread:
+        print(f"{path.relative_to(settings).as_posix()}/: could not be read, so its files were not checked")
+        tally.errors += 1
+    if not paths and not unread:
         print(f"{shown_folder}: holds no {kind} file (.yaml or .yml)")
         tally.errors += 1
     built, where = [], []

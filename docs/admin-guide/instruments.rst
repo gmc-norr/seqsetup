@@ -383,7 +383,9 @@ reads: every ``.yaml`` and ``.yml`` file in the folder's ``instruments/`` and
 the folders below it (``--instruments <path>`` names another folder inside the
 settings folder). A link to a folder is skipped, as the sync skips it. A link
 to a file is refused, as the sync refuses it: GitHub serves the link's target
-path, not the file it points to, so put the file itself in the folder. An ``instruments/`` folder that is not
+path, not the file it points to, so put the file itself in the folder. A git
+submodule is skipped, as the sync skips it, and a folder the command cannot
+open is an error, since its files go unchecked. An ``instruments/`` folder that is not
 there, or holds no instrument file, is an error. ``--local-instruments
 <file>`` also checks a local instruments file. It checks the application and
 test profiles too, in ``profiles/application_profiles/`` and
