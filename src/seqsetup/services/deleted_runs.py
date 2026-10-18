@@ -20,7 +20,9 @@ the run checked the newest version any attempt saw. Attempts on that same
 version hold the same run; which of them deleted it is not known, so all are
 named.
 
-Read only: nothing here changes a copy or a run.
+Read only: nothing here changes a copy or a run. And nothing here *reads* a
+run: whether one still exists is asked with ``RunRepository.exists``, so a
+damaged run document cannot stop the page that accounts for deletions.
 """
 
 from typing import Optional
@@ -55,7 +57,10 @@ def visible_rows(deleted_run_repo, run_repo) -> list[dict]:
         if row["state"] == PENDING and row["run_id"] not in shown and row["run_id"] not in unfinished:
             unfinished.append(row["run_id"])
     for run_id in unfinished:
-        if run_repo.get_by_id(run_id) is not None:
+        # Only whether the document is there: get_by_id builds the model and
+        # runs every check, so one run this release cannot read took the whole
+        # page down for every administrator (2026-10-18 batch, step 7).
+        if run_repo.exists(run_id):
             continue
         # Read this run's copies again now that the run is seen gone
         # (second review, P2).

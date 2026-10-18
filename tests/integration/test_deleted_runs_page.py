@@ -139,18 +139,18 @@ class TestWhatIsShown:
         run = _archived("r-race")
         ctx.run_repo.save(run)
         _copy(ctx, run, state="pending", at=T0, who="first")
-        real_get = ctx.run_repo.get_by_id
+        real_exists = ctx.run_repo.exists
 
         def another_attempt_finishes_first(run_id):
-            loaded = real_get(run_id)
+            loaded = ctx.run_repo.get_by_id(run_id) if real_exists(run_id) else None
             if run_id == "r-race" and loaded is not None:
                 done = DeletedRun.of(loaded, "second", T0 + timedelta(minutes=5))
                 ctx.deleted_run_repo.start(done)
                 assert ctx.run_repo.delete_if_unchanged(loaded, copy_id=done.copy_id)
                 ctx.deleted_run_repo.mark_completed(done.copy_id, T0 + timedelta(minutes=5))
-            return real_get(run_id)
+            return real_exists(run_id)
 
-        monkeypatch.setattr(ctx.run_repo, "get_by_id", another_attempt_finishes_first)
+        monkeypatch.setattr(ctx.run_repo, "exists", another_attempt_finishes_first)
         text = logged_in_client.get("/admin/deleted-runs").text
         assert "not confirmed" not in text
         assert text.count('href="/admin/deleted-runs/') == 1

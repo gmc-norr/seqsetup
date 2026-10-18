@@ -19,6 +19,12 @@ run.
 An empty Draft that was never Ready is deleted without a copy: it never
 produced a sample sheet.
 
+The page opens whatever else is stored. Deciding whether a delete finished
+needs to know whether a run still exists, and SeqSetup asks only that -- it
+does not read the run -- so a run whose record this version cannot read (see
+:doc:`/user-guide/dashboard`) does not stop the page that accounts for
+deletions.
+
 .. figure:: /_static/screenshots/admin/deleted-runs.png
    :alt: The Deleted runs page: a table with one deleted run, showing its status when deleted, its number of samples, who created and who deleted it, when, and its state, with the table outlined.
 

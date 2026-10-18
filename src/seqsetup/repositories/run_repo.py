@@ -202,6 +202,17 @@ class RunRepository(BaseRepository[SequencingRun]):
         database — no document is read."""
         return self.collection.count_documents({"status": status} if status is not None else {})
 
+    def exists(self, run_id: str) -> bool:
+        """Whether a run document of that id is stored.
+
+        Asked where only the answer to that question is wanted, so a run this
+        release cannot read -- a damaged document -- does not take the asking
+        page down with it. ``get_by_id`` builds the model and runs every
+        check, which is why Admin -> Deleted runs failed for every
+        administrator over one such run (2026-10-18 batch, step 7).
+        """
+        return self.collection.count_documents({"_id": run_id}, limit=1) > 0
+
     def save(self, run: SequencingRun) -> None:
         """Insert or update a run with optimistic-locking on updated_at.
 
