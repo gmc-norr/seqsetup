@@ -214,11 +214,13 @@ _DECIMAL = ("is a number with a decimal point, which YAML may have changed "
             "(1.10 is read as 1.1): put it in quotes")
 
 
-def _within_data(data, loc: tuple, kind: str) -> tuple[tuple, bool]:
+def _within_data(data, loc: tuple, kind: str, given=None) -> tuple[tuple, bool]:
     """``loc`` as far as it names keys and list items of the data, and
     whether anything was left: past that point Pydantic names one kind of a
     value of several kinds (``bool``, ``constrained-str``). A key the data
-    lacks is a place only when it is the missing key itself."""
+    lacks is a place only when it is the missing key itself, and the map
+    Pydantic was given is never walked into: its own keys may be named
+    ``bool`` or ``int``."""
     at = data
     for n, item in enumerate(loc):
         if isinstance(at, list) and isinstance(item, int) and not isinstance(item, bool):
@@ -227,6 +229,8 @@ def _within_data(data, loc: tuple, kind: str) -> tuple[tuple, bool]:
         if isinstance(at, dict):
             if kind == "missing" and n == len(loc) - 1:
                 return loc, False
+            if at is given:
+                return loc[:n], True
             try:
                 present = item in at
             except TypeError:
@@ -246,7 +250,8 @@ def _from_pydantic_errors(errors: list, data, locations: Locations, file: str,
     groups: dict = {}
     for item in errors:
         loc = tuple(item["loc"])
-        within, past = (loc, False) if loc and loc[-1] == "[key]" else _within_data(data, loc, item["type"])
+        within, past = ((loc, False) if loc and loc[-1] == "[key]"
+                        else _within_data(data, loc, item["type"], item.get("input")))
         if not past:
             order.append(_from_pydantic(item, data, locations, file, retired_keys))
             continue

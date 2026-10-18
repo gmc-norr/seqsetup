@@ -337,6 +337,9 @@ class TestSheetValues:
     @pytest.mark.parametrize("value, says", [
         ("[a, b]", "must be text, a whole number or true/false"),
         ("{a: 1}", "must be text, a whole number or true/false"),
+        # Keys named as Pydantic names the kinds it tried (the fresh review
+        # of b21ea6f, P3 5): one problem, at the value, never at "X > bool".
+        ("{bool: 1, int: 2}", "must be text, a whole number or true/false"),
         ("", "needs a value: write '' if it should be empty"),
         ("'" + "x" * 4097 + "'", "must be at most 4096 characters"),
         ('"a\\tb"', "holds a hidden character: U+0009 (tab)"),
