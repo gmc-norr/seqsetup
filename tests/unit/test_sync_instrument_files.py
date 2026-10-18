@@ -1,9 +1,13 @@
 """A config sync refuses any instrument file or folder that does not give
-valid instruments, and says which and why (spec 2026-10-04 group A2, §5)."""
+valid instruments, and says which and why (spec 2026-10-04 group A2, §5),
+each problem with its line (docs/design/2026-10-18-input-rules-design.md)."""
+
+import re
 
 import pytest
 import yaml
 
+from seqsetup.input_rules.instruments import duplicate_instruments
 from seqsetup.services.github_sync import GitHubSyncError, GitHubSyncService
 
 from .test_i5_workflows import BAD, _yaml
@@ -71,15 +75,14 @@ class TestGoodFiles:
 
 
 class TestRefusedFiles:
-    """Each refusal names the file (its path) and the problem."""
+    """Each refusal names the file (its path), the line and the problem."""
 
     @pytest.mark.parametrize("changes,field", BAD)
     def test_each_rule_is_refused_at_sync(self, changes, field):
         instruments, refused = _fetch(_service({ROOT: {"i100.yaml": _text(**changes)}}))
         assert instruments == []
         (problem,) = refused
-        assert problem.startswith(f"{ROOT}/i100.yaml: MiSeq i100 Series: ")
-        assert f"{field}: " in problem
+        assert re.match(rf"{ROOT}/i100\.yaml:\d+:\d+: {field}\b", problem), problem
 
     def test_one_bad_entry_refuses_its_whole_file(self):
         data = {"instruments": {
@@ -90,10 +93,30 @@ class TestRefusedFiles:
         }}
         instruments, refused = _fetch(_service({ROOT: {"all.yaml": yaml.safe_dump(data)}}))
         assert instruments == []
-        assert refused == [
-            f"{ROOT}/all.yaml: NovaSeq X Series: runinfo_marks_i5_reversed: Must be true or "
-            f"false (got: 'yes')"
-        ]
+        (problem,) = refused
+        assert re.fullmatch(
+            rf"{ROOT}/all\.yaml:\d+:\d+: instruments > NovaSeq X Series > "
+            r"runinfo_marks_i5_reversed: must be true or false", problem), problem
+
+    def test_the_sync_keeps_each_problem_with_its_place(self):
+        service = _service({ROOT: {"i100.yaml": _text(runinfo_marks_i5_reversed="yes")}})
+        _fetch(service)
+        (problem,) = service.input_problems
+        assert (problem.file, problem.path, problem.level) == (
+            f"{ROOT}/i100.yaml", ("runinfo_marks_i5_reversed",), "error")
+        assert problem.line > 1
+
+    def test_a_warning_does_not_refuse_the_file(self):
+        text = _text(chemistry_type="2-color", color_balance_enabled=True,
+                     dye_channels=["Blue", "Teal"], base_colors={"A": "Blue", "C": "Blue+Green",
+                                                                "G": "Dark", "T": "Green"},
+                     channel1_name="Blue", channel1_bases=["A", "C"], channel2_name="Green",
+                     channel2_bases=["C", "T"], dark_base="G")
+        service = _service({ROOT: {"i100.yaml": text}})
+        instruments, refused = _fetch(service)
+        assert len(instruments) == 1 and refused == []
+        (warning,) = service.input_problems
+        assert warning.level == "warning" and warning.path == ("dye_channels", 1)
 
     def test_a_file_that_cannot_be_downloaded(self):
         instruments, refused = _fetch(_service(
@@ -105,13 +128,19 @@ class TestRefusedFiles:
     def test_yaml_that_cannot_be_read(self):
         instruments, refused = _fetch(_service({ROOT: {"i100.yaml": "name: [unclosed\n"}}))
         assert instruments == []
-        (problem,) = refused
-        assert problem.startswith(f"{ROOT}/i100.yaml: cannot be read as YAML: ")
+        assert refused == [f"{ROOT}/i100.yaml:2:1: the file: a [ list ] that is not closed"]
 
-    @pytest.mark.parametrize("text", ["", "- MiSeq\n", "version: 1\n", "instruments: {}\n"])
-    def test_a_file_that_gives_no_instrument(self, text):
+    @pytest.mark.parametrize("text, says", [
+        ("", "the file: the file is empty"),
+        ("- MiSeq\n", "the file: must be a map of keys and values"),
+        ("version: 1\n", "version: must be text: put it in quotes"),
+        ("instruments: {}\n", "instruments: must have at least 1 item(s)"),
+    ])
+    def test_a_file_that_gives_no_instrument(self, text, says):
         instruments, refused = _fetch(_service({ROOT: {"x.yaml": text}}))
-        assert (instruments, refused) == ([], [f"{ROOT}/x.yaml: does not describe an instrument"])
+        assert instruments == []
+        (problem,) = refused
+        assert problem.startswith(f"{ROOT}/x.yaml:") and says in problem
 
     def test_a_subfolder_that_cannot_be_listed(self):
         instruments, refused = _fetch(_service(
@@ -132,7 +161,7 @@ class TestDuplicates:
         instruments, _ = _fetch(_service({ROOT: {
             "a.yaml": _text(), "b.yaml": _text(samplesheet_name="Other"),
         }}))
-        assert GitHubSyncService._duplicate_instruments(instruments) == [
+        assert duplicate_instruments(instruments) == [
             "a.yaml and b.yaml both give name 'MiSeq i100 Series'"
         ]
 
@@ -140,7 +169,7 @@ class TestDuplicates:
         instruments, _ = _fetch(_service({ROOT: {
             "a.yaml": _text(), "b.yaml": _text(name="NovaSeq X Series"),
         }}))
-        assert GitHubSyncService._duplicate_instruments(instruments) == [
+        assert duplicate_instruments(instruments) == [
             "a.yaml and b.yaml both give samplesheet_name 'MiSeqi100Series'"
         ]
 
@@ -149,4 +178,4 @@ class TestDuplicates:
             "a.yaml": _text(),
             "b.yaml": _text(name="NovaSeq X Series", samplesheet_name="NovaSeqXSeries"),
         }}))
-        assert GitHubSyncService._duplicate_instruments(instruments) == []
+        assert duplicate_instruments(instruments) == []

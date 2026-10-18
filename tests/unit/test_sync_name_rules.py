@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from seqsetup.services.instrument_validator import validate_instrument_yaml
+from seqsetup.input_rules.instruments import check_synced_instrument_file
 from seqsetup.services.profile_validator import validate_application_profile_yaml
 
 REPO = Path(__file__).resolve().parents[2]
@@ -18,6 +18,9 @@ def _instrument(**extra) -> dict:
         "samplesheet_name": "NovaSeqXSeries",
         "version": "1.0.0",
         "chemistry_type": "4-color",
+        "has_dragen_onboard": True,
+        "color_balance_enabled": False,
+        "onboard_applications": {"BCLConvert": {"software_version": "4.3.6"}},
         "flowcells": {"10B": {"lanes": 8, "reagent_kits": [300]}},
         "i5_workflows": [{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
         "runinfo_marks_i5_reversed": True,
@@ -26,8 +29,14 @@ def _instrument(**extra) -> dict:
     return data
 
 
-def _errors_on(result, field: str) -> list:
-    return [e for e in result.errors if e.field == field]
+def _checked(data: dict, file: str = "x.yaml"):
+    """The sync's check of an instrument file holding ``data`` (the instrument
+    rulebook, docs/design/2026-10-18-input-rules-design.md)."""
+    return check_synced_instrument_file(yaml.safe_dump(data), file)
+
+
+def _errors_on(result, *path) -> list:
+    return [p for p in result.problems if p.level == "error" and p.path[:len(path)] == path]
 
 
 class TestSamplesheetName:
@@ -35,15 +44,15 @@ class TestSamplesheetName:
 
     @pytest.mark.parametrize("name", ["NovaSeqXSeries\n[Cloud_Data]", "NovaSeq X", "a,b", "X\x00"])
     def test_non_plain_samplesheet_name_is_refused(self, name):
-        result = validate_instrument_yaml(_instrument(samplesheet_name=name))
+        result = _checked(_instrument(samplesheet_name=name))
 
-        assert not result.is_valid
+        assert not result.ok
         assert _errors_on(result, "samplesheet_name")
 
     def test_plain_samplesheet_name_is_accepted(self):
-        result = validate_instrument_yaml(_instrument())
+        result = _checked(_instrument())
 
-        assert result.is_valid, [str(e) for e in result.errors]
+        assert result.ok, result.problems
 
 
 class TestOnboardApplications:
@@ -52,49 +61,46 @@ class TestOnboardApplications:
 
     @pytest.mark.parametrize("name", ["BCLConvert]\n[Junk", "Dragen Germline", "a,b"])
     def test_non_plain_application_name_is_refused(self, name):
-        result = validate_instrument_yaml(
-            _instrument(onboard_applications={name: {"software_version": "4.3.6"}})
-        )
+        result = _checked(_instrument(onboard_applications={name: {"software_version": "4.3.6"}}))
 
-        assert not result.is_valid
+        assert not result.ok
         assert _errors_on(result, "onboard_applications")
 
     @pytest.mark.parametrize("version", ["4.3.6\n[Junk]", "4.3 6", "4,3"])
     def test_non_plain_software_version_is_refused(self, version):
-        result = validate_instrument_yaml(
-            _instrument(onboard_applications={"BCLConvert": {"software_version": version}})
-        )
+        result = _checked(_instrument(onboard_applications={"BCLConvert": {"software_version": version}}))
 
-        assert not result.is_valid
-        assert _errors_on(result, "onboard_applications.BCLConvert.software_version")
+        assert not result.ok
+        assert _errors_on(result, "onboard_applications", "BCLConvert", "software_version")
 
-    def test_plain_names_and_version_are_accepted(self):
-        result = validate_instrument_yaml(_instrument(onboard_applications={
+    def test_illumina_names_with_plain_versions_are_accepted(self):
+        # The names must now be Illumina's, each with its version (the input
+        # rules design, 2026-10-18); "Dragen_Germline-2" with none passed before.
+        result = _checked(_instrument(onboard_applications={
             "BCLConvert": {"software_version": "4.3.6"},
-            "Dragen_Germline-2": {},
+            "DragenGermline": {"software_version": "4.3.6-2"},
         }))
 
-        assert result.is_valid, [str(e) for e in result.errors]
+        assert result.ok, result.problems
 
 
 class TestShippedConfigStillPasses:
     """Everything SeqSetup ships must still pass the stricter rules."""
 
     def test_every_shipped_instrument_passes(self):
-        data = yaml.safe_load((REPO / "config" / "instruments.yaml").read_text())
-        for name, inst in data["instruments"].items():
-            yaml_data = dict(inst)
-            yaml_data.setdefault("name", name)
-            result = validate_instrument_yaml(yaml_data, "instruments.yaml")
-            assert result.is_valid, (name, [str(e) for e in result.errors])
+        from seqsetup.input_rules.instruments import check_local_instruments_file
+
+        result = check_local_instruments_file(
+            (REPO / "config" / "instruments.yaml").read_text(), "instruments.yaml")
+        assert result.ok, result.problems
 
     def test_every_shipped_instrument_file_passes(self):
         """The one-instrument files are the format a config sync reads."""
         paths = sorted((REPO / "config" / "instruments").glob("*.y*ml"))
         assert paths
         for path in paths:
-            result = validate_instrument_yaml(yaml.safe_load(path.read_text()), path.name)
-            assert result.is_valid, (path.name, [str(e) for e in result.errors])
+            result = check_synced_instrument_file(path.read_text(), path.name)
+            assert result.ok, (path.name, result.problems)
 
     def test_every_shipped_application_profile_passes(self):
         checked = 0

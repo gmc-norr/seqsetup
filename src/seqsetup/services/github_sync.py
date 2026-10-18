@@ -26,7 +26,12 @@ from ..repositories.test_profile_repo import TestProfileRepository
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
-from .instrument_validator import validate_instrument_yaml, ValidationResult
+from ..input_rules.instruments import (
+    check_synced_instrument_file,
+    definitions_from,
+    duplicate_instruments,
+)
+from ..input_rules.problems import InputProblem, problem_line
 from .validation import clear_validation_cache
 from ..utils.clock import local_time, utcnow
 
@@ -226,6 +231,10 @@ class GitHubSyncService:
         self.test_profile_repo = test_profile_repo
         self.instrument_definition_repo = instrument_definition_repo
         self.index_kit_repo = index_kit_repo
+        # Every problem the input rules found in this sync's files, errors and
+        # warnings, each with its file, line and path
+        # (docs/design/2026-10-18-input-rules-design.md).
+        self.input_problems: list[InputProblem] = []
 
     def sync(self) -> Tuple[bool, str, int]:
         """
@@ -238,6 +247,7 @@ class GitHubSyncService:
             return self._sync()
 
     def _sync(self) -> Tuple[bool, str, int]:
+        self.input_problems = []
         config = self.config_repo.get()
         # Each collection this sync replaces goes on the "writing" note before
         # it is deleted, and comes off only when the whole sync has finished;
@@ -307,7 +317,7 @@ class GitHubSyncService:
                     config.instruments_path,
                     strict=True,
                 )
-                refused_instruments += self._duplicate_instruments(instruments)
+                refused_instruments += duplicate_instruments(instruments)
                 logger.info(f"Fetched {len(instruments)} instrument definitions")
 
             # Fetch index kits if enabled and repo available. A refused kit
@@ -818,11 +828,18 @@ class GitHubSyncService:
                     if not download_url:
                         raise InstrumentFileRefused("has no download link")
                     content = self._fetch_file_content(download_url)
-                    try:
-                        yaml_data = safe_load_strict(content)
-                    except yaml.YAMLError as e:
-                        raise InstrumentFileRefused(f"cannot be read as YAML: {e}") from e
-                    parsed = self._parse_instruments_yaml(yaml_data, item_name)
+                    result = check_synced_instrument_file(content, item_path)
+                    self.input_problems.extend(result.problems)
+                    errors = [p for p in result.problems if p.level == "error"]
+                    if errors:
+                        raise InstrumentFileRefused("; ".join(problem_line(p) for p in errors))
+                    for warning in result.problems:
+                        logger.warning(f"Instrument file {problem_line(warning)}")
+                    parsed = definitions_from(result.value, item_name)
+                except InstrumentFileRefused as e:
+                    text = str(e) if str(e).startswith(item_path + ":") else f"{item_path}: {e}"
+                    refused.append(text)
+                    logger.error(f"Refused instrument file {text}")
                 except Exception as e:
                     refused.append(f"{item_path}: {e}")
                     logger.error(f"Refused instrument file {item_path}: {e}")
@@ -831,109 +848,6 @@ class GitHubSyncService:
                     logger.debug(f"Parsed {len(parsed)} instruments from {item_path}")
 
         return instruments, refused
-
-    @staticmethod
-    def _duplicate_instruments(instruments: list[InstrumentDefinition]) -> list[str]:
-        """Two instrument files may not give the same name or samplesheet
-        name (spec 2026-10-04 group A2, §1)."""
-        problems = []
-        for field_name in ("name", "samplesheet_name"):
-            seen: dict[str, str] = {}
-            for inst in instruments:
-                value = getattr(inst, field_name)
-                if value in seen:
-                    problems.append(
-                        f"{seen[value]} and {inst.source_file} both give {field_name} {value!r}"
-                    )
-                else:
-                    seen[value] = inst.source_file
-        return problems
-
-    def _parse_instruments_yaml(
-        self,
-        yaml_data,
-        filename: str,
-    ) -> list[InstrumentDefinition]:
-        """Parse YAML data into InstrumentDefinition objects.
-
-        Handles two formats:
-        1. Multi-instrument file: {'instruments': {'Name1': {...}, 'Name2': {...}}}
-        2. Single-instrument file: {'name': 'Name1', 'samplesheet_name': ...}
-
-        Raises InstrumentFileRefused, listing every problem, when any
-        instrument in the file is not valid or the file describes none: the
-        file is refused as a whole (spec 2026-10-04 group A2, §5).
-        """
-        if isinstance(yaml_data, dict) and isinstance(yaml_data.get("instruments"), dict):
-            # A multi-instrument file (like instruments.yaml)
-            entries = [
-                {**config, "name": name} if isinstance(config, dict) else config
-                for name, config in yaml_data["instruments"].items()
-            ]
-        elif isinstance(yaml_data, dict) and (
-            "samplesheet_name" in yaml_data or "chemistry_type" in yaml_data or "name" in yaml_data
-        ):
-            entries = [yaml_data]
-        else:
-            entries = []
-        if not entries:
-            raise InstrumentFileRefused("does not describe an instrument")
-
-        instruments, problems = [], []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                problems.append("an instrument entry must be a mapping")
-                continue
-            try:
-                instruments.append(self._validate_and_parse_instrument(entry, filename))
-            except InstrumentFileRefused as e:
-                problems.append(str(e))
-        if problems:
-            raise InstrumentFileRefused("; ".join(problems))
-        return instruments
-
-    def _validate_and_parse_instrument(
-        self,
-        yaml_data: dict,
-        filename: str,
-    ) -> InstrumentDefinition:
-        """Validate and parse a single instrument definition.
-
-        Args:
-            yaml_data: Instrument configuration dict
-            filename: Source filename for error reporting
-
-        Returns:
-            The InstrumentDefinition.
-
-        Raises:
-            InstrumentFileRefused: naming the instrument and every problem the
-                validator or the model found.
-        """
-        # Validate the instrument data
-        result = validate_instrument_yaml(yaml_data, filename)
-        instrument_name = yaml_data.get("name", filename)
-
-        # Log any warnings
-        for warning in result.warnings:
-            logger.warning(f"Instrument '{instrument_name}' ({filename}): {warning}")
-
-        if not result.is_valid:
-            raise InstrumentFileRefused(
-                f"{instrument_name}: " + "; ".join(str(error) for error in result.errors)
-            )
-
-        # Parse the valid instrument
-        try:
-            instrument = InstrumentDefinition.from_yaml(yaml_data, filename)
-        except InstrumentRecordError as e:
-            raise InstrumentFileRefused(str(e)) from e
-
-        # If name not in file, derive from filename
-        if not instrument.name:
-            instrument.name = filename.replace(".yaml", "").replace(".yml", "").replace("-", " ").replace("_", " ").title()
-
-        return instrument
 
     def _parse_application_profile(
         self,
