@@ -295,7 +295,7 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
     def test_an_empty_file(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
         message, _logged = self._sync_again(ctx, monkeypatch, {"Empty.yaml": "# not yet\n"})
-        assert message == (REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: the file is empty. "
+        assert message == (REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: is empty. "
                            "Synced 1 application profiles.")
 
     def test_a_file_with_no_download_link(self, fresh_app, monkeypatch):
@@ -341,7 +341,7 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
             instrument_files={**GOOD_FILES, "bad.yaml": "name: [\n"})
         assert ok is False
         assert message.startswith(
-            REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: the file is empty. Instrument files "
+            REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: is empty. Instrument files "
             "were refused, so no "
             "instrument settings were stored and the stored ones are kept: "
             "instruments/bad.yaml:")
@@ -358,7 +358,7 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         ok, message, _logged = _sync_tests(ctx, monkeypatch, {**TESTS_BEFORE, "Empty.yaml": ""},
                                            instrument_files=GOOD_FILES)
         assert ok is False
-        assert message == (REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: the file is empty. "
+        assert message == (REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: is empty. "
                            "Synced 1 application profiles, 2 instruments.")
         assert ctx.instrument_definition_repo.collection.count_documents({}) == 2
         status = ctx.profile_sync_config_repo.get()

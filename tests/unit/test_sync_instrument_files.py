@@ -132,7 +132,7 @@ class TestRefusedFiles:
         assert refused == [f"{ROOT}/i100.yaml:2:1: the file: a [ list ] that is not closed"]
 
     @pytest.mark.parametrize("text, says", [
-        ("", "the file: the file is empty"),
+        ("", "the file: is empty"),
         ("- MiSeq\n", "the file: must be a map of keys and values"),
         ("version: 1\n", "version: must be text: put it in quotes"),
         ("instruments: {}\n", "instruments: must have at least 1 item(s)"),

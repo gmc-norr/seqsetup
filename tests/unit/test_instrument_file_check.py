@@ -108,7 +108,7 @@ class TestBrokenFile:
         assert "not closed" in message
 
     def test_an_empty_file(self, tmp_path):
-        assert _problems(_file(tmp_path, "")) == STOPS + "instruments.yaml:1:1: the file: the file is empty"
+        assert _problems(_file(tmp_path, "")) == STOPS + "instruments.yaml:1:1: the file: is empty"
 
     def test_a_top_level_that_is_not_a_mapping(self, tmp_path):
         assert _problems(_file(tmp_path, "- MiSeq\n")) == (

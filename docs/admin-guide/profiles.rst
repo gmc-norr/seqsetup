@@ -114,7 +114,7 @@ cannot be listed. The sync then stores no test profile, keeps the ones
 already stored, still syncs the application profiles, and ends with
 **error**, naming each file::
 
-   Test profile files were refused, so no test profiles were stored and the stored ones are kept: profiles/test_profiles/Wgs_1.3.yaml:1:1: the file: the file is empty. Synced 3 application profiles.
+   Test profile files were refused, so no test profiles were stored and the stored ones are kept: profiles/test_profiles/Wgs_1.3.yaml:1:1: the file: is empty. Synced 3 application profiles.
 
 Keeping the stored ones also keeps any version you deleted from the
 repository on purpose, which a sync without a refusal would have removed.

@@ -88,7 +88,7 @@ def check_data(
     ``retired_keys`` gives a key that is no longer read its own message
     instead of the unknown-key one."""
     if data is None:
-        empty = InputProblem(file, 1, 1, (), "the file is empty")
+        empty = InputProblem(file, 1, 1, (), "is empty")
         return _result(None, [empty], "", rulebook, sensitive)
     try:
         value = rulebook.model_validate(data)

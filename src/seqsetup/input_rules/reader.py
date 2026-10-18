@@ -41,11 +41,11 @@ _ANCHOR = "a YAML anchor (&name) is not allowed"
 _ALIAS = "a YAML alias (*name) is not allowed"
 _MERGE = "a merge key (<<) is not allowed"
 _KEY_NOT_PLAIN = "a key must be a plain value, not a list or a map"
-_MORE_THAN_ONE = "the file holds more than one YAML document"
+_MORE_THAN_ONE = "holds more than one YAML document"
 _HALF = "holds half of a character (a \\uD800-\\uDFFF escape): write the whole character"
 _TOO_LONG = "is too long a number to read"
 _CONTROL = "a control character (such as a form feed or NUL) a YAML file cannot hold: remove it"
-_TOO_DEEP = "the file nests lists and maps too deep to read"
+_TOO_DEEP = "nests lists and maps too deep to read"
 
 # A fixed explanation per kind of parser error, chosen by the parser's own
 # wording but never repeating it: that text can quote the line, and the line
@@ -66,7 +66,7 @@ _SYNTAX = [
     (("did not find expected '-'",), "the indentation does not line up"),
     (("while scanning a simple key",), "a key with no ':' after it"),
 ]
-_SYNTAX_OTHER = "the file is not valid YAML here"
+_SYNTAX_OTHER = "is not valid YAML here"
 
 
 @dataclass

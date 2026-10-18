@@ -208,7 +208,7 @@ YAML syntax error; two unfinished lists on one line differ only by column).
   memory or the stores below.
 - **YAML syntax errors** get a fixed explanation per kind of parser error (a list
   or map not closed, a tab, an unexpected character, ...), with the line and
-  column; unknown kinds get "the file is not valid YAML here". PyYAML's own text
+  column; unknown kinds get "is not valid YAML here". PyYAML's own text
   is never shown (see "Sensitive inputs").
 - **Locations.** Pydantic's error location is mapped to the location map: a
   mapping key's line for an unknown key or a bad map key (Pydantic's `[key]`
