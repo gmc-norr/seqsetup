@@ -357,6 +357,16 @@ class TestSheetValues:
 
         assert error.path == ("Settings", "FastqCompressionFormat")
 
+    @pytest.mark.parametrize("key, shown", [
+        ("true", "true"), ("false", "false"), ("~", "null"), ("null", "null"), ("5", "5"),
+    ])
+    def test_a_key_that_is_not_text_is_named_on_its_own_line(self, key, shown):
+        """Pydantic names a key of true, false or null as 1, 0 or None (the
+        fresh review of b21ea6f, P3 5)."""
+        error = _only(_app(APP.replace("FastqCompressionFormat: gzip", f"{key}: gzip")))
+
+        assert problem_line(error) == f"app.yaml:7:3: Settings > {shown}: must be text: put it in quotes"
+
     @pytest.mark.parametrize("key", ["'Fastq Format'", "'[BCLConvert_Data]'"])
     def test_a_name_that_is_not_plain(self, key):
         error = _only(_app(APP.replace("FastqCompressionFormat: gzip", f"{key}: gzip")))

@@ -285,8 +285,12 @@ def _from_pydantic(item: dict, data, locations: Locations, file: str, retired_ke
     loc = tuple(item["loc"])
     kind = item["type"]
     if loc and loc[-1] == "[key]":
-        path = loc[:-1]
+        # Pydantic names a key of true, false or null as 1, 0 or "None"; the
+        # key itself is the error's input.
+        path = loc[:-2] + (item.get("input"),)
         line, column = _place(locations, path, prefer_key=True)
+        if item.get("input") is None and kind == "string_type":
+            return InputProblem(file, line, column, _path_in(data, path), "must be text: put it in quotes")
     elif kind == "missing":
         path = loc
         line, column = _place(locations, loc[:-1], prefer_key=False)
