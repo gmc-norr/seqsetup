@@ -71,6 +71,9 @@ class _Tally:
 
 def _read(path: Path, shown: str, tally: _Tally):
     try:
+        if path.is_symlink():
+            # What GitHub serves for a link to a file: its target path.
+            return os.readlink(path)
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
         why = e.strerror if isinstance(e, OSError) else "not UTF-8 text"
@@ -81,13 +84,16 @@ def _read(path: Path, shown: str, tally: _Tally):
 
 def _instrument_files(folder: Path) -> list[Path]:
     """The files the sync reads: every name ending .yaml or .yml, in every
-    folder below, but never a link -- GitHub lists one as a link and the sync
-    skips it, so a file read through one would be checked here only."""
+    folder below. GitHub lists a link to a folder as a link, which the sync
+    skips, and a link to anything else as a file whose text is the link's
+    target path, which the sync reads and refuses; ``_read`` reads it so."""
     found = []
+    # os.walk lists a link to a folder among the folders and does not go
+    # into it; every other link is among the names.
     for root, _folders, names in os.walk(folder):
         for name in names:
             path = Path(root) / name
-            if name.endswith((".yaml", ".yml")) and not path.is_symlink() and path.is_file():
+            if name.endswith((".yaml", ".yml")) and (path.is_symlink() or path.is_file()):
                 found.append(path)
     return sorted(found)
 

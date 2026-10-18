@@ -380,8 +380,10 @@ Checking settings before a sync
 the sync uses, with no database, no network and no running SeqSetup -- for
 example on every change to your settings repository. It reads what the sync
 reads: every ``.yaml`` and ``.yml`` file in the folder's ``instruments/`` and
-the folders below it, but not a link (``--instruments <path>`` names another
-folder inside the settings folder). An ``instruments/`` folder that is not
+the folders below it (``--instruments <path>`` names another folder inside the
+settings folder). A link to a folder is skipped, as the sync skips it. A link
+to a file is refused, as the sync refuses it: GitHub serves the link's target
+path, not the file it points to, so put the file itself in the folder. An ``instruments/`` folder that is not
 there, or holds no instrument file, is an error. ``--local-instruments
 <file>`` also checks a local instruments file. It prints one problem per line, *"instruments/miseq.yaml:30:5:
 flowcells > v2 Standard > lane: is not a key this file can have (check

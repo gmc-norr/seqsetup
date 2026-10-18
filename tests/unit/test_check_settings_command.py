@@ -128,10 +128,25 @@ class TestItReadsWhatTheSyncReads:
         assert done.returncode == 1
         assert done.stdout.splitlines() == ["instruments/: holds no instrument file (.yaml or .yml)"]
 
-    def test_a_link_is_skipped_as_the_sync_skips_it(self, tmp_path):
+    def test_a_link_to_a_file_is_read_as_github_serves_it(self, tmp_path):
+        """GitHub lists a link to a file as a file and serves the link's
+        target path as its text, so the sync refuses a linked instrument
+        file. Skipping it here once passed what the sync refuses."""
         folder = _folder(tmp_path, {"a.yaml": GOOD})
-        (folder / "instruments" / "b.yaml").symlink_to(folder / "instruments" / "a.yaml")
+        (folder / "instruments" / "b.yaml").symlink_to("a.yaml")
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert done.stdout.splitlines() == [
+            "instruments/b.yaml:1:1: the file: must be a map of keys and values"]
+        assert "2 files checked, 1 error" in done.stderr
+
+    def test_a_link_to_a_folder_is_skipped_as_the_sync_skips_it(self, tmp_path):
+        """GitHub lists a link to a folder as a link, which the sync skips."""
+        folder = _folder(tmp_path, {"a.yaml": GOOD})
         (folder / "instruments" / "sub").symlink_to(folder / "instruments", target_is_directory=True)
+        (folder / "instruments" / "old.yaml").symlink_to(folder / "instruments", target_is_directory=True)
 
         done = _run(str(folder))
 

@@ -333,8 +333,12 @@ stay in the sync.
 - checks a settings folder laid out as the sync reads it (the shipped `config/`
   is the example; options name other paths), with the same rulebooks and the same
   database-free cross-file checks the sync uses, and reads the files the sync
-  reads: every name ending `.yaml` or `.yml` in the folder and those below it,
-  never a link (GitHub lists one as a link and the sync skips it);
+  reads: every name ending `.yaml` or `.yml` in the folder and those below it.
+  GitHub lists a link to a folder as a link, which the sync skips, and a link
+  to a file as a file whose text is the link's target path, which the sync
+  reads and refuses (checked on a live listing, 2026-10-18); the command
+  skips the first and reads the second as that text (sol's design review of
+  step 2, P2-4);
 - fails when the instrument folder is not there or holds no instrument file,
   rather than pass having checked nothing; `--instruments` names a folder inside
   the settings folder;

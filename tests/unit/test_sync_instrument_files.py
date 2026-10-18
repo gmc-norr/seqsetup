@@ -147,6 +147,14 @@ class TestRefusedFiles:
         assert refusal.startswith(f"{ROOT}/x.yaml:")
         assert any(says in problem_line(p) for p in service.input_problems)
 
+    def test_a_link_to_a_file_is_refused(self):
+        """GitHub lists a link to a file as a file and serves the link's
+        target path as its text: the sync refuses it, as the settings
+        command does."""
+        instruments, refused = _fetch(_service({ROOT: {"i100.yaml": _text(), "link.yaml": "i100.yaml"}}))
+        assert [i.name for i in instruments] == ["MiSeq i100 Series"]
+        assert refused == [f"{ROOT}/link.yaml:1:1: the file: must be a map of keys and values"]
+
     def test_a_subfolder_that_cannot_be_listed(self):
         instruments, refused = _fetch(_service(
             {ROOT: {"i100.yaml": _text(), "old": {"nx.yaml": _text(name="NovaSeq X Series")}}},
