@@ -59,7 +59,7 @@
                     hx-post="/runs/{{ run.id }}/archive"
                     hx-target="#dashboard"
                     hx-swap="outerHTML"
-                    hx-confirm="Archive this run?">Archive</button>
+                    hx-confirm="Archive {{ run.run_name or 'this run' }}? An archived run cannot be changed and cannot be returned to Draft. To sequence it again you would have to build a new run.">Archive</button>
             {% elif run.status.value == 'draft' and run.sample_count == 0 and (not run.was_ready or (user and user.is_admin)) %}
             <button class="btn btn-danger btn-small"
                     hx-delete="/runs/{{ run.id }}"
