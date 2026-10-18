@@ -323,6 +323,20 @@ them reports itself.
    ``mongo-init.sh``. Before, this state came up *healthy* and the
    application answered "Authentication failed" for ever.
 
+   SeqSetup's own log says that the database refused its user name or
+   password, and names the exception, but never repeats the server's message
+   or anything from the connection string: a database password must not end
+   up in a log file. The same holds for every other failure to connect --
+   the log names the exception and the reason (``connection refused by
+   mongodb:27017``) with any user name and password replaced by ``***``. If
+   ``config/mongodb.yaml`` cannot be read as YAML, the log names the file and
+   the line and says why it does not quote it.
+
+   The same holds for a traceback: the credential part of any
+   ``scheme://user:password@`` is replaced wherever it appears, in
+   :doc:`/admin-guide/logs` and in the log file, so an unhandled error that
+   carries a connection string does not spill it either.
+
 .. note::
    If you ever worked around the old ``authSource=admin`` setting by creating
    the application user in the ``admin`` database, that user is no longer

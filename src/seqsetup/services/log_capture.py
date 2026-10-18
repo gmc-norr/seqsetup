@@ -2,6 +2,7 @@
 
 import logging
 import re
+import traceback
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -46,6 +47,12 @@ def _build_scrub_pattern() -> re.Pattern:
 _SCRUB_PATTERN = _build_scrub_pattern()
 # Bcrypt hash: starts with $2 followed by a/b/y, $cost$, then 53-char base64ish.
 _BCRYPT_PATTERN = re.compile(r"\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}")
+# The credential part of any URL: "<scheme>://<user>:<password>@". A database
+# or LDAP password reaches a log through an exception message or a traceback,
+# not through a "password:" key, so the key rules above never see it. The
+# "://" is required, so an e-mail address or a bare host is left alone
+# (review of 5aef69b, P2-1).
+_URL_CREDENTIALS = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^/\s@]*@")
 
 
 def scrub_log_message(message: str) -> str:
@@ -64,6 +71,7 @@ def scrub_log_message(message: str) -> str:
 
     scrubbed = _SCRUB_PATTERN.sub(_replace, message)
     scrubbed = _BCRYPT_PATTERN.sub("$2b$**$***", scrubbed)
+    scrubbed = _URL_CREDENTIALS.sub(r"\1***@", scrubbed)
     return scrubbed
 
 
@@ -236,6 +244,20 @@ class ScrubbingFilter(logging.Filter):
             return True
         record.msg = scrub_log_message(full)
         record.args = ()
+        # And the traceback. logging.Formatter reuses record.exc_text when it
+        # is set rather than formatting exc_info again, so scrubbing it here
+        # is what every handler downstream then writes. Without this the
+        # message was scrubbed and the traceback below it was not -- and a
+        # connection string lives in the exception, not the message
+        # (review of 5aef69b, P2-1).
+        if record.exc_info and not record.exc_text:
+            try:
+                record.exc_text = scrub_log_message(
+                    "".join(traceback.format_exception(*record.exc_info)).rstrip("\n"))
+            except Exception:
+                record.exc_text = "(traceback withheld: it could not be scrubbed)"
+        elif record.exc_text:
+            record.exc_text = scrub_log_message(record.exc_text)
         return True
 
 
