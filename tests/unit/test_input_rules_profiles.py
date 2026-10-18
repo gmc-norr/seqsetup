@@ -217,7 +217,7 @@ class TestVersions:
 
     @pytest.mark.parametrize("version, says", [
         ("'not a version'", "is not a valid PEP 440 version"),
-        ("'1.0+" + "a" * 260 + "'", "must be at most 256 characters"),
+        ("'1.0+" + "a" * 253 + "'", "must be at most 256 characters"),
     ])
     def test_an_application_profile_version(self, version, says):
         error = _only(_app(APP.replace("ApplicationProfileVersion: 1.0.0", f"ApplicationProfileVersion: {version}")))
@@ -231,7 +231,7 @@ class TestVersions:
 
     @pytest.mark.parametrize("version, says", [
         ("'not one'", "is not a valid PEP 440 version or specifier"),
-        ("'===" + "a" * 260 + "'", "must be at most 256 characters"),
+        ("'===" + "a" * 254 + "'", "must be at most 256 characters"),
     ])
     def test_a_reference_version(self, version, says):
         text = TEST.replace('ApplicationProfileVersion: "~=1.0.0"', f"ApplicationProfileVersion: {version}")
