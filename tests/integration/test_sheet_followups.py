@@ -128,11 +128,10 @@ class TestSyncRefusesRiskyValues:
         # A refused file stops every application-profile change (outside
         # review of f490536, F1).
         assert not ok, message
-        assert "Bad.yaml" in message
-        assert "'SoftwareVersion' is a number with a decimal point" in message
+        assert "Bad.yaml:6:20: Settings > SoftwareVersion: is read as a decimal number" in message
         assert ctx.app_profile_repo.list_all() == []
         assert any(
-            "Bad.yaml" in m and "'SoftwareVersion' is a number with a decimal point" in m
+            "Bad.yaml:6:20: Settings > SoftwareVersion: is read as a decimal number" in m
             for m in handler.messages
         ), handler.messages
 

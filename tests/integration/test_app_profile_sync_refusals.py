@@ -298,7 +298,7 @@ class TestAProfileNameMustBeText:
                                        app_files={"old.yaml": OLD, "odd.yaml": odd}).sync()
 
         assert not ok, msg
-        assert "odd.yaml" in msg and "'ApplicationProfileName' must be text" in msg, msg
+        assert "odd.yaml:1:25: ApplicationProfileName: must be text" in msg, msg
         assert ctx.app_profile_repo.list_all() == []
         assert [p.test_type for p in ctx.test_profile_repo.list_all()] == ["WGS"]
 
@@ -325,7 +325,7 @@ class TestTheRefusalMessage:
             "old.yaml": OLD, "list.yaml": "- GuardProfile\n- 1.0.0\n"}).sync()
 
         assert not ok
-        assert "list.yaml: is not a profile: YAML read it as a list, not a mapping" in msg, msg
+        assert "list.yaml:1:1: the file: must be a map of keys and values" in msg, msg
 
     def test_nothing_synced_says_no_synced_part(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app

@@ -281,22 +281,22 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         _app, ctx, _db = fresh_app
         message, logged = self._sync_again(ctx, monkeypatch, {"Wgs_1.3.yaml": _test_yaml("1.3")})
         assert message == (
-            REFUSED + f"{FOLDER}/Wgs_1.3.yaml: Profile validation failed for 'Wgs_1.3.yaml': "
-            "Field 'Version' must be three whole numbers joined by dots, each at most 9 digits, "
-            "like 1.0.0: '1.3'. Synced 1 application profiles.")
-        assert any("Wgs_1.3.yaml" in m and "Field 'Version' must be three whole numbers" in m
+            REFUSED + f"{FOLDER}/Wgs_1.3.yaml:4:10: Version: must be three whole numbers joined "
+            "by dots, each at most 9 digits, like 1.0.0. Synced 1 application profiles.")
+        assert any("Wgs_1.3.yaml:4:10" in m and "Version: must be three whole numbers" in m
                    for m in logged), logged
 
     def test_yaml_that_cannot_be_read(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
         message, _logged = self._sync_again(ctx, monkeypatch, {"Bad.yaml": "TestType: [WGS\n"})
-        assert message.startswith(REFUSED + f"{FOLDER}/Bad.yaml: cannot be read as YAML: ")
-        assert message.endswith(". Synced 1 application profiles.")
+        assert message == (REFUSED + f"{FOLDER}/Bad.yaml:2:1: the file: a [ list ] that is not "
+                           "closed. Synced 1 application profiles.")
 
     def test_an_empty_file(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
         message, _logged = self._sync_again(ctx, monkeypatch, {"Empty.yaml": "# not yet\n"})
-        assert message == REFUSED + f"{FOLDER}/Empty.yaml: is empty. Synced 1 application profiles."
+        assert message == (REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: the file is empty. "
+                           "Synced 1 application profiles.")
 
     def test_a_file_with_no_download_link(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -317,7 +317,7 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         message, _logged = self._sync_again(ctx, monkeypatch, {
             "new": {"Wgs_1.3.yaml": _test_yaml("1.3")}})
         assert message.startswith(
-            REFUSED + f"{FOLDER}/new/Wgs_1.3.yaml: Profile validation failed for 'Wgs_1.3.yaml'")
+            REFUSED + f"{FOLDER}/new/Wgs_1.3.yaml:4:10: Version: must be three whole numbers")
 
     def test_the_application_profiles_are_still_stored(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -341,7 +341,8 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
             instrument_files={**GOOD_FILES, "bad.yaml": "name: [\n"})
         assert ok is False
         assert message.startswith(
-            REFUSED + f"{FOLDER}/Empty.yaml: is empty. Instrument files were refused, so no "
+            REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: the file is empty. Instrument files "
+            "were refused, so no "
             "instrument settings were stored and the stored ones are kept: "
             "instruments/bad.yaml:")
         # The reader's own explanation, with its line (the input rules design,
@@ -357,7 +358,7 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         ok, message, _logged = _sync_tests(ctx, monkeypatch, {**TESTS_BEFORE, "Empty.yaml": ""},
                                            instrument_files=GOOD_FILES)
         assert ok is False
-        assert message == (REFUSED + f"{FOLDER}/Empty.yaml: is empty. "
+        assert message == (REFUSED + f"{FOLDER}/Empty.yaml:1:1: the file: the file is empty. "
                            "Synced 1 application profiles, 2 instruments.")
         assert ctx.instrument_definition_repo.collection.count_documents({}) == 2
         status = ctx.profile_sync_config_repo.get()
@@ -374,9 +375,9 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         # are kept without being read and the message names them (batch 4,
         # item 11); tests/integration/test_refused_sync_keeps_versions.py.
         assert message == (
-            REFUSED + f"{FOLDER}/Wgs_1.3.yaml: Profile validation failed for 'Wgs_1.3.yaml': "
-            "Field 'Version' must be three whole numbers joined by dots, each at most 9 digits, "
-            "like 1.0.0: '1.3'. Kept test profiles this sync did not read: RNA 1.0.0, WGS 1.1.0, "
+            REFUSED + f"{FOLDER}/Wgs_1.3.yaml:4:10: Version: must be three whole numbers joined "
+            "by dots, each at most 9 digits, like 1.0.0. Kept test profiles this sync did not "
+            "read: RNA 1.0.0, WGS 1.1.0, "
             "WGS 1.2.0 -- each is in a refused file or no longer in the repository. "
             "Synced 1 application profiles.")
         assert _stored(ctx) == STORED_BEFORE
