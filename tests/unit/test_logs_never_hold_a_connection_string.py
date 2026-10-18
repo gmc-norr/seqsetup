@@ -80,6 +80,19 @@ class TestATracebackIsScrubbedToo:
 
         assert PASSWORD not in rendered, rendered
 
+    def test_a_traceback_another_handler_already_formatted_is_scrubbed(self):
+        """A handler earlier in the chain caches the formatted traceback in
+        record.exc_text; the filter must scrub that rather than leave it
+        (break row B16)."""
+        record = _record_with_traceback(URI)
+        logging.Formatter("%(message)s").format(record)      # caches exc_text
+        assert PASSWORD in (record.exc_text or ""), "the premise"
+
+        ScrubbingFilter().filter(record)
+
+        assert PASSWORD not in (record.exc_text or ""), record.exc_text
+        assert "RuntimeError" in record.exc_text
+
     def test_the_traceback_is_still_there(self):
         record = _record_with_traceback(URI)
         ScrubbingFilter().filter(record)
