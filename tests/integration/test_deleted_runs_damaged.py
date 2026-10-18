@@ -124,6 +124,15 @@ class TestExistsAsksOnlyWhetherTheDocumentIsThere:
 
         assert ctx.run_repo.exists("nowhere") is False
 
+    def test_false_while_another_run_is_stored(self, fresh_app):
+        """It must ask about the one id, not whether any run exists: a count
+        over the whole collection would call every missing run present."""
+        _app, ctx, _db = fresh_app
+        _run(ctx, "somebody-else")
+
+        assert ctx.run_repo.exists("nowhere") is False
+        assert ctx.run_repo.exists("somebody-else") is True
+
     def test_true_for_a_run_that_cannot_be_read(self, fresh_app):
         _app, ctx, db = fresh_app
         _run(ctx, "damaged")
