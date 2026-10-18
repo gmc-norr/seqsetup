@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..utils.clock import utcnow
-from .sequencing_run import InstrumentPlatform, RunStatus, checked_sheet_targets, stored_platform
+from .sequencing_run import (InstrumentPlatform, RunStatus, checked_sheet_targets,
+                             stored_platform, stored_status)
 
 
 logger = logging.getLogger(__name__)
@@ -116,16 +117,7 @@ class RunListing:
         if count is None and "sample_count" in doc:
             raise ValueError(f"run {run_id}: samples is stored as something that is not a list")
 
-        raw_status = "archived" if doc.get("status") == "complete" else doc.get("status", "draft")
-        try:
-            status = RunStatus(raw_status)
-        except ValueError:
-            logger.warning(
-                "Unknown RunStatus %r in stored run %r — falling back to DRAFT",
-                raw_status, run_id,
-            )
-            status = RunStatus.DRAFT
-
+        status = stored_status(doc, f"Run {run_id!r}")
         platform = stored_platform(doc, f"Run {run_id!r}")
 
         return cls(

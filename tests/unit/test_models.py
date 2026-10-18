@@ -536,6 +536,7 @@ class TestSampleIndexMutations:
         data = {
             "id": "test-id",
             "instrument_platform": "NovaSeq X Series",
+            "status": "draft",
             "run_name": "Test",
             "generated_samplesheet_v2": "v2 content",
             "generated_samplesheet_v1": "v1 content",
@@ -555,6 +556,7 @@ class TestSampleIndexMutations:
         data = {
             "id": "test-id",
             "instrument_platform": "NovaSeq X Series",
+            "status": "draft",
             "run_name": "Test",
             "generated_samplesheet": "old v2 content",  # Old field name
         }
@@ -563,7 +565,7 @@ class TestSampleIndexMutations:
 
     def test_from_dict_generated_fields_missing(self):
         """Test from_dict when generated fields are absent (old data)."""
-        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series"}
+        data = {"id": "test-id", "status": "draft", "instrument_platform": "NovaSeq X Series"}
         run = SequencingRun.from_dict(data)
         assert run.generated_samplesheet_v2 is None
         assert run.generated_samplesheet_v1 is None
@@ -639,7 +641,7 @@ class TestSampleIndexMutations:
 
     def test_from_dict_ignores_legacy_validation_approved(self):
         """from_dict silently drops the legacy validation_approved field from old documents."""
-        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series", "validation_approved": True}
+        data = {"id": "test-id", "status": "draft", "instrument_platform": "NovaSeq X Series", "validation_approved": True}
         run = SequencingRun.from_dict(data)
         assert not hasattr(run, "validation_approved")
 
@@ -705,29 +707,41 @@ class TestSampleIndexMutations:
         run = SequencingRun.from_dict(data)
         assert run.status == RunStatus.ARCHIVED
 
-    def test_from_dict_unknown_status_falls_back_safely(self):
-        """An unknown status string must not crash from_dict — losing access
-        to runs because of a renamed enum is a clinical traceability bug.
-        Unknown values map to DRAFT, which keeps the run editable and *out*
-        of the API + export pipeline (which only expose Ready/Archived)
-        until an admin re-examines it. ARCHIVED would silently elevate a
-        corrupted record into the API surface."""
-        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series", "status": "renamed_in_future_version"}
-        run = SequencingRun.from_dict(data)
-        assert run.status == RunStatus.DRAFT
+    def test_from_dict_refuses_an_unknown_status(self):
+        """An unknown status string is refused, not read as DRAFT. Reading it
+        as DRAFT kept a damaged run out of the API and the exports, but it
+        also made it editable, and the first save wrote "draft" over the
+        stored value -- so a damaged Ready run lost the record that it had
+        ever been Ready (docs/design/2026-10-18-unknown-status-design.md)."""
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series",
+                "status": "renamed_in_future_version"}
+        with pytest.raises(ValueError, match="status this release does not know"):
+            SequencingRun.from_dict(data)
+
+    def test_from_dict_refuses_a_missing_status(self):
+        """Every version of to_dict in this repository's history writes the
+        field, so only a document changed outside SeqSetup lacks it."""
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series"}
+        with pytest.raises(ValueError, match="status this release does not know"):
+            SequencingRun.from_dict(data)
+
+    def test_from_dict_still_reads_the_legacy_complete(self):
+        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series",
+                "status": "complete"}
+        assert SequencingRun.from_dict(data).status == RunStatus.ARCHIVED
 
     def test_from_dict_refuses_an_unknown_platform(self):
         """An unknown instrument_platform is refused, not read as NovaSeq X:
         the instrument decides the i5 direction and the sheet's settings
         (docs/design/2026-10-17-unknown-platform-design.md)."""
-        data = {"id": "test-id", "instrument_platform": "NovaSeq Z Hypothetical"}
+        data = {"id": "test-id", "status": "draft", "instrument_platform": "NovaSeq Z Hypothetical"}
         with pytest.raises(ValueError, match="instrument this release does not know"):
             SequencingRun.from_dict(data)
 
     def test_from_dict_datetime_objects_preserved(self):
         """from_dict handles datetime objects (not just strings)."""
         now = datetime(2025, 6, 15, 10, 30, 0)
-        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series", "created_at": now, "updated_at": now}
+        data = {"id": "test-id", "status": "draft", "instrument_platform": "NovaSeq X Series", "created_at": now, "updated_at": now}
         run = SequencingRun.from_dict(data)
         # datetime objects are passed through as-is (not re-parsed)
         assert run.created_at == now
@@ -735,7 +749,7 @@ class TestSampleIndexMutations:
 
     def test_from_dict_missing_timestamps_default_to_now(self):
         """from_dict creates datetime.now() when timestamps are absent."""
-        data = {"id": "test-id", "instrument_platform": "NovaSeq X Series"}
+        data = {"id": "test-id", "status": "draft", "instrument_platform": "NovaSeq X Series"}
         run = SequencingRun.from_dict(data)
         assert isinstance(run.created_at, datetime)
         assert isinstance(run.updated_at, datetime)

@@ -39,6 +39,7 @@ class TestSampleCountCap:
         monkeypatch.setattr(sequencing_run_module, "MAX_SAMPLES_PER_RUN", 2)
         data = {
             "id": "legacy-run",
+            "status": "draft",
             "instrument_platform": "NovaSeq X Series",
             "run_name": "legacy",
             "samples": [{"id": f"id{i}", "sample_id": f"S{i}"} for i in range(5)],
@@ -904,7 +905,7 @@ class TestMismatchIsAWholeNumber:
             id="sample",
         ),
         pytest.param(
-            lambda v: SequencingRun.from_dict({"id": "r", "instrument_platform": "NovaSeq X Series", "barcode_mismatches_index1": v}),
+            lambda v: SequencingRun.from_dict({"id": "r", "status": "draft", "instrument_platform": "NovaSeq X Series", "barcode_mismatches_index1": v}),
             id="run",
         ),
         pytest.param(

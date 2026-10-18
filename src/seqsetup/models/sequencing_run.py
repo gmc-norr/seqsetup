@@ -163,6 +163,33 @@ class InstrumentPlatform(Enum):
     NEXTSEQ_1000_2000 = "NextSeq 1000/2000"
 
 
+def stored_status(data: dict, what: str) -> "RunStatus":
+    """The status a stored run or listing row names.
+
+    One this release does not know, or none, is refused, never read as a
+    Draft: the status decides whether the run can be edited, whether the API
+    serves it, and whether its exports exist, and a document read as a Draft
+    is written back as ``"draft"`` on its next save -- so a damaged Ready run
+    opened editable and lost the record that it had ever been Ready. The
+    document is then unreadable until an administrator repairs it, and the
+    lists name it (design note
+    docs/design/2026-10-18-unknown-status-design.md).
+
+    ``"complete"`` is the status an early release wrote for an archived run
+    and still reads as ARCHIVED. Every version of ``to_dict`` in this
+    repository's history writes the field, so only a document changed
+    outside SeqSetup lacks it.
+    """
+    raw = data.get("status")
+    try:
+        return RunStatus("archived" if raw == "complete" else raw)
+    except ValueError:
+        raise ValueError(
+            f"{what} names a status this release does not know: {raw!r}. "
+            f"SeqSetup does not guess one; an administrator must repair the document."
+        ) from None
+
+
 def stored_platform(data: dict, what: str) -> InstrumentPlatform:
     """The instrument a stored run, listing row or template names.
 
@@ -542,28 +569,9 @@ class SequencingRun:
         elif updated_at is None:
             updated_at = utcnow()
 
-        # Defensive enum parsing: an unknown status (e.g. from a renamed enum
-        # value in a future release, or a corrupted document) must not make
-        # an archived clinical run unloadable. Surface a warning and fall
-        # back to a safe value. An unknown instrument is refused instead
-        # (stored_platform): no instrument is a safe guess.
-        raw_status = "archived" if data.get("status") == "complete" else data.get("status", "draft")
-        try:
-            status = RunStatus(raw_status)
-        except ValueError:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Unknown RunStatus %r in stored run %r — falling back to DRAFT",
-                raw_status, data.get("_id") or data.get("id"),
-            )
-            # Falling back to DRAFT (not ARCHIVED) keeps the run out of the
-            # JSON API surface (which exposes only Ready + Archived) and out
-            # of the export pipeline until an admin re-examines it. A
-            # corrupted status field should never silently become a clinical
-            # snapshot.
-            status = RunStatus.DRAFT
-
-        platform = stored_platform(data, f"Run {data.get('_id') or data.get('id')!r}")
+        what = f"Run {data.get('_id') or data.get('id')!r}"
+        status = stored_status(data, what)
+        platform = stored_platform(data, what)
 
         return cls(
             id=data.get("_id") or data["id"],
