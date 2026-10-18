@@ -6,14 +6,19 @@ out where the i5 is written reversed (spec 2026-10-10 later list slice 1,
 import pytest
 
 from seqsetup.models.application_profile import ApplicationProfile
-from seqsetup.services.profile_validator import (
-    ProfileValidationError,
-    validate_application_profile_yaml,
-)
+from seqsetup.input_rules.profiles import ProfileValidationError
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.sheet_text import I5_RULE_SETTINGS
 
 from .test_i5_rule_guards import _Out, _profile, _run
+
+
+def check_application_profile(data, source_file=""):
+    """The input rules for an application profile, through its one builder
+    (input_rules/profiles.py; services/profile_validator.py was removed)."""
+    from seqsetup.models.application_profile import ApplicationProfile
+
+    ApplicationProfile.from_yaml(data, source_file)
 
 
 class TestIndexOrientationIsRefused:
@@ -24,14 +29,14 @@ class TestIndexOrientationIsRefused:
     @pytest.mark.parametrize("key", ["IndexOrientation", "indexorientation", "INDEXORIENTATION"])
     def test_the_sync_refuses_it(self, key):
         with pytest.raises(ProfileValidationError) as exc:
-            validate_application_profile_yaml(_profile({key: "Forward"}), "Guard.yaml")
+            check_application_profile(_profile({key: "Forward"}), "Guard.yaml")
         assert (
-            f"Field 'Settings' may not set {key!r} in the BCLConvert profile: SeqSetup "
+            f"Settings > {key}: may not be set in the BCLConvert profile: SeqSetup "
             f"writes the i5 and OverrideCycles itself"
-        ) in str(exc.value)
+        ) in exc.value.errors
 
     def test_another_application_may_carry_it(self):
-        validate_application_profile_yaml(_profile({"IndexOrientation": "Forward"}, "DragenGermline"))
+        check_application_profile(_profile({"IndexOrientation": "Forward"}, "DragenGermline"))
 
     @pytest.mark.parametrize("key", ["IndexOrientation", "indexorientation"])
     def test_the_writer_refuses_a_stored_one(self, key):

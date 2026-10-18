@@ -187,9 +187,12 @@ and index modes.
 Profile Validation
 -------------------
 
-``validate_test_profile_yaml()`` and ``validate_application_profile_yaml()``
-(in ``services/profile_validator.py``) validate test and application profile
-definitions against the expected schema.
+Test and application profiles are checked by the input rules
+(``input_rules/profiles.py``): every key of both documents is named and any
+other is refused, with each problem's file, line and place. The sync and
+``pixi run check-settings`` check a profile file's text;
+``ApplicationProfile.from_yaml`` and ``TestProfile.from_yaml`` check the data
+they are given with the same rules and raise ``ProfileValidationError``.
 
 GitHubSyncService
 -----------------

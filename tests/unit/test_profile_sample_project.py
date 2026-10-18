@@ -5,14 +5,19 @@ refused, at Mark Ready and by the sync."""
 
 import pytest
 
-from seqsetup.services.profile_validator import (
-    ProfileValidationError,
-    validate_application_profile_yaml,
-)
+from seqsetup.input_rules.profiles import ProfileValidationError
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 
 from .test_sheet_plan import BCL_FIELDS, _app, _dragen, _plan, _problems, _repos, _run, _sample
 from .test_sheet_plan import _test as _test_profile
+
+
+def check_application_profile(data, source_file=""):
+    """The input rules for an application profile, through its one builder
+    (input_rules/profiles.py; services/profile_validator.py was removed)."""
+    from seqsetup.models.application_profile import ApplicationProfile
+
+    ApplicationProfile.from_yaml(data, source_file)
 
 BOTH = ["Sample_ID", "Lane", "Index", "Index2", "Sample_Name", "Sample_Project"]
 DEFAULTS = {"Sample_Name": "PROFILE_NAME", "Sample_Project": "PROFILE_PROJECT"}
@@ -202,13 +207,13 @@ class TestTheSyncRefusesAnotherSpelling:
             "DataFields": ["Sample_ID", written], "Translate": {},
         }
         with pytest.raises(ProfileValidationError) as exc:
-            validate_application_profile_yaml(profile, "P.yaml")
-        assert (f"'{written}' must be spelled {canonical}: SeqSetup fills and reads "
-                f"{canonical} itself, in that spelling only.") in exc.value.errors
+            check_application_profile(profile, "P.yaml")
+        assert (f"DataFields > item 2: must be spelled {canonical}: SeqSetup fills and reads "
+                f"{canonical} itself, in that spelling only") in exc.value.errors
 
     @pytest.mark.parametrize("column", ["Sample_Project", "Sample_Name"])
     def test_the_spelling_seqsetup_uses_passes(self, column):
-        validate_application_profile_yaml({
+        check_application_profile({
             "ApplicationProfileName": "P", "ApplicationProfileVersion": "1.0.0",
             "ApplicationName": "DragenGermline", "ApplicationType": "Dragen",
             "Settings": {"SoftwareVersion": "4.3.6"}, "Data": {column: "x"},

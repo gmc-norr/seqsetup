@@ -210,6 +210,8 @@ _TYPE_ERRORS = frozenset({
 _KIND_NAMES = (("string_type", "text"), ("int_type", "a whole number"), ("bool_type", "true/false"),
                ("list_type", "a list"), ("dict_type", "a map of keys and values"))
 _EMPTY_TEXT = "needs a value: write '' if it should be empty"
+_DECIMAL = ("is a number with a decimal point, which YAML may have changed "
+            "(1.10 is read as 1.1): put it in quotes")
 
 
 def _within_data(data, loc: tuple, kind: str) -> tuple[tuple, bool]:
@@ -262,6 +264,8 @@ def _from_kinds(items: list, loc: tuple, data, locations: Locations, file: str) 
     bounds = [item for item in items if item["type"] not in _TYPE_ERRORS]
     if given is None:
         message = _EMPTY_TEXT if any(item["type"] == "string_type" for item in items) else "needs a value"
+    elif isinstance(given, float) and any(item["type"] == "string_type" for item in items):
+        message = _DECIMAL
     elif bounds:
         message = _message(bounds[0])
     else:
@@ -311,8 +315,7 @@ def _message(item: dict) -> str:
         return "needs a value"
     if kind == "string_type":
         if isinstance(given, float):
-            return ("is a number with a decimal point, which YAML may have changed "
-                    "(1.10 is read as 1.1): put it in quotes")
+            return _DECIMAL
         if isinstance(given, (int, bool)):
             return "must be text: put it in quotes"
         return "must be text"

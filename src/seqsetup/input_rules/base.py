@@ -13,7 +13,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
-from ..services.sheet_text import PLAIN_NAME_RE, PLAIN_VERSION_RE
+from ..services.sheet_text import PLAIN_NAME_RE, PLAIN_VERSION_RE, describe, hidden_characters
 
 # MongoDB stores a whole number in 64 bits: a larger one passes a model and
 # then fails to save. No range in a rulebook goes past it.
@@ -29,13 +29,21 @@ class StrictRules(BaseModel):
     model_config = STRICT
 
 
+def _hidden(value: str) -> None:
+    chars = hidden_characters(value)
+    if chars:
+        raise ValueError(f"holds a hidden character: {describe(chars)}")
+
+
 def _plain_name(value: str) -> str:
+    _hidden(value)
     if not PLAIN_NAME_RE.fullmatch(value):
         raise ValueError("may only hold letters, digits, '_' and '-'")
     return value
 
 
 def _plain_version(value: str) -> str:
+    _hidden(value)
     if not PLAIN_VERSION_RE.fullmatch(value):
         raise ValueError("may only hold letters, digits, '.', '_' and '-'")
     return value
@@ -49,6 +57,17 @@ PlainVersion = Annotated[
 ]
 # Text that must not be empty, such as a name shown to people.
 Text256 = Annotated[str, StringConstraints(min_length=1, max_length=256)]
+
+
+def _filled(value: str) -> str:
+    if not value.strip():
+        raise ValueError("must not be empty")
+    return value
+
+
+# Text that must hold more than spaces, kept as written (never trimmed).
+FilledText256 = Annotated[str, StringConstraints(min_length=1, max_length=256), AfterValidator(_filled)]
+FilledText4096 = Annotated[str, StringConstraints(min_length=1, max_length=4096), AfterValidator(_filled)]
 # Text that may be empty, such as a description.
 Label = Annotated[str, StringConstraints(max_length=4096)]
 

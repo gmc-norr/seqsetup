@@ -11,13 +11,18 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services.cycle_calculator import INDEX2_ORDER_RULE, CycleCalculator
-from seqsetup.services.profile_validator import (
-    ProfileValidationError,
-    validate_application_profile_yaml,
-)
+from seqsetup.input_rules.profiles import ProfileValidationError
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.sheet_text import I5_RULE_SETTINGS
 from seqsetup.services.validation import ValidationService
+
+
+def check_application_profile(data, source_file=""):
+    """The input rules for an application profile, through its one builder
+    (input_rules/profiles.py; services/profile_validator.py was removed)."""
+    from seqsetup.models.application_profile import ApplicationProfile
+
+    ApplicationProfile.from_yaml(data, source_file)
 
 RC = RunCycles(151, 151, 10, 10)
 
@@ -86,17 +91,17 @@ class TestProfilesCannotChangeTheRule:
     @pytest.mark.parametrize("key", list(I5_RULE_SETTINGS) + ["overridecycles"])
     def test_the_sync_refuses_it(self, key):
         with pytest.raises(ProfileValidationError) as exc:
-            validate_application_profile_yaml(_profile({key: "1"}), "Guard.yaml")
+            check_application_profile(_profile({key: "1"}), "Guard.yaml")
         assert (
-            f"Field 'Settings' may not set {key!r} in the BCLConvert profile: SeqSetup "
+            f"Settings > {key}: may not be set in the BCLConvert profile: SeqSetup "
             f"writes the i5 and OverrideCycles itself"
-        ) in str(exc.value)
+        ) in exc.value.errors
 
     def test_another_application_may_carry_it(self):
-        validate_application_profile_yaml(_profile({"OverrideCycles": "1"}, "DragenGermline"))
+        check_application_profile(_profile({"OverrideCycles": "1"}, "DragenGermline"))
 
     def test_overridecycles_as_a_data_column_is_fine(self):
-        validate_application_profile_yaml(_profile({"SoftwareVersion": "4.3.6"}))
+        check_application_profile(_profile({"SoftwareVersion": "4.3.6"}))
 
     @pytest.mark.parametrize("key", list(I5_RULE_SETTINGS))
     def test_the_writer_refuses_a_stored_one(self, key):

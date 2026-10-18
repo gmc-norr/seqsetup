@@ -7,7 +7,14 @@ import pytest
 import yaml
 
 from seqsetup.input_rules.instruments import check_synced_instrument_file
-from seqsetup.services.profile_validator import validate_application_profile_yaml
+
+
+def check_application_profile(data, source_file=""):
+    """The input rules for an application profile, through its one builder
+    (input_rules/profiles.py; services/profile_validator.py was removed)."""
+    from seqsetup.models.application_profile import ApplicationProfile
+
+    ApplicationProfile.from_yaml(data, source_file)
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -107,6 +114,6 @@ class TestShippedConfigStillPasses:
         for path in sorted(REPO.glob("config/**/*.y*ml")):
             data = yaml.safe_load(path.read_text())
             if isinstance(data, dict) and "ApplicationName" in data:
-                validate_application_profile_yaml(data, str(path))
+                check_application_profile(data, str(path))
                 checked += 1
         assert checked >= 5
