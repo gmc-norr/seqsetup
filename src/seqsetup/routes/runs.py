@@ -1257,7 +1257,23 @@ def update_status(
         chosen_kit_id=selected_kit_id(request),
     )
     ready_html = templates.env.get_template("runs/_ready_message.html").render(oob=True)
-    return HTMLResponse(status_html + export_html + section_html + ready_html, headers={"Cache-Control": "no-store"})
+    # The setup panel too: its Edit setup link is shown only to whoever holds
+    # the draft's edit lock, so a Ready run kept offering it until a reload --
+    # a link to a page where every save is then refused -- and a run just
+    # returned to Draft was missing it (2026-10-18 batch, step 6).
+    flowcells = get_flowcells_for_instrument(run.instrument_platform)
+    config_html = templates.env.get_template("runs/_run_config_panel.html").render(
+        run=run,
+        flowcell_desc=flowcells.get(run.flowcell_type, {}).get(
+            "description", run.flowcell_type),
+        cycles=run.run_cycles,
+        i5_workflows=i5_workflow_names(run.instrument_platform.value),
+        is_editable=is_editable,
+        oob=True,
+    )
+    return HTMLResponse(
+        status_html + export_html + section_html + ready_html + config_html,
+        headers={"Cache-Control": "no-store"})
 
 
 _HISTORY_PAGE = 50
