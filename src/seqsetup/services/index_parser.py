@@ -49,6 +49,49 @@ class IndexNamesNotText(KitFileRefused):
     reason = "index_names_not_text"
 
 
+class I5DataInSingleKit(KitFileRefused):
+    """A kit file uploaded as Single whose content carries i5 data.
+
+    A Single kit saves the i7 indexes only, so the file's i5 column, i5Index2
+    list, IndexNumber 2 lines, [i5] section or i5_indexes list went nowhere --
+    or into a kit whose panel never shows them. The admin was told nothing.
+    """
+
+    reason = "i5_data_in_single_kit"
+
+
+class PairsInSingleKit(KitFileRefused):
+    """A SeqSetup-format kit file uploaded as Single that lists index_pairs.
+
+    A Single kit hands out single i7 indexes; its panel reads i7_indexes and
+    never the pairs, so every pair in the file went unused and unseen.
+    """
+
+    reason = "pairs_in_single_kit"
+
+
+class IncompleteIndexRows(KitFileRefused):
+    """A kit file with a line that has content but is not an index.
+
+    A CSV row with no name or no i7 sequence, and a TSV [Indices] line with
+    fewer than three cells or an index number that is neither 1 nor 2, were
+    dropped without a word: the kit saved fewer indexes than the file listed.
+    """
+
+    reason = "incomplete_index_rows"
+
+
+class TwoKeysForOneList(KitFileRefused):
+    """An Illumina YAML file that gives two keys for one index list.
+
+    ``i7Index1`` and ``Index1`` both name the i7 list (``i5Index2`` and
+    ``Index2`` the i5 one). Reading the first and dropping the second lost
+    every index in it without a word.
+    """
+
+    reason = "two_keys_for_one_list"
+
+
 _UNPAIRED_SHOWN = 10
 _NAME_SHOWN = 40
 
@@ -62,6 +105,253 @@ def _names(names: list) -> str:
     shown = ", ".join(_quoted(name) for name in names[:_UNPAIRED_SHOWN])
     more = len(names) - _UNPAIRED_SHOWN
     return f"{shown} and {more} more" if more > 0 else shown
+
+
+class ColumnsNotRead(KitFileRefused):
+    """A kit file with a column whose name looks like an index or a lane but
+    is not one the parser reads, or a row with a cell under no column name.
+
+    Such a column was ignored: a file whose i5 column is called "Index 2"
+    uploaded as Single dropped the i5 and said nothing. The sample paste has
+    refused an unread index-looking column by name since 32ae40e.
+    """
+
+    reason = "columns_not_read"
+
+
+class ListsNotRead(KitFileRefused):
+    """A SeqSetup-format kit file holding an index list the chosen mode does
+    not read. Such a list was kept in the kit where the index panel never
+    shows it -- an index in the file that no sample can be given."""
+
+    reason = "lists_not_read"
+
+
+_LINES_SHOWN = 10
+
+# Which of the three index lists each mode reads; the index panel shows only
+# those, so a list a mode does not read is an index nothing can reach.
+_INDEX_LISTS = ("index_pairs", "i7_indexes", "i5_indexes")
+_LISTS_READ = {
+    IndexMode.UNIQUE_DUAL: ("index_pairs",),
+    IndexMode.COMBINATORIAL: ("i7_indexes", "i5_indexes"),
+    IndexMode.SINGLE: ("i7_indexes",),
+}
+
+# The names the simple CSV reader looks for, in the order it looks (the
+# lookups below are built from these, so a name added here is read).
+_CSV_NAME_COLUMNS = ("name", "Name", "Sample_ID", "sample_id")
+_CSV_I7_NAME_COLUMNS = ("i7_name", "I7_Name", "i7_index_name")
+_CSV_I5_NAME_COLUMNS = ("i5_name", "I5_Name", "i5_index_name")
+_CSV_I7_COLUMNS = ("index", "Index", "i7", "Index1", "index1", "sequence", "Sequence")
+_CSV_I5_COLUMNS = ("index2", "Index2", "i5", "Index_2")
+_CSV_WELL_COLUMNS = ("well", "Well", "well_position", "Well_Position")
+_SIMPLE_CSV_COLUMNS = frozenset(
+    _CSV_NAME_COLUMNS + _CSV_I7_NAME_COLUMNS + _CSV_I5_NAME_COLUMNS
+    + _CSV_I7_COLUMNS + _CSV_I5_COLUMNS + _CSV_WELL_COLUMNS)
+_SECTION_CSV_COLUMNS = frozenset(("name", "Name", "sequence", "Sequence") + _CSV_WELL_COLUMNS)
+_SIMPLE_CSV_READS = ("name, index (the i7), index2 (the i5), i7_name, i5_name and "
+                     "well_position")
+_SECTION_CSV_READS = "name, sequence and well_position"
+
+# Same rule as services/sample_parser.py: a header name holding "index" or
+# "barcode", or a word starting i7, i5 or lane, is about an index or a lane.
+_INDEX_OR_LANE_TEXT = ("index", "barcode")
+_INDEX_OR_LANE_WORD = re.compile(r"^(i7|i5|lane)")
+
+# A cell of four or more bases is a sequence, so the line carrying it is an
+# index line and not a section header however the header is spelled.
+_LOOKS_LIKE_DNA = re.compile(r"^[ACGTN]{4,}\Z")
+
+
+def _section_marker(line: str) -> Optional[str]:
+    """``[i7]`` or ``[i5]`` when the line is that section's marker, else None.
+
+    A spreadsheet writes the marker as ``[i7],`` or ``"[i7]"`` when the sheet
+    has more than one column, and comparing the line with "[i7]" then read the
+    marker as a line of the section (review of 14b7f6d).
+    """
+    bare = line.strip().strip('",').strip().lower()
+    return bare if bare in ("[i7]", "[i5]") else None
+
+_SINGLE_ADVICE = ("Upload the kit as Unique Dual (each i7 paired with the i5 of the same "
+                  "name) or as Combinatorial (any i7 with any i5), or take the i5 data "
+                  "out of the file.")
+
+
+def _lines(numbers: list[int]) -> str:
+    shown = ", ".join(f"line {n}" for n in numbers[:_LINES_SHOWN])
+    more = len(numbers) - _LINES_SHOWN
+    return f"{shown} and {more} more" if more > 0 else shown
+
+
+def _looks_like_index_or_lane(name: str) -> bool:
+    name = name.lower()
+    return (any(text in name for text in _INDEX_OR_LANE_TEXT)
+            or any(_INDEX_OR_LANE_WORD.match(word) for word in re.split(r"[^a-z0-9]+", name)))
+
+
+def _columns_not_read(header, read: frozenset, reads: str) -> None:
+    """Refuse a header that this format cannot read as it stands.
+
+    Two faults: a column whose name looks like an index or a lane but is not
+    one the reader looks for (it was ignored without a word), and two columns
+    whose normal form is the same, which would both be one slot -- the reader
+    takes one of them and the other's sequences go nowhere.
+    """
+    names = [name for name in header or [] if name]
+    read_keys = {_column_key(name) for name in read}
+    unread = [name for name in names
+              if _column_key(name) not in read_keys and _looks_like_index_or_lane(name)]
+    if unread:
+        quoted = ", ".join(f'"{name}"' for name in unread)
+        raise ColumnsNotRead(
+            f"The file has a column named {quoted}, which looks like an index or a lane "
+            f"but is not a column this format reads, so nothing was saved: it would have "
+            f"been ignored without a word. This format reads {reads}. Rename the column "
+            f"or take it out."
+        )
+    seen: dict[str, str] = {}
+    for name in names:
+        key = _column_key(name)
+        if key in seen and seen[key] != name:
+            raise ColumnsNotRead(
+                f'The file has two columns, "{seen[key]}" and "{name}", that name one '
+                f"column of this format, so nothing was saved: the reader would take one "
+                f"of them and the other's values would go nowhere. Keep one."
+            )
+        seen[key] = name
+
+
+def _cells_with_no_column(numbered) -> None:
+    """Refuse rows that carry a cell under no column name (more cells than the
+    header), naming their lines: that cell was dropped unseen."""
+    bad = [lineno for lineno, row in numbered
+           if any(str(extra).strip() for extra in (row.get(None) or []))]
+    if bad:
+        raise ColumnsNotRead(
+            f"These rows have more cells than the header has columns, so nothing was "
+            f"saved: {_lines(bad)}. A cell under no column name was dropped unseen; give "
+            f"the column a header name or take the cell out."
+        )
+
+
+def _i5_in_single(where: str) -> I5DataInSingleKit:
+    return I5DataInSingleKit(
+        f"The file carries i5 data ({where}) but the kit was uploaded as Single, which "
+        f"saves the i7 indexes only, so nothing was saved: the i5 data would have been "
+        f"dropped without a word. {_SINGLE_ADVICE}"
+    )
+
+
+def _incomplete_csv_rows(numbers: list[int]) -> IncompleteIndexRows:
+    return IncompleteIndexRows(
+        f"These rows have content but no index name or no i7 sequence, so nothing was "
+        f"saved: {_lines(numbers)}. Each row needs both (name,index[,index2]); a row "
+        f"missing one was dropped without a word."
+    )
+
+
+def _column_key(name) -> str:
+    """One normal form for a CSV column name: lower case, no spaces and no
+    underscores, so ``INDEX``, ``Index`` and ``index_2`` read as the columns
+    they plainly are. ``row.get("index")`` matched the header text exactly, so
+    a file whose column said INDEX was read as having no i7 column at all --
+    and then refused as an unread index-looking column.
+    """
+    return re.sub(r"[\s_]+", "", str(name).strip().lower())
+
+
+def _by_column(row: dict) -> dict:
+    """The row keyed by each column's normal form. The restkey (None) is kept
+    under None so a cell with no column name is still found."""
+    out = {}
+    for name, value in row.items():
+        out[None if name is None else _column_key(name)] = value
+    return out
+
+
+def _cell(row: dict, *names: str) -> str:
+    """The first of ``names`` this CSV row has a value in, else "". ``names``
+    are given as the reader writes them and compared by normal form."""
+    keyed = _by_column(row)
+    for name in names:
+        value = keyed.get(_column_key(name))
+        if value:
+            return value
+    return ""
+
+
+def _csv_name(row: dict) -> str:
+    return _cell(row, *_CSV_NAME_COLUMNS)
+
+
+def _csv_i7(row: dict) -> str:
+    return _cell(row, *_CSV_I7_COLUMNS)
+
+
+def _csv_i5(row: dict) -> str:
+    return _cell(row, *_CSV_I5_COLUMNS)
+
+
+def _row_has_content(row: dict) -> bool:
+    """True when any cell of the row holds something. A row with nothing in it
+    is a blank line, not a dropped index."""
+    # A row with more cells than the header puts the rest in one list under
+    # the restkey: [""] is not content, and counting it as content refused a
+    # row of only separators that used to upload (review of 3be7a45, P2-3).
+    flat = []
+    for value in row.values():
+        flat.extend(value if isinstance(value, list) else [value])
+    return any(str(value).strip() for value in flat if value)
+
+
+def _text_or_refuse(data: dict) -> None:
+    """Every index name and sequence in a SeqSetup-format file must be text.
+
+    YAML reads an unquoted ``012`` as the number 10 and ``yes`` as true, so two
+    names written differently could be read as one -- the same refusal the
+    Illumina format already makes.
+    """
+    names_not_text: list = []
+    sequences_not_text: list = []
+
+    def check(entry, label: str) -> None:
+        if not isinstance(entry, dict):
+            return
+        name = entry.get("name")
+        if name is not None and not isinstance(name, str):
+            names_not_text.append(name)
+        sequence = entry.get("sequence")
+        if sequence is not None and not isinstance(sequence, str):
+            sequences_not_text.append(name if isinstance(name, str) else label)
+
+    for pair in data.get("index_pairs") or []:
+        if not isinstance(pair, dict):
+            continue
+        pair_name = pair.get("name")
+        if pair_name is not None and not isinstance(pair_name, str):
+            names_not_text.append(pair_name)
+        check(pair.get("index1"), "an i7 in index_pairs")
+        check(pair.get("index2"), "an i5 in index_pairs")
+    for key, label in (("i7_indexes", "an i7 index"), ("i5_indexes", "an i5 index")):
+        for entry in data.get(key) or []:
+            check(entry, label)
+
+    if names_not_text:
+        raise IndexNamesNotText(
+            f"YAML does not read these index names as text, so nothing was saved: it read "
+            f"them as {_names(list(dict.fromkeys(names_not_text)))}. A name made only of "
+            f"digits (012 is read as the number 10), or one of yes, no, true, false, on, "
+            f"off or null, is not text to YAML. Put each such name in quotes, for example "
+            f"name: '012'."
+        )
+    if sequences_not_text:
+        raise IndexNamesNotText(
+            f"These indexes have a sequence that is not text, so nothing was saved: "
+            f"{_names(list(dict.fromkeys(sequences_not_text)))}. Write each sequence out, "
+            f"for example sequence: ACGTACGT, and quote one YAML would read as a number."
+        )
 
 
 def _repeated(names: list) -> RepeatedNames:
@@ -167,6 +457,7 @@ class IndexParser:
         """
         suffix = file_path.suffix.lower()
         content = file_content if file_content is not None else file_path.read_text()
+        content = content.lstrip("\ufeff")
 
         if suffix in (".yaml", ".yml"):
             return cls._parse_yaml(content, file_path.stem, index_mode)
@@ -214,6 +505,10 @@ class IndexParser:
             else:
                 # Try to detect from content
                 format_hint = cls._detect_format(content)
+
+        # A spreadsheet writes UTF-8 with a byte order mark, which would hide
+        # inside the first header name or the first section marker.
+        content = content.lstrip("\ufeff")
 
         default_name = kit_name or Path(filename).stem
 
@@ -317,10 +612,40 @@ class IndexParser:
         index_mode: Optional[IndexMode] = None,
     ) -> IndexKit:
         """Parse sync/export YAML format."""
+        _text_or_refuse(data)
         # Get index mode from file or parameter
         mode_str = data.get("index_mode", "unique_dual")
         file_mode = IndexMode(mode_str) if mode_str else IndexMode.UNIQUE_DUAL
         mode = index_mode or file_mode
+
+        # A Single kit saves single i7 indexes: its panel reads i7_indexes and
+        # never the i5 list or the pairs, so either would have gone into a kit
+        # that never shows them.
+        if mode == IndexMode.SINGLE:
+            if data.get("i5_indexes"):
+                raise _i5_in_single("the file's i5_indexes list")
+            if data.get("index_pairs"):
+                raise PairsInSingleKit(
+                    "The file lists index_pairs but the kit was uploaded as Single, which "
+                    "hands out single i7 indexes and never reads the pairs, so nothing "
+                    "was saved rather than every pair going unused and unseen. Upload the "
+                    "kit as Unique Dual, or give the file an i7_indexes list."
+                )
+        # The other modes read their own lists too, and the panel shows only
+        # those: a Combinatorial kit's pairs and a Unique Dual kit's i7 list
+        # were kept where nothing ever shows them. The sync refuses every such
+        # list (index_kit_sync_parser.KitListsNotRead); so does the upload
+        # (review of 14b7f6d).
+        read = _LISTS_READ[mode]
+        unread = [key for key in _INDEX_LISTS if key not in read and data.get(key)]
+        if unread:
+            raise ListsNotRead(
+                f"The kit was uploaded as {mode.value}, which reads "
+                f"{' and '.join(read)}, so this file's {' and '.join(unread)} would have "
+                f"been kept where the index panel never shows it and nothing was saved. "
+                f"Upload the kit in the mode its lists are for, or take the unread "
+                f"{'list' if len(unread) == 1 else 'lists'} out of the file."
+            )
 
         kit = IndexKit(
             name=data.get("name", default_name),
@@ -405,6 +730,20 @@ class IndexParser:
         """Parse legacy Illumina YAML format."""
         # Parse index sequences
         index_seqs = data.get("IndexSequences", {})
+        # ``a or b`` read one list and dropped the other without a word, so a
+        # file that gives both keys is refused naming them. Only for a mapping:
+        # anything else keeps the old behaviour (a generic parse failure).
+        if isinstance(index_seqs, dict):
+            for keys, label in ((("i7Index1", "Index1"), "i7"),
+                                (("i5Index2", "Index2"), "i5")):
+                given = [key for key in keys if key in index_seqs]
+                if len(given) > 1:
+                    raise TwoKeysForOneList(
+                        f"The file's IndexSequences gives both '{given[0]}' and "
+                        f"'{given[1]}' for its {label} list, so nothing was saved: one "
+                        f"would be read and every index in the other dropped without a "
+                        f"word. Keep one of the two keys."
+                    )
         i7_indexes = index_seqs.get("i7Index1", {}) or index_seqs.get("Index1", {})
         i5_indexes = index_seqs.get("i5Index2", {}) or index_seqs.get("Index2", {})
         for label, keys, indexes in (("i7", "i7Index1 or Index1", i7_indexes),
@@ -443,6 +782,12 @@ class IndexParser:
             indexes.update(stripped)
         if repeated:
             raise _repeated(repeated)
+
+        # A Single kit saves the i7 indexes only, so an i5 list in the file
+        # went nowhere. Checked against the mode as given, before the
+        # auto-detect below overwrites it (a detected Single has no i5).
+        if index_mode == IndexMode.SINGLE and i5_indexes:
+            raise _i5_in_single("the file's i5Index2 list")
 
         # Auto-detect mode if not specified
         if index_mode is None:
@@ -493,7 +838,7 @@ class IndexParser:
         D701<tab>ATTACTCG<tab>1
         D501<tab>TATAGCCT<tab>2
         """
-        lines = content.strip().split("\n")
+        lines = content.split("\n")
         current_section = None
         i7_indexes: dict[str, str] = {}
         i5_indexes: dict[str, str] = {}
@@ -501,14 +846,23 @@ class IndexParser:
         kit_version = "1.0"
         kit_description = ""
         repeated: list[str] = []
+        incomplete: list[int] = []
+        # The header line is only ever the section's first content line.
+        seen_index_line = False
+        # A line in no section, or under a section marker this format does not
+        # read, had no branch at all and vanished while the file's other lines
+        # kept the kit valid -- a section header spelled [Indexes] lost every
+        # index under it with nothing said (review of 14b7f6d, P1-1).
+        unread_sections: dict[str, list[int]] = {}
 
-        for line in lines:
+        for lineno, line in enumerate(lines, start=1):
             line = line.strip()
             if not line:
                 continue
 
             if line.startswith("["):
                 current_section = line.strip("[]")
+                seen_index_line = False
                 continue
 
             parts = line.split("\t")
@@ -523,20 +877,63 @@ class IndexParser:
                     elif key == "Description":
                         kit_description = value
 
-            elif current_section == "Indices":
-                if len(parts) >= 3:
-                    name, seq, index_num = parts[0].strip(), parts[1].strip(), parts[2].strip()
-                    if index_num == "1":
-                        if name in i7_indexes:
-                            repeated.append(name)
-                        i7_indexes[name] = seq
-                    elif index_num == "2":
-                        if name in i5_indexes:
-                            repeated.append(name)
-                        i5_indexes[name] = seq
+            elif current_section != "Indices":
+                unread_sections.setdefault(
+                    current_section if current_section is not None else "", []).append(lineno)
 
+            else:
+                cells = [part.strip() for part in parts]
+                is_index_line = len(cells) >= 3 and cells[2] in ("1", "2")
+                # The section's own first line is its header when it carries
+                # no sequence, however it spells its columns ("IndexNumber",
+                # "Index Number", or only Name and Sequence): matching one
+                # exact spelling refused a file whose header read otherwise
+                # (review of 3be7a45, P2-5).
+                if not is_index_line and not seen_index_line and not any(
+                        _LOOKS_LIKE_DNA.match(cell.upper()) for cell in cells):
+                    seen_index_line = True
+                    continue
+                # A short line, or one whose index number is neither 1 nor 2,
+                # was dropped without a word: the kit then held fewer indexes
+                # than the file listed.
+                if not is_index_line:
+                    incomplete.append(lineno)
+                    seen_index_line = True
+                    continue
+                seen_index_line = True
+                name, seq, index_num = cells[0], cells[1], cells[2]
+                if index_num == "1":
+                    if name in i7_indexes:
+                        repeated.append(name)
+                    i7_indexes[name] = seq
+                else:
+                    if name in i5_indexes:
+                        repeated.append(name)
+                    i5_indexes[name] = seq
+
+        if unread_sections:
+            parts = []
+            for section, numbers in unread_sections.items():
+                where = f"[{section}]" if section else "no section (before the first one)"
+                parts.append(f"{where}: {_lines(numbers)}")
+            raise ColumnsNotRead(
+                "These lines are in a part of the file this format does not read, so "
+                "nothing was saved: " + "; ".join(parts) + ". This format reads an "
+                "[IndexKit] section and an [Indices] section; a line anywhere else was "
+                "dropped without a word, so a section marker spelled otherwise lost every "
+                "index under it. Check the section's spelling, or take the lines out."
+            )
+        if incomplete:
+            raise IncompleteIndexRows(
+                f"These [Indices] lines are not a name, a sequence and an index number "
+                f"(1 for an i7, 2 for an i5), so nothing was saved: {_lines(incomplete)}. "
+                f"Such a line was dropped without a word."
+            )
         if repeated:
             raise _repeated(repeated)
+
+        if index_mode == IndexMode.SINGLE and i5_indexes:
+            raise _i5_in_single("its IndexNumber 2 lines")
 
         # Auto-detect mode if not specified
         if index_mode is None:
@@ -592,29 +989,37 @@ class IndexParser:
            name,sequence
            01,TATAGCCT
         """
+        # The strip is what lets DictReader find the header, but it also takes
+        # lines off the front: count them so a refusal names the file's own
+        # line, not the stripped content's.
+        line_offset = content[:len(content) - len(content.lstrip())].count("\n")
         content = content.strip()
 
         # Check if this is combinatorial format (has [i7] section)
-        if content.startswith("[i7]") or "\n[i7]" in content:
-            return cls._parse_combinatorial_csv(content, default_name, index_mode)
+        if any(_section_marker(line) == "[i7]" for line in content.split("\n")):
+            return cls._parse_combinatorial_csv(content, default_name, index_mode,
+                                                line_offset=line_offset)
 
-        # Parse simple format
+        # Parse simple format. The line number of each row comes with it: a row
+        # with content but no name or no i7 sequence is refused by line, and
+        # ``if name and i7_seq`` below dropped such a row without a word.
         reader = csv.DictReader(StringIO(content))
-        rows = list(reader)
+        numbered = [(reader.line_num + line_offset, row) for row in reader]
+        rows = [row for _lineno, row in numbered]
+
+        _columns_not_read(reader.fieldnames, _SIMPLE_CSV_COLUMNS, _SIMPLE_CSV_READS)
+        _cells_with_no_column(numbered)
+
+        incomplete = [lineno for lineno, row in numbered
+                      if _row_has_content(row) and not (_csv_name(row) and _csv_i7(row))]
+        if incomplete:
+            raise _incomplete_csv_rows(incomplete)
 
         # Check for i5 sequences to auto-detect mode
-        has_i5 = False
-        for row in rows:
-            i5_seq = (
-                row.get("index2")
-                or row.get("Index2")
-                or row.get("i5")
-                or row.get("Index_2")
-                or ""
-            )
-            if i5_seq:
-                has_i5 = True
-                break
+        has_i5 = any(_csv_i5(row) for row in rows)
+
+        if index_mode == IndexMode.SINGLE and has_i5:
+            raise _i5_in_single("the index2 column")
 
         # Auto-detect mode if not specified
         if index_mode is None:
@@ -625,61 +1030,16 @@ class IndexParser:
 
         kit = IndexKit(name=default_name, version="1.0", description="", index_mode=index_mode)
 
+        # Every column through the same lookups the checks above used, so a
+        # header the check counted as read is a header the row is read by:
+        # the two drifting apart is how an ignored column went unnoticed.
         for row in rows:
-            # Find pair/combination name column
-            name = (
-                row.get("name")
-                or row.get("Name")
-                or row.get("Sample_ID")
-                or row.get("sample_id")
-                or ""
-            )
-
-            # Find i7 name column (optional, falls back to pair name)
-            i7_name = (
-                row.get("i7_name")
-                or row.get("I7_Name")
-                or row.get("i7_index_name")
-                or name
-            )
-
-            # Find i5 name column (optional, falls back to pair name)
-            i5_name = (
-                row.get("i5_name")
-                or row.get("I5_Name")
-                or row.get("i5_index_name")
-                or name
-            )
-
-            # Find i7 sequence column
-            i7_seq = (
-                row.get("index")
-                or row.get("Index")
-                or row.get("i7")
-                or row.get("Index1")
-                or row.get("index1")
-                or row.get("sequence")
-                or row.get("Sequence")
-                or ""
-            )
-
-            # Find i5 sequence column (optional)
-            i5_seq = (
-                row.get("index2")
-                or row.get("Index2")
-                or row.get("i5")
-                or row.get("Index_2")
-                or ""
-            )
-
-            # Find well position column (optional)
-            well = (
-                row.get("well")
-                or row.get("Well")
-                or row.get("well_position")
-                or row.get("Well_Position")
-                or None
-            )
+            name = _csv_name(row)
+            i7_name = _cell(row, *_CSV_I7_NAME_COLUMNS) or name
+            i5_name = _cell(row, *_CSV_I5_NAME_COLUMNS) or name
+            i7_seq = _csv_i7(row)
+            i5_seq = _csv_i5(row)
+            well = _cell(row, *_CSV_WELL_COLUMNS) or None
 
             if name and i7_seq:
                 if index_mode == IndexMode.SINGLE:
@@ -714,6 +1074,7 @@ class IndexParser:
         content: str,
         default_name: str = "Imported Kit",
         index_mode: Optional[IndexMode] = None,
+        line_offset: int = 0,
     ) -> IndexKit:
         """
         Parse combinatorial CSV format with [i7] and [i5] sections.
@@ -742,52 +1103,80 @@ class IndexParser:
 
         lines = content.strip().split("\n")
         current_section = None
-        section_lines: list[str] = []
+        # Each kept line with its own number, so a row with content but no name
+        # or no sequence -- which ``if name and seq`` dropped without a word --
+        # is refused by the line it is on.
+        section_lines: list[tuple[int, str]] = []
+        incomplete: list[int] = []
+        outside: list[int] = []
 
         def process_section():
             nonlocal section_lines
-            if not section_lines or current_section is None:
+            if not section_lines:
+                return
+            if current_section is None:
+                # Lines before the first [i7] belong to no section. They were
+                # kept and read as the next section's own, so an [IndexKit]
+                # preamble became its header and the refusal named a good
+                # index instead of the stray lines (review of 3be7a45, P2-4).
+                outside.extend(lineno for lineno, _text in section_lines)
+                section_lines = []
                 return
 
-            section_content = "\n".join(section_lines)
-            reader = csv.DictReader(StringIO(section_content))
+            numbers = [lineno for lineno, _text in section_lines]
+            reader = csv.DictReader(StringIO("\n".join(text for _n, text in section_lines)))
+            # line_num counts the lines of this section read so far, the
+            # header included, so it indexes the section's own line list.
+            numbered = [(numbers[min(reader.line_num, len(numbers)) - 1], row)
+                        for row in reader]
+            _columns_not_read(reader.fieldnames, _SECTION_CSV_COLUMNS, _SECTION_CSV_READS)
+            _cells_with_no_column(numbered)
 
-            for row in reader:
-                name = row.get("name") or row.get("Name") or ""
-                seq = row.get("sequence") or row.get("Sequence") or ""
-                well = (
-                    row.get("well")
-                    or row.get("Well")
-                    or row.get("well_position")
-                    or row.get("Well_Position")
-                    or None
-                )
+            for lineno, row in numbered:
+                name = _cell(row, "name", "Name")
+                seq = _cell(row, "sequence", "Sequence")
+                well = _cell(row, *_CSV_WELL_COLUMNS) or None
 
-                if name and seq:
-                    if current_section == "i7":
-                        kit.i7_indexes.append(
-                            Index(name=name, sequence=seq, index_type=IndexType.I7, well_position=well)
-                        )
-                    elif current_section == "i5":
-                        kit.i5_indexes.append(
-                            Index(name=name, sequence=seq, index_type=IndexType.I5, well_position=well)
-                        )
+                if not (name and seq):
+                    if _row_has_content(row):
+                        incomplete.append(lineno)
+                    continue
+
+                if current_section == "i7":
+                    kit.i7_indexes.append(
+                        Index(name=name, sequence=seq, index_type=IndexType.I7, well_position=well)
+                    )
+                elif current_section == "i5":
+                    kit.i5_indexes.append(
+                        Index(name=name, sequence=seq, index_type=IndexType.I5, well_position=well)
+                    )
 
             section_lines = []
 
-        for line in lines:
+        for lineno, line in enumerate(lines, start=1 + line_offset):
             line = line.strip()
+            marker = _section_marker(line)
 
-            if line.lower() == "[i7]":
+            if marker:
                 process_section()
-                current_section = "i7"
-            elif line.lower() == "[i5]":
-                process_section()
-                current_section = "i5"
+                current_section = marker.strip("[]")
             elif line:
-                section_lines.append(line)
+                section_lines.append((lineno, line))
 
         # Process last section
         process_section()
+
+        if outside:
+            raise ColumnsNotRead(
+                f"These lines are before the file's first [i7] section, so they belong to "
+                f"no section and nothing was saved: {_lines(outside)}. An [i7] or [i5] "
+                f"file holds only those two sections; such a line was read as part of the "
+                f"next section or dropped."
+            )
+        if incomplete:
+            raise _incomplete_csv_rows(incomplete)
+
+        if index_mode == IndexMode.SINGLE and kit.i5_indexes:
+            raise _i5_in_single("an [i5] section")
 
         return kit

@@ -5,11 +5,17 @@ from typing import Optional
 
 import yaml
 
-from ..utils.yaml_safety import safe_load_strict
+from ..utils.yaml_safety import DuplicateKeyError, safe_load_unique_keys
 
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 
 logger = logging.getLogger(__name__)
+
+
+class KitListsNotRead(ValueError):
+    """A synced kit file holding an index list its own ``index_mode`` does not
+    read. Raised out of ``parse`` rather than turned into None, so the sync's
+    refusal carries this message to the config-sync page."""
 
 
 class IndexKitSyncParser:
@@ -69,11 +75,23 @@ class IndexKitSyncParser:
             IndexKit if parsing succeeds, None otherwise
         """
         try:
-            data = safe_load_strict(yaml_content)
+            data = safe_load_unique_keys(yaml_content)
             if not data:
                 logger.warning(f"Empty YAML content in {source_file}")
                 return None
             return cls._parse_kit(data, source_file)
+        except KitListsNotRead:
+            raise
+        except DuplicateKeyError as repeated:
+            # Raised, not returned as None: the sync's caller puts the message
+            # in the file's refusal, so the config-sync page says which key and
+            # which line. PyYAML would keep the last value without a word and
+            # the first index would be gone.
+            raise ValueError(
+                f"the key {repeated.key!r} is given twice in one mapping "
+                f"(line {repeated.line}), so nothing was read from this file: the "
+                f"second would replace the first without a word"
+            ) from None
         except yaml.YAMLError as e:
             logger.warning(f"Failed to parse YAML from {source_file}: {e}")
             return None
@@ -121,6 +139,27 @@ class IndexKitSyncParser:
             created_by="github_sync",
             source="github",
         )
+
+        # A mode reads some of the three index lists and not the others, so a
+        # list it does not read went nowhere and the sync reported success: a
+        # file saying index_mode: single with an i5_indexes list synced as an
+        # i7-only kit, and samples were then demultiplexed on the i7 alone
+        # (review of 3be7a45, P1-1). Refused before anything is read, naming
+        # the list and the mode; github_sync's per-file refusal then names
+        # the file and keeps the kit of that name and version already stored.
+        read = {IndexMode.UNIQUE_DUAL: ("index_pairs",),
+                IndexMode.COMBINATORIAL: ("i7_indexes", "i5_indexes"),
+                IndexMode.SINGLE: ("i7_indexes",)}[index_mode]
+        unread = [key for key in ("index_pairs", "i7_indexes", "i5_indexes")
+                  if key not in read and data.get(key)]
+        if unread:
+            raise KitListsNotRead(
+                f"index_mode is {index_mode.value}, which reads "
+                f"{' and '.join(read)}, so this file's "
+                f"{' and '.join(unread)} would have been dropped without a word and "
+                f"nothing was read from it: give the file the mode its lists are for, "
+                f"or take the unread {'list' if len(unread) == 1 else 'lists'} out"
+            )
 
         # Parse indexes based on mode
         if index_mode == IndexMode.UNIQUE_DUAL:

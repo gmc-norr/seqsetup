@@ -74,6 +74,71 @@ Before a kit is saved, SeqSetup checks, in order:
    version are the kit's place in the URL of its own detail, download and
    delete links, so such a kit would be listed and usable but could never be
    deleted.
+
+   Eight more faults refuse the whole file, with nothing saved.
+
+   * **i5 data with Single picked.** A Single kit saves the i7 indexes
+     only, so a file's ``index2`` column, ``i5Index2`` or ``Index2`` list,
+     ``IndexNumber 2`` lines, ``[i5]`` section or ``i5_indexes`` list went
+     nowhere -- or into a kit whose panel never shows them. The file is
+     refused naming where the i5 data is: upload it as **Unique Dual** or
+     **Combinatorial**, or take the i5 data out. A SeqSetup-format file that
+     lists ``index_pairs`` is refused the same way, since a Single kit never
+     reads the pairs.
+   * **A row that is not an index.** A CSV row with content but no name or
+     no i7 sequence, and a TSV ``[Indices]`` line that is not a name, a
+     sequence and 1 (i7) or 2 (i5), were dropped without a word, so the kit
+     held fewer indexes than the file listed. Such lines are now named
+     (*"These rows have content but no index name or no i7 sequence, so
+     nothing was saved: line 3, line 7."*), as a pasted worklist's are.
+     A blank line is still a blank line.
+   * **Two keys for one list.** An Illumina YAML that gives both
+     ``i7Index1`` and ``Index1``, or both ``i5Index2`` and ``Index2``, had
+     one read and every index in the other dropped. Both keys are named;
+     keep one.
+   * **A SeqSetup-format name YAML does not read as text.** The same
+     refusal the Illumina format already made: an unquoted ``012`` is the
+     number 10, so quote such a name (``name: '012'``).
+   * **A column the format cannot place.** A CSV column is matched by its
+     name in lower case with spaces and underscores taken out, so
+     ``INDEX``, ``Index 2``, ``index_2`` and ``I5`` are read as the columns
+     they plainly are -- matching the header text exactly meant such a
+     column was ignored, and a file whose i5 column was spelled one of
+     those uploaded as Single lost the i5 without a word. A name that
+     still looks like an index or a lane but names no column of the format
+     -- ``Lane``, ``Barcode``, ``I7_Index_ID``, ``Index_Plate`` -- is
+     refused by name. So are two columns that name one column of the format
+     (``index`` and ``INDEX``), since one would be read and the other's
+     values go nowhere. A name that looks like neither an index nor a lane
+     -- ``plate``, ``Description`` -- is still ignored.
+   * **A row with more cells than the header has columns.** That cell was
+     under no column name and dropped unseen; the row is named by its line.
+   * **A line that is in no section, or in a section the format does not
+     read.** In an ``[i7]``/``[i5]`` CSV, lines before the first ``[i7]``
+     were read as part of it, so an ``[IndexKit]`` preamble became its
+     header. In a TSV, a line before the first section, between the two
+     sections, or under a marker spelled ``[Indexes]`` had no branch at all
+     and vanished while the file's other lines kept the kit valid -- every
+     index under a misspelled marker, gone with nothing said. Such lines
+     are named, with the section they are in.
+   * **An index list the chosen mode does not read.** Unique Dual reads
+     ``index_pairs``, Combinatorial ``i7_indexes`` and ``i5_indexes``, and
+     Single ``i7_indexes``; a list a mode does not read was kept in the kit
+     where the index panel never shows it. The list and the mode are named.
+     The same check runs on a kit synced from GitHub.
+
+   A section marker written ``[i7],`` or ``"[i7]"`` -- as a spreadsheet
+   writes it when the sheet has more than one column -- is still the
+   marker, and a UTF-8 byte order mark no longer hides the first column
+   name.
+
+   Three things are still dropped quietly, and are known: a TSV
+   ``[IndexKit]`` key the reader does not use (``AdapterRead1`` among
+   them), a fourth column in ``[Indices]``, and the first line of
+   ``[Indices]``, which is read as its header when no cell of it holds a
+   sequence. None of them can hide an index -- a line carrying a sequence
+   is never read as a header -- but check a TSV kit's adapters and
+   defaults on its detail page after uploading it.
 4. **Field validation** -- the kit name is required; the version must be a
    valid semantic version; adapter sequences, and every i7/i5 sequence, must
    be DNA (``A``, ``C``, ``G``, ``T``, ``N`` only); every index pair needs a
@@ -92,7 +157,9 @@ Before a kit is saved, SeqSetup checks, in order:
    :doc:`/user-guide/override-cycles`). A slot with no indexes
    is not checked. The same check runs on a kit synced from GitHub (see
    :doc:`profiles`): a kit file that fails it is refused and not stored,
-   and the sync names the file and why.
+   and the sync names the file and why. A synced kit file that gives one key
+   twice is refused the same way -- YAML would keep the last value and lose
+   the first -- and the stored kit of that name and version stays as it was.
 5. **Name + version clash** -- a kit with the same name and version already
    present is rejected rather than silently overwritten. A kit deleted
    and then uploaded again under its name and version is stored, even
