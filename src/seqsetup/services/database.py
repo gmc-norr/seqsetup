@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from typing import Optional
-from urllib.parse import unquote
+from urllib.parse import unquote, unquote_plus
 
 import yaml
 from pymongo import MongoClient
@@ -25,6 +25,15 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "mongodb.yaml"
 
 # The credential part of a connection URI: everything between the scheme and
 # the "@" that ends it.
+#
+# Two patterns, because the two uses want different appetites. _CONFIGURED is
+# anchored at the start of the URI SeqSetup was given, so it may take spaces
+# and anything else a password can hold; refusing \s there turned the whole
+# scrub off for a password with a space in it, which parse_uri accepts and a
+# deployment can therefore have (review of 5aef69b, P2-2). _IN_TEXT scans a
+# free-form message, where a greedy run up to a later "@" would swallow
+# unrelated words, so it stops at whitespace.
+_URI_CREDENTIALS_CONFIGURED = re.compile(r"(mongodb(?:\+srv)?://)([^/@]*)@", re.IGNORECASE)
 _URI_CREDENTIALS = re.compile(r"(mongodb(?:\+srv)?://)[^/@\s]*@", re.IGNORECASE)
 
 # A user name shorter than this is not scrubbed from a message: replacing a
@@ -35,17 +44,23 @@ _SHORTEST_NAME_SCRUBBED = 3
 
 
 def _credentials(uri: str) -> tuple[str, ...]:
-    """The user name and password a URI carries, as written and unescaped, so
-    a message holding either form is caught. Longest first, so scrubbing the
-    pair does not leave half of one behind."""
-    match = _URI_CREDENTIALS.match(uri or "")
+    """The user name and password a URI carries, in every form they can be
+    written or sent, so a message holding any of them is caught. Longest
+    first, so scrubbing the pair does not leave half of one behind.
+
+    Three forms: as the URI writes it, percent-unescaped, and
+    ``unquote_plus``-unescaped -- a URI "+" is sent to the server as a space,
+    so that is the form the server's own message would carry
+    (review of 5aef69b, P2-3).
+    """
+    match = _URI_CREDENTIALS_CONFIGURED.match(uri or "")
     if not match:
         return ()
-    userinfo = (uri or "")[match.end(1):match.end() - 1]
+    userinfo = match.group(2)
     user, _, password = userinfo.partition(":")
     found = {userinfo}
     for part, shortest in ((password, 1), (user, _SHORTEST_NAME_SCRUBBED)):
-        for form in (part, unquote(part)):
+        for form in (part, unquote(part), unquote_plus(part)):
             if len(form) >= shortest:
                 found.add(form)
     return tuple(sorted((text for text in found if text), key=len, reverse=True))

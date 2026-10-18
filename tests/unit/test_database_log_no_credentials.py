@@ -138,6 +138,34 @@ class TestTheLogNeverHoldsTheCredentials:
 
         assert escaped not in caplog.text and plain not in caplog.text, caplog.text
 
+    @pytest.mark.parametrize("password, as_sent", [
+        # A space in the credentials made the whole scrub give up: the
+        # userinfo pattern refused \s, so nothing was parsed out of the URI
+        # and the generic pass could not match that URI either. parse_uri
+        # accepts such a URI, so it is a deployable setting
+        # (review of 5aef69b, P2-2).
+        ("pa ss word", "pa ss word"),
+        ("pa%20ss", "pa ss"),
+        # A URI "+" is sent to the server as a space, so the form the server
+        # saw is a third one (review of 5aef69b, P2-3). The project's own
+        # deployment notes call out this hazard twice.
+        ("pa+ss", "pa ss"),
+        ("s3cret%41word", "s3cretAword"),
+    ])
+    def test_every_form_of_an_awkward_password_goes(self, monkeypatch, caplog,
+                                                    password, as_sent):
+        monkeypatch.setattr(database, "_client", None)
+        monkeypatch.setattr(database, "_db", None)
+        monkeypatch.setenv("MONGODB_URI", f"mongodb://{USER}:{password}@mongodb:27017/s")
+        monkeypatch.setattr(database, "MongoClient", _Raises(
+            ConnectionFailure(f"refused: tried {password} then {as_sent}")))
+        with caplog.at_level(logging.DEBUG, logger=database.logger.name):
+            with pytest.raises(ConnectionFailure):
+                database.init_db()
+
+        assert password not in caplog.text, caplog.text
+        assert as_sent not in caplog.text, caplog.text
+
     def test_what_is_left_of_a_message_is_still_useful(self, connecting, caplog):
         log = connecting(ConnectionFailure("connection refused by mongodb:27017"), caplog)
 

@@ -332,6 +332,11 @@ them reports itself.
    ``config/mongodb.yaml`` cannot be read as YAML, the log names the file and
    the line and says why it does not quote it.
 
+   The same holds for a traceback: the credential part of any
+   ``scheme://user:password@`` is replaced wherever it appears, in
+   :doc:`/admin-guide/logs` and in the log file, so an unhandled error that
+   carries a connection string does not spill it either.
+
 .. note::
    If you ever worked around the old ``authSource=admin`` setting by creating
    the application user in the ``admin`` database, that user is no longer
