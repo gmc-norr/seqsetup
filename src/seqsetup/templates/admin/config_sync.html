@@ -32,6 +32,24 @@
             {% if last_sync_other_repo %}<div><strong>The repository and branch saved here have not been synced yet.</strong> The last sync read {{ config.last_sync_repo_url }} ({{ config.last_sync_branch }}).</div>{% endif %}
             {% if config.last_sync_message %}<div>{{ config.last_sync_message }}</div>{% endif %}
         </div>
+        {% if sync_problems %}
+        {# Each problem the input rules found in the last sync's files, with
+           its file, line and place (docs/design/2026-10-18-input-rules-design.md). #}
+        <table id="sync-problems" class="text-sm w-full mt-2">
+            <thead><tr><th class="text-left">File</th><th class="text-left">Line</th><th class="text-left">Where</th><th class="text-left">Problem</th></tr></thead>
+            <tbody>
+            {% for problem in sync_problems %}
+                <tr{% if problem.level == "warning" %} class="text-amber-800"{% endif %}>
+                    <td>{{ problem.file }}</td>
+                    <td>{{ problem.line }}</td>
+                    <td>{{ problem.where }}</td>
+                    <td>{% if problem.level == "warning" %}warning: {% endif %}{{ problem.message }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% if sync_problems_left_out %}<div>{{ sync_problems_left_out }} more problems are not shown here; <code>pixi run check-settings</code> on the settings folder lists them.</div>{% endif %}
+        {% endif %}
     </div>
 
     {# Config form #}

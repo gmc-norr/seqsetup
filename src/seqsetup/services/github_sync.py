@@ -31,7 +31,12 @@ from ..input_rules.instruments import (
     definitions_from,
     duplicate_instruments,
 )
-from ..input_rules.problems import InputProblem, problem_line
+from ..input_rules.problems import (
+    SYNC_STATUS_BUDGET,
+    InputProblem,
+    bounded_report,
+    problem_line,
+)
 from .validation import clear_validation_cache
 from ..utils.clock import local_time, utcnow
 
@@ -87,6 +92,18 @@ def paused_page_message(since: datetime, collections: list[str],
             if _INSTRUMENTS in collections and not instruments_synced else "Press Sync now")
     return (f"Mark Ready is paused: a sync started at {local_time(since)} did not finish "
             f"writing the {_names(collections)}. {then} to write them again.")
+
+
+class SyncResult(tuple):
+    """What a sync answers: ``(success, message, count)`` -- every caller
+    unpacks it as before -- and ``problems``, every problem the input rules
+    found in the files it read, each with its file, line and path
+    (docs/design/2026-10-18-input-rules-design.md)."""
+
+    def __new__(cls, success: bool, message: str, count: int, problems=()):
+        result = super().__new__(cls, (success, message, count))
+        result.problems = list(problems)
+        return result
 
 
 class InstrumentFileRefused(ValueError):
@@ -236,15 +253,30 @@ class GitHubSyncService:
         # (docs/design/2026-10-18-input-rules-design.md).
         self.input_problems: list[InputProblem] = []
 
-    def sync(self) -> Tuple[bool, str, int]:
+    def sync(self) -> SyncResult:
         """
         Perform full sync from GitHub.
 
         Returns:
-            Tuple of (success, message, count)
+            SyncResult: (success, message, count), with ``problems``
         """
         with _SYNC_LOCK:
-            return self._sync()
+            success, message, count = self._sync()
+            return SyncResult(success, message, count, self.input_problems)
+
+    def _store_status(self, status: str, message: str, count: int, instruments_count: int,
+                      index_kits_count: int, repo_url: str, branch: str) -> str:
+        """Store the sync's status with its problems, both cut to the status
+        budget (one MongoDB document holds them), and return the message as
+        stored: a report of thousands of problems would otherwise fill it."""
+        report = bounded_report(message, self.input_problems, SYNC_STATUS_BUDGET)
+        self.config_repo.update_sync_status(
+            status, report["message"], count, instruments_count, index_kits_count,
+            repo_url, branch,
+            problems=report["problems"], problem_count=report["problem_count"],
+            problems_left_out=report["problems_left_out"],
+        )
+        return report["message"]
 
     def _sync(self) -> Tuple[bool, str, int]:
         self.input_problems = []
@@ -529,7 +561,7 @@ class GitHubSyncService:
                 message = " ".join(refusals)
                 if synced:
                     message += f" Synced {', '.join(synced)}."
-                self.config_repo.update_sync_status(
+                message = self._store_status(
                     "error", message, count, instruments_count, index_kits_count,
                     config.github_repo_url, config.github_branch
                 )
@@ -546,10 +578,9 @@ class GitHubSyncService:
             if index_kits_count > 0:
                 parts.append(f"{index_kits_count} index kits")
 
-            message = f"Synced {', '.join(parts)}"
-            self.config_repo.update_sync_status(
-                "success", message, count, instruments_count, index_kits_count,
-                config.github_repo_url, config.github_branch
+            message = self._store_status(
+                "success", f"Synced {', '.join(parts)}", count, instruments_count,
+                index_kits_count, config.github_repo_url, config.github_branch
             )
 
             logger.info(f"Sync completed: {message}")
@@ -559,11 +590,11 @@ class GitHubSyncService:
             error_msg = str(e)
             if writing:
                 error_msg += " " + _PAUSED_IN_STATUS
-            logger.error(f"Sync failed: {error_msg}")
-            self.config_repo.update_sync_status(
+            error_msg = self._store_status(
                 "error", error_msg, 0, 0, 0,
                 config.github_repo_url, config.github_branch
             )
+            logger.error(f"Sync failed: {error_msg}")
             return False, f"Sync failed: {error_msg}", 0
 
         except Exception as e:
@@ -571,7 +602,7 @@ class GitHubSyncService:
             if writing:
                 error_msg += " " + _PAUSED_IN_STATUS
             logger.exception("Sync failed with unexpected error")
-            self.config_repo.update_sync_status(
+            error_msg = self._store_status(
                 "error", error_msg, 0, 0, 0,
                 config.github_repo_url, config.github_branch
             )

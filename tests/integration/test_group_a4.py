@@ -343,7 +343,10 @@ class TestARefusedTestFileKeepsTheStoredTestProfiles:
         assert message.startswith(
             REFUSED + f"{FOLDER}/Empty.yaml: is empty. Instrument files were refused, so no "
             "instrument settings were stored and the stored ones are kept: "
-            "instruments/bad.yaml: cannot be read as YAML: ")
+            "instruments/bad.yaml:")
+        # The reader's own explanation, with its line (the input rules design,
+        # 2026-10-18), never the YAML parser's text.
+        assert "instruments/bad.yaml:2:1: the file: " in message
         assert message.endswith(". Synced 1 application profiles.")
         assert _stored(ctx) == []
         assert ctx.instrument_definition_repo.collection.count_documents({}) == 0

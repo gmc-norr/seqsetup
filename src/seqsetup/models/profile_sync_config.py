@@ -39,6 +39,14 @@ class ProfileSyncConfig:
     last_sync_repo_url: str = ""
     last_sync_branch: str = ""
 
+    # The problems the input rules found in the files the last sync read, as
+    # plain records (file, line, column, path, message, level), cut to the
+    # status budget; how many there were, and how many are not stored
+    # (docs/design/2026-10-18-input-rules-design.md).
+    last_sync_problems: list = field(default_factory=list)
+    last_sync_problem_count: int = 0
+    last_sync_problems_left_out: int = 0
+
     # Instrument sync status (tracked separately)
     last_instruments_sync_count: int = 0
 
@@ -64,6 +72,9 @@ class ProfileSyncConfig:
             "last_sync_count": self.last_sync_count,
             "last_sync_repo_url": self.last_sync_repo_url,
             "last_sync_branch": self.last_sync_branch,
+            "last_sync_problems": list(self.last_sync_problems),
+            "last_sync_problem_count": self.last_sync_problem_count,
+            "last_sync_problems_left_out": self.last_sync_problems_left_out,
             "last_instruments_sync_count": self.last_instruments_sync_count,
             "last_index_kits_sync_count": self.last_index_kits_sync_count,
         }
@@ -92,6 +103,9 @@ class ProfileSyncConfig:
             last_sync_count=data.get("last_sync_count", 0),
             last_sync_repo_url=data.get("last_sync_repo_url", ""),
             last_sync_branch=data.get("last_sync_branch", ""),
+            last_sync_problems=list(data.get("last_sync_problems") or []),
+            last_sync_problem_count=data.get("last_sync_problem_count", 0),
+            last_sync_problems_left_out=data.get("last_sync_problems_left_out", 0),
             last_instruments_sync_count=data.get("last_instruments_sync_count", 0),
             last_index_kits_sync_count=data.get("last_index_kits_sync_count", 0),
         )

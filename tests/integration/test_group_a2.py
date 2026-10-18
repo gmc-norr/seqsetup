@@ -766,10 +766,13 @@ index_pairs:
 
 
 def _instrument_text(name: str, **changes) -> str:
-    """The shipped local entry for ``name``, as a one-instrument sync file."""
+    """The shipped local entry for ``name``, as a one-instrument sync file
+    (which states its version, as every synced instrument must: the input
+    rules design, 2026-10-18)."""
     import yaml
     from seqsetup.data import instruments as instruments_module
-    return yaml.safe_dump({**instruments_module._instruments[name], "name": name, **changes})
+    return yaml.safe_dump({**instruments_module._instruments[name], "name": name,
+                           "version": "1.0.0", **changes})
 
 
 def _sync_with_instruments(ctx, monkeypatch, instrument_files: dict, fail_download=(),
@@ -867,10 +870,11 @@ class TestASyncThatRefusesAnInstrumentFile:
         ok, message, _ = _sync_with_instruments(ctx, monkeypatch, {
             **GOOD_FILES, "i100.yaml": _instrument_text(I100.value, runinfo_marks_i5_reversed="yes"),
         })
+        # Each problem names the file, its line and the key (the input rules
+        # design, 2026-10-18), not "name: field" as the old validator did.
         self._assert_nothing_stored(
-            ctx, before, ok, message,
-            "instruments/i100.yaml: MiSeq i100 Series: runinfo_marks_i5_reversed: "
-            "Must be true or false (got: 'yes')")
+            ctx, before, ok, message, "runinfo_marks_i5_reversed: must be true or false")
+        assert "instruments/i100.yaml:" in message
 
     def test_a_file_that_cannot_be_downloaded(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
@@ -905,9 +909,8 @@ class TestASyncThatRefusesAnInstrumentFile:
             "i100.yaml": _instrument_text(I100.value, i5_workflows=[]),
         })
         self._assert_nothing_stored(
-            ctx, before, ok, message,
-            "instruments/i100.yaml: MiSeq i100 Series: i5_workflows: Must be a non-empty list "
-            "of workflows, the standard one first")
+            ctx, before, ok, message, "i5_workflows: must have at least 1 item(s)")
+        assert "instruments/i100.yaml:" in message
         assert "Refusing to replace" not in message
 
 
