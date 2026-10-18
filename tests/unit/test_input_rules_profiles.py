@@ -420,7 +420,25 @@ class TestTheRulesMovedFromTheOldValidator:
         assert any("SeqSetup writes the i5 and OverrideCycles itself" in m for _, m in _errors(_app(text)))
 
 
+def _typed(value):
+    """A value with the type of every part and the order of every map: ``==``
+    takes True for 1 and ignores the order of keys, and the sheet writes
+    True, 1 and "1" differently, in the order the profile gives."""
+    if isinstance(value, dict):
+        return [(key, _typed(item)) for key, item in value.items()]
+    if isinstance(value, list):
+        return [_typed(item) for item in value]
+    return (type(value).__name__, value)
+
+
+def _sections(profile):
+    return _typed([profile.settings, profile.data, profile.data_fields, profile.translate])
+
+
 class TestTheConvertedProfile:
+    """Every synced profile is built by the converter; the 78-sheet corpus
+    loads its profiles without it, so only these tests see a value it would
+    change (the fresh review of b21ea6f, P2 1)."""
 
     @pytest.mark.parametrize("path", APPS, ids=lambda p: p.name)
     def test_a_shipped_application_profile_is_the_file_as_written(self, path):
@@ -430,12 +448,28 @@ class TestTheConvertedProfile:
         assert (profile.name, profile.version, profile.application_type, profile.application_name) == (
             raw["ApplicationProfileName"], str(raw["ApplicationProfileVersion"]),
             raw["ApplicationType"], raw["ApplicationName"])
-        assert (profile.settings, profile.data, profile.data_fields, profile.translate) == (
+        assert _sections(profile) == _typed([
             raw.get("Settings") or {}, raw.get("Data") or {}, raw.get("DataFields") or [],
-            raw.get("Translate") or {})
+            raw.get("Translate") or {}])
         assert profile.source_file == path.name
         stored = ApplicationProfile.from_dict(bson.decode(bson.encode(profile.to_dict())))
-        assert stored.to_dict() == profile.to_dict()
+        assert _sections(stored) == _sections(profile)
+
+    def test_every_kind_of_value_keeps_its_type_and_its_place(self):
+        text = APP.replace("  BarcodeMismatchesIndex1: 1\n", (
+            "  BarcodeMismatchesIndex1: 1\n  Zeta: true\n  Alpha: '1'\n  Mid: -5\n"
+            "  Beta: false\n  Empty: ''\n"))
+        raw = yaml.safe_load(text)
+
+        profile = build_application_profile(_app(text).value, "app.yaml")
+
+        assert _typed(profile.data) == [
+            ("BarcodeMismatchesIndex1", ("int", 1)), ("Zeta", ("bool", True)),
+            ("Alpha", ("str", "1")), ("Mid", ("int", -5)), ("Beta", ("bool", False)),
+            ("Empty", ("str", ""))]
+        assert _typed(profile.data) == _typed(raw["Data"])
+        stored = ApplicationProfile.from_dict(bson.decode(bson.encode(profile.to_dict())))
+        assert _sections(stored) == _sections(profile)
 
     @pytest.mark.parametrize("path", TESTS, ids=lambda p: p.name)
     def test_a_shipped_test_profile_is_the_file_as_written(self, path):
