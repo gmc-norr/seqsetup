@@ -245,6 +245,32 @@ class TestProfiles:
             "profiles/test_profiles/: WGS 1.0.0 is in profiles/test_profiles/Wgs.yaml and "
             "profiles/test_profiles/sub/Wgs.yaml"]
 
+    def test_an_application_profile_ending_in_capitals_is_read_too(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        (folder / "profiles" / "application_profiles" / "Other.YAML").write_text(
+            "ApplicationProfileName: 5\n")
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert "profiles/application_profiles/Other.YAML:1:25: ApplicationProfileName: " in done.stdout
+
+    def test_two_files_for_one_application_profile_and_version(self, tmp_path):
+        """The fresh review of b21ea6f, P3 3: skipping this check passed every test."""
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        (folder / "profiles" / "application_profiles" / "sub").mkdir()
+        (folder / "profiles" / "application_profiles" / "sub" / "Copy.yaml").write_text(
+            PROFILES["profiles/application_profiles/BCLConvertNextera.yaml"])
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert done.stdout.splitlines() == [
+            "profiles/application_profiles/: BCLConvertNextera 1.0.0 is in "
+            "profiles/application_profiles/BCLConvertNextera.yaml and "
+            "profiles/application_profiles/sub/Copy.yaml; a profile name and version may be "
+            "in one file only"]
+
     def test_a_missing_profile_folder_fails(self, tmp_path):
         folder = _folder(tmp_path, {"good.yaml": GOOD}, profiles=False)
 
