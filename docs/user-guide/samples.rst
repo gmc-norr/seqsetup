@@ -268,6 +268,12 @@ it found before you rely on that row.
 The Sample ID is always shown in full: a long one wraps onto a second line
 instead of being cut short, on flagged rows too.
 
+The **Index (i7)** and **Index (i5)** cells likewise show every base of the
+assigned sequence. Nothing is cut: two 10-base indexes that differ only
+after base 8 read apart here, which is the point of reading the table
+before you mark the run Ready. A wide table scrolls sideways rather than
+shortening a sequence.
+
 Editing a sample
 ^^^^^^^^^^^^^^^^^^
 
