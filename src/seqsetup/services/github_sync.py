@@ -10,10 +10,6 @@ from datetime import datetime
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
-import yaml
-from packaging.version import Version
-
-from ..utils.yaml_safety import safe_load_strict
 from ..data.instruments import clear_synced_instruments_cache
 from ..models.application_profile import ApplicationProfile
 from ..models.index import IndexKit
@@ -26,6 +22,15 @@ from ..repositories.test_profile_repo import TestProfileRepository
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
+from ..input_rules.profiles import (
+    build_application_profile,
+    build_test_profile,
+    check_application_profile_file,
+    check_test_profile_file,
+    differing_only_in_capitals,
+    repeated_app_versions,
+    repeated_test_versions,
+)
 from ..input_rules.instruments import (
     check_synced_instrument_file,
     definitions_from,
@@ -109,6 +114,11 @@ class SyncResult(tuple):
 class InstrumentFileRefused(ValueError):
     """An instrument file that does not give valid instruments; the message
     says why (spec 2026-10-04 group A2, §5)."""
+
+
+class ProfileFileRefused(ValueError):
+    """A profile file the input rules refuse; the message is its first
+    problem."""
 
 
 class GitHubSyncError(Exception):
@@ -308,7 +318,8 @@ class GitHubSyncService:
                 repo,
                 config.github_branch,
                 config.application_profiles_path,
-                self._parse_application_profile,
+                check_application_profile_file,
+                build_application_profile,
                 strict=True,
                 refused=refused_apps,
                 paths=app_paths,
@@ -327,7 +338,8 @@ class GitHubSyncService:
                 repo,
                 config.github_branch,
                 config.test_profiles_path,
-                self._parse_test_profile,
+                check_test_profile_file,
+                build_test_profile,
                 strict=True,
                 refused=refused_tests,
                 paths=test_paths,
@@ -712,19 +724,23 @@ class GitHubSyncService:
         repo: str,
         branch: str,
         path: str,
-        parser,
+        check,
+        build,
         strict: bool = False,
         refused: Optional[list[str]] = None,
         paths: Optional[list[str]] = None,
     ) -> list:
-        """Fetch YAML files from directory recursively and parse them.
+        """Fetch YAML files from directory recursively, check each with the
+        input rules and build its profile from the checked value.
 
         Args:
             owner: GitHub owner
             repo: GitHub repo name
             branch: Branch name
             path: Directory path within repo
-            parser: Function to parse YAML into model object
+            check: the input rules for one file's text (``CheckResult``); its
+                problems join ``self.input_problems``
+            build: the profile from a checked value and the file's name
             refused: when given, each file or sub-folder that gives no
                 profile, for any reason, is added as "<path>: <problem>",
                 and a .yaml or .yml ending is read in any case (test
@@ -758,7 +774,7 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_profiles = self._fetch_profiles_recursive(
-                    owner, repo, branch, item_path, parser, strict=False, refused=refused,
+                    owner, repo, branch, item_path, check, build, strict=False, refused=refused,
                     paths=paths
                 )
                 profiles.extend(sub_profiles)
@@ -774,25 +790,25 @@ class GitHubSyncService:
                 if download_url:
                     try:
                         content = self._fetch_file_content(download_url)
-                        yaml_data = safe_load_strict(content)
-                        if yaml_data and not isinstance(yaml_data, dict):
-                            kind = "a list" if isinstance(yaml_data, list) else (
-                                f"{type(yaml_data).__name__} {str(yaml_data)[:40]!r}")
-                            raise ValueError(
-                                f"is not a profile: YAML read it as {kind}, not a mapping "
-                                "of fields")
-                        if yaml_data:
-                            profile = parser(yaml_data, item_name)
-                            profiles.append(profile)
-                            if paths is not None:
-                                paths.append(item_path)
-                            logger.debug(f"Parsed profile from {item_path}")
-                        elif refused is not None:
-                            refused.append(f"{item_path}: is empty")
-                    except yaml.YAMLError as e:
-                        logger.warning(f"Failed to parse YAML {item_path}: {e}")
+                        result = check(content, item_path)
+                        self.input_problems.extend(result.problems)
+                        errors = [p for p in result.problems if p.level == "error"]
+                        if errors:
+                            for error in errors:
+                                logger.warning(f"Profile file {problem_line(error)}")
+                            # The first problem only, as for instrument files:
+                            # the list of problems has them all.
+                            more = (" (and more problems in this file: see the list of problems)"
+                                    if len(errors) > 1 else "")
+                            raise ProfileFileRefused(problem_line(errors[0]) + more)
+                        profile = build(result.value, item_name)
+                        profiles.append(profile)
+                        if paths is not None:
+                            paths.append(item_path)
+                        logger.debug(f"Parsed profile from {item_path}")
+                    except ProfileFileRefused as e:
                         if refused is not None:
-                            refused.append(f"{item_path}: cannot be read as YAML: {e}")
+                            refused.append(str(e))
                     except Exception as e:
                         logger.warning(f"Failed to process {item_path}: {e}")
                         if refused is not None:
@@ -887,22 +903,6 @@ class GitHubSyncService:
 
         return instruments, refused
 
-    def _parse_application_profile(
-        self,
-        yaml_data: dict,
-        filename: str,
-    ) -> ApplicationProfile:
-        """Parse YAML into ApplicationProfile."""
-        return ApplicationProfile.from_yaml(yaml_data, filename)
-
-    def _parse_test_profile(
-        self,
-        yaml_data: dict,
-        filename: str,
-    ) -> TestProfile:
-        """Parse YAML into TestProfile."""
-        return TestProfile.from_yaml(yaml_data, filename)
-
     def _kept_test_versions_not_read(self, test_profiles: list[TestProfile]) -> list[str]:
         """The stored test versions that are not among ``test_profiles``, as
         "<test> <version>". A refused test file keeps every stored profile,
@@ -930,21 +930,15 @@ class GitHubSyncService:
         a range such as "~=1.0" matches both, while an exact reference finds
         only the one spelled as it is. The profile checks have made sure each
         version is a valid one. ``paths`` are the files' paths in the repository,
-        in step with ``app_profiles``, as for ``_refuse_repeated_test_versions``."""
-        files: dict[tuple[str, Version], list[tuple[str, str]]] = {}
-        for profile, where in zip(app_profiles, paths, strict=True):
-            files.setdefault((profile.name, Version(profile.version)), []).append(
-                (where, profile.version))
-        for (name, _version), found in files.items():
-            if len(found) > 1:
-                names = sorted(where for where, _spelled in found)
-                spellings = " = ".join(sorted({spelled for _where, spelled in found}))
-                where = f"{name} {spellings} is in {', '.join(names[:-1])} and {names[-1]}"
-                logger.warning(
-                    f"Application profiles refused: {where}. A profile name and version "
-                    "may be in one file only."
-                )
-                refused.append(where + "; a profile name and version may be in one file only")
+        in step with ``app_profiles``, as for ``_refuse_repeated_test_versions``.
+        The rule is ``input_rules.profiles.repeated_app_versions``, which the
+        settings command uses too."""
+        for where in repeated_app_versions(app_profiles, paths):
+            logger.warning(
+                f"Application profiles refused: {where}. A profile name and version "
+                "may be in one file only."
+            )
+            refused.append(where + "; a profile name and version may be in one file only")
 
     def _refuse_changed_or_repeated_kits(self, kits: list[IndexKit], paths: list[str],
                                          refused: list[dict]) -> list[IndexKit]:
@@ -1001,21 +995,14 @@ class GitHubSyncService:
         can hold the same base name, and "in Wgs.yaml and Wgs.yaml" says
         nothing about where the second one is."""
         where_of = paths if paths is not None else [p.source_file for p in test_profiles]
-        files: dict[tuple[str, str], list[str]] = {}
-        # strict=True: a plain zip stops at the shorter list, so a caller that
-        # appended a profile without its path would drop the trailing profiles
-        # out of this check and sync a test and version from two files
-        # silently. Fail closed instead (batch 4 review fix E).
-        for profile, where in zip(test_profiles, where_of, strict=True):
-            files.setdefault((profile.test_type, profile.version), []).append(where)
-        for (test, version), names in files.items():
-            if len(names) > 1:
-                names = sorted(names)
-                where = f"{test} {version} is in {', '.join(names[:-1])} and {names[-1]}"
-                logger.warning(
-                    f"Test profiles refused: {where}. A test and version may be in one file only."
-                )
-                refused.append(where)
+        # input_rules.profiles.repeated_test_versions zips with strict=True: a
+        # caller that appended a profile without its path fails closed
+        # (batch 4 review fix E).
+        for where in repeated_test_versions(test_profiles, where_of):
+            logger.warning(
+                f"Test profiles refused: {where}. A test and version may be in one file only."
+            )
+            refused.append(where)
 
     @staticmethod
     def _refuse_tests_differing_only_in_capitals(test_profiles: list[TestProfile],
@@ -1029,16 +1016,7 @@ class GitHubSyncService:
         the files' paths in the repository, in step with ``test_profiles``, as
         for ``_refuse_repeated_test_versions`` (the night run's Q7)."""
         where_of = paths if paths is not None else [p.source_file for p in test_profiles]
-        files: dict[str, dict[str, list[str]]] = {}
-        for profile, where in zip(test_profiles, where_of, strict=True):
-            spellings = files.setdefault(profile.test_type.lower(), {})
-            spellings.setdefault(profile.test_type, []).append(where)
-        for spellings in files.values():
-            if len(spellings) < 2:
-                continue
-            parts = [f"{test} in {', '.join(sorted(names))}"
-                     for test, names in sorted(spellings.items())]
-            where = f"{', '.join(parts[:-1])} and {parts[-1]} differ only in capitals"
+        for where in differing_only_in_capitals(test_profiles, where_of):
             logger.warning(
                 f"Test profiles refused: {where}. Two tests may not differ only in capitals."
             )
