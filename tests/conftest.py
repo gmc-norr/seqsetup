@@ -1,8 +1,43 @@
 """Pytest fixtures for seqsetup tests."""
 
 import os
+import signal
 
 import pytest
+
+# A real per-test time limit, with no dependency. pytest-timeout is not in
+# this environment and may not be added, and pytest.ini's
+# faulthandler_timeout only *reports* a hang -- it prints every thread's
+# traceback and lets the test run on. This ends it: the alarm raises inside
+# the test, so it fails with the hanging frame in its traceback and the suite
+# moves on (2026-10-18 batch, step 9).
+#
+# Two limits it has, and faulthandler covers the first: it can only interrupt
+# the MAIN thread, so a hang inside another thread or a GIL-holding C call
+# still needs the traceback dump; and neither covers a hang during
+# collection. Keep both.
+#
+# 300 s is far above anything legitimate here: the slowest single test
+# measured is about 50 s (tests/integration/test_index_safety_net.py), and the
+# whole browser suite runs in about 110 s across eight parts.
+TEST_TIME_LIMIT_SECONDS = 300
+
+
+@pytest.hookimpl(wrapper=True, trylast=True)
+def pytest_runtest_protocol(item):
+    def _too_long(_signum, _frame):
+        raise TimeoutError(
+            f"{item.nodeid} ran longer than {TEST_TIME_LIMIT_SECONDS}s and was "
+            f"stopped. The traceback below is where it was."
+        )
+
+    previous = signal.signal(signal.SIGALRM, _too_long)
+    signal.setitimer(signal.ITIMER_REAL, TEST_TIME_LIMIT_SECONDS)
+    try:
+        return (yield)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 # Pages show times in the TZ zone (seqsetup.utils.clock). Pin it so a test's
 # expected text does not depend on the machine; a test that needs another

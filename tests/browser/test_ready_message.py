@@ -42,13 +42,16 @@ def cleanup(app_ctx):
 
 
 # Mark Ready pre-generates the five export files before it flips the status,
-# the validation report's charts included -- which the project documents as
-# taking up to two minutes for a large run (CLAUDE.md, "Run state integrity").
-# Playwright's default five seconds is therefore a bet on how busy the machine
-# is, and under load these two tests lost it. The waits below are on the
-# response, which is the real signal, with a limit matched to the work rather
-# than to the default (2026-10-18 batch, step 9).
-MARK_READY_MS = 120_000
+# the validation report's charts included. Playwright's default five seconds
+# is therefore a bet on how busy the machine is, and under load these two
+# tests lost it. The waits below are on the response, which is the real
+# signal, with a limit matched to the work (2026-10-18 batch, step 9).
+#
+# 30 s, not the two minutes CLAUDE.md gives: that figure is for a LARGE run,
+# and these runs hold one sample -- measured at about 6 s under load. Six
+# times the measurement is room enough for a busy machine, and a real
+# regression still fails in 30 s rather than hanging for two minutes.
+MARK_READY_MS = 30_000
 
 
 def _mark_ready(page):

@@ -63,7 +63,10 @@ def frozen_clock(monkeypatch):
     class _Still:
         """``time`` for rate_limit: ``monotonic`` is fixed, the rest is real."""
 
-        now = 1_000_000.0
+        def __init__(self):
+            # The real clock's reading, held: a fixed literal would make a
+            # bucket timestamp depend on how long the host has been up.
+            self.now = time.monotonic()
 
         def monotonic(self):
             return self.now

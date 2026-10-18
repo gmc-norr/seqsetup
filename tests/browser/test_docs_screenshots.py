@@ -499,14 +499,21 @@ def test_indexes_fill_assigned(demo_page, base_url, demo):
     page.get_by_role("button", name="Fill empty samples in order…").click()
     page.wait_for_selector("#index-fill-preview .index-fill-summary")
     # #validate-panel refreshes separately, 300ms after any successful
-    # non-GET request (_validate_panel.html:50-51); markSampleErrors() (app.js:
-    # 383-413) runs on this swap's own htmx:afterSettle first, reusing the
-    # *stale* "6 sample(s) have no index" data and wrongly badging every row
-    # until the panel's own refresh lands. The expectation is set up before the
-    # click, so the wait cannot miss a refresh that lands quickly.
+    # non-GET request (_validate_panel.html:50-51); markSampleErrors()
+    # (app.js: 498-526) runs on this swap's own htmx:afterSettle first,
+    # reusing the *stale* "6 sample(s) have no index" data and wrongly badging
+    # every row until the panel's own refresh lands.
+    #
+    # The assign's own response first, so the panel refresh awaited next is
+    # the one that FOLLOWS it -- the preview click above triggers a panel
+    # refresh of its own, and an expectation set before the assign could
+    # settle on that one instead.
     with page.expect_response(
-            lambda r: "/validate-panel" in r.url and r.status == 200, timeout=15000):
+            lambda r: "/index-fill/apply" in r.url or "/index-fill" in r.url,
+            timeout=30000):
         page.get_by_role("button", name="Assign 6 indexes").click()
+    with page.expect_response(
+            lambda r: "/validate-panel" in r.url and r.status == 200, timeout=30000):
         # index-fill swaps #sample-section outerHTML; wait for a row to
         # actually carry the assigned index, not the pre-fill drop-zone.
         page.wait_for_selector('tr.sample-row:has-text("SAMPLE-A01") .assigned-index.i7')
@@ -526,7 +533,7 @@ def test_indexes_fill_assigned(demo_page, base_url, demo):
         return !!a01 && !!a02
             && a01.querySelector('.row-error-badge') !== null
             && a02.querySelector('.row-error-badge') === null;
-    }""", timeout=15000)
+    }""", timeout=30000)
     with _sample_section_unclipped(page):
         snap(page, "indexes/fill-assigned", page.locator("#sample-table"))
 
