@@ -58,7 +58,8 @@ class TestThePageSurvivesADamagedRun:
         # The run still exists, so a delete that did not finish shows no row.
         assert rows == []
 
-    def test_a_damaged_run_that_is_gone_is_listed_as_not_confirmed(self, fresh_app):
+    def test_a_gone_run_is_still_listed_as_not_confirmed(self, fresh_app):
+        """The unchanged case, kept as the guard: nothing is damaged here."""
         _app, ctx, db = fresh_app
         run = _run(ctx, "gone")
         _pending_copy(ctx, run, "copy-1")
@@ -67,6 +68,19 @@ class TestThePageSurvivesADamagedRun:
         (row,) = visible_rows(ctx.deleted_run_repo, ctx.run_repo)
 
         assert (row["run_id"], row["shown_state"]) == ("gone", NOT_CONFIRMED)
+
+    def test_a_gone_run_is_listed_past_a_damaged_one(self, fresh_app):
+        _app, ctx, db = fresh_app
+        damaged = _run(ctx, "damaged")
+        _pending_copy(ctx, damaged, "copy-damaged")
+        _damage(db, "damaged")
+        gone = _run(ctx, "gone")
+        _pending_copy(ctx, gone, "copy-gone")
+        ctx.run_repo.collection.delete_one({"_id": "gone"})
+
+        rows = visible_rows(ctx.deleted_run_repo, ctx.run_repo)
+
+        assert [(r["run_id"], r["shown_state"]) for r in rows] == [("gone", NOT_CONFIRMED)]
 
     def test_one_damaged_run_does_not_hide_the_other_rows(self, fresh_app):
         _app, ctx, db = fresh_app
