@@ -16,6 +16,7 @@ from collections import deque
 import pytest
 from starlette.testclient import TestClient
 
+from seqsetup import rate_limit
 from seqsetup.rate_limit import get_login_limiter
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -44,6 +45,35 @@ def _cheap_timing_sentinel(monkeypatch):
     from seqsetup.services import auth as auth_module
     monkeypatch.setattr(auth_module, "_DUMMY_BCRYPT_HASH", bcrypt.hashpw(
         b"seqsetup-timing-sentinel", bcrypt.gensalt(rounds=4)).decode("utf-8"))
+
+
+@pytest.fixture
+def frozen_clock(monkeypatch):
+    """Hold the limiter's clock still.
+
+    ``retry_after`` and ``allow`` report ``int(oldest + window - now) + 1``, so
+    a test that fills a bucket at ``now`` and expects a particular wait is
+    really asserting that no more than half a second passes before the handler
+    reads the clock again. On a busy machine it does, and the answer comes back
+    one second short -- the 49-vs-50 flake. With the clock still, the wait
+    depends only on what the bucket holds, which is what these tests are
+    about; the arithmetic itself is unchanged and still exercised
+    (2026-10-18 batch, step 9).
+    """
+    class _Still:
+        """``time`` for rate_limit: ``monotonic`` is fixed, the rest is real."""
+
+        now = 1_000_000.0
+
+        def monotonic(self):
+            return self.now
+
+        def __getattr__(self, name):
+            return getattr(time, name)
+
+    still = _Still()
+    monkeypatch.setattr(rate_limit, "time", still)
+    return still
 
 
 def _defaults(limiter):
@@ -127,10 +157,10 @@ class TestTheLimiterDoesNotGrowWithTheNamesItIsSent:
 
 
 class TestTheRefusalItselfIsUnchanged:
-    def test_the_address_refusal_keeps_its_status_body_and_wait(self, client):
+    def test_the_address_refusal_keeps_its_status_body_and_wait(self, client, frozen_clock):
         limiter = get_login_limiter()
         _defaults(limiter)
-        now = time.monotonic()
+        now = frozen_clock.now
         # Filled 40.5 s ago: 19.5 s of the window left, so the handler has
         # always answered 20.
         limiter._buckets[f"login-ip:{HERE}"] = deque([now - 40.5] * 20)
@@ -141,14 +171,15 @@ class TestTheRefusalItselfIsUnchanged:
         assert refused.text == TOO_MANY
         assert refused.headers["Retry-After"] == "20"
 
-    def test_an_address_refusal_still_answers_the_longer_of_the_two_waits(self, client):
+    def test_an_address_refusal_still_answers_the_longer_of_the_two_waits(
+            self, client, frozen_clock):
         """``retry = max(retry_ip, retry_user)``: the address cap was filled
         40.5 s ago (20 s left) while the name's own cap was filled 10.5 s ago
         from other addresses (50 s left). The header must still say 50 —
         reading the name's bucket must not mean counting a request into it."""
         limiter = get_login_limiter()
         _defaults(limiter)
-        now = time.monotonic()
+        now = frozen_clock.now
         limiter._buckets[f"login-ip:{HERE}"] = deque([now - 40.5] * 20)
         limiter._buckets["login-user:erik"] = deque([now - 10.5] * 20)
 
@@ -158,11 +189,11 @@ class TestTheRefusalItselfIsUnchanged:
         assert refused.text == TOO_MANY
         assert refused.headers["Retry-After"] == "50"
 
-    def test_the_name_refusal_keeps_its_status_body_and_wait(self, client):
+    def test_the_name_refusal_keeps_its_status_body_and_wait(self, client, frozen_clock):
         """The address has plenty left; the name does not."""
         limiter = get_login_limiter()
         _defaults(limiter)
-        now = time.monotonic()
+        now = frozen_clock.now
         limiter._buckets["login-user:frida"] = deque([now - 10.5] * 20)
 
         refused = _post(client, "Frida")
@@ -197,10 +228,10 @@ class TestTheDirectorySignInTestRefusesTheSameWay:
     same two unconditional counts (the same bug in the same pattern)."""
 
     def test_a_refused_test_makes_no_bucket_for_the_name_it_carries(
-            self, logged_in_client):
+            self, logged_in_client, frozen_clock):
         limiter = get_login_limiter()
         _defaults(limiter)
-        now = time.monotonic()
+        now = frozen_clock.now
         limiter._buckets[f"ldap-test-ip:{HERE}"] = deque([now - 40.5] * 20)
 
         refused = logged_in_client.post(
@@ -211,10 +242,10 @@ class TestTheDirectorySignInTestRefusesTheSameWay:
         assert "ldap-test-user:never-tested" not in limiter._buckets
 
     def test_a_refused_test_still_answers_the_longer_of_the_two_waits(
-            self, logged_in_client):
+            self, logged_in_client, frozen_clock):
         limiter = get_login_limiter()
         _defaults(limiter)
-        now = time.monotonic()
+        now = frozen_clock.now
         limiter._buckets[f"ldap-test-ip:{HERE}"] = deque([now - 40.5] * 20)
         limiter._buckets["ldap-test-user:gustav"] = deque([now - 10.5] * 20)
 

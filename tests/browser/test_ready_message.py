@@ -41,6 +41,23 @@ def cleanup(app_ctx):
         app_ctx.run_repo.collection.delete_one({"_id": run_id})
 
 
+# Mark Ready pre-generates the five export files before it flips the status,
+# the validation report's charts included -- which the project documents as
+# taking up to two minutes for a large run (CLAUDE.md, "Run state integrity").
+# Playwright's default five seconds is therefore a bet on how busy the machine
+# is, and under load these two tests lost it. The waits below are on the
+# response, which is the real signal, with a limit matched to the work rather
+# than to the default (2026-10-18 batch, step 9).
+MARK_READY_MS = 120_000
+
+
+def _mark_ready(page):
+    """Click Mark Ready and wait for the answer, not for a redraw."""
+    with page.expect_response(lambda r: r.url.endswith("/status/ready"),
+                              timeout=MARK_READY_MS):
+        page.get_by_role("button", name="Mark Ready").click()
+
+
 @pytest.mark.browser
 def test_save_failure_survives_mark_ready(logged_in_page, base_url, app_ctx, cleanup):
     """A refused edit leaves the old value stored; Mark Ready can succeed
@@ -64,8 +81,9 @@ def test_save_failure_survives_mark_ready(logged_in_page, base_url, app_ctx, cle
         page.keyboard.press("Tab")
     expect(page.locator("#error-banner")).to_contain_text("not valid OverrideCycles")
 
-    page.get_by_role("button", name="Mark Ready").click()
-    expect(page.locator("#run-status-bar .status-ready")).to_be_visible()
+    _mark_ready(page)
+    expect(page.locator("#run-status-bar .status-ready")).to_be_visible(
+        timeout=MARK_READY_MS)
 
     expect(page.locator("#error-banner")).to_contain_text("not valid OverrideCycles")
 
@@ -113,12 +131,16 @@ def test_question_survives_a_retry_after_a_failure(logged_in_page, base_url, app
     page.get_by_role("button", name="Mark Ready").click()
     expect(page.locator("#error-banner")).to_contain_text("Failed to generate exports")
 
-    with page.expect_response(lambda r: r.url.endswith("/status/ready") and r.status == 200):
+    with page.expect_response(lambda r: r.url.endswith("/status/ready") and r.status == 200,
+                              timeout=MARK_READY_MS):
         page.get_by_role("button", name="Mark Ready").click()
     page.wait_for_load_state("networkidle")
 
     question = page.locator("#ready-message .ready-confirm")
     expect(question).to_be_visible()
-    question.get_by_role("button", name="Mark Ready anyway").click()
-    expect(page.locator("#run-status-bar .status-ready")).to_be_visible()
+    with page.expect_response(lambda r: r.url.endswith("/status/ready"),
+                              timeout=MARK_READY_MS):
+        question.get_by_role("button", name="Mark Ready anyway").click()
+    expect(page.locator("#run-status-bar .status-ready")).to_be_visible(
+        timeout=MARK_READY_MS)
     expect(page.locator("#ready-message")).to_be_empty()
