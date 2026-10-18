@@ -216,8 +216,11 @@ def _application_findings(value: ApplicationProfileRules) -> list[Finding]:
                 f"{', '.join(name for _, name, _ in group)}; each column may appear once "
                 "(check DataFields and Translate)",
             ))
+    # A column named under Translate is spelled there.
+    written = [(("Translate", name) if name in translate else path, column)
+               for path, name, column in columns]
     spelled = [(("Settings", key), key, SPELLED_SETTINGS_ANY) for key in settings]
-    spelled += [(path, column, SPELLED_COLUMNS_ANY) for path, _, column in columns]
+    spelled += [(path, column, SPELLED_COLUMNS_ANY) for path, column in written]
     if value.ApplicationName == BCLCONVERT:
         column_lower = {column.lower() for _, _, column in columns}
         for key in settings:
@@ -225,7 +228,7 @@ def _application_findings(value: ApplicationProfileRules) -> list[Finding]:
                 found.append(Finding(("Settings", key), "is both in Settings and a data column: "
                                                         "BCL Convert allows a setting in one place only"))
         spelled += [(("Settings", key), key, SPELLED_SETTINGS_BCLCONVERT) for key in settings]
-        spelled += [(path, column, SPELLED_COLUMNS_BCLCONVERT) for path, _, column in columns]
+        spelled += [(path, column, SPELLED_COLUMNS_BCLCONVERT) for path, column in written]
         # They change how BCL Convert reads the i5 or the OverrideCycles
         # SeqSetup writes (spec 2026-10-04 group A2, §2).
         for key in settings:

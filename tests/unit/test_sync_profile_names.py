@@ -79,25 +79,27 @@ class TestASettingInTwoPlaces:
 
 
 class TestAnotherSpelling:
-    @pytest.mark.parametrize("profile,written,canonical", [
-        (_profile(fields=["Sample_ID", "Lane", "index", "index2"], data={}), "index", "Index"),
+    @pytest.mark.parametrize("profile,place,canonical", [
+        (_profile(fields=["Sample_ID", "Lane", "index", "index2"], data={}),
+         "DataFields > item 3", "Index"),
         (_profile(fields=["Sample_ID", "Index", "Index2", "Mm1"], data={"Mm1": 1},
                   translate={"Mm1": "barcodemismatchesindex1"}),
-         "barcodemismatchesindex1", "BarcodeMismatchesIndex1"),
+         "Translate > Mm1", "BarcodeMismatchesIndex1"),
         (_profile(settings={"SoftwareVersion": "4.3.6", "barcodeMismatchesIndex1": 2},
                   fields=FIELDS[:5], data={}),
-         "barcodeMismatchesIndex1", "BarcodeMismatchesIndex1"),
+         "Settings > barcodeMismatchesIndex1", "BarcodeMismatchesIndex1"),
         (_profile(settings={"SoftwareVersion": "4.3.6", "nolanesplitting": "true"}),
-         "nolanesplitting", "NoLaneSplitting"),
-        (_profile(settings={"softwareversion": "999.0"}), "softwareversion", "SoftwareVersion"),
+         "Settings > nolanesplitting", "NoLaneSplitting"),
+        (_profile(settings={"softwareversion": "999.0"}),
+         "Settings > softwareversion", "SoftwareVersion"),
         (_profile("DragenGermline", settings={"softwareversion": "999.0"},
-                  fields=["Sample_ID"], data={}), "softwareversion", "SoftwareVersion"),
+                  fields=["Sample_ID"], data={}), "Settings > softwareversion", "SoftwareVersion"),
     ])
-    def test_it_is_refused(self, profile, written, canonical):
-        said = (f"must be spelled {canonical}: SeqSetup fills and reads {canonical} itself, "
-                f"in that spelling only")
-        assert any(error.endswith(f"{written}: {said}") or error.endswith(f": {said}")
-                   for error in _errors(profile))
+    def test_it_is_refused_where_it_is_written(self, profile, place, canonical):
+        """A column named under Translate is spelled there, not in DataFields
+        (the fresh review of b21ea6f, P3 6)."""
+        assert (f"{place}: must be spelled {canonical}: SeqSetup fills and reads {canonical} "
+                f"itself, in that spelling only") in _errors(profile)
 
     def test_a_dragen_profile_may_have_an_index_column_in_any_case(self):
         check_application_profile(
