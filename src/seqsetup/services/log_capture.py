@@ -52,7 +52,12 @@ _BCRYPT_PATTERN = re.compile(r"\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}")
 # not through a "password:" key, so the key rules above never see it. The
 # "://" is required, so an e-mail address or a bare host is left alone
 # (review of 5aef69b, P2-1).
-_URL_CREDENTIALS = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^/\s@]*@")
+# Tried only where a run of scheme characters starts, with the run's leading
+# digits and signs kept in group 1: tried at every letter, a long word took
+# time growing with the square of its length (20,000 letters 2.5 s), and
+# every log line and audit row goes through this. It scrubs exactly what
+# "([a-z][a-z0-9+.-]*://)[^/\s@]*@" did.
+_URL_CREDENTIALS = re.compile(r"(?i)(?<![a-z0-9+.-])([0-9+.-]*)([a-z][a-z0-9+.-]*://)[^/\s@]*@")
 
 
 def scrub_log_message(message: str) -> str:
@@ -71,8 +76,11 @@ def scrub_log_message(message: str) -> str:
 
     scrubbed = _SCRUB_PATTERN.sub(_replace, message)
     scrubbed = _BCRYPT_PATTERN.sub("$2b$**$***", scrubbed)
-    scrubbed = _URL_CREDENTIALS.sub(r"\1***@", scrubbed)
-    return scrubbed
+    return _scrub_url_credentials(scrubbed)
+
+
+def _scrub_url_credentials(text: str) -> str:
+    return _URL_CREDENTIALS.sub(r"\1\2***@", text)
 
 
 @dataclass

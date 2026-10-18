@@ -576,3 +576,11 @@ rulebook states and the model applies (the converters pass only the keys a file
 writes; `test_samplesheet_versions_is_the_one_named_exception` holds the result
 to `[2]`). Break row N27 also showed the size check inside `bounded_report`'s
 loop untested; a test now counts how often the whole report is measured.
+
+Found while testing a long sync message: the log scrubber's connection-string
+rule (`services/log_capture.py`, `_URL_CREDENTIALS`) tried every letter of a
+word as the start of a scheme, so its time grew with the square of a word's
+length (20,000 letters 2.5 s, a million over an hour). Every log line and every
+audit row goes through it, so one long key in a settings file stalled the
+logging and the sync. It now starts only where a run of scheme characters
+starts, and a test holds it to scrubbing exactly what it scrubbed before.
