@@ -533,35 +533,64 @@ inside `Settings` and `Data` are open, but their shape is not.
 
 | Key | Required | Value |
 |---|---|---|
-| `ApplicationProfileName` | yes | text, 1-256 characters |
-| `ApplicationProfileVersion` | yes | text, a PEP 440 version |
+| `ApplicationProfileName` | yes | filled text, 1-256 characters |
+| `ApplicationProfileVersion` | yes | filled text, 1-256, a PEP 440 version |
 | `ApplicationName` | yes | a plain name (letters, digits, `_`, `-`), 1-256; one of Illumina's when the type is `Dragen` |
-| `ApplicationType` | yes | text, 1-256 |
+| `ApplicationType` | yes | filled text, 1-256 |
 | `Settings` | when `Dragen` | a map of a plain name to a sheet value; empty allowed |
 | `Data` | when `Dragen` | as `Settings` |
 | `DataFields` | when `Dragen` | a list of plain names |
 | `Translate` | no | a map of a plain name to a plain name |
 
+**Filled text** holds at least one character that is not a space: a value of
+spaces only is refused, as `_is_empty` refuses it today. The value is stored
+as written, never trimmed. The type is `Dragen` when its text, trimmed and in
+small letters, is `dragen` (today's `.strip().lower()`).
+
 A **sheet value** is text of at most 4,096 characters, a whole number within
 64 bits, or `true`/`false`. Text holds no hidden character (a line break, a
 tab, an invisible control) and does not start with `[`, even after spaces.
 `''` is an empty cell; a key with nothing after it is refused ("write `''` for
-an empty cell"). For a type other than `Dragen` an empty `Settings:` (and the
-other three) means none, as today.
+an empty cell"). An empty section (`Settings:` with nothing under it) means
+none: for `Translate` in every profile, and for the other three in a profile
+whose type is not `Dragen`, as today; a `Dragen` profile's `Settings`, `Data`
+and `DataFields` must be maps and a list, as today.
+
+**One setting has a value rule of its own: `SoftwareVersion`**, the one the
+app reads (the validation service compares it with the instrument's onboard
+versions and sorts the versions a run asks for). It is a plain version (text of
+letters, digits, `.`, `_` and `-`, 1-256), the rule the instrument's
+`software_version` follows; a whole number such as `SoftwareVersion: 4` is
+refused. Today it is accepted, and a run with `4` in one profile and `"4.3.6"`
+in another stops the run check with `TypeError: '<' not supported between
+instances of 'str' and 'int'` (`services/application_profile_validator.py`,
+`sorted(versions_map.items())`). That sort also compares the versions as text,
+so a profile stored before this rule cannot stop the check either. The other
+setting names stay open.
+
+**Errors in a value of several kinds** (a sheet value) are reported once, at
+the value's own path: a missing value "needs a value: write `''` for an empty
+cell"; a value of another kind "must be text, a whole number or true/false";
+a value of a matching kind that breaks a bound gets that bound's message. Step
+1's checker gives one error per kind, at paths with Pydantic's names for the
+kinds (`Settings > Threads > constrained-str`); the checker drops a segment
+that names no key in the data and merges the errors at one path.
 
 **A test profile** (one per file):
 
 | Key | Required | Value |
 |---|---|---|
-| `TestType` | yes | text, 1-256 (a sample's test ID is at most 256) |
-| `TestName` | yes | text, 1-256 |
-| `Description` | yes | text, 1-4,096 |
+| `TestType` | yes | filled text, 1-256 (a sample's test ID is at most 256) |
+| `TestName` | yes | filled text, 1-256 |
+| `Description` | yes | filled text, 1-4,096 |
 | `Version` | yes | text, three whole numbers joined by dots (`PROFILE_VERSION_RE`) |
 | `ApplicationProfiles` | yes | a list of at least one reference |
 
-A reference holds `ApplicationProfileName` (text, 1-256) and
-`ApplicationProfileVersion` (text, a PEP 440 version or specifier), and nothing
-else.
+A reference holds `ApplicationProfileName` (filled text, 1-256) and
+`ApplicationProfileVersion` (filled text, 1-256, a PEP 440 version or
+specifier; `SpecifierSet("")` and `SpecifierSet(" ")` are valid specifiers, so
+"filled" is checked first), and nothing else. A test's `Version` is bounded by
+its own rule (three numbers of at most 9 digits).
 
 **The rules relating keys move from `services/profile_validator.py`**, with
 their substance and their tests (section 5): the mismatch values (0, 1 or 2 in
@@ -570,7 +599,14 @@ gives it); a `Sample_ID` column; no column written twice, whatever its case; in
 the `BCLConvert` profile no name both in `Settings` and among the columns, and no
 setting that changes how BCL Convert reads the i5 (`is_i5_rule_setting`); a
 name SeqSetup fills itself spelled its one way (`SPELLED_*`); the three
-`Dragen` sections. `profile_validator.py` is removed.
+`Dragen` sections. `profile_validator.py` is removed. The `SPELLED_*` names
+move from `services/sheet_plan.py` into `services/sheet_text.py`, which the
+rules already use and which imports nothing of the app: `sheet_plan` imports
+`cycle_calculator`, which imports `data.instruments` and its start-up, so with
+a broken `INSTRUMENTS_CONFIG` merely importing `SPELLED_SETTINGS_ANY` stops
+with `InstrumentConfigError`, and the settings command could not run.
+`sheet_plan` imports them from there; the command's isolation test also
+asserts `services.sheet_plan` and `services.cycle_calculator` are not loaded.
 
 **The rules across files** need no database and move into `input_rules` as
 pure functions the sync and the settings command both call: a profile name and
@@ -597,7 +633,10 @@ on `58510df` (probed with the old validator, 2026-10-18):
   refuses for every file (section 1);
 - a `Dragen` profile with an application name that is not Illumina's
   (`DragenGermlin`);
-- a value over 4,096 characters, or a name, type or test over 256.
+- a value over 4,096 characters, or a name, type, test or version over 256
+  (`1.0+` and 5,000 letters is a PEP 440 version, and `===` and 5,000 letters a
+  specifier, both accepted today);
+- `SoftwareVersion` written as a whole number (`SoftwareVersion: 4`).
 
 The shipped profiles pass unchanged, and the settings command is run on the
 lab's settings repository before merging, as in step 1.
@@ -617,8 +656,9 @@ lab's settings repository before merging, as in step 1.
 - **The settings command** checks `profiles/application_profiles/` and
   `profiles/test_profiles/` (`--application-profiles`, `--test-profiles`), the
   sync's default paths, reading what the sync reads (a `.yaml` or `.yml` ending
-  in any case, as the sync takes it for profiles; never a link), and runs the
-  cross-file rules. A missing profile folder is an error, as for instruments;
+  in any case, as the sync takes it for profiles; a link to a file read as the
+  link's target path and a link to a folder skipped, as for instruments in step
+  1), and runs the cross-file rules. A missing profile folder is an error, as for instruments;
   `--no-instruments` is for a lab whose sync does not read instruments.
 - **The stored profiles** (`from_dict`) and the Sample Sheet writer's backstops
   (`_escape_config_cell`, `_require_profile_mismatch`) are unchanged.
@@ -628,16 +668,20 @@ lab's settings repository before merging, as in step 1.
 ### How step 2 is proved
 
 - Red tests first: each unknown key refused with its line, also inside a
-  reference; each required key; each value kind in `Settings` and `Data`
-  (text, a whole number, true/false; a list, a map, an empty value refused);
-  the Dragen name rule both ways; `TestType: 5`; each bound at and past its
-  edge.
+  reference; each required key, and each filled text given spaces only; each
+  value kind in `Settings` and `Data` (text, a whole number, true/false; a
+  list, a map, an empty value refused), each reported once at its own path; the
+  Dragen name rule both ways, and `" dragen "` read as `Dragen`; an empty
+  `Translate:` in a `Dragen` profile meaning none; `SoftwareVersion: 4`, and
+  the validation service given a stored `4` beside `"4.3.6"`; `TestType: 5`;
+  each bound at and past its edge, the two versions included.
 - The old validator's tests (84 in `test_profile_validator.py`, and the profile
   tests in the files that build profiles through `from_yaml`) keep their
   guarantee on the new path; any changed test is listed.
 - Every shipped profile gives the same model (`to_dict`, but its id and time)
   on the old path and the new, and survives the model, BSON and back.
-- The cross-file rules, through the sync and through the command.
+- The cross-file rules, through the sync and through the command; a linked
+  profile file refused by both.
 - Break checks, the full check (the 78 Sample Sheets unchanged), a fresh
   review, and the lab's settings repository through the command.
 
@@ -724,3 +768,16 @@ length (20,000 letters 2.5 s, a million over an hour). Every log line and every
 audit row goes through it, so one long key in a settings file stalled the
 logging and the sync. It now starts only where a run of scheme characters
 starts, and a test holds it to scrubbing exactly what it scrubbed before.
+
+A review of step 2's design (`1a40e31`) gave four P2 and three P3, all
+confirmed and folded in above: `SoftwareVersion` needs a value rule, since the
+validation service sorts mixed versions (P2); text of spaces only and a blank
+version specifier, refused today, would pass a plain length bound (P2); the
+`SPELLED_*` names sit in a module whose imports run the instrument start-up
+(P2); GitHub serves a link to a file as the link's target path, so the sync
+refuses it while step 1's command skipped it (P2, fixed in step 1 as
+`bd8c87f`); an empty `Translate:` in a `Dragen` profile (P3); no bound on the
+two version strings (P3); errors in a value of several kinds reported once
+per kind at invented paths (P3). It found no forced Sample Sheet change: all
+seven shipped profiles gave the same model through both readers and
+survived BSON.
