@@ -451,6 +451,17 @@ class TestTheTsvHeaderLineIsReadHoweverItIsSpelled:
 
         assert [i.name for i in kit.i7_indexes] == ["A1"]
 
+    def test_only_the_sections_first_line_can_be_its_header(self):
+        # A line with no sequence in it later in the section is not a second
+        # header: it is a line that carries something and is not an index.
+        content = ("[IndexKit]\nName\tOld kit\n\n[Indices]\n"
+                   "Name\tSequence\tIndexNumber\nA1\tATTACTCG\t1\nNotes\tsee below\n")
+
+        with pytest.raises(IncompleteIndexRows) as refused:
+            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+
+        assert "line 7" in str(refused.value), str(refused.value)
+
     def test_a_first_line_that_carries_a_sequence_is_not_a_header(self):
         content = "[IndexKit]\nName\tOld kit\n\n[Indices]\nA1\tATTACTCG\n"
 
