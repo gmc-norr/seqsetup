@@ -93,8 +93,8 @@ def check_data(
     try:
         value = rulebook.model_validate(data)
     except ValidationError as error:
-        problems = [_from_pydantic(item, data, locations, file, retired_keys or {})
-                    for item in error.errors(include_url=False)]
+        problems = _from_pydantic_errors(error.errors(include_url=False), data, locations, file,
+                                         retired_keys or {})
         return _result(None, problems, FURTHER_CHECKS, rulebook, sensitive)
 
     problems = [
@@ -201,6 +201,77 @@ def _from_finding(finding: Finding, data, locations: Locations, file: str, level
     return InputProblem(file, line, column, path, finding.message, level)
 
 
+# Pydantic's errors for a value of the wrong kind, as against a value of the
+# right kind that breaks a bound.
+_TYPE_ERRORS = frozenset({
+    "string_type", "int_type", "bool_type", "int_from_float", "int_parsing", "float_type",
+    "dict_type", "list_type", "model_type", "model_attributes_type",
+})
+_KIND_NAMES = (("string_type", "text"), ("int_type", "a whole number"), ("bool_type", "true/false"),
+               ("list_type", "a list"), ("dict_type", "a map of keys and values"))
+_EMPTY_TEXT = "needs a value: write '' if it should be empty"
+
+
+def _within_data(data, loc: tuple, kind: str) -> tuple[tuple, bool]:
+    """``loc`` as far as it names keys and list items of the data, and
+    whether anything was left: past that point Pydantic names one kind of a
+    value of several kinds (``bool``, ``constrained-str``). A key the data
+    lacks is a place only when it is the missing key itself."""
+    at = data
+    for n, item in enumerate(loc):
+        if isinstance(at, list) and isinstance(item, int) and not isinstance(item, bool):
+            at = at[item] if 0 <= item < len(at) else None
+            continue
+        if isinstance(at, dict):
+            if kind == "missing" and n == len(loc) - 1:
+                return loc, False
+            try:
+                present = item in at
+            except TypeError:
+                present = False
+            if present or _member(at, item) is not None:
+                at = _member(at, item)
+                continue
+        return loc[:n], True
+    return loc, False
+
+
+def _from_pydantic_errors(errors: list, data, locations: Locations, file: str,
+                          retired_keys: dict) -> list[InputProblem]:
+    """One problem per Pydantic error, except that the errors of a value of
+    several kinds become one problem at the value's own path."""
+    order: list = []
+    groups: dict = {}
+    for item in errors:
+        loc = tuple(item["loc"])
+        within, past = (loc, False) if loc and loc[-1] == "[key]" else _within_data(data, loc, item["type"])
+        if not past:
+            order.append(_from_pydantic(item, data, locations, file, retired_keys))
+            continue
+        if within not in groups:
+            groups[within] = []
+            order.append(within)
+        groups[within].append(item)
+    return [entry if isinstance(entry, InputProblem)
+            else _from_kinds(groups[entry], entry, data, locations, file)
+            for entry in order]
+
+
+def _from_kinds(items: list, loc: tuple, data, locations: Locations, file: str) -> InputProblem:
+    given = items[0].get("input", _NO_VALUE)
+    bounds = [item for item in items if item["type"] not in _TYPE_ERRORS]
+    if given is None:
+        message = _EMPTY_TEXT if any(item["type"] == "string_type" for item in items) else "needs a value"
+    elif bounds:
+        message = _message(bounds[0])
+    else:
+        kinds = [name for kind, name in _KIND_NAMES if any(item["type"] == kind for item in items)]
+        message = "must be " + (", ".join(kinds[:-1]) + " or " + kinds[-1] if len(kinds) > 1 else kinds[0])
+    path = _path_in(data, loc)
+    line, column = _place(locations, path, prefer_key=False)
+    return InputProblem(file, line, column, path, message)
+
+
 def _from_pydantic(item: dict, data, locations: Locations, file: str, retired_keys: dict) -> InputProblem:
     loc = tuple(item["loc"])
     kind = item["type"]
@@ -239,6 +310,9 @@ def _message(item: dict) -> str:
     if given is None:
         return "needs a value"
     if kind == "string_type":
+        if isinstance(given, float):
+            return ("is a number with a decimal point, which YAML may have changed "
+                    "(1.10 is read as 1.1): put it in quotes")
         if isinstance(given, (int, bool)):
             return "must be text: put it in quotes"
         return "must be text"

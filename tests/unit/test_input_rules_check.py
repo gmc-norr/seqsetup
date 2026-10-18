@@ -7,9 +7,10 @@ input; the translator turns each into a problem with a line, a column and a
 plain message of our own.
 """
 
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional, Union
 
 import pytest
+from pydantic import StringConstraints
 
 from seqsetup.input_rules.base import (
     STORAGE_MAX_INT,
@@ -309,3 +310,50 @@ class TestTheCapOfProblemsPerFile:
         assert result.ok and result.value is not None
         assert "500 more" in result.problems[-1].message
         assert result.problems[-1].level == "warning"
+
+
+class SheetCells(StrictRules):
+    Settings: dict[PlainName, Union[bool, whole(-STORAGE_MAX_INT - 1), Annotated[str, StringConstraints(max_length=4096)]]] = {}
+    version: Text256 = "1"
+
+
+class TestAValueOfSeveralKinds:
+    """A value that may be text, a whole number or true/false once gave one
+    error per kind, at paths with Pydantic's names for the kinds
+    (Settings > Threads > constrained-str). It gets one problem at its own
+    path (sol's review of step 2's design, P3-7)."""
+
+    def test_a_missing_value(self):
+        (problem,) = _check("Settings:\n  Threads:\n", SheetCells).problems
+
+        assert problem_line(problem) == "f.yaml:2:11: Settings > Threads: needs a value: write '' if it should be empty"
+
+    def test_a_value_of_another_kind(self):
+        (problem,) = _check("Settings:\n  Threads: [1]\n", SheetCells).problems
+
+        assert problem.path == ("Settings", "Threads")
+        assert problem.message == "must be text, a whole number or true/false"
+
+    def test_a_value_of_a_matching_kind_past_its_bound(self):
+        (problem,) = _check("Settings:\n  Threads: " + "x" * 4097 + "\n", SheetCells).problems
+
+        assert problem.path == ("Settings", "Threads")
+        assert problem.message == "must be at most 4096 characters"
+
+    def test_each_kind_is_taken(self):
+        result = _check("Settings:\n  a: true\n  b: -3\n  c: text\n  d: ''\n", SheetCells)
+
+        assert result.problems == []
+        assert result.value.Settings == {"a": True, "b": -3, "c": "text", "d": ""}
+
+
+class TestADecimalNumberWhereTextBelongs:
+
+    def test_says_yaml_may_have_changed_it(self):
+        from seqsetup.input_rules.check import check_data
+        from seqsetup.input_rules.reader import Locations
+
+        result = check_data({"version": 1.1}, Locations(), "f.yaml", SheetCells)
+
+        (problem,) = result.problems
+        assert problem.message == "is a number with a decimal point, which YAML may have changed (1.10 is read as 1.1): put it in quotes"

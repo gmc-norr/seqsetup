@@ -550,8 +550,8 @@ small letters, is `dragen` (today's `.strip().lower()`).
 A **sheet value** is text of at most 4,096 characters, a whole number within
 64 bits, or `true`/`false`. Text holds no hidden character (a line break, a
 tab, an invisible control) and does not start with `[`, even after spaces.
-`''` is an empty cell; a key with nothing after it is refused ("write `''` for
-an empty cell"). An empty section (`Settings:` with nothing under it) means
+`''` is an empty cell; a key with nothing after it is refused ("needs a value:
+write '' if it should be empty", today's wording). An empty section (`Settings:` with nothing under it) means
 none: for `Translate` in every profile, and for the other three in a profile
 whose type is not `Dragen`, as today; a `Dragen` profile's `Settings`, `Data`
 and `DataFields` must be maps and a list, as today.
@@ -569,8 +569,8 @@ so a profile stored before this rule cannot stop the check either. The other
 setting names stay open.
 
 **Errors in a value of several kinds** (a sheet value) are reported once, at
-the value's own path: a missing value "needs a value: write `''` for an empty
-cell"; a value of another kind "must be text, a whole number or true/false";
+the value's own path: a missing value "needs a value: write '' if it should be
+empty"; a value of another kind "must be text, a whole number or true/false";
 a value of a matching kind that breaks a bound gets that bound's message. Step
 1's checker gives one error per kind, at paths with Pydantic's names for the
 kinds (`Settings > Threads > constrained-str`); the checker drops a segment
