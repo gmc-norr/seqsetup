@@ -167,6 +167,33 @@ class TestARowWithNoNameOrNoSequenceIsRefused:
         message = str(refused.value)
         assert "line 2" in message and "line 4" in message
 
+    def test_the_line_number_is_the_files_own_after_leading_blank_lines(self):
+        # The CSV reader strips the content so DictReader can find the header;
+        # the lines it strips are counted back on, or the refusal would name
+        # line 3 for a row on line 5.
+        content = "\n\nname,index,index2\nA1,ATTACTCG,TATAGCCT\n,CCCCGGGG,\n"
+
+        with pytest.raises(IncompleteIndexRows) as refused:
+            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert "line 5" in str(refused.value), str(refused.value)
+
+    def test_a_row_of_only_separators_is_not_a_row(self):
+        content = "name,index,index2\nA1,ATTACTCG,TATAGCCT\n,,\nA2,TCCGGAGA,ATAGAGGC\n"
+
+        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert [p.name for p in kit.index_pairs] == ["A1", "A2"]
+
+    def test_a_combinatorial_row_of_only_separators_is_not_a_row(self):
+        content = "[i7]\nname,sequence\nA1,ATTACTCG\n,\n[i5]\nname,sequence\nB1,TATAGCCT\n"
+
+        kit = IndexParser.parse_from_content(content, "k.csv",
+                                             index_mode=IndexMode.COMBINATORIAL)
+
+        assert ([i.name for i in kit.i7_indexes], [i.name for i in kit.i5_indexes]) == (
+            ["A1"], ["B1"])
+
     def test_a_blank_line_is_not_a_row(self):
         content = "name,index,index2\nA1,ATTACTCG,TATAGCCT\n\n\nA2,TCCGGAGA,ATAGAGGC\n"
 
@@ -214,6 +241,17 @@ class TestATsvLineThatIsNotAnIndexIsRefused:
         message = str(refused.value)
         assert f"line {line}" in message, message
         assert refused.value.reason == "incomplete_index_rows"
+
+    def test_the_line_number_is_the_files_own_after_leading_blank_lines(self):
+        # The TSV reader counts the file's own lines, blanks included: it does
+        # not strip the content first, or a line on 9 would be named as 7.
+        content = ("\n\n[IndexKit]\nName\tOld kit\n\n[Indices]\n"
+                   "Name\tSequence\tIndexNumber\nA1\tATTACTCG\t1\nB1\tCCCCGGGG\t3\n")
+
+        with pytest.raises(IncompleteIndexRows) as refused:
+            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+
+        assert "line 9" in str(refused.value), str(refused.value)
 
     def test_the_header_line_is_not_refused(self):
         kit = IndexParser.parse_from_content(_illumina_tsv(I7, I5), "k.tsv",
