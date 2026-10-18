@@ -367,10 +367,10 @@ and tested. Labels (`sbs_chemistry`, `error_tendencies`, a flow cell's `reads` a
 | `dye_channels`, `base_colors`, `channel1_name`, `channel1_bases`, `channel2_name`, `channel2_bases`, `dark_base` | yes on a 2-color instrument with colour balance on (today a missing one is only a warning: `instrument_validator.py:140-175`); allowed and checked on a 2-color instrument with it off; refused on a 4-color instrument, where nothing reads them | today's value rules; `base_colors` has exactly A, C, G, T; an unusual dye channel name stays a warning |
 | `error_tendencies` | no | label |
 | `samplesheet_versions` | no; absent means `[2]`, as the admin guide says (9 of the 11 shipped synced files leave it out) | a non-empty list of distinct whole numbers, each 1 or 2 |
-| `onboard_applications` | yes | map of an Illumina application name to `{software_version: version text}` |
+| `onboard_applications` | yes | map of an Illumina application name to `{software_version: version text}`; the version is required |
 | `flowcells` | yes, at least one | map of a name to `{lanes, reagent_kits, reads, description}` |
-| `flowcells > * > lanes` | yes (today defaults to 1) | whole number, range set by its consumers (see below) |
-| `flowcells > * > reagent_kits` | yes | non-empty list of distinct whole numbers, range set by its consumers |
+| `flowcells > * > lanes` | yes (today defaults to 1) | whole number, 1 to 8 (see below) |
+| `flowcells > * > reagent_kits` | yes | list of distinct whole numbers, 1 to 2000 each; `[]` is allowed and means the flow cell sets no kit limit (`services/run_builder.py`) |
 | `flowcells > * > reads` | no | whole number, 0 to 2^63 - 1 (storage) |
 | `flowcells > * > description` | no | label |
 | `reagent_kit_max_cycles` | no | today's rules (`instrument_validator.py:234-268`): a map of a kit label (a whole number) to the most cycles allowed (a whole number, at least the label); a label no flow cell offers is a warning |
@@ -389,9 +389,24 @@ Every other key is refused.
 - `index_cycle_options`: a non-empty list of distinct whole numbers, each one an
   index cycle count a run accepts.
 
-**Ranges.** Every number in the table is listed in the step's notes with the code
-that consumes it and the range that code accepts without clamping or refusing;
-the rulebook uses that range (section 4).
+**Ranges.** Every number has the range its consumers accept unchanged (section 4),
+recorded with its source in `input_rules/instruments.py`:
+
+- a flow cell's `lanes`: 1-8. The run page draws a box per lane
+  (`range(1, num_lanes + 1)` in the lane panel and the LIMS import), and no
+  Illumina flow cell has more than eight lanes.
+- a reagent kit's cycles (`reagent_kits`, the keys of `reagent_kit_max_cycles`
+  and of `default_cycles`): 1-2000, the reagent kit field's own range
+  (`routes/runs.py`: `max(1, min(..., 2000))`); a kit above it would be read as
+  2000 and then not found among the flow cell's kits.
+- `default_cycles`: read 1 1-600; read 2 and both indexes 0-600.
+- `index_cycle_options`: 1-600.
+- a flow cell's `reads` and a kit's most cycles: up to 2^63 - 1, MongoDB's limit;
+  nothing reads them as a bound.
+
+The local file's three top-level keys are all required: the shipped file has
+them, and without `default_cycles` or `index_cycle_options` the app fell back
+to defaults nobody wrote.
 
 ### What else changes in step 1
 
