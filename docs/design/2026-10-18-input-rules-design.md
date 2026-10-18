@@ -498,16 +498,152 @@ to defaults nobody wrote.
 - Before merging, the settings command is run on the lab's real settings
   repository, and the user sees what it would refuse.
 
+## Step 2: application and test profiles
+
+### Decided by the user (2026-10-18)
+
+- **Application names.** A profile whose `ApplicationType` is `Dragen` (in any
+  case, as today) must name one of Illumina's applications
+  (`ILLUMINA_APPLICATION_NAMES`), so `DragenGermlin` is refused. Any other type
+  (`External`, `Cloud`, ...) keeps any plain name, as the admin guide documents
+  for a downstream tool's section. (The short note above said Illumina's names
+  only; the guide's external profiles were missed.)
+- **The keys inside `Settings` and `Data` stay open**: any plain name, as today.
+  Illumina's key lists change with each DRAGEN version, and a stale list would
+  block a lab's valid key; the instrument's software judges the names. Their
+  shape is checked in full (below).
+- **A true/false value is written as today**, `True` or `False`: step 2 changes
+  no Sample Sheet. Whether DRAGEN wants `true` or `True` is a later item of its
+  own, after a look at Illumina's documents.
+
+### What a new file needs
+
+A new profile, test, instrument or version of one is checked by the same rules
+and needs no code change. Code changes only for what changes what the app does:
+an application Illumina adds (one line in `ILLUMINA_APPLICATION_NAMES`, with
+its source), or a new fact SeqSetup reads from an instrument file (its rulebook
+field comes with the code that reads it).
+
+### The structure every profile has
+
+Every key of both documents is named; any other key is refused. The keys
+inside `Settings` and `Data` are open, but their shape is not.
+
+**An application profile** (one per file):
+
+| Key | Required | Value |
+|---|---|---|
+| `ApplicationProfileName` | yes | text, 1-256 characters |
+| `ApplicationProfileVersion` | yes | text, a PEP 440 version |
+| `ApplicationName` | yes | a plain name (letters, digits, `_`, `-`), 1-256; one of Illumina's when the type is `Dragen` |
+| `ApplicationType` | yes | text, 1-256 |
+| `Settings` | when `Dragen` | a map of a plain name to a sheet value; empty allowed |
+| `Data` | when `Dragen` | as `Settings` |
+| `DataFields` | when `Dragen` | a list of plain names |
+| `Translate` | no | a map of a plain name to a plain name |
+
+A **sheet value** is text of at most 4,096 characters, a whole number within
+64 bits, or `true`/`false`. Text holds no hidden character (a line break, a
+tab, an invisible control) and does not start with `[`, even after spaces.
+`''` is an empty cell; a key with nothing after it is refused ("write `''` for
+an empty cell"). For a type other than `Dragen` an empty `Settings:` (and the
+other three) means none, as today.
+
+**A test profile** (one per file):
+
+| Key | Required | Value |
+|---|---|---|
+| `TestType` | yes | text, 1-256 (a sample's test ID is at most 256) |
+| `TestName` | yes | text, 1-256 |
+| `Description` | yes | text, 1-4,096 |
+| `Version` | yes | text, three whole numbers joined by dots (`PROFILE_VERSION_RE`) |
+| `ApplicationProfiles` | yes | a list of at least one reference |
+
+A reference holds `ApplicationProfileName` (text, 1-256) and
+`ApplicationProfileVersion` (text, a PEP 440 version or specifier), and nothing
+else.
+
+**The rules relating keys move from `services/profile_validator.py`**, with
+their substance and their tests (section 5): the mismatch values (0, 1 or 2 in
+`Settings`; also blank or `na` as a `Data` default, under the column `Translate`
+gives it); a `Sample_ID` column; no column written twice, whatever its case; in
+the `BCLConvert` profile no name both in `Settings` and among the columns, and no
+setting that changes how BCL Convert reads the i5 (`is_i5_rule_setting`); a
+name SeqSetup fills itself spelled its one way (`SPELLED_*`); the three
+`Dragen` sections. `profile_validator.py` is removed.
+
+**The rules across files** need no database and move into `input_rules` as
+pure functions the sync and the settings command both call: a profile name and
+version in two files (`_refuse_repeated_app_versions`); a test and version in
+two files (`_refuse_repeated_test_versions`); two tests differing only in
+capitals (`_refuse_tests_differing_only_in_capitals`).
+
+### What changes for a lab
+
+Every change is a refusal with its file, line and place; nothing is accepted
+that was refused before, and no Sample Sheet changes. Each of these is accepted
+on `58510df` (probed with the old validator, 2026-10-18):
+
+- an unknown key, at the top of either document (`Setings:`, `Owner:`) or in
+  a test's reference (`Note:`), ignored today;
+- a whole number where text belongs: `ApplicationProfileVersion: 1`,
+  `ApplicationType: 1`, `TestName: 5`, and `TestType: 5`, which passes the
+  validator and then stops the sync with `'int' object has no attribute
+  'lower'`, naming no file;
+- `yes`, `no`, `on`, `off` as a value (today written `True`/`False`): "write
+  true or false";
+- a value YAML changes before any check: `012` in `Settings` is written as
+  `10` today; and the tags, anchors, merge keys and repeated keys the reader
+  refuses for every file (section 1);
+- a `Dragen` profile with an application name that is not Illumina's
+  (`DragenGermlin`);
+- a value over 4,096 characters, or a name, type or test over 256.
+
+The shipped profiles pass unchanged, and the settings command is run on the
+lab's settings repository before merging, as in step 1.
+
+### Where it runs
+
+- **The sync** reads each profile file with the reader and the rulebook in
+  `_fetch_profiles_recursive` (today `safe_load_strict` and the old validator):
+  its problems join the sync's list, shown on the Config Sync page and in the
+  audit row; a refused file is named with its first problem, and a refused
+  file keeps the stored profiles as today.
+- **`ApplicationProfile.from_yaml` and `TestProfile.from_yaml`** stay the one
+  builder of each model; they check their dict with the rulebook (the data
+  path, without lines) and raise `ProfileValidationError` listing the problems.
+  The sync and the command check the file's text first, with lines, and build
+  from the checked value.
+- **The settings command** checks `profiles/application_profiles/` and
+  `profiles/test_profiles/` (`--application-profiles`, `--test-profiles`), the
+  sync's default paths, reading what the sync reads (a `.yaml` or `.yml` ending
+  in any case, as the sync takes it for profiles; never a link), and runs the
+  cross-file rules. A missing profile folder is an error, as for instruments;
+  `--no-instruments` is for a lab whose sync does not read instruments.
+- **The stored profiles** (`from_dict`) and the Sample Sheet writer's backstops
+  (`_escape_config_cell`, `_require_profile_mismatch`) are unchanged.
+- **`docs/admin-guide/profiles.rst`** gets both key tables and the value
+  spellings; a test fails when a rulebook key is missing from it.
+
+### How step 2 is proved
+
+- Red tests first: each unknown key refused with its line, also inside a
+  reference; each required key; each value kind in `Settings` and `Data`
+  (text, a whole number, true/false; a list, a map, an empty value refused);
+  the Dragen name rule both ways; `TestType: 5`; each bound at and past its
+  edge.
+- The old validator's tests (84 in `test_profile_validator.py`, and the profile
+  tests in the files that build profiles through `from_yaml`) keep their
+  guarantee on the new path; any changed test is listed.
+- Every shipped profile gives the same model (`to_dict`, but its id and time)
+  on the old path and the new, and survives the model, BSON and back.
+- The cross-file rules, through the sync and through the command.
+- Break checks, the full check (the 78 Sample Sheets unchanged), a fresh
+  review, and the lab's settings repository through the command.
+
 ## Later steps (each adds its details to this note, or a note of its own)
 
-2. **Profiles.** The application name must be one of Illumina's. The `Settings`
-   and `Data` sections are maps copied into the sheet; `extra="forbid"` does not
-   constrain their keys, so their key policy is decided in that step (restricting
-   them to the keys Illumina documents per application needs those lists).
-   `TestType: 5` is refused, not a crash. A yes/no value in a profile's `Data`
-   section (`DifferentialExpressionEnable: False` in
-   `config/profiles/application_profiles/dragen/DragenRnaIdt.yaml:14`) reaches
-   the sheet as text: what is written is decided there.
+2. **Profiles**: built as step 2, above.
 3. **Index kit files**, every format, each through its own adapter to one
    canonical kit shape: replaces the stopped batch's step 8. A column name given
    twice; `is_fixed_layout: 'no'`; a missing name or version silently taking the
