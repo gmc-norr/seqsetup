@@ -61,6 +61,24 @@ def describe(chars: list[str]) -> str:
 # a Settings entry and per sample.
 MISMATCH_COLUMNS = ("BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2")
 
+# Names SeqSetup fills or reads itself, in the one spelling it uses. Another
+# spelling of one of them is refused (spec §1 problem 7). They live here, not
+# beside the sheet plan, because the profile rules and the settings command
+# use them, and the sheet plan's imports run the instrument start-up.
+SPELLED_SETTINGS_ANY = ("SoftwareVersion",)
+# Columns the writer fills from the sample in every application's section
+# (spec 2026-10-12 batch 2, 2b): another spelling would get the profile's Data
+# default in every row instead of each sample's own value.
+SPELLED_COLUMNS_ANY = ("Sample_Project", "Sample_Name")
+SPELLED_COLUMNS_BCLCONVERT = (
+    "Sample_ID", "Lane", "Index", "Index2", "OverrideCycles",
+    "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2",
+)
+SPELLED_SETTINGS_BCLCONVERT = (
+    "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2",
+    "NoLaneSplitting", "CreateFastqForIndexReads", "AdapterBehavior",
+)
+
 # BCL Convert settings that change how it reads the i5 or the OverrideCycles
 # SeqSetup writes. A BCLConvert profile's Settings may not set them (spec
 # 2026-10-04 group A2, §2). Compared ignoring case.
