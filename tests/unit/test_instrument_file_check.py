@@ -122,25 +122,28 @@ class TestStartAndReload:
     """The app reads the file through the check. A missing file at start still
     loads no instruments, and reload_config() still raises for one."""
 
+    # _loaded_config_path is in the list because it was not: a test here
+    # left it naming a tmp_path file, and the next app start in the same
+    # process then logged that path instead of the real one, failing
+    # test_startup_instruments_log. Both sibling fixtures
+    # (test_instruments_config_env.py, test_instruments_folder_closed.py)
+    # already restored it (2026-10-18 batch, step 9).
+    _KEPT = ("_config", "_instruments", "_default_cycles", "_index_cycle_options",
+             "_loaded_config_path", "_local_file_problem")
+
     @pytest.fixture
     def keep_loaded_config(self):
-        saved = (
-            instruments_module._config, instruments_module._instruments,
-            instruments_module._default_cycles, instruments_module._index_cycle_options,
-            instruments_module._local_file_problem,
-        )
+        saved = {name: getattr(instruments_module, name) for name in self._KEPT}
         yield
-        (
-            instruments_module._config, instruments_module._instruments,
-            instruments_module._default_cycles, instruments_module._index_cycle_options,
-            instruments_module._local_file_problem,
-        ) = saved
+        for name, value in saved.items():
+            setattr(instruments_module, name, value)
 
     @staticmethod
     def _missing():
         raise FileNotFoundError("no instruments.yaml")
 
-    def test_the_app_reads_the_file_through_the_check(self, tmp_path, monkeypatch):
+    def test_the_app_reads_the_file_through_the_check(self, tmp_path, monkeypatch,
+                                                      keep_loaded_config):
         path = _file(tmp_path, _shipped(MiSeq=_entry("MiSeq", runinfo_marks_i5_reversed="x")))
         monkeypatch.setattr(instruments_module, "_find_config_path", lambda: path)
         with pytest.raises(InstrumentConfigError):
