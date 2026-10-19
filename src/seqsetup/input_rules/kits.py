@@ -192,7 +192,10 @@ class KitFileProblems(ValueError):
 
     def __init__(self, problems: list[InputProblem], source_file: str = ""):
         self.problems = problems
-        self.errors = [f"{path_text(p.path)}: {p.message}" for p in problems if p.level == "error"]
+        # The line first: a person fixing the file looks there, and the
+        # sync's refusal and the upload's list are read as sentences.
+        self.errors = [f"line {p.line}: {path_text(p.path)}: {p.message}"
+                       for p in problems if p.level == "error"]
         self.source_file = source_file
         # A repeated index name is audited under repeated_names, and the
         # reader is what finds it now.

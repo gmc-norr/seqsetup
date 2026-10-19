@@ -22,6 +22,7 @@ from ..repositories.test_profile_repo import TestProfileRepository
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
+from ..input_rules.kits import KitFileProblems, build_kit
 from ..input_rules.profiles import (
     build_application_profile,
     build_test_profile,
@@ -1088,7 +1089,20 @@ class GitHubSyncService:
                 if download_url:
                     try:
                         content = self._fetch_file_content(download_url)
-                        kit = IndexKitSyncParser.parse(content, item_name)
+                        # Every problem of the file, each with its line, on
+                        # the Config Sync page and in the audit row: one
+                        # exception could carry only the first (step 3 of the
+                        # input rules, as for profiles and instruments).
+                        result = IndexKitSyncParser.check(content, item_path)
+                        self.input_problems.extend(result.problems)
+                        errors = [p for p in result.problems if p.level == "error"]
+                        if errors:
+                            for error in errors:
+                                logger.error(f"Index kit file {problem_line(error)}")
+                            more = (" (and more problems in this file: see the list of problems)"
+                                    if len(errors) > 1 else "")
+                            raise KitFileProblems(errors, item_path)
+                        kit = build_kit(result.value, created_by="github_sync", source="github")
 
                         if kit:
                             # Validate the kit
@@ -1135,6 +1149,16 @@ class GitHubSyncService:
                             refused.append({"path": item_path, "name": None, "kit": None,
                                             "reason": "could not be read as an index kit"})
 
+                    except KitFileProblems:
+                        # The file's own problems, the first one named as for
+                        # a profile or an instrument file; the list of
+                        # problems has them all. ``name`` stays None, so
+                        # _synced_kits_to_keep keeps every synced kit it did
+                        # not read -- the conservative side, and what a file
+                        # that could not be parsed has always done.
+                        if refused is not None:
+                            refused.append({"path": item_path, "name": None, "kit": None,
+                                            "reason": problem_line(errors[0]).rstrip(".") + more})
                     except Exception as e:
                         logger.warning(f"Failed to process index kit {item_path}: {e}")
                         if refused is not None:
