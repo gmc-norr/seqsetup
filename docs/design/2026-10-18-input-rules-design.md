@@ -1255,12 +1255,19 @@ are the first to go near `_load_config`. So:
 | a `uri` or `database` written as a number or a list | read as it was, then pymongo's own error | refused: must be text |
 | a key given twice, a YAML tag, an anchor, a merge key | the last value kept, or the tag expanded | refused, as for every other settings file |
 | `MONGODB_URI` or `MONGODB_DATABASE` holding such a value | the same unhandled errors, outside any `try` | refused, naming the variable |
-| no file at all | `mongodb://localhost:27017` | **unchanged** |
+| a file that is **there but cannot be opened** -- a dangling link (a secret mount is a link), a link loop, an unreadable parent | `Path.exists()` says no, so the local default, with no line in the log | start-up stops: "cannot be read" |
+| `uri` written `MONGODB://…` or with no host | accepted here, then pymongo's own error from inside `init_db` | refused: the scheme is compared as pymongo compares it, and a host is required |
+| a `uri` or `database` with a trailing newline (a secret read from a file keeps one) | accepted, and the newline reaches every log line | refused as a hidden character |
+| `pixi run create-admin` or `use-local-sign-in` with bad settings | "Could not reach the database. Nothing was changed." | the settings refusal itself, naming the file, the line and the key |
+| no file at all | `mongodb://localhost:27017` | **unchanged**, and one log line says so |
 | `MONGODB_URI` set | wins over the file | **unchanged** |
 | `MONGODB_DATABASE` set alone | dropped without a word | **unchanged** (in the run's QUESTIONS) |
 
 No message, log line, status or audit row quotes a value of this file or of
-either variable, or the name of a key the rulebook does not define.
+either variable, or the name of a key the rulebook does not define. One
+`INFO` line names **where** the settings came from -- the environment, the
+file's path, or the local default -- so "falls back to localhost without a
+word" is no longer true of any path.
 
 ### How step 4 is proved
 

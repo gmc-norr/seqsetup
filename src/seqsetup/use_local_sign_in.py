@@ -22,6 +22,14 @@ def main(get_db=None, say=print) -> int:
 
     try:
         db = (get_db or init_db)()
+    except ValueError as settings:
+        # What is wrong with the settings, as _load_config says it: the file,
+        # the line and the key. It carries no value of the file, so it can be
+        # shown. "Could not reach the database" hid it, and this command is
+        # the first thing a new deployment runs (fresh review of 6164dd9,
+        # P2-5).
+        say(str(settings))
+        return 1
     except Exception:
         say("Could not reach the database. Nothing was changed.")
         return 1

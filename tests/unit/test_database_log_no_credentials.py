@@ -238,7 +238,11 @@ class TestAMalformedConfigFileKeepsItsSecret:
         assert str(path) in str(refused.value) and "is empty" in str(refused.value)
 
     def test_a_file_that_cannot_be_read_says_so(self, monkeypatch, tmp_path):
+        import os
+
         path = self._config(monkeypatch, tmp_path, f'mongodb:\n  uri: "{URI}"\n')
+        if os.geteuid() == 0:
+            pytest.skip("root reads a file whatever its mode")
         path.chmod(0o000)
         try:
             with pytest.raises(ValueError) as refused:
@@ -248,6 +252,51 @@ class TestAMalformedConfigFileKeepsItsSecret:
 
         assert "cannot be read" in str(refused.value)
         assert PASSWORD not in str(refused.value)
+
+    @pytest.mark.parametrize("make", ["dangling link", "a folder"])
+    def test_a_file_that_is_there_but_cannot_be_opened_stops_start_up(
+            self, monkeypatch, tmp_path, make):
+        """``Path.exists()`` says no for a dangling link, a link loop and an
+        unreadable parent as well as for a file that is not there, so a
+        mongodb.yaml the operator DID configure -- a secret mount is a link --
+        quietly became mongodb://localhost:27017, with no line in the log
+        (fresh review of 6164dd9, P1-1)."""
+        monkeypatch.delenv("MONGODB_URI", raising=False)
+        path = tmp_path / "mongodb.yaml"
+        if make == "dangling link":
+            path.symlink_to(tmp_path / "gone.yaml")
+        else:
+            path.mkdir()
+        monkeypatch.setattr(database, "CONFIG_PATH", path)
+
+        with pytest.raises(ValueError) as refused:
+            database._load_config()
+
+        assert "cannot be read" in str(refused.value), str(refused.value)
+        assert str(path) in str(refused.value)
+
+    def test_the_source_of_the_settings_is_logged(self, monkeypatch, tmp_path, caplog):
+        """"falls back to localhost without a word" stops being true: one
+        line names where the settings came from, with no value in it."""
+        path = self._config(monkeypatch, tmp_path,
+                            f'mongodb:\n  uri: "{URI}"\n  database: seqsetup\n')
+
+        with caplog.at_level(logging.INFO, logger=database.logger.name):
+            database._load_config()
+
+        assert str(path) in caplog.text
+        assert PASSWORD not in caplog.text and USER not in caplog.text
+
+    def test_the_local_default_says_it_is_the_local_default(
+            self, monkeypatch, tmp_path, caplog):
+        monkeypatch.delenv("MONGODB_URI", raising=False)
+        monkeypatch.setattr(database, "CONFIG_PATH", tmp_path / "not-there.yaml")
+
+        with caplog.at_level(logging.INFO, logger=database.logger.name):
+            config = database._load_config()
+
+        assert config["uri"] == "mongodb://localhost:27017"
+        assert "no database settings file" in caplog.text, caplog.text
 
     def test_a_file_that_is_not_utf_8_says_so_and_names_no_byte_of_it(
             self, monkeypatch, tmp_path):

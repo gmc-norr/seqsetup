@@ -138,13 +138,20 @@ def _load_config() -> dict:
     (docs/design/2026-10-18-input-rules-design.md, step 4).
     """
     if os.environ.get("MONGODB_URI"):
+        logger.info("Database settings: from the environment (MONGODB_URI)")
         return _from_the_environment()
 
-    if CONFIG_PATH.exists():
+    # lexists, not exists: Path.exists() says no for a dangling link, a link
+    # loop and an unreadable parent as well as for a file that is not there,
+    # so a file the operator DID configure -- a secret mount is a link --
+    # quietly became the local default (fresh review of 6164dd9, P1-1).
+    if os.path.lexists(CONFIG_PATH):
+        logger.info("Database settings: from %s", CONFIG_PATH)
         try:
             text = CONFIG_PATH.read_text(encoding="utf-8")
         except OSError as e:
-            raise ValueError(f"{CONFIG_PATH} cannot be read ({e.strerror})") from None
+            raise ValueError(
+                f"{CONFIG_PATH} cannot be read ({e.strerror or type(e).__name__})") from None
         except UnicodeDecodeError:
             # Not the exception's message: it names a byte of the file and
             # where it is, and that byte can be part of the password.
@@ -157,7 +164,8 @@ def _load_config() -> dict:
             raise _refusal(result.problems)
         return {"uri": result.value.mongodb.uri, "database": result.value.mongodb.database}
 
-    # No file: the local default, as before.
+    logger.info("Database settings: no database settings file at %s, so the local "
+                "default is used", CONFIG_PATH)
     return {
         "uri": "mongodb://localhost:27017",
         "database": "seqsetup",

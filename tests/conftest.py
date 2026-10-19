@@ -77,10 +77,28 @@ class _NoRealDatabase:
         )
 
 
+# One stub for the whole session, installed before any fixture runs.
+THE_STUB = _NoRealDatabase()
+
+
+def pytest_configure(config):
+    """Install the guard before collection, so a **session**- or
+    module-scoped fixture sees it too: an autouse function-scoped fixture
+    runs after those, and a session fixture that called ``init_db`` would
+    reach whatever is on port 27017 (fresh review of 6164dd9, P2-3)."""
+    import os
+
+    from seqsetup.services import database
+
+    os.environ["MONGODB_URI"] = "mongodb://127.0.0.1:1"
+    database.MongoClient = THE_STUB
+
+
 @pytest.fixture(autouse=True)
 def no_real_database(monkeypatch):
-    """Every test, without asking: an address nothing listens on, a client
-    that refuses, and no connection left over from the test before --
+    """Every test, without asking: the address and the stub are already in
+    place from ``pytest_configure``; this keeps them against a test that
+    changes the environment, and leaves no connection from the test before --
     ``init_db`` returns early when ``_db`` is already set, so a test that
     forgets that would pass while proving nothing."""
     from seqsetup.services import database
@@ -88,9 +106,9 @@ def no_real_database(monkeypatch):
     monkeypatch.setenv("MONGODB_URI", "mongodb://127.0.0.1:1")
     monkeypatch.setattr(database, "_client", None)
     monkeypatch.setattr(database, "_db", None)
-    stub = _NoRealDatabase()
-    monkeypatch.setattr(database, "MongoClient", stub)
-    yield stub
+    monkeypatch.setattr(database, "MongoClient", THE_STUB)
+    THE_STUB.built.clear()
+    yield THE_STUB
     database._client = None
     database._db = None
 

@@ -71,18 +71,26 @@ class TestAConnectionStringIsAConnectionString:
     @pytest.mark.parametrize("uri", [
         "mongodb://db:27017/x",
         "mongodb+srv://cluster.example.com/x",
-        "MONGODB://db:27017/x",
+        "mongodb://db/x",
     ])
     def test_a_real_scheme_is_accepted(self, uri):
         assert checked(f'mongodb:\n  uri: "{uri}"\n  database: db\n').mongodb.uri == uri
 
     @pytest.mark.parametrize("uri", ["localhost:27017", "mongodb.example.invalid",
-                                     "see .env", "http://db:27017", "mongodb:/db"])
+                                     "see .env", "http://db:27017", "mongodb:/db",
+                                     "MONGODB://db:27017/x", "MongoDB://db:27017/x",
+                                     "MONGODB+SRV://c.example.com/x", "mongodb://",
+                                     "mongodb+srv://"])
     def test_anything_else_is_refused(self, uri):
         (problem,) = problems(f'mongodb:\n  uri: "{uri}"\n  database: db\n')
 
         assert problem[1] == ("mongodb", "uri")
-        assert "mongodb://" in problem[2]
+        assert "connection string" in problem[2]
+
+    def test_the_refusal_says_what_a_connection_string_begins_with(self):
+        (problem,) = problems('mongodb:\n  uri: "localhost:27017"\n  database: db\n')
+
+        assert "mongodb://" in problem[2] and "mongodb+srv://" in problem[2]
 
     def test_a_uri_over_4096_characters_is_refused(self):
         long = "mongodb://" + "h" * 4096
@@ -90,6 +98,21 @@ class TestAConnectionStringIsAConnectionString:
 
         assert problem[1] == ("mongodb", "uri")
         assert problem[2] == "must be at most 4096 characters"
+
+    def test_the_scheme_is_compared_as_pymongo_compares_it(self):
+        """pymongo's own check is case-sensitive and wants a host after the
+        scheme, so a value the rulebook let through gave pymongo's error from
+        inside init_db instead of the file-and-line refusal (fresh review of
+        6164dd9, P2-4). Measured: pymongo refuses MONGODB://db:27017/x and
+        mongodb:// and accepts mongodb://db/x."""
+        from pymongo import uri_parser
+
+        for uri in ("MONGODB://db:27017/x", "mongodb://"):
+            with pytest.raises(Exception):
+                uri_parser.parse_uri(uri)
+            assert problems(f'mongodb:\n  uri: "{uri}"\n  database: db\n')
+        uri_parser.parse_uri("mongodb://db/x")
+        assert checked('mongodb:\n  uri: "mongodb://db/x"\n  database: db\n')
 
     def test_a_uri_with_a_hidden_character_is_refused(self):
         (problem,) = problems('mongodb:\n  uri: "mongodb://db​:27017"\n  database: db\n')
@@ -239,3 +262,38 @@ class TestTheRulebookIsTheOnlyDocument:
 
     def test_it_names_exactly_the_two_settings(self):
         assert set(DatabaseFileRules.model_fields) == {"mongodb"}
+
+
+class TestNoMessageQuotesAnythingOnTheReaderPath:
+    """The scrub ran only on the rulebook's problems: ``reader_refusal``
+    passed no data, so a value the READER refused -- a password written as a
+    plain number, a tag, an anchor -- could still be quoted (fresh review of
+    6164dd9, P2-2)."""
+
+    @pytest.mark.parametrize("written", ["0755123456", "!!str 0755123456", "&a 0755123456"])
+    def test_a_value_the_reader_refuses_is_not_quoted(self, written):
+        result = check_database_file(
+            f'mongodb:\n  uri: "{URI}"\n  database: {written}\n', "config/mongodb.yaml")
+
+        said = " ".join(f"{p.path} {p.message}" for p in result.problems)
+        assert not result.ok, said
+        assert "0755123456" not in said, said
+
+    def test_a_secret_of_one_character_is_not_quoted(self):
+        result = check_database_file(
+            'mongodb:\n  uri: "mongodb://u:x@db"\n  database: "a b"\n', "config/mongodb.yaml")
+
+        said = " ".join(p.message for p in result.problems)
+        assert not result.ok, said
+
+    def test_a_secret_written_in_another_case_is_not_quoted(self):
+        """``database._credentials`` already takes a password in every form
+        it can be written; the scrub now folds case too."""
+        from seqsetup.input_rules.check import _scrubbed, _secret_pattern
+        from seqsetup.input_rules.problems import InputProblem
+
+        problem = InputProblem("f", 1, 1, (), f"is wrong: {SECRET.upper()}")
+
+        scrubbed = _scrubbed(problem, _secret_pattern((SECRET,)))
+
+        assert SECRET.upper() not in scrubbed.message

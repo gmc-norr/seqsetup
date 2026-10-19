@@ -24,6 +24,10 @@ UNKNOWN_KEY = "an unknown key"
 # short user name, and a value that short is no secret.
 MASKED = "***"
 SHORTEST_MASKED = 4
+# How many of a sensitive file's strings one pattern holds. A file of 20,000
+# keys is the operator's own, but the pattern is built for every problem list
+# and must not grow with the file without bound.
+MOST_SECRETS = 2000
 
 
 @dataclass(frozen=True)
@@ -69,18 +73,29 @@ def _strings_in(data, found: Optional[set] = None) -> set:
     return found
 
 
-def _scrubbed(problem: InputProblem, secrets: tuple) -> InputProblem:
+def _secret_pattern(secrets: tuple):
+    """One pattern for every string of a sensitive file, longest first so
+    taking one out does not leave half of another behind, and ignoring case
+    because a server's message can repeat a value in another case -- the
+    same reasoning as ``services/database.py: _credentials``.
+
+    One pattern, not one ``str.replace`` per secret: a 2 MiB file of bad keys
+    made 20,000 secrets, and replacing each in each of 1,000 messages took 90
+    seconds (fresh review of 6164dd9, P3-6).
+    """
+    import re
+
+    return re.compile("|".join(re.escape(text) for text in secrets), re.IGNORECASE)
+
+
+def _scrubbed(problem: InputProblem, pattern) -> InputProblem:
     """``problem`` with the file's own text taken out of its message.
 
     ``sensitive`` masks a problem's PATH; a validator's own ``ValueError``
     text goes through ``_message`` as it is, so a rule written
-    ``f"may not hold '/': {value!r}"`` would quote a password. Longest first,
-    so taking one secret out does not leave half of another behind -- the
-    same reasoning as ``services/database.py: _safe``.
+    ``f"may not hold '/': {value!r}"`` would quote a password.
     """
-    message = problem.message
-    for secret in secrets:
-        message = message.replace(secret, MASKED)
+    message = pattern.sub(MASKED, problem.message)
     if message == problem.message:
         return problem
     return InputProblem(problem.file, problem.line, problem.column, problem.path,
@@ -161,9 +176,10 @@ def _result(value, problems, note, rulebook, sensitive, data=None) -> CheckResul
         # "must begin ***://".
         secrets = tuple(sorted((text for text in _strings_in(data)
                                 if len(text) >= SHORTEST_MASKED and text not in known),
-                               key=len, reverse=True))
+                               key=len, reverse=True))[:MOST_SECRETS]
         if secrets:
-            problems = [_scrubbed(problem, secrets) for problem in problems]
+            pattern = _secret_pattern(secrets)
+            problems = [_scrubbed(problem, pattern) for problem in problems]
     if len(problems) > MAX_PROBLEMS_PER_FILE:
         rest = problems[MAX_PROBLEMS_PER_FILE:]
         last = problems[MAX_PROBLEMS_PER_FILE - 1]

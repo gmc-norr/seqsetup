@@ -58,8 +58,11 @@ All configuration files are in the ``config/`` directory:
         database: "seqsetup"
 
    Start-up stops, naming the file, the line and the key, when a key is
-   misspelt or missing, when the file is empty, cannot be read or is not
-   UTF-8, when ``uri`` does not begin ``mongodb://`` or ``mongodb+srv://``
+   misspelt or missing, when the file is empty, cannot be read (a dangling
+   link counts: a secret mount is a link) or is not UTF-8, when ``uri`` does
+   not begin ``mongodb://`` or ``mongodb+srv://`` in small letters and name a
+   host, when either value carries a trailing newline (a secret read from a
+   file keeps one),
    (without a scheme the driver reads the value as a host name and connects
    to it with **no authentication**), or when ``database`` is longer than 63
    bytes or holds a space, ``.``, ``$``, ``/``, ``\``, ``"`` or a hidden
@@ -69,6 +72,9 @@ All configuration files are in the ``config/`` directory:
    **No message, log line or audit row ever repeats a value of this file**:
    it holds the password. ``MONGODB_URI`` and ``MONGODB_DATABASE`` win over
    the file, as before, and their values follow the same rules.
+
+   One line in the log names where the settings came from: the environment,
+   the file's path, or the local default.
 
    ``pixi run check-settings <folder> --local-database config/mongodb.yaml``
    checks the file without connecting to anything.

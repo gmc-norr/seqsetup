@@ -51,11 +51,17 @@ def _no_hidden(value: str) -> str:
 
 def _a_connection_string(value: str) -> str:
     _no_hidden(value)
-    if not value.lower().startswith(URI_SCHEMES):
+    # Compared as pymongo compares it: case-sensitively, and with something
+    # after the scheme. A value the rulebook let through gave pymongo's own
+    # error from inside init_db instead of this refusal (fresh review of
+    # 6164dd9, P2-4).
+    if not any(value.startswith(scheme) and len(value) > len(scheme)
+               for scheme in URI_SCHEMES):
         raise ValueError(
-            "is not a connection string: it must begin mongodb:// or mongodb+srv://. "
-            "Without a scheme the driver reads the value as a host name and connects "
-            "to it with no authentication."
+            "is not a connection string: it must begin mongodb:// or mongodb+srv:// "
+            "(in small letters, as the driver reads it) and name a host. Without a "
+            "scheme the driver reads the value as a host name and connects to it "
+            "with no authentication."
         )
     return value
 
