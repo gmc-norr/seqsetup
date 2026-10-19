@@ -87,7 +87,9 @@ class TestTheOtherCasesAreAsBefore:
         assert "Could not find" in instruments.local_instruments_problem()
 
     def test_a_file_it_can_see_but_not_open_still_stops_the_start(self, project):
-        """Unchanged: the folder can be entered, the file cannot be read."""
+        """The folder can be entered, the file cannot be read: the start still
+        stops, now naming the file and why instead of a raw PermissionError
+        (docs/design/2026-10-18-input-rules-design.md)."""
         (project / "config" / "instruments.yaml").chmod(0o000)
-        with pytest.raises(PermissionError):
+        with pytest.raises(instruments.InstrumentConfigError, match="instruments.yaml cannot be read"):
             instruments._initialize_at_start()

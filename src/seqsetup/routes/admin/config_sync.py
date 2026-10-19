@@ -17,8 +17,9 @@ from pydantic.functional_validators import BeforeValidator
 from starlette.responses import HTMLResponse, Response
 
 from ...context import AppContext
+from ...input_rules.problems import AUDIT_BUDGET, bounded_report, path_text
 from ...forms.validators import clamp, strip_and_truncate
-from ...services.audit_log import audit
+from ...services.audit_log import audit, audit_text
 from ...services.github_sync import GitHubSyncError, GitHubSyncService, paused_page_message
 from ...templating import render
 from ..dependencies import get_ctx, require_admin_dep
@@ -93,6 +94,13 @@ def _page_ctx(ctx: AppContext, message: str = "", message_ok: bool = True) -> di
                            if paused else ""),
         "message": message,
         "message_ok": message_ok,
+        # The problems the input rules found in the last sync's files, each
+        # with its file, line and place (docs/design/2026-10-18-input-rules-design.md).
+        "sync_problems": [
+            {**record, "where": path_text(tuple(record["path"]))}
+            for record in config.last_sync_problems
+        ],
+        "sync_problems_left_out": config.last_sync_problems_left_out,
     }
 
 
@@ -167,13 +175,17 @@ def trigger_manual_sync(
         )
 
     sync_service = ctx.get_github_sync_service()
-    success, message, count = sync_service.sync()
+    result = sync_service.sync()
+    success, message, count = result
+    # The row carries the sync's message and problems, cut to fit an audit
+    # row: details over 64 KiB would be dropped whole.
     audit(
         "config_sync.triggered",
         actor=get_username(request),
         target="github_sync",
         outcome="success" if success else "failure",
         items_synced=count,
+        **bounded_report(message, getattr(result, "problems", []), AUDIT_BUDGET, clean=audit_text),
     )
     # Bust the synced-instruments cache so the new sync is visible to the
     # instruments page immediately. The lazy import matches the existing

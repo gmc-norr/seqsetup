@@ -22,7 +22,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
-import yaml
 from pymongo.errors import PyMongoError
 
 if TYPE_CHECKING:
@@ -235,6 +234,13 @@ def _present(path: Path) -> bool:
             f"({e.strerror}), so "
             f"{path.name} was not read and no local instruments are loaded"
         ) from e
+    except OSError as e:
+        # A folder on the way that SeqSetup sees but cannot read (a link that
+        # points at itself gives ELOOP): the start stops, naming it, instead
+        # of ending in a raw traceback (docs/design/2026-10-18-input-rules-design.md).
+        raise InstrumentConfigError(
+            f"{path} cannot be read ({e.strerror}), so SeqSetup will not start"
+        ) from e
     return True
 
 
@@ -244,47 +250,29 @@ class InstrumentConfigError(ValueError):
 
 
 def load_checked_instrument_file(path: Path) -> dict:
-    """Read the local instruments file and check every instrument the way a
-    config sync checks synced ones (``validate_instrument_yaml``, with the
-    map key as the name). A wrong i5 fact would otherwise decide the i5
-    direction in every Sample Sheet. Raise InstrumentConfigError
-    naming the file and listing every problem. Warnings are ignored: every
-    local entry lacks the ``version`` a synced file carries."""
-    from ..services.instrument_validator import validate_instrument_yaml
+    """Read the local instruments file and check it with the instrument
+    rulebook (``input_rules.instruments``), the rules a config sync checks
+    synced instruments with. A wrong i5 fact would otherwise decide the i5
+    direction in every Sample Sheet. Raise InstrumentConfigError naming the
+    file and listing every problem with its line. Return the file as written:
+    exactly its keys, nothing added."""
+    from ..input_rules.instruments import check_local_instruments_file, local_config
+    from ..input_rules.problems import problem_line
 
-    problems: list[str] = []
-    data = None
+    stops = f"{path.name} has errors, so SeqSetup will not start: "
     try:
-        with open(path) as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        problems.append(f"cannot be read as YAML: {e}")
-    else:
-        if not isinstance(data, dict):
-            problems.append("must be a mapping at the top level")
-    if isinstance(data, dict):
-        instruments = data.get("instruments", {})
-        if not isinstance(instruments, dict):
-            problems.append("'instruments' must be a mapping")
-            instruments = {}
-        for name, entry in instruments.items():
-            if not isinstance(entry, dict):
-                problems.append(f"{name}: must be a mapping")
-                continue
-            try:
-                result = validate_instrument_yaml({**entry, "name": name}, path.name)
-            except Exception as e:
-                # The check itself fails on some values of the wrong type
-                # (channel1_bases: 42 raises TypeError). Report it; the
-                # start still stops.
-                problems.append(f"{name}: could not be checked: {e}")
-                continue
-            problems += [f"{name}: {error}" for error in result.errors]
-    if problems:
-        raise InstrumentConfigError(
-            f"{path.name} has errors, so SeqSetup will not start: " + "; ".join(problems)
-        )
-    return data
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise InstrumentConfigError(stops + f"{path.name} cannot be read ({e.strerror})") from e
+    except UnicodeDecodeError as e:
+        raise InstrumentConfigError(stops + f"{path.name} is not UTF-8 text") from e
+    result = check_local_instruments_file(text, path.name)
+    errors = [problem for problem in result.problems if problem.level == "error"]
+    if errors:
+        raise InstrumentConfigError(stops + "; ".join(problem_line(p) for p in errors))
+    for warning in result.problems:
+        logger.warning(problem_line(warning))
+    return local_config(result.value)
 
 
 # The instruments file that was read, so the start-up line names the file in
@@ -366,15 +354,6 @@ def _initialize_at_start() -> None:
 
 # Initialize on module load
 _initialize_at_start()
-
-
-def reload_config():
-    """Reload configuration from YAML file.
-
-    Call this after modifying the config file to pick up changes
-    without restarting the application.
-    """
-    _initialize_config()
 
 
 def get_instrument_names() -> list[str]:
@@ -963,8 +942,9 @@ def get_lanes_for_flowcell(platform: InstrumentPlatform, flowcell_type: str, ins
 def get_reagent_kit_max_cycles(platform: InstrumentPlatform, reagent_kit: int) -> Optional[int]:
     """Most cycles (all reads together) this instrument's reagent kit allows,
     from ``reagent_kit_max_cycles`` in its config; None when no number is
-    given for the kit. The sync validator checks synced numbers; a malformed
-    value in the fallback YAML is logged and treated as no number."""
+    given for the kit. The input rules check the numbers of both instrument
+    files before they are kept; a malformed value is still logged and treated
+    as no number."""
     name = _platform_to_name(platform)
     limits = (get_instrument_config(name) or {}).get("reagent_kit_max_cycles")
     if not limits:

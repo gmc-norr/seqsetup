@@ -1,7 +1,9 @@
 """The two i5 facts an instrument gives: how it reads the i5 in each of its
 workflows, and whether its RunInfo.xml marks a reversed i5 read (spec
-2026-10-04 group A2, §1). The validator and the model check them the same
-way, so a record a sync stores always loads again."""
+2026-10-04 group A2, §1). The sync's instrument rulebook refuses every rule
+(docs/design/2026-10-18-input-rules-design.md), and the model checks them
+with one function, i5_fact_problems, from a file and from a stored record
+alike, so a record a sync stores always loads again."""
 
 import dataclasses
 from pathlib import Path
@@ -10,12 +12,24 @@ import pytest
 import yaml
 
 from seqsetup.data.instruments import InstrumentConfigError, load_checked_instrument_file
+from seqsetup.input_rules.instruments import check_synced_instrument_file
 from seqsetup.models.instrument_definition import (
     I5Workflow,
     InstrumentDefinition,
     InstrumentRecordError,
+    _problem_text,
+    i5_fact_problems,
 )
-from seqsetup.services.instrument_validator import validate_instrument_yaml
+
+
+def _checked(data: dict, file: str = "i100.yaml"):
+    """The sync's check of an instrument file holding ``data``."""
+    return check_synced_instrument_file(yaml.safe_dump(data), file)
+
+
+def _model_text(data: dict) -> str:
+    """What the model says about a file or record holding ``data``."""
+    return "MiSeq i100 Series: " + "; ".join(_problem_text(*p) for p in i5_fact_problems(data))
 
 CONFIG = Path(__file__).resolve().parents[2] / "config"
 FORWARD = "forward"
@@ -36,6 +50,11 @@ def _yaml(**changes) -> dict:
         "samplesheet_name": "MiSeqi100Series",
         "version": "1.0.0",
         "chemistry_type": "4-color",
+        # Written out, as a fact that changes a sheet or a check must be
+        # (docs/design/2026-10-18-input-rules-design.md).
+        "has_dragen_onboard": False,
+        "color_balance_enabled": False,
+        "onboard_applications": {"BCLConvert": {"software_version": "4.3.6"}},
         "flowcells": {"5M": {"lanes": 1, "reads": 5000000, "reagent_kits": [100]}},
         "i5_workflows": [_workflow("Index-first", FORWARD), _workflow("Read-first", REVERSED)],
         "runinfo_marks_i5_reversed": True,
@@ -96,28 +115,28 @@ BAD = [
 
 
 class TestTheRules:
-    """Each rule is refused by the validator, by the model from a file, by the
-    model from a stored record, and in the local file, with the same text."""
+    """Each rule is refused by the sync's rulebook, by the model from a file
+    and from a stored record (with the text of the one function they share),
+    and in the local file."""
 
     @pytest.mark.parametrize("changes,field", BAD)
-    def test_the_validator_refuses_it(self, changes, field):
-        result = validate_instrument_yaml(_yaml(**changes), "i100.yaml")
-        assert not result.is_valid
-        assert [e.field for e in result.errors] == [field]
+    def test_the_sync_refuses_it(self, changes, field):
+        result = _checked(_yaml(**changes))
+        assert not result.ok
+        assert {p.path[0] for p in result.problems if p.level == "error"} == {field}
 
     @pytest.mark.parametrize("changes,field", BAD)
-    def test_a_file_is_refused_by_the_model_with_the_validators_text(self, changes, field):
-        errors = validate_instrument_yaml(_yaml(**changes), "i100.yaml").errors
+    def test_a_file_is_refused_by_the_model_with_its_own_text(self, changes, field):
+        assert i5_fact_problems(_yaml(**changes))
         with pytest.raises(InstrumentRecordError) as exc:
             InstrumentDefinition.from_yaml(_yaml(**changes), "i100.yaml")
-        assert str(exc.value) == "MiSeq i100 Series: " + "; ".join(str(e) for e in errors)
+        assert str(exc.value) == _model_text(_yaml(**changes))
 
     @pytest.mark.parametrize("changes,field", BAD)
-    def test_a_stored_record_is_refused_with_the_validators_text(self, changes, field):
-        errors = validate_instrument_yaml(_yaml(**changes), "i100.yaml").errors
+    def test_a_stored_record_is_refused_with_the_same_text(self, changes, field):
         with pytest.raises(InstrumentRecordError) as exc:
             InstrumentDefinition.from_dict(_stored(**changes))
-        assert str(exc.value) == "MiSeq i100 Series: " + "; ".join(str(e) for e in errors)
+        assert str(exc.value) == _model_text(_yaml(**changes))
 
     @pytest.mark.parametrize("changes,field", BAD)
     def test_the_local_file_stops_the_start(self, tmp_path, changes, field):
@@ -128,13 +147,16 @@ class TestTheRules:
         path.write_text(yaml.safe_dump(data))
         with pytest.raises(InstrumentConfigError) as exc:
             load_checked_instrument_file(path)
-        assert f"MiSeq i100 Series: {field}: " in str(exc.value)
+        # The rulebook names the path down to the field (the input rules
+        # design, 2026-10-18), not "name: field:" as the old validator did.
+        assert f"instruments > MiSeq i100 Series > {field}" in str(exc.value)
 
     def test_the_old_keys_point_to_the_new_ones(self):
-        result = validate_instrument_yaml(_yaml(i5_read_orientation=FORWARD), "i100.yaml")
-        assert str(result.errors[0]) == (
-            "i5_read_orientation: Replaced by i5_workflows and runinfo_marks_i5_reversed; "
-            "see Instruments in the admin guide"
+        (problem,) = _checked(_yaml(i5_read_orientation=FORWARD)).problems
+        assert (problem.path, problem.message) == (
+            ("i5_read_orientation",),
+            "Replaced by i5_workflows and runinfo_marks_i5_reversed; "
+            "see Instruments in the admin guide",
         )
 
     def test_a_record_error_is_a_value_error(self):
@@ -149,7 +171,7 @@ class TestGoodValues:
     ])
     def test_a_name_that_is_allowed(self, name):
         changes = {"i5_workflows": [_workflow(name, FORWARD)]}
-        assert validate_instrument_yaml(_yaml(**changes), "i100.yaml").is_valid
+        assert _checked(_yaml(**changes)).ok
         inst = InstrumentDefinition.from_yaml(_yaml(**changes), "i100.yaml")
         assert inst.i5_workflows == (I5Workflow(name, FORWARD),)
 
@@ -281,8 +303,8 @@ class TestBuiltInInstruments:
     @pytest.mark.parametrize("name", sorted(BUILT_IN))
     def test_the_example_file_gives_the_tables_facts_and_loads_again(self, name):
         filename, data = _example_files()[name]
-        result = validate_instrument_yaml(data, filename)
-        assert result.errors == []
+        result = _checked(data, filename)
+        assert result.ok, result.problems
         inst = InstrumentDefinition.from_yaml(data, filename)
         workflows, marks = BUILT_IN[name]
         assert inst.i5_workflows == tuple(I5Workflow(n, o) for n, o in workflows)

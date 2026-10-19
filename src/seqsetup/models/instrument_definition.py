@@ -28,7 +28,7 @@ _I5_WORKFLOW_NAME_RULE = (
 
 
 def _problem_text(field_name: str, message: str, value: Optional[str] = None) -> str:
-    """The text the instrument validator gives for one error."""
+    """The text the model gives for one error in an instrument record."""
     if value is not None:
         return f"{field_name}: {message} (got: {value!r})"
     return f"{field_name}: {message}"
@@ -72,8 +72,10 @@ def _i5_workflows_problems(value) -> list[tuple[str, Optional[str]]]:
 
 def i5_fact_problems(data: dict) -> list[tuple[str, str, Optional[str]]]:
     """The two i5 facts of an instrument file or stored record, and the old
-    keys they replaced, as (field, message, value). The validator and the
-    model both use this, so they accept and refuse the same inputs."""
+    keys they replaced, as (field, message, value), for a record the model
+    is given. The input rules check a file's i5 facts with their lines
+    (input_rules/instruments.py); tests/unit/test_i5_workflows.py holds the
+    two to the same inputs."""
     problems = [(key, OLD_I5_KEY_MESSAGE, None) for key in OLD_I5_KEYS if key in data]
     if "i5_workflows" not in data:
         problems.append((

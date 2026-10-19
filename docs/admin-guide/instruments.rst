@@ -18,14 +18,17 @@ the i5 direction in every Sample Sheet. With the variable unset (or set to
 nothing), the shipped file is read, as before. Either way the log line
 *"Reading instruments from <path>"* at the start says which file it was.
 
-SeqSetup checks the file it reads at every start, the same way a config sync
-checks synced instruments. If an instrument in it has a mistake -- say
-``i5_read_orientation: forwards`` in one of its ``i5_workflows`` -- or the
-file cannot be read, SeqSetup does not start, and the error names the file,
-each instrument and each problem: *"instruments.yaml has errors, so
-SeqSetup will not start: MiSeq: i5_workflows: i5_read_orientation must be
-forward or reverse-complement (got: 'forwards')"*. Fix the file and start
-again.
+SeqSetup checks the file it reads at every start, with the same rules a
+config sync checks synced instruments with (see *The keys of an instrument
+file* below). If the file has a mistake -- say ``i5_read_orientation:
+forwards`` in one of an instrument's ``i5_workflows``, or a key it does not
+know -- or the file cannot be read, SeqSetup does not start, and the error
+names the file and, for each problem, its line and column, the place and
+the problem: *"instruments.yaml has errors, so SeqSetup will not start:
+instruments.yaml:456:30: instruments > MiSeq > i5_workflows > item 1 >
+i5_read_orientation: must be one of: 'forward' or 'reverse-complement'"*.
+Fix the file and start again. ``pixi run check-settings`` checks a file
+before you start (see *Checking settings before a sync* below).
 
 **Admin > Instruments** lets an admin manage a *different*, additional set:
 instrument definitions synced in from GitHub (see :doc:`profiles`). Until at
@@ -285,6 +288,117 @@ SBS chemistry and names
    that check, it only ever exists after a GitHub sync brings in a
    definition that sets it.
 
+The keys of an instrument file
+------------------------------------
+
+Every key an instrument file can have is listed here, and **any other key
+is refused**: a misspelt key such as ``lane:`` for ``lanes`` or
+``colour_balance_enabled`` for ``color_balance_enabled`` once fell back to a
+default without a word (one lane; no colour balance check). A fact that
+changes a Sample Sheet or a check must be written out; only labels may be
+left out, and ``samplesheet_versions``, which then means ``[2]``.
+
+A synced instrument file holds one instrument at the top level, or several
+under ``instruments:`` -- a map of each instrument's name to its keys, with
+nothing beside it. An instrument listed under a name may leave out ``name``;
+if it gives one, it must be the name it is listed under. The local file
+(``config/instruments.yaml``) has three top-level keys, all required:
+``instruments`` (as above), ``default_cycles`` and ``index_cycle_options``.
+
+Values are read as written: a whole number is plain digits (``012``,
+``0x10``, ``1_000`` and ``1:20`` are refused, because YAML would read them as
+other numbers); a yes/no value is ``true`` or ``false`` (``yes``, ``no``,
+``on`` and ``off`` are refused); a version is text, so ``1.10`` must be in
+quotes (YAML reads it as the number 1.1); a date must be in quotes. YAML
+tags (``!!int`` and the like), anchors (``&name``) and merge keys (``<<``)
+are refused, and so is a key given twice in one map.
+
+**An instrument**
+
+``name``
+   The instrument's name, as the pages show it. Required in a file holding
+   one instrument.
+``samplesheet_name``
+   Required. Written on the Sample Sheet's ``InstrumentPlatform`` line, so
+   only letters, digits, ``_`` and ``-``.
+``version``
+   Required in a synced file (the version of the file's content); a local
+   entry has none.
+``chemistry_type``
+   Required: ``2-color`` or ``4-color``.
+``sbs_chemistry``, ``error_tendencies``
+   Labels, shown on the instruments page. May be left out.
+``has_dragen_onboard``
+   Required: ``true`` or ``false``.
+``i5_workflows``, ``runinfo_marks_i5_reversed``
+   Required: the two i5 facts (see *The i5 (Index 2)* above). Each workflow
+   has exactly a ``name`` and an ``i5_read_orientation`` (``forward`` or
+   ``reverse-complement``); no two names may differ only in capitals.
+``color_balance_enabled``
+   Required: ``true`` or ``false``.
+``dye_channels``, ``base_colors``, ``channel1_name``, ``channel1_bases``, ``channel2_name``, ``channel2_bases``, ``dark_base``
+   The colour balance facts: all required on a 2-color instrument with
+   ``color_balance_enabled: true``, checked when given on one with it off,
+   and refused on a 4-color instrument, where nothing reads them.
+   ``base_colors`` names each of ``A``, ``C``, ``G`` and ``T`` once; the
+   bases are ``A``, ``C``, ``G`` or ``T``. A dye channel other than Blue,
+   Green, Red or Yellow is a warning, not a refusal.
+``samplesheet_versions``
+   The Sample Sheet versions the instrument reads: ``[2]``, ``[1, 2]`` or
+   ``[1]``. Left out, it means ``[2]``.
+``onboard_applications``
+   Required: a map of each application the instrument runs to its
+   ``software_version``. The names are Illumina's (``BCLConvert``,
+   ``DragenGermline``, ``DragenSomatic``, ``DragenRna``,
+   ``DragenEnrichment``, ``DragenMethylation``); the version may hold
+   letters, digits, ``.``, ``_`` and ``-``.
+``flowcells``
+   Required, at least one: a map of each flow cell's name to its
+   ``lanes`` (required, 1 to 8), ``reagent_kits`` (required: the reagent
+   kits' cycles, 1 to 2000 each, none twice; ``[]`` means the flow cell
+   sets no kit limit), ``reads`` and ``description`` (labels, may be left
+   out).
+``reagent_kit_max_cycles``
+   Optional: a map of a reagent kit's cycles to the most cycles it allows
+   (all reads together, at least the kit's own cycles). A kit no flow cell
+   offers is a warning.
+
+**The local file's cycle sections**
+
+``default_cycles``
+   A map of a reagent kit's cycles (1 to 2000) to the cycles a new run with
+   that kit starts with: ``read1`` (1 to 600), ``read2``, ``index1`` and
+   ``index2`` (0 to 600 each; ``read2: 0`` is a single-end run).
+``index_cycle_options``
+   The index cycle counts the run page offers: at least one, each 1 to 600,
+   none twice.
+
+Checking settings before a sync
+----------------------------------
+
+``pixi run check-settings <folder>`` checks a settings folder with the rules
+the sync uses, with no database, no network and no running SeqSetup -- for
+example on every change to your settings repository. It reads what the sync
+reads: every ``.yaml`` and ``.yml`` file in the folder's ``instruments/`` and
+the folders below it (``--instruments <path>`` names another folder inside the
+settings folder). A link to a folder is skipped, as the sync skips it. A link
+to a file is refused, as the sync refuses it: GitHub serves the link's target
+path, not the file it points to, so put the file itself in the folder. A git
+submodule is skipped, as the sync skips it, and a folder the command cannot
+open is an error, since its files go unchecked. An ``instruments/`` folder that is not
+there, or holds no instrument file, is an error. ``--local-instruments
+<file>`` also checks a local instruments file. It checks the application and
+test profiles too, in ``profiles/application_profiles/`` and
+``profiles/test_profiles/`` (``--application-profiles``, ``--test-profiles``
+name others), reading a ``.yaml`` or ``.yml`` ending in any case as the sync
+does for profiles (see :doc:`profiles`). A lab whose sync does not read
+instruments adds ``--no-instruments``. It prints one problem per line, *"instruments/miseq.yaml:30:5:
+flowcells > v2 Standard > lane: is not a key this file can have (check
+the spelling)"* for a ``lane:`` written under the flow cell's ``lanes:``, marks warnings, and ends with a failure when there is an error.
+``pixi run check-settings --schema <dir>`` writes a JSON Schema for each kind
+of instrument file, which an editor can use to point out mistakes as you
+type; the command, not the schema, is the full check.
+
 When a sync refuses an instrument file
 -----------------------------------------
 
@@ -298,8 +412,11 @@ its whole file. When anything is refused:
   their **Enabled** switches, stay as they were;
 - application profiles, test profiles and index kits are synced as usual;
 - the sync reports that it failed, on the Config Sync page and in its
-  stored status, naming each refused file and its problem, and says what
-  it did sync.
+  stored status, naming each refused file and its first problem, and says
+  what it did sync. The page lists every problem with its file, line and place,
+  warnings too, and the sync's audit row carries them; a very long list is
+  cut there and on the page, which say how many are not shown
+  (``pixi run check-settings`` lists them, up to 1,000 per file).
 
 When the synced instruments cannot be used
 --------------------------------------------

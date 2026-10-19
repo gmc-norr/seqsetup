@@ -348,11 +348,14 @@ class TestTheSyncRefusesNamesTheSheetWouldNotCarry:
 
     @pytest.mark.parametrize("change,logged", [
         pytest.param(("  - Index2\n", "  - Index2\n  - index\n"),
-                     "The data section writes the column 'Index' more than once", id="repeated"),
+                     "Bad.yaml:11:5: DataFields > item 4: writes the column 'Index' more than once",
+                     id="repeated"),
         pytest.param(("Settings:\n", "Settings:\n  Index: x\n"),
-                     "'Index' is both in Settings and a data column", id="two-places"),
+                     "Bad.yaml:6:3: Settings > Index: is both in Settings and a data column",
+                     id="two-places"),
         pytest.param(("  SoftwareVersion:", "  softwareversion:"),
-                     "'softwareversion' must be spelled SoftwareVersion", id="spelling"),
+                     "Bad.yaml:6:3: Settings > softwareversion: must be spelled SoftwareVersion",
+                     id="spelling"),
     ])
     def test_the_file_is_refused_and_logged(self, fresh_app, monkeypatch, change, logged):
         from .test_sheet_followups import _SYNC_LOGGER, _Messages, _app_profile_yaml, _sync

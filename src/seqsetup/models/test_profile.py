@@ -120,11 +120,15 @@ class TestProfile:
                 ApplicationProfileVersion: "~=1.0.0"
 
         Raises:
-            ProfileValidationError: If required fields are missing or invalid.
+            ProfileValidationError: listing every problem the input rules
+                find (input_rules/profiles.py). The sync and the settings
+                command check the file's text first, with lines.
         """
-        from ..services.profile_validator import validate_test_profile_yaml
+        from ..input_rules.profiles import ProfileValidationError, check_test_profile_data
 
-        validate_test_profile_yaml(yaml_data, source_file)
+        result = check_test_profile_data(yaml_data, source_file)
+        if not result.ok:
+            raise ProfileValidationError(result.problems, source_file)
 
         app_profiles = [
             ApplicationProfileReference.from_yaml(ap)

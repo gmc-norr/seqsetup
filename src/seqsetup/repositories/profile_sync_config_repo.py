@@ -68,11 +68,18 @@ class ProfileSyncConfigRepository(SingletonConfigRepository[ProfileSyncConfig]):
         index_kits_count: int = 0,
         repo_url: str = "",
         branch: str = "",
+        problems: Optional[list] = None,
+        problem_count: int = 0,
+        problems_left_out: int = 0,
     ) -> None:
         """Update sync status after a sync operation.
 
         ``repo_url`` and ``branch`` are the ones the sync read, stored with
         the status so no page can show it under another repository.
+        ``problems`` are the input problems as plain records, already cut to
+        the status budget by the sync; ``problem_count`` and
+        ``problems_left_out`` say how many there were and how many are not
+        stored.
         """
         config = self.get()
         config.last_sync_at = utcnow()
@@ -83,4 +90,7 @@ class ProfileSyncConfigRepository(SingletonConfigRepository[ProfileSyncConfig]):
         config.last_index_kits_sync_count = index_kits_count
         config.last_sync_repo_url = repo_url
         config.last_sync_branch = branch
+        config.last_sync_problems = list(problems or [])
+        config.last_sync_problem_count = problem_count
+        config.last_sync_problems_left_out = problems_left_out
         self.save(config)

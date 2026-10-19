@@ -114,7 +114,7 @@ cannot be listed. The sync then stores no test profile, keeps the ones
 already stored, still syncs the application profiles, and ends with
 **error**, naming each file::
 
-   Test profile files were refused, so no test profiles were stored and the stored ones are kept: profiles/test_profiles/Wgs_1.3.yaml: is empty. Synced 3 application profiles.
+   Test profile files were refused, so no test profiles were stored and the stored ones are kept: profiles/test_profiles/Wgs_1.3.yaml:1:1: the file: is empty. Synced 3 application profiles.
 
 Keeping the stored ones also keeps any version you deleted from the
 repository on purpose, which a sync without a refusal would have removed.
@@ -440,6 +440,31 @@ read.
 Validation
 ----------
 
+Every Profile File
+~~~~~~~~~~~~~~~~~~~
+
+- Every key a profile can have is in the tables above; any other key is
+  refused, also inside a test's application profile reference. A misspelt
+  key such as ``Setings:`` or ``ApplicationProfile:`` was ignored before.
+  The keys inside ``Settings`` and ``Data`` are free names (see below)
+- Values are read the plain way, as for instrument files: a whole number as
+  plain digits, true/false as ``true`` or ``false`` (``yes``, ``no``,
+  ``on`` and ``off`` are refused), a decimal number or a date in quotes.
+  YAML tags (``!!int``), anchors and aliases (``&a``, ``*a``), merge keys
+  (``<<``) and a key given twice are refused. ``012`` in a ``Settings``
+  value, written as ``10`` before, is refused: put it in quotes
+- Text is written as text: a whole number where text belongs, such as
+  ``TestType: 5`` or ``ApplicationProfileVersion: 1``, is refused -- put it
+  in quotes. Required text must hold more than spaces. A name, type, test or
+  version is at most 256 characters, a ``Description`` and a ``Settings`` or
+  ``Data`` value at most 4,096
+- Each problem is reported as *file:line:column: place: problem*, for
+  example *"profiles/test_profiles/Wgs.yaml:2:11: TestType: must be text:
+  put it in quotes"*. The **Config Sync** page lists every problem of the
+  last sync, and its message names each refused file with its first
+  problem. ``pixi run check-settings`` checks both profile folders before a
+  sync (see :doc:`instruments`, "Checking settings before a sync")
+
 Test Profile Validation
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -468,6 +493,16 @@ Application Profile Validation
 - ``ApplicationName`` may only contain letters, digits, ``_`` and ``-`` --
   it becomes a section name in the Sample Sheet (``[<name>_Settings]``),
   written exactly as given
+- When ``ApplicationType`` is ``Dragen`` (in any case, spaces around it
+  ignored), ``ApplicationName`` must be one of Illumina's applications:
+  ``BCLConvert``, ``DragenGermline``, ``DragenSomatic``, ``DragenRna``,
+  ``DragenEnrichment`` or ``DragenMethylation``, so a misspelt
+  ``DragenGermlin`` is refused. A profile of another type (``External``,
+  ``Cloud``) may use any such name
+- ``SoftwareVersion`` in ``Settings`` must be a version written as text:
+  letters, digits, ``.``, ``_`` and ``-``. ``SoftwareVersion: 4`` is
+  refused (write ``"4"``): **Mark Ready** compares it with the instrument's
+  software versions
 - ``Settings``, ``Data``, ``DataFields`` and ``Translate`` may not hold a
   hidden character anywhere -- no line break, tab or other invisible
   control character, in a key or a value. They are written into the Sample
@@ -542,9 +577,10 @@ Application Profile Validation
    these checks, cannot be read as YAML, is empty, cannot be downloaded, or
    sits in a sub-folder that cannot be listed. The sync then stores no
    application profile, keeps the ones already stored, still syncs the test
-   profiles, and ends with **error**, naming each file and why::
+   profiles, and ends with **error**, naming each file and its first
+   problem (the page lists them all)::
 
-      Application profile files were refused, so no application profiles were stored and the stored ones are kept: profiles/application_profiles/Guard_1.0.1.yaml: cannot be read as YAML: ... Synced 4 test profiles.
+      Application profile files were refused, so no application profiles were stored and the stored ones are kept: profiles/application_profiles/Guard_1.0.1.yaml:5:16: the file: a [ list ] that is not closed. Synced 4 test profiles.
 
    As for test profiles, the message also names every stored profile and
    version this sync did not read, since a version deleted from the
@@ -556,7 +592,9 @@ Application Profile Validation
    refusal. Fix the file and sync again.
 
    An application profile file is any file in the application profile
-   folder whose name ends in ``.yaml`` or ``.yml``, in any case.
+   folder whose name ends in ``.yaml`` or ``.yml``, in any case. A link to a
+   file is refused: GitHub serves the link's target path, not the file it
+   points to, so put the file itself in the folder.
 
 Runtime Validation
 ~~~~~~~~~~~~~~~~~~~

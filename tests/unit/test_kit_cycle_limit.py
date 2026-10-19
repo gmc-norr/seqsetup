@@ -6,6 +6,7 @@ depends on the kit. The lab enters the exact number per instrument and kit
 """
 
 import pytest
+import yaml
 
 from seqsetup.data import instruments as instruments_module
 from seqsetup.data.instruments import get_reagent_kit_max_cycles
@@ -18,7 +19,7 @@ from seqsetup.models.sequencing_run import (
     RunCycles,
     SequencingRun,
 )
-from seqsetup.services.instrument_validator import validate_instrument_yaml
+from seqsetup.input_rules.instruments import check_synced_instrument_file
 from seqsetup.services.validation import ValidationService
 
 NEXTSEQ = "NextSeq 1000/2000"
@@ -35,6 +36,9 @@ def _instrument_yaml(**extra) -> dict:
         "samplesheet_name": "NextSeq1k2k",
         "version": "1.0.0",
         "chemistry_type": "4-color",
+        "has_dragen_onboard": False,
+        "color_balance_enabled": False,
+        "onboard_applications": {"BCLConvert": {"software_version": "4.3.6"}},
         "flowcells": {"P3": {"lanes": 1, "reagent_kits": [50, 300]}},
         **I5_FACTS,
     }
@@ -90,16 +94,22 @@ def _cycle_errors(run):
             if e.category == "cycles_exceed_kit"]
 
 
+def _checked(data: dict):
+    """The sync's check of an instrument file holding ``data`` (the instrument
+    rulebook, docs/design/2026-10-18-input-rules-design.md)."""
+    return check_synced_instrument_file(yaml.safe_dump(data), "nextseq.yaml")
+
+
 class TestInstrumentFileValidation:
     """The sync refuses a limit that cannot be right."""
 
     def test_valid_limits_accepted(self):
-        result = validate_instrument_yaml(_instrument_yaml(reagent_kit_max_cycles={300: 338}))
-        assert result.is_valid, result.errors
-        assert not any(w.field == "reagent_kit_max_cycles" for w in result.warnings)
+        result = _checked(_instrument_yaml(reagent_kit_max_cycles={300: 338}))
+        assert result.ok, result.problems
+        assert not any(p.path[0] == "reagent_kit_max_cycles" for p in result.problems)
 
     def test_absent_is_fine(self):
-        assert validate_instrument_yaml(_instrument_yaml()).is_valid
+        assert _checked(_instrument_yaml()).ok
 
     @pytest.mark.parametrize("limits", [
         [338],                 # not a mapping
@@ -110,15 +120,16 @@ class TestInstrumentFileValidation:
         {300: 299},            # smaller than the label
     ])
     def test_bad_limits_refused(self, limits):
-        result = validate_instrument_yaml(_instrument_yaml(reagent_kit_max_cycles=limits))
-        assert not result.is_valid
-        assert any(e.field.startswith("reagent_kit_max_cycles") for e in result.errors)
+        result = _checked(_instrument_yaml(reagent_kit_max_cycles=limits))
+        assert not result.ok
+        assert any(p.level == "error" and p.path[0] == "reagent_kit_max_cycles"
+                   for p in result.problems)
 
     def test_label_no_flowcell_offers_is_a_warning(self):
-        result = validate_instrument_yaml(_instrument_yaml(reagent_kit_max_cycles={30: 60}))
-        assert result.is_valid
-        assert any(w.field == "reagent_kit_max_cycles" and "30" in w.message
-                   for w in result.warnings)
+        result = _checked(_instrument_yaml(reagent_kit_max_cycles={30: 60}))
+        assert result.ok
+        assert any(p.level == "warning" and p.path == ("reagent_kit_max_cycles", "30")
+                   for p in result.problems)
 
 
 class TestInstrumentDefinitionField:

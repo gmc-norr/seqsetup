@@ -177,7 +177,10 @@ class ApplicationProfileValidator:
             if len(versions_map) > 1:
                 version_details = ", ".join(
                     f"{ver} (from {', '.join(sorted(set(profiles)))})"
-                    for ver, profiles in sorted(versions_map.items())
+                    # As text: a profile stored before SoftwareVersion had to
+                    # be text can hold the number 4 beside "4.3.6" (input
+                    # rules step 2, sol's review P2-1).
+                    for ver, profiles in sorted(versions_map.items(), key=lambda item: str(item[0]))
                 )
                 errors.append(
                     ApplicationValidationError(

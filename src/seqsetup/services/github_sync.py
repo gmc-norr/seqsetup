@@ -10,14 +10,10 @@ from datetime import datetime
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
-import yaml
-from packaging.version import Version
-
-from ..utils.yaml_safety import safe_load_strict
 from ..data.instruments import clear_synced_instruments_cache
 from ..models.application_profile import ApplicationProfile
 from ..models.index import IndexKit
-from ..models.instrument_definition import InstrumentDefinition, InstrumentRecordError
+from ..models.instrument_definition import InstrumentDefinition
 from ..models.test_profile import TestProfile
 from ..repositories.application_profile_repo import ApplicationProfileRepository
 from ..repositories.index_kit_repo import IndexKitRepository
@@ -26,7 +22,26 @@ from ..repositories.test_profile_repo import TestProfileRepository
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
-from .instrument_validator import validate_instrument_yaml, ValidationResult
+from ..input_rules.profiles import (
+    build_application_profile,
+    build_test_profile,
+    check_application_profile_file,
+    check_test_profile_file,
+    differing_only_in_capitals,
+    repeated_app_versions,
+    repeated_test_versions,
+)
+from ..input_rules.instruments import (
+    check_synced_instrument_file,
+    definitions_from,
+    duplicate_instruments,
+)
+from ..input_rules.problems import (
+    SYNC_STATUS_BUDGET,
+    InputProblem,
+    bounded_report,
+    problem_line,
+)
 from .validation import clear_validation_cache
 from ..utils.clock import local_time, utcnow
 
@@ -84,9 +99,26 @@ def paused_page_message(since: datetime, collections: list[str],
             f"writing the {_names(collections)}. {then} to write them again.")
 
 
+class SyncResult(tuple):
+    """What a sync answers: ``(success, message, count)`` -- every caller
+    unpacks it as before -- and ``problems``, every problem the input rules
+    found in the files it read, each with its file, line and path
+    (docs/design/2026-10-18-input-rules-design.md)."""
+
+    def __new__(cls, success: bool, message: str, count: int, problems=()):
+        result = super().__new__(cls, (success, message, count))
+        result.problems = list(problems)
+        return result
+
+
 class InstrumentFileRefused(ValueError):
     """An instrument file that does not give valid instruments; the message
     says why (spec 2026-10-04 group A2, §5)."""
+
+
+class ProfileFileRefused(ValueError):
+    """A profile file the input rules refuse; the message is its first
+    problem."""
 
 
 class GitHubSyncError(Exception):
@@ -226,18 +258,38 @@ class GitHubSyncService:
         self.test_profile_repo = test_profile_repo
         self.instrument_definition_repo = instrument_definition_repo
         self.index_kit_repo = index_kit_repo
+        # Every problem the input rules found in this sync's files, errors and
+        # warnings, each with its file, line and path
+        # (docs/design/2026-10-18-input-rules-design.md).
+        self.input_problems: list[InputProblem] = []
 
-    def sync(self) -> Tuple[bool, str, int]:
+    def sync(self) -> SyncResult:
         """
         Perform full sync from GitHub.
 
         Returns:
-            Tuple of (success, message, count)
+            SyncResult: (success, message, count), with ``problems``
         """
         with _SYNC_LOCK:
-            return self._sync()
+            success, message, count = self._sync()
+            return SyncResult(success, message, count, self.input_problems)
+
+    def _store_status(self, status: str, message: str, count: int, instruments_count: int,
+                      index_kits_count: int, repo_url: str, branch: str) -> str:
+        """Store the sync's status with its problems, both cut to the status
+        budget (one MongoDB document holds them), and return the message as
+        stored: a report of thousands of problems would otherwise fill it."""
+        report = bounded_report(message, self.input_problems, SYNC_STATUS_BUDGET)
+        self.config_repo.update_sync_status(
+            status, report["message"], count, instruments_count, index_kits_count,
+            repo_url, branch,
+            problems=report["problems"], problem_count=report["problem_count"],
+            problems_left_out=report["problems_left_out"],
+        )
+        return report["message"]
 
     def _sync(self) -> Tuple[bool, str, int]:
+        self.input_problems = []
         config = self.config_repo.get()
         # Each collection this sync replaces goes on the "writing" note before
         # it is deleted, and comes off only when the whole sync has finished;
@@ -266,7 +318,8 @@ class GitHubSyncService:
                 repo,
                 config.github_branch,
                 config.application_profiles_path,
-                self._parse_application_profile,
+                check_application_profile_file,
+                build_application_profile,
                 strict=True,
                 refused=refused_apps,
                 paths=app_paths,
@@ -285,7 +338,8 @@ class GitHubSyncService:
                 repo,
                 config.github_branch,
                 config.test_profiles_path,
-                self._parse_test_profile,
+                check_test_profile_file,
+                build_test_profile,
                 strict=True,
                 refused=refused_tests,
                 paths=test_paths,
@@ -307,7 +361,7 @@ class GitHubSyncService:
                     config.instruments_path,
                     strict=True,
                 )
-                refused_instruments += self._duplicate_instruments(instruments)
+                refused_instruments += duplicate_instruments(instruments)
                 logger.info(f"Fetched {len(instruments)} instrument definitions")
 
             # Fetch index kits if enabled and repo available. A refused kit
@@ -519,7 +573,7 @@ class GitHubSyncService:
                 message = " ".join(refusals)
                 if synced:
                     message += f" Synced {', '.join(synced)}."
-                self.config_repo.update_sync_status(
+                message = self._store_status(
                     "error", message, count, instruments_count, index_kits_count,
                     config.github_repo_url, config.github_branch
                 )
@@ -536,10 +590,9 @@ class GitHubSyncService:
             if index_kits_count > 0:
                 parts.append(f"{index_kits_count} index kits")
 
-            message = f"Synced {', '.join(parts)}"
-            self.config_repo.update_sync_status(
-                "success", message, count, instruments_count, index_kits_count,
-                config.github_repo_url, config.github_branch
+            message = self._store_status(
+                "success", f"Synced {', '.join(parts)}", count, instruments_count,
+                index_kits_count, config.github_repo_url, config.github_branch
             )
 
             logger.info(f"Sync completed: {message}")
@@ -549,11 +602,11 @@ class GitHubSyncService:
             error_msg = str(e)
             if writing:
                 error_msg += " " + _PAUSED_IN_STATUS
-            logger.error(f"Sync failed: {error_msg}")
-            self.config_repo.update_sync_status(
+            error_msg = self._store_status(
                 "error", error_msg, 0, 0, 0,
                 config.github_repo_url, config.github_branch
             )
+            logger.error(f"Sync failed: {error_msg}")
             return False, f"Sync failed: {error_msg}", 0
 
         except Exception as e:
@@ -561,7 +614,7 @@ class GitHubSyncService:
             if writing:
                 error_msg += " " + _PAUSED_IN_STATUS
             logger.exception("Sync failed with unexpected error")
-            self.config_repo.update_sync_status(
+            error_msg = self._store_status(
                 "error", error_msg, 0, 0, 0,
                 config.github_repo_url, config.github_branch
             )
@@ -671,19 +724,23 @@ class GitHubSyncService:
         repo: str,
         branch: str,
         path: str,
-        parser,
+        check,
+        build,
         strict: bool = False,
         refused: Optional[list[str]] = None,
         paths: Optional[list[str]] = None,
     ) -> list:
-        """Fetch YAML files from directory recursively and parse them.
+        """Fetch YAML files from directory recursively, check each with the
+        input rules and build its profile from the checked value.
 
         Args:
             owner: GitHub owner
             repo: GitHub repo name
             branch: Branch name
             path: Directory path within repo
-            parser: Function to parse YAML into model object
+            check: the input rules for one file's text (``CheckResult``); its
+                problems join ``self.input_problems``
+            build: the profile from a checked value and the file's name
             refused: when given, each file or sub-folder that gives no
                 profile, for any reason, is added as "<path>: <problem>",
                 and a .yaml or .yml ending is read in any case (test
@@ -717,7 +774,7 @@ class GitHubSyncService:
             if item_type == "dir":
                 # Recurse into subdirectory
                 sub_profiles = self._fetch_profiles_recursive(
-                    owner, repo, branch, item_path, parser, strict=False, refused=refused,
+                    owner, repo, branch, item_path, check, build, strict=False, refused=refused,
                     paths=paths
                 )
                 profiles.extend(sub_profiles)
@@ -733,25 +790,25 @@ class GitHubSyncService:
                 if download_url:
                     try:
                         content = self._fetch_file_content(download_url)
-                        yaml_data = safe_load_strict(content)
-                        if yaml_data and not isinstance(yaml_data, dict):
-                            kind = "a list" if isinstance(yaml_data, list) else (
-                                f"{type(yaml_data).__name__} {str(yaml_data)[:40]!r}")
-                            raise ValueError(
-                                f"is not a profile: YAML read it as {kind}, not a mapping "
-                                "of fields")
-                        if yaml_data:
-                            profile = parser(yaml_data, item_name)
-                            profiles.append(profile)
-                            if paths is not None:
-                                paths.append(item_path)
-                            logger.debug(f"Parsed profile from {item_path}")
-                        elif refused is not None:
-                            refused.append(f"{item_path}: is empty")
-                    except yaml.YAMLError as e:
-                        logger.warning(f"Failed to parse YAML {item_path}: {e}")
+                        result = check(content, item_path)
+                        self.input_problems.extend(result.problems)
+                        errors = [p for p in result.problems if p.level == "error"]
+                        if errors:
+                            for error in errors:
+                                logger.warning(f"Profile file {problem_line(error)}")
+                            # The first problem only, as for instrument files:
+                            # the list of problems has them all.
+                            more = (" (and more problems in this file: see the list of problems)"
+                                    if len(errors) > 1 else "")
+                            raise ProfileFileRefused(problem_line(errors[0]) + more)
+                        profile = build(result.value, item_name)
+                        profiles.append(profile)
+                        if paths is not None:
+                            paths.append(item_path)
+                        logger.debug(f"Parsed profile from {item_path}")
+                    except ProfileFileRefused as e:
                         if refused is not None:
-                            refused.append(f"{item_path}: cannot be read as YAML: {e}")
+                            refused.append(str(e))
                     except Exception as e:
                         logger.warning(f"Failed to process {item_path}: {e}")
                         if refused is not None:
@@ -818,11 +875,25 @@ class GitHubSyncService:
                     if not download_url:
                         raise InstrumentFileRefused("has no download link")
                     content = self._fetch_file_content(download_url)
-                    try:
-                        yaml_data = safe_load_strict(content)
-                    except yaml.YAMLError as e:
-                        raise InstrumentFileRefused(f"cannot be read as YAML: {e}") from e
-                    parsed = self._parse_instruments_yaml(yaml_data, item_name)
+                    result = check_synced_instrument_file(content, item_path)
+                    self.input_problems.extend(result.problems)
+                    errors = [p for p in result.problems if p.level == "error"]
+                    if errors:
+                        for error in errors:
+                            logger.error(f"Instrument file {problem_line(error)}")
+                        # The first problem only: all of them once filled the
+                        # message, and the cut to fit the store dropped the
+                        # refusals after them and STAYS_PAUSED.
+                        more = (" (and more problems in this file: see the list of problems)"
+                                if len(errors) > 1 else "")
+                        raise InstrumentFileRefused(problem_line(errors[0]) + more)
+                    for warning in result.problems:
+                        logger.warning(f"Instrument file {problem_line(warning)}")
+                    parsed = definitions_from(result.value, item_name)
+                except InstrumentFileRefused as e:
+                    text = str(e) if str(e).startswith(item_path + ":") else f"{item_path}: {e}"
+                    refused.append(text)
+                    logger.error(f"Refused instrument file {text}")
                 except Exception as e:
                     refused.append(f"{item_path}: {e}")
                     logger.error(f"Refused instrument file {item_path}: {e}")
@@ -831,125 +902,6 @@ class GitHubSyncService:
                     logger.debug(f"Parsed {len(parsed)} instruments from {item_path}")
 
         return instruments, refused
-
-    @staticmethod
-    def _duplicate_instruments(instruments: list[InstrumentDefinition]) -> list[str]:
-        """Two instrument files may not give the same name or samplesheet
-        name (spec 2026-10-04 group A2, §1)."""
-        problems = []
-        for field_name in ("name", "samplesheet_name"):
-            seen: dict[str, str] = {}
-            for inst in instruments:
-                value = getattr(inst, field_name)
-                if value in seen:
-                    problems.append(
-                        f"{seen[value]} and {inst.source_file} both give {field_name} {value!r}"
-                    )
-                else:
-                    seen[value] = inst.source_file
-        return problems
-
-    def _parse_instruments_yaml(
-        self,
-        yaml_data,
-        filename: str,
-    ) -> list[InstrumentDefinition]:
-        """Parse YAML data into InstrumentDefinition objects.
-
-        Handles two formats:
-        1. Multi-instrument file: {'instruments': {'Name1': {...}, 'Name2': {...}}}
-        2. Single-instrument file: {'name': 'Name1', 'samplesheet_name': ...}
-
-        Raises InstrumentFileRefused, listing every problem, when any
-        instrument in the file is not valid or the file describes none: the
-        file is refused as a whole (spec 2026-10-04 group A2, §5).
-        """
-        if isinstance(yaml_data, dict) and isinstance(yaml_data.get("instruments"), dict):
-            # A multi-instrument file (like instruments.yaml)
-            entries = [
-                {**config, "name": name} if isinstance(config, dict) else config
-                for name, config in yaml_data["instruments"].items()
-            ]
-        elif isinstance(yaml_data, dict) and (
-            "samplesheet_name" in yaml_data or "chemistry_type" in yaml_data or "name" in yaml_data
-        ):
-            entries = [yaml_data]
-        else:
-            entries = []
-        if not entries:
-            raise InstrumentFileRefused("does not describe an instrument")
-
-        instruments, problems = [], []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                problems.append("an instrument entry must be a mapping")
-                continue
-            try:
-                instruments.append(self._validate_and_parse_instrument(entry, filename))
-            except InstrumentFileRefused as e:
-                problems.append(str(e))
-        if problems:
-            raise InstrumentFileRefused("; ".join(problems))
-        return instruments
-
-    def _validate_and_parse_instrument(
-        self,
-        yaml_data: dict,
-        filename: str,
-    ) -> InstrumentDefinition:
-        """Validate and parse a single instrument definition.
-
-        Args:
-            yaml_data: Instrument configuration dict
-            filename: Source filename for error reporting
-
-        Returns:
-            The InstrumentDefinition.
-
-        Raises:
-            InstrumentFileRefused: naming the instrument and every problem the
-                validator or the model found.
-        """
-        # Validate the instrument data
-        result = validate_instrument_yaml(yaml_data, filename)
-        instrument_name = yaml_data.get("name", filename)
-
-        # Log any warnings
-        for warning in result.warnings:
-            logger.warning(f"Instrument '{instrument_name}' ({filename}): {warning}")
-
-        if not result.is_valid:
-            raise InstrumentFileRefused(
-                f"{instrument_name}: " + "; ".join(str(error) for error in result.errors)
-            )
-
-        # Parse the valid instrument
-        try:
-            instrument = InstrumentDefinition.from_yaml(yaml_data, filename)
-        except InstrumentRecordError as e:
-            raise InstrumentFileRefused(str(e)) from e
-
-        # If name not in file, derive from filename
-        if not instrument.name:
-            instrument.name = filename.replace(".yaml", "").replace(".yml", "").replace("-", " ").replace("_", " ").title()
-
-        return instrument
-
-    def _parse_application_profile(
-        self,
-        yaml_data: dict,
-        filename: str,
-    ) -> ApplicationProfile:
-        """Parse YAML into ApplicationProfile."""
-        return ApplicationProfile.from_yaml(yaml_data, filename)
-
-    def _parse_test_profile(
-        self,
-        yaml_data: dict,
-        filename: str,
-    ) -> TestProfile:
-        """Parse YAML into TestProfile."""
-        return TestProfile.from_yaml(yaml_data, filename)
 
     def _kept_test_versions_not_read(self, test_profiles: list[TestProfile]) -> list[str]:
         """The stored test versions that are not among ``test_profiles``, as
@@ -978,21 +930,15 @@ class GitHubSyncService:
         a range such as "~=1.0" matches both, while an exact reference finds
         only the one spelled as it is. The profile checks have made sure each
         version is a valid one. ``paths`` are the files' paths in the repository,
-        in step with ``app_profiles``, as for ``_refuse_repeated_test_versions``."""
-        files: dict[tuple[str, Version], list[tuple[str, str]]] = {}
-        for profile, where in zip(app_profiles, paths, strict=True):
-            files.setdefault((profile.name, Version(profile.version)), []).append(
-                (where, profile.version))
-        for (name, _version), found in files.items():
-            if len(found) > 1:
-                names = sorted(where for where, _spelled in found)
-                spellings = " = ".join(sorted({spelled for _where, spelled in found}))
-                where = f"{name} {spellings} is in {', '.join(names[:-1])} and {names[-1]}"
-                logger.warning(
-                    f"Application profiles refused: {where}. A profile name and version "
-                    "may be in one file only."
-                )
-                refused.append(where + "; a profile name and version may be in one file only")
+        in step with ``app_profiles``, as for ``_refuse_repeated_test_versions``.
+        The rule is ``input_rules.profiles.repeated_app_versions``, which the
+        settings command uses too."""
+        for where in repeated_app_versions(app_profiles, paths):
+            logger.warning(
+                f"Application profiles refused: {where}. A profile name and version "
+                "may be in one file only."
+            )
+            refused.append(where + "; a profile name and version may be in one file only")
 
     def _refuse_changed_or_repeated_kits(self, kits: list[IndexKit], paths: list[str],
                                          refused: list[dict]) -> list[IndexKit]:
@@ -1049,21 +995,14 @@ class GitHubSyncService:
         can hold the same base name, and "in Wgs.yaml and Wgs.yaml" says
         nothing about where the second one is."""
         where_of = paths if paths is not None else [p.source_file for p in test_profiles]
-        files: dict[tuple[str, str], list[str]] = {}
-        # strict=True: a plain zip stops at the shorter list, so a caller that
-        # appended a profile without its path would drop the trailing profiles
-        # out of this check and sync a test and version from two files
-        # silently. Fail closed instead (batch 4 review fix E).
-        for profile, where in zip(test_profiles, where_of, strict=True):
-            files.setdefault((profile.test_type, profile.version), []).append(where)
-        for (test, version), names in files.items():
-            if len(names) > 1:
-                names = sorted(names)
-                where = f"{test} {version} is in {', '.join(names[:-1])} and {names[-1]}"
-                logger.warning(
-                    f"Test profiles refused: {where}. A test and version may be in one file only."
-                )
-                refused.append(where)
+        # input_rules.profiles.repeated_test_versions zips with strict=True: a
+        # caller that appended a profile without its path fails closed
+        # (batch 4 review fix E).
+        for where in repeated_test_versions(test_profiles, where_of):
+            logger.warning(
+                f"Test profiles refused: {where}. A test and version may be in one file only."
+            )
+            refused.append(where)
 
     @staticmethod
     def _refuse_tests_differing_only_in_capitals(test_profiles: list[TestProfile],
@@ -1077,16 +1016,7 @@ class GitHubSyncService:
         the files' paths in the repository, in step with ``test_profiles``, as
         for ``_refuse_repeated_test_versions`` (the night run's Q7)."""
         where_of = paths if paths is not None else [p.source_file for p in test_profiles]
-        files: dict[str, dict[str, list[str]]] = {}
-        for profile, where in zip(test_profiles, where_of, strict=True):
-            spellings = files.setdefault(profile.test_type.lower(), {})
-            spellings.setdefault(profile.test_type, []).append(where)
-        for spellings in files.values():
-            if len(spellings) < 2:
-                continue
-            parts = [f"{test} in {', '.join(sorted(names))}"
-                     for test, names in sorted(spellings.items())]
-            where = f"{', '.join(parts[:-1])} and {parts[-1]} differ only in capitals"
+        for where in differing_only_in_capitals(test_profiles, where_of):
             logger.warning(
                 f"Test profiles refused: {where}. Two tests may not differ only in capitals."
             )

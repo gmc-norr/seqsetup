@@ -68,3 +68,12 @@ class TestTheShippedExamplesFitTogether:
         offered = _offered()
         unoffered = {yaml.safe_load(p.read_text())["ApplicationName"] for p in PROFILES} - set(offered)
         assert not unoffered, sorted(unoffered)
+
+
+def test_the_input_rules_take_illumina_s_application_names():
+    """The rules' own list against the list written out here from Illumina's
+    sources, so a wrong name added to either one fails."""
+    from seqsetup.input_rules.base import ILLUMINA_APPLICATION_NAMES
+
+    assert sorted(ILLUMINA_APPLICATION_NAMES) == sorted(ILLUMINA_APPS)
+    assert len(set(ILLUMINA_APPLICATION_NAMES)) == len(ILLUMINA_APPLICATION_NAMES)

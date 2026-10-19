@@ -21,6 +21,9 @@ serve = { cmd = "PYTHONPATH=src python -m seqsetup.app", depends-on = ["css"] }
 mock-api = "uvicorn tools.mock_igene_api:app --port 8100"
 create-admin = "PYTHONPATH=src python -m seqsetup.create_admin"
 use-local-sign-in = "PYTHONPATH=src python -m seqsetup.use_local_sign_in"
+# Check a settings folder with the rules the configuration sync uses: no
+# database, no network, no running app (docs/design/2026-10-18-input-rules-design.md).
+check-settings = "PYTHONPATH=src python -m seqsetup.input_rules.cli"
 tailwind-install = "bash tools/install-tailwind.sh"
 css = { cmd = "bash -c '.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --minify'", depends-on = ["tailwind-install"] }
 css-watch = { cmd = "bash -c '.pixi/bin/tailwindcss -i src/seqsetup/static/css/input.css -o src/seqsetup/static/css/app.css --watch'", depends-on = ["tailwind-install"] }

@@ -20,15 +20,20 @@ from seqsetup.data.instruments import InstrumentConfigError, _find_config_path
 SHIPPED = Path(__file__).resolve().parents[2] / "config" / "instruments.yaml"
 
 # An operator's own file: one instrument, with the facts the start-up check
-# requires of every instrument (see test_instrument_file_check.py).
+# requires of every instrument (see test_instrument_file_check.py and
+# docs/design/2026-10-18-input-rules-design.md: a fact that changes a sheet or
+# a check is written out).
 OWN_FILE = {
     "instruments": {
         "OnlyInTheOperatorsFile": {
             "samplesheet_name": "OnlyInTheOperatorsFile",
             "samplesheet_versions": [2],
             "chemistry_type": "2-color",
+            "has_dragen_onboard": False,
             "i5_workflows": [{"name": "Standard", "i5_read_orientation": "forward"}],
             "runinfo_marks_i5_reversed": False,
+            "color_balance_enabled": False,
+            "onboard_applications": {"BCLConvert": {"software_version": "4.3.6"}},
             "flowcells": {"FC1": {"description": "One lane", "lanes": 1,
                                   "reagent_kits": [300]}},
         },
@@ -102,12 +107,6 @@ class TestTheVariableIsSetAndTheFileIsMissing:
 
         with pytest.raises(InstrumentConfigError):
             _find_config_path()
-
-    def test_a_reload_raises_too(self, monkeypatch, tmp_path, keep_loaded_config):
-        monkeypatch.setenv("INSTRUMENTS_CONFIG", str(tmp_path / "not-there.yaml"))
-
-        with pytest.raises(InstrumentConfigError):
-            instruments_module.reload_config()
 
     def test_a_directory_is_not_a_file_to_read(self, monkeypatch, tmp_path):
         monkeypatch.setenv("INSTRUMENTS_CONFIG", str(tmp_path))

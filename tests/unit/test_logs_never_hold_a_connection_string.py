@@ -10,11 +10,14 @@ log file by the back door.
 """
 
 import logging
+import random
+import re
+import time
 
 import pytest
 
 from seqsetup.services.log_capture import (LogCaptureHandler, ScrubbingFilter,
-                                           scrub_log_message)
+                                           _scrub_url_credentials, scrub_log_message)
 
 PASSWORD = "sUp3r-s3cr3t-pw"
 URI = f"mongodb://seqsetup_app:{PASSWORD}@mongodb:27017/seqsetup?authSource=seqsetup"
@@ -100,3 +103,43 @@ class TestATracebackIsScrubbedToo:
         rendered = logging.Formatter("%(message)s").format(record)
 
         assert "RuntimeError" in rendered and "Traceback" in rendered, rendered
+
+
+class TestALongWordIsScrubbedQuickly:
+    """The connection-string rule tried every letter of a long word as the
+    start of a scheme, so its time grew with the square of the word's length:
+    20,000 letters took 2.5 s. Every log line and every audit row goes through
+    it, and one long key in a settings file stalled both. The rule now starts
+    only where a run of scheme characters starts, and scrubs exactly what it
+    scrubbed before."""
+
+    OLD = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^/\s@]*@")
+
+    @pytest.mark.parametrize("text", [
+        "x" * 50_000,
+        "a1" * 25_000,
+        "http://" + "x" * 50_000,
+        "1" * 50_000 + "http://u:pw@h",
+        "a://" * 12_500,
+    ], ids=["letters", "letters and digits", "after a scheme", "digits", "schemes"])
+    def test_in_well_under_a_second(self, text):
+        start = time.perf_counter()
+
+        scrub_log_message(text)
+
+        assert time.perf_counter() - start < 1.0
+
+    @pytest.mark.parametrize("text", [
+        f"1http://u:{PASSWORD}@h", f"x-mongodb://u:{PASSWORD}@h", f"a://u@b://p@h",
+        f"a://b://c@h", f"http://h/p@x", f"mailto:u@h", f"\u212aa://u:{PASSWORD}@h",
+    ])
+    def test_the_same_as_before_for_each_kind_of_address(self, text):
+        assert _scrub_url_credentials(text) == self.OLD.sub(r"\1***@", text)
+
+    def test_the_same_as_before_for_any_text(self):
+        rng = random.Random(20261018)
+        alphabet = "aZk1+.-:/@ \tx\u212a\u017f"
+        for _ in range(20_000):
+            text = "".join(rng.choice(alphabet) for _ in range(rng.randrange(40)))
+
+            assert _scrub_url_credentials(text) == self.OLD.sub(r"\1***@", text), repr(text)

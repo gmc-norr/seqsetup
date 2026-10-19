@@ -17,26 +17,18 @@ from ..models.application_profile import ApplicationProfile
 from ..models.sample import Sample
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
-from .sheet_text import MISMATCH_COLUMNS, is_allowed_mismatch
+from .sheet_text import (
+    MISMATCH_COLUMNS,
+    SPELLED_COLUMNS_ANY,
+    SPELLED_COLUMNS_BCLCONVERT,
+    SPELLED_SETTINGS_ANY,
+    SPELLED_SETTINGS_BCLCONVERT,
+    is_allowed_mismatch,
+)
 from .versioned_tests import resolve_test
 
 BCLCONVERT = "BCLConvert"
 
-# Names SeqSetup fills or reads itself, in the one spelling it uses. Another
-# spelling of one of them is refused (spec §1 problem 7).
-SPELLED_SETTINGS_ANY = ("SoftwareVersion",)
-# Columns the writer fills from the sample in every application's section
-# (spec 2026-10-12 batch 2, 2b): another spelling would get the profile's Data
-# default in every row instead of each sample's own value.
-SPELLED_COLUMNS_ANY = ("Sample_Project", "Sample_Name")
-SPELLED_COLUMNS_BCLCONVERT = (
-    "Sample_ID", "Lane", "Index", "Index2", "OverrideCycles",
-    "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2",
-)
-SPELLED_SETTINGS_BCLCONVERT = (
-    "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2",
-    "NoLaneSplitting", "CreateFastqForIndexReads", "AdapterBehavior",
-)
 
 # What every sync renews; left out of the fingerprint so a sync that changes
 # nothing else is not a change.
