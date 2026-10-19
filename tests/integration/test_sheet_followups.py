@@ -46,9 +46,10 @@ TEST_PROFILE_YAML = (
     "TestName: WGS\n"
     "Description: Whole genome\n"
     'Version: "1.0.0"\n'
-    "ApplicationProfiles:\n"
-    "  - ApplicationProfileName: GuardProfile\n"
-    '    ApplicationProfileVersion: "1.0.0"\n'
+    "TestApplicationProfiles:\n"
+    "  OnInstrument:\n"
+    "    - ApplicationProfileName: GuardProfile\n"
+    '      ApplicationProfileVersion: "1.0.0"\n'
 )
 
 
@@ -59,9 +60,10 @@ def _app_profile_yaml(name: str, software_version: str) -> str:
         f"ApplicationProfileName: {name}\n"
         'ApplicationProfileVersion: "1.0.0"\n'
         "ApplicationName: BCLConvert\n"
-        "ApplicationType: BclConvert\n"
+        "ApplicationType: Dragen\n"
         "Settings:\n"
         f"  SoftwareVersion: {software_version}\n"
+        "Data: {}\n"
         "DataFields:\n"
         "  - Sample_ID\n"
         "  - Index\n"

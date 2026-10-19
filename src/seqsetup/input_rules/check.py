@@ -32,15 +32,19 @@ class Finding:
 @dataclass
 class CheckResult:
     """The checked value (None when there is an error), every problem found,
-    and a note saying more checks are waiting when some could not run."""
+    and a note saying more checks are waiting when some could not run.
+    ``skipped`` names why a file SeqSetup does not read was left alone (an
+    application profile for another tool: its ApplicationType); such a file
+    has no value and is not ok to build from."""
 
     value: Any
     problems: list[InputProblem] = field(default_factory=list)
     note: str = ""
+    skipped: str = ""
 
     @property
     def ok(self) -> bool:
-        return not any(problem.level == "error" for problem in self.problems)
+        return not self.skipped and not any(problem.level == "error" for problem in self.problems)
 
 
 CrossCheck = Callable[[Any], Iterable[Finding]]

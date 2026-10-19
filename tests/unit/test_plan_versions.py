@@ -26,8 +26,8 @@ def _sample(sample_id, test="WGS", i7="ACGTACGTAC", i5="TTGGCCAATT", version="1"
 def _test(version, bcl_version="1.0.0", test="WGS"):
     return _TestProfile.from_yaml({
         "TestType": test, "TestName": test, "Description": test, "Version": version,
-        "ApplicationProfiles": [{"ApplicationProfileName": "BCLX",
-                                 "ApplicationProfileVersion": bcl_version}],
+        "TestApplicationProfiles": {"OnInstrument": [{"ApplicationProfileName": "BCLX",
+                                 "ApplicationProfileVersion": bcl_version}]},
     }, f"{test}_{version}.yaml")
 
 

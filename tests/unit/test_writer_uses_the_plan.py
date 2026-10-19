@@ -115,7 +115,10 @@ class TestTodaysSheet:
                 sorted((SHIPPED / "application_profiles" / "dragen").glob("*.yaml"))]
         wgs = _TestProfile.from_yaml(
             yaml.safe_load((SHIPPED / "test_profiles" / "Wgs.yaml").read_text()), "Wgs.yaml")
-        assert _export(_today_run(), apps, [wgs]) == TODAY
+        # The one difference since: the run's id is written as RunDescription
+        # (docs/design/2026-10-19-lab-profile-layout-design.md).
+        assert _export(_today_run(), apps, [wgs]) == TODAY.replace(
+            "RunName,A3-today\n", "RunName,A3-today\nRunDescription,a3-today\n")
 
 
 class TestOneSectionPerApplication:

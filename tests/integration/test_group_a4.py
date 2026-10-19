@@ -15,9 +15,10 @@ def _test_yaml(version: str, test: str = "WGS") -> str:
         f"TestName: {test}\n"
         "Description: Whole genome\n"
         f'Version: "{version}"\n'
-        "ApplicationProfiles:\n"
-        "  - ApplicationProfileName: GuardProfile\n"
-        '    ApplicationProfileVersion: "1.0.0"\n'
+        "TestApplicationProfiles:\n"
+        "  OnInstrument:\n"
+        "    - ApplicationProfileName: GuardProfile\n"
+        '      ApplicationProfileVersion: "1.0.0"\n'
     )
 
 

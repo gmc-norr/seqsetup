@@ -352,3 +352,52 @@ class TestThePixiTask:
     def test_is_defined(self):
         assert 'check-settings = "PYTHONPATH=src python -m seqsetup.input_rules.cli"' in (
             REPO / "pixi.toml").read_text()
+
+
+PIPELINE = (
+    "ApplicationProfileName: NfCoreRareDisease\n"
+    'ApplicationProfileVersion: "1.1"\n'
+    "ApplicationType: nextflow\n"
+    "ApplicationName: nf-core/raredisease\n"
+)
+
+
+class TestProfilesForOtherTools:
+    """A profile whose type is not Dragen is skipped, named and counted apart
+    from the files checked (docs/design/2026-10-19-lab-profile-layout-design.md)."""
+
+    def test_it_is_named_and_counted_apart(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        (folder / "profiles" / "application_profiles" / "NfCore.yaml").write_text(PIPELINE)
+
+        done = _run(str(folder))
+
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert done.stdout.splitlines() == [
+            "profiles/application_profiles/NfCore.yaml: skipped, a profile for other tools "
+            "(ApplicationType nextflow, not Dragen)"]
+        assert "3 files checked, 1 skipped, no errors" in done.stderr
+
+    def test_a_folder_of_only_skipped_profiles_is_an_error(self, tmp_path):
+        """For SeqSetup it holds no profile, as an empty folder; a sync would
+        keep the stored profiles, or store none."""
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        (folder / "profiles" / "application_profiles" / "BCLConvertNextera.yaml").unlink()
+        (folder / "profiles" / "application_profiles" / "NfCore.yaml").write_text(PIPELINE)
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert done.stdout.splitlines()[-1] == (
+            "profiles/application_profiles/: holds no profile for the instrument: every file "
+            "is skipped, a profile for other tools")
+
+    def test_an_illumina_application_of_another_type_is_refused(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        app = folder / "profiles" / "application_profiles" / "BCLConvertNextera.yaml"
+        app.write_text(app.read_text().replace("ApplicationType: Dragen", "ApplicationType: External"))
+
+        done = _run(str(folder))
+
+        assert done.returncode == 1
+        assert "ApplicationType: must be Dragen: BCLConvert is one of Illumina's applications" in done.stdout

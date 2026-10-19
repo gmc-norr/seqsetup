@@ -90,9 +90,10 @@ TestType: WGS
 TestName: WGS
 Description: Whole Genome Sequencing
 Version: 1.0.0
-ApplicationProfiles:
-  - ApplicationProfileName: BCLConvertTest
-    ApplicationProfileVersion: "~=1.0.0"
+TestApplicationProfiles:
+  OnInstrument:
+    - ApplicationProfileName: BCLConvertTest
+      ApplicationProfileVersion: "~=1.0.0"
 """
 
 
@@ -144,10 +145,10 @@ class TestUnknownKeys:
         assert _only(_test(TEST + "Owner: lab\n")).path == ("Owner",)
 
     def test_in_a_reference(self):
-        error = _only(_test(TEST + "    Note: x\n"))
+        error = _only(_test(TEST + "      Note: x\n"))
 
-        assert error.path == ("ApplicationProfiles", 0, "Note")
-        assert "ApplicationProfiles > item 1 > Note: is not a key" in problem_line(error)
+        assert error.path == ("TestApplicationProfiles", "OnInstrument", 0, "Note")
+        assert "TestApplicationProfiles > OnInstrument > item 1 > Note: is not a key" in problem_line(error)
 
 
 class TestRequiredKeys:
@@ -160,25 +161,25 @@ class TestRequiredKeys:
         assert ((key,), "is required") in _errors(_app(text))
 
     @pytest.mark.parametrize("key", ["TestType", "TestName", "Description", "Version",
-                                     "ApplicationProfiles"])
+                                     "TestApplicationProfiles"])
     def test_of_a_test_profile(self, key):
         rows = TEST.splitlines(keepends=True)
-        if key == "ApplicationProfiles":
+        if key == "TestApplicationProfiles":
             rows = rows[:4]
         text = "".join(r for r in rows if not r.startswith(f"{key}:"))
 
         assert ((key,), "is required") in _errors(_test(text))
 
     def test_a_reference_s_name(self):
-        text = TEST.replace("  - ApplicationProfileName: BCLConvertTest\n    ApplicationProfileVersion",
-                            "  - ApplicationProfileVersion")
+        text = TEST.replace("    - ApplicationProfileName: BCLConvertTest\n      ApplicationProfileVersion",
+                            "    - ApplicationProfileVersion")
 
-        assert (("ApplicationProfiles", 0, "ApplicationProfileName"), "is required") in _errors(_test(text))
+        assert (("TestApplicationProfiles", "OnInstrument", 0, "ApplicationProfileName"), "is required") in _errors(_test(text))
 
     def test_a_reference_s_version(self):
-        text = TEST.replace('    ApplicationProfileVersion: "~=1.0.0"\n', "")
+        text = TEST.replace('      ApplicationProfileVersion: "~=1.0.0"\n', "")
 
-        assert (("ApplicationProfiles", 0, "ApplicationProfileVersion"), "is required") in _errors(_test(text))
+        assert (("TestApplicationProfiles", "OnInstrument", 0, "ApplicationProfileVersion"), "is required") in _errors(_test(text))
 
 
 class TestFilledText:
@@ -205,7 +206,7 @@ class TestFilledText:
         """SpecifierSet("") and SpecifierSet(" ") are valid specifiers."""
         text = TEST.replace('ApplicationProfileVersion: "~=1.0.0"', f"ApplicationProfileVersion: {version}")
 
-        assert _only(_test(text)).path == ("ApplicationProfiles", 0, "ApplicationProfileVersion")
+        assert _only(_test(text)).path == ("TestApplicationProfiles", "OnInstrument", 0, "ApplicationProfileVersion")
 
     def test_text_with_spaces_around_is_kept_as_written(self):
         result = _test(TEST.replace("TestName: WGS", "TestName: ' WGS '"))
@@ -264,7 +265,6 @@ class TestEveryBoundAtItsEdge:
 
     @pytest.mark.parametrize("old, key", [
         ("ApplicationProfileName: BCLConvertTest", ("ApplicationProfileName",)),
-        ("ApplicationType: Dragen", ("ApplicationType",)),
     ])
     def test_text_in_an_application_profile(self, old, key):
         name = key[0]
@@ -273,12 +273,22 @@ class TestEveryBoundAtItsEdge:
         assert _errors(_app(APP.replace(old, f"{name}: " + "a" * 257))) == [
             (key, "must be at most 256 characters")]
 
+    def test_the_type_of_an_application_profile(self):
+        """Only a Dragen type is checked (a file of another type is skipped,
+        docs/design/2026-10-19-lab-profile-layout-design.md), so the edge is
+        taken on Dragen padded with spaces, which still reads as Dragen."""
+        def typed(length):
+            return APP.replace("ApplicationType: Dragen", f'ApplicationType: "Dragen{" " * (length - 6)}"')
+
+        assert _errors(_app(typed(256))) == []
+        assert _errors(_app(typed(257))) == [(("ApplicationType",), "must be at most 256 characters")]
+
     @pytest.mark.parametrize("old, key, most", [
         ("TestType: WGS", ("TestType",), 256),
         ("TestName: WGS", ("TestName",), 256),
         ("Description: Whole Genome Sequencing", ("Description",), 4096),
-        ("  - ApplicationProfileName: BCLConvertTest",
-         ("ApplicationProfiles", 0, "ApplicationProfileName"), 256),
+        ("    - ApplicationProfileName: BCLConvertTest",
+         ("TestApplicationProfiles", "OnInstrument", 0, "ApplicationProfileName"), 256),
     ])
     def test_text_in_a_test_profile(self, old, key, most):
         start = old[:old.index(":") + 2]
@@ -408,13 +418,21 @@ class TestTheDragenType:
         assert _errors(result) == []
         assert build_application_profile(result.value, "app.yaml").translate == {}
 
-    def test_another_type_may_leave_each_section_out_or_empty(self):
-        text = _external(APP)
+    def test_another_type_is_skipped_whatever_its_sections(self):
+        """A file whose type is not Dragen is left to other tools, unchecked
+        (docs/design/2026-10-19-lab-profile-layout-design.md)."""
+        text = _external(APP.replace("ApplicationName: BCLConvert", "ApplicationName: CloudGenomics"))
         for key in ("Settings", "Data", "Translate"):
             text = _without(text, key)
         text = text.replace("  - IndexI7\n", "").replace("  - BarcodeMismatchesIndex1\n", "") + "Settings:\n"
 
-        assert _errors(_app(text)) == []
+        result = _app(text)
+        assert (result.skipped, result.problems) == ("External", [])
+
+    def test_another_type_naming_an_illumina_application_is_refused(self):
+        assert _errors(_app(_external(APP))) == [
+            (("ApplicationType",), "must be Dragen: BCLConvert is one of Illumina's applications, "
+                                   "which SeqSetup writes into the Sample Sheet")]
 
 
 class TestApplicationNames:
@@ -425,15 +443,13 @@ class TestApplicationNames:
         assert error.path == ("ApplicationName",)
         assert "is not one of Illumina's application names" in error.message
 
-    def test_an_external_profile_may_name_its_own(self):
-        text = _external(APP.replace("ApplicationName: BCLConvert", "ApplicationName: CloudGenomics"))
+    @pytest.mark.parametrize("name", ["CloudGenomics", "'Cloud Genomics'", "nf-core/raredisease"])
+    def test_an_external_profile_s_name_is_not_checked(self, name):
+        """It is skipped, never written into the sheet
+        (docs/design/2026-10-19-lab-profile-layout-design.md)."""
+        result = _app(_external(APP.replace("ApplicationName: BCLConvert", f"ApplicationName: {name}")))
 
-        assert _errors(_app(text)) == []
-
-    def test_an_external_name_is_still_a_plain_name(self):
-        text = _external(APP.replace("ApplicationName: BCLConvert", "ApplicationName: 'Cloud Genomics'"))
-
-        assert _only(_app(text)).path == ("ApplicationName",)
+        assert (result.skipped, result.problems) == ("External", [])
 
 
 class TestSoftwareVersion:
@@ -562,7 +578,7 @@ class TestTheConvertedProfile:
         assert (profile.test_type, profile.test_name, profile.description, profile.version) == (
             raw["TestType"], raw["TestName"], raw["Description"], raw["Version"])
         assert [(r.profile_name, r.profile_version) for r in profile.application_profiles] == [
-            (r["ApplicationProfileName"], r["ApplicationProfileVersion"]) for r in raw["ApplicationProfiles"]]
+            (r["ApplicationProfileName"], r["ApplicationProfileVersion"]) for r in raw["TestApplicationProfiles"]["OnInstrument"]]
         stored = StoredTestProfile.from_dict(bson.decode(bson.encode(profile.to_dict())))
         assert stored.to_dict() == profile.to_dict()
 

@@ -110,7 +110,9 @@ profile is almost always the wrong folder, or one whose instrument profiles
 are not added yet (as the lab's is at 3d0db82), and wiping SeqSetup's
 profiles for it would stop every run's Check. The refusal names the skipped
 files, so the admin sees why. A SeqSetup with no stored profiles stores none
-and is not refused, as today.
+and is not refused, as today. `pixi run check-settings`, which has no stored
+profiles to keep, reports such a folder as an error, as it does an empty one:
+for SeqSetup it holds no profile.
 
 **Sample Sheet v2.** `[Header]` always writes `RunDescription,<run id>`, after
 `RunName`, through `_escape_identifier` (a UUID passes unchanged).

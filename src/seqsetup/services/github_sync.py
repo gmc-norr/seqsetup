@@ -30,6 +30,7 @@ from ..input_rules.profiles import (
     differing_only_in_capitals,
     repeated_app_versions,
     repeated_test_versions,
+    shown_type,
 )
 from ..input_rules.instruments import (
     check_synced_instrument_file,
@@ -79,6 +80,18 @@ def _refused_kits_text(refused_kits: list[dict]) -> str:
             + "; ".join(f"{r['path']} ({r['kit']}): {r['reason']}" if r["kit"]
                         else f"{r['path']}: {r['reason']}" for r in refused_kits)
             + ".")
+
+
+def _skipped_list(skipped: list[tuple[str, str]]) -> str:
+    return ", ".join(f"{path} ({shown_type(kind)})" for path, kind in skipped)
+
+
+def _skipped_text(skipped: list[tuple[str, str]]) -> str:
+    """The application profile files a sync left to other tools, for its
+    message (docs/design/2026-10-19-lab-profile-layout-design.md)."""
+    files = "file" if len(skipped) == 1 else "files"
+    return (f"Skipped {len(skipped)} application profile {files} for other tools "
+            f"(its type is not Dragen): {_skipped_list(skipped)}.")
 
 
 def unfinished_sync_message(since: datetime, collections: list[str]) -> str:
@@ -313,6 +326,7 @@ class GitHubSyncService:
             # run get either (outside review of f490536, F1 and F10).
             refused_apps: list[str] = []
             app_paths: list[str] = []
+            skipped_apps: list[tuple[str, str]] = []
             app_profiles = self._fetch_profiles_recursive(
                 owner,
                 repo,
@@ -323,6 +337,7 @@ class GitHubSyncService:
                 strict=True,
                 refused=refused_apps,
                 paths=app_paths,
+                skipped=skipped_apps,
             )
             self._refuse_repeated_app_versions(app_profiles, refused_apps, app_paths)
             logger.info(f"Fetched {len(app_profiles)} application profiles")
@@ -394,9 +409,19 @@ class GitHubSyncService:
             existing_app_profiles = self.app_profile_repo.collection.count_documents({})
             existing_test_profiles = self.test_profile_repo.collection.count_documents({})
             if not refused_apps:
-                self._guard_against_destructive_replace(
-                    existing_app_profiles, len(app_profiles), "application profiles"
-                )
+                try:
+                    self._guard_against_destructive_replace(
+                        existing_app_profiles, len(app_profiles), "application profiles"
+                    )
+                except GitHubSyncError as e:
+                    # Every file skipped: say which, not only that none is left
+                    # (sol's review of the design).
+                    if not skipped_apps:
+                        raise
+                    raise GitHubSyncError(
+                        f"{e}. Every application profile file was skipped, as one for other "
+                        f"tools (its type is not Dragen): {_skipped_list(skipped_apps)}."
+                    ) from e
             if not refused_tests:
                 self._guard_against_destructive_replace(
                     existing_test_profiles, len(test_profiles), "test profiles"
@@ -573,6 +598,8 @@ class GitHubSyncService:
                 message = " ".join(refusals)
                 if synced:
                     message += f" Synced {', '.join(synced)}."
+                if skipped_apps:
+                    message += " " + _skipped_text(skipped_apps)
                 message = self._store_status(
                     "error", message, count, instruments_count, index_kits_count,
                     config.github_repo_url, config.github_branch
@@ -590,8 +617,11 @@ class GitHubSyncService:
             if index_kits_count > 0:
                 parts.append(f"{index_kits_count} index kits")
 
+            done = f"Synced {', '.join(parts)}"
+            if skipped_apps:
+                done += ". " + _skipped_text(skipped_apps)
             message = self._store_status(
-                "success", f"Synced {', '.join(parts)}", count, instruments_count,
+                "success", done, count, instruments_count,
                 index_kits_count, config.github_repo_url, config.github_branch
             )
 
@@ -729,6 +759,7 @@ class GitHubSyncService:
         strict: bool = False,
         refused: Optional[list[str]] = None,
         paths: Optional[list[str]] = None,
+        skipped: Optional[list[tuple[str, str]]] = None,
     ) -> list:
         """Fetch YAML files from directory recursively, check each with the
         input rules and build its profile from the checked value.
@@ -750,6 +781,10 @@ class GitHubSyncService:
                 is appended, in step with the returned list, so a refusal can
                 name a file by its path and not by a base name two folders
                 can share
+            skipped: when given, each file ``check`` leaves alone (an
+                application profile for other tools) is added as (path,
+                ApplicationType) and gives no profile
+                (docs/design/2026-10-19-lab-profile-layout-design.md)
 
         Returns:
             List of parsed profile objects
@@ -775,7 +810,7 @@ class GitHubSyncService:
                 # Recurse into subdirectory
                 sub_profiles = self._fetch_profiles_recursive(
                     owner, repo, branch, item_path, check, build, strict=False, refused=refused,
-                    paths=paths
+                    paths=paths, skipped=skipped
                 )
                 profiles.extend(sub_profiles)
 
@@ -791,6 +826,12 @@ class GitHubSyncService:
                     try:
                         content = self._fetch_file_content(download_url)
                         result = check(content, item_path)
+                        if result.skipped:
+                            if skipped is None:
+                                raise ProfileFileRefused(f"{item_path}: is not a file this folder reads")
+                            skipped.append((item_path, result.skipped))
+                            logger.info(f"Skipped {item_path}: a profile for other tools")
+                            continue
                         self.input_problems.extend(result.problems)
                         errors = [p for p in result.problems if p.level == "error"]
                         if errors:
