@@ -46,6 +46,13 @@ _HALF = "holds half of a character (a \\uD800-\\uDFFF escape): write the whole c
 _TOO_LONG = "is too long a number to read"
 _CONTROL = "a control character (such as a form feed or NUL) a YAML file cannot hold: remove it"
 _TOO_DEEP = "nests lists and maps too deep to read"
+# The wording of a key given twice, which the kit checker recognises to keep
+# the upload's ``repeated_names`` audit reason.
+GIVEN_TWICE = "is given twice in one map"
+# How much of a value a message may quote. ``values_safe`` quoted the whole
+# scalar, so a 100,000-character value gave a message just as long, shown in
+# the admin's HTML and printed by the settings command.
+MOST_QUOTED = 60
 
 # A fixed explanation per kind of parser error, chosen by the parser's own
 # wording but never repeating it: that text can quote the line, and the line
@@ -168,7 +175,10 @@ class _Builder:
 
     def _refuse(self, node, path, message) -> None:
         if self.values_safe and isinstance(node, yaml.ScalarNode):
-            message = f"{node.value!r}: {message}"
+            shown = node.value
+            if len(shown) > MOST_QUOTED:
+                shown = shown[:MOST_QUOTED] + "…"
+            message = f"{shown!r}: {message}"
         self.problems.add(node.start_mark, path, message)
 
     def build(self, node, path=()):
@@ -197,7 +207,7 @@ class _Builder:
             if key in first_line:
                 self.problems.add(
                     key_node.start_mark, key_path,
-                    f"is given twice in one map (also on line {first_line[key]})",
+                    f"{GIVEN_TWICE} (also on line {first_line[key]})",
                 )
                 continue
             first_line[key] = key_node.start_mark.line + 1
