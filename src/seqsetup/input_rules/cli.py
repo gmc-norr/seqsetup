@@ -4,9 +4,9 @@ the configuration sync uses, with no database, no network and no running app
 
 A lab runs it on its settings repository before a sync, or on every change.
 It prints one problem per line, ``file:line:column: place: problem``, warnings
-marked, and exits 1 when there is an error. It checks instrument files and
-application and test profiles; each later step of the input rules adds its
-files here.
+marked, and exits 1 when there is an error. It checks instrument files,
+application and test profiles and index kit files; each later step of the
+input rules adds its files here.
 
 ``--schema <dir>`` writes a JSON Schema per document for editors. A schema is
 a help, not the authority: it cannot express keys given twice, how a value is
@@ -28,6 +28,8 @@ from .instruments import (
     definitions_from,
     duplicate_instruments,
 )
+from ..services.index_validator import IndexValidator
+from .kits import KitRules, build_kit, check_index_kit_file, repeated_kit_versions
 from .problems import problem_line
 from .profiles import (
     ApplicationProfileRules,
@@ -49,6 +51,7 @@ SCHEMAS = {
         LocalInstrumentsFileRules, "The local instruments file (config/instruments.yaml)."),
     "application-profile.schema.json": (ApplicationProfileRules, "An application profile."),
     "test-profile.schema.json": (TestProfileRules, "A test profile."),
+    "index-kit.schema.json": (KitRules, "An index kit file."),
 }
 _NOT_THE_AUTHORITY = (
     " A help for editors, not the authority: keys given twice, how a value is "
@@ -63,6 +66,11 @@ def _write_schemas(folder: Path) -> None:
         schema = rulebook.model_json_schema()
         schema["description"] = what + _NOT_THE_AUTHORITY
         (folder / name).write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
+
+
+def _built_kit(value, filename: str):
+    """The kit a checked file describes, as the sync builds it."""
+    return build_kit(value, created_by="github_sync", source="github")
 
 
 class _Tally:
@@ -166,6 +174,10 @@ def main(argv=None) -> int:
                              "(default: profiles/application_profiles)")
     parser.add_argument("--test-profiles", default="profiles/test_profiles",
                         help="the test profile folder inside FOLDER (default: profiles/test_profiles)")
+    parser.add_argument("--index-kits", default="index_kits",
+                        help="the index kit folder inside FOLDER (default: index_kits)")
+    parser.add_argument("--no-index-kits", action="store_true",
+                        help="the sync does not read index kits: do not check an index kit folder")
     parser.add_argument("--local-instruments", type=Path,
                         help="also check a local instruments file, such as config/instruments.yaml")
     parser.add_argument("--schema", type=Path,
@@ -183,7 +195,8 @@ def main(argv=None) -> int:
     folders = {}
     for option, value in (("--instruments", args.instruments),
                           ("--application-profiles", args.application_profiles),
-                          ("--test-profiles", args.test_profiles)):
+                          ("--test-profiles", args.test_profiles),
+                          ("--index-kits", args.index_kits)):
         inside = PurePosixPath(value)
         if inside.is_absolute() or ".." in inside.parts:
             print(f"{option} names a folder inside {args.folder}, as the sync reads it", file=sys.stderr)
@@ -213,6 +226,25 @@ def main(argv=None) -> int:
     for problem in repeated_test_versions(tests, test_paths) + differing_only_in_capitals(tests, test_paths):
         print(f"{shown}: {problem}")
         tally.errors += 1
+
+    if not args.no_index_kits:
+        kits, kit_paths, shown = _check_folder(
+            args.folder, folders["--index-kits"], "--index-kits", "index kit",
+            check_index_kit_file, _built_kit, tally, any_case=True,
+            hint=", or say --no-index-kits when the sync does not read index kits")
+        for kit, where in zip(kits, kit_paths, strict=True):
+            # The same check the sync runs on each built kit
+            # (github_sync._fetch_index_kits).
+            validation = IndexValidator.validate(kit)
+            for error in validation.errors:
+                print(f"{where}: {error}")
+                tally.errors += 1
+            for warning in validation.warnings:
+                print(f"{where}: warning: {warning}")
+                tally.warnings += 1
+        for problem in repeated_kit_versions(kits, kit_paths):
+            print(f"{shown}: {problem}; a kit name and version may be in one file only")
+            tally.errors += 1
 
     if args.local_instruments is not None:
         tally.files += 1

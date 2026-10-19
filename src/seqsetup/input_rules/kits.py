@@ -185,6 +185,41 @@ def check_index_kit_file(text: str, file: str) -> CheckResult:
     return check_yaml(text, file, KitRules, cross_checks=[_kit_findings])
 
 
+# The upload form's own boxes (templates/indexes/import.html), in plain words.
+# A value typed there becomes the kit's identity or its stored text, so it
+# follows the same rules as the file's keys: the model cut a 300-character Kit
+# name to 256 and stored an 8,000-base adapter whole.
+FORM_BOXES = {
+    "kit_name": "Kit name",
+    "kit_version": "Kit version",
+    "kit_description": "Kit description",
+    "comments": "Comments",
+    "adapter_read1": "Adapter Read 1",
+    "adapter_read2": "Adapter Read 2",
+}
+
+
+class FormBoxRules(StrictRules):
+    """What the import form's boxes may hold. A box left empty is no value
+    and is left out before the check."""
+
+    kit_name: Optional[KitName] = None
+    kit_version: Optional[KitVersion] = None
+    kit_description: Optional[KitLabel] = None
+    comments: Optional[KitLabel] = None
+    adapter_read1: Optional[KitDna] = None
+    adapter_read2: Optional[KitDna] = None
+
+
+def check_form_boxes(**values) -> list[str]:
+    """One sentence per box that breaks a rule, naming the box in plain
+    words. An empty box is left out: it means the box was not filled in."""
+    given = {key: value for key, value in values.items() if value}
+    result = check_data(given, Locations(), "", FormBoxRules)
+    return [f"{FORM_BOXES.get(str(problem.path[0]), 'The form')}: {problem.message}"
+            for problem in result.problems if problem.level == "error"]
+
+
 class KitFileRefused(ValueError):
     """A kit file refused for a fault of its own, which the upload route
     shows in full and audits under ``reason``. Each shape's own refusals

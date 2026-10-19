@@ -9,7 +9,8 @@ own lists must hold. The format adapters are tested through their parsers
 
 import pytest
 
-from seqsetup.input_rules.kits import KIT_LIST_MAX, KitRules, build_kit, check_index_kit_file
+from seqsetup.input_rules.kits import (FORM_BOXES, KIT_LIST_MAX, FormBoxRules, KitRules,
+                                       build_kit, check_form_boxes, check_index_kit_file)
 from seqsetup.models.index import IndexMode
 
 SINGLE = """name: Probe Kit
@@ -342,3 +343,34 @@ class TestTheCheckedValueBecomesTodaySKit:
         kit = build_kit(checked(SINGLE), created_by="github_sync", source="github")
 
         assert (kit.created_by, kit.source) == ("github_sync", "github")
+
+
+class TestTheUploadFormSBoxesFollowTheSameRules:
+    """The import form's boxes reached the kit with no rulebook at all: a Kit
+    name of 300 characters was cut to 256 by the model, and an 8,000-base
+    adapter was stored whole. A box is refused, never cut, and named."""
+
+    def test_an_empty_box_is_no_value(self):
+        assert check_form_boxes(kit_name="", kit_version=None) == []
+
+    def test_a_good_box_passes(self):
+        assert check_form_boxes(kit_name="A kit", kit_version="1.0") == []
+
+    @pytest.mark.parametrize("box, value, says", [
+        ("kit_name", "N" * 257, "at most 256 characters"),
+        ("kit_version", "1" * 257, "at most 256 characters"),
+        ("kit_description", "D" * 257, "at most 256 characters"),
+        ("comments", "C" * 257, "at most 256 characters"),
+        ("adapter_read1", "A" * 1001, "at most 1000 characters"),
+        ("adapter_read2", "ACGTX", "A, C, G, T"),
+        ("kit_version", "1:0", "':'"),
+        ("kit_name", "..", "dots"),
+    ])
+    def test_a_box_that_breaks_a_rule_is_named(self, box, value, says):
+        (problem,) = check_form_boxes(**{box: value})
+
+        assert problem.startswith(FORM_BOXES[box] + ":")
+        assert says in problem
+
+    def test_every_box_is_named_in_plain_words(self):
+        assert set(FORM_BOXES) == set(FormBoxRules.model_fields)

@@ -27,6 +27,7 @@ from ..context import AppContext
 from ..models.index import IndexMode
 from ..services.audit_log import audit
 from ..services.index_kit_yaml_exporter import IndexKitYamlExporter
+from ..input_rules.kits import KitFileProblems, check_form_boxes
 from ..services.index_parser import IndexParser, KitFileRefused
 from ..services.index_validator import IndexValidator
 from ..services.validation import clear_validation_cache
@@ -182,6 +183,24 @@ async def upload_index_kit(
         )
         return _error_fragment(request, reason)
 
+    # The boxes are checked before the file, by the same rules as its keys:
+    # a value typed here becomes the kit's identity or its stored text, and
+    # the model cut it instead of refusing it.
+    box_problems = check_form_boxes(
+        kit_name=kit_name.strip(), kit_version=kit_version.strip(),
+        kit_description=kit_description.strip(), comments=comments.strip(),
+        adapter_read1=adapter_read1.strip(), adapter_read2=adapter_read2.strip(),
+    )
+    if box_problems:
+        audit(
+            "index_kit.upload",
+            actor=get_username(request),
+            target=index_file.filename or "",
+            outcome="failure",
+            reason="form_box_refused",
+        )
+        return _error_fragment_list(request, "This kit was not saved:", box_problems)
+
     user = request.scope.get("auth")
     try:
         mode = IndexMode(index_mode)
@@ -232,6 +251,18 @@ async def upload_index_kit(
         # color-balance outcomes; invalidate validation cache so any future
         # validate_run() recomputes against the new kit set.
         clear_validation_cache()
+    except KitFileProblems as refused:
+        # Every problem the rules found, each with its line, where one
+        # "Failed to parse file. Please check the format and try again."
+        # once stood for all of them.
+        audit(
+            "index_kit.upload",
+            actor=get_username(request),
+            target=index_file.filename or "",
+            outcome="failure",
+            reason=refused.reason,
+        )
+        return _error_fragment_list(request, "This kit was not saved:", refused.errors)
     except KitFileRefused as refused:
         # The file's own fault, said in full: which indexes do not pair up
         # or are named twice, and what to upload instead.

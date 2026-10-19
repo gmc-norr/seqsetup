@@ -731,9 +731,17 @@ class IndexParser:
         rulebook's own, so the file's lines carry straight through."""
         locations = locations if locations is not None else Locations()
         _text_or_refuse(data)
-        # Get index mode from file or parameter
+        # The mode picked on the upload wins, as it does today; the file's
+        # own key goes on into the canonical map so ``_checked`` can refuse a
+        # file that names a different one.
         mode_str = data.get("index_mode", "unique_dual")
-        file_mode = IndexMode(mode_str) if mode_str else IndexMode.UNIQUE_DUAL
+        try:
+            file_mode = IndexMode(mode_str) if mode_str else IndexMode.UNIQUE_DUAL
+        except ValueError:
+            # Not a mode at all: the rulebook names the key and its line.
+            if index_mode is None:
+                return cls._checked(data, locations, file, None)
+            file_mode = None
         mode = index_mode or file_mode
 
         # A Single kit saves single i7 indexes: its panel reads i7_indexes and
@@ -773,7 +781,11 @@ class IndexParser:
             canonical["version"] = normalize_version(str(said["version"]))
         else:
             canonical.pop("version", None)
-        canonical["index_mode"] = mode.value
+        # The file's own words when it wrote them, so a mode that is not the
+        # one picked is seen; else the picked mode.
+        canonical["index_mode"] = (data["index_mode"]
+                                   if isinstance(data.get("index_mode"), str) and data["index_mode"]
+                                   else mode.value)
         # An index2 that is empty or missing means an i7-only pair, as before.
         if isinstance(canonical.get("index_pairs"), list):
             canonical["index_pairs"] = [

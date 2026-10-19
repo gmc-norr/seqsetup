@@ -82,7 +82,9 @@ def _combinatorial_csv(i7: dict, i5: dict) -> str:
 
 
 def _sync_yaml_i5(i7: dict, i5: dict) -> str:
-    lines = ["name: Old kit", 'version: "1.0"', "index_mode: combinatorial", "i7_indexes:"]
+    # No index_mode: the upload's picker gives it, and a file naming a
+    # different one is refused naming both (KitModeDiffers).
+    lines = ["name: Old kit", 'version: "1.0"', "i7_indexes:"]
     lines += [f"  - name: {n}\n    sequence: {s}" for n, s in i7.items()]
     if i5:
         lines += ["i5_indexes:"] + [f"  - name: {n}\n    sequence: {s}" for n, s in i5.items()]
