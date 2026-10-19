@@ -138,6 +138,8 @@ class TestApplicationProfilesRules(StrictRules):
     application profiles; DownstreamAnalysis is for other tools reading the
     same file (docs/design/2026-10-19-lab-profile-layout-design.md)."""
 
+    __test__ = False  # not a test class, for pytest
+
     OnInstrument: Annotated[list[ApplicationProfileReferenceRules], Field(min_length=1)]
     DownstreamAnalysis: Optional[list[dict[PlainName, OtherToolValue]]] = None
 
