@@ -94,10 +94,23 @@ tags or anchors), as today; a file that fails is refused. Then:
   row; `pixi run check-settings` prints a line per skipped file and counts
   them apart from the files checked.
 
-So every stored application profile is a Dragen profile with one of Illumina's
-application names, and the Sample Sheet writer is unchanged. A test whose
-`OnInstrument` names a skipped profile gets the Check page's existing "not
-found" error for its samples.
+So every application profile this change stores is a Dragen profile with one
+of Illumina's application names, and the Sample Sheet writer is unchanged.
+Profiles stored before are not checked again; SeqSetup is not deployed, so no
+lab has any. A test whose `OnInstrument` names a skipped profile gets the
+Check page's existing "not found" error for its samples, once a sync has
+stored the folder's profiles.
+
+**When every file is skipped.** A folder with no instrument profile fetches
+none, and the sync's existing guard against replacing stored profiles with
+nothing (`_guard_against_destructive_replace`) refuses the whole sync, as it
+does today for an empty folder: the stored profiles stay, and stay usable, so
+no "not found" follows. That is kept on purpose. A folder with no instrument
+profile is almost always the wrong folder, or one whose instrument profiles
+are not added yet (as the lab's is at 3d0db82), and wiping SeqSetup's
+profiles for it would stop every run's Check. The refusal names the skipped
+files, so the admin sees why. A SeqSetup with no stored profiles stores none
+and is not refused, as today.
 
 **Sample Sheet v2.** `[Header]` always writes `RunDescription,<run id>`, after
 `RunName`, through `_escape_identifier` (a UUID passes unchanged).
@@ -118,8 +131,9 @@ Checked with `pixi run check-settings` against `test-profile-config/` at
 3d0db82:
 
 - Test profiles: `Version: "1.0.0"` (three numbers); `OnInstrument` versions
-  as text, e.g. `"~=1.0"` (a bare `1` matches only a profile whose version is
-  the text `1`).
+  as quoted text, e.g. `"~=1.0"`, which matches any 1.x (1.0, 1.1, 1.3). A
+  bare `1` is refused (a version must be text); a quoted `"1"` is accepted but
+  matches only a profile whose version is exactly `1`.
 - The instrument profiles the tests name (`BCLConvertNextera`,
   `DragenGermlineIdtWgs`) added to the folder.
 - Pipeline profiles: versions in quotes (`"1.0"`, `"1.3"`); the reader refuses
