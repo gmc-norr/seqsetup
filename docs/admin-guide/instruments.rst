@@ -232,7 +232,7 @@ This rests on three things:
   ``IndexOrientation`` (see :doc:`profiles`).
 
 .. important::
-   **Check it before first clinical use.** For each instrument and
+   **Check it on a real run first.** For each instrument and
    workflow your lab uses, demultiplex a real run that has an i5 shorter
    than its index read, using the Sample Sheet SeqSetup writes, with
    ``CreateFastqForIndexReads,1`` (**Create FASTQ for index reads**). Look
