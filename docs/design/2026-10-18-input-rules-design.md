@@ -1001,6 +1001,10 @@ that was refused before, and no Sample Sheet changes. Each of these is
 | an index inside a pair with no `name` | the pair's name | refused |
 | an unknown key (`ownr:`) in any of the three YAML shapes | ignored | refused: not a key this file can have |
 | an `id:` key on a pair | ignored; the pair's id is built from the kit's name and the pair's. `IndexKitYamlExporter` never writes one | refused as an unknown key |
+| a `name`, `version` or `index_mode` written as a number, a true/false, a list or a map | read as whatever it was, or the key quietly ignored: `version: 1` became the version `1.0` on the upload (the sync refused it), and `index_mode: 3` was replaced with the mode picked on the form | refused, naming the key and its line; a mode that is not the one picked is refused naming both |
+| a CSV column named `sequence2` or `seq_2` | ignored: the i5 went nowhere and the kit was stored as i7-only | refused as a column that looks like an index but is not one this format reads |
+| a CSV header naming one slot twice under two different names (`index` beside `sequence`, `name` beside `Sample_ID`) | the first name read, the other's values gone | refused, naming both |
+| a TSV `[IndexKit]` line that is not `Name`, `Version` or `Description`, or that has one cell (a real template's `AdapterRead1`) | dropped without a word | refused with its line |
 | `version: 1.10` (unquoted) | the version `1.1` | refused by the reader: put it in quotes |
 | `version: 1.0` (unquoted) | the version `1.0` | refused by the reader too: a decimal is quoted, or it is not text |
 | a plain CSV uploaded as Combinatorial, or an `[i7]`/`[i5]` CSV uploaded as Unique Dual | refused by `IndexValidator` after the fact, with no line ("Combinatorial index kit must contain at least one i7 index"; "Unique dual index kit must contain at least one index pair") | refused where the lists are built, naming the lists and the mode |
@@ -1013,6 +1017,14 @@ that was refused before, and no Sample Sheet changes. Each of these is
 | broken YAML in a sync | the file is dropped, "could not be read as an index kit" | the syntax problem with its line and column |
 | `default_index1_cycles: '8'` in a sync | the file is dropped with `'>' not supported between instances of 'str' and 'int'` in the log | refused: must be a whole number, with its line |
 | `i7_indexes` written as a map in a sync | dropped with `'str' object has no attribute 'get'` | refused: must be a list, with its line |
+
+**One accepted file gives another kit.** A file whose `name` is written
+**empty** (`name: ''`, `name: ~` or spaces only) and uploaded with the **Kit
+name** box filled in: the pair ids were built from the file's empty value
+(`_P1`, `None_P1`, `   _P1`) and are now built from the name the person
+typed, so the kit's `fingerprint()` moves. Such a file is refused outright in
+a sync, where there is no box, so no stored synced kit is touched; an
+uploaded one is stored under ids that name something.
 
 **What stays accepted**, measured, so the step changes nothing it need not:
 a `:` in a kit **name**; a sequence or adapter written as a block scalar
@@ -1047,12 +1059,15 @@ whose columns are spelt `INDEX` or `Index_2`.
   seven shipped `config/indexes/*.yaml` and `combinatorial_example.csv` are in
   it, so "the shipped files are unchanged" is measured, as in steps 1 and 2.
 
-  **Measured on 2026-10-19** (`probes/kits_diff.py`, 851 inputs: every shipped
-  kit file in four modes with and without the form's boxes, the five shapes
-  written out, and up to 25 generated variants of each): **272 give the same
-  kit**, field for field and fingerprint for fingerprint; **410 are refused by
-  both**; **169 are new refusals**, each a row of the table above; **0 kits
-  differ** and **0 inputs only the tip accepts**.
+  **Measured on 2026-10-19** (`probes/kits_diff.py`, 1,337 inputs: every
+  shipped kit file in four modes with and without the form's boxes, the five
+  shapes written out, and up to 40 generated variants of each -- including
+  each scalar key present but empty, null or spaces only, and each written as
+  a number, a true/false, a list or a map, the blind spots the fresh review of
+  the build found): **308 give the same kit**, field for field and fingerprint
+  for fingerprint; **692 are refused by both**; **331 are new refusals**, every
+  one a row of the table above; **0 inputs only the tip accepts**; and **6
+  kits differ**, all one case -- the empty name above.
 - Break checks (`harness/rows_kits.py`), the full check with the 78 Sample
   Sheets unchanged, and a fresh code review.
 - `docs/admin-guide/` gets the kit key table and the value spellings, with the
