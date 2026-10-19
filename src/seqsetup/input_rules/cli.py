@@ -147,9 +147,9 @@ def _check_folder(settings: Path, inside: PurePosixPath, option: str, kind: str,
         result = check(text, shown)
         if result.skipped:
             # As the sync does (docs/design/2026-10-19-lab-profile-layout-design.md).
-            kind = shown_type(result.skipped)
+            shown_kind = shown_type(result.skipped)
             print(f"{shown}: skipped, a profile for other tools ("
-                  + (f"ApplicationType {kind}, not Dragen)" if kind != "another type"
+                  + (f"ApplicationType {shown_kind}, not Dragen)" if shown_kind != "another type"
                      else "its ApplicationType is not Dragen)"))
             tally.skipped += 1
             skipped += 1

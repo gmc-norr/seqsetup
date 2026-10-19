@@ -19,10 +19,11 @@ The profile system consists of two types:
    associated application pipelines in the sample sheet.
 
 **Application Profiles**
-   Define analysis pipeline configurations -- for on-instrument DRAGEN
-   pipelines, cloud pipelines, or external tools. All of them generate
-   sample sheet sections the same way; none of them appear in the JSON
-   metadata export.
+   Define what the instrument runs: BCL Convert and the on-instrument DRAGEN
+   pipelines, each writing its own sample sheet sections. The same folder
+   may hold profiles for other tools (``ApplicationType`` other than
+   ``Dragen``), which SeqSetup skips (see `Profiles for other tools`_). No
+   profile appears in the JSON metadata export.
 
 Test Profiles
 -------------

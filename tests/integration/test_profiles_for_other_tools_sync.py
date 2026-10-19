@@ -45,6 +45,19 @@ class TestProfilesForOtherToolsAreSkipped:
         assert ("Skipped 2 application profile files for other tools (its type is not Dragen): "
                 f"{FOLDER}/NfCore.yaml (nextflow), {FOLDER}/pipelines/Solid.yaml (snakemake).") in message
 
+    def test_at_most_20_are_named(self, fresh_app, monkeypatch):
+        """A long list would be cut where the message is stored, under a
+        marker that points at the list of problems, which skipped files are
+        not in (fresh review of f54d3f0, P3 2)."""
+        _app, ctx, _db = fresh_app
+        pipelines = {f"P{n:02}.yaml": PIPELINE.replace("NfCoreRareDisease", f"P{n:02}") for n in range(25)}
+        ok, message, logged = _sync_tests(ctx, monkeypatch, TESTS, {"Guard.yaml": GUARD, **pipelines})
+        assert ok, message
+        named = ", ".join(f"{FOLDER}/P{n:02}.yaml (nextflow)" for n in range(20))
+        assert ("Skipped 25 application profile files for other tools (its type is not Dragen): "
+                f"{named}, and 5 more, each named in the log.") in message
+        assert f"Skipped {FOLDER}/P24.yaml: a profile for other tools" in logged
+
     def test_a_sync_that_skips_nothing_says_nothing_of_it(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
         ok, message, _logged = _sync_tests(ctx, monkeypatch, TESTS, {"Guard.yaml": GUARD})

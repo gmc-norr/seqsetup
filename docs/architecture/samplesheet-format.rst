@@ -28,9 +28,11 @@ Optional fields: ``RunName``, ``RunDescription``.
 
 SeqSetup writes the run's UUID twice: as ``RunDescription``, a standard key
 the NovaSeq X keeps in the sheet it runs with, and as ``Custom_UUID``, a
-custom key it leaves out. Another tool can tie a run folder back to its
-SeqSetup run by either. The run's typed description is not written into
-the sheet (``docs/design/2026-10-19-lab-profile-layout-design.md``).
+custom key it leaves out. Another tool ties a run folder back to its
+SeqSetup run by ``RunDescription``, which every instrument keeps;
+``Custom_UUID`` is there only where the instrument keeps custom keys. The
+run's typed description is not written into the sheet
+(``docs/design/2026-10-19-lab-profile-layout-design.md``).
 
 [Reads]
 ^^^^^^^

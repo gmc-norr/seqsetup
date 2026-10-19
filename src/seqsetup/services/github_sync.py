@@ -82,8 +82,17 @@ def _refused_kits_text(refused_kits: list[dict]) -> str:
             + ".")
 
 
+_SKIPPED_NAMED = 20
+
+
 def _skipped_list(skipped: list[tuple[str, str]]) -> str:
-    return ", ".join(f"{path} ({shown_type(kind)})" for path, kind in skipped)
+    """The first files a sync skipped, each with its type, and how many
+    more: a long list would be cut where the message is stored, under a
+    marker pointing at the list of problems, which they are not in (fresh
+    review of f54d3f0, P3 2). Each is logged."""
+    named = ", ".join(f"{path} ({shown_type(kind)})" for path, kind in skipped[:_SKIPPED_NAMED])
+    more = len(skipped) - _SKIPPED_NAMED
+    return named + (f", and {more} more, each named in the log" if more > 0 else "")
 
 
 def _skipped_text(skipped: list[tuple[str, str]]) -> str:
