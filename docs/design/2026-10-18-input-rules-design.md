@@ -1076,12 +1076,108 @@ whose columns are spelt `INDEX` or `Index_2`.
 - Before merging, the settings command is run on the lab's real settings
   repository and the user sees what it would refuse, as in steps 1 and 2.
 
+## Step 4: the database settings file
+
+`config/mongodb.yaml` holds the connection string SeqSetup uses, password and
+all. It is the one **sensitive** input: a message about it may quote nothing
+(section "Sensitive inputs"), and `services/database.py` already refuses to
+repeat a YAML parser's message for exactly that reason (`_yaml_refusal`).
+
+### What it does today, measured on step 3's tip
+
+- `MONGODB_URI` set in the environment wins: the file is not read at all, and
+  `MONGODB_DATABASE` (default `seqsetup`) names the database. **Unchanged.**
+- No `MONGODB_URI` and the file is **there**: `yaml.safe_load(f)` then
+  `config.get("mongodb", {})`. A misspelt top key (`mongdb:`) gives `{}`, and
+  `init_db` then falls back to `mongodb://localhost:27017` and the database
+  `seqsetup` — **a different server, with no word**. So does a file whose
+  `mongodb:` map leaves out `uri` or `database`.
+- No `MONGODB_URI` and the file is **not there**: the same localhost default.
+  **Unchanged**: a missing file is how a developer runs SeqSetup against a
+  local MongoDB, and the shipped `.env.example` and Compose file set
+  `MONGODB_URI` for every other deployment.
+- An **empty** file: `config` is `None`, so `config.get` raises
+  `AttributeError` — start-up stops, with a traceback and no words.
+- A file that is not YAML: `_yaml_refusal`, which names the file and the
+  line and **never repeats the parser's message**.
+
+### The rulebook
+
+One document, `mongodb` its only key:
+
+| Key | Required | Rule |
+|---|---|---|
+| `mongodb` | yes | a map, the only key the file may have |
+| `mongodb > uri` | yes | text, 1-4,096 characters, holding no hidden character |
+| `mongodb > database` | yes | text, 1-63 characters, holding none of `. $ / \ " ` a space or NUL |
+
+**Why these bounds.** A connection string is text: nothing in SeqSetup bounds
+it, and 4,096 is the cap the app gives a description. MongoDB's own limit on a
+database name is 63 bytes, and pymongo refuses `.`, `$`, `/`, `\`, `"`, a
+space and NUL in one with `InvalidName` (measured on step 3's tip), so the
+rulebook refuses them by name and line instead of letting `_client[name]`
+raise at start-up. Both keys are **required**: a file that is there and does
+not write them is a file whose writer meant something, and falling back to
+another server is the one thing this step exists to stop.
+
+**Sensitive**: `check_yaml(..., sensitive=True)`. No value is quoted, no
+unknown key's **name** reaches a message (it could be a connection string
+written as a key), and PyYAML's own text is never shown — the guarantees
+step 1 built and `_yaml_refusal` already keeps.
+
+### Where it runs
+
+- **`_load_config`** reads the file with the reader and the rulebook and
+  raises a `ValueError` naming the file, the line, the column and the place
+  for every problem — where a misspelt key quietly meant another server and
+  an empty file gave an `AttributeError`. The three cases it keeps apart stay:
+  the environment wins, a missing file means the localhost default, and a
+  file that is there must be right.
+- **Every other guarantee of `database.py` is untouched**: the connection
+  string is never logged (`_safe`, `_credentials`), the authentication-failure
+  message still says where to look, and the timeouts are the same.
+- **`pixi run check-settings`** checks a database file only when told to, with
+  `--local-database <path>`, like `--local-instruments`: a settings repository
+  does not hold one, and the command **never connects to anything**.
+
+### What changes for a lab
+
+| The file says | Today | New |
+|---|---|---|
+| a misspelt top key (`mongdb:`) | `mongodb://localhost:27017`, database `seqsetup`, with no word | start-up stops: `mongodb` is required, and `mongdb` is not a key this file can have |
+| `mongodb:` with `uri` misspelt (`url:`) | the same silent localhost default | start-up stops, naming the key and its line |
+| `mongodb:` with no `database` | the database `seqsetup`, with no word | start-up stops |
+| an empty file | `AttributeError`, no words | start-up stops: "is empty", with the file's name |
+| a `database` holding a `.` or a space | `_client[name]` raises `InvalidName` at start-up | refused by name and line |
+| a `uri` or `database` written as a number or a list | read as it was, then pymongo's own error | refused: must be text |
+| a key given twice, a YAML tag, an anchor | the last value kept, or the tag expanded | refused, as for every other settings file |
+| no file at all | `mongodb://localhost:27017` | **unchanged** |
+| `MONGODB_URI` set | wins over the file | **unchanged** |
+
+No message, log line, status or audit row ever quotes a value of this file, or
+the name of a key it does not know.
+
+### How step 4 is proved
+
+- Red tests first: each row above; the three cases `_load_config` keeps apart;
+  a password in the file never in any message, log record or raised text (the
+  test that exists for `_yaml_refusal`, pointed at the new path and widened
+  to every problem kind); a connection string written as an unknown **key**.
+- **No test may reach a real database.** The test file replaces
+  `seqsetup.services.database.MongoClient` in an **autouse** fixture with a
+  stub that records its arguments and raises, and asserts after each test that
+  nothing was handed to a real client. `_load_config` and the checker are
+  tested directly; `init_db` is called only behind that stub.
+- The existing tests of `test_database_log_no_credentials.py` keep their
+  guarantee; any changed test is listed.
+- The guard test covers the new rulebook. Break checks. The full check with
+  the 78 Sample Sheets unchanged. A fresh review.
+
 ## Later steps (each adds its details to this note, or a note of its own)
 
 2. **Profiles**: built as step 2, above.
 3. **Index kit files**: built as step 3, below.
-4. **`config/mongodb.yaml`**: a misspelt `mongodb:`; an empty file. Its values are
-   never shown in a message (see "Sensitive inputs").
+4. **`config/mongodb.yaml`**: built as step 4, below.
 5. **Pasted samples and LIMS worklists.** These already refuse the whole input and
    name the rows, and their behaviour must not change unless a gap is found, which
    is then decided on its own. They keep explicit adapters for what they accept
