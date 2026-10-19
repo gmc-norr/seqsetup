@@ -8,6 +8,7 @@ import os
 import re
 import socket
 import ssl
+from types import MappingProxyType
 import threading
 import time
 from collections import Counter
@@ -918,19 +919,23 @@ _I5_NAMES = ("index_i5", "index2", "i5", "index_i5_sequence", "i5_sequence")
 # the same table it has always been, read from here instead of built inside
 # parse_api_samples (step 5 of the input rules; the only change it makes in
 # src/, and it changes no behaviour).
-ALIAS_NAMES = {
-    "sample_id": ["sample_id", "sampleid", "sample", "id", "name", "sample_name"],
-    "test_id": ["test_id", "testid", "test", "test_type", "assay", "application"],
+# Tuples behind a read-only view: which LIMS field becomes a sample ID is
+# not something a caller or a test may rewire (fresh review of the step 5
+# design, P3-8).
+ALIAS_NAMES = MappingProxyType({
+    "sample_id": ("sample_id", "sampleid", "sample", "id", "name", "sample_name"),
+    "test_id": ("test_id", "testid", "test", "test_type", "assay", "application"),
     # Not "version" alone: another field may have that name (spec
     # 2026-10-07 group A4, §2).
-    "test_version": ["test_version", "testversion"],
-    "worksheet_id": list(_SAMPLE_WORKSHEET_ID_NAMES),
-    "index1_sequence": list(_I7_NAMES),
-    "index2_sequence": list(_I5_NAMES),
-    "index_pair_name": ["index_pair_name", "pair_name", "index_pair", "index_kit", "kit_name"],
-    "index1_name": ["i7_name", "index_i7_name", "index1_name", "index_name"],
-    "index2_name": ["i5_name", "index_i5_name", "index2_name"],
-}
+    "test_version": ("test_version", "testversion"),
+    "worksheet_id": tuple(_SAMPLE_WORKSHEET_ID_NAMES),
+    "index1_sequence": tuple(_I7_NAMES),
+    "index2_sequence": tuple(_I5_NAMES),
+    "index_pair_name": ("index_pair_name", "pair_name", "index_pair", "index_kit",
+                        "kit_name"),
+    "index1_name": ("i7_name", "index_i7_name", "index1_name", "index_name"),
+    "index2_name": ("i5_name", "index_i5_name", "index2_name"),
+})
 
 
 def _unread_fields_error(fields: dict[str, list[int]]) -> ValueError:

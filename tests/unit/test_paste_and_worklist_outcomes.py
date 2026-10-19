@@ -103,6 +103,39 @@ def paste_corpus():
         "the same two faults, the rows the other way round": (
             "sample_id,test_id,test_version\nS2,WGS,one\n,WGS,1\n"),
         "one row with two faults": "sample_id,test_id,test_version\n000,WGS,one\n",
+        "no id on row 2, bad DNA on row 3":
+            "sample_id,test_id,test_version,index\n" + ',WGS,1,ATTACTCG' + "\n" + 'S3,WGS,1,ATTAXTCG' + "\n",
+        "bad DNA on row 2, no id on row 3":
+            "sample_id,test_id,test_version,index\n" + 'S2,WGS,1,ATTAXTCG' + "\n" + ',WGS,1,ATTACTCG' + "\n",
+        "a zero id on row 2, bad DNA on row 3":
+            "sample_id,test_id,test_version,index\n" + '000,WGS,1,ATTACTCG' + "\n" + 'S3,WGS,1,ATTAXTCG' + "\n",
+        "bad DNA on row 2, a zero id on row 3":
+            "sample_id,test_id,test_version,index\n" + 'S2,WGS,1,ATTAXTCG' + "\n" + '000,WGS,1,ATTACTCG' + "\n",
+        "a long id on row 2, bad DNA on row 3":
+            "sample_id,test_id,test_version,index\n" + 'S' * 257 + ',WGS,1,ATTACTCG' + "\n" + 'S3,WGS,1,ATTAXTCG' + "\n",
+        "bad DNA on row 2, a long id on row 3":
+            "sample_id,test_id,test_version,index\n" + 'S2,WGS,1,ATTAXTCG' + "\n" + 'S' * 257 + ',WGS,1,ATTACTCG' + "\n",
+        "a long test on row 2, bad DNA on row 3":
+            "sample_id,test_id,test_version,index\n" + 'S2,' + 'T' * 257 + ',1,ATTACTCG' + "\n" + 'S3,WGS,1,ATTAXTCG' + "\n",
+        "bad DNA on row 2, a long test on row 3":
+            "sample_id,test_id,test_version,index\n" + 'S2,WGS,1,ATTAXTCG' + "\n" + 'S3,' + 'T' * 257 + ',1,ATTACTCG' + "\n",
+        "a bad test version on row 2, bad DNA on row 3":
+            "sample_id,test_id,test_version,index\n" + 'S2,WGS,one,ATTACTCG' + "\n" + 'S3,WGS,1,ATTAXTCG' + "\n",
+        "bad DNA on row 2, a bad test version on row 3":
+            "sample_id,test_id,test_version,index\n" + 'S2,WGS,1,ATTAXTCG' + "\n" + 'S3,WGS,one,ATTACTCG' + "\n",
+        "no id and bad DNA on one row":
+            "sample_id,test_id,test_version,index\n,WGS,1,ATTAXTCG\n",
+        "a zero id and bad DNA on one row":
+            "sample_id,test_id,test_version,index\n000,WGS,1,ATTAXTCG\n",
+        "a bad test version and bad DNA on one row":
+            "sample_id,test_id,test_version,index\nS1,WGS,one,ATTAXTCG\n",
+        "the cap and a no-id row, the bad row first":
+            "sample_id,test_id,test_version,index\n,WGS,1,ATTACTCG\n"
+            + "".join(f"S{n},WGS,1,ATTACTCG\n" for n in range(5001)),
+        "the cap and a no-id row, the bad row last":
+            "sample_id,test_id,test_version,index\n"
+            + "".join(f"S{n},WGS,1,ATTACTCG\n" for n in range(5001))
+            + ",WGS,1,ATTACTCG\n",
         "an empty paste": "",
         "spaces only": "   \n  \n",
         "one cell": "S1\n",
@@ -113,6 +146,14 @@ def paste_corpus():
         "mixed tabs and commas (two cells become one id: a poor read, recorded as it is)":
             "sample_id\ttest_id\nS1,WGS\n",
         "a well column and a test column": "sample_id,well,test_id\nS1,A01,WGS\n",
+        # A long sequence is CUT to 256 today, not refused: a bound in a
+        # rulebook would be an accept-to-refuse change on the one field the
+        # index-mixup audit exists for (fresh review of the step 5 design,
+        # P1-3).
+        "an i7 of 300 bases": "sample_id,index\nS1," + "A" * 300 + "\n",
+        "an i7 of 256 good bases and 44 that are not DNA":
+            "sample_id,index\nS1," + "A" * 256 + "X" * 44 + "\n",
+        "an i5 of 300 bases": "sample_id,index,index2\nS1,ATTACTCG," + "A" * 300 + "\n",
         "a double quote that is not closed": 'sample_id,test_id\n"S1,WGS\n',
         "a cell too long for the reader": 'sample_id\n"' + "x" * 200_000 + "\n",
     }
@@ -193,6 +234,24 @@ def worklist_corpus():
         "a row that is not a map": ["S1"],
         "two rows, one bad": [{"sample_id": "S1"}, {"test_id": "WGS"}],
         "one sample id twice": [{"sample_id": "S1"}, {"sample_id": "S1"}],
+        # The same fault-precedence pairs on the LIMS side.
+        "a bad i7 in row 1, no id in row 2": [
+            {"sample_id": "S1", "index_i7": "ATTAXTCG"}, {"test_id": "WGS"}],
+        "no id in row 1, a bad i7 in row 2": [
+            {"test_id": "WGS"}, {"sample_id": "S2", "index_i7": "ATTAXTCG"}],
+        "a bad i7 and no id in one row": [{"index_i7": "ATTAXTCG"}],
+        "a bad i7 in row 1, a zero id in row 2": [
+            {"sample_id": "S1", "index_i7": "ATTAXTCG"}, {"sample_id": "000"}],
+        "a zero id in row 1, a bad i7 in row 2": [
+            {"sample_id": "000"}, {"sample_id": "S2", "index_i7": "ATTAXTCG"}],
+        "a bad i7 in row 1, a long id in row 2": [
+            {"sample_id": "S1", "index_i7": "ATTAXTCG"}, {"sample_id": "S" * 257}],
+        "a bad i7 in row 1, a bad version in row 2": [
+            {"sample_id": "S1", "index_i7": "ATTAXTCG"},
+            {"sample_id": "S2", "test_version": "one"}],
+        "an i7 of 300 bases": [{"sample_id": "S1", "index_i7": "A" * 300}],
+        "an i7 of 256 good bases and 44 that are not DNA": [
+            {"sample_id": "S1", "index_i7": "A" * 256 + "X" * 44}],
         "one sample over the cap": [{"sample_id": f"S{n}"} for n in range(5001)],
     }
     # One case per field name the LIMS import reads, so dropping an alias is
@@ -225,6 +284,12 @@ def mapped_corpus():
             {"worksheet_id": "AL"}, [{"sample_id": "S1", "AL": "W1"}]),
         "a mapping whose field the row does not have": (
             {"sample_id": "LimsId"}, [{"sample_id": "S1"}]),
+        # A mapping for a field SeqSetup does not know puts that key into the
+        # adapted row, which a rulebook with extra="forbid" would refuse
+        # (fresh review of the step 5 design, P2-4).
+        "a mapping for a field SeqSetup does not know": (
+            {"patient_name": "PatientName"},
+            [{"sample_id": "S1", "PatientName": "Bob"}]),
     }
 
 # What each paste gives today: ('read', rows, header_found, columns_used,
@@ -232,6 +297,10 @@ def mapped_corpus():
 PASTES = {
     'CRLF':
         ('read', (('S1', 'WGS', '', 'ATTACTCG', 'TATAGCCT', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('test_id', 'Test'), ('index', 'i7'), ('index2', 'i5')), ()),
+    'a bad test version and bad DNA on one row':
+        ('refused', 'ValueError', 'Row(s) 2: the test version is not right. A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3.'),
+    'a bad test version on row 2, bad DNA on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S3': {'X'}. Only A, C, G, T, N are allowed."),
     'a byte order mark':
         ('read', (('S1', 'WGS', '', 'ATTACTCG', 'TATAGCCT', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('test_id', 'Test'), ('index', 'i7'), ('index2', 'i5')), ()),
     'a cell too long for the reader':
@@ -352,6 +421,10 @@ PASTES = {
         ('refused', 'ValueError', 'Line 2: this line could not be read — check it for a double quote (") that is not closed correctly, then paste again.'),
     'a kit name of 300 characters':
         ('read', (('S1', '', '', '', '', 'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index_kit', 'Index name')), ()),
+    'a long id on row 2, bad DNA on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S3': {'X'}. Only A, C, G, T, N are allowed."),
+    'a long test on row 2, bad DNA on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S3': {'X'}. Only A, C, G, T, N are allowed."),
     'a lower-case i5':
         ('read', (('S1', '', '', 'ATTACTCG', 'TATAGCCT', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index', 'i7'), ('index2', 'i5')), ()),
     'a lower-case sequence':
@@ -384,18 +457,38 @@ PASTES = {
         ('refused', 'ValueError', 'Row(s) 1: this paste has no header row, and these rows have more than two columns. Without a header row SeqSetup reads only the sample ID (first column) and the test (second column); it does not guess which column holds which index. Add a header row naming the columns, for example: sample_id, test_id, index_i7, index_i5. The header row must be the first line.'),
     'a well column and a test column':
         ('read', (('S1', 'WGS', '', '', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('test_id', 'Test')), ('well',)),
+    'a zero id and bad DNA on one row':
+        ('refused', 'ValueError', 'Row(s) 2: A sample ID made only of zeros is not a sample ID — a LIMS may use 0 for an empty well. Give the sample its real ID or remove the row entirely.'),
+    'a zero id on row 2, bad DNA on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S3': {'X'}. Only A, C, G, T, N are allowed."),
     'an empty paste':
         ('read', (), False, (), ()),
+    'an i5 of 300 bases':
+        ('read', (('S1', '', '', 'ATTACTCG', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index', 'i7'), ('index2', 'i5')), ()),
     'an i5 that is not DNA':
         ('refused', 'ValueError', "Invalid characters in index2 for sample 'S1': {'X'}. Only A, C, G, T, N are allowed."),
     'an i7 name of 300 characters':
         ('read', (('S1', '', '', '', '', '', 'NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN', '', 2),), True, (('sample_id', 'Sample ID'), ('i7_name', 'i7 name')), ()),
+    'an i7 of 256 good bases and 44 that are not DNA':
+        ('read', (('S1', '', '', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index', 'i7')), ()),
+    'an i7 of 300 bases':
+        ('read', (('S1', '', '', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index', 'i7')), ()),
     'an id of 256 characters':
         ('read', (('SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS', 'WGS', '', '', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('test_id', 'Test')), ()),
     'an id of 257 characters':
         ('refused', 'ValueError', 'Row(s) 2: the sample_id is longer than 256 characters. SeqSetup does not shorten it; shorten it in the source.'),
     'an id of zeros':
         ('refused', 'ValueError', 'Row(s) 2: A sample ID made only of zeros is not a sample ID — a LIMS may use 0 for an empty well. Give the sample its real ID or remove the row entirely.'),
+    'bad DNA on row 2, a bad test version on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S2': {'X'}. Only A, C, G, T, N are allowed."),
+    'bad DNA on row 2, a long id on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S2': {'X'}. Only A, C, G, T, N are allowed."),
+    'bad DNA on row 2, a long test on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S2': {'X'}. Only A, C, G, T, N are allowed."),
+    'bad DNA on row 2, a zero id on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S2': {'X'}. Only A, C, G, T, N are allowed."),
+    'bad DNA on row 2, no id on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S2': {'X'}. Only A, C, G, T, N are allowed."),
     'columns reordered':
         ('read', (('S1', 'WGS', '', '', '', '', '', '', 2),), True, (('test_id', 'Test'), ('sample_id', 'Sample ID')), ()),
     'every column':
@@ -412,6 +505,10 @@ PASTES = {
         ('read', (('S1,WGS', '', '', '', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('test_id', 'Test')), ()),
     'no header row':
         ('read', (('S1', 'WGS', '', '', '', '', '', '', 1), ('S2', 'PANEL', '', '', '', '', '', '', 2)), False, (('column 1', 'Sample ID'), ('column 2', 'Test')), ()),
+    'no id and bad DNA on one row':
+        ('refused', 'ValueError', 'Row(s) 2: sample_id is required. Either supply a sample_id or remove the row entirely.'),
+    'no id on row 2, bad DNA on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S3': {'X'}. Only A, C, G, T, N are allowed."),
     'one cell':
         ('read', (('S1', '', '', '', '', '', '', '', 1),), False, (('column 1', 'Sample ID'),), ()),
     'one row with two faults':
@@ -426,6 +523,10 @@ PASTES = {
         ('read', (('S1', 'WGS, extra', '', '', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('test_id', 'Test')), ()),
     'spaces only':
         ('read', (), False, (), ()),
+    'the cap and a no-id row, the bad row first':
+        ('refused', 'ValueError', 'Too many samples: a run accepts a maximum of 5000. Reduce the worklist or split it across runs.'),
+    'the cap and a no-id row, the bad row last':
+        ('refused', 'ValueError', 'Too many samples: a run accepts a maximum of 5000. Reduce the worklist or split it across runs.'),
     'the same two faults, the rows the other way round':
         ('refused', 'ValueError', 'Row(s) 3: sample_id is required. Either supply a sample_id or remove the row entirely.'),
     'three samples, each with its own i7 and i5':
@@ -448,6 +549,16 @@ PASTES = {
 
 # What each worklist gives today.
 WORKLISTS = {
+    'a bad i7 and no id in one row':
+        ('refused', 'ValueError', 'LIMS row(s) 1: sample_id is missing or empty. Fix the upstream record(s) before retrying.'),
+    'a bad i7 in row 1, a bad version in row 2':
+        ('refused', 'ValueError', "Sample 'S1' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
+    'a bad i7 in row 1, a long id in row 2':
+        ('refused', 'ValueError', "Sample 'S1' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
+    'a bad i7 in row 1, a zero id in row 2':
+        ('refused', 'ValueError', "Sample 'S1' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
+    'a bad i7 in row 1, no id in row 2':
+        ('refused', 'ValueError', "Sample 'S1' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
     "a field named 'al'":
         ('read', ((('sample_id', 'S1'), ('test_version', ''), ('worksheet_id', 'V1')),)),
     "a field named 'application'":
@@ -570,6 +681,8 @@ WORKLISTS = {
         ('refused', 'ValueError', "Sample 'S1' has a test version but no test."),
     'a test version of four parts':
         ('refused', 'ValueError', "Sample 'S1' has a test version that is not right ('1.2.3.4'). A test version is 1, 2 or 3 whole numbers joined by dots, each at most 9 digits, like 1, 1.2 or 1.2.3."),
+    'a zero id in row 1, a bad i7 in row 2':
+        ('refused', 'ValueError', "Sample 'S2' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
     'an empty sample id':
         ('refused', 'ValueError', 'LIMS row(s) 1: sample_id is missing or empty. Fix the upstream record(s) before retrying.'),
     'an empty worklist':
@@ -578,10 +691,16 @@ WORKLISTS = {
         ('refused', 'ValueError', "Sample 'S1' has an invalid index2_sequence ('TATAXCCT'): only A, C, G, T, N are allowed (offending: X)."),
     'an i7 name of 300 characters':
         ('read', ((('index1_name', 'NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN'), ('sample_id', 'S1'), ('test_version', '')),)),
+    'an i7 of 256 good bases and 44 that are not DNA':
+        ('read', ((('index1_sequence', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), ('sample_id', 'S1'), ('test_version', '')),)),
+    'an i7 of 300 bases':
+        ('read', ((('index1_sequence', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), ('sample_id', 'S1'), ('test_version', '')),)),
     'every field':
         ('read', ((('index1_name', 'D701'), ('index1_sequence', 'ATTACTCG'), ('index2_name', 'D501'), ('index2_sequence', 'TATAGCCT'), ('index_pair_name', 'Kit A'), ('sample_id', 'S1'), ('test_id', 'WGS'), ('test_version', '1.2'), ('worksheet_id', 'W1')),)),
     'ids of zeros in several rows':
         ('refused', 'ValueError', 'LIMS row(s) 1, 3, 4: A sample ID made only of zeros is not a sample ID — a LIMS may use 0 for an empty well. Fix the upstream record(s) before retrying.'),
+    'no id in row 1, a bad i7 in row 2':
+        ('refused', 'ValueError', "Sample 'S2' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
     'no sample id':
         ('refused', 'ValueError', 'LIMS row(s) 1: sample_id is missing or empty. Fix the upstream record(s) before retrying.'),
     'one sample id twice':
@@ -614,6 +733,8 @@ WORKLISTS = {
 
 # ... and each one read with a field mapping.
 MAPPED = {
+    'a mapping for a field SeqSetup does not know':
+        ('read', ((('patient_name', 'Bob'), ('sample_id', 'S1'), ('test_version', '')),)),
     'a mapping for every field':
         ('read', ((('index1_sequence', 'ATTACTCG'), ('index2_sequence', 'TATAGCCT'), ('sample_id', 'S1'), ('test_id', 'WGS'), ('test_version', '')), (('index1_sequence', 'TCCGGAGA'), ('index2_sequence', 'ATAGAGGC'), ('sample_id', 'S2'), ('test_id', 'WGS'), ('test_version', '')), (('index1_sequence', 'CGCTCATT'), ('index2_sequence', 'CCTATCCT'), ('sample_id', 'S3'), ('test_id', 'PANEL'), ('test_version', '')))),
     'a mapping for the worksheet only':
@@ -764,7 +885,72 @@ class TestTheCorpusCanSeeTheThingsThatMatter:
 
         assert missing == [], missing
 
+    def test_the_corpus_pins_which_of_two_faults_a_person_sees(self):
+        """Today's order is three stages: the DNA and cap refusals raise
+        inside the row loop, so the first offending row wins and the scan
+        stops; the other six are collected and raised in a fixed class order
+        at the tail. The consequence, measured, is that the precedence of the
+        same two classes FLIPS depending on whether they share a row -- so a
+        corpus of one-fault cases cannot hold a move (fresh review of the
+        step 5 design, P1-1 and P1-2)."""
+        for first, second in (("no id", "a zero id"), ("no id", "a long id"),
+                              ("no id", "a long test"), ("no id", "a bad test version")):
+            pass
+        apart = PASTES["no id on row 2, bad DNA on row 3"]
+        together = PASTES["no id and bad DNA on one row"]
+
+        assert apart[0] == together[0] == "refused"
+        assert "Invalid characters" in apart[2], apart
+        assert "sample_id is required" in together[2], together
+        assert apart[2] != together[2]
+
+    def test_the_corpus_pins_a_long_sequence_as_cut_not_refused(self):
+        """A 300-base i7 is CUT to 256 today, not refused: a bound in a
+        rulebook would be an accept-to-refuse change on the one field the
+        index-mixup audit exists for (P1-3)."""
+        record = PASTES["an i7 of 300 bases"]
+        at = FIELDS.index("index1_sequence")
+
+        assert record[0] == "read"
+        assert len(record[1][0][at]) == 256
+
+    def test_the_corpus_pins_a_mapping_for_a_field_seqsetup_does_not_know(self):
+        """Such a mapping puts that key into the adapted row, which a
+        rulebook with extra="forbid" would refuse (P2-4)."""
+        record = MAPPED["a mapping for a field SeqSetup does not know"]
+
+        assert record[0] == "read"
+        assert "patient_name" in dict(record[1][0])
+
     def test_both_readers_refuse_more_samples_than_a_run_holds(self):
         for record in (PASTES["one sample over the cap"],
                        WORKLISTS["one sample over the cap"]):
             assert record[0] == "refused" and "Too many samples" in record[2]
+
+
+class TestWhichLimsFieldBecomesASampleIdCannotBeRewired:
+    """The table was built inside ``parse_api_samples`` and could not be
+    reached from outside; as a module constant it can, and one appended name
+    would make a patient's name the sample ID (fresh review of the step 5
+    design, P3-8)."""
+
+    def test_the_table_is_read_only(self):
+        from seqsetup.services.sample_api import ALIAS_NAMES
+
+        with pytest.raises(TypeError):
+            ALIAS_NAMES["sample_id"] = ("patient_name",)
+
+    def test_no_name_can_be_added_to_a_field_s_list(self):
+        from seqsetup.services.sample_api import ALIAS_NAMES
+
+        with pytest.raises((TypeError, AttributeError)):
+            ALIAS_NAMES["sample_id"].append("patient_name")
+
+    def test_a_copy_a_caller_makes_does_not_change_it(self):
+        from seqsetup.services.sample_api import ALIAS_NAMES, parse_api_samples
+
+        before = {field: tuple(names) for field, names in ALIAS_NAMES.items()}
+        parse_api_samples([{"sample_id": "S1"}],
+                          SampleApiConfig(field_mappings={"sample_id": "LimsId"}))
+
+        assert {f: tuple(n) for f, n in ALIAS_NAMES.items()} == before

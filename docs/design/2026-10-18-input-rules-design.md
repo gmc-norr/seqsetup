@@ -1336,10 +1336,15 @@ fresh review wrote 24 behaviour-changing mutations of which **20 passed it**.
 Every one of those is now a case or an assertion, and
 `harness/rows_samples.py` keeps 16 of them as break rows.
 
-That file is the step's whole safety net, and it is useful on its own: it
-holds the two readers to their behaviour whoever changes them next, and a move
-onto the rulebook is then a change that either keeps every assertion or is not
-made.
+That file is **what a move would be held to**, and it is useful on its own: it
+holds the two readers to their behaviour whoever changes them next. It is not a
+proof that a move is safe -- a fresh review of this design wrote the one
+mutation it could not see, the DNA refusal deferred instead of raised inside
+the row loop, and all 216 assertions passed while three real pastes changed
+their message. Those cases are in it now (every immediate-against-deferred
+fault pair, in both orders and on one row, and the cap against a deferred
+fault both ways round), and the lesson stands: the file holds what it has a
+case for, and a move must come with the cases its own shape needs.
 
 ### Where the rulebook would sit
 
@@ -1347,11 +1352,30 @@ made.
 
 | Key | Rule |
 |---|---|
-| `sample_id` | filled text, 1-256, not made only of zeros (`ZERO_SAMPLE_ID_RULE`) |
-| `test_id`, `worksheet_id` | text, at most 256 |
+| `sample_id` | filled text, not made only of zeros (`ZERO_SAMPLE_ID_RULE`); **the adapter refuses it over 256, never cuts it** |
+| `test_id` | text; **the adapter refuses it over 256** |
+| `worksheet_id` | text; **the adapter cuts it at 256**. LIMS-only: the paste has no such column and `ParsedSample` no such field |
 | `test_version` | text matching `TEST_VERSION_RE` (`1`, `1.2`, `1.2.3`) or absent |
-| `index1_sequence`, `index2_sequence` | DNA text of `[ACGTN]` after uppercasing, at most 256 |
-| `index_pair_name`, `index1_name`, `index2_name` | text, at most 256 |
+| `index1_sequence`, `index2_sequence` | DNA text of `[ACGTN]` after uppercasing. **The adapter cuts at 256, it does not refuse** (measured: a 300-base i7 is stored as 256 today, and a non-DNA character past 256 is cut away with it), so **the rulebook may not bound them** unless that is a listed accept-to-refuse change |
+| `index_pair_name`, `index1_name`, `index2_name` | text; **the adapter cuts at 256** |
+| `line` | the source line, which the adapter fills and nothing checks |
+
+**Which stage owns the 256 is written out above, field by field**, because the
+two readers do not agree: the sample text is **refused** over 256 and
+everything else is **cut**. A rulebook bound where the adapter cuts would be an
+accept-to-refuse change, which is what Q7 asks the user about.
+
+**An unknown key is the one place this series' `extra="forbid"` does not
+hold.** A LIMS row legitimately carries clinical metadata a lab's own system
+needs, and a paste may carry a column SeqSetup does not read; both are
+accepted today, and only a column or field that **looks like an index or a
+lane** is refused. The adapters therefore pass the rulebook **only the keys it
+names** and drop the rest -- they never hand it the row as the LIMS sent it.
+This is deliberate, it is the one departure in the series, and it has to be
+written down: a builder inheriting `StrictRules` without reading this would
+refuse a worklist a lab sends every day. A `field_mappings` entry for a field
+SeqSetup does not know puts that key into the adapted row today (measured),
+and the guard has a case for it.
 
 **Lanes are not in it**: neither reader gives a sample a lane -- they come
 from `_picked_lanes` in `routes/samples.py` after the read -- so a rulebook
@@ -1359,40 +1383,84 @@ field for them would be a field nothing fills, and the guard above cannot see
 one either. "No page gives a sample no lane" stays the route's rule.
 
 The rules that are **about the worklist rather than the row** stay where they
-are, because they need every row at once or the file's own words: the rows with
-content but no `sample_id`, the rows whose ID is all zeros, the column that
-looks like an index, the column with no header name, the delimiter, the header
-ranking, `MAX_SAMPLES_PER_RUN`, and the LIMS field-name mapping. The
-`sample_id` row above is the *shape* of one ID; the reader keeps the refusal
-that names **every** such row in one message.
+are, because they need every row at once or the file's own words. The paste's
+thirteen: the unreadable line, the multi-line cell, no header row with more
+than two columns, a column that is not read, a first column taken as the ID, a
+column with no header name, the delimiter, the header ranking, the rows with no
+`sample_id`, the rows whose ID is all zeros, and the long-ID, long-test and
+bad-version refusals that **name every such row in one message**, plus
+`MAX_SAMPLES_PER_RUN`. The LIMS import's thirteen: the non-map row, a field
+that looks like an index or a lane, two names for one index, two field names
+differing only in capitals, the JSON-type check on each of seven fields, the
+**repeated sample ID** (a true whole-worklist rule), the long-text refusals,
+`MAX_SAMPLES_PER_RUN` and the field-name mapping.
+
+Two of them are not symmetrical, and one row rulebook has to say which it
+follows: **"a test version but no test"** is a LIMS rule the paste does not
+have (measured: the same row reads as a sample with a version and no test on
+the paste path and is refused on the LIMS path), and **one sample ID twice** is
+refused by the LIMS reader while the paste reader accepts it and the route
+refuses it later. Unifying either is a behaviour change; the guard records both
+as they are.
+
+The `sample_id` row of the table above is the *shape* of one ID; the reader
+keeps the refusal that names **every** such row in one message.
 
 ### Why the move is not made in this step
 
 Measured on step 4's tip: `read_pasted_samples` is one function of some 250
-lines whose refusals are **ordered** -- a row with two faults gets the first
-one, and the order is per **fault class**, not per row: a paste holding a row
+lines, and its refusals come in **three stages**, not one order (all
+measured):
+
+1. **Immediate**, inside the row loop, in code order: a non-DNA i7, a non-DNA
+   i5, then the sample cap. The first offending **row** wins and the scan
+   stops there.
+2. **Deferred**, collected and raised after every row is read, in a fixed
+   class order: a column with no header name, a row with no ID, a row whose
+   ID is all zeros, a long ID, a long test, a bad test version.
+3. **Reader stage**, before any row: an unreadable line, a multi-line cell, no
+   header row with more than two columns, a column that is not read, a first
+   column taken as the ID.
+
+Two consequences, both measured and both in the guard. A paste holding a row
 with no ID and another with a bad test version reports only the no-ID row and
-does not mention the version at all (measured). The order was pinned by
-nothing before this file -- the fresh review showed a mutation that reorders
-the refusals passing every test in the repository -- and it is pinned by this
-file now. A Pydantic rulebook
-reports a row's faults together and in field order, so the first message a
-person sees for such a row would change -- not less information, but not the
-same words either, and these are the two inputs whose words a lab reads under
-time pressure.
+does not mention the version at all. And the precedence of the **same two
+classes flips** depending on whether they share a row: row 2 with no ID and
+row 3 with a non-DNA i7 says "Invalid characters in index1"; the same two
+faults **on one row** say "sample_id is required". So no scheme that merely
+sorts a row's problems can reproduce today's words, and a Pydantic rulebook
+reports a row's faults together -- not less information, but not the same
+words either, and these are the two inputs whose words a lab reads under time
+pressure.
 
 So this step stops at the design and the guard, and the move waits for the
-user's word on **which** of the two it should be:
+user's word on **which of three** it should be:
 
-- **A**: keep today's order by running the rulebook's problems through a fixed
-  order per row, so no message changes at all. Safe, and the rulebook then
-  buys only the one place the rules are written.
+- **A**: keep today's words exactly. That means keeping today's **control
+  flow** -- the rulebook's DNA and cap problems stop the scan at the offending
+  row and the rest are collected -- not sorting a row's problems, which cannot
+  do it.
 - **B**: let a row report every fault it has, so a paste is fixed in one pass
-  instead of one row at a time -- better for a lab, and a change to the words
-  of some refusals, each of which has to be listed.
+  instead of one row at a time -- better for a lab under time pressure, and a
+  change to the words of some refusals, each of which has to be listed and
+  probed as steps 3 and 4 list theirs.
+- **C**: no rulebook for these two inputs. Single-source what is actually
+  duplicated -- `_VALID_DNA_RE`, written out in `sample_parser.py`,
+  `sample_api.py` **and** `models/index.py`, and `_MAX_FIELD_LEN = 256`, a
+  hand-copy of `MAX_SAMPLE_TEXT` -- and extract the shared row predicates as
+  named functions both readers call, each keeping its own message and flow.
+  Five of the six shared row rules already have one definition in
+  `models/sample.py` which both readers import, so "the rules in one place" is
+  **two things**, and C buys them with no change of words, no ordering
+  question and no answer needed from the user.
 
-Both are in the run's QUESTIONS, with the guard above already in place to hold
-whichever is chosen.
+All three are in the run's QUESTIONS. Option A was first written here as "run
+the rulebook's problems through a fixed order per row"; a fresh review of this
+design showed that cannot reproduce the flip above, and that what A would buy
+is the two constants C buys more cheaply. **A rulebook's problem must never
+reach a person as it is**: `pydantic.ValidationError` is a `ValueError`, which
+`routes/samples.py` catches and writes straight into the banner, URL and all.
+
 
 ### What this step does change
 
@@ -1400,7 +1468,11 @@ One thing in `src/`, and it changes no behaviour: the LIMS import's table of
 field names is lifted out of `parse_api_samples` into the module constant
 `ALIAS_NAMES`, so the guard can walk it and fail when an alias is dropped --
 which a fresh review showed was otherwise silent for the test and kit fields.
-Everything else is the guard, the design and the two questions.
+It is a **read-only** mapping of tuples: which LIMS field becomes a **sample
+ID** is not something a caller or a test may rewire, and a single appended name
+would make a patient's name the sample ID (a fresh review of this design
+measured exactly that before the table was frozen). Everything else is the
+guard, the design and the three questions.
 
 ## Later steps (each adds its details to this note, or a note of its own)
 
