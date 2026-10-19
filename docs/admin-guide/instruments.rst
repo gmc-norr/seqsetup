@@ -94,12 +94,12 @@ and in each synced instrument file:
 
    # How the instrument reads the i5, per workflow. The first one is the standard one.
    i5_workflows:
-     - name: Index-first
-       i5_read_orientation: forward
-     - name: Read-first
+     - name: Standard kits
        i5_read_orientation: reverse-complement
+     - name: Rapid kits
+       i5_read_orientation: forward
    # In a run whose i5 read is reversed, does RunInfo.xml mark it IsReverseComplement="Y"?
-   runinfo_marks_i5_reversed: true
+   runinfo_marks_i5_reversed: false
 
 ``i5_workflows``
    Each way the instrument runs that reads the i5 differently, with a
@@ -150,12 +150,9 @@ For an 8-base i5 on a 10-cycle Index 2 read, with the shipped instruments:
    * - Run
      - Index2 column
      - Index 2 part of OverrideCycles
-   * - NovaSeq X Series, NextSeq 1000/2000, MiSeq i100 Series read-first
+   * - NovaSeq X Series, NextSeq 1000/2000, MiSeq i100 Series (read-first)
      - forward
      - ``N2I8``
-   * - MiSeq i100 Series index-first
-     - forward
-     - ``I8N2``
    * - NextSeq 500/550, MiniSeq standard kits, NovaSeq 6000 v1.5 reagents,
        HiSeq 4000, HiSeq X
      - reverse complement
@@ -178,7 +175,7 @@ files in ``config/instruments/``:
      - ``i5_workflows`` (first = standard)
      - ``runinfo_marks_i5_reversed``
    * - MiSeq i100 Series
-     - Index-first: forward; Read-first: reverse-complement
+     - Read-first: reverse-complement
      - true
    * - MiniSeq
      - Standard kits: reverse-complement; Rapid kits: forward
@@ -203,12 +200,22 @@ Cells
 Overview Guide, document 15057455), `Planning a Manual Mode Run on MiSeq
 i100 Series
 <https://knowledge.illumina.com/instrumentation/miseq-i100-series/instrumentation-miseq-i100-series-reference_material-list/000009499>`_
-(index-first is that instrument's default), `DRAGEN v4.5 BCL conversion
+(index-first is that instrument's default; see below), `DRAGEN v4.5 BCL conversion
 <https://help.dragen.illumina.com/dragen-v4.5/product-guides/dragen-v4.5/bcl-conversion>`_
 and the `i5 Index Orientation Table
 <https://help.connected.illumina.com/run-set-up/overview/index-orientation-guide/i5-index-orientation-table>`_.
 GAIIx keeps the forward direction it always had; no Illumina source was
 found for it.
+
+The MiSeq i100 Series ships with **Read-first only**. An index-first run
+(the instrument's default) reads both index reads before Read 1, and BCL
+Convert reads OverrideCycles in the order ``RunInfo.xml`` lists the reads;
+SeqSetup writes Read 1, Index 1, Index 2, Read 2, which matches a read-first
+``RunInfo.xml`` and has not been checked against an index-first one. So on
+the instrument, untick **Sequence Indexes First** on the Review Run page.
+Do not add an index-first workflow to your own instrument settings before
+you have checked its ``RunInfo.xml`` read order
+(``docs/design/2026-10-19-i100-read-first-design.md``).
 
 This rests on three things:
 

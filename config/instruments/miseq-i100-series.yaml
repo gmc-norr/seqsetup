@@ -1,9 +1,11 @@
 # MiSeq i100 Series - Two-color XLEAP chemistry (Blue+Green)
 #
 # Benchtop sequencer with XLEAP SBS chemistry and onboard DRAGEN.
-# i5: index-first runs (the instrument's default) read the i5 forward;
-# read-first runs read it as its reverse complement, and RunInfo.xml
-# marks it.
+# i5: read-first runs read it as its reverse complement, and RunInfo.xml
+# marks it. Read-first only: an index-first run (the instrument's default)
+# reads both indexes before Read 1, and SeqSetup writes OverrideCycles in
+# the order Read 1, Index 1, Index 2, Read 2, checked against a read-first
+# RunInfo.xml only.
 # See Instruments in the admin guide.
 
 version: "1.0.0"
@@ -14,8 +16,6 @@ chemistry_type: 2-color
 has_dragen_onboard: true
 sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
 i5_workflows:
-  - name: Index-first
-    i5_read_orientation: forward
   - name: Read-first
     i5_read_orientation: reverse-complement
 runinfo_marks_i5_reversed: true

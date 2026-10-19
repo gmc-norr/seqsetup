@@ -72,13 +72,17 @@ Read-first standard, would keep a path whose sheets are probably refused.
   in its two OverrideCycles cells only, `Y151;I8N2;I8N2;Y151` becoming
   `Y151;I8N2;N2I8;Y151`. The 8-on-8 and 10-on-10 i100 sheets and every other
   instrument's sheets are unchanged.
-- **A run or template stored with Index-first** keeps that name. The run setup
-  page shows it "(not available)" beside Read-first, and the Check page and
-  Mark Ready refuse it ("Index-first is not an i5 workflow of MiSeq i100
-  Series (it has: Read-first). Pick one in Run Setup.") until Read-first is
-  picked. A Ready or Archived
-  run keeps its sheets and the record of what they were written for.
-  SeqSetup is not deployed yet, so no lab run is stored with it.
+- **A run stored with Index-first** keeps that name. The run setup page shows
+  it "(not available)" beside Read-first, and the Check page and Mark Ready
+  refuse it ("Index-first is not an i5 workflow of MiSeq i100 Series (it has:
+  Read-first). Pick one in Run Setup.") until Read-first is picked. A Ready or
+  Archived run keeps its sheets and the record of what they were written for.
+  **A template stored with Index-first** makes no run ("Index-first is no
+  longer an i5 workflow of MiSeq i100 Series; this template cannot be
+  used."), as for any workflow its instrument no longer lists. SeqSetup is
+  not deployed yet, so no lab run or template is stored with it.
+- **On the instrument**, a run must be set up read-first: untick "Sequence
+  Indexes First" on the Review Run page. The admin and user guides say so.
 - **A lab's own instrument settings** (a synced instrument file or its own
   local file) keep whatever workflows they list; this changes only what ships.
 

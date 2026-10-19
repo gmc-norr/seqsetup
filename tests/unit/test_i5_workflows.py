@@ -240,7 +240,9 @@ class TestTheModel:
 
 
 BUILT_IN = {
-    "MiSeq i100 Series": ([("Index-first", FORWARD), ("Read-first", REVERSED)], True),
+    # Read-first only: SeqSetup's read order is checked for read-first i100
+    # runs, not for index-first ones (docs/design/2026-10-19-i100-read-first-design.md).
+    "MiSeq i100 Series": ([("Read-first", REVERSED)], True),
     "MiniSeq": ([("Standard kits", REVERSED), ("Rapid kits", FORWARD)], False),
     "NovaSeq 6000": ([("v1.5 reagents", REVERSED), ("v1.0 reagents", FORWARD)], False),
     "NextSeq 500/550": ([("Standard", REVERSED)], False),
@@ -318,9 +320,13 @@ class TestTheLookupsCarryTheFacts:
         self._sync(InstrumentDefinition.from_yaml(_yaml(), "i100.yaml"))
         config = get_instrument_config("MiSeq i100 Series")
         (listed,) = get_all_instruments()
-        local = yaml.safe_load((CONFIG / "instruments.yaml").read_text())["instruments"]
+        # The local file's shape (the shipped i100 lists Read-first only since
+        # docs/design/2026-10-19-i100-read-first-design.md; this record lists two).
         for entry in (config, listed):
-            assert entry["i5_workflows"] == local["MiSeq i100 Series"]["i5_workflows"]
+            assert entry["i5_workflows"] == [
+                {"name": "Index-first", "i5_read_orientation": FORWARD},
+                {"name": "Read-first", "i5_read_orientation": REVERSED},
+            ]
             assert entry["runinfo_marks_i5_reversed"] is True
             assert "i5_read_orientation" not in entry
             assert "samplesheet_v2_i5_orientation" not in entry

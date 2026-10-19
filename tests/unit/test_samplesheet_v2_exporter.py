@@ -71,8 +71,9 @@ class TestSampleSheetV2Exporter:
         output = SampleSheetV2Exporter.export(sample_run)
         assert "OverrideCycles,Y151;I8N2;N2I8;Y151" in output
 
-    def test_export_override_cycles_global_forward_instrument(self):
-        """Test global OverrideCycles for a forward-orientation instrument."""
+    def test_export_override_cycles_global_forward_instrument(self, i100_with_index_first):
+        """Test global OverrideCycles for a forward-orientation instrument: the
+        i100 as a lab's own file may list it, Index-first its standard."""
         run = SequencingRun(
             run_name="MiSeq Run",
             instrument_platform=InstrumentPlatform.MISEQ_I100,
@@ -93,7 +94,7 @@ class TestSampleSheetV2Exporter:
 
         output = SampleSheetV2Exporter.export(run)
 
-        # MiSeq i100's standard workflow (index-first) reads the i5 forward:
+        # That i100's standard workflow (index-first) reads the i5 forward:
         # nothing is reversed.
         assert "OverrideCycles,Y150;I8N2;I8N2;Y150" in output
 
@@ -182,11 +183,13 @@ class TestSampleSheetV2Exporter:
     def test_adjust_override_cycles_single_index_nextseq_500_unchanged(self):
         assert self._adjust("Y151;I8N2;Y151", RunCycles(151, 151, 10, 0)) == "Y151;I8N2;Y151"
 
-    def test_comma_override_normalized_to_semicolon_on_forward_instrument(self):
+    def test_comma_override_normalized_to_semicolon_on_forward_instrument(
+            self, i100_with_index_first):
         """BCL Convert v2 uses ';' as the OverrideCycles separator; a legacy
         comma-form override must be normalized to ';' where nothing is
         reversed too, not emitted with literal commas the sequencer can't
-        parse. MiSeq i100 index-first reads the i5 forward."""
+        parse. MiSeq i100 index-first, as a lab's own file may list it, reads
+        the i5 forward."""
         assert self._adjust("Y151,I8N2,I8N2,Y151", RunCycles(151, 151, 10, 10),
                             InstrumentPlatform.MISEQ_I100) == "Y151;I8N2;I8N2;Y151"
 

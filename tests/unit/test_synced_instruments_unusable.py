@@ -78,7 +78,7 @@ class TestOnlySyncedInstrumentsCount:
 
     def test_with_no_synced_records_the_local_file_is_used(self, use_repo):
         use_repo(_Repo([]))
-        assert i5_workflow_names(I100) == ["Index-first", "Read-first"]
+        assert i5_workflow_names(I100) == ["Read-first"]
         assert no_settings_reason("No Such Sequencer") == (
             "No Such Sequencer is not in the local instruments file")
 

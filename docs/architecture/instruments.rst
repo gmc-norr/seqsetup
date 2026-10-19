@@ -27,7 +27,7 @@ The latest chemistry generation using blue and green dye channels.
      - 1.5B (2 lanes), 10B (8 lanes), 25B (8 lanes)
      - 100, 200, 300
    * - **MiSeq i100 Series**
-     - Forward (index-first)
+     - Reverse-complement (read-first)
      - 5M, 25M, 50M, 100M (1 lane each)
      - 100, 300, 600, 1000 (varies by flowcell)
    * - **NextSeq 1000/2000**
@@ -129,10 +129,10 @@ values and their sources.
 
 Read reversed in the standard workflow: NovaSeq X Series, NextSeq
 1000/2000, NextSeq 500/550, MiniSeq (standard kits), NovaSeq 6000 (v1.5
-reagents), HiSeq 4000, HiSeq X. Read forward: MiSeq i100 Series
-(index-first), MiSeq, HiSeq 2000/2500, GAIIx. ``RunInfo.xml`` marks the
-reversed read on NovaSeq X Series, NextSeq 1000/2000 and MiSeq i100
-Series.
+reagents), HiSeq 4000, HiSeq X, MiSeq i100 Series (read-first, its only
+workflow as shipped). Read forward: MiSeq, HiSeq 2000/2500, GAIIx.
+``RunInfo.xml`` marks the reversed read on NovaSeq X Series, NextSeq
+1000/2000 and MiSeq i100 Series.
 
 SampleSheet v2 Export Support
 -----------------------------
