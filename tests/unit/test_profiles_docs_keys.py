@@ -12,11 +12,13 @@ import pytest
 from seqsetup.input_rules.profiles import (
     ApplicationProfileReferenceRules,
     ApplicationProfileRules,
+    TestApplicationProfilesRules,
     TestProfileRules,
 )
 
 GUIDE = Path(__file__).resolve().parents[2] / "docs" / "admin-guide" / "profiles.rst"
-RULEBOOKS = (ApplicationProfileRules, ApplicationProfileReferenceRules, TestProfileRules)
+RULEBOOKS = (ApplicationProfileRules, ApplicationProfileReferenceRules, TestProfileRules,
+             TestApplicationProfilesRules)
 
 
 @pytest.mark.parametrize("key", sorted({key for rulebook in RULEBOOKS for key in rulebook.model_fields}))

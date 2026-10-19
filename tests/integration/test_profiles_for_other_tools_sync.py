@@ -122,3 +122,10 @@ class TestRefusedFiles:
         (stored,) = ctx.test_profile_repo.list_all()
         assert [(r.profile_name, r.profile_version) for r in stored.application_profiles] == [
             ("GuardProfile", "1.0.0")]
+
+    def test_a_refusal_still_names_the_skipped_files(self, fresh_app, monkeypatch):
+        _app, ctx, _db = fresh_app
+        ok, message, _logged = _sync_tests(ctx, monkeypatch, {"Wgs.yaml": "TestType: 5\n"},
+                                           {"Guard.yaml": GUARD, "NfCore.yaml": PIPELINE})
+        assert not ok
+        assert SKIPPED in message
