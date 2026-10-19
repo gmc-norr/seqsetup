@@ -190,11 +190,17 @@ class TestAShortenedI5OnAReversedRead:
         run = _shortened("NovaSeq X Series", index2_cycles=None, override="Y151;I10;I8N2;Y151")
         assert len(_shortened_errors(run)) == 1
 
-    @pytest.mark.parametrize("instrument,workflow", [
-        ("MiSeq", ""), ("MiSeq i100 Series", "Index-first"),
-    ])
-    def test_it_is_refused_where_the_i5_is_read_forward_too(self, instrument, workflow):
-        assert len(_shortened_errors(_shortened(instrument, workflow))) == 1
+    def test_it_is_refused_where_the_i5_is_read_forward_too(self):
+        assert len(_shortened_errors(_shortened("MiSeq"))) == 1
+
+    def test_it_is_refused_on_a_forward_workflow_of_a_marking_instrument(
+            self, i100_with_index_first):
+        """The i100's Index-first, as a lab's own file may list it (the shipped
+        i100 lists Read-first only, docs/design/2026-10-19-i100-read-first-design.md)."""
+        run = _shortened("MiSeq i100 Series", "Index-first")
+        categories = [e.category for e in ValidationService.validate_configuration(run)]
+        assert "no_i5_direction" not in categories
+        assert len(_shortened_errors(run)) == 1
 
     def test_a_long_i5_on_a_short_read_is_left_to_index_exceeds_cycles(self):
         run = _shortened("NovaSeq X Series", index2_cycles=None, cycles=RunCycles(151, 151, 8, 8))

@@ -67,8 +67,8 @@ Read-first standard, would keep a path whose sheets are probably refused.
   and the `IndexOrientation,Forward` header line do not change. The Index 2
   part of OverrideCycles is written reversed when the i5 is shorter than the
   Index 2 read, as for the NovaSeq X Series (see Instruments in the admin
-  guide). Measured on the 78-sheet corpus (`tools/today_sheets.py` against
-  the `cca4a12` sheets): one sheet differs, `MiSeq i100 Series|5M|8on10|dual|v2`,
+  guide). Measured on a corpus of 78 sheets (a script outside this
+  repository, against the sheets `cca4a12` writes): one sheet differs, `MiSeq i100 Series|5M|8on10|dual|v2`,
   in its two OverrideCycles cells only, `Y151;I8N2;I8N2;Y151` becoming
   `Y151;I8N2;N2I8;Y151`. The 8-on-8 and 10-on-10 i100 sheets and every other
   instrument's sheets are unchanged.
@@ -90,6 +90,7 @@ Read-first standard, would keep a path whose sheets are probably refused.
 
 - The i5 rule itself (`services/i5_rule.py`): a forward workflow on an
   instrument whose `RunInfo.xml` marks the i5 stays supported and tested, on
-  a test instrument instead of the shipped i100.
+  the i100 with its workflow list patched to the old two (the
+  `i100_with_index_first` test fixture), as a lab's own file may list them.
 - Every other shipped instrument's workflows.
 - No code change: the instrument settings, the docs and the tests change.
