@@ -9,6 +9,8 @@ what is wrong. The form's own boxes are checked by the same rules, refused
 rather than cut, and named.
 """
 
+import pytest
+
 ORIGIN = {"Origin": "http://testserver"}
 
 GOOD = (b"name: Probe Kit\nversion: '1.0'\nindex_mode: single\n"
@@ -86,6 +88,23 @@ class TestTheFormSBoxesAreCheckedToo:
 
         assert "HX-Redirect" not in resp.headers
         assert "Adapter Read 1" in resp.text and "at most 1000 characters" in resp.text
+        assert ctx.index_kit_repo.list_all() == []
+
+    @pytest.mark.parametrize("box, value, says", [
+        ("default_read1_override", "Y" * 257, "at most 256 characters"),
+        ("default_read2_override", "Y*Z", "Y, I, U, N"),
+        ("default_index1_override", "I601", "at most 600"),
+    ])
+    def test_an_override_box_is_refused_at_the_route(self, logged_in_client, fresh_app,
+                                                    box, value, says):
+        """A 402-character read pattern became a 410-character OverrideCycles
+        on every sample the kit touched (fresh review of a382f57, P2-1)."""
+        _app, ctx, _db = fresh_app
+
+        resp = _upload(logged_in_client, GOOD, **{box: value})
+
+        assert "HX-Redirect" not in resp.headers
+        assert says in resp.text, resp.text
         assert ctx.index_kit_repo.list_all() == []
 
     def test_a_kit_name_of_256_characters_is_saved_as_written(
