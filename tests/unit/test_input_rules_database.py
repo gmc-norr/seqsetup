@@ -297,3 +297,48 @@ class TestNoMessageQuotesAnythingOnTheReaderPath:
         scrubbed = _scrubbed(problem, _secret_pattern((SECRET,)))
 
         assert SECRET.upper() not in scrubbed.message
+
+
+class TestTheScrubIsWhatMakesTheGuaranteeHold:
+    """The rulebook's own messages name no value, so with the scrub switched
+    off nothing leaks today -- which is why break row W10 reddened nothing.
+    This drives the scrub itself, with a rule that does quote its input, as a
+    future rule might."""
+
+    def _rulebook(self):
+        from typing import Annotated
+
+        from pydantic import AfterValidator
+
+        from seqsetup.input_rules.base import StrictRules
+
+        def _quotes_it(value: str) -> str:
+            raise ValueError(f"is wrong: {value!r}")
+
+        class Inner(StrictRules):
+            uri: str
+            database: Annotated[str, AfterValidator(_quotes_it)]
+
+        class Rules(StrictRules):
+            mongodb: Inner
+
+        return Rules
+
+    def test_a_rule_that_quotes_its_input_is_scrubbed(self):
+        from seqsetup.input_rules.check import check_yaml
+
+        result = check_yaml(f'mongodb:\n  uri: "{URI}"\n  database: "{SECRET}"\n',
+                            "config/mongodb.yaml", self._rulebook(), sensitive=True)
+
+        said = " ".join(p.message for p in result.problems)
+        assert not result.ok
+        assert SECRET not in said, said
+        assert "***" in said, said
+
+    def test_a_file_that_is_not_sensitive_still_says_what_it_found(self):
+        from seqsetup.input_rules.check import check_yaml
+
+        result = check_yaml('mongodb:\n  uri: "u"\n  database: "plain"\n',
+                            "f.yaml", self._rulebook())
+
+        assert "'plain'" in " ".join(p.message for p in result.problems)

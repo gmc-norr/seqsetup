@@ -222,8 +222,10 @@ class TestAMalformedConfigFileKeepsItsSecret:
         message = str(refused.value)
         assert PASSWORD not in message and USER not in message, message
         # file:line:column:, as every other settings file is named since
-        # step 2 of the input rules.
-        assert str(path) in message and f"{path}:2:" in message, message
+        # step 2 of the input rules, and the file first: a person fixing it
+        # looks there.
+        assert message.startswith(f"{path} cannot be used"), message
+        assert f"{path}:2:" in message, message
 
     def test_an_empty_config_file_still_stops_start_up(self, monkeypatch, tmp_path):
         """An empty file is a broken one: it must not quietly turn into the
@@ -319,3 +321,36 @@ class TestAMalformedConfigFileKeepsItsSecret:
                      f'mongodb:\n  uri: "{URI}"\n  database: seqsetup\n')
 
         assert database._load_config() == {"uri": URI, "database": "seqsetup"}
+
+
+class TestTheEnvironmentSValuesStopStartUpToo:
+    """docker-compose.yml sets both variables, so a lab takes that path and
+    never reads the file; a MONGODB_DATABASE holding a '.' reached
+    ``_client[name]``, which is outside ``init_db``'s try."""
+
+    def test_a_bad_database_name_in_the_environment_stops_start_up(self, monkeypatch):
+        monkeypatch.setenv("MONGODB_URI", URI)
+        monkeypatch.setenv("MONGODB_DATABASE", "seq.setup")
+
+        with pytest.raises(ValueError) as refused:
+            database._load_config()
+
+        assert "MONGODB_DATABASE" in str(refused.value)
+        assert PASSWORD not in str(refused.value)
+
+    def test_a_uri_with_no_scheme_in_the_environment_stops_start_up(self, monkeypatch):
+        monkeypatch.setenv("MONGODB_URI", "localhost:27017")
+
+        with pytest.raises(ValueError) as refused:
+            database._load_config()
+
+        assert "MONGODB_URI" in str(refused.value)
+
+    def test_a_good_pair_is_what_init_db_is_handed(self, monkeypatch, no_real_database):
+        monkeypatch.setenv("MONGODB_URI", URI)
+        monkeypatch.setenv("MONGODB_DATABASE", "seqsetup")
+
+        with pytest.raises(RuntimeError):
+            database.init_db()
+
+        assert no_real_database.built == [URI]

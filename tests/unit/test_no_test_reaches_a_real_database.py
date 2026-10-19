@@ -118,3 +118,17 @@ def _what_a_session_fixture_saw():
     from seqsetup.services import database
 
     return (os.environ.get("MONGODB_URI"), type(database.MongoClient).__name__)
+
+
+def test_one_test_leaves_a_connection_behind():
+    """Deliberately: the test below proves the guard cleared it. ``init_db``
+    returns early when ``_db`` is already set, so a test that forgets the
+    reset passes while proving nothing (break row W18)."""
+    database._db = object()
+    database._client = object()
+
+    assert database._db is not None
+
+
+def test_the_next_test_sees_none_of_it():
+    assert database._db is None and database._client is None
