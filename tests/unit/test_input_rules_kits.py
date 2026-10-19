@@ -209,6 +209,14 @@ class TestASequenceIsDna:
 
         assert problem[1] == ("i7_indexes", 0, "sequence")
 
+    def test_a_sequence_of_spaces_only_is_refused(self):
+        """It has characters, so a length bound alone lets it through, and
+        the model stores it as the empty sequence."""
+        (problem,) = problems(SINGLE.replace("sequence: ACGTACGT", "sequence: '   '"))
+
+        assert problem[1] == ("i7_indexes", 0, "sequence")
+        assert problem[2] == "must hold a sequence"
+
     def test_an_adapter_that_is_not_dna_is_refused(self):
         (problem,) = problems(SINGLE + "adapter_read1: ACGTX\n")
 
@@ -338,6 +346,21 @@ class TestTheCheckedValueBecomesTodaySKit:
 
         assert kit.name == "FormKit"
         assert [p.id for p in kit.index_pairs] == ["Probe Kit_P1"]
+
+    def test_a_repeated_key_keeps_the_upload_s_own_audit_reason(self):
+        """A repeated key in a kit file is usually an index name, and the
+        upload has audited it as ``repeated_names`` since ec465fc; the reader
+        is what finds it now, so KitFileProblems recognises that problem."""
+        from seqsetup.input_rules.kits import KitFileProblems
+        from seqsetup.input_rules.problems import InputProblem
+        from seqsetup.input_rules.reader import GIVEN_TWICE
+
+        twice = InputProblem("k.yaml", 5, 1, ("i7Index1", "A"),
+                             f"{GIVEN_TWICE} (also on line 4)")
+        other = InputProblem("k.yaml", 2, 1, ("ownr",), "is not a key this file can have")
+
+        assert KitFileProblems([twice]).reason == "repeated_names"
+        assert KitFileProblems([other]).reason == "kit_file_problems"
 
     def test_the_sync_s_own_fields_are_set_by_the_caller(self):
         kit = build_kit(checked(SINGLE), created_by="github_sync", source="github")

@@ -514,6 +514,30 @@ class TestTheTsvHeaderLineIsReadHoweverItIsSpelled:
         assert "line 5" in str(refused.value), str(refused.value)
 
 
+class TestAProblemInACsvNamesTheRowSLine:
+    """A CSV has no keys for the rulebook's paths, so each row's own line is
+    recorded as the canonical map is built: a problem the rules find in it
+    still names the line the index came from."""
+
+    def test_a_single_mode_row_s_problem_names_its_line(self):
+        content = ("name,index\nA1,ATTACTCG\n" + "Z" * 300 + ",TCCGGAGA\n")
+
+        with pytest.raises(KitFileProblems) as refused:
+            _upload(content, "k.csv", index_mode=IndexMode.SINGLE)
+
+        assert "line 3" in str(refused.value), str(refused.value)
+        assert "at most 256 characters" in str(refused.value)
+
+    def test_a_pair_row_s_problem_names_its_line(self):
+        content = ("name,index,index2\nA1,ATTACTCG,TATAGCCT\n"
+                   + "Z" * 300 + ",TCCGGAGA,ATAGAGGC\n")
+
+        with pytest.raises(KitFileProblems) as refused:
+            _upload(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
+
+        assert "line 3" in str(refused.value), str(refused.value)
+
+
 class TestAColumnIsReadHoweverItIsSpelled:
     """``row.get("index")`` matched the header text exactly, so a file whose
     column is called ``INDEX`` or ``Index_2`` in the other letter case was

@@ -46,6 +46,10 @@ class TestEveryProblemIsShownWithItsLine:
         assert "is_fixed_layout" in resp.text and "line 8" in resp.text
         assert "true or false" in resp.text
         assert "Failed to parse file" not in resp.text
+        # The list fragment, not one sentence: it carries a title and one
+        # entry per problem (_error_fragment_list, not _error_fragment).
+        assert "This kit was not saved:" in resp.text
+        assert resp.text.count("line 7") == 1 and resp.text.count("line 8") == 1
         assert ctx.index_kit_repo.list_all() == []
         (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
         assert (row.outcome, row.details["reason"]) == ("failure", "kit_file_problems")
@@ -137,3 +141,23 @@ class TestAFileSModeMustBeTheModePicked:
         assert ctx.index_kit_repo.list_all() == []
         (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
         assert (row.outcome, row.details["reason"]) == ("failure", "kit_mode_differs")
+
+
+class TestARefusedKitFileSProblemsReachTheSync:
+    """The sync puts every problem of a file in its own list, which the
+    Config Sync page shows as a table and the audit row carries: the
+    refusal's own line names the first problem only."""
+
+    def test_the_sync_result_carries_every_problem_of_the_file(self, fresh_app, monkeypatch):
+        from .test_synced_kit_indexes import _sync_with_kits
+
+        _app, ctx, _db = fresh_app
+        bad = ("name: Lab Kit\nversion: '1.0'\nindex_mode: single\nownr: me\n"
+               "i7_indexes:\n  - name: A1\n    sequence: ATTACTCG\n"
+               "is_fixed_layout: 'no'\n")
+
+        result = _sync_with_kits(ctx, monkeypatch, {"lab.yaml": bad})
+
+        places = [(p.file, p.line, tuple(p.path)) for p in result.problems]
+        assert ("index_kits/lab.yaml", 4, ("ownr",)) in places, places
+        assert ("index_kits/lab.yaml", 8, ("is_fixed_layout",)) in places, places
