@@ -146,6 +146,13 @@ class TestEveryTextHasItsBound:
         assert problem[1] == ("i7_indexes", 0, "name")
         assert problem[2] == "must be at most 256 characters"
 
+    def test_a_well_position_may_be_empty_as_a_description_may(self):
+        """It was refused where description: '' is accepted, and the base
+        stored it (fresh review of a382f57, P3-7)."""
+        value = checked(SINGLE + "    well_position: ''\n")
+
+        assert value.i7_indexes[0].well_position == ""
+
     def test_a_well_position_over_256_characters_is_refused(self):
         (problem,) = problems(SINGLE + "    well_position: " + "W" * 257 + "\n")
 
@@ -316,6 +323,30 @@ class TestTheModeSOwnListsHoldTheIndexes:
         assert value.i7_indexes == []
 
 
+class TestAMessageDoesNotFollowTheFileSSize:
+    """One problem could carry a kilobyte of a file's own text (a long key),
+    and a thousand problems a megabyte of HTML (fresh review of a382f57,
+    P3-6)."""
+
+    def test_a_long_key_is_cut_in_the_path(self):
+        from seqsetup.input_rules.kits import KitFileProblems
+
+        result = check_index_kit_file(SINGLE + ("K" * 1000) + ": x\n", "k.yaml")
+
+        assert not result.ok
+        assert len(str(KitFileProblems(result.problems, "k.yaml"))) < 400
+
+    def test_many_problems_are_cut_with_a_count_of_the_rest(self):
+        from seqsetup.input_rules.kits import KitFileProblems
+
+        entries = "".join(f"ownr{n}: me\n" for n in range(200))
+        result = check_index_kit_file(SINGLE + entries, "k.yaml")
+
+        message = str(KitFileProblems(result.problems, "k.yaml"))
+        assert "and 180 more problems" in message, message
+        assert len(message) < 4000
+
+
 class TestAKitFileHasASize:
     """Nothing bounded a kit's size: 20,000 pairs make a 4.72 MB BSON
     document from a 2.63 MB file, and the sync's 10 MB per-file cap would
@@ -397,3 +428,23 @@ class TestTheUploadFormSBoxesFollowTheSameRules:
 
     def test_every_box_is_named_in_plain_words(self):
         assert set(FORM_BOXES) == set(FormBoxRules.model_fields)
+
+    @pytest.mark.parametrize("box, value, says", [
+        ("default_read1_override", "Y" * 257, "at most 256 characters"),
+        ("default_read2_override", "Y*Z", "Y, I, U, N"),
+        ("default_index1_override", 601, "at most 600"),
+        ("default_index2_override", 0, "at least 1"),
+    ])
+    def test_an_override_box_that_breaks_a_rule_is_named(self, box, value, says):
+        """The form's four override boxes saw no rulebook: a 402-character
+        read pattern became a 410-character OverrideCycles on every sample
+        the kit touched, and a cycle count for an empty slot escaped
+        IndexValidator too (fresh review of a382f57, P2-1)."""
+        (problem,) = check_form_boxes(**{box: value})
+
+        assert problem.startswith(FORM_BOXES[box] + ":")
+        assert says in problem, problem
+
+    def test_a_good_override_box_passes(self):
+        assert check_form_boxes(default_read1_override="N2Y*",
+                                default_index1_override=8) == []

@@ -843,3 +843,131 @@ class TestIndexNamesMustBeText:
         kit = IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.UNIQUE_DUAL)
 
         assert [p.name for p in kit.index_pairs] == ["012"]
+
+
+class TestAFileSModeMustBeTheModePicked:
+    """The mode decides which indexes a sample can be given, so it is never
+    guessed. The picker wins, as before, and a file naming a different mode
+    is refused -- whatever kind of value it names it with: an
+    ``index_mode: 3`` had its ValueError swallowed and the picked mode
+    written in its place, so the file was accepted where it was refused
+    before (fresh review of a382f57, P1-1)."""
+
+    GOOD = ("name: K\nversion: '1.0'\nindex_mode: single\n"
+            "i7_indexes:\n  - name: A1\n    sequence: ATTACTCG\n")
+
+    def test_the_same_mode_is_accepted(self):
+        kit = IndexParser.parse_from_content(self.GOOD, "k.yaml", index_mode=IndexMode.SINGLE)
+
+        assert kit.index_mode == IndexMode.SINGLE
+
+    def test_another_mode_in_words_is_refused_naming_both(self):
+        content = self.GOOD.replace("index_mode: single", "index_mode: combinatorial")
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.yaml", index_mode=IndexMode.SINGLE)
+
+        assert "combinatorial" in str(refused.value) and "single" in str(refused.value)
+
+    @pytest.mark.parametrize("written", ["3", "true", "[a]", "{a: b}", "'singl'"])
+    def test_a_mode_of_any_other_kind_is_refused(self, written):
+        content = self.GOOD.replace("index_mode: single", f"index_mode: {written}")
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.yaml", index_mode=IndexMode.SINGLE)
+
+        assert "single" in str(refused.value), str(refused.value)
+
+    @pytest.mark.parametrize("written", ["''", "~"])
+    def test_a_mode_left_empty_still_means_the_picked_one(self, written):
+        content = self.GOOD.replace("index_mode: single", f"index_mode: {written}")
+
+        kit = IndexParser.parse_from_content(content, "k.yaml", index_mode=IndexMode.SINGLE)
+
+        assert kit.index_mode == IndexMode.SINGLE
+
+    @pytest.mark.parametrize("written", ["1", "true", "[a]"])
+    def test_a_version_of_another_kind_is_refused_not_turned_into_text(self, written):
+        """str() + normalize_version ran before the check, so version: 1 was
+        stored as "1.0" on the upload while the sync refused the same file
+        (fresh review of a382f57, P2-2)."""
+        content = self.GOOD.replace("version: '1.0'", f"version: {written}")
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.yaml", index_mode=IndexMode.SINGLE)
+
+        assert "version" in str(refused.value)
+
+    def test_a_version_written_as_one_number_in_quotes_still_gains_its_zero(self):
+        """normalize_version stays on the upload path, after the check."""
+        content = self.GOOD.replace("version: '1.0'", "version: '1'")
+
+        kit = IndexParser.parse_from_content(content, "k.yaml", index_mode=IndexMode.SINGLE)
+
+        assert kit.version == "1.0"
+
+
+class TestATsvIndexKitLineIsReadOrRefused:
+    """An [IndexKit] line whose key is not Name, Version or Description -- a
+    real Illumina template's AdapterRead1 -- was dropped without a word, and
+    so was a line with one cell (fresh review of a382f57, P2-4)."""
+
+    GOOD = ("[IndexKit]\nName\tT Kit\nVersion\t1.0\n\n[Indices]\n"
+            "Name\tSequence\tIndexNumber\nD701\tATTACTCG\t1\n")
+
+    def test_the_three_keys_it_reads_are_read(self):
+        kit = IndexParser.parse_from_content(
+            self.GOOD.replace("Version\t1.0", "Version\t1.0\nDescription\tA kit"),
+            "k.tsv", index_mode=IndexMode.SINGLE)
+
+        assert (kit.name, kit.version, kit.description) == ("T Kit", "1.0", "A kit")
+
+    def test_a_key_it_does_not_read_is_refused_with_its_line(self):
+        content = self.GOOD.replace("Version\t1.0", "Version\t1.0\nAdapterRead1\tAGATCGGAAGAGC")
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+
+        assert "AdapterRead1" in str(refused.value) and "line 4" in str(refused.value)
+
+    def test_a_line_with_one_cell_is_refused_with_its_line(self):
+        content = self.GOOD.replace("Version\t1.0", "Version\t1.0\nJustOneCell")
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+
+        assert "line 4" in str(refused.value)
+
+
+class TestAColumnThatLooksLikeASequenceIsReadOrRefused:
+    """A CSV whose i5 column is spelt sequence2 lost the i5 with no word,
+    and a header naming one slot under two different aliases dropped one of
+    them (fresh review of a382f57, P2-3)."""
+
+    def test_a_sequence_with_a_number_is_refused_when_it_is_not_read(self):
+        content = "name,sequence,sequence2\nA1,ATTACTCG,TATAGCCT\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE,
+                                           kit_name="K", kit_version="1.0")
+
+        assert "sequence2" in str(refused.value)
+
+    def test_a_plain_sequence_column_is_still_read_in_a_section(self):
+        content = "[i7]\nname,sequence\nA,ATTACTCG\n[i5]\nname,sequence\nB,TATAGCCT\n"
+
+        kit = IndexParser.parse_from_content(content, "k.csv",
+                                             index_mode=IndexMode.COMBINATORIAL,
+                                             kit_name="K", kit_version="1.0")
+
+        assert [i.sequence for i in kit.i7_indexes] == ["ATTACTCG"]
+
+    @pytest.mark.parametrize("header", ["name,index,sequence", "name,Sample_ID,index"])
+    def test_two_aliases_of_one_slot_are_refused(self, header):
+        content = header + "\nA1,ATTACTCG,TATAGCCT\n"
+
+        with pytest.raises(KitFileRefused) as refused:
+            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE,
+                                           kit_name="K", kit_version="1.0")
+
+        assert "one column of this format" in str(refused.value), str(refused.value)

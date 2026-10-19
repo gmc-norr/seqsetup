@@ -177,6 +177,11 @@ _SECTION_CSV_READS = "name, sequence and well_position"
 # "barcode", or a word starting i7, i5 or lane, is about an index or a lane.
 _INDEX_OR_LANE_TEXT = ("index", "barcode")
 _INDEX_OR_LANE_WORD = re.compile(r"^(i7|i5|lane)")
+# A column called sequence2 or seq_2 is an i5 nobody reads: the simple CSV
+# reads "sequence" as the i7 and has no such name for the i5, so the column
+# was ignored and the i5 went nowhere (fresh review of a382f57, P2-3). Plain
+# "sequence" stays a column the section CSV reads.
+_SEQUENCE_WITH_A_NUMBER = re.compile(r"^seq(uence)?[\s_]*[0-9]")
 
 # A cell of four or more bases is a sequence, so the line carrying it is an
 # index line and not a section header however the header is spelled.
@@ -207,6 +212,7 @@ def _lines(numbers: list[int]) -> str:
 def _looks_like_index_or_lane(name: str) -> bool:
     name = name.lower()
     return (any(text in name for text in _INDEX_OR_LANE_TEXT)
+            or _SEQUENCE_WITH_A_NUMBER.match(name.strip())
             or any(_INDEX_OR_LANE_WORD.match(word) for word in re.split(r"[^a-z0-9]+", name)))
 
 
@@ -230,9 +236,15 @@ def _columns_not_read(header, read: frozenset, reads: str) -> None:
             f"been ignored without a word. This format reads {reads}. Rename the column "
             f"or take it out."
         )
+    # Two names for one slot: the reader takes the first alias it finds
+    # (``_cell``) and the other's values go nowhere -- "name" beside
+    # "Sample_ID", "index" beside "sequence" (fresh review of a382f57, P2-3).
+    # The same-slot case covers the same-normal-form one, which
+    # ``input_rules.table.refuse_repeated_columns`` also refuses first for a
+    # header it read itself.
     seen: dict[str, str] = {}
     for name in names:
-        key = _column_key(name)
+        key = _slot_key(name) or _column_key(name)
         if key in seen and seen[key] != name:
             raise ColumnsNotRead(
                 f'The file has two columns, "{seen[key]}" and "{name}", that name one '
@@ -240,6 +252,27 @@ def _columns_not_read(header, read: frozenset, reads: str) -> None:
                 f"of them and the other's values would go nowhere. Keep one."
             )
         seen[key] = name
+
+
+# Which slot each name the readers look for fills, so a header naming one
+# slot twice is seen.
+_SLOTS = {
+    "name": _CSV_NAME_COLUMNS + ("name", "Name"),
+    "i7_name": _CSV_I7_NAME_COLUMNS,
+    "i5_name": _CSV_I5_NAME_COLUMNS,
+    "i7": _CSV_I7_COLUMNS + ("sequence", "Sequence"),
+    "i5": _CSV_I5_COLUMNS,
+    "well": _CSV_WELL_COLUMNS,
+}
+
+
+def _slot_key(name) -> Optional[str]:
+    """The slot ``name`` fills, or None when no reader looks for it."""
+    key = _column_key(name)
+    for slot, names in _SLOTS.items():
+        if key in {_column_key(known) for known in names}:
+            return slot
+    return None
 
 
 def _cells_with_no_column(numbered) -> None:
@@ -505,18 +538,25 @@ class IndexParser:
 
     @classmethod
     def _checked(cls, data: dict, locations: Locations, file: str,
-                 index_mode: Optional[IndexMode] = None) -> IndexKit:
+                 index_mode: Optional[IndexMode] = None,
+                 normalize: bool = False) -> IndexKit:
         """The kit a canonical map describes, checked by the rulebook.
 
         ``index_mode`` is the mode picked on the upload form, which wins as it
         does today; a file naming a different one is refused naming both,
         since a wrong mode decides which indexes a sample can be given.
         """
-        file_mode = data.get("index_mode")
         if index_mode is not None:
-            if isinstance(file_mode, str) and file_mode and file_mode != index_mode.value:
+            # A mode that is not the picked one is refused whatever kind of
+            # value it is written as: a file saying index_mode: 3 had its
+            # ValueError swallowed and the picked mode written in its place,
+            # so the file was accepted where it was refused before (fresh
+            # review of a382f57, P1-1). An empty value and null mean "names
+            # none", as before.
+            said = data.get("index_mode")
+            if said is not None and said != "" and said != index_mode.value:
                 raise KitModeDiffers(
-                    f"The file says index_mode: {file_mode} but the kit was uploaded as "
+                    f"The file says index_mode: {said!r} but the kit was uploaded as "
                     f"{index_mode.value}, so nothing was saved: the mode decides which "
                     f"indexes a sample can be given, and only one of the two can be right. "
                     f"Upload the kit in the mode its file says, or change the file."
@@ -525,7 +565,13 @@ class IndexParser:
         result = check_kit_data(data, locations, file)
         if not result.ok:
             raise KitFileProblems(result.problems, file)
-        return build_kit(result.value)
+        kit = build_kit(result.value)
+        if normalize:
+            # The upload has always written "1" as "1.0"; it is the builder's
+            # business, after the check, and changing it would change the
+            # stored identity of a kit a lab uploaded.
+            kit.version = normalize_version(kit.version)
+        return kit
 
     @classmethod
     def parse(
@@ -778,13 +824,19 @@ class IndexParser:
         canonical = dict(data)
         canonical["name"] = said["name"]
         if said["version"] is not None:
-            canonical["version"] = normalize_version(str(said["version"]))
+            # Unchanged: str() + normalize_version ran before the check, so
+            # version: 1 was stored as "1.0" on the upload while the sync
+            # refused the same file (fresh review of a382f57, P2-2).
+            canonical["version"] = said["version"]
         else:
             canonical.pop("version", None)
         # The file's own words when it wrote them, so a mode that is not the
         # one picked is seen; else the picked mode.
+        # The file's own value whenever it wrote one, whatever kind it is,
+        # so _checked can see a mode that is not the one picked; an empty
+        # value and null mean "names none".
         canonical["index_mode"] = (data["index_mode"]
-                                   if isinstance(data.get("index_mode"), str) and data["index_mode"]
+                                   if data.get("index_mode") not in (None, "")
                                    else mode.value)
         # An index2 that is empty or missing means an i7-only pair, as before.
         if isinstance(canonical.get("index_pairs"), list):
@@ -793,7 +845,7 @@ class IndexParser:
                 if isinstance(pair, dict) else pair
                 for pair in canonical["index_pairs"]
             ]
-        return cls._checked(canonical, locations, file, index_mode)
+        return cls._checked(canonical, locations, file, index_mode, normalize=True)
 
     @classmethod
     def _parse_illumina_yaml(
@@ -880,12 +932,11 @@ class IndexParser:
         canonical = {
             "name": said["name"],
             "index_mode": index_mode.value,
-            **({"version": normalize_version(str(said["version"]))}
-               if said["version"] is not None else {}),
+            **({"version": said["version"]} if said["version"] is not None else {}),
             **({"description": data["Description"]} if "Description" in data else {}),
             **_lists_in_mode(index_mode, i7_indexes, i5_indexes),
         }
-        return cls._checked(canonical, Locations(), file, index_mode)
+        return cls._checked(canonical, Locations(), file, index_mode, normalize=True)
 
     @classmethod
     def _parse_tsv(
@@ -919,6 +970,10 @@ class IndexParser:
         kit_version = None
         kit_description = None
         index_lines: dict = {}
+        # An [IndexKit] line whose key is not one of the three read, or that
+        # has one cell, was dropped without a word -- a real template's
+        # AdapterRead1 vanished (fresh review of a382f57, P2-4).
+        unread_settings: list[tuple[int, str]] = []
         repeated: list[str] = []
         incomplete: list[int] = []
         # The header line is only ever the section's first content line.
@@ -942,14 +997,17 @@ class IndexParser:
             parts = line.split("\t")
 
             if current_section == "IndexKit":
-                if len(parts) >= 2:
-                    key, value = parts[0], parts[1]
+                key = parts[0].strip()
+                if len(parts) >= 2 and key in ("Name", "Version", "Description"):
+                    value = parts[1]
                     if key == "Name":
                         kit_name = value
                     elif key == "Version":
                         kit_version = value
-                    elif key == "Description":
+                    else:
                         kit_description = value
+                else:
+                    unread_settings.append((lineno, key))
 
             elif current_section != "Indices":
                 unread_sections.setdefault(
@@ -998,6 +1056,17 @@ class IndexParser:
                 "[IndexKit] section and an [Indices] section; a line anywhere else was "
                 "dropped without a word, so a section marker spelled otherwise lost every "
                 "index under it. Check the section's spelling, or take the lines out."
+            )
+        if unread_settings:
+            named = ", ".join(f"line {n} ({key!r})" if key else f"line {n}"
+                              for n, key in unread_settings[:_LINES_SHOWN])
+            more = len(unread_settings) - _LINES_SHOWN
+            raise ColumnsNotRead(
+                f"These [IndexKit] lines are not one this format reads, so nothing was "
+                f"saved: {named}{f' and {more} more' if more > 0 else ''}. An [IndexKit] "
+                f"section holds a Name, a Version and a Description, each written as the "
+                f"key, a tab and the value; any other line was dropped without a word. "
+                f"Take the line out, or check the key's spelling."
             )
         if incomplete:
             raise IncompleteIndexRows(
@@ -1184,8 +1253,6 @@ class IndexParser:
         if index_mode is None:
             index_mode = IndexMode.COMBINATORIAL
 
-        said = _name_and_version({}, "", "", default_name, default_version,
-                                 name_given, version_given, "")
         i7_entries: list = []
         i5_entries: list = []
         locations = Locations()
@@ -1269,6 +1336,11 @@ class IndexParser:
         if index_mode == IndexMode.SINGLE and i5_entries:
             raise _i5_in_single("an [i5] section")
 
+        # Last, as in _parse_csv: raised at the top it shadowed the
+        # stray-line and repeated-column messages, so a file's real fault
+        # was never said (fresh review of a382f57, P3-2).
+        said = _name_and_version({}, "", "", default_name, default_version,
+                                 name_given, version_given, "")
         canonical = {"name": said["name"], "index_mode": index_mode.value,
                      "version": said["version"], "i7_indexes": i7_entries}
         if index_mode != IndexMode.SINGLE:

@@ -1149,16 +1149,23 @@ class GitHubSyncService:
                             refused.append({"path": item_path, "name": None, "kit": None,
                                             "reason": "could not be read as an index kit"})
 
-                    except KitFileProblems:
+                    except KitFileProblems as problems:
                         # The file's own problems, the first one named as for
                         # a profile or an instrument file; the list of
                         # problems has them all. ``name`` stays None, so
                         # _synced_kits_to_keep keeps every synced kit it did
                         # not read -- the conservative side, and what a file
-                        # that could not be parsed has always done.
+                        # that could not be parsed has always done. Read from
+                        # the exception, not from names set inside the try: a
+                        # NameError in this handler would escape the
+                        # ``except Exception`` below and stop the sync
+                        # mid-write (fresh review of a382f57, P3-8).
+                        found = [p for p in problems.problems if p.level == "error"]
+                        rest = (" (and more problems in this file: see the list of problems)"
+                                if len(found) > 1 else "")
                         if refused is not None:
                             refused.append({"path": item_path, "name": None, "kit": None,
-                                            "reason": problem_line(errors[0]).rstrip(".") + more})
+                                            "reason": problem_line(found[0]).rstrip(".") + rest})
                     except Exception as e:
                         logger.warning(f"Failed to process index kit {item_path}: {e}")
                         if refused is not None:

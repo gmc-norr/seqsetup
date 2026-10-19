@@ -38,6 +38,9 @@ KIT_LIST_MAX = 20_000
 # kit whose indexes are longer than 600 bases can never state its cycles.
 MOST_BASES = 1000
 MOST_INDEX_CYCLES = 600
+# How many of a file's problems one message carries. The sync's problem list
+# and the settings command have them all (up to the per-file cap).
+MOST_PROBLEMS_SHOWN = 20
 
 _OVERRIDE_ALPHABET = set("YIUN0123456789*")
 _DNA = set("ACGTN")
@@ -119,7 +122,7 @@ class IndexRules(StrictRules):
 
     name: FilledText256
     sequence: KitDna
-    well_position: Optional[Text256] = None
+    well_position: Optional[KitLabel] = None
 
 
 class IndexPairRules(StrictRules):
@@ -128,7 +131,7 @@ class IndexPairRules(StrictRules):
     name: FilledText256
     index1: IndexRules
     index2: Optional[IndexRules] = None
-    well_position: Optional[Text256] = None
+    well_position: Optional[KitLabel] = None
 
 
 class KitRules(StrictRules):
@@ -196,6 +199,10 @@ FORM_BOXES = {
     "comments": "Comments",
     "adapter_read1": "Adapter Read 1",
     "adapter_read2": "Adapter Read 2",
+    "default_index1_override": "Default Index1 Override",
+    "default_index2_override": "Default Index2 Override",
+    "default_read1_override": "Default Read1 Override",
+    "default_read2_override": "Default Read2 Override",
 }
 
 
@@ -209,12 +216,20 @@ class FormBoxRules(StrictRules):
     comments: Optional[KitLabel] = None
     adapter_read1: Optional[KitDna] = None
     adapter_read2: Optional[KitDna] = None
+    # A read pattern of 402 characters became a 410-character OverrideCycles
+    # on every sample the kit touched, and a cycle count for a slot with no
+    # indexes escaped IndexValidator too (fresh review of a382f57, P2-1).
+    default_read1_override: Optional[OverridePattern] = None
+    default_read2_override: Optional[OverridePattern] = None
+    default_index1_override: Optional[IndexCycles] = None
+    default_index2_override: Optional[IndexCycles] = None
 
 
 def check_form_boxes(**values) -> list[str]:
     """One sentence per box that breaks a rule, naming the box in plain
-    words. An empty box is left out: it means the box was not filled in."""
-    given = {key: value for key, value in values.items() if value}
+    words. An empty box is left out: it means the box was not filled in. A
+    number is a value even when it is 0."""
+    given = {key: value for key, value in values.items() if value not in (None, "")}
     result = check_data(given, Locations(), "", FormBoxRules)
     return [f"{FORM_BOXES.get(str(problem.path[0]), 'The form')}: {problem.message}"
             for problem in result.problems if problem.level == "error"]
@@ -238,8 +253,16 @@ class KitFileProblems(KitFileRefused):
         self.problems = problems
         # The line first: a person fixing the file looks there, and the
         # sync's refusal and the upload's list are read as sentences.
-        self.errors = [f"line {p.line}: {path_text(p.path)}: {p.message}"
-                       for p in problems if p.level == "error"]
+        errors = [f"line {p.line}: {path_text(p.path)}: {p.message}"
+                  for p in problems if p.level == "error"]
+        # Neither one problem nor their number follows the file's size: a key
+        # of a thousand characters, and a file with a thousand bad keys, each
+        # put the file's own text into the admin's HTML (fresh review of
+        # a382f57, P3-6). The full list is in the sync's problem list.
+        self.errors = errors[:MOST_PROBLEMS_SHOWN]
+        if len(errors) > MOST_PROBLEMS_SHOWN:
+            self.errors.append(f"and {len(errors) - MOST_PROBLEMS_SHOWN} more problems in "
+                               "this file, not listed here")
         self.source_file = source_file
         # A repeated index name is audited under repeated_names, and the
         # reader is what finds it now.

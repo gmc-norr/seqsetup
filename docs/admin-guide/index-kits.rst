@@ -301,10 +301,12 @@ runs. **Neither is ever invented.**
   without its ending and the version ``1.0``.
 * The form's boxes follow the same rules as the file's keys and are
   **refused, never cut**, each named in the refusal: **Kit name**, **Kit
-  version**, **Kit description**, **Comments**, **Adapter Read 1** and
-  **Adapter Read 2**. A **Kit name** of 300 characters was quietly cut to 256
-  -- a cut name is another name -- and an **Adapter Read 1** of 8,000 bases
-  was stored whole.
+  version**, **Kit description**, **Comments**, **Adapter Read 1**, **Adapter Read 2**, **Default Index1 Override**, **Default Index2 Override**,
+  **Default Read1 Override** and **Default Read2 Override**. A **Kit name** of
+  300 characters was quietly cut to 256 -- a cut name is another name -- an
+  **Adapter Read 1** of 8,000 bases was stored whole, and a **Default Read1
+  Override** of 402 characters became a 410-character ``OverrideCycles`` on
+  every sample the kit touched.
 
 The mode picked on the form wins, as before, and a file that names a
 **different** mode is refused naming both: *"The file says index_mode:

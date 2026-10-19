@@ -190,6 +190,10 @@ async def upload_index_kit(
         kit_name=kit_name.strip(), kit_version=kit_version.strip(),
         kit_description=kit_description.strip(), comments=comments.strip(),
         adapter_read1=adapter_read1.strip(), adapter_read2=adapter_read2.strip(),
+        default_read1_override=default_read1_override.strip().upper(),
+        default_read2_override=default_read2_override.strip().upper(),
+        default_index1_override=_parse_index_override(default_index1_override),
+        default_index2_override=_parse_index_override(default_index2_override),
     )
     if box_problems:
         audit(
