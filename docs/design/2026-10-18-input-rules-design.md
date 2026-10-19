@@ -1318,12 +1318,23 @@ first, as its own deliverable, and the move only after.
 ### The guard, built first
 
 `tests/unit/test_paste_and_worklist_outcomes.py` records what today's readers
-do with a corpus of **every paste text and worklist payload in `tests/`**,
-plus generated variants: header spellings and case, column order, tabs against
-commas, CRLF, a byte order mark, trailing blank rows, quoted cells, a number
-as an ID, extra metadata, long and short rows, 256 and 257 characters, IDs of
-zeros, a multi-line cell, an unnamed column. For each one it asserts the
-outcome exactly: the samples (field by field) or the refusal's own words.
+do with a corpus written for it -- 107 paste texts, 81 worklist payloads and 3
+read with a LIMS field mapping: header spellings and case, column order, tabs
+against commas, CRLF, a byte order mark, trailing blank rows, quoted cells, a
+number as an ID, extra metadata, long and short rows, 256 and 257 characters,
+IDs of zeros, a multi-line cell, an unnamed column, one case for **every
+column name the paste reads and every field name the LIMS import reads**,
+more samples than a run holds, a double quote that is not closed, and -- the
+case a fresh review of the first version showed was missing -- **three
+samples each carrying its own i7 and i5**, so an index exchanged between two
+rows is seen. For each one it asserts the outcome exactly: the samples field
+by field (every field of `ParsedSample`, taken from the dataclass so a new one
+is compared too), or the refusal's own exception type and words.
+
+The first version of this file held one sample per index-carrying case, and a
+fresh review wrote 24 behaviour-changing mutations of which **20 passed it**.
+Every one of those is now a case or an assertion, and
+`harness/rows_samples.py` keeps 16 of them as break rows.
 
 That file is the step's whole safety net, and it is useful on its own: it
 holds the two readers to their behaviour whoever changes them next, and a move
@@ -1341,21 +1352,30 @@ made.
 | `test_version` | text matching `TEST_VERSION_RE` (`1`, `1.2`, `1.2.3`) or absent |
 | `index1_sequence`, `index2_sequence` | DNA text of `[ACGTN]` after uppercasing, at most 256 |
 | `index_pair_name`, `index1_name`, `index2_name` | text, at most 256 |
-| `lanes` | a list of whole numbers, 1 to 8, each once |
+
+**Lanes are not in it**: neither reader gives a sample a lane -- they come
+from `_picked_lanes` in `routes/samples.py` after the read -- so a rulebook
+field for them would be a field nothing fills, and the guard above cannot see
+one either. "No page gives a sample no lane" stays the route's rule.
 
 The rules that are **about the worklist rather than the row** stay where they
 are, because they need every row at once or the file's own words: the rows with
 content but no `sample_id`, the rows whose ID is all zeros, the column that
 looks like an index, the column with no header name, the delimiter, the header
-ranking, `MAX_SAMPLES_PER_RUN`, and the LIMS field-name mapping.
+ranking, `MAX_SAMPLES_PER_RUN`, and the LIMS field-name mapping. The
+`sample_id` row above is the *shape* of one ID; the reader keeps the refusal
+that names **every** such row in one message.
 
 ### Why the move is not made in this step
 
 Measured on step 4's tip: `read_pasted_samples` is one function of some 250
 lines whose refusals are **ordered** -- a row with two faults gets the first
-one, and which is first is part of today's messages, which the tests pin
-(`tests/unit/test_sample_parser.py`, 38 tests; `tests/unit/test_sample_api.py`,
-44; and `tests/integration/test_index_safety_net.py`). A Pydantic rulebook
+one, and the order is per **fault class**, not per row: a paste holding a row
+with no ID and another with a bad test version reports only the no-ID row and
+does not mention the version at all (measured). The order was pinned by
+nothing before this file -- the fresh review showed a mutation that reorders
+the refusals passing every test in the repository -- and it is pinned by this
+file now. A Pydantic rulebook
 reports a row's faults together and in field order, so the first message a
 person sees for such a row would change -- not less information, but not the
 same words either, and these are the two inputs whose words a lab reads under
@@ -1376,7 +1396,11 @@ whichever is chosen.
 
 ### What this step does change
 
-Nothing in `src/`. The deliverable is the guard, the design and the questions.
+One thing in `src/`, and it changes no behaviour: the LIMS import's table of
+field names is lifted out of `parse_api_samples` into the module constant
+`ALIAS_NAMES`, so the guard can walk it and fail when an alias is dropped --
+which a fresh review showed was otherwise silent for the test and kit fields.
+Everything else is the guard, the design and the two questions.
 
 ## Later steps (each adds its details to this note, or a note of its own)
 

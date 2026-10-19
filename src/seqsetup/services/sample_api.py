@@ -913,6 +913,25 @@ _SAMPLE_WORKSHEET_ID_NAMES = ("worksheet_id", "worksheetid", "worksheet", "workl
 _I7_NAMES = ("index_i7", "index1", "i7", "index_i7_sequence", "i7_sequence")
 _I5_NAMES = ("index_i5", "index2", "i5", "index_i5_sequence", "i5_sequence")
 
+# Each field the import reads, and the field names a LIMS may send it under,
+# in the order they are looked for. A module constant so a test can walk it:
+# the same table it has always been, read from here instead of built inside
+# parse_api_samples (step 5 of the input rules; the only change it makes in
+# src/, and it changes no behaviour).
+ALIAS_NAMES = {
+    "sample_id": ["sample_id", "sampleid", "sample", "id", "name", "sample_name"],
+    "test_id": ["test_id", "testid", "test", "test_type", "assay", "application"],
+    # Not "version" alone: another field may have that name (spec
+    # 2026-10-07 group A4, §2).
+    "test_version": ["test_version", "testversion"],
+    "worksheet_id": list(_SAMPLE_WORKSHEET_ID_NAMES),
+    "index1_sequence": list(_I7_NAMES),
+    "index2_sequence": list(_I5_NAMES),
+    "index_pair_name": ["index_pair_name", "pair_name", "index_pair", "index_kit", "kit_name"],
+    "index1_name": ["i7_name", "index_i7_name", "index1_name", "index_name"],
+    "index2_name": ["i5_name", "index_i5_name", "index2_name"],
+}
+
 
 def _unread_fields_error(fields: dict[str, list[int]]) -> ValueError:
     """Reject the whole worklist: a field looks like an index or a lane but
@@ -969,20 +988,7 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         sample_id, test_id, worksheet_id, index1_sequence, index2_sequence,
         index_pair_name, index1_name, index2_name
     """
-    # Map of normalized field name -> possible API field names
-    field_aliases = {
-        "sample_id": ["sample_id", "sampleid", "sample", "id", "name", "sample_name"],
-        "test_id": ["test_id", "testid", "test", "test_type", "assay", "application"],
-        # Not "version" alone: another field may have that name (spec
-        # 2026-10-07 group A4, §2).
-        "test_version": ["test_version", "testversion"],
-        "worksheet_id": list(_SAMPLE_WORKSHEET_ID_NAMES),
-        "index1_sequence": list(_I7_NAMES),
-        "index2_sequence": list(_I5_NAMES),
-        "index_pair_name": ["index_pair_name", "pair_name", "index_pair", "index_kit", "kit_name"],
-        "index1_name": ["i7_name", "index_i7_name", "index1_name", "index_name"],
-        "index2_name": ["i5_name", "index_i5_name", "index2_name"],
-    }
+    field_aliases = {field: list(names) for field, names in ALIAS_NAMES.items()}
 
     # The import's own sample fields; an admin's other mappings (investigator,
     # updated_at, samples) name worksheet fields, which a sample row does not
