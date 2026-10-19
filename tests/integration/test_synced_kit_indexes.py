@@ -222,7 +222,9 @@ class TestARefusedKitIsNamedAndTheOldOneKept:
                                                                  "dual.yaml": GOOD_KIT_YAML})
 
         assert ok is False
-        assert "index_kits/lab.yaml: could not be read as an index kit" in message
+        # file:line:column: and what is wrong, as a refused profile or
+        # instrument file is named since step 2 of the input rules.
+        assert "index_kits/lab.yaml:1:" in message and "not closed" in message
         assert _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
         assert "Kept the stored index kits Lab Kit 1.0 until the file is fixed." in message
 

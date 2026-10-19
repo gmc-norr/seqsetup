@@ -1000,6 +1000,7 @@ that was refused before, and no Sample Sheet changes. Each of these is
 | a pair with no `name` in a synced file | the invented name `Pair_1`, and the pair id `K_Pair_1` | refused: a pair's `name` is required |
 | an index inside a pair with no `name` | the pair's name | refused |
 | an unknown key (`ownr:`) in any of the three YAML shapes | ignored | refused: not a key this file can have |
+| an `id:` key on a pair | ignored; the pair's id is built from the kit's name and the pair's. `IndexKitYamlExporter` never writes one | refused as an unknown key |
 | `version: 1.10` (unquoted) | the version `1.1` | refused by the reader: put it in quotes |
 | `version: 1.0` (unquoted) | the version `1.0` | refused by the reader too: a decimal is quoted, or it is not text |
 | a plain CSV uploaded as Combinatorial, or an `[i7]`/`[i5]` CSV uploaded as Unique Dual | refused by `IndexValidator` after the fact, with no line ("Combinatorial index kit must contain at least one i7 index"; "Unique dual index kit must contain at least one index pair") | refused where the lists are built, naming the lists and the mode |

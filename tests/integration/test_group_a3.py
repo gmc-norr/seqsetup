@@ -621,7 +621,7 @@ class TestTheCacheClears:
             "/indexes/upload",
             data={"index_mode": "unique_dual", "kit_name": "A3Kit", "kit_version": "1.0"},
             files={"index_file": ("a3.yaml", (
-                b"index_pairs:\n  - id: A3-P1\n    name: P1\n    index1:\n      name: i7-A01\n"
+                b"index_pairs:\n  - name: P1\n    index1:\n      name: i7-A01\n"
                 b"      sequence: ATTACTCG\n    index2:\n      name: i5-A01\n"
                 b"      sequence: TATAGCCT\n"), "text/yaml")},
             headers=ORIGIN,

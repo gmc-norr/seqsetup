@@ -30,8 +30,9 @@ class TestIndexKitUpload:
             b"version: '1.0'\n"
             b"index_mode: unique_dual\n"
             b"index_pairs:\n"
-            b"  - id: SK-P1\n"
-            b"    name: P1\n"
+            # A pair's id is built from the kit's name and the pair's; an
+            # id: key in the file was read by nothing and is refused now.
+            b"  - name: P1\n"
             b"    index1:\n"
             b"      name: i7-A01\n"
             b"      sequence: ATTACTCG\n"
