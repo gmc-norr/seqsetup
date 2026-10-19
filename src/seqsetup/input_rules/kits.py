@@ -185,7 +185,16 @@ def check_index_kit_file(text: str, file: str) -> CheckResult:
     return check_yaml(text, file, KitRules, cross_checks=[_kit_findings])
 
 
-class KitFileProblems(ValueError):
+class KitFileRefused(ValueError):
+    """A kit file refused for a fault of its own, which the upload route
+    shows in full and audits under ``reason``. Each shape's own refusals
+    derive from it in ``services/index_parser.py``; the rules' own is
+    ``KitFileProblems`` below."""
+
+    reason = "kit_file_refused"
+
+
+class KitFileProblems(KitFileRefused):
     """A kit file the rules refuse: ``problems`` has each one with its line,
     and ``reason`` is what the upload audits. The upload route shows every
     problem, where it once said "Failed to parse file" for all of them."""
@@ -204,6 +213,8 @@ class KitFileProblems(ValueError):
                        else "kit_file_problems")
         where = f" in {source_file}" if source_file else ""
         super().__init__(f"This file was not saved{where}: " + "; ".join(self.errors))
+
+    reason = "kit_file_problems"
 
 
 def _index(value: IndexRules, index_type: IndexType) -> Index:

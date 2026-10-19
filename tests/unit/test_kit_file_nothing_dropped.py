@@ -23,12 +23,23 @@ in and did not come out:
 import pytest
 
 from seqsetup.models.index import IndexMode
+from seqsetup.input_rules.kits import KitFileProblems
 from seqsetup.services.index_parser import (I5DataInSingleKit, IncompleteIndexRows,
                                             IndexNamesNotText, IndexParser, KitFileRefused,
                                             PairsInSingleKit, TwoKeysForOneList)
 
 I7 = {"A1": "ATTACTCG", "A2": "TCCGGAGA"}
 I5 = {"A1": "TATAGCCT", "A2": "ATAGAGGC"}
+
+
+def _upload(content, filename, **rest):
+    """An upload as the route makes it. A kit's name and version are its
+    identity and nothing invents them, so the two boxes are filled in: the
+    two CSV shapes carry neither, and a YAML or TSV that writes its own name
+    keeps it (the file's value wins for the canonical map)."""
+    rest.setdefault("kit_name", "Old kit")
+    rest.setdefault("kit_version", "1.0")
+    return IndexParser.parse_from_content(content, filename, **rest)
 
 
 def _sequences(kit) -> set[str]:
@@ -95,7 +106,7 @@ class TestASingleUploadWithI5DataIsRefused:
     @pytest.mark.parametrize("filename, make, where", ALL_FORMATS)
     def test_the_file_is_refused_naming_where_the_i5_is(self, filename, make, where):
         with pytest.raises(I5DataInSingleKit) as refused:
-            IndexParser.parse_from_content(make(I7, I5), filename, index_mode=IndexMode.SINGLE)
+            _upload(make(I7, I5), filename, index_mode=IndexMode.SINGLE)
 
         message = str(refused.value)
         assert where in message, message
@@ -104,7 +115,7 @@ class TestASingleUploadWithI5DataIsRefused:
 
     @pytest.mark.parametrize("filename, make, _where", ALL_FORMATS)
     def test_the_same_file_with_no_i5_is_saved_as_single(self, filename, make, _where):
-        kit = IndexParser.parse_from_content(make(I7, {}), filename,
+        kit = _upload(make(I7, {}), filename,
                                              index_mode=IndexMode.SINGLE)
 
         assert kit.index_mode == IndexMode.SINGLE
@@ -112,18 +123,31 @@ class TestASingleUploadWithI5DataIsRefused:
         assert kit.i5_indexes == [] and kit.index_pairs == []
 
     def test_an_i5_column_with_no_values_in_it_is_not_i5_data(self):
-        kit = IndexParser.parse_from_content("name,index,index2\nA1,ATTACTCG,\n", "k.csv",
+        kit = _upload("name,index,index2\nA1,ATTACTCG,\n", "k.csv",
                                              index_mode=IndexMode.SINGLE)
 
         assert [i.name for i in kit.i7_indexes] == ["A1"]
 
     @pytest.mark.parametrize("filename, make, _where", ALL_FORMATS)
     def test_the_same_file_as_combinatorial_keeps_every_index(self, filename, make, _where):
-        # A simple CSV read as Combinatorial still becomes pairs -- _parse_csv
-        # only tells Single from the rest -- so this asks for the sequences,
-        # not the shape: none of them may go missing.
-        kit = IndexParser.parse_from_content(make(I7, I5), filename,
-                                             index_mode=IndexMode.COMBINATORIAL)
+        """Every sequence in the file is in the kit, whatever shape the kit
+        holds them in: none of them may go missing.
+
+        A plain CSV is the one shape this cannot be asked of: ``_parse_csv``
+        tells only Single from the rest, so a Combinatorial upload of one
+        builds ``index_pairs``, which a combinatorial kit's panel never
+        reads -- and ``IndexValidator`` has always refused such a kit
+        ("Combinatorial index kit must contain at least one i7 index"), so
+        the upload never stored it. The rulebook now refuses it where the
+        lists are built, naming them and the mode (run QUESTIONS Q4).
+        """
+        if make is _simple_csv:
+            with pytest.raises(KitFileProblems) as refused:
+                _upload(make(I7, I5), filename, index_mode=IndexMode.COMBINATORIAL)
+
+            assert "i7_indexes" in str(refused.value) and "combinatorial" in str(refused.value)
+            return
+        kit = _upload(make(I7, I5), filename, index_mode=IndexMode.COMBINATORIAL)
 
         assert _sequences(kit) == set(I7.values()) | set(I5.values())
 
@@ -133,7 +157,7 @@ class TestASingleUploadWithI5DataIsRefused:
                    "      name: A1\n      sequence: TATAGCCT\n")
 
         with pytest.raises(PairsInSingleKit) as refused:
-            IndexParser.parse_from_content(content, "sync.yaml", index_mode=IndexMode.SINGLE)
+            _upload(content, "sync.yaml", index_mode=IndexMode.SINGLE)
 
         assert "index_pairs" in str(refused.value)
         assert refused.value.reason == "pairs_in_single_kit"
@@ -153,7 +177,7 @@ class TestARowWithNoNameOrNoSequenceIsRefused:
         content = f"name,index,index2\nA1,ATTACTCG,TATAGCCT\n{row}\n"
 
         with pytest.raises(IncompleteIndexRows) as refused:
-            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
+            _upload(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
 
         assert f"line {line}" in str(refused.value)
         assert refused.value.reason == "incomplete_index_rows"
@@ -162,7 +186,7 @@ class TestARowWithNoNameOrNoSequenceIsRefused:
         content = "name,index,index2\n,CCCCGGGG,\nA1,ATTACTCG,TATAGCCT\nB1,,\n"
 
         with pytest.raises(IncompleteIndexRows) as refused:
-            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
+            _upload(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
 
         message = str(refused.value)
         assert "line 2" in message and "line 4" in message
@@ -174,21 +198,21 @@ class TestARowWithNoNameOrNoSequenceIsRefused:
         content = "\n\nname,index,index2\nA1,ATTACTCG,TATAGCCT\n,CCCCGGGG,\n"
 
         with pytest.raises(IncompleteIndexRows) as refused:
-            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
+            _upload(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
 
         assert "line 5" in str(refused.value), str(refused.value)
 
     def test_a_row_of_only_separators_is_not_a_row(self):
         content = "name,index,index2\nA1,ATTACTCG,TATAGCCT\n,,\nA2,TCCGGAGA,ATAGAGGC\n"
 
-        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
+        kit = _upload(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
 
         assert [p.name for p in kit.index_pairs] == ["A1", "A2"]
 
     def test_a_combinatorial_row_of_only_separators_is_not_a_row(self):
         content = "[i7]\nname,sequence\nA1,ATTACTCG\n,\n[i5]\nname,sequence\nB1,TATAGCCT\n"
 
-        kit = IndexParser.parse_from_content(content, "k.csv",
+        kit = _upload(content, "k.csv",
                                              index_mode=IndexMode.COMBINATORIAL)
 
         assert ([i.name for i in kit.i7_indexes], [i.name for i in kit.i5_indexes]) == (
@@ -197,7 +221,7 @@ class TestARowWithNoNameOrNoSequenceIsRefused:
     def test_a_blank_line_is_not_a_row(self):
         content = "name,index,index2\nA1,ATTACTCG,TATAGCCT\n\n\nA2,TCCGGAGA,ATAGAGGC\n"
 
-        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
+        kit = _upload(content, "k.csv", index_mode=IndexMode.UNIQUE_DUAL)
 
         assert [p.name for p in kit.index_pairs] == ["A1", "A2"]
 
@@ -214,7 +238,7 @@ class TestARowWithNoNameOrNoSequenceIsRefused:
             lines.append(row)
 
         with pytest.raises(IncompleteIndexRows) as refused:
-            IndexParser.parse_from_content("\n".join(lines) + "\n", "k.csv",
+            _upload("\n".join(lines) + "\n", "k.csv",
                                            index_mode=IndexMode.COMBINATORIAL)
 
         assert f"line {line}" in str(refused.value), str(refused.value)
@@ -236,7 +260,7 @@ class TestATsvLineThatIsNotAnIndexIsRefused:
         content = _illumina_tsv(I7, I5).rstrip("\n") + f"\n{row}\n"
 
         with pytest.raises(IncompleteIndexRows) as refused:
-            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.UNIQUE_DUAL)
+            _upload(content, "k.tsv", index_mode=IndexMode.UNIQUE_DUAL)
 
         message = str(refused.value)
         assert f"line {line}" in message, message
@@ -249,12 +273,12 @@ class TestATsvLineThatIsNotAnIndexIsRefused:
                    "Name\tSequence\tIndexNumber\nA1\tATTACTCG\t1\nB1\tCCCCGGGG\t3\n")
 
         with pytest.raises(IncompleteIndexRows) as refused:
-            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+            _upload(content, "k.tsv", index_mode=IndexMode.SINGLE)
 
         assert "line 9" in str(refused.value), str(refused.value)
 
     def test_the_header_line_is_not_refused(self):
-        kit = IndexParser.parse_from_content(_illumina_tsv(I7, I5), "k.tsv",
+        kit = _upload(_illumina_tsv(I7, I5), "k.tsv",
                                              index_mode=IndexMode.UNIQUE_DUAL)
 
         assert [p.name for p in kit.index_pairs] == list(I7)
@@ -263,7 +287,7 @@ class TestATsvLineThatIsNotAnIndexIsRefused:
         content = ("[IndexKit]\nName\tOld kit\n\n[Indices]\n"
                    "A1\tATTACTCG\t1\nA1\tTATAGCCT\t2\n")
 
-        kit = IndexParser.parse_from_content(content, "k.tsv",
+        kit = _upload(content, "k.tsv",
                                              index_mode=IndexMode.UNIQUE_DUAL)
 
         assert [p.name for p in kit.index_pairs] == ["A1"]
@@ -283,7 +307,7 @@ class TestTwoKeysForOneListAreRefused:
                    f"  {second}:\n    A2: TCCGGAGA\n  {other}:\n    A1: TATAGCCT\n")
 
         with pytest.raises(TwoKeysForOneList) as refused:
-            IndexParser.parse_from_content(content, "old.yaml",
+            _upload(content, "old.yaml",
                                            index_mode=IndexMode.COMBINATORIAL)
 
         message = str(refused.value)
@@ -295,12 +319,12 @@ class TestTwoKeysForOneListAreRefused:
                    "    A2: TCCGGAGA\n")
 
         with pytest.raises(TwoKeysForOneList):
-            IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.SINGLE)
+            _upload(content, "old.yaml", index_mode=IndexMode.SINGLE)
 
     def test_one_key_alone_is_read(self):
         content = "Name: Old kit\nIndexSequences:\n  Index1:\n    A1: ATTACTCG\n"
 
-        kit = IndexParser.parse_from_content(content, "old.yaml", index_mode=IndexMode.SINGLE)
+        kit = _upload(content, "old.yaml", index_mode=IndexMode.SINGLE)
 
         assert [i.name for i in kit.i7_indexes] == ["A1"]
 
@@ -312,6 +336,9 @@ class TestASyncYamlNameMustBeText:
 
     @pytest.mark.parametrize("where", ["i7_indexes", "index_pairs"])
     def test_a_name_that_is_not_text_is_refused(self, where):
+        """The reader refuses ``012`` now, before YAML's reading of it
+        reaches any name: it names the value as written and the line it is
+        on, where the old refusal named the number YAML had made of it."""
         if where == "i7_indexes":
             content = ("name: Old kit\nindex_mode: single\ni7_indexes:\n"
                        "  - name: 012\n    sequence: ATTACTCG\n")
@@ -321,17 +348,17 @@ class TestASyncYamlNameMustBeText:
                        "      name: 012\n      sequence: ATTACTCG\n")
             mode = IndexMode.UNIQUE_DUAL
 
-        with pytest.raises(IndexNamesNotText) as refused:
-            IndexParser.parse_from_content(content, "sync.yaml", index_mode=mode)
+        with pytest.raises(KitFileRefused) as refused:
+            _upload(content, "sync.yaml", index_mode=mode)
 
-        assert "quote" in str(refused.value)
-        assert refused.value.reason == "index_names_not_text"
+        assert "'012'" in str(refused.value) and "quotes" in str(refused.value)
+        assert "line" in str(refused.value)
 
     def test_a_quoted_name_is_read(self):
         content = ("name: Old kit\nindex_mode: single\ni7_indexes:\n"
                    "  - name: '012'\n    sequence: ATTACTCG\n")
 
-        kit = IndexParser.parse_from_content(content, "sync.yaml", index_mode=IndexMode.SINGLE)
+        kit = _upload(content, "sync.yaml", index_mode=IndexMode.SINGLE)
 
         assert [i.name for i in kit.i7_indexes] == ["012"]
 
@@ -340,7 +367,7 @@ class TestASyncYamlNameMustBeText:
                    "  - name: A1\n    sequence: 1234\n")
 
         with pytest.raises(IndexNamesNotText) as refused:
-            IndexParser.parse_from_content(content, "sync.yaml", index_mode=IndexMode.SINGLE)
+            _upload(content, "sync.yaml", index_mode=IndexMode.SINGLE)
 
         assert "A1" in str(refused.value)
 
@@ -372,7 +399,7 @@ class TestAColumnTheParserDoesNotReadIsRefused:
         content = f"name,index,{column}\nA1,ATTACTCG,TATAGCCT\n"
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+            _upload(content, "k.csv", index_mode=IndexMode.SINGLE)
 
         assert column in str(refused.value), str(refused.value)
 
@@ -380,7 +407,7 @@ class TestAColumnTheParserDoesNotReadIsRefused:
     def test_an_i5_column_spelled_differently_is_read_not_ignored(self, column):
         content = f"name,index,{column}\nA1,ATTACTCG,TATAGCCT\n"
 
-        kit = IndexParser.parse_from_content(content, "k.csv",
+        kit = _upload(content, "k.csv",
                                              index_mode=IndexMode.UNIQUE_DUAL)
 
         assert [(p.index1.sequence, p.index2.sequence) for p in kit.index_pairs] == [
@@ -390,7 +417,7 @@ class TestAColumnTheParserDoesNotReadIsRefused:
     def test_a_column_that_looks_like_neither_is_still_ignored(self, column):
         content = f"name,index,{column}\nA1,ATTACTCG,anything\n"
 
-        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+        kit = _upload(content, "k.csv", index_mode=IndexMode.SINGLE)
 
         assert [i.name for i in kit.i7_indexes] == ["A1"]
 
@@ -398,7 +425,7 @@ class TestAColumnTheParserDoesNotReadIsRefused:
         content = "[i7]\nname,sequence,Index 2\nA1,ATTACTCG,TATAGCCT\n"
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.csv",
+            _upload(content, "k.csv",
                                            index_mode=IndexMode.COMBINATORIAL)
 
         assert "Index 2" in str(refused.value), str(refused.value)
@@ -407,14 +434,14 @@ class TestAColumnTheParserDoesNotReadIsRefused:
         content = "name,index\nA1,ATTACTCG\nA2,TCCGGAGA,TATAGCCT\n"
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+            _upload(content, "k.csv", index_mode=IndexMode.SINGLE)
 
         assert "line 3" in str(refused.value), str(refused.value)
 
     def test_a_row_with_more_empty_cells_than_the_header_is_not_a_row(self):
         content = "name,index\nA1,ATTACTCG\n,,\nA2,TCCGGAGA\n"
 
-        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+        kit = _upload(content, "k.csv", index_mode=IndexMode.SINGLE)
 
         assert [i.name for i in kit.i7_indexes] == ["A1", "A2"]
 
@@ -428,7 +455,7 @@ class TestALineOutsideASectionIsRefused:
         content = "stray,line\n[i7]\nname,sequence\nA1,ATTACTCG\n"
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.csv",
+            _upload(content, "k.csv",
                                            index_mode=IndexMode.COMBINATORIAL)
 
         assert "line 1" in str(refused.value), str(refused.value)
@@ -438,7 +465,7 @@ class TestALineOutsideASectionIsRefused:
                    "[i5]\nname,sequence\nB1,TATAGCCT\n")
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.csv",
+            _upload(content, "k.csv",
                                            index_mode=IndexMode.COMBINATORIAL)
 
         message = str(refused.value)
@@ -461,7 +488,7 @@ class TestTheTsvHeaderLineIsReadHoweverItIsSpelled:
         content = (f"[IndexKit]\nName\tOld kit\n\n[Indices]\n{header}\n"
                    "A1\tATTACTCG\t1\n")
 
-        kit = IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+        kit = _upload(content, "k.tsv", index_mode=IndexMode.SINGLE)
 
         assert [i.name for i in kit.i7_indexes] == ["A1"]
 
@@ -472,7 +499,7 @@ class TestTheTsvHeaderLineIsReadHoweverItIsSpelled:
                    "Name\tSequence\tIndexNumber\nA1\tATTACTCG\t1\nNotes\tsee below\n")
 
         with pytest.raises(IncompleteIndexRows) as refused:
-            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+            _upload(content, "k.tsv", index_mode=IndexMode.SINGLE)
 
         assert "line 7" in str(refused.value), str(refused.value)
 
@@ -480,7 +507,7 @@ class TestTheTsvHeaderLineIsReadHoweverItIsSpelled:
         content = "[IndexKit]\nName\tOld kit\n\n[Indices]\nA1\tATTACTCG\n"
 
         with pytest.raises(IncompleteIndexRows) as refused:
-            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+            _upload(content, "k.tsv", index_mode=IndexMode.SINGLE)
 
         assert "line 5" in str(refused.value), str(refused.value)
 
@@ -498,7 +525,7 @@ class TestAColumnIsReadHoweverItIsSpelled:
     def test_the_columns_are_read_in_any_case_or_spacing(self, i7_column, i5_column):
         content = f"name,{i7_column},{i5_column}\nA1,ATTACTCG,TATAGCCT\n"
 
-        kit = IndexParser.parse_from_content(content, "k.csv",
+        kit = _upload(content, "k.csv",
                                              index_mode=IndexMode.UNIQUE_DUAL)
 
         assert [(p.index1.sequence, p.index2.sequence) for p in kit.index_pairs] == [
@@ -508,15 +535,16 @@ class TestAColumnIsReadHoweverItIsSpelled:
         content = "name,index,INDEX\nA1,ATTACTCG,TCCGGAGA\n"
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+            _upload(content, "k.csv", index_mode=IndexMode.SINGLE)
 
         message = str(refused.value)
         assert "index" in message and "INDEX" in message, message
+        assert refused.value.reason == "columns_not_read"
 
     def test_a_byte_order_mark_does_not_hide_the_first_column(self):
         content = "﻿name,index\nA1,ATTACTCG\n"
 
-        kit = IndexParser.parse_from_content(content, "k.csv", index_mode=IndexMode.SINGLE)
+        kit = _upload(content, "k.csv", index_mode=IndexMode.SINGLE)
 
         assert [i.name for i in kit.i7_indexes] == ["A1"]
 
@@ -531,7 +559,7 @@ class TestASectionHeaderIsReadWithAStraySeparator:
         content = (f"{marker}\nname,sequence\nA1,ATTACTCG\n"
                    f"{marker.replace('i7', 'i5')}\nname,sequence\nB1,TATAGCCT\n")
 
-        kit = IndexParser.parse_from_content(content, "k.csv",
+        kit = _upload(content, "k.csv",
                                              index_mode=IndexMode.COMBINATORIAL)
 
         assert ([i.name for i in kit.i7_indexes], [i.name for i in kit.i5_indexes]) == (
@@ -541,7 +569,7 @@ class TestASectionHeaderIsReadWithAStraySeparator:
         content = "[i7]\nname,sequence\nA1,ATTACTCG,TATAGCCT\n"
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.csv",
+            _upload(content, "k.csv",
                                            index_mode=IndexMode.COMBINATORIAL)
 
         assert "line 3" in str(refused.value), str(refused.value)
@@ -557,7 +585,7 @@ class TestATsvLineInNoSectionOrAnUnreadSectionIsRefused:
         content = "Old kit\tnotes\n[IndexKit]\nName\tOld kit\n\n[Indices]\nA1\tATTACTCG\t1\n"
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+            _upload(content, "k.tsv", index_mode=IndexMode.SINGLE)
 
         assert "line 1" in str(refused.value), str(refused.value)
 
@@ -567,13 +595,13 @@ class TestATsvLineInNoSectionOrAnUnreadSectionIsRefused:
                    "Name\tSequence\tIndexNumber\nB1\tTCCGGAGA\t1\n")
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(content, "k.tsv", index_mode=IndexMode.SINGLE)
+            _upload(content, "k.tsv", index_mode=IndexMode.SINGLE)
 
         message = str(refused.value)
         assert "Indexes" in message and "line 5" in message, message
 
     def test_a_file_with_only_the_two_sections_it_reads_is_read(self):
-        kit = IndexParser.parse_from_content(_illumina_tsv(I7, I5), "k.tsv",
+        kit = _upload(_illumina_tsv(I7, I5), "k.tsv",
                                              index_mode=IndexMode.UNIQUE_DUAL)
 
         assert [p.name for p in kit.index_pairs] == list(I7)
@@ -600,7 +628,7 @@ class TestASyncFormatListTheModeDoesNotReadIsRefused:
                 "      name: A1\n      sequence: TATAGCCT\n")
 
         with pytest.raises(KitFileRefused) as refused:
-            IndexParser.parse_from_content(base + extra, "sync.yaml", index_mode=mode)
+            _upload(base + extra, "sync.yaml", index_mode=mode)
 
         assert unread in str(refused.value), str(refused.value)
 
@@ -613,6 +641,6 @@ class TestASyncFormatListTheModeDoesNotReadIsRefused:
         (IndexMode.SINGLE, "name: K\ni7_indexes:\n  - name: A1\n    sequence: ATTACTCG\n"),
     ])
     def test_a_file_whose_lists_match_its_mode_is_read(self, mode, content):
-        kit = IndexParser.parse_from_content(content, "sync.yaml", index_mode=mode)
+        kit = _upload(content, "sync.yaml", index_mode=mode)
 
         assert _sequences(kit) >= {"ATTACTCG"}

@@ -101,6 +101,14 @@ class Locations:
     def _set_value(self, path, mark) -> None:
         self._values[self._id(path)] = (mark.line + 1, mark.column + 1)
 
+    def at(self, path, line: int, column: Optional[int] = None) -> None:
+        """Record a line (and column) for a path a reader of another format
+        knows: the kit adapters build a canonical map out of a TSV's or a
+        CSV's own lines, so a problem the rulebook finds in it still names
+        the line it came from."""
+        self._keys[self._id(path)] = (line, column)
+        self._values[self._id(path)] = (line, column)
+
 
 @dataclass
 class ReadResult:

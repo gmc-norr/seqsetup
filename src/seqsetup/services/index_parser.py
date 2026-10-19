@@ -1,23 +1,17 @@
 """Parse index adapter kit files in various formats."""
 
-import csv
 import re
-from io import StringIO
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
-from ..utils.yaml_safety import DuplicateKeyError, safe_load_strict, safe_load_unique_keys
+from ..input_rules.kits import KitFileProblems, KitFileRefused, build_kit, check_kit_data
+from ..input_rules.reader import GIVEN_TWICE, Locations, read_yaml
+from ..input_rules.table import ColumnGivenTwice, read_table
+from ..utils.yaml_safety import safe_load_strict
 
-from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
-
-
-class KitFileRefused(ValueError):
-    """A kit file refused for a fault of its own, which the upload route
-    shows in full and audits under ``reason``."""
-
-    reason = "kit_file_refused"
+from ..models.index import IndexKit, IndexMode
 
 
 class UnpairedIndexes(KitFileRefused):
@@ -90,6 +84,31 @@ class TwoKeysForOneList(KitFileRefused):
     """
 
     reason = "two_keys_for_one_list"
+
+
+class KitModeDiffers(KitFileRefused):
+    """A file whose ``index_mode`` is not the mode picked on the upload form.
+
+    The form's picker always won and the file's key was never read, so a file
+    saying ``combinatorial``, uploaded as Single, was stored as a Single kit
+    with no word -- and every sample then took an i7 alone.
+    """
+
+    reason = "kit_mode_differs"
+
+
+class KitNamesNothing(KitFileRefused):
+    """A kit file that names neither the kit nor its version, uploaded with
+    the matching box empty.
+
+    A kit's name and version are its identity: the stored id, the address of
+    its page, its download and its Delete, and what a sync compares between
+    runs. The file's own name was used instead ("my_kit_file.csv" became the
+    kit "my_kit_file"), and the version "1.0" was invented, so a kit was
+    stored under a name nobody wrote.
+    """
+
+    reason = "kit_names_nothing"
 
 
 _UNPAIRED_SHOWN = 10
@@ -361,7 +380,7 @@ def _repeated(names: list) -> RepeatedNames:
     )
 
 
-def _pairs_by_same_name(kit_name: str, i7_indexes: dict, i5_indexes: dict) -> list[IndexPair]:
+def _pairs_by_same_name(i7_indexes: dict, i5_indexes: dict) -> list[dict]:
     """Pair each i7 with the i5 of the same name, or raise UnpairedIndexes
     naming every index left without one. Nothing is guessed or dropped."""
     if i7_indexes and not i5_indexes:
@@ -383,12 +402,9 @@ def _pairs_by_same_name(kit_name: str, i7_indexes: dict, i5_indexes: dict) -> li
                      "pairs, upload a CSV with each pair's i7 and i5 on one row (name,index,index2).")
         raise UnpairedIndexes(" ".join(parts))
     return [
-        IndexPair(
-            id=f"{kit_name}_{name}",
-            name=name,
-            index1=Index(name=name, sequence=seq, index_type=IndexType.I7),
-            index2=Index(name=name, sequence=i5_indexes[name], index_type=IndexType.I5),
-        )
+        {"name": name,
+         "index1": {"name": name, "sequence": seq},
+         "index2": {"name": name, "sequence": i5_indexes[name]}}
         for name, seq in i7_indexes.items()
     ]
 
@@ -434,8 +450,82 @@ def normalize_version(version: str) -> str:
     return version
 
 
+def _lists_in_mode(mode: IndexMode, i7: dict, i5: dict) -> dict:
+    """The index lists a kit of ``mode`` holds, built from an Illumina YAML's
+    or a TSV's two name-to-sequence maps, as each mode stored them."""
+    if mode == IndexMode.COMBINATORIAL:
+        return {"i7_indexes": [{"name": name, "sequence": seq} for name, seq in i7.items()],
+                "i5_indexes": [{"name": name, "sequence": seq} for name, seq in i5.items()]}
+    if mode == IndexMode.SINGLE:
+        return {"i7_indexes": [{"name": name, "sequence": seq} for name, seq in i7.items()]}
+    return {"index_pairs": _pairs_by_same_name(i7, i5)}
+
+
+def _name_and_version(data: dict, name_key: str, version_key: str, default_name: str,
+                      default_version: Optional[str], name_given: bool, version_given: bool,
+                      where: str) -> dict:
+    """The kit's name and version for the canonical map, refusing a file that
+    names neither and an upload whose matching box is empty.
+
+    The file's own value wins, as it does today: a pair's id is built from it,
+    and the id is inside ``fingerprint()``, so the form's name overrides
+    ``kit.name`` afterwards and no accepted file's fingerprint moves.
+    ``name_given`` and ``version_given`` say whether the default came from a
+    person -- the upload form's box -- or only from the file's own name.
+    """
+    said = {}
+    for key, given, default, label, fix in (
+        (name_key, name_given, default_name, "name", "the Kit name box"),
+        (version_key, version_given, default_version, "version", "the Kit version box"),
+    ):
+        value = data.get(key) if key else None
+        if value is not None and not (isinstance(value, str) and not value.strip()):
+            said[label] = value
+            continue
+        if given:
+            said[label] = default
+            continue
+        wrote = f"does not write {where.format(key=key)}" if key else f"carries no {label}"
+        raise KitNamesNothing(
+            f"The file {wrote} and {fix} is empty, so nothing was saved: a kit's "
+            f"{label} is its identity -- the address of its page, its download and its "
+            f"Delete, and what a configuration sync compares between runs. "
+            + (f"Write the kit's {label} in the file or in {fix}."
+               if key else f"This file format carries no {label}: fill in {fix}.")
+        )
+    return said
+
+
 class IndexParser:
-    """Parse index adapter kit files in various formats."""
+    """Read an index adapter kit file in any of the five shapes SeqSetup
+    accepts, and check it against the one canonical kit rulebook
+    (``input_rules/kits.py``). Each shape's own refusals -- a column not
+    read, indexes that do not pair up, a list the mode does not read -- stay
+    here, where the file's own words are."""
+
+    @classmethod
+    def _checked(cls, data: dict, locations: Locations, file: str,
+                 index_mode: Optional[IndexMode] = None) -> IndexKit:
+        """The kit a canonical map describes, checked by the rulebook.
+
+        ``index_mode`` is the mode picked on the upload form, which wins as it
+        does today; a file naming a different one is refused naming both,
+        since a wrong mode decides which indexes a sample can be given.
+        """
+        file_mode = data.get("index_mode")
+        if index_mode is not None:
+            if isinstance(file_mode, str) and file_mode and file_mode != index_mode.value:
+                raise KitModeDiffers(
+                    f"The file says index_mode: {file_mode} but the kit was uploaded as "
+                    f"{index_mode.value}, so nothing was saved: the mode decides which "
+                    f"indexes a sample can be given, and only one of the two can be right. "
+                    f"Upload the kit in the mode its file says, or change the file."
+                )
+            data = {**data, "index_mode": index_mode.value}
+        result = check_kit_data(data, locations, file)
+        if not result.ok:
+            raise KitFileProblems(result.problems, file)
+        return build_kit(result.value)
 
     @classmethod
     def parse(
@@ -460,11 +550,11 @@ class IndexParser:
         content = content.lstrip("\ufeff")
 
         if suffix in (".yaml", ".yml"):
-            return cls._parse_yaml(content, file_path.stem, index_mode)
+            return cls._parse_yaml(content, file_path.stem, index_mode, file=file_path.name)
         elif suffix == ".tsv":
-            return cls._parse_tsv(content, file_path.stem, index_mode)
+            return cls._parse_tsv(content, file_path.stem, index_mode, file=file_path.name)
         elif suffix == ".csv":
-            return cls._parse_csv(content, file_path.stem, index_mode)
+            return cls._parse_csv(content, file_path.stem, index_mode, file=file_path.name)
         else:
             raise ValueError(f"Unsupported file format: {suffix}")
 
@@ -510,14 +600,22 @@ class IndexParser:
         # inside the first header name or the first section marker.
         content = content.lstrip("\ufeff")
 
+        # A kit's name and version are its identity, so nothing invents one:
+        # the file's own value wins, the form's box is next, and a file and a
+        # box that both say nothing are refused (KitNamesNothing). The
+        # filename's stem is still what a pair's id is built from when the
+        # form names the kit, as it was before.
         default_name = kit_name or Path(filename).stem
+        shape = dict(index_mode=index_mode, file=filename,
+                     default_version=kit_version or "1.0",
+                     name_given=bool(kit_name), version_given=bool(kit_version))
 
         if format_hint == "yaml":
-            kit = cls._parse_yaml(content, default_name, index_mode)
+            kit = cls._parse_yaml(content, default_name, **shape)
         elif format_hint == "tsv":
-            kit = cls._parse_tsv(content, default_name, index_mode)
+            kit = cls._parse_tsv(content, default_name, **shape)
         elif format_hint == "csv":
-            kit = cls._parse_csv(content, default_name, index_mode)
+            kit = cls._parse_csv(content, default_name, **shape)
         else:
             raise ValueError(f"Could not determine format for {filename}")
 
@@ -557,6 +655,10 @@ class IndexParser:
         content: str,
         default_name: str = "Imported Kit",
         index_mode: Optional[IndexMode] = None,
+        file: str = "",
+        default_version: Optional[str] = "1.0",
+        name_given: bool = True,
+        version_given: bool = True,
     ) -> IndexKit:
         """
         Parse YAML index kit file.
@@ -580,17 +682,25 @@ class IndexParser:
              i7Index1:
                D701: "ATTACTCG"
         """
-        try:
-            data = safe_load_unique_keys(content)
-        except DuplicateKeyError as repeated:
-            raise RepeatedNames(
-                f"The file gives the key {_quoted(repeated.key)} twice in one section "
-                f"(line {repeated.line}), so nothing was saved: the second would replace "
-                f"the first without a word."
-            ) from None
+        read = read_yaml(content, file, values_safe=True)
+        if read.problems:
+            # A key given twice keeps today's words and its own audit
+            # reason: in a kit file such a key is usually an index name, and
+            # only the second entry was kept.
+            twice = [p for p in read.problems if GIVEN_TWICE in p.message]
+            if twice:
+                raise RepeatedNames(
+                    f"The file gives the key {_quoted(twice[0].path[-1])} twice in one "
+                    f"section (line {twice[0].line}), so nothing was saved: the second "
+                    f"would replace the first without a word."
+                )
+            raise KitFileProblems(read.problems, file)
+        data = read.data
 
         if not data:
             raise ValueError("Empty or invalid YAML content")
+        if not isinstance(data, dict):
+            raise ValueError("A kit file holds a map of keys and values")
 
         # Detect format: sync format has "index_pairs" or "i7_indexes" keys
         is_sync_format = (
@@ -600,18 +710,26 @@ class IndexParser:
         )
 
         if is_sync_format:
-            return cls._parse_sync_yaml(data, default_name, index_mode)
-        else:
-            return cls._parse_illumina_yaml(data, default_name, index_mode)
+            return cls._parse_sync_yaml(data, read.locations, default_name, index_mode,
+                                        file, default_version, name_given, version_given)
+        return cls._parse_illumina_yaml(data, default_name, index_mode, file,
+                                        default_version, name_given, version_given)
 
     @classmethod
     def _parse_sync_yaml(
         cls,
         data: dict,
+        locations: Optional[Locations] = None,
         default_name: str = "Imported Kit",
         index_mode: Optional[IndexMode] = None,
+        file: str = "",
+        default_version: Optional[str] = "1.0",
+        name_given: bool = True,
+        version_given: bool = True,
     ) -> IndexKit:
-        """Parse sync/export YAML format."""
+        """Read the canonical (SeqSetup) YAML shape: the keys are the
+        rulebook's own, so the file's lines carry straight through."""
+        locations = locations if locations is not None else Locations()
         _text_or_refuse(data)
         # Get index mode from file or parameter
         mode_str = data.get("index_mode", "unique_dual")
@@ -647,78 +765,23 @@ class IndexParser:
                 f"{'list' if len(unread) == 1 else 'lists'} out of the file."
             )
 
-        kit = IndexKit(
-            name=data.get("name", default_name),
-            version=normalize_version(str(data.get("version", "1.0"))),
-            description=data.get("description", ""),
-            comments=data.get("comments", ""),
-            index_mode=mode,
-            is_fixed_layout=data.get("is_fixed_layout", False),
-            adapter_read1=data.get("adapter_read1"),
-            adapter_read2=data.get("adapter_read2"),
-            default_index1_cycles=data.get("default_index1_cycles"),
-            default_index2_cycles=data.get("default_index2_cycles"),
-            default_read1_override=data.get("default_read1_override"),
-            default_read2_override=data.get("default_read2_override"),
-        )
-
-        # Parse index_pairs for unique_dual mode
-        if "index_pairs" in data:
-            for pair_data in data["index_pairs"]:
-                i1_data = pair_data.get("index1", {})
-                i2_data = pair_data.get("index2")
-
-                index1 = Index(
-                    name=i1_data.get("name", ""),
-                    sequence=i1_data.get("sequence", ""),
-                    index_type=IndexType.I7,
-                    well_position=i1_data.get("well_position"),
-                )
-
-                index2 = None
-                if i2_data:
-                    index2 = Index(
-                        name=i2_data.get("name", ""),
-                        sequence=i2_data.get("sequence", ""),
-                        index_type=IndexType.I5,
-                        well_position=i2_data.get("well_position"),
-                    )
-
-                pair_name = pair_data.get("name", index1.name)
-                pair = IndexPair(
-                    id=f"{kit.name}_{pair_name}",
-                    name=pair_name,
-                    index1=index1,
-                    index2=index2,
-                    well_position=pair_data.get("well_position"),
-                )
-                kit.index_pairs.append(pair)
-
-        # Parse i7_indexes for combinatorial/single mode
-        if "i7_indexes" in data:
-            for idx_data in data["i7_indexes"]:
-                kit.i7_indexes.append(
-                    Index(
-                        name=idx_data.get("name", ""),
-                        sequence=idx_data.get("sequence", ""),
-                        index_type=IndexType.I7,
-                        well_position=idx_data.get("well_position"),
-                    )
-                )
-
-        # Parse i5_indexes for combinatorial mode
-        if "i5_indexes" in data:
-            for idx_data in data["i5_indexes"]:
-                kit.i5_indexes.append(
-                    Index(
-                        name=idx_data.get("name", ""),
-                        sequence=idx_data.get("sequence", ""),
-                        index_type=IndexType.I5,
-                        well_position=idx_data.get("well_position"),
-                    )
-                )
-
-        return kit
+        said = _name_and_version(data, "name", "version", default_name, default_version,
+                                 name_given, version_given, "a {key}")
+        canonical = dict(data)
+        canonical["name"] = said["name"]
+        if said["version"] is not None:
+            canonical["version"] = normalize_version(str(said["version"]))
+        else:
+            canonical.pop("version", None)
+        canonical["index_mode"] = mode.value
+        # An index2 that is empty or missing means an i7-only pair, as before.
+        if isinstance(canonical.get("index_pairs"), list):
+            canonical["index_pairs"] = [
+                {key: value for key, value in pair.items() if not (key == "index2" and not value)}
+                if isinstance(pair, dict) else pair
+                for pair in canonical["index_pairs"]
+            ]
+        return cls._checked(canonical, locations, file, index_mode)
 
     @classmethod
     def _parse_illumina_yaml(
@@ -726,6 +789,10 @@ class IndexParser:
         data: dict,
         default_name: str = "Imported Kit",
         index_mode: Optional[IndexMode] = None,
+        file: str = "",
+        default_version: Optional[str] = "1.0",
+        name_given: bool = True,
+        version_given: bool = True,
     ) -> IndexKit:
         """Parse legacy Illumina YAML format."""
         # Parse index sequences
@@ -796,27 +863,17 @@ class IndexParser:
             else:
                 index_mode = IndexMode.UNIQUE_DUAL
 
-        kit = IndexKit(
-            name=data.get("Name", default_name),
-            version=normalize_version(str(data.get("Version", "1.0"))),
-            description=data.get("Description", ""),
-            index_mode=index_mode,
-        )
-
-        if index_mode == IndexMode.COMBINATORIAL:
-            # Store indexes separately for combinatorial mode
-            for name, seq in i7_indexes.items():
-                kit.i7_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I7))
-            for name, seq in i5_indexes.items():
-                kit.i5_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I5))
-        elif index_mode == IndexMode.SINGLE:
-            # Store only i7 indexes for single mode
-            for name, seq in i7_indexes.items():
-                kit.i7_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I7))
-        else:
-            kit.index_pairs.extend(_pairs_by_same_name(kit.name, i7_indexes, i5_indexes))
-
-        return kit
+        said = _name_and_version(data, "Name", "Version", default_name, default_version,
+                                 name_given, version_given, "a {key}:")
+        canonical = {
+            "name": said["name"],
+            "index_mode": index_mode.value,
+            **({"version": normalize_version(str(said["version"]))}
+               if said["version"] is not None else {}),
+            **({"description": data["Description"]} if "Description" in data else {}),
+            **_lists_in_mode(index_mode, i7_indexes, i5_indexes),
+        }
+        return cls._checked(canonical, Locations(), file, index_mode)
 
     @classmethod
     def _parse_tsv(
@@ -824,6 +881,10 @@ class IndexParser:
         content: str,
         default_name: str = "Imported Kit",
         index_mode: Optional[IndexMode] = None,
+        file: str = "",
+        default_version: Optional[str] = "1.0",
+        name_given: bool = True,
+        version_given: bool = True,
     ) -> IndexKit:
         """
         Parse TSV index kit file (Illumina template format).
@@ -842,9 +903,10 @@ class IndexParser:
         current_section = None
         i7_indexes: dict[str, str] = {}
         i5_indexes: dict[str, str] = {}
-        kit_name = default_name
-        kit_version = "1.0"
-        kit_description = ""
+        kit_name = None
+        kit_version = None
+        kit_description = None
+        index_lines: dict = {}
         repeated: list[str] = []
         incomplete: list[int] = []
         # The header line is only ever the section's first content line.
@@ -906,10 +968,12 @@ class IndexParser:
                     if name in i7_indexes:
                         repeated.append(name)
                     i7_indexes[name] = seq
+                    index_lines[("i7", name)] = lineno
                 else:
                     if name in i5_indexes:
                         repeated.append(name)
                     i5_indexes[name] = seq
+                    index_lines[("i5", name)] = lineno
 
         if unread_sections:
             parts = []
@@ -942,27 +1006,28 @@ class IndexParser:
             else:
                 index_mode = IndexMode.UNIQUE_DUAL
 
-        kit = IndexKit(
-            name=kit_name,
-            version=kit_version,
-            description=kit_description,
-            index_mode=index_mode,
-        )
-
-        if index_mode == IndexMode.COMBINATORIAL:
-            # Store indexes separately for combinatorial mode
-            for name, seq in i7_indexes.items():
-                kit.i7_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I7))
-            for name, seq in i5_indexes.items():
-                kit.i5_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I5))
-        elif index_mode == IndexMode.SINGLE:
-            # Store only i7 indexes for single mode
-            for name, seq in i7_indexes.items():
-                kit.i7_indexes.append(Index(name=name, sequence=seq, index_type=IndexType.I7))
-        else:
-            kit.index_pairs.extend(_pairs_by_same_name(kit.name, i7_indexes, i5_indexes))
-
-        return kit
+        said = _name_and_version({"Name": kit_name, "Version": kit_version},
+                                 "Name", "Version", default_name, default_version,
+                                 name_given, version_given, "an [IndexKit] {key} line")
+        canonical = {
+            "name": said["name"],
+            "index_mode": index_mode.value,
+            **({"version": said["version"]} if said["version"] is not None else {}),
+            **({"description": kit_description} if kit_description is not None else {}),
+            **_lists_in_mode(index_mode, i7_indexes, i5_indexes),
+        }
+        locations = Locations()
+        for slot, key in (("i7", "i7_indexes"), ("i5", "i5_indexes")):
+            for n, entry in enumerate(canonical.get(key, [])):
+                line = index_lines.get((slot, entry["name"]))
+                if line:
+                    for field in ("name", "sequence"):
+                        locations.at((key, n, field), line)
+        for n, pair in enumerate(canonical.get("index_pairs", [])):
+            line = index_lines.get(("i7", pair["name"]))
+            if line:
+                locations.at(("index_pairs", n, "name"), line)
+        return cls._checked(canonical, locations, file, index_mode)
 
     @classmethod
     def _parse_csv(
@@ -970,6 +1035,10 @@ class IndexParser:
         content: str,
         default_name: str = "Imported Kit",
         index_mode: Optional[IndexMode] = None,
+        file: str = "",
+        default_version: Optional[str] = "1.0",
+        name_given: bool = True,
+        version_given: bool = True,
     ) -> IndexKit:
         """
         Parse CSV index file.
@@ -998,16 +1067,19 @@ class IndexParser:
         # Check if this is combinatorial format (has [i7] section)
         if any(_section_marker(line) == "[i7]" for line in content.split("\n")):
             return cls._parse_combinatorial_csv(content, default_name, index_mode,
-                                                line_offset=line_offset)
+                                                line_offset=line_offset, file=file,
+                                                default_version=default_version,
+                                                name_given=name_given,
+                                                version_given=version_given)
 
         # Parse simple format. The line number of each row comes with it: a row
         # with content but no name or no i7 sequence is refused by line, and
         # ``if name and i7_seq`` below dropped such a row without a word.
-        reader = csv.DictReader(StringIO(content))
-        numbered = [(reader.line_num + line_offset, row) for row in reader]
+        table = read_table(content, line_offset)
+        numbered = [(row.line, {**row.cells, None: row.extra}) for row in table.rows]
         rows = [row for _lineno, row in numbered]
 
-        _columns_not_read(reader.fieldnames, _SIMPLE_CSV_COLUMNS, _SIMPLE_CSV_READS)
+        _columns_not_read(table.header, _SIMPLE_CSV_COLUMNS, _SIMPLE_CSV_READS)
         _cells_with_no_column(numbered)
 
         incomplete = [lineno for lineno, row in numbered
@@ -1028,12 +1100,18 @@ class IndexParser:
             else:
                 index_mode = IndexMode.UNIQUE_DUAL
 
-        kit = IndexKit(name=default_name, version="1.0", description="", index_mode=index_mode)
+        said = _name_and_version({}, "", "", default_name, default_version,
+                                 name_given, version_given, "")
+        canonical: dict = {"name": said["name"], "index_mode": index_mode.value,
+                           "version": said["version"]}
+        locations = Locations()
 
         # Every column through the same lookups the checks above used, so a
         # header the check counted as read is a header the row is read by:
         # the two drifting apart is how an ignored column went unnoticed.
-        for row in rows:
+        pairs: list = []
+        singles: list = []
+        for lineno, row in numbered:
             name = _csv_name(row)
             i7_name = _cell(row, *_CSV_I7_NAME_COLUMNS) or name
             i5_name = _cell(row, *_CSV_I5_NAME_COLUMNS) or name
@@ -1043,30 +1121,26 @@ class IndexParser:
 
             if name and i7_seq:
                 if index_mode == IndexMode.SINGLE:
-                    # Store as individual indexes
-                    kit.i7_indexes.append(
-                        Index(name=name, sequence=i7_seq, index_type=IndexType.I7, well_position=well)
-                    )
+                    locations.at(("i7_indexes", len(singles), "name"), lineno)
+                    locations.at(("i7_indexes", len(singles), "sequence"), lineno)
+                    locations.at(("i7_indexes", len(singles), "well_position"), lineno)
+                    singles.append({"name": name, "sequence": i7_seq, "well_position": well})
                 else:
-                    # Store as index pairs (unique_dual mode)
-                    index1 = Index(name=i7_name, sequence=i7_seq, index_type=IndexType.I7, well_position=well)
-                    index2 = (
-                        Index(name=i5_name, sequence=i5_seq, index_type=IndexType.I5, well_position=well)
-                        if i5_seq
-                        else None
-                    )
-
-                    kit.index_pairs.append(
-                        IndexPair(
-                            id=f"{kit.name}_{name}",
-                            name=name,
-                            index1=index1,
-                            index2=index2,
-                            well_position=well,
-                        )
-                    )
-
-        return kit
+                    pair = {"name": name, "well_position": well,
+                            "index1": {"name": i7_name, "sequence": i7_seq,
+                                       "well_position": well}}
+                    if i5_seq:
+                        pair["index2"] = {"name": i5_name, "sequence": i5_seq,
+                                          "well_position": well}
+                    for field in ("name", "well_position"):
+                        locations.at(("index_pairs", len(pairs), field), lineno)
+                    for slot in ("index1", "index2"):
+                        for field in ("name", "sequence", "well_position"):
+                            locations.at(("index_pairs", len(pairs), slot, field), lineno)
+                    pairs.append(pair)
+        canonical["i7_indexes" if index_mode == IndexMode.SINGLE else "index_pairs"] = (
+            singles if index_mode == IndexMode.SINGLE else pairs)
+        return cls._checked(canonical, locations, file, index_mode)
 
     @classmethod
     def _parse_combinatorial_csv(
@@ -1075,6 +1149,10 @@ class IndexParser:
         default_name: str = "Imported Kit",
         index_mode: Optional[IndexMode] = None,
         line_offset: int = 0,
+        file: str = "",
+        default_version: Optional[str] = "1.0",
+        name_given: bool = True,
+        version_given: bool = True,
     ) -> IndexKit:
         """
         Parse combinatorial CSV format with [i7] and [i5] sections.
@@ -1094,12 +1172,11 @@ class IndexParser:
         if index_mode is None:
             index_mode = IndexMode.COMBINATORIAL
 
-        kit = IndexKit(
-            name=default_name,
-            version="1.0",
-            description="",
-            index_mode=index_mode,
-        )
+        said = _name_and_version({}, "", "", default_name, default_version,
+                                 name_given, version_given, "")
+        i7_entries: list = []
+        i5_entries: list = []
+        locations = Locations()
 
         lines = content.strip().split("\n")
         current_section = None
@@ -1124,12 +1201,12 @@ class IndexParser:
                 return
 
             numbers = [lineno for lineno, _text in section_lines]
-            reader = csv.DictReader(StringIO("\n".join(text for _n, text in section_lines)))
-            # line_num counts the lines of this section read so far, the
-            # header included, so it indexes the section's own line list.
-            numbered = [(numbers[min(reader.line_num, len(numbers)) - 1], row)
-                        for row in reader]
-            _columns_not_read(reader.fieldnames, _SECTION_CSV_COLUMNS, _SECTION_CSV_READS)
+            table = read_table("\n".join(text for _n, text in section_lines))
+            # A row's line_num counts the lines of this section read so far,
+            # the header included, so it indexes the section's own line list.
+            numbered = [(numbers[min(row.line, len(numbers)) - 1],
+                         {**row.cells, None: row.extra}) for row in table.rows]
+            _columns_not_read(table.header, _SECTION_CSV_COLUMNS, _SECTION_CSV_READS)
             _cells_with_no_column(numbered)
 
             for lineno, row in numbered:
@@ -1143,13 +1220,14 @@ class IndexParser:
                     continue
 
                 if current_section == "i7":
-                    kit.i7_indexes.append(
-                        Index(name=name, sequence=seq, index_type=IndexType.I7, well_position=well)
-                    )
+                    entries, key = i7_entries, "i7_indexes"
                 elif current_section == "i5":
-                    kit.i5_indexes.append(
-                        Index(name=name, sequence=seq, index_type=IndexType.I5, well_position=well)
-                    )
+                    entries, key = i5_entries, "i5_indexes"
+                else:
+                    continue
+                for field in ("name", "sequence", "well_position"):
+                    locations.at((key, len(entries), field), lineno)
+                entries.append({"name": name, "sequence": seq, "well_position": well})
 
             section_lines = []
 
@@ -1176,7 +1254,11 @@ class IndexParser:
         if incomplete:
             raise _incomplete_csv_rows(incomplete)
 
-        if index_mode == IndexMode.SINGLE and kit.i5_indexes:
+        if index_mode == IndexMode.SINGLE and i5_entries:
             raise _i5_in_single("an [i5] section")
 
-        return kit
+        canonical = {"name": said["name"], "index_mode": index_mode.value,
+                     "version": said["version"], "i7_indexes": i7_entries}
+        if index_mode != IndexMode.SINGLE:
+            canonical["i5_indexes"] = i5_entries
+        return cls._checked(canonical, locations, file, index_mode)
