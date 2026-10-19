@@ -194,19 +194,24 @@ class TestAMalformedConfigFileKeepsItsSecret:
         assert PASSWORD in str(broken.value)
 
     def test_the_refusal_repeats_nothing_of_a_message_that_quotes_the_line(self):
-        """``_load_config`` reads the file as a stream, and PyYAML then names
-        the file and the place without quoting it -- so this is a guard, not a
-        live leak. It is tested against the error that *does* carry the line
-        (string input), so the rule holds whichever way the file is loaded
-        (break row B10)."""
+        """``_load_config`` reads the file's text now, and PyYAML's own
+        message for text input DOES quote the line -- so what was a guard is
+        a live leak if anything repeats it. The input rules build every
+        message themselves and scrub the file's own text out of it
+        (``input_rules/check.py``, a sensitive input), which is what
+        ``_yaml_refusal`` used to promise (break row B10)."""
+        from seqsetup.input_rules.database import check_database_file
+
         with pytest.raises(yaml.YAMLError) as broken:
             yaml.safe_load(self.BROKEN)
         assert PASSWORD in str(broken.value), "the premise"
 
-        refusal = str(database._yaml_refusal(broken.value))
+        result = check_database_file(self.BROKEN, "config/mongodb.yaml")
 
-        assert PASSWORD not in refusal and USER not in refusal, refusal
-        assert "line 2" in refusal and "YAML" in refusal, refusal
+        said = " ".join(f"{p.line} {p.path} {p.message}" for p in result.problems)
+        assert not result.ok, said
+        assert PASSWORD not in said and USER not in said, said
+        assert [p.line for p in result.problems] == [2], said
 
     def test_the_refusal_names_the_file_and_the_place_only(self, monkeypatch, tmp_path):
         path = self._config(monkeypatch, tmp_path, self.BROKEN)
@@ -216,15 +221,49 @@ class TestAMalformedConfigFileKeepsItsSecret:
 
         message = str(refused.value)
         assert PASSWORD not in message and USER not in message, message
-        assert str(path) in message and "line 2" in message, message
+        # file:line:column:, as every other settings file is named since
+        # step 2 of the input rules.
+        assert str(path) in message and f"{path}:2:" in message, message
 
     def test_an_empty_config_file_still_stops_start_up(self, monkeypatch, tmp_path):
         """An empty file is a broken one: it must not quietly turn into the
-        localhost default, which is what a file that does not exist means."""
-        self._config(monkeypatch, tmp_path, "")
+        localhost default, which is what a file that does not exist means.
+        It stopped start-up with an ``AttributeError`` and no words; it now
+        says which file is empty."""
+        path = self._config(monkeypatch, tmp_path, "")
 
-        with pytest.raises(AttributeError):
+        with pytest.raises(ValueError) as refused:
             database._load_config()
+
+        assert str(path) in str(refused.value) and "is empty" in str(refused.value)
+
+    def test_a_file_that_cannot_be_read_says_so(self, monkeypatch, tmp_path):
+        path = self._config(monkeypatch, tmp_path, f'mongodb:\n  uri: "{URI}"\n')
+        path.chmod(0o000)
+        try:
+            with pytest.raises(ValueError) as refused:
+                database._load_config()
+        finally:
+            path.chmod(0o600)
+
+        assert "cannot be read" in str(refused.value)
+        assert PASSWORD not in str(refused.value)
+
+    def test_a_file_that_is_not_utf_8_says_so_and_names_no_byte_of_it(
+            self, monkeypatch, tmp_path):
+        """The decode error names a byte of the file and its offset, and for
+        a latin-1 password that byte is part of the password."""
+        monkeypatch.delenv("MONGODB_URI", raising=False)
+        path = tmp_path / "mongodb.yaml"
+        path.write_bytes(f'mongodb:\n  uri: "mongodb://u:p\xe4ss@db"\n'.encode("latin-1"))
+        monkeypatch.setattr(database, "CONFIG_PATH", path)
+
+        with pytest.raises(ValueError) as refused:
+            database._load_config()
+
+        message = str(refused.value)
+        assert "is not UTF-8 text" in message
+        assert "0xe4" not in message and "position" not in message, message
 
     def test_a_readable_config_file_still_reads(self, monkeypatch, tmp_path):
         self._config(monkeypatch, tmp_path,

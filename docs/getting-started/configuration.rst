@@ -50,7 +50,28 @@ Configuration Files
 All configuration files are in the ``config/`` directory:
 
 ``mongodb.yaml``
-   MongoDB connection settings (URI and database name).
+   MongoDB connection settings. It has one key, ``mongodb``, holding
+   ``uri`` and ``database``, and **both must be written out**::
+
+      mongodb:
+        uri: "mongodb://user:password@host:27017/seqsetup?authSource=seqsetup"
+        database: "seqsetup"
+
+   Start-up stops, naming the file, the line and the key, when a key is
+   misspelt or missing, when the file is empty, cannot be read or is not
+   UTF-8, when ``uri`` does not begin ``mongodb://`` or ``mongodb+srv://``
+   (without a scheme the driver reads the value as a host name and connects
+   to it with **no authentication**), or when ``database`` is longer than 63
+   bytes or holds a space, ``.``, ``$``, ``/``, ``\``, ``"`` or a hidden
+   character -- the characters MongoDB itself refuses. A misspelt key used to
+   mean ``mongodb://localhost:27017`` with no word at all.
+
+   **No message, log line or audit row ever repeats a value of this file**:
+   it holds the password. ``MONGODB_URI`` and ``MONGODB_DATABASE`` win over
+   the file, as before, and their values follow the same rules.
+
+   ``pixi run check-settings <folder> --local-database config/mongodb.yaml``
+   checks the file without connecting to anything.
 
 ``instruments.yaml``
    Supported sequencing instruments, flowcell types, reagent kits, SBS chemistry

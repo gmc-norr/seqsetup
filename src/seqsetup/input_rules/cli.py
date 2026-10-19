@@ -6,7 +6,8 @@ A lab runs it on its settings repository before a sync, or on every change.
 It prints one problem per line, ``file:line:column: place: problem``, warnings
 marked, and exits 1 when there is an error. It checks instrument files,
 application and test profiles and index kit files; each later step of the
-input rules adds its files here.
+input rules adds its files here. ``--local-database`` checks a database
+settings file, and nothing in this command ever connects to anything.
 
 ``--schema <dir>`` writes a JSON Schema per document for editors. A schema is
 a help, not the authority: it cannot express keys given twice, how a value is
@@ -29,6 +30,7 @@ from .instruments import (
     duplicate_instruments,
 )
 from ..services.index_validator import IndexValidator
+from .database import DatabaseFileRules, check_database_file
 from .kits import KitRules, build_kit, check_index_kit_file, repeated_kit_versions
 from .problems import problem_line
 from .profiles import (
@@ -52,6 +54,7 @@ SCHEMAS = {
     "application-profile.schema.json": (ApplicationProfileRules, "An application profile."),
     "test-profile.schema.json": (TestProfileRules, "A test profile."),
     "index-kit.schema.json": (KitRules, "An index kit file."),
+    "database.schema.json": (DatabaseFileRules, "The database settings file (config/mongodb.yaml)."),
 }
 _NOT_THE_AUTHORITY = (
     " A help for editors, not the authority: keys given twice, how a value is "
@@ -180,6 +183,9 @@ def main(argv=None) -> int:
                         help="the sync does not read index kits: do not check an index kit folder")
     parser.add_argument("--local-instruments", type=Path,
                         help="also check a local instruments file, such as config/instruments.yaml")
+    parser.add_argument("--local-database", type=Path,
+                        help="also check a database settings file, such as config/mongodb.yaml "
+                             "(nothing is ever connected to)")
     parser.add_argument("--schema", type=Path,
                         help="write a JSON Schema per document into this folder, and stop")
     args = parser.parse_args(argv)
@@ -252,6 +258,22 @@ def main(argv=None) -> int:
         text = _read(args.local_instruments, shown, tally)
         if text is not None:
             tally.report(check_local_instruments_file(text, shown).problems)
+
+    if args.local_database is not None:
+        # Read straight, not through _read, whose "a link is its target
+        # path" rule is for a GitHub listing: a mongodb.yaml is often a
+        # secret mount, which is a link to the real file. Nothing is
+        # connected to, here or anywhere in this command.
+        tally.files += 1
+        shown = args.local_database.name
+        try:
+            text = args.local_database.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            why = e.strerror if isinstance(e, OSError) else "not UTF-8 text"
+            print(f"{shown}: cannot be read ({why})")
+            tally.errors += 1
+        else:
+            tally.report(check_database_file(text, shown).problems)
 
     print(tally.summary(), file=sys.stderr)
     return 1 if tally.errors else 0

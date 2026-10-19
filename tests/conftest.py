@@ -54,6 +54,47 @@ from seqsetup.models.sequencing_run import (
 )
 
 
+class _NoRealDatabase:
+    """What ``seqsetup.services.database.MongoClient`` is for the whole test
+    suite: it records the address it was handed and refuses to connect.
+
+    ``pixi run test`` sets no environment, and ``_load_config`` with no
+    ``MONGODB_URI`` reads the shipped ``config/mongodb.yaml``, which says
+    ``mongodb://localhost:27017`` -- the address of the real database on a
+    deployment host. One test calling ``init_db`` unguarded would ping it
+    (docs/design/2026-10-18-input-rules-design.md, step 4).
+    """
+
+    def __init__(self):
+        self.built: list = []
+
+    def __call__(self, uri=None, *args, **kwargs):
+        self.built.append(uri)
+        raise RuntimeError(
+            "no test may reach a real database: seqsetup.services.database."
+            f"MongoClient was asked for {uri!r}. Use mongomock, or the "
+            "no_real_database fixture to see what was asked for."
+        )
+
+
+@pytest.fixture(autouse=True)
+def no_real_database(monkeypatch):
+    """Every test, without asking: an address nothing listens on, a client
+    that refuses, and no connection left over from the test before --
+    ``init_db`` returns early when ``_db`` is already set, so a test that
+    forgets that would pass while proving nothing."""
+    from seqsetup.services import database
+
+    monkeypatch.setenv("MONGODB_URI", "mongodb://127.0.0.1:1")
+    monkeypatch.setattr(database, "_client", None)
+    monkeypatch.setattr(database, "_db", None)
+    stub = _NoRealDatabase()
+    monkeypatch.setattr(database, "MongoClient", stub)
+    yield stub
+    database._client = None
+    database._db = None
+
+
 @pytest.fixture
 def sample_index_pair():
     """Create a sample index pair for testing."""
