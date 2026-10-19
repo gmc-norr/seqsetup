@@ -1083,23 +1083,51 @@ all. It is the one **sensitive** input: a message about it may quote nothing
 (section "Sensitive inputs"), and `services/database.py` already refuses to
 repeat a YAML parser's message for exactly that reason (`_yaml_refusal`).
 
-### What it does today, measured on step 3's tip
+### What happens today, measured on step 3's tip
 
-- `MONGODB_URI` set in the environment wins: the file is not read at all, and
-  `MONGODB_DATABASE` (default `seqsetup`) names the database. **Unchanged.**
-- No `MONGODB_URI` and the file is **there**: `yaml.safe_load(f)` then
-  `config.get("mongodb", {})`. A misspelt top key (`mongdb:`) gives `{}`, and
-  `init_db` then falls back to `mongodb://localhost:27017` and the database
-  `seqsetup` — **a different server, with no word**. So does a file whose
-  `mongodb:` map leaves out `uri` or `database`.
-- No `MONGODB_URI` and the file is **not there**: the same localhost default.
-  **Unchanged**: a missing file is how a developer runs SeqSetup against a
-  local MongoDB, and the shipped `.env.example` and Compose file set
-  `MONGODB_URI` for every other deployment.
-- An **empty** file: `config` is `None`, so `config.get` raises
-  `AttributeError` — start-up stops, with a traceback and no words.
-- A file that is not YAML: `_yaml_refusal`, which names the file and the
-  line and **never repeats the parser's message**.
+- `MONGODB_URI` set in the environment wins and the file is not read at all;
+  `MONGODB_DATABASE` (default `seqsetup`) then names the database.
+  `docker-compose.yml` sets both, so **the lab takes this path and never
+  reads the file**.
+- `MONGODB_DATABASE` set with **no** `MONGODB_URI` is dropped without a word:
+  `_load_config` only reads it inside the `if mongo_uri` branch, so a file is
+  read and the variable means nothing (measured).
+- No `MONGODB_URI` and the file is **there** (the shipped case: the file is
+  tracked, copied into the image by `Dockerfile` and mounted read-only by
+  `docker-compose.yml`, and `pixi run serve` sets no `MONGODB_URI`):
+  `yaml.safe_load(f)` then `config.get("mongodb", {})`. A misspelt top key
+  (`mongdb:`) gives `{}`, and `init_db` then falls back to
+  `mongodb://localhost:27017` and the database `seqsetup` — **a different
+  server, with no word**. So does a `mongodb:` map that leaves out `uri` or
+  `database`.
+- No `MONGODB_URI` and **no file**: the same localhost default. **Unchanged**:
+  it is what a checkout with the file removed does, and nothing in the
+  shipped deployment relies on it.
+- An **empty** file: `config.get` on `None` raises `AttributeError` —
+  start-up stops, with a traceback and no words
+  (`test_an_empty_config_file_still_stops_start_up`, added on purpose in
+  `86b2037`).
+- A file that **cannot be read** (no permission) or that is **not UTF-8**:
+  an unhandled `PermissionError`, or a `UnicodeDecodeError` naming a byte of
+  the file and its offset — which for a latin-1 password is a byte of the
+  password (measured).
+- A `uri` with **no scheme** is not refused by anyone: pymongo reads
+  `localhost:27017`, `mongodb.example.invalid` and even `see .env` as **host
+  lists** and connects to them with no authentication (measured with
+  `connect=False`).
+- A `database` holding a `.` or a space reaches `_client[database_name]`,
+  which is **outside** `init_db`'s `try`, so it is an unhandled `InvalidName`
+  with no log line. pymongo refuses exactly `' '`, `'.'`, `'$'`, `'/'`,
+  `'\'`, `'"'` and NUL, bounds the length not at all, and accepts a tab and a
+  zero-width space (measured).
+
+### Where the code goes
+
+`input_rules/database.py`, beside the other rulebooks: `DatabaseFileRules`
+and `check_database_file(text, file)`, listed in `cli.SCHEMAS`. It imports
+nothing of `services/database.py`, which pulls in pymongo, and
+`seqsetup.services.database` joins the modules the settings command's
+isolation test forbids.
 
 ### The rulebook
 
@@ -1108,68 +1136,146 @@ One document, `mongodb` its only key:
 | Key | Required | Rule |
 |---|---|---|
 | `mongodb` | yes | a map, the only key the file may have |
-| `mongodb > uri` | yes | text, 1-4,096 characters, holding no hidden character |
-| `mongodb > database` | yes | text, 1-63 characters, holding none of `. $ / \ " ` a space or NUL |
+| `mongodb > uri` | yes | text, 1-4,096 characters, no hidden character, beginning `mongodb://` or `mongodb+srv://` |
+| `mongodb > database` | yes | text, 1-63 **bytes** of UTF-8, no hidden character, holding none of `. $ / \ "`, a space or NUL |
 
-**Why these bounds.** A connection string is text: nothing in SeqSetup bounds
-it, and 4,096 is the cap the app gives a description. MongoDB's own limit on a
-database name is 63 bytes, and pymongo refuses `.`, `$`, `/`, `\`, `"`, a
-space and NUL in one with `InvalidName` (measured on step 3's tip), so the
-rulebook refuses them by name and line instead of letting `_client[name]`
-raise at start-up. Both keys are **required**: a file that is there and does
-not write them is a file whose writer meant something, and falling back to
-another server is the one thing this step exists to stop.
+**Why these bounds.**
 
-**Sensitive**: `check_yaml(..., sensitive=True)`. No value is quoted, no
-unknown key's **name** reaches a message (it could be a connection string
-written as a key), and PyYAML's own text is never shown — the guarantees
-step 1 built and `_yaml_refusal` already keeps.
+- A connection string is text; nothing in SeqSetup bounds it, and 4,096 is the
+  cap the app gives a description. The **scheme** is required because pymongo
+  reads a scheme-less value as a host list, so a hand edit to
+  `localhost:27017` silently connects somewhere else with no authentication.
+  `mongodb+srv://` works in production: dnspython is in the **default** pixi
+  environment, not only `dev`.
+- MongoDB's own limit on a database name is 63 **bytes**, so the bound is on
+  the UTF-8 length: `"é" * 63` is 63 characters and 126 bytes, and both
+  pymongo and a character bound let it through (measured).
+- The seven characters are exactly the ones pymongo refuses, so the rulebook
+  says it by name and line instead of letting `_client[name]` raise outside
+  any `try`. `database` gets the **hidden-character** rule too: a tab or a
+  zero-width space in it reaches every log line, the Admin > Logs page and
+  every audit row.
+- Both keys are **required**: a file that is there and does not write them is
+  a file whose writer meant something, and falling back to another server is
+  the one thing this step exists to stop.
+
+`retired_keys` is empty: `git log --follow -- config/mongodb.yaml` has one
+commit, and the file has held exactly `mongodb.uri` and `mongodb.database`
+since the initial commit, so there is no older spelling to give its own
+message.
+
+### Sensitive: a message quotes nothing, whatever a validator says
+
+`check_yaml(..., sensitive=True)` masks a problem's **path**; it does **not**
+mask its message, and `check.py` passes a validator's own `ValueError` text
+through verbatim (measured: a rule written `may not hold '/': {value!r}`
+quotes the password). Step 4 is the first user of `sensitive=True` anywhere,
+so the gap has never been reachable. Two things close it:
+
+1. **The rulebook's own messages name no value** — they name the character or
+   the bound, never the input.
+2. **`check.py` scrubs a sensitive file's own text out of every message**: for
+   a sensitive input it collects every string the file holds (every value and
+   every map key, at every depth), longest first, and replaces any of 4
+   characters or more wherever it appears in a message, as
+   `database._safe` does for credentials. So a message cannot quote a value
+   even if a future validator tries to. A test holds it for each problem kind.
 
 ### Where it runs
 
-- **`_load_config`** reads the file with the reader and the rulebook and
-  raises a `ValueError` naming the file, the line, the column and the place
-  for every problem — where a misspelt key quietly meant another server and
-  an empty file gave an `AttributeError`. The three cases it keeps apart stay:
-  the environment wins, a missing file means the localhost default, and a
-  file that is there must be right.
+- **`_load_config`** reads the file with `read_text`, the reader and the
+  rulebook, and raises one `ValueError` naming the file (its full path, as
+  today) and listing every **error** with its line, column and place. A
+  warning, if a rulebook ever has one, is logged and does not stop start-up,
+  as step 1's loader does. The three cases it keeps apart stay: the
+  environment wins, a missing file means the localhost default, and a file
+  that is there must be right. Two more cases gain words: a file that cannot
+  be read ("cannot be read (<reason>)") and one that is not UTF-8 ("is not
+  UTF-8 text"), each naming the file and nothing else — step 1's wording.
+- **It returns the plain two-key dict** `{"uri": …, "database": …}`, built
+  from the checked value, so `init_db` reads both keys directly and its two
+  `.get` fallbacks go: `config.get("uri", "mongodb://localhost:27017")` was a
+  second silent localhost default.
+- **`MONGODB_URI` and `MONGODB_DATABASE` keep exactly the meaning they have**
+  -- the variables win over the file, and `MONGODB_DATABASE` alone still means
+  nothing (recorded in the run's QUESTIONS; changing it is the user's call).
+  Their **values** go through the same two rules, with the variable's name in
+  place of a line, before any client is built: a `MONGODB_DATABASE` holding a
+  `.` was an unhandled `InvalidName` from outside `init_db`'s `try`.
+- **`_yaml_refusal` is deleted** -- the reader never repeats PyYAML's text, so
+  the guard it was has moved into `input_rules` -- and its two tests are
+  pointed at the new path with the same guarantee. The line of
+  `docs/getting-started/deployment.rst` that quotes its wording is updated.
 - **Every other guarantee of `database.py` is untouched**: the connection
-  string is never logged (`_safe`, `_credentials`), the authentication-failure
-  message still says where to look, and the timeouts are the same.
+  string is never logged (`_safe`, `_credentials`), the
+  authentication-failure message still says where to look, and the timeouts
+  are the same.
 - **`pixi run check-settings`** checks a database file only when told to, with
   `--local-database <path>`, like `--local-instruments`: a settings repository
-  does not hold one, and the command **never connects to anything**.
+  does not hold one, and the command **never connects to anything**. It reads
+  the path with `read_text`, not `cli._read`, whose "a link is its target
+  path" rule is for a GitHub listing and would refuse a `mongodb.yaml` that is
+  a secret mount (measured with `--local-instruments` on a symlink).
+
+### No test reaches a real database
+
+The suite's unguarded default **is** the clinical database: there is no
+`tests/unit/conftest.py`, `pytest.ini` sets no environment, and
+`_load_config` with no `MONGODB_URI` returns `mongodb://localhost:27017` from
+the shipped file (measured). `tests/integration/conftest.py` patches `init_db`
+and `get_db` per test, and no unit test calls them today, but step 4's tests
+are the first to go near `_load_config`. So:
+
+- **a session-wide autouse guard in `tests/conftest.py`**: it sets
+  `MONGODB_URI=mongodb://127.0.0.1:1` for the whole suite, replaces
+  `seqsetup.services.database.MongoClient` with a stub that records its
+  arguments and raises, and resets `_client` and `_db` around every test --
+  `init_db` returns early when `_db` is already set, so a test that forgets
+  that passes while proving nothing;
+- **a test that `services/database.py` is the only place in `src/` that
+  builds a `MongoClient`** (true today: `database.py` lines 11, 18 and 152),
+  so the one patched name is the whole of it;
+- step 4's own tests call `_load_config` and `check_database_file` directly,
+  and `init_db` only behind that stub, asserting afterwards which URI it was
+  handed.
 
 ### What changes for a lab
 
-| The file says | Today | New |
+| The file or the environment says | Today | New |
 |---|---|---|
 | a misspelt top key (`mongdb:`) | `mongodb://localhost:27017`, database `seqsetup`, with no word | start-up stops: `mongodb` is required, and `mongdb` is not a key this file can have |
 | `mongodb:` with `uri` misspelt (`url:`) | the same silent localhost default | start-up stops, naming the key and its line |
 | `mongodb:` with no `database` | the database `seqsetup`, with no word | start-up stops |
-| an empty file | `AttributeError`, no words | start-up stops: "is empty", with the file's name |
-| a `database` holding a `.` or a space | `_client[name]` raises `InvalidName` at start-up | refused by name and line |
+| an empty file | `AttributeError`, no words | start-up stops: "is empty", naming the file |
+| a file that cannot be read | an unhandled `PermissionError` | start-up stops: "cannot be read (Permission denied)" |
+| a file that is not UTF-8 | a `UnicodeDecodeError` naming a byte of the file and its offset | start-up stops: "is not UTF-8 text" |
+| `uri: localhost:27017` (no scheme) | pymongo reads it as a host and connects with no authentication | refused: a connection string begins `mongodb://` or `mongodb+srv://` |
+| a `database` holding a `.`, a space or a tab | an unhandled `InvalidName` from outside `init_db`'s `try`, or a tab in every log line | refused by name and line |
+| a `database` of 63 characters but 126 bytes | accepted by SeqSetup and by pymongo; the server refuses it | refused: at most 63 bytes |
 | a `uri` or `database` written as a number or a list | read as it was, then pymongo's own error | refused: must be text |
-| a key given twice, a YAML tag, an anchor | the last value kept, or the tag expanded | refused, as for every other settings file |
+| a key given twice, a YAML tag, an anchor, a merge key | the last value kept, or the tag expanded | refused, as for every other settings file |
+| `MONGODB_URI` or `MONGODB_DATABASE` holding such a value | the same unhandled errors, outside any `try` | refused, naming the variable |
 | no file at all | `mongodb://localhost:27017` | **unchanged** |
 | `MONGODB_URI` set | wins over the file | **unchanged** |
+| `MONGODB_DATABASE` set alone | dropped without a word | **unchanged** (in the run's QUESTIONS) |
 
-No message, log line, status or audit row ever quotes a value of this file, or
-the name of a key it does not know.
+No message, log line, status or audit row quotes a value of this file or of
+either variable, or the name of a key the rulebook does not define.
 
 ### How step 4 is proved
 
-- Red tests first: each row above; the three cases `_load_config` keeps apart;
-  a password in the file never in any message, log record or raised text (the
-  test that exists for `_yaml_refusal`, pointed at the new path and widened
-  to every problem kind); a connection string written as an unknown **key**.
-- **No test may reach a real database.** The test file replaces
-  `seqsetup.services.database.MongoClient` in an **autouse** fixture with a
-  stub that records its arguments and raises, and asserts after each test that
-  nothing was handed to a real client. `_load_config` and the checker are
-  tested directly; `init_db` is called only behind that stub.
+- Red tests first: each row above; the five cases `_load_config` keeps apart;
+  the scheme rule both ways (`mongodb://`, `mongodb+srv://`, none); the
+  database-name bound at 63 and 64 bytes of a multi-byte character; each
+  forbidden character; a password written as a **value**, as a **key**, inside
+  a nested map and as a very long scalar, absent from every problem's
+  **message** as well as its path, for every problem kind; a validator that
+  tries to quote its input, scrubbed.
+- The guard: the session-wide stub, the "only one `MongoClient` in `src/`"
+  test, and the assertion that nothing was handed to a real client.
 - The existing tests of `test_database_log_no_credentials.py` keep their
-  guarantee; any changed test is listed.
+  guarantee; the two `_yaml_refusal` tests and the empty-file test are
+  pointed at the new path and listed in STATUS.md with their reasons.
 - The guard test covers the new rulebook. Break checks. The full check with
   the 78 Sample Sheets unchanged. A fresh review.
 
@@ -1250,6 +1356,26 @@ length (20,000 letters 2.5 s, a million over an hour). Every log line and every
 audit row goes through it, so one long key in a settings file stalled the
 logging and the sync. It now starts only where a run of scheme characters
 starts, and a test holds it to scrubbing exactly what it scrubbed before.
+
+A review of step 4's design (`7525748`) gave three P1, six P2 and five P3, all
+confirmed by my own probes and folded in above: `sensitive=True` masks a
+problem's path but not its message, and `check.py` passes a validator's own
+text through verbatim, so the one rule step 4 adds was the one place a
+password could leak -- step 4 is the first user of `sensitive=True` anywhere
+(P1); the test suite's unguarded default is the real database on
+localhost:27017, and a one-file fixture is not a guarantee (P1); the
+environment path, the only one the lab takes, was left unchecked, so a
+`MONGODB_DATABASE` holding a `.` stayed an unhandled `InvalidName` from
+outside `init_db`'s `try` (P1); a `uri` with no scheme is read by pymongo as a
+host and connected to with no authentication (P2); MongoDB's 63 is bytes, not
+characters (P2); an unreadable or non-UTF-8 file still ended in a bare
+traceback naming a byte of the file (P2); what `_load_config` returns, and
+`init_db`'s second silent localhost fallback (P2); where the rulebook lives,
+and the settings command's import rule (P2); `_yaml_refusal`'s fate and the
+path it names (P2); the empty-file test added on purpose (P3); a
+`--local-database` symlink (P3); no hidden-character rule for `database` (P3);
+errors versus warnings and an invented `retired_keys` (P3); and a measurably
+false reason for keeping the missing-file fallback (P3).
 
 A review of step 3's design (`332ce45`) gave three P1, eight P2 and six P3,
 all confirmed by my own probes and folded in above: both Illumina readers strip
