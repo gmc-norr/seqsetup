@@ -698,15 +698,253 @@ lab's settings repository before merging, as in step 1.
 - Break checks, the full check (the 78 Sample Sheets unchanged), a fresh
   review, and the lab's settings repository through the command.
 
+## Step 3: index kit files, every format
+
+### The formats, measured
+
+Five file shapes reach `IndexKit` today, and the code that picks among them is
+`IndexParser._detect_format` plus the file's ending
+(`services/index_parser.py`), with the sync reading only the first:
+
+| Shape | Read by | Name in the file | Version in the file |
+|---|---|---|---|
+| **SeqSetup YAML** (`index_mode`, `index_pairs`, `i7_indexes`) | the sync (`index_kit_sync_parser.py`) and the upload (`_parse_sync_yaml`) | `name` | `version` |
+| **Illumina YAML** (`Name`, `Version`, `IndexSequences`) | the upload (`_parse_illumina_yaml`) | `Name` | `Version` |
+| **Illumina TSV** (`[IndexKit]`, `[Indices]`) | the upload (`_parse_tsv`) | `[IndexKit]` `Name` | `[IndexKit]` `Version` |
+| **plain CSV** (`name,index,index2,...`) | the upload (`_parse_csv`) | never | never |
+| **sectioned CSV** (`[i7]`, `[i5]`, `name,sequence,well`) | the upload (`_parse_combinatorial_csv`) | never | never |
+
+`services/index_validator.py` is not a file reader: it checks a built
+`IndexKit`, on upload and on every synced kit, and it also guards kits built
+from stored documents. It stays where it is and keeps every rule it has
+(section 5, "the domain models stay a backstop").
+
+### The shape: five adapters, one rulebook
+
+Each shape gets its own **adapter**, and every adapter produces the same
+canonical kit map — the keys of the SeqSetup YAML format, which is the one
+`IndexKitYamlExporter` writes back. One **canonical kit rulebook**
+(`input_rules/kits.py`) checks that map, and `build_kit` then makes today's
+`IndexKit` from the checked value only.
+
+- **YAML shapes** go through the step 1 reader (`read_yaml`), so they get the
+  plain-value spellings, no tags, no anchors, keys-given-twice and every
+  problem's line and column for nothing.
+- **CSV and TSV** go through a new **table reader** (`input_rules/table.py`)
+  that keeps each row's own line number and **refuses a column name given
+  twice before any row is read** — including two columns spelt the same, which
+  `_columns_not_read` lets through today because it only compares two
+  *different* spellings of one normal form.
+- The adapters keep every refusal the parsers make now, each with its own
+  `KitFileRefused` subclass and the same text or more: a column that looks
+  like an index or a lane but is not read, a cell under no column name, i5
+  data in a Single kit, pairs in a Single kit, a list the mode does not read,
+  indexes that do not pair up by name, a name given twice, a name or sequence
+  YAML does not read as text, two keys for one list, an incomplete row, a line
+  in a section this format does not read. **A refusal is never dropped and
+  never made vaguer.**
+- Kit files are **not sensitive**: no field can hold a credential (name,
+  version, description, comments, DNA, well positions), so `values_safe=True`
+  and a message may quote a value, as the parsers' messages do today.
+
+### The canonical kit rulebook
+
+| Key | Required | Rule |
+|---|---|---|
+| `name` | yes | filled text, 1-256, no `:`, no part between `/` made only of dots |
+| `version` | yes | filled text, 1-256, no `:`, no `/`, no part made only of dots |
+| `index_mode` | yes | `unique_dual`, `combinatorial` or `single` |
+| `description` | no | text, at most 256 |
+| `comments` | no | text, at most 256 |
+| `is_fixed_layout` | no (false when absent) | true/false |
+| `adapter_read1`, `adapter_read2` | no | DNA text, `[ACGTN]` after uppercasing, at most 1000 |
+| `default_index1_cycles`, `default_index2_cycles` | no | whole number, 1 to 600 |
+| `default_read1_override`, `default_read2_override` | no | text of `Y I U N`, digits and `*`, at most 256 |
+| `index_pairs` | only in `unique_dual` | a list of pairs, at least one |
+| `i7_indexes` | in `combinatorial` and `single` | a list of indexes, at least one |
+| `i5_indexes` | only in `combinatorial` | a list of indexes, at least one |
+
+An **index** is `{name, sequence, well_position}`: `name` filled text 1-256,
+`sequence` DNA text 1-1000 (`[ACGTN]` after uppercasing; a kit's own index may
+not be empty, which `IndexValidator` already refuses), `well_position` text at
+most 256 or absent. A **pair** is `{name, index1, index2, well_position}`:
+`name` filled text 1-256, `index1` an index, `index2` an index or absent.
+
+**A list the mode does not read is refused by the rulebook** as well as by the
+adapters, as a cross-key check, with the adapters' own message: the rule then
+holds for a file reaching the rulebook by any road.
+
+`created_by` and `source` are not file keys: the sync and the upload route set
+them, as today. A kit file naming either is refused as an unknown key.
+
+**Why these bounds.** `name`, `version`, `description` and `comments` are cut
+at 256 by `IndexKit.__setattr__`, so 256 is what is stored; above it the
+rulebook refuses, since a cut name is another name (CLAUDE.md). `name` and
+`version` make the stored `_id` as `name:version`, and two kits can then share
+one document: a kit named `A:1` version `0` and a kit named `A` version `1:0`
+both give `_id` `A:1:0` (measured on `6e99e1f`). `default_index*_cycles` is
+clamped to at least 1 by the model and must equal the length of every index in
+its slot (`IndexValidator._validate_index_cycles`), and a run reads at most 600
+index cycles (`routes/runs.py`), so 1-600. `default_read*_override` is held to
+the `Y I U N` digits `*` alphabet by the model.
+
+### The adapters, key by key
+
+- **SeqSetup YAML**: the canonical map already. Every key above, nothing else.
+  `index_mode` absent is `unique_dual` today in both readers; the rulebook
+  requires it, since a wrong mode pairs samples with the wrong indexes. Every
+  shipped file writes it.
+- **Illumina YAML**: `Name` -> `name`, `Version` -> `version`,
+  `Description` -> `description`, `IndexSequences.i7Index1` (or `Index1`) and
+  `.i5Index2` (or `.Index2`), each a map of a name to a sequence, into
+  `i7_indexes` / `i5_indexes`; then today's mode rules
+  (`index_mode` as given, else Single when there is no i5, else Unique Dual,
+  whose pairs are made by `_pairs_by_same_name`). Two keys for one list stay
+  refused, and so does a name or sequence YAML does not read as text -- which
+  the reader now refuses first, by its line.
+- **Illumina TSV**: `[IndexKit]` gives `Name`, `Version`, `Description`;
+  `[Indices]` gives name, sequence and index number (1 for an i7, 2 for an
+  i5). Every line outside those two sections stays refused with its line.
+- **plain CSV**: the header's columns as `_CSV_*_COLUMNS` name them, through
+  `_column_key`'s normal form, into `index_pairs` (or `i7_indexes` in Single
+  mode), exactly as today.
+- **sectioned CSV**: `[i7]` and `[i5]`, each `name,sequence,well`, into
+  `i7_indexes` and `i5_indexes`.
+
+### Where a name and a version come from
+
+A kit's name and version are its identity: the stored `_id`, the URL of its
+page, its download and its Delete, and what `_refuse_changed_or_repeated_kits`
+compares between syncs. **A name or version nobody gave is never invented
+without the person seeing it.**
+
+- **A synced file** must write both: `name` and `version` are required keys,
+  refused by name and line. Today a file with no `name` is stored under the
+  file's name made into a title (`my_kit_file.yaml` -> `My Kit File`) and a
+  file with no `version` under `1.0` (measured on `6e99e1f`) -- so the file's
+  own name decides the identity a sync compares.
+- **An upload** may give them in the file or in the form: `routes/indexes.py`
+  already takes `kit_name` and `kit_version` text boxes
+  (`templates/indexes/import.html`), and a value typed there wins over the
+  file's, as today. For the three shapes that carry them (SeqSetup YAML,
+  Illumina YAML, TSV), **a file giving neither and a form giving neither is
+  refused**, naming both places.
+- **The two CSV shapes never carry a name or a version**: there is no key for
+  either in `name,index,index2` or in `[i7]`/`[i5]`. There the upload keeps
+  today's behaviour -- the file's name without its ending, and version `1.0` --
+  and the person sees both on the kits list right after the upload. This is the
+  one place a name and a version are still taken from the file's name; it is in
+  QUESTIONS for the user, with the option of requiring the form's two boxes
+  for a CSV instead.
+- `normalize_version` (`"1"` -> `"1.0"`) stays exactly where it is, on the
+  upload path only, after the check: it is the builder's business, and
+  changing it would change the stored identity of a kit a lab uploads.
+
+### What a new file needs
+
+A new kit file, or a new version of one, is checked by these rules and needs no
+code change. Code changes only for a new fact SeqSetup reads from a kit file
+(its rulebook field comes with the code that reads it) or a new file shape (its
+own adapter).
+
+### Where it runs
+
+- **The sync** reads each kit file with the reader and the rulebook
+  (`IndexKitSyncParser.parse`, which keeps its name and its signature): its
+  problems become the file's refusal, which `_fetch_index_kits` already puts
+  on the Config Sync page and in the audit row, naming the file. A refused file
+  keeps the stored kit of that name and version, as today.
+  `_refuse_changed_or_repeated_kits` and the kit fingerprint are unchanged:
+  they need several files and the stored kits (CLAUDE.md).
+- **The upload** (`routes/indexes.py`) shows every problem with its line, in
+  the list fragment it already has for validation errors
+  (`_error_fragment_list`), instead of one "Failed to parse file. Please check
+  the format and try again." for everything. `KitFileRefused` keeps its
+  `reason` for the audit row; the new `KitFileProblems` carries the problems
+  and the reason `kit_file_problems`. The route's catch-all stays for anything
+  unforeseen.
+- **`pixi run check-settings`** checks the kit folder too, with its own
+  `--index-kits` folder option (default `index_kits/`, the sync's
+  `ProfileSyncConfig.index_kits_path`) and a `--no-index-kits` beside
+  `--no-instruments`, reading what the sync reads: a `.yaml` or `.yml` ending
+  in any case, every folder below, a link to a file read as the link's target
+  path and a link to a folder skipped. A missing folder is an error, as for the
+  other folders. It runs `IndexValidator` on each built kit, as the sync does,
+  and reports the kits that share a name and version.
+- **The stored kits** (`IndexKit.from_dict`) are unchanged: a kit stored before
+  this change still loads, cut names and all.
+
+### What changes for a lab
+
+Every change is a refusal with its file, line and place; nothing is accepted
+that was refused before, and no Sample Sheet changes. Each of these is
+**accepted on `6e99e1f`** (probed 2026-10-19 with the old parsers,
+`probes/base_kits.py`; "stored as" is what the kit then held):
+
+| The file says | Stored today | New |
+|---|---|---|
+| a CSV with two columns named `index2` | the last column's sequence | refused, naming the column and its line |
+| a CSV with two columns named `name` | the first column's value | refused |
+| a sectioned CSV with two columns named `sequence` | the last one's | refused |
+| `is_fixed_layout: 'no'` | `is_fixed_layout` = the text `'no'` | refused: must be true or false |
+| `is_fixed_layout: 'yes'` / `'true'` / `'maybe'` | that text | refused |
+| `is_fixed_layout: 1` / `0` | the number | refused |
+| `is_fixed_layout: no` / `yes` (unquoted) | false / true | refused by the reader (step 1's rule) |
+| a `name` of 300 characters | cut to 256 | refused, over 256 |
+| a `version` of 300 characters | cut to 256 | refused |
+| a `description` of 300 characters | cut to 256 | refused |
+| `name: 'Probe: Kit'` | `_id` `Probe: Kit:1.0` | refused: a `:` makes two kits one document |
+| `version: '1:0'` | `_id` `Probe Kit:1:0` | refused |
+| the `kit_name` box holding `Probe: Kit` | the same | refused |
+| a synced file with no `name` | the file's name as a title (`My Kit File`) | refused: `name` is required |
+| a synced file with no `version` | `1.0` | refused: `version` is required |
+| an uploaded YAML or TSV with no name and an empty Kit name box | the file's name without its ending | refused, naming the file's key and the box |
+| an uploaded YAML or TSV with no version and an empty box | `1.0` | refused |
+| an unknown key (`ownr:`) in any of the three YAML shapes | ignored | refused: not a key this file can have |
+| `version: 1.10` (unquoted) | the version `1.1` | refused by the reader: put it in quotes |
+| `comments: 12` | the number 12 | refused: must be text |
+| a SeqSetup YAML with no `index_mode` and only `i7_indexes` | already refused (`KitListsNotRead`) | the same, plus `index_mode` is required |
+| a plain-CSV upload of text that is no kit at all | a kit with no indexes, refused later by `IndexValidator` with no line | refused with the line of each unreadable row |
+| broken YAML on upload | "Failed to parse file. Please check the format and try again." | every problem with its line and column |
+| broken YAML in a sync | the file is dropped, "could not be read as an index kit" | the syntax problem with its line and column |
+| `default_index1_cycles: '8'` in a sync | the file is dropped with `'>' not supported between instances of 'str' and 'int'` in the log | refused: must be a whole number, with its line |
+| `i7_indexes` written as a map in a sync | dropped with `'str' object has no attribute 'get'` | refused: must be a list, with its line |
+
+The two CSV shapes keep taking the kit's name from the file's name and the
+version `1.0` (above).
+
+### How step 3 is proved
+
+- Red tests first, for every rule: each table above, with the line the problem
+  names; every required key; each bound at and past its edge; each kind of
+  value in the wrong place; the colon rule for the name, the version and the
+  form boxes; the mode's own lists; an index with no sequence, a sequence that
+  is not DNA, a well position too long.
+- Every refusal the parsers make today, on the new path, with the same or a
+  more exact message: the existing tests of `test_index_parser.py` (58),
+  `test_kit_file_nothing_dropped.py` (44), `test_index_kit_sync_parser.py`
+  (10), `test_kit_sync_unique_keys.py` (5) and
+  `test_kit_index_cycles_equal_length.py` (12) keep their guarantee; any
+  changed test is listed in STATUS.md with its reason.
+- The guard test covers each new rulebook (it reads every model in the
+  package).
+- **A differential probe** (`probes/kits_diff.py`) runs `6e99e1f` and the tip
+  on every kit file in the repository (`config/indexes/*`, every kit text in
+  `tests/`, `docs/`) and on generated variants (keys removed, reordered,
+  retyped, columns swapped and doubled, CRLF, a byte order mark, blank lines,
+  comments): for every file both accept, the built kit must be the same in
+  every field and in `fingerprint()`; every file only the base accepts must be
+  a row of the table above; **a file only the tip accepts is a defect**.
+- Break checks (`harness/rows_kits.py`), the full check with the 78 Sample
+  Sheets unchanged, and a fresh code review.
+- `docs/admin-guide/` gets the kit key table and the value spellings, with the
+  messages this code writes; a test fails when a rulebook key is missing from
+  the page.
+
 ## Later steps (each adds its details to this note, or a note of its own)
 
 2. **Profiles**: built as step 2, above.
-3. **Index kit files**, every format, each through its own adapter to one
-   canonical kit shape: replaces the stopped batch's step 8. A column name given
-   twice; `is_fixed_layout: 'no'`; a missing name or version silently taking the
-   file name or `1.0`; names cut at 256 characters (`models/index.py:226`); a `:`
-   in a name or version (the stored id is `name:version`); the generic "Failed to
-   parse file".
+3. **Index kit files**: built as step 3, below.
 4. **`config/mongodb.yaml`**: a misspelt `mongodb:`; an empty file. Its values are
    never shown in a message (see "Sensitive inputs").
 5. **Pasted samples and LIMS worklists.** These already refuse the whole input and
