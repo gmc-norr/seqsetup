@@ -25,7 +25,6 @@ I7_10, I5_10, I5_10_RC = "ATTACTCGAA", "TATAGCCTGG", "CCAGGCTATA"
 RULE = [
     ("NovaSeq X Series", "Standard", R, False, True),
     ("NextSeq 1000/2000", "Standard", R, False, True),
-    ("MiSeq i100 Series", "Index-first", F, False, False),
     ("MiSeq i100 Series", "Read-first", R, False, True),
     ("NextSeq 500/550", "Standard", R, True, False),
     ("MiniSeq", "Standard kits", R, True, False),
@@ -72,7 +71,7 @@ class TestTheRule:
         assert direction.index2_mask_reversed is mask
 
     def test_no_workflow_is_the_standard_one(self):
-        assert i5_direction("MiSeq i100 Series", "").workflow == "Index-first"
+        assert i5_direction("MiSeq i100 Series", "").workflow == "Read-first"
         assert i5_direction("MiniSeq", "").workflow == "Standard kits"
 
     def test_a_run_uses_its_own_workflow(self):
@@ -189,6 +188,8 @@ HEADER_LINE_GONE = {"NextSeq 500/550", "MiniSeq", "NovaSeq 6000", "HiSeq 4000", 
 INDEX2_MASK_NOW = {  # an 8-base i5: today's mask -> the new one
     "NovaSeq X Series": ("I8N2", "N2I8"),
     "NextSeq 1000/2000": ("I8N2", "N2I8"),
+    # Read-first became its standard (docs/design/2026-10-19-i100-read-first-design.md).
+    "MiSeq i100 Series": ("I8N2", "N2I8"),
     "NextSeq 500/550": ("N2I8", "I8N2"),
     "MiniSeq": ("N2I8", "I8N2"),
     "NovaSeq 6000": ("N2I8", "I8N2"),
@@ -245,7 +246,7 @@ class TestNoDirection:
             i5_direction("MiSeq i100 Series", "Old name")
         assert str(exc.value) == (
             "Old name is not an i5 workflow of MiSeq i100 Series "
-            "(it has: Index-first, Read-first)."
+            "(it has: Read-first)."
         )
 
     def test_the_name_must_match_exactly(self):
@@ -292,7 +293,6 @@ class TestTheChecks:
 
     @pytest.mark.parametrize("instrument,workflow", [
         ("MiniSeq", "Rapid kits"),
-        ("MiSeq i100 Series", "Index-first"),
         ("NovaSeq 6000", "v1.0 reagents"),
     ])
     def test_it_passes_when_read_forward(self, instrument, workflow):
@@ -308,6 +308,36 @@ class TestTheChecks:
         assert (rapid_balance.positions[0].g_count, rapid_balance.positions[0].a_count) == (0, 1)
 
 
+class TestALabFileThatListsIndexFirst:
+    """A lab's own instrument file may list the i100's Index-first: a forward
+    workflow on an instrument whose RunInfo.xml marks a reversed i5. The
+    shipped i100 lists Read-first only
+    (docs/design/2026-10-19-i100-read-first-design.md), and no other shipped
+    instrument has this pair of facts, so it is kept here: the column, the
+    mask and the header line as the kit lists the i5."""
+
+    @pytest.fixture(autouse=True)
+    def _lab_file(self, i100_with_index_first):
+        pass
+
+    def test_the_direction(self):
+        direction = i5_direction("MiSeq i100 Series", "Index-first")
+        assert (direction.read_orientation, direction.index2_column_reversed,
+                direction.index2_mask_reversed) == (F, False, False)
+
+    def test_the_v2_sheet(self):
+        sheet = SampleSheetV2Exporter.export(_run("MiSeq i100 Series", "Index-first"))
+        assert _line(sheet, "1,S1,") == f"1,S1,{I7},{I5},1,1"
+        assert _line(sheet, "OverrideCycles,") == "OverrideCycles,Y151;I8N2;I8N2;Y151"
+        assert "IndexOrientation,Forward" in sheet.splitlines()
+
+    def test_the_dark_start_check_reads_it_forward(self):
+        run = _run("MiSeq i100 Series", "Index-first", i7="ACGTACGT", i5=DARK_ONLY_REVERSED)
+        assert _errors(run, "no_i5_direction") == []
+        assert _dark_errors("MiSeq i100 Series", "Index-first") == []
+        assert len(_dark_errors("MiSeq i100 Series", "Read-first")) == 1
+
+
 def _errors(run, category: str) -> list:
     return [e for e in ValidationService.validate_configuration(run) if e.category == category]
 
@@ -320,7 +350,7 @@ class TestNoDirectionStopsMarkReady:
         (error,) = _errors(_run("MiSeq i100 Series", "Old name"), "no_i5_direction")
         assert error.message == (
             "Old name is not an i5 workflow of MiSeq i100 Series "
-            "(it has: Index-first, Read-first). Pick one in Run Setup."
+            "(it has: Read-first). Pick one in Run Setup."
         )
 
     def test_an_unlisted_workflow_on_a_ready_run(self):
@@ -328,7 +358,7 @@ class TestNoDirectionStopsMarkReady:
         (error,) = _errors(run, "no_i5_direction")
         assert error.message == (
             "Old name is not an i5 workflow of MiSeq i100 Series "
-            "(it has: Index-first, Read-first)."
+            "(it has: Read-first)."
         )
 
     def test_the_checks_that_need_a_direction_do_not_run(self):
@@ -353,14 +383,14 @@ class TestTheResultNamesTheDirection:
 
     def test_a_run_from_before_names_the_standard_one(self):
         result = ValidationService.validate_run(_run("MiSeq i100 Series"))
-        assert (result.i5_workflow, result.i5_read_orientation) == ("Index-first", F)
+        assert (result.i5_workflow, result.i5_read_orientation) == ("Read-first", R)
 
     def test_none_with_the_reason(self):
         result = ValidationService.validate_run(_run("MiSeq i100 Series", "Old name"))
         assert (result.i5_workflow, result.i5_read_orientation) == ("", "")
         assert result.no_i5_direction == (
             "Old name is not an i5 workflow of MiSeq i100 Series "
-            "(it has: Index-first, Read-first)."
+            "(it has: Read-first)."
         )
 
     def test_the_json_report(self):
@@ -372,7 +402,7 @@ class TestTheResultNamesTheDirection:
         run = _run("MiSeq i100 Series", "Old name")
         report = ValidationReportJSON._build_report(run, ValidationService.validate_run(run))
         reason = ("none (Old name is not an i5 workflow of MiSeq i100 Series "
-                  "(it has: Index-first, Read-first).)")
+                  "(it has: Read-first).)")
         assert (report["i5_workflow"], report["i5_read_orientation"]) == (reason, reason)
 
     def test_the_pdf_report(self):

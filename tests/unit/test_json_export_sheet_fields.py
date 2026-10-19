@@ -152,6 +152,18 @@ class TestTheSheetsValuesAreInTheJSON:
         assert sample["samplesheet_index2"] == sample["index2"]["sequence"] == I5
         assert sample["samplesheet_override_cycles"] == sample["override_cycles"] == MASK
 
+    def test_a_forward_workflow_on_an_instrument_whose_runinfo_marks_the_i5(
+            self, i100_with_index_first):
+        """The i100's Index-first, as a lab's own file may list it: PAIRS had it
+        while the shipped i100 listed it, and no other shipped instrument has
+        this pair of facts (docs/design/2026-10-19-i100-read-first-design.md)."""
+        run = _run("MiSeq i100 Series", "Index-first")
+        sample = _sample_json(run)
+        assert sample["samplesheet_index2"] == _data_row(run)["Index2"] == I5
+        assert sample["samplesheet_override_cycles"] == _data_row(run)["OverrideCycles"] == MASK
+        assert sample["index2"]["sequence"] == I5
+        assert sample["override_cycles"] == MASK
+
     def test_a_sample_without_an_i5(self):
         run = _run("NextSeq 500/550", i5=None)
         sample = _sample_json(run)

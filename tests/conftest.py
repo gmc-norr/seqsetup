@@ -130,3 +130,18 @@ def sample_analysis():
         reference_genome="hg38",
         sample_ids=["Sample_001"],
     )
+
+
+@pytest.fixture
+def i100_with_index_first(monkeypatch):
+    """The MiSeq i100 Series as a lab's own instrument file may still list it:
+    Index-first (forward, the standard) and Read-first. The shipped i100 lists
+    Read-first only (docs/design/2026-10-19-i100-read-first-design.md); a test
+    of an instrument with two workflows, or of a forward workflow on an
+    instrument whose RunInfo.xml marks a reversed i5, uses this."""
+    from seqsetup.data import instruments
+
+    monkeypatch.setitem(instruments._instruments["MiSeq i100 Series"], "i5_workflows", [
+        {"name": "Index-first", "i5_read_orientation": "forward"},
+        {"name": "Read-first", "i5_read_orientation": "reverse-complement"},
+    ])

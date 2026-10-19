@@ -44,6 +44,9 @@ def _options(html: str) -> list[str]:
             for text in re.findall(r"<option[^>]*>(.*?)</option>", _workflow_select(html), re.S)]
 
 
+# The i100 as a lab's own file may list it, with two workflows: the shipped one
+# lists Read-first only (docs/design/2026-10-19-i100-read-first-design.md).
+@pytest.mark.usefixtures("i100_with_index_first")
 class TestANewRunGetsTheStandardWorkflow:
     """New Run and an instrument change store the instrument's standard name."""
 
@@ -85,6 +88,9 @@ class TestANewRunGetsTheStandardWorkflow:
         )
 
 
+# The i100 as a lab's own file may list it, with two workflows: the shipped one
+# lists Read-first only (docs/design/2026-10-19-i100-read-first-design.md).
+@pytest.mark.usefixtures("i100_with_index_first")
 class TestPickingAWorkflow:
     """POST /runs/{id}/i5-workflow saves only a name the instrument lists."""
 
@@ -139,6 +145,9 @@ class TestPickingAWorkflow:
         assert ctx.run_repo.get_by_id(run.id).i5_workflow == "Index-first"
 
 
+# The i100 as a lab's own file may list it, with two workflows: the shipped one
+# lists Read-first only (docs/design/2026-10-19-i100-read-first-design.md).
+@pytest.mark.usefixtures("i100_with_index_first")
 class TestTheSetupPage:
     """The select shows for an instrument with more than one workflow, or a
     workflow the instrument does not list; otherwise the container is empty."""
@@ -175,6 +184,9 @@ class TestTheSetupPage:
         assert 'value="Old name" selected' in _workflow_select(html)
 
 
+# The i100 as a lab's own file may list it, with two workflows: the shipped one
+# lists Read-first only (docs/design/2026-10-19-i100-read-first-design.md).
+@pytest.mark.usefixtures("i100_with_index_first")
 class TestTheRunPage:
     """The Setup panel names the workflow where there is a choice."""
 

@@ -6,6 +6,7 @@ import pytest
 from playwright.sync_api import expect
 
 I100 = "MiSeq i100 Series"
+MINISEQ = "MiniSeq"
 NOVASEQ_X = "NovaSeq X Series"
 
 
@@ -30,7 +31,7 @@ def _pick_instrument(page, name: str) -> None:
 
 
 @pytest.mark.browser
-def test_the_select_shows_for_miseq_i100_and_not_for_novaseq_x(logged_in_page, app_ctx):
+def test_the_select_shows_for_miniseq_and_not_for_novaseq_x_or_the_i100(logged_in_page, app_ctx):
     page = logged_in_page
     run_id = _new_run(page)
     try:
@@ -38,16 +39,23 @@ def test_the_select_shows_for_miseq_i100_and_not_for_novaseq_x(logged_in_page, a
         expect(container).to_be_hidden()
         expect(page.locator("#i5_workflow")).to_have_count(0)
 
-        _pick_instrument(page, I100)
+        _pick_instrument(page, MINISEQ)
         expect(container).to_be_visible()
         expect(page.locator("#i5_workflow option")).to_have_text(
-            ["Index-first (standard)", "Read-first"])
-        expect(page.locator("#i5_workflow")).to_have_value("Index-first")
+            ["Standard kits (standard)", "Rapid kits"])
+        expect(page.locator("#i5_workflow")).to_have_value("Standard kits")
 
         _pick_instrument(page, NOVASEQ_X)
         expect(page.locator("#i5_workflow")).to_have_count(0)
         expect(container).to_be_hidden()
         assert app_ctx.run_repo.get_by_id(run_id).i5_workflow == "Standard"
+
+        # The shipped i100 lists Read-first only
+        # (docs/design/2026-10-19-i100-read-first-design.md).
+        _pick_instrument(page, I100)
+        expect(page.locator("#i5_workflow")).to_have_count(0)
+        expect(container).to_be_hidden()
+        assert app_ctx.run_repo.get_by_id(run_id).i5_workflow == "Read-first"
     finally:
         app_ctx.run_repo.collection.delete_one({"_id": run_id})
 
@@ -57,13 +65,13 @@ def test_a_change_is_saved(logged_in_page, app_ctx):
     page = logged_in_page
     run_id = _new_run(page)
     try:
-        _pick_instrument(page, I100)
+        _pick_instrument(page, MINISEQ)
         with page.expect_response(lambda r: r.url.endswith("/i5-workflow") and r.status == 200):
-            page.select_option("#i5_workflow", "Read-first")
-        expect(page.locator("#i5_workflow")).to_have_value("Read-first")
-        assert app_ctx.run_repo.get_by_id(run_id).i5_workflow == "Read-first"
+            page.select_option("#i5_workflow", "Rapid kits")
+        expect(page.locator("#i5_workflow")).to_have_value("Rapid kits")
+        assert app_ctx.run_repo.get_by_id(run_id).i5_workflow == "Rapid kits"
 
         page.reload()
-        expect(page.locator("#i5_workflow")).to_have_value("Read-first")
+        expect(page.locator("#i5_workflow")).to_have_value("Rapid kits")
     finally:
         app_ctx.run_repo.collection.delete_one({"_id": run_id})

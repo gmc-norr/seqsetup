@@ -127,9 +127,10 @@ instruments:
     chemistry_type: 2-color
     has_dragen_onboard: true
     sbs_chemistry: "Two-color SBS (Blue+Green, XLEAP)"
+    # Read-first only: an index-first run reads both indexes before Read 1,
+    # and SeqSetup writes OverrideCycles in the order Read 1, Index 1,
+    # Index 2, Read 2, checked against a read-first RunInfo.xml only.
     i5_workflows:
-      - name: Index-first
-        i5_read_orientation: forward
       - name: Read-first
         i5_read_orientation: reverse-complement
     runinfo_marks_i5_reversed: true

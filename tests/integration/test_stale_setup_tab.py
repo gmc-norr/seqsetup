@@ -218,11 +218,12 @@ class TestThePageSendsTheVersionWithEverySave:
     the answer can refresh it; the Continue button's hx-include region holds
     the hidden field itself."""
 
-    def test_each_control_sends_the_version(self, logged_in_client, fresh_app):
+    def test_each_control_sends_the_version(self, logged_in_client, fresh_app,
+                                            i100_with_index_first):
         _app, ctx, _db = fresh_app
-        # MiSeq i100 Series is the one shipped instrument that lists more than
-        # one i5 workflow, so it is the one whose setup page shows every
-        # control -- the i5 workflow select included.
+        # The i100 as a lab's own file may list it, with two i5 workflows, so
+        # its setup page shows every control -- the i5 workflow select
+        # included (the shipped one lists Read-first only).
         _run(ctx, platform=InstrumentPlatform.MISEQ_I100, flowcell="5M")
 
         page = logged_in_client.get(f"/runs/new/step/1?run_id={RUN}").text

@@ -63,11 +63,12 @@ class TestTheLookups:
     """The names an instrument offers, standard first."""
 
     def test_names_in_file_order(self):
-        assert i5_workflow_names("MiSeq i100 Series") == ["Index-first", "Read-first"]
+        assert i5_workflow_names("MiniSeq") == ["Standard kits", "Rapid kits"]
+        assert i5_workflow_names("MiSeq i100 Series") == ["Read-first"]
         assert i5_workflow_names("NovaSeq X Series") == ["Standard"]
 
     def test_the_standard_one_is_the_first(self):
-        assert standard_i5_workflow("MiSeq i100 Series") == "Index-first"
+        assert standard_i5_workflow("MiSeq i100 Series") == "Read-first"
         assert standard_i5_workflow("MiniSeq") == "Standard kits"
 
     def test_an_instrument_with_no_settings(self):
@@ -97,7 +98,7 @@ class TestCopies:
     def test_a_copy_of_a_run_from_before_gets_the_standard_name(self):
         run = build_draft_run(config_source=_source(), samples=[], created_by="u",
                               run_name="copy")
-        assert run.i5_workflow == "Index-first"
+        assert run.i5_workflow == "Read-first"
 
     def test_a_copy_keeps_an_unlisted_name(self):
         # A duplicate is not reference-checked: the name shows up in the
@@ -126,9 +127,19 @@ class TestTemplateCheck:
             "this template cannot be used."
         )
 
-    @pytest.mark.parametrize("workflow", ["", "Index-first", "Read-first"])
+    @pytest.mark.parametrize("workflow", ["", "Read-first"])
     def test_a_listed_or_standard_workflow_passes(self, workflow):
         assert_references_available(_source(i5_workflow=workflow), None)
+
+    def test_a_template_saved_with_index_first_is_refused(self):
+        """The shipped i100 lists Read-first only
+        (docs/design/2026-10-19-i100-read-first-design.md)."""
+        with pytest.raises(RunInstantiationError) as exc:
+            assert_references_available(_source(i5_workflow="Index-first"), None)
+        assert str(exc.value) == (
+            "Index-first is no longer an i5 workflow of MiSeq i100 Series; "
+            "this template cannot be used."
+        )
 
     def test_the_name_must_match_exactly(self):
         with pytest.raises(RunInstantiationError):
