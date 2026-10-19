@@ -1001,6 +1001,8 @@ that was refused before, and no Sample Sheet changes. Each of these is
 | an index inside a pair with no `name` | the pair's name | refused |
 | an unknown key (`ownr:`) in any of the three YAML shapes | ignored | refused: not a key this file can have |
 | `version: 1.10` (unquoted) | the version `1.1` | refused by the reader: put it in quotes |
+| `version: 1.0` (unquoted) | the version `1.0` | refused by the reader too: a decimal is quoted, or it is not text |
+| a plain CSV uploaded as Combinatorial, or an `[i7]`/`[i5]` CSV uploaded as Unique Dual | refused by `IndexValidator` after the fact, with no line ("Combinatorial index kit must contain at least one i7 index"; "Unique dual index kit must contain at least one index pair") | refused where the lists are built, naming the lists and the mode |
 | `comments: 12` | the number 12 | refused: must be text |
 | a SeqSetup YAML naming a mode other than the one picked on the upload | the picked mode, the file's key unread | refused, naming both |
 | a SeqSetup YAML with no `index_mode` and only `i7_indexes` | already refused (`KitListsNotRead`) | the same, plus `index_mode` is required in a synced file |
@@ -1043,6 +1045,13 @@ whose columns are spelt `INDEX` or `Index_2`.
   a row of the table above; **a file only the tip accepts is a defect**. The
   seven shipped `config/indexes/*.yaml` and `combinatorial_example.csv` are in
   it, so "the shipped files are unchanged" is measured, as in steps 1 and 2.
+
+  **Measured on 2026-10-19** (`probes/kits_diff.py`, 851 inputs: every shipped
+  kit file in four modes with and without the form's boxes, the five shapes
+  written out, and up to 25 generated variants of each): **272 give the same
+  kit**, field for field and fingerprint for fingerprint; **410 are refused by
+  both**; **169 are new refusals**, each a row of the table above; **0 kits
+  differ** and **0 inputs only the tip accepts**.
 - Break checks (`harness/rows_kits.py`), the full check with the 78 Sample
   Sheets unchanged, and a fresh code review.
 - `docs/admin-guide/` gets the kit key table and the value spellings, with the
