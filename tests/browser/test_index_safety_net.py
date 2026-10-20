@@ -112,7 +112,14 @@ def run_id(app_ctx):
 _READ_ROWS = """() => Array.from(document.querySelectorAll('#sample-table .sample-row'))
     .map(row => ({
         row_id: row.id.slice('sample-row-'.length),
-        sample_id: (row.querySelector('td.sample-id-cell') || {}).textContent || '',
+        // The cell's text without Check's "!" mark, which it holds while
+        // Check lists an error for the row.
+        sample_id: (cell => {
+            if (!cell) return '';
+            const copy = cell.cloneNode(true);
+            copy.querySelectorAll('.row-error-badge').forEach(badge => badge.remove());
+            return copy.textContent;
+        })(row.querySelector('td.sample-id-cell')),
         i7: row.dataset.i7 || '',
         i5: row.dataset.i5 || '',
         lanes: (row.querySelector('.lanes-display') || {}).textContent || '',
@@ -215,6 +222,21 @@ def _untick_all(page):
     page.evaluate("""() => document.querySelectorAll('.sample-checkbox')
         .forEach(box => { box.checked = false; box.dispatchEvent(
             new Event('change', {bubbles: true})); })""")
+
+
+@pytest.mark.browser
+def test_a_row_is_read_without_its_error_mark(logged_in_page, base_url, run_id):
+    """Check marks a row it lists an error for with a "!" in its Sample ID
+    cell (``markSampleErrors`` in ``app.js``) and refreshes after every
+    change. Read before the refresh landed, the net once took "!B-08" for
+    B-08's ID and failed on a busy machine. A sample with no index is an
+    error, so every seeded row carries the mark here."""
+    page = logged_in_page
+    page.goto(f"{base_url}/runs/{run_id}")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#sample-table .row-error-badge")).to_have_count(len(SAMPLES))
+
+    assert sorted(shown_rows(page)) == SAMPLES
 
 
 # --------------------------------------------------------------------------
