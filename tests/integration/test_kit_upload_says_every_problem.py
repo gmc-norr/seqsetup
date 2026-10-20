@@ -107,6 +107,37 @@ class TestTheFormSBoxesAreCheckedToo:
         assert says in resp.text, resp.text
         assert ctx.index_kit_repo.list_all() == []
 
+    @pytest.mark.parametrize("box", ["default_index1_override", "default_index2_override"])
+    @pytest.mark.parametrize("value", ["N2I8", "I8garbage", "I8N2", "8", "X", "I", "I 8"])
+    def test_an_index_override_is_read_whole_or_refused(self, logged_in_client, fresh_app,
+                                                        box, value):
+        """The box is I and a number of cycles, I* or empty, as the form
+        says; anything else is refused naming the box. Only its start was
+        read: N2I8 meant no override and I8garbage meant 8, and the check saw
+        the converted value (outside review of 51eb3c4, P2-3)."""
+        _app, ctx, _db = fresh_app
+
+        resp = _upload(logged_in_client, GOOD, **{box: value})
+
+        assert "HX-Redirect" not in resp.headers
+        label = "Default Index1 Override" if box.endswith("1_override") else "Default Index2 Override"
+        assert label in resp.text and "such as I8" in resp.text, resp.text
+        assert ctx.index_kit_repo.list_all() == []
+        (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
+        assert (row.outcome, row.details["reason"]) == ("failure", "form_box_refused")
+
+    @pytest.mark.parametrize("value, cycles", [
+        ("I8", 8), ("i8", 8), (" I8 ", 8), ("I*", None), ("i*", None), ("", None)])
+    def test_an_index_override_that_fits_is_saved(self, logged_in_client, fresh_app,
+                                                  value, cycles):
+        _app, ctx, _db = fresh_app
+
+        resp = _upload(logged_in_client, GOOD, default_index1_override=value)
+
+        assert resp.headers.get("HX-Redirect") == "/indexes", resp.text
+        (kit,) = ctx.index_kit_repo.list_all()
+        assert kit.default_index1_cycles == cycles
+
     def test_a_kit_name_of_256_characters_is_saved_as_written(
             self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app

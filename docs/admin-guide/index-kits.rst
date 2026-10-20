@@ -307,6 +307,11 @@ runs. **Neither is ever invented.**
   **Adapter Read 1** of 8,000 bases was stored whole, and a **Default Read1
   Override** of 402 characters became a 410-character ``OverrideCycles`` on
   every sample the kit touched.
+* **Default Index1 Override** and **Default Index2 Override** take ``I`` and
+  the number of index cycles (``I8``), ``I*``, or nothing; both ``I*`` and an
+  empty box mean each index's own length. Anything else is refused naming
+  the box. Only the start of the box was read: ``N2I8`` meant no override,
+  ``I8garbage`` meant 8, and the ``N2`` of ``I8N2`` went nowhere.
 
 The mode picked on the form wins, as before, and a file that names a
 **different** mode is refused naming both: *"The file says index_mode:
