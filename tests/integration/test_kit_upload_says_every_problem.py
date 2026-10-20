@@ -223,6 +223,10 @@ class TestACsvRowWhoseQuotesDoNotCloseIsRefused:
         (b'name,index\nP1,ACGTACGT\nP2,"TCCGGAGA\n', 3),
         (b'[i7]\nname,sequence\nA,ATTACTCG\nB,"TCCG"GAGA\n\n[i5]\nname,sequence\n01,TATAGCCT\n', 4),
         (b'[i7]\nname,sequence\nA,ATTACTCG\n\n[i5]\nname,sequence\n01,"TATA"GCCT\n', 7),
+        # A blank line before the row is not the row (fresh review of the
+        # P2 fixes, P2-1).
+        (b'name,index,index2\nD701,ATTACTCG,TATAGCCT\n\nD702,"TCCG"GAGA,ATAGAGGC\n', 4),
+        (b'name,index,index2\r\nD701,ATTACTCG,TATAGCCT\r\n\r\n\r\nD702,"TCCG"GAGA,ATAGAGGC\r\n', 5),
     ])
     def test_the_upload_is_refused_naming_the_line(self, logged_in_client, fresh_app,
                                                   content, line):

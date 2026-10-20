@@ -94,6 +94,37 @@ class TestARowWhoseQuotesDoNotCloseIsRefused:
         assert f"Line {line}:" in str(refused.value)
         assert 'double quote (")' in str(refused.value)
 
+    @pytest.mark.parametrize("text, line", [
+        ('name,index\nP1,ACGTACGT\n\nP2,"TCCG"GAGA\n', 4),
+        ('name,index\nP1,ACGTACGT\n\n\nP2,"TCCG"GAGA\n', 5),
+        ('name,index\r\nP1,ACGTACGT\r\n\r\nP2,"TCCG"GAGA\r\n', 4),
+        ('name,index\n\nP1,"TCCGGAGA\n', 3),
+    ])
+    def test_a_blank_line_before_the_row_is_not_the_row(self, text, line):
+        """A blank line is skipped inside the read of the row after it, so
+        the line taken before that read was the blank one (fresh review of
+        the P2 fixes, P2-1)."""
+        with pytest.raises(TableNotRead) as refused:
+            read_table(text)
+
+        assert refused.value.line == line
+
+    def test_a_cell_over_two_lines_after_a_blank_line_names_its_own_line(self):
+        with pytest.raises(CellOverLines) as refused:
+            read_table('name,index\nP1,ACGTACGT\n\n"P2\nX",TCCGGAGA\n')
+
+        assert refused.value.line == 4
+
+    def test_rows_after_blank_lines_keep_their_lines_and_cells(self):
+        table = read_table('name,index,index2\n\nP1,ACGTACGT\n\n\nP2,TCCGGAGA,TATAGCCT,x\nP3\n')
+
+        assert table.header == ["name", "index", "index2"]
+        assert [(row.line, row.cells, row.extra) for row in table.rows] == [
+            (3, {"name": "P1", "index": "ACGTACGT", "index2": None}, []),
+            (6, {"name": "P2", "index": "TCCGGAGA", "index2": "TATAGCCT"}, ["x"]),
+            (7, {"name": "P3", "index": None, "index2": None}, []),
+        ]
+
     def test_the_line_counts_the_lines_taken_off_the_front(self):
         with pytest.raises(TableNotRead) as refused:
             read_table('name,index\nP1,"ACGT"NNNN\n', line_offset=3)

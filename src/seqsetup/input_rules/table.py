@@ -82,28 +82,44 @@ def read_table(text: str, line_offset: int = 0, delimiter: str = ",") -> Table:
     ``ColumnGivenTwice`` when the header names one column twice, and
     ``TableNotRead`` for a row whose quotes do not close.
     """
-    reader = csv.DictReader(StringIO(text), delimiter=delimiter, strict=True)
+    # csv.reader, not DictReader: DictReader skips a blank line inside the
+    # read of the row after it, so a line taken before that read named the
+    # blank line (fresh review of the P2 fixes, P2-1). Each blank line is a
+    # read of its own here, and the cells go by column as DictReader puts them.
+    reader = csv.reader(StringIO(text), delimiter=delimiter, strict=True)
     # A record starts on the line after the one the last record ended on.
     start = 1
     try:
-        # Before any row: reading the header is what DictReader's fieldnames does.
-        refuse_repeated_columns(reader.fieldnames)
-        if _over_lines(reader.fieldnames or []):
+        header = next(reader, None)
+        # Before any row is read.
+        refuse_repeated_columns(header)
+        if _over_lines(header or []):
             raise CellOverLines(1 + line_offset)
         rows = []
         while True:
             start = reader.line_num + 1
             try:
-                row = next(reader)
+                cells = next(reader)
             except StopIteration:
                 break
-            extra = list(row.pop(None, None) or [])
-            if _over_lines([*row.values(), *extra]):
+            if cells == []:
+                continue
+            if _over_lines(cells):
                 raise CellOverLines(start + line_offset)
-            rows.append(Row(reader.line_num + line_offset, row, extra))
+            rows.append(Row(reader.line_num + line_offset, *_by_column(header, cells)))
     except csv.Error:
         raise TableNotRead(start + line_offset) from None
-    return Table(reader.fieldnames, rows)
+    return Table(header, rows)
+
+
+def _by_column(header: list, cells: list) -> tuple[dict, list]:
+    """A row's cells by column name, None for a column the row is too short
+    for, and the cells past the last column -- as ``csv.DictReader`` gives
+    them, its ``restval`` and ``restkey`` both None."""
+    by_name = dict(zip(header, cells))
+    for name in header[len(cells):]:
+        by_name[name] = None
+    return by_name, list(cells[len(header):])
 
 
 def _over_lines(cells) -> bool:
