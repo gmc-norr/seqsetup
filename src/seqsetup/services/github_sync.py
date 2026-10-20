@@ -1028,8 +1028,15 @@ class GitHubSyncService:
         a kit is stored its name and version mean the same indexes (a kit whose
         file left the repository is removed, and may come back changed), and a
         drop from a page loaded before cannot pick up new ones (index mix-up
-        audit #6, 2026-10-14)."""
+        audit #6, 2026-10-14). A file already refused for something else
+        still gives its kit's name and version, so the other file's kit is
+        refused too (fresh review of the P2 fixes, P2-2): its entry in
+        ``refused`` carries the kit's ``kit_id``, as check-settings counts
+        every built kit."""
         files: dict[str, list[str]] = {}
+        for entry in refused:
+            if entry.get("kit_id") is not None:
+                files.setdefault(entry["kit_id"], []).append(entry["path"])
         # strict=True: a kit without its path would be checked against none.
         for kit, where in zip(kits, paths, strict=True):
             files.setdefault(kit.kit_id, []).append(where)
@@ -1119,7 +1126,9 @@ class GitHubSyncService:
         Only valid index kits (passing IndexValidator) are returned. Each file
         that is not is added to ``refused`` as {"path", "name", "kit",
         "reason"}, with name and kit None when the file names no kit (the
-        night run's Q3: the sync names it and keeps the kit stored before).
+        night run's Q3: the sync names it and keeps the kit stored before),
+        and with the kit's ``kit_id`` when it was built, for
+        ``_refuse_changed_or_repeated_kits``.
         A kit whose kit_id is in ``uploaded_ids`` -- a kit uploaded through
         SeqSetup -- is refused the same way, and the uploaded one is kept
         (review P2-2, 2026-10-13). ``paths`` gets each returned kit's file
@@ -1194,7 +1203,7 @@ class GitHubSyncService:
                                 )
                                 if refused is not None:
                                     refused.append({
-                                        "path": item_path, "name": kit.name,
+                                        "path": item_path, "name": kit.name, "kit_id": kit.kit_id,
                                         "kit": f"{kit.name} {kit.version}",
                                         "reason": "a kit of this name and version was uploaded "
                                                   "through SeqSetup, and the uploaded one is kept",
@@ -1204,7 +1213,7 @@ class GitHubSyncService:
                                              f"{too_large}")
                                 if refused is not None:
                                     refused.append({
-                                        "path": item_path, "name": kit.name,
+                                        "path": item_path, "name": kit.name, "kit_id": kit.kit_id,
                                         "kit": f"{kit.name} {kit.version}", "reason": too_large,
                                     })
                             elif validation.is_valid:
@@ -1222,7 +1231,7 @@ class GitHubSyncService:
                                 )
                                 if refused is not None:
                                     refused.append({
-                                        "path": item_path, "name": kit.name,
+                                        "path": item_path, "name": kit.name, "kit_id": kit.kit_id,
                                         "kit": f"{kit.name} {kit.version}",
                                         "reason": "; ".join(e.rstrip(".") for e in validation.errors),
                                     })

@@ -102,6 +102,24 @@ class TestAKitTooLargeToStoreIsRefused:
         assert _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
         assert "Kept the stored index kits Lab Kit 1.0 until the file is fixed." in message
 
+    def test_a_file_too_large_still_gives_its_kit_name_and_version(self, fresh_app, monkeypatch):
+        """Two files that give one name and version are both refused: the
+        one too large to store named the kit, and the other was stored
+        (fresh review of the P2 fixes, P2-2)."""
+        _app, ctx, _db = fresh_app
+        same_name = BIG_LAB_KIT.replace('version: "2.0"', 'version: "1.0"')
+        small, big = _size(_kit(GOOD_LAB_KIT)), _size(_kit(same_name))
+        monkeypatch.setattr(github_sync, "_MOST_STORED_BYTES", (small + big) // 2)
+
+        ok, message, _count = _sync_with_kits(ctx, monkeypatch, {
+            "dual.yaml": GOOD_KIT_YAML, "a.yaml": GOOD_LAB_KIT, "b.yaml": same_name})
+
+        assert ok is False
+        assert ("index_kits/a.yaml (Lab Kit 1.0): index_kits/b.yaml gives this kit "
+                "name and version too; a kit name and version may be in one file only") in message
+        assert "index_kits/b.yaml (Lab Kit 1.0): would take" in message, message
+        assert _synced(ctx) == ["Dual Kit 2.1.0"]
+
 
 class TestAProfileTooLargeToStoreIsRefused:
 

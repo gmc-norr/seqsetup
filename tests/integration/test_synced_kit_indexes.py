@@ -363,6 +363,25 @@ class TestAKitNameAndVersionMeanOneContent:
                 "name and version too; a kit name and version may be in one file only") in message
         assert _synced(ctx) == ["Lab Kit 1.0"]
 
+    def test_a_file_the_kit_checks_refuse_still_gives_its_name_and_version(
+            self, fresh_app, monkeypatch):
+        """The repeat was looked for among the kits the sync would store
+        only, so the other file's kit was stored (fresh review of the P2
+        fixes, P2-2); check-settings counts every built kit."""
+        _app, ctx, _db = fresh_app
+        _sync_with_kits(ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML, "lab.yaml": GOOD_LAB_KIT})
+
+        ok, message, _count = _sync_with_kits(
+            ctx, monkeypatch, {"dual.yaml": GOOD_KIT_YAML, "a.yaml": GOOD_LAB_KIT,
+                               "b.yaml": BROKEN_LAB_KIT})
+
+        assert ok is False
+        assert ("index_kits/a.yaml (Lab Kit 1.0): index_kits/b.yaml gives this kit "
+                "name and version too; a kit name and version may be in one file only") in message
+        assert "index_kits/b.yaml (Lab Kit 1.0): Index kit 'Lab Kit': i7 index cycles is 12" in message
+        assert "Kept the stored index kits Lab Kit 1.0 until the file is fixed." in message
+        assert _synced(ctx) == ["Dual Kit 2.1.0", "Lab Kit 1.0"]
+
     def test_two_files_keep_the_kit_stored_before(self, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
         _sync_with_kits(ctx, monkeypatch, {"a.yaml": GOOD_KIT_YAML})
