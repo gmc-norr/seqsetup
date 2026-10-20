@@ -82,6 +82,17 @@ class TestTheLimitIsMongoDBs:
     def test_a_kit_of_ordinary_size_is_stored(self):
         assert github_sync._too_large_to_store(_kit(GOOD_KIT_YAML)) == ""
 
+    def test_a_record_one_byte_over_shows_two_different_sizes(self, monkeypatch):
+        """In MiB to two places both were 15.94 (fresh review of the P2
+        fixes, P3-5)."""
+        kit = _kit(GOOD_KIT_YAML)
+        monkeypatch.setattr(github_sync, "_MOST_STORED_BYTES", _size(kit) - 1)
+
+        said = github_sync._too_large_to_store(kit)
+
+        assert f"would take {_size(kit):,} bytes" in said, said
+        assert f"over the {_size(kit) - 1:,} bytes" in said, said
+
 
 class TestAKitTooLargeToStoreIsRefused:
 

@@ -121,7 +121,9 @@ Before a kit is saved, SeqSetup checks, in order:
      with text after its closing quote (``P1,"ACGT"NNNN``) was read as
      ``ACGTNNNN``, and a quote never closed took the rest of the file into
      one cell; a quoted cell over more than one line merged the rows after
-     it into the cell. Each is refused naming its line.
+     it into the cell. Each is refused naming its line. A line break inside
+     a cell is refused too, in any column, an ignored ``Description`` too:
+     each row must be on one line.
    * **A line that is in no section, or in a section the format does not
      read.** In an ``[i7]``/``[i5]`` CSV, lines before the first ``[i7]``
      were read as part of it, so an ``[IndexKit]`` preamble became its
@@ -339,7 +341,8 @@ as ``file:line:column: key: problem``. It reads the kit folder the sync reads
 (``index_kits`` by default; ``--index-kits <folder>`` names another, and
 ``--no-index-kits`` is for a lab whose sync does not read kits), runs the same
 field checks on each built kit, and names a kit name and version that two
-files give.
+files give. It does not measure how large a kit is once stored; the sync
+does, and refuses one too large to store as one record.
 
 Viewing a kit
 ----------------

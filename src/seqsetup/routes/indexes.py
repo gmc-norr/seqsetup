@@ -53,7 +53,9 @@ router = APIRouter(prefix="/indexes", tags=["indexes"])
 # cycles, I* or empty. Read whole: only its start was read, so N2I8 meant no
 # override, I8garbage meant 8, and the N2 of I8N2 went nowhere -- and the box
 # check saw the converted value (outside review of 51eb3c4, P2-3).
-_INDEX_OVERRIDE_RE = re.compile(r"I(\d{1,6})|I\*|")
+# ASCII only: \d took any digit (I followed by a full-width 8 gave 8), and
+# .upper() made a dotless i an I (fresh review of the P2 fixes, P3-4).
+_INDEX_OVERRIDE_RE = re.compile(r"I([0-9]{1,6})|I\*|", re.IGNORECASE | re.ASCII)
 _INDEX_OVERRIDE_RULE = ("must be I and the number of index cycles, such as I8, or I* or "
                         "empty for each index's own length")
 
@@ -69,7 +71,7 @@ def _parse_index_override(pattern: str) -> Optional[int]:
     "I8" → 8 (use 8 index cycles)
     Anything else raises IndexOverrideNotRead.
     """
-    m = _INDEX_OVERRIDE_RE.fullmatch(pattern.strip().upper())
+    m = _INDEX_OVERRIDE_RE.fullmatch(pattern.strip())
     if m is None:
         raise IndexOverrideNotRead(pattern)
     return int(m.group(1)) if m.group(1) else None

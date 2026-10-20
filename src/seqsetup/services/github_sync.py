@@ -86,9 +86,10 @@ def _too_large_to_store(item) -> str:
     size = len(BSON.encode(item.to_dict()))
     if size <= _MOST_STORED_BYTES:
         return ""
-    return (f"would take {size / 2**20:.2f} MiB to store, over the "
-            f"{_MOST_STORED_BYTES / 2**20:.2f} MiB SeqSetup stores in one record "
-            "(MongoDB stores at most 16 MiB)")
+    # In bytes: in MiB to two places, one byte over showed two equal sizes
+    # (fresh review of the P2 fixes, P3-5).
+    return (f"would take {size:,} bytes to store, over the {_MOST_STORED_BYTES:,} bytes "
+            "SeqSetup stores in one record (MongoDB stores at most 16 MiB)")
 
 
 def _names(collections: list[str]) -> str:

@@ -47,8 +47,8 @@ class CellOverLines(TableNotRead):
     cell and go nowhere, as the paste refuses (services/sample_parser.py)."""
 
     what = ('a cell runs over more than one line -- a double quote (") that is not closed '
-            "where it should be, or a line break inside a cell; the rows after it would "
-            "merge into it")
+            "where it should be, or a line break inside a cell, in any column; each row "
+            "must be on one line")
 
 
 def column_key(name) -> str:

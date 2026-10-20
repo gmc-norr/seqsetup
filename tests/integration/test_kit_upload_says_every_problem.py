@@ -108,7 +108,9 @@ class TestTheFormSBoxesAreCheckedToo:
         assert ctx.index_kit_repo.list_all() == []
 
     @pytest.mark.parametrize("box", ["default_index1_override", "default_index2_override"])
-    @pytest.mark.parametrize("value", ["N2I8", "I8garbage", "I8N2", "8", "X", "I", "I 8"])
+    @pytest.mark.parametrize("value", ["N2I8", "I8garbage", "I8N2", "8", "X", "I", "I 8",
+                                       # Plain digits only (fresh review of the P2 fixes, P3-4).
+                                       "I\uff18", "I\u0968", "\u0131" + "8"])
     def test_an_index_override_is_read_whole_or_refused(self, logged_in_client, fresh_app,
                                                         box, value):
         """The box is I and a number of cycles, I* or empty, as the form
@@ -227,6 +229,8 @@ class TestACsvRowWhoseQuotesDoNotCloseIsRefused:
         # P2 fixes, P2-1).
         (b'name,index,index2\nD701,ATTACTCG,TATAGCCT\n\nD702,"TCCG"GAGA,ATAGAGGC\n', 4),
         (b'name,index,index2\r\nD701,ATTACTCG,TATAGCCT\r\n\r\n\r\nD702,"TCCG"GAGA,ATAGAGGC\r\n', 5),
+        # A line break in a column no one reads is refused too, as the guide says.
+        (b'name,index,Description\nD701,ATTACTCG,"two\nlines"\nD702,TCCGGAGA,x\n', 2),
     ])
     def test_the_upload_is_refused_naming_the_line(self, logged_in_client, fresh_app,
                                                   content, line):
