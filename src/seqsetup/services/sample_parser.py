@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from ..models.index import VALID_DNA_RE
 from ..models.sample import (
     MAX_SAMPLE_TEXT,
     TEST_VERSION_RE,
@@ -14,12 +15,6 @@ from ..models.sample import (
     is_zero_only,
 )
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
-
-# DNA sequence validation pattern (compiled once at module level).
-# \Z (not $) so a trailing newline can't slip through — $ also matches just
-# before a final newline. Cells are stripped before this runs, but keep the
-# anchor strict for defense in depth and consistency with models/index.py.
-_VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 
 # Per-cell character cap. Matches the 256 limit applied by routes' sanitize_string()
 # on form-submitted fields, so pasted/imported values arrive at the model layer
@@ -506,13 +501,13 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
         index2_upper = index2.upper() if index2 else ""
 
         # Check for invalid DNA characters
-        if index1_upper and not _VALID_DNA_RE.match(index1_upper):
+        if index1_upper and not VALID_DNA_RE.match(index1_upper):
             invalid_chars = set(index1_upper) - set("ACGTN")
             raise ValueError(
                 f"Invalid characters in index1 for sample '{sample_id}': {invalid_chars}. "
                 f"Only A, C, G, T, N are allowed."
             )
-        if index2_upper and not _VALID_DNA_RE.match(index2_upper):
+        if index2_upper and not VALID_DNA_RE.match(index2_upper):
             invalid_chars = set(index2_upper) - set("ACGTN")
             raise ValueError(
                 f"Invalid characters in index2 for sample '{sample_id}': {invalid_chars}. "

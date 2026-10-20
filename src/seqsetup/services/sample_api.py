@@ -15,6 +15,7 @@ from collections import Counter
 from urllib.parse import urlparse
 from typing import Optional, Tuple
 
+from ..models.index import VALID_DNA_RE
 from ..models.sample import (
     MAX_SAMPLE_TEXT,
     TEST_VERSION_RE,
@@ -37,13 +38,8 @@ _MAX_RESPONSE_SIZE = 10 * 1024 * 1024
 # see an unbounded string regardless of which ingest route was taken. The
 # fields below are refused over it instead, never cut, naming their rows: a
 # cut ID is another ID (spec 2026-10-14 long sample text).
-_MAX_FIELD_LEN = 256
+_MAX_FIELD_LEN = MAX_SAMPLE_TEXT
 _NEVER_CUT = {"sample_id": "the sample_id", "test_id": "the test", "worksheet_id": "the worksheet ID"}
-
-# Index sequences from a LIMS must be DNA; validate at this ingest point (like
-# the paste parser) so a malformed sequence is a clean, sample-naming rejection
-# rather than an uncaught Index() ValueError (HTTP 500) downstream.
-_VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 
 
 # Minimum interval between consecutive LIMS API calls (per host). Defends
@@ -1117,7 +1113,7 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
             seq = sample.get(seq_field)
             if seq:
                 upper = seq.upper()
-                if not _VALID_DNA_RE.match(upper):
+                if not VALID_DNA_RE.match(upper):
                     bad = "".join(sorted(set(upper) - set("ACGTN")))
                     raise ValueError(
                         f"Sample '{sample['sample_id']}' has an invalid {seq_field} "

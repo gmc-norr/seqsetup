@@ -15,11 +15,9 @@ commit message that introduces it.
 """
 
 import json
-import re
 from typing import Callable
 
-
-_DNA_RE = re.compile(r"[ACGTN]*")
+from ..models.index import VALID_DNA_RE
 
 
 def strip_and_truncate(max_len: int) -> Callable[[object], str]:
@@ -62,7 +60,7 @@ def dna_upper_or_reject(value: object) -> str:
     if value is None:
         return ""
     s = str(value).strip().upper()
-    if not _DNA_RE.fullmatch(s):
+    if not VALID_DNA_RE.match(s):
         raise ValueError("DNA sequence must contain only A, C, G, T, N")
     return s
 

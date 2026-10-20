@@ -12,7 +12,9 @@ from ..utils.names import is_dot_only
 # Anchor with \Z (not $): in Python $ also matches just before a trailing
 # newline, so "ACGT\n" would wrongly pass and leave a newline in the sequence
 # that later splits a Sample Sheet row. \Z matches only the true end of string.
-_VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
+# The one DNA rule: the paste, the LIMS import and the forms import it
+# (tests/unit/test_dna_rule_and_bound_written_once.py).
+VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
 # Single-segment override pattern alphabet (Y/I/U/N/digits/*) — e.g. "Y*", "N2Y*".
 # ``\Z`` (not ``$``) so a trailing newline can't sneak past, per project convention.
 _VALID_OVERRIDE_PATTERN_RE = re.compile(r'^[YIUN0-9*]*\Z')
@@ -56,7 +58,7 @@ class Index:
         # can carry stray spaces). Internal whitespace is then rejected below.
         self.sequence = self.sequence.upper().strip()
         # Validate DNA characters
-        if self.sequence and not _VALID_DNA_RE.match(self.sequence):
+        if self.sequence and not VALID_DNA_RE.match(self.sequence):
             invalid = set(self.sequence) - set("ACGTN")
             raise ValueError(
                 f"Index sequence contains invalid characters: {invalid}. "
@@ -210,7 +212,7 @@ class IndexKit:
         # (matches the Index.sequence rule). Uppercase + strip like Index does.
         elif name in ("adapter_read1", "adapter_read2") and isinstance(value, str):
             seq = value.upper().strip()
-            if seq and not _VALID_DNA_RE.match(seq):
+            if seq and not VALID_DNA_RE.match(seq):
                 invalid = sorted(set(seq) - set("ACGTN"))
                 raise ValueError(
                     f"Invalid characters in {name} "
@@ -341,7 +343,7 @@ class IndexKit:
             stored without that check. Recover (drop to None + log) rather than
             make the kit (and every run referencing it) unloadable."""
             value = data.get(field_name)
-            if value is None or _VALID_DNA_RE.match(str(value).upper().strip()):
+            if value is None or VALID_DNA_RE.match(str(value).upper().strip()):
                 return value
             import logging
             logging.getLogger(__name__).warning(
