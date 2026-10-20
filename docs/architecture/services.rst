@@ -192,7 +192,14 @@ Test and application profiles are checked by the input rules
 other is refused, with each problem's file, line and place. The sync and
 ``pixi run check-settings`` check a profile file's text;
 ``ApplicationProfile.from_yaml`` and ``TestProfile.from_yaml`` check the data
-they are given with the same rules and raise ``ProfileValidationError``.
+they are given with the same rules and raise ``ProfileValidationError``. Two
+rules belong to the file check only: an application profile whose
+``ApplicationType`` is not ``Dragen`` is skipped as one for other tools, and
+one of another type that names an Illumina application is refused
+(``docs/design/2026-10-19-lab-profile-layout-design.md``). ``from_yaml``
+skips nothing and builds a profile of any type, so a new way of storing
+profiles must go through the file check: the Sample Sheet writer writes
+every stored profile a test names, whatever its type.
 
 GitHubSyncService
 -----------------

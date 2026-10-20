@@ -19,10 +19,11 @@ The profile system consists of two types:
    associated application pipelines in the sample sheet.
 
 **Application Profiles**
-   Define analysis pipeline configurations -- for on-instrument DRAGEN
-   pipelines, cloud pipelines, or external tools. All of them generate
-   sample sheet sections the same way; none of them appear in the JSON
-   metadata export.
+   Define what the instrument runs: BCL Convert and the on-instrument DRAGEN
+   pipelines, each writing its own sample sheet sections. The same folder
+   may hold profiles for other tools (``ApplicationType`` other than
+   ``Dragen``), which SeqSetup skips (see `Profiles for other tools`_). No
+   profile appears in the JSON metadata export.
 
 Test Profiles
 -------------
@@ -53,17 +54,35 @@ Required Fields
      - string
      - Three whole numbers joined by dots, each at most 9 digits and without
        a leading zero, e.g. ``1.0.0`` (see `Test versions`_)
-   * - ``ApplicationProfiles``
-     - list
-     - List of application profile references (see below)
+   * - ``TestApplicationProfiles``
+     - map
+     - ``OnInstrument`` and ``DownstreamAnalysis`` (see below)
 
 Application Profile References
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Each entry in ``ApplicationProfiles`` must contain:
+``TestApplicationProfiles`` holds two lists. The same test profile files can
+be read by other tools, such as the lab's pipeline automation:
 
-- ``ApplicationProfileName`` -- Name of the application profile
-- ``ApplicationProfileVersion`` -- Version constraint (PEP 440 format)
+- ``OnInstrument`` (required, at least one entry) -- the application
+  profiles the instrument runs, which SeqSetup writes into the Sample Sheet.
+  Each entry has exactly these two keys:
+
+  - ``ApplicationProfileName`` -- Name of the application profile
+  - ``ApplicationProfileVersion`` -- Version constraint (PEP 440 format), as
+    text: ``"~=1.0"`` matches any 1.x. A bare ``1`` is refused; a quoted
+    ``"1"`` matches only a profile whose version is exactly ``1``
+
+- ``DownstreamAnalysis`` (optional) -- the pipelines other tools run after
+  the sequencer. SeqSetup does not store or use it. It checks only that it
+  is a list of maps whose keys are plain names (letters, digits, ``_``,
+  ``-``) and whose values are text (at most 4,096 characters), whole numbers
+  or ``true``/``false`` -- such as ``ApplicationProfileName``,
+  ``ApplicationProfileVersion`` and ``DependsOn``
+
+A test profile with the old top-level ``ApplicationProfiles`` list is
+refused, saying to move the list under ``TestApplicationProfiles`` >
+``OnInstrument``.
 
 Version constraints support:
 
@@ -71,8 +90,8 @@ Version constraints support:
 - Compatible releases: ``~=1.0.0`` (matches 1.0.x)
 - Range specifiers: ``>=1.0,<2.0``
 
-Every test lists exactly one profile whose ``ApplicationName`` is
-``BCLConvert`` -- without one, its samples would not be demultiplexed -- and
+Every test's ``OnInstrument`` lists exactly one profile whose
+``ApplicationName`` is ``BCLConvert`` -- without one, its samples would not be demultiplexed -- and
 at most one profile for any other application, each once. A test that lists
 one application twice (two profiles, or the same profile twice, also as
 ``1.0`` and ``~=1.0``) would write its samples twice. **Mark Ready** refuses
@@ -152,25 +171,29 @@ Example Test Profile
    Description: Germline whole genome sequencing with variant calling
    Version: 1.0.0
 
-   ApplicationProfiles:
-     - ApplicationProfileName: BCLConvertNextera
-       ApplicationProfileVersion: "~=1.0.0"
+   TestApplicationProfiles:
+     OnInstrument:
+       - ApplicationProfileName: BCLConvertNextera
+         ApplicationProfileVersion: "~=1.0.0"
 
-     - ApplicationProfileName: DragenGermlineIdtWgs
-       ApplicationProfileVersion: "~=1.0.0"
+       - ApplicationProfileName: DragenGermlineIdtWgs
+         ApplicationProfileVersion: "~=1.0.0"
+
+     DownstreamAnalysis:   # read by other tools, not by SeqSetup
+       - ApplicationProfileName: NfCoreRareDisease
+         ApplicationProfileVersion: "~=1.0"
+         DependsOn: BCLConvertNextera
 
 Application Profiles
 ---------------------
 
-Application profiles define analysis pipeline configurations. SeqSetup
-does not treat the ``ApplicationType`` field specially when writing the
-Sample Sheet: **every** application profile referenced by a sample's test
-profile writes an ``[AppName_Settings]`` / ``[AppName_Data]`` pair into
-the instrument-facing Sample Sheet, named after whatever
-``ApplicationName`` the profile declares -- whether ``ApplicationType`` is
-``Dragen`` (BCLConvert, DragenGermline, DragenSomatic, etc.), ``Cloud``,
-``External``, or anything else. ``ApplicationType`` is free-form,
-informational text; it does not control what gets exported.
+Application profiles describe what the instrument runs. SeqSetup reads a
+profile only when its ``ApplicationType`` is ``Dragen``: each one a sample's
+test lists under ``OnInstrument`` writes an ``[AppName_Settings]`` /
+``[AppName_Data]`` pair into the Sample Sheet, named after its
+``ApplicationName`` (``BCLConvert``, ``DragenGermline``, ...). A profile of
+any other type is for other tools that read the same folder, and SeqSetup
+skips it (see `Profiles for other tools`_).
 
 Application and test profile data is never included in the JSON metadata
 export, regardless of ``ApplicationType``.
@@ -257,7 +280,7 @@ itself, in this spelling only: in every profile's ``Settings``,
 Required Fields (All Profiles)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-These fields are required for all application profiles regardless of type:
+These fields are required in every application profile SeqSetup reads:
 
 .. list-table::
    :header-rows: 1
@@ -274,11 +297,12 @@ These fields are required for all application profiles regardless of type:
      - Version (PEP 440 format, e.g., ``1.0.0``)
    * - ``ApplicationName``
      - string
-     - Application identifier (e.g., ``DragenGermline``, ``CustomPipeline``)
+     - One of Illumina's applications (e.g., ``BCLConvert``,
+       ``DragenGermline``; see `Application Profile Validation`_)
    * - ``ApplicationType``
      - string
-     - Free-form label describing how the pipeline runs (e.g. ``Dragen``,
-       ``Cloud``, ``External``) -- does not change what gets exported
+     - ``Dragen``; a profile of any other type is skipped (see `Profiles for
+       other tools`_)
 
 DRAGEN Profile Fields
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -363,79 +387,30 @@ This generates sample sheet sections like:
    ReferenceGenomeDir,VariantCallingMode,...,Sample_ID
    hg38-alt_masked...,AllVariantCallers,...,Sample_001
 
-External Profile Fields
-~~~~~~~~~~~~~~~~~~~~~~~~
+Profiles for other tools
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-External profiles (``ApplicationType`` is anything other than ``Dragen``)
-only require the four core fields. Additional fields are optional and can be
-used to store pipeline-specific configuration:
+The application profile folder may also hold profiles other tools read, such
+as the lab's pipeline automation: a profile whose ``ApplicationType`` is
+anything but ``Dragen`` (``nextflow``, ``snakemake``, ...). SeqSetup skips
+such a file. It is not stored, and nothing in it is checked beyond being
+readable under the rules in `Every Profile File`_ (a decimal version in
+quotes, no key given twice), so its ``ApplicationName`` may hold a ``/``
+(``nf-core/raredisease``): it never reaches the Sample Sheet.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 20 15 65
-
-   * - Field
-     - Type
-     - Description
-   * - ``Settings``
-     - dict
-     - Optional. Pipeline configuration (URLs, parameters, etc.)
-   * - ``Data``
-     - dict
-     - Optional. Default values for sample-level fields
-   * - ``DataFields``
-     - list
-     - Optional. Field names to include as columns in this profile's
-       ``[AppName_Data]`` Sample Sheet section
-
-Example External Profiles
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Minimal external profile:**
-
-.. code-block:: yaml
-
-   ---
-   ApplicationProfileName: ExternalVariantCalling
-   ApplicationProfileVersion: 1.0.0
-   ApplicationName: CustomVariantPipeline
-   ApplicationType: External
-
-   DataFields:
-     - Sample_ID
-
-**External profile with configuration:**
-
-.. code-block:: yaml
-
-   ---
-   ApplicationProfileName: CloudAnalysisPipeline
-   ApplicationProfileVersion: 2.1.0
-   ApplicationName: CloudGenomics
-   ApplicationType: Cloud
-
-   Settings:
-     PipelineUrl: "https://pipeline.example.com/api/v2"
-     OutputBucket: "s3://results-bucket"
-     NotifyEmail: "lab@example.com"
-     QueuePriority: "high"
-
-   Data:
-     AnalysisMode: "germline"
-     ReferenceGenome: "GRCh38"
-
-   DataFields:
-     - Sample_ID
-     - AnalysisMode
-     - ReferenceGenome
-
-External profiles generate sample sheet sections exactly like DRAGEN
-profiles do -- an ``[AppName_Settings]`` / ``[AppName_Data]`` pair, named
-after the profile's ``ApplicationName`` -- and are not included in the
-JSON metadata export. Use them to track which external pipelines should
-process which samples, and to carry the settings and per-sample data those
-pipelines need directly into the Sample Sheet for a downstream tool to
-read.
+- The sync's message names each skipped file and its type, for example
+  *"Skipped 1 application profile file for other tools (its type is not
+  Dragen): profiles/application_profiles/NfCoreRareDisease.yaml
+  (nextflow)."* ``pixi run check-settings`` prints a line for each and
+  counts them apart from the files checked
+- A profile whose ``ApplicationName`` is one of Illumina's applications is
+  refused unless its type is ``Dragen`` (see `Application Profile
+  Validation`_)
+- A folder in which every file is skipped holds no profile for SeqSetup. A
+  sync then keeps the stored application profiles, as it does for an empty
+  folder, and names the skipped files; ``pixi run check-settings`` reports
+  it as an error. A test that lists a skipped profile under
+  ``OnInstrument`` gets the Check page's "not found" error for its samples
 
 Validation
 ----------
@@ -473,8 +448,10 @@ Test Profile Validation
 - ``Version`` must be three whole numbers joined by dots, each at most 9
   digits and without a leading zero (see `Test versions`_). A PEP 440
   version that is not three whole numbers, such as ``1.0.0rc1``, is refused
-- ``ApplicationProfiles`` must be a non-empty list
-- Each application profile reference must have a name and a version
+- ``TestApplicationProfiles`` must hold ``OnInstrument``, a non-empty
+  list, and may hold ``DownstreamAnalysis`` (see `Application Profile
+  References`_); the old top-level ``ApplicationProfiles`` is refused
+- Each ``OnInstrument`` reference must have a name and a version
   constraint, and the constraint must itself be valid PEP 440
 - A version written as a number with a decimal point -- ``Version: 1.10``,
   or ``ApplicationProfileVersion: 1.10`` in a reference -- is refused: YAML
@@ -497,8 +474,10 @@ Application Profile Validation
   ignored), ``ApplicationName`` must be one of Illumina's applications:
   ``BCLConvert``, ``DragenGermline``, ``DragenSomatic``, ``DragenRna``,
   ``DragenEnrichment`` or ``DragenMethylation``, so a misspelt
-  ``DragenGermlin`` is refused. A profile of another type (``External``,
-  ``Cloud``) may use any such name
+  ``DragenGermlin`` is refused. A profile of another type is skipped (see
+  `Profiles for other tools`_), unless its ``ApplicationName`` is one of
+  these, in any case: then it is refused, since skipping it would leave the
+  application out of the Sample Sheet unseen
 - ``SoftwareVersion`` in ``Settings`` must be a version written as text:
   letters, digits, ``.``, ``_`` and ``-``. ``SoftwareVersion: 4`` is
   refused (write ``"4"``): **Mark Ready** compares it with the instrument's

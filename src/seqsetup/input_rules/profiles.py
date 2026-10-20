@@ -14,6 +14,7 @@ held, moved here with their substance; the rules across files are pure
 functions the sync and the settings command both call.
 """
 
+import re
 from typing import Annotated, Optional, Union
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -127,6 +128,22 @@ class ApplicationProfileReferenceRules(StrictRules):
     ApplicationProfileVersion: VersionOrSpecifier
 
 
+# A value another tool reads (DownstreamAnalysis): SeqSetup neither stores nor
+# writes it, so it is only held to a plain value.
+OtherToolValue = Union[bool, whole(-STORAGE_MAX_INT - 1), Annotated[str, StringConstraints(max_length=4096)]]
+
+
+class TestApplicationProfilesRules(StrictRules):
+    """OnInstrument is what the instrument runs, and the test's list of
+    application profiles; DownstreamAnalysis is for other tools reading the
+    same file (docs/design/2026-10-19-lab-profile-layout-design.md)."""
+
+    __test__ = False  # not a test class, for pytest
+
+    OnInstrument: Annotated[list[ApplicationProfileReferenceRules], Field(min_length=1)]
+    DownstreamAnalysis: Optional[list[dict[PlainName, OtherToolValue]]] = None
+
+
 class TestProfileRules(StrictRules):
     __test__ = False  # not a test class, for pytest
 
@@ -134,11 +151,47 @@ class TestProfileRules(StrictRules):
     TestName: FilledText256
     Description: FilledText4096
     Version: TestVersion
-    ApplicationProfiles: Annotated[list[ApplicationProfileReferenceRules], Field(min_length=1)]
+    TestApplicationProfiles: TestApplicationProfilesRules
+
+
+TEST_RETIRED_KEYS = {
+    "ApplicationProfiles": ("is no longer read: list these profiles under "
+                            "TestApplicationProfiles > OnInstrument"),
+}
+
+
+def _is_dragen_type(kind: str) -> bool:
+    return kind.strip().lower() == "dragen"
 
 
 def _is_dragen(value: ApplicationProfileRules) -> bool:
-    return value.ApplicationType.strip().lower() == "dragen"
+    return _is_dragen_type(value.ApplicationType)
+
+
+def _names_an_illumina_application(name) -> bool:
+    return isinstance(name, str) and name.strip().lower() in {
+        known.lower() for known in ILLUMINA_APPLICATION_NAMES}
+
+
+def shown_type(kind: str) -> str:
+    """A skipped profile's ApplicationType as a message names it: the text
+    itself when it is a short plain word, else "another type"."""
+    kind = kind.strip()
+    return kind if re.fullmatch(r"[A-Za-z0-9_.+-]{1,64}", kind) else "another type"
+
+
+def _other_tools_type(data) -> str:
+    """The ApplicationType of a profile read but left to other tools: one
+    whose type is text and not Dragen, naming none of Illumina's
+    applications. "" for every other file, which is checked in full."""
+    if not isinstance(data, dict):
+        return ""
+    kind = data.get("ApplicationType")
+    if not isinstance(kind, str) or not kind.strip() or _is_dragen_type(kind):
+        return ""
+    if _names_an_illumina_application(data.get("ApplicationName")):
+        return ""
+    return kind
 
 
 def _columns(value: ApplicationProfileRules) -> list[tuple[tuple, str, str]]:
@@ -248,13 +301,33 @@ def _application_check(data, locations: Locations, file: str) -> CheckResult:
                       cross_checks=[_application_findings])
 
 
+def _illumina_type_findings(value: ApplicationProfileRules) -> list[Finding]:
+    """The exception to skipping a file whose type is not Dragen: one naming
+    an Illumina application is refused, since skipping it would leave the
+    application out of the sheet unseen."""
+    if _is_dragen(value) or not _names_an_illumina_application(value.ApplicationName):
+        return []
+    return [Finding(
+        ("ApplicationType",),
+        f"must be Dragen: {value.ApplicationName} is one of Illumina's applications, "
+        "which SeqSetup writes into the Sample Sheet",
+    )]
+
+
 def check_application_profile_file(text: str, file: str) -> CheckResult:
     """Check one application profile file. A profile may hold a pipeline's
-    address or key in Settings, so no message quotes a value."""
+    address or key in Settings, so no message quotes a value. A profile for
+    another tool (``_other_tools_type``) is read by the reader's rules and
+    then skipped: the lab's one folder holds those too
+    (docs/design/2026-10-19-lab-profile-layout-design.md)."""
     read = read_yaml(text, file)
     if read.problems:
         return reader_refusal(read.problems, ApplicationProfileRules)
-    return _application_check(read.data, read.locations, file)
+    kind = _other_tools_type(read.data)
+    if kind:
+        return CheckResult(None, skipped=kind)
+    return check_data(read.data, read.locations, file, ApplicationProfileRules,
+                      cross_checks=[_application_findings, _illumina_type_findings])
 
 
 def check_test_profile_file(text: str, file: str) -> CheckResult:
@@ -262,7 +335,8 @@ def check_test_profile_file(text: str, file: str) -> CheckResult:
     read = read_yaml(text, file)
     if read.problems:
         return reader_refusal(read.problems, TestProfileRules)
-    return check_data(read.data, read.locations, file, TestProfileRules)
+    return check_data(read.data, read.locations, file, TestProfileRules,
+                      retired_keys=TEST_RETIRED_KEYS)
 
 
 def check_application_profile_data(data, file: str) -> CheckResult:
@@ -272,7 +346,7 @@ def check_application_profile_data(data, file: str) -> CheckResult:
 
 
 def check_test_profile_data(data, file: str) -> CheckResult:
-    return check_data(data, Locations(), file, TestProfileRules)
+    return check_data(data, Locations(), file, TestProfileRules, retired_keys=TEST_RETIRED_KEYS)
 
 
 class ProfileValidationError(Exception):

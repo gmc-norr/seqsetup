@@ -28,10 +28,11 @@ def _profile(version: str, software: str = '"4.3.6"', adapter: bool = False) -> 
         "ApplicationProfileName: GuardProfile\n"
         f'ApplicationProfileVersion: "{version}"\n'
         "ApplicationName: BCLConvert\n"
-        "ApplicationType: BclConvert\n"
+        "ApplicationType: Dragen\n"
         "Settings:\n"
         f"  SoftwareVersion: {software}\n"
         + (f"  AdapterRead1: {ADAPTER}\n" if adapter else "")
+        + "Data: {}\n"
         + "DataFields:\n"
         "  - Sample_ID\n"
         "  - Lane\n"

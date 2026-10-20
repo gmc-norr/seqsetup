@@ -18,8 +18,8 @@ RULE = "Version: must be three whole numbers joined by dots, each at most 9 digi
 def _test(version) -> dict:
     return {
         "TestType": "WGS", "TestName": "WGS", "Description": "Whole genome", "Version": version,
-        "ApplicationProfiles": [
-            {"ApplicationProfileName": "BCLConvertNextera", "ApplicationProfileVersion": "~=1.0.0"}],
+        "TestApplicationProfiles": {"OnInstrument": [
+            {"ApplicationProfileName": "BCLConvertNextera", "ApplicationProfileVersion": "~=1.0.0"}]},
     }
 
 

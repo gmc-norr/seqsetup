@@ -46,8 +46,8 @@ def _test(test_type, *refs) -> _TestProfile:
     return _TestProfile.from_yaml({
         "TestType": test_type, "TestName": test_type, "Description": test_type,
         "Version": "1.0.0",
-        "ApplicationProfiles": [{"ApplicationProfileName": n, "ApplicationProfileVersion": v}
-                                for n, v in refs],
+        "TestApplicationProfiles": {"OnInstrument": [
+            {"ApplicationProfileName": n, "ApplicationProfileVersion": v} for n, v in refs]},
     }, f"{test_type}.yaml")
 
 

@@ -348,7 +348,7 @@ class TestTheSyncRefusesNamesTheSheetWouldNotCarry:
 
     @pytest.mark.parametrize("change,logged", [
         pytest.param(("  - Index2\n", "  - Index2\n  - index\n"),
-                     "Bad.yaml:11:5: DataFields > item 4: writes the column 'Index' more than once",
+                     "Bad.yaml:12:5: DataFields > item 4: writes the column 'Index' more than once",
                      id="repeated"),
         pytest.param(("Settings:\n", "Settings:\n  Index: x\n"),
                      "Bad.yaml:6:3: Settings > Index: is both in Settings and a data column",

@@ -34,10 +34,11 @@ def _profile_yaml(name: str, adapter: str) -> str:
         f"ApplicationProfileName: {name}\n"
         'ApplicationProfileVersion: "1.0.0"\n'
         "ApplicationName: BCLConvert\n"
-        "ApplicationType: BclConvert\n"
+        "ApplicationType: Dragen\n"
         "Settings:\n"
         '  SoftwareVersion: "4.3.6"\n'
         f"  AdapterRead1: {adapter}\n"
+        "Data: {}\n"
         "DataFields:\n"
         "  - Sample_ID\n"
         "  - Lane\n"
@@ -53,9 +54,10 @@ def _wgs_yaml(version: str, profile: str) -> str:
         "TestName: WGS\n"
         "Description: Whole genome\n"
         f'Version: "{version}"\n'
-        "ApplicationProfiles:\n"
-        f"  - ApplicationProfileName: {profile}\n"
-        '    ApplicationProfileVersion: "1.0.0"\n'
+        "TestApplicationProfiles:\n"
+        "  OnInstrument:\n"
+        f"    - ApplicationProfileName: {profile}\n"
+        '      ApplicationProfileVersion: "1.0.0"\n'
     )
 
 

@@ -103,8 +103,10 @@ class SampleSheetV2Exporter:
         if run.run_name:
             output.write(f"RunName,{cls._escape_identifier(run.run_name)}\n")
 
-        if run.run_description:
-            output.write(f"RunDescription,{cls._escape_csv(run.run_description)}\n")
+        # The run's id, not its description: the NovaSeq X keeps this standard
+        # key but leaves out custom ones such as Custom_UUID below, and cleve
+        # reads the UUID here (docs/design/2026-10-19-lab-profile-layout-design.md).
+        output.write(f"RunDescription,{cls._escape_identifier(run.id)}\n")
 
         # Get platform name from config (e.g., "NovaSeqXSeries" for "NovaSeq X Series")
         platform_name = cls._require_plain(

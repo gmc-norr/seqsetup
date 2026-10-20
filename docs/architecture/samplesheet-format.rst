@@ -18,11 +18,21 @@ header in square brackets.
    [Header]
    FileFormatVersion,2
    RunName,MyRun_001
-   RunDescription,Whole genome sequencing
-   InstrumentPlatform,NovaSeq X Series
+   RunDescription,0f8e2a43-5c1d-4b7e-9a6f-3d2c1b0a9e8f
+   InstrumentPlatform,NovaSeqXSeries
+   IndexOrientation,Forward
+   Custom_UUID,0f8e2a43-5c1d-4b7e-9a6f-3d2c1b0a9e8f
 
 Required fields: ``FileFormatVersion``, ``InstrumentPlatform``.
 Optional fields: ``RunName``, ``RunDescription``.
+
+SeqSetup writes the run's UUID twice: as ``RunDescription``, a standard key
+the NovaSeq X keeps in the sheet it runs with, and as ``Custom_UUID``, a
+custom key it leaves out. Another tool ties a run folder back to its
+SeqSetup run by ``RunDescription``, which every instrument keeps;
+``Custom_UUID`` is there only where the instrument keeps custom keys. The
+run's typed description is not written into the sheet
+(``docs/design/2026-10-19-lab-profile-layout-design.md``).
 
 [Reads]
 ^^^^^^^

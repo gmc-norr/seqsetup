@@ -39,6 +39,7 @@ from .profiles import (
     differing_only_in_capitals,
     repeated_app_versions,
     repeated_test_versions,
+    shown_type,
 )
 
 SCHEMAS = {
@@ -67,7 +68,7 @@ def _write_schemas(folder: Path) -> None:
 
 class _Tally:
     def __init__(self):
-        self.files = self.errors = self.warnings = 0
+        self.files = self.errors = self.warnings = self.skipped = 0
 
     def report(self, problems) -> None:
         for problem in problems:
@@ -80,7 +81,8 @@ class _Tally:
     def summary(self) -> str:
         errors = f"{self.errors} error{'' if self.errors == 1 else 's'}" if self.errors else "no errors"
         warnings = f", {self.warnings} warning{'' if self.warnings == 1 else 's'}" if self.warnings else ""
-        return f"{self.files} files checked, {errors}{warnings}"
+        skipped = f", {self.skipped} skipped" if self.skipped else ""
+        return f"{self.files - self.skipped} files checked{skipped}, {errors}{warnings}"
 
 
 def _read(path: Path, shown: str, tally: _Tally):
@@ -135,6 +137,7 @@ def _check_folder(settings: Path, inside: PurePosixPath, option: str, kind: str,
         print(f"{shown_folder}: holds no {kind} file (.yaml or .yml)")
         tally.errors += 1
     built, where = [], []
+    skipped = 0
     for path in paths:
         shown = path.relative_to(settings).as_posix()
         tally.files += 1
@@ -142,11 +145,25 @@ def _check_folder(settings: Path, inside: PurePosixPath, option: str, kind: str,
         if text is None:
             continue
         result = check(text, shown)
+        if result.skipped:
+            # As the sync does (docs/design/2026-10-19-lab-profile-layout-design.md).
+            shown_kind = shown_type(result.skipped)
+            print(f"{shown}: skipped, a profile for other tools ("
+                  + (f"ApplicationType {shown_kind}, not Dragen)" if shown_kind != "another type"
+                     else "its ApplicationType is not Dragen)"))
+            tally.skipped += 1
+            skipped += 1
+            continue
         tally.report(result.problems)
         if result.ok:
             made = build(result.value, path.name)
             built += made if isinstance(made, list) else [made]
             where += [shown] * (len(made) if isinstance(made, list) else 1)
+    if paths and skipped == len(paths):
+        # For SeqSetup the folder holds no profile, as an empty one.
+        print(f"{shown_folder}: holds no profile for the instrument: every file is skipped, "
+              "a profile for other tools")
+        tally.errors += 1
     return built, where, shown_folder
 
 

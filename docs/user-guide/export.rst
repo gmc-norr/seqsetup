@@ -227,8 +227,10 @@ Sample Sheet v2 format
 The exported file follows the Illumina Sample Sheet v2 CSV format:
 
 ``[Header]``
-   Run metadata including file format version, run name, run description,
-   and instrument platform.
+   Run metadata: file format version, run name, the run's UUID (as
+   ``RunDescription`` and as ``Custom_UUID``) and instrument platform. The
+   description typed in SeqSetup is not written into the sheet; it is in the
+   JSON export.
 
 ``[Reads]``
    Cycle counts for Read 1, Read 2, Index 1, and Index 2.

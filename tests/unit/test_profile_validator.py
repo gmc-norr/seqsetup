@@ -22,12 +22,12 @@ class TestValidateTestProfile:
         "TestName": "WGS",
         "Description": "Whole Genome Sequencing",
         "Version": "1.0.0",
-        "ApplicationProfiles": [
+        "TestApplicationProfiles": {"OnInstrument": [
             {
                 "ApplicationProfileName": "BCLConvert",
                 "ApplicationProfileVersion": "~=1.0.0",
             },
-        ],
+        ]},
     }
 
     def test_valid_profile_passes(self):
@@ -69,49 +69,49 @@ class TestValidateTestProfile:
 
     def test_missing_application_profiles(self):
         data = {**self.VALID_TEST_PROFILE}
-        del data["ApplicationProfiles"]
-        with pytest.raises(ProfileValidationError, match="ApplicationProfiles: is required"):
+        del data["TestApplicationProfiles"]
+        with pytest.raises(ProfileValidationError, match="TestApplicationProfiles: is required"):
             check_test_profile(data)
 
     def test_application_profiles_not_list(self):
-        data = {**self.VALID_TEST_PROFILE, "ApplicationProfiles": "not-a-list"}
-        with pytest.raises(ProfileValidationError, match="ApplicationProfiles: must be a list"):
+        data = {**self.VALID_TEST_PROFILE, "TestApplicationProfiles": {"OnInstrument": "not-a-list"}}
+        with pytest.raises(ProfileValidationError, match="TestApplicationProfiles > OnInstrument: must be a list"):
             check_test_profile(data)
 
     def test_application_profiles_empty_list(self):
-        data = {**self.VALID_TEST_PROFILE, "ApplicationProfiles": []}
-        with pytest.raises(ProfileValidationError, match=r"ApplicationProfiles: must have at least 1 item\(s\)"):
+        data = {**self.VALID_TEST_PROFILE, "TestApplicationProfiles": {"OnInstrument": []}}
+        with pytest.raises(ProfileValidationError, match=r"TestApplicationProfiles > OnInstrument: must have at least 1 item\(s\)"):
             check_test_profile(data)
 
     def test_application_profile_missing_name(self):
         data = {
             **self.VALID_TEST_PROFILE,
-            "ApplicationProfiles": [
+            "TestApplicationProfiles": {"OnInstrument": [
                 {"ApplicationProfileVersion": "~=1.0.0"},
-            ],
+            ]},
         }
-        with pytest.raises(ProfileValidationError, match="ApplicationProfiles > item 1 > ApplicationProfileName: is required"):
+        with pytest.raises(ProfileValidationError, match="TestApplicationProfiles > OnInstrument > item 1 > ApplicationProfileName: is required"):
             check_test_profile(data)
 
     def test_application_profile_missing_version(self):
         data = {
             **self.VALID_TEST_PROFILE,
-            "ApplicationProfiles": [
+            "TestApplicationProfiles": {"OnInstrument": [
                 {"ApplicationProfileName": "BCLConvert"},
-            ],
+            ]},
         }
-        with pytest.raises(ProfileValidationError, match="ApplicationProfiles > item 1 > ApplicationProfileVersion: is required"):
+        with pytest.raises(ProfileValidationError, match="TestApplicationProfiles > OnInstrument > item 1 > ApplicationProfileVersion: is required"):
             check_test_profile(data)
 
     def test_application_profile_invalid_version_constraint(self):
         data = {
             **self.VALID_TEST_PROFILE,
-            "ApplicationProfiles": [
+            "TestApplicationProfiles": {"OnInstrument": [
                 {
                     "ApplicationProfileName": "BCLConvert",
                     "ApplicationProfileVersion": "not-valid",
                 },
-            ],
+            ]},
         }
         with pytest.raises(ProfileValidationError, match="ApplicationProfileVersion: is not a valid PEP 440 version or specifier"):
             check_test_profile(data)
@@ -120,12 +120,12 @@ class TestValidateTestProfile:
         """Version constraints like ~=1.0.0 should be accepted."""
         data = {
             **self.VALID_TEST_PROFILE,
-            "ApplicationProfiles": [
+            "TestApplicationProfiles": {"OnInstrument": [
                 {
                     "ApplicationProfileName": "BCLConvert",
                     "ApplicationProfileVersion": "~=1.0.0",
                 },
-            ],
+            ]},
         }
         check_test_profile(data)
 
@@ -133,12 +133,12 @@ class TestValidateTestProfile:
         """Range specifiers like >=1.0,<2.0 should be accepted."""
         data = {
             **self.VALID_TEST_PROFILE,
-            "ApplicationProfiles": [
+            "TestApplicationProfiles": {"OnInstrument": [
                 {
                     "ApplicationProfileName": "BCLConvert",
                     "ApplicationProfileVersion": ">=1.0,<2.0",
                 },
-            ],
+            ]},
         }
         check_test_profile(data)
 
@@ -146,12 +146,12 @@ class TestValidateTestProfile:
         """Exact versions like 1.0.0 should be accepted as constraints."""
         data = {
             **self.VALID_TEST_PROFILE,
-            "ApplicationProfiles": [
+            "TestApplicationProfiles": {"OnInstrument": [
                 {
                     "ApplicationProfileName": "BCLConvert",
                     "ApplicationProfileVersion": "1.0.0",
                 },
-            ],
+            ]},
         }
         check_test_profile(data)
 
@@ -160,7 +160,7 @@ class TestValidateTestProfile:
         data = {}
         with pytest.raises(ProfileValidationError) as exc_info:
             check_test_profile(data)
-        assert len(exc_info.value.errors) >= 5  # 4 missing fields + missing ApplicationProfiles
+        assert len(exc_info.value.errors) >= 5  # 4 missing fields + missing TestApplicationProfiles
 
     def test_source_file_in_error(self):
         with pytest.raises(ProfileValidationError) as exc_info:
@@ -314,12 +314,12 @@ class TestFromYamlValidation:
             "TestName": "WGS",
             "Description": "Whole Genome Sequencing",
             "Version": "1.0.0",
-            "ApplicationProfiles": [
+            "TestApplicationProfiles": {"OnInstrument": [
                 {
                     "ApplicationProfileName": "BCLConvert",
                     "ApplicationProfileVersion": "~=1.0.0",
                 },
-            ],
+            ]},
         }
         tp = TestProfile.from_yaml(data, "Wgs.yaml")
         assert tp.test_type == "WGS"
@@ -685,8 +685,8 @@ class TestProfileVersions:
 
     def test_reference_version_is_refused(self):
         refs = [{"ApplicationProfileName": "P", "ApplicationProfileVersion": 1.1}]
-        assert _test_profile_errors({**TEST, "ApplicationProfiles": refs}) == [
-            f"ApplicationProfiles > item 1 > ApplicationProfileVersion: {DECIMAL}"
+        assert _test_profile_errors({**TEST, "TestApplicationProfiles": {"OnInstrument": refs}}) == [
+            f"TestApplicationProfiles > OnInstrument > item 1 > ApplicationProfileVersion: {DECIMAL}"
         ]
 
     def test_unquoted_1_10_and_1_1_can_no_longer_collide(self):
@@ -732,8 +732,8 @@ class TestEmptyRequiredFields:
     def test_reference_field(self, key):
         ref = {"ApplicationProfileName": "P", "ApplicationProfileVersion": "~=1.0.0", key: None}
         assert (
-            f"ApplicationProfiles > item 1 > {key}: needs a value"
-            in _test_profile_errors({**TEST, "ApplicationProfiles": [ref]})
+            f"TestApplicationProfiles > OnInstrument > item 1 > {key}: needs a value"
+            in _test_profile_errors({**TEST, "TestApplicationProfiles": {"OnInstrument": [ref]}})
         )
 
 

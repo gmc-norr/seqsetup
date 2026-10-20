@@ -220,6 +220,9 @@ class TestTodaysSheets:
     @pytest.mark.parametrize("instrument", sorted(TODAY))
     def test_the_v2_sheet(self, instrument, size):
         expected = today_sheet(instrument, size)
+        # The run's id is written as RunDescription
+        # (docs/design/2026-10-19-lab-profile-layout-design.md).
+        expected = expected.replace("RunName,A2-sheet\n", "RunName,A2-sheet\nRunDescription,a2-sheet-run\n")
         if instrument in HEADER_LINE_GONE:
             expected = expected.replace("IndexOrientation,Forward\n", "")
         if size == 8 and instrument in INDEX2_MASK_NOW:

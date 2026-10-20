@@ -113,11 +113,14 @@ class TestProfile:
             TestName: WGS
             Description: Whole Genome Sequencing
             Version: 1.0.0
-            ApplicationProfiles:
-              - ApplicationProfileName: BCLConvertNextera
-                ApplicationProfileVersion: "~=1.0.0"
-              - ApplicationProfileName: DragenGermlineIdtWgs
-                ApplicationProfileVersion: "~=1.0.0"
+            TestApplicationProfiles:
+              OnInstrument:
+                - ApplicationProfileName: BCLConvertNextera
+                  ApplicationProfileVersion: "~=1.0.0"
+                - ApplicationProfileName: DragenGermlineIdtWgs
+                  ApplicationProfileVersion: "~=1.0.0"
+              DownstreamAnalysis:   # for other tools; checked, not kept
+                - ...
 
         Raises:
             ProfileValidationError: listing every problem the input rules
@@ -132,7 +135,7 @@ class TestProfile:
 
         app_profiles = [
             ApplicationProfileReference.from_yaml(ap)
-            for ap in yaml_data.get("ApplicationProfiles", [])
+            for ap in yaml_data["TestApplicationProfiles"]["OnInstrument"]
         ]
 
         return cls(
