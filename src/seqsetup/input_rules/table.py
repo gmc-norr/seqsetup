@@ -26,6 +26,31 @@ class ColumnGivenTwice(KitFileRefused):
     reason = "columns_not_read"
 
 
+class TableNotRead(KitFileRefused):
+    """A row ``csv`` cannot read strictly: a quoted cell with text after its
+    closing quote, or a quote that is never closed. Read loosely, the first
+    gave ``P1,"ACGT"NNNN`` the sequence ACGTNNNN and the second took the rest
+    of the file into one cell (outside review of 51eb3c4, P2-2). ``line`` is
+    the line the row starts on."""
+
+    reason = "table_not_read"
+    what = ('this line could not be read -- check it for a double quote (") that is not '
+            'closed, or for text after a closing quote')
+
+    def __init__(self, line: int):
+        self.line = line
+        super().__init__(f"Line {line}: {self.what}. Nothing was saved.")
+
+
+class CellOverLines(TableNotRead):
+    """A quoted cell holding a line break: the rows after it merge into the
+    cell and go nowhere, as the paste refuses (services/sample_parser.py)."""
+
+    what = ('a cell runs over more than one line -- a double quote (") that is not closed '
+            "where it should be, or a line break inside a cell; the rows after it would "
+            "merge into it")
+
+
 def column_key(name) -> str:
     """One normal form for a column name: lower case, no spaces and no
     underscores, so ``INDEX``, ``Index`` and ``index_2`` read as the columns
@@ -54,16 +79,35 @@ def read_table(text: str, line_offset: int = 0, delimiter: str = ",") -> Table:
 
     ``line_offset`` is how many lines were taken off the front of ``text``
     before it was read, so a row names the file's own line. Raises
-    ``ColumnGivenTwice`` when the header names one column twice.
+    ``ColumnGivenTwice`` when the header names one column twice, and
+    ``TableNotRead`` for a row whose quotes do not close.
     """
-    reader = csv.DictReader(StringIO(text), delimiter=delimiter)
-    # Before any row: reading the header is what DictReader's fieldnames does.
-    refuse_repeated_columns(reader.fieldnames)
-    rows = []
-    for row in reader:
-        extra = list(row.pop(None, None) or [])
-        rows.append(Row(reader.line_num + line_offset, row, extra))
+    reader = csv.DictReader(StringIO(text), delimiter=delimiter, strict=True)
+    # A record starts on the line after the one the last record ended on.
+    start = 1
+    try:
+        # Before any row: reading the header is what DictReader's fieldnames does.
+        refuse_repeated_columns(reader.fieldnames)
+        if _over_lines(reader.fieldnames or []):
+            raise CellOverLines(1 + line_offset)
+        rows = []
+        while True:
+            start = reader.line_num + 1
+            try:
+                row = next(reader)
+            except StopIteration:
+                break
+            extra = list(row.pop(None, None) or [])
+            if _over_lines([*row.values(), *extra]):
+                raise CellOverLines(start + line_offset)
+            rows.append(Row(reader.line_num + line_offset, row, extra))
+    except csv.Error:
+        raise TableNotRead(start + line_offset) from None
     return Table(reader.fieldnames, rows)
+
+
+def _over_lines(cells) -> bool:
+    return any(isinstance(cell, str) and ("\n" in cell or "\r" in cell) for cell in cells)
 
 
 def refuse_repeated_columns(names) -> None:

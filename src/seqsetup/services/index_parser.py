@@ -8,7 +8,7 @@ import yaml
 
 from ..input_rules.kits import KitFileProblems, KitFileRefused, build_kit, check_kit_data
 from ..input_rules.reader import GIVEN_TWICE, Locations, read_yaml
-from ..input_rules.table import ColumnGivenTwice, read_table
+from ..input_rules.table import ColumnGivenTwice, TableNotRead, read_table
 from ..utils.yaml_safety import safe_load_strict
 
 from ..models.index import IndexKit, IndexMode
@@ -1280,7 +1280,11 @@ class IndexParser:
                 return
 
             numbers = [lineno for lineno, _text in section_lines]
-            table = read_table("\n".join(text for _n, text in section_lines))
+            try:
+                table = read_table("\n".join(text for _n, text in section_lines))
+            except TableNotRead as unread:
+                # Its line counts this section's own lines; name the file's.
+                raise type(unread)(numbers[min(unread.line, len(numbers)) - 1]) from None
             # A row's line_num counts the lines of this section read so far,
             # the header included, so it indexes the section's own line list.
             numbered = [(numbers[min(row.line, len(numbers)) - 1],

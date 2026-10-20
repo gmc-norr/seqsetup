@@ -117,6 +117,11 @@ Before a kit is saved, SeqSetup checks, in order:
      -- ``plate``, ``Description`` -- is still ignored.
    * **A row with more cells than the header has columns.** That cell was
      under no column name and dropped unseen; the row is named by its line.
+   * **A double quote that does not close where it should.** A quoted cell
+     with text after its closing quote (``P1,"ACGT"NNNN``) was read as
+     ``ACGTNNNN``, and a quote never closed took the rest of the file into
+     one cell; a quoted cell over more than one line merged the rows after
+     it into the cell. Each is refused naming its line.
    * **A line that is in no section, or in a section the format does not
      read.** In an ``[i7]``/``[i5]`` CSV, lines before the first ``[i7]``
      were read as part of it, so an ``[IndexKit]`` preamble became its

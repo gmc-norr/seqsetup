@@ -11,7 +11,8 @@ were accepted.
 
 import pytest
 
-from seqsetup.input_rules.table import ColumnGivenTwice, column_key, read_table
+from seqsetup.input_rules.table import (CellOverLines, ColumnGivenTwice, TableNotRead, column_key,
+                                         read_table)
 
 
 class TestEachRowKnowsItsLine:
@@ -72,3 +73,53 @@ class TestTheNormalFormOfAColumnName:
 
     def test_two_names_that_differ_really_are_two(self):
         assert column_key("index") != column_key("index2")
+
+
+class TestARowWhoseQuotesDoNotCloseIsRefused:
+    """``csv`` read a broken quote as it could: ``P1,"ACGT"NNNN`` gave the
+    sequence ACGTNNNN, and a quote never closed took the rest of the file
+    into one cell. Read strictly, the file is refused naming the line
+    (outside review of 51eb3c4, P2-2)."""
+
+    @pytest.mark.parametrize("text, line", [
+        ('name,index\nP1,"ACGT"NNNN\nP2,TCCGGAGA\n', 2),
+        ('name,index\nP1,ACGTACGT\nP2,"TCCGGAGA\n', 3),
+        ('"name,index\nP1,ACGTACGT\n', 1),
+    ])
+    def test_a_broken_quote_names_its_line(self, text, line):
+        with pytest.raises(TableNotRead) as refused:
+            read_table(text)
+
+        assert refused.value.line == line
+        assert f"Line {line}:" in str(refused.value)
+        assert 'double quote (")' in str(refused.value)
+
+    def test_the_line_counts_the_lines_taken_off_the_front(self):
+        with pytest.raises(TableNotRead) as refused:
+            read_table('name,index\nP1,"ACGT"NNNN\n', line_offset=3)
+
+        assert refused.value.line == 5
+
+    def test_a_tsv_is_read_strictly_too(self):
+        with pytest.raises(TableNotRead):
+            read_table('Name\tSequence\nD701\t"ATTA"CTCG\n', delimiter="\t")
+
+    def test_quotes_that_close_are_read(self):
+        table = read_table('"name","index"\n"P1","ACGTACGT"\n"P2,x",TCCGGAGA\n')
+
+        assert [(row.cells["name"], row.cells["index"]) for row in table.rows] == [
+            ("P1", "ACGTACGT"), ("P2,x", "TCCGGAGA")]
+
+    @pytest.mark.parametrize("text, line", [
+        ('name,index\n"P1\nP2",ACGTACGT\nP3,TCCGGAGA\n', 2),
+        ('name,index\nP1,ACGTACGT\n"P2\nP3,TCCGGAGA\nP4",CGCTCATT\n', 3),
+        ('"na\nme",index\nP1,ACGTACGT\n', 1),
+    ])
+    def test_a_cell_over_two_lines_is_refused(self, text, line):
+        """Rows merge into the cell, so the lines after it go nowhere -- the
+        paste refuses the same (services/sample_parser.py)."""
+        with pytest.raises(CellOverLines) as refused:
+            read_table(text)
+
+        assert refused.value.line == line
+        assert f"Line {line}:" in str(refused.value) and "more than one line" in str(refused.value)
