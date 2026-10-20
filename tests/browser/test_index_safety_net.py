@@ -112,7 +112,14 @@ def run_id(app_ctx):
 _READ_ROWS = """() => Array.from(document.querySelectorAll('#sample-table .sample-row'))
     .map(row => ({
         row_id: row.id.slice('sample-row-'.length),
-        sample_id: (row.querySelector('td.sample-id-cell') || {}).textContent || '',
+        // The cell's text without Check's "!" mark, which it holds while
+        // Check lists an error for the row.
+        sample_id: (cell => {
+            if (!cell) return '';
+            const copy = cell.cloneNode(true);
+            copy.querySelectorAll('.row-error-badge').forEach(badge => badge.remove());
+            return copy.textContent;
+        })(row.querySelector('td.sample-id-cell')),
         i7: row.dataset.i7 || '',
         i5: row.dataset.i5 || '',
         lanes: (row.querySelector('.lanes-display') || {}).textContent || '',
@@ -129,15 +136,22 @@ _READ_CHIPS = """() => Array.from(document.querySelectorAll(
 
 def shown_rows(page) -> dict:
     """``sample_id -> {"i7", "i5", "lanes"}``, from each row's own data
-    attributes and its lanes cell."""
-    return {
+    attributes and its lanes cell. Each sample is read from one row, its
+    own: the row's id names the sample the run seeded under that ID."""
+    rows = page.evaluate(_READ_ROWS)
+    shown = {
         row["sample_id"].strip(): {
             "i7": row["i7"], "i5": row["i5"],
             "lanes": [] if row["lanes"].strip() in ("", "All")
                      else row["lanes"].strip().split(","),
         }
-        for row in page.evaluate(_READ_ROWS)
+        for row in rows
     }
+    assert len(shown) == len(rows), f"a sample is drawn twice: {[r['sample_id'] for r in rows]}"
+    for row in rows:
+        assert row["row_id"] == f"{RUN_ID}-{row['sample_id'].strip()}", \
+            f"row {row['row_id']} shows the ID {row['sample_id'].strip()!r}"
+    return shown
 
 
 def shown_chips(page) -> list[dict]:
@@ -215,6 +229,44 @@ def _untick_all(page):
     page.evaluate("""() => document.querySelectorAll('.sample-checkbox')
         .forEach(box => { box.checked = false; box.dispatchEvent(
             new Event('change', {bubbles: true})); })""")
+
+
+@pytest.mark.browser
+def test_a_row_is_read_without_its_error_mark(logged_in_page, base_url, run_id):
+    """Check marks a row it lists an error for with a "!" in its Sample ID
+    cell (``markSampleErrors`` in ``app.js``) and refreshes after every
+    change. Read before the refresh landed, the net once took "!B-08" for
+    B-08's ID and failed on a busy machine. A sample with no index is an
+    error, so every seeded row carries the mark here."""
+    page = logged_in_page
+    page.goto(f"{base_url}/runs/{run_id}")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#sample-table td.sample-id-cell .row-error-badge")).to_have_count(
+        len(SAMPLES))
+
+    assert sorted(shown_rows(page)) == SAMPLES
+
+
+@pytest.mark.browser
+def test_a_row_is_read_only_as_its_own_sample(logged_in_page, base_url, run_id):
+    """The reader keys rows by the ID they show: a sample drawn twice would
+    fold into one entry, the last winning, and a row showing another
+    sample's ID would be read as that sample (fresh review of 017950b,
+    P3-3)."""
+    page = logged_in_page
+    page.goto(f"{base_url}/runs/{run_id}")
+    page.wait_for_load_state("networkidle")
+    page.evaluate("""() => { const row = document.querySelector('#sample-table .sample-row');
+        row.after(row.cloneNode(true)); }""")
+    with pytest.raises(AssertionError):
+        shown_rows(page)
+
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    page.evaluate(f"""() => {{ document.querySelector(
+        '#sample-row-{run_id}-{SAMPLES[0]} td.sample-id-cell').textContent = '{SAMPLES[1]}x'; }}""")
+    with pytest.raises(AssertionError):
+        shown_rows(page)
 
 
 # --------------------------------------------------------------------------
