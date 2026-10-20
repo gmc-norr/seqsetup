@@ -45,15 +45,15 @@
             <legend class="text-lg font-semibold">Kit Metadata (optional &mdash; overrides file headers)</legend>
             <div>
                 <label for="kit_name" class="block text-sm font-medium mb-1">Kit name</label>
-                <input type="text" name="kit_name" id="kit_name" class="w-full border rounded px-3 py-2">
+                <input type="text" name="kit_name" id="kit_name" maxlength="256" class="w-full border rounded px-3 py-2">
             </div>
             <div>
                 <label for="kit_version" class="block text-sm font-medium mb-1">Kit version</label>
-                <input type="text" name="kit_version" id="kit_version" class="w-full border rounded px-3 py-2">
+                <input type="text" name="kit_version" id="kit_version" maxlength="256" class="w-full border rounded px-3 py-2">
             </div>
             <div>
                 <label for="kit_description" class="block text-sm font-medium mb-1">Description</label>
-                <textarea name="kit_description" id="kit_description" rows="2" class="w-full border rounded px-3 py-2"></textarea>
+                <textarea name="kit_description" id="kit_description" maxlength="256" rows="2" class="w-full border rounded px-3 py-2"></textarea>
             </div>
         </fieldset>
 
@@ -62,35 +62,35 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                     <label for="adapter_read1" class="block text-sm font-medium mb-1">Adapter Read 1</label>
-                    <input type="text" name="adapter_read1" id="adapter_read1" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                    <input type="text" name="adapter_read1" id="adapter_read1" maxlength="1000" class="w-full border rounded px-3 py-2 font-mono text-sm">
                 </div>
                 <div>
                     <label for="adapter_read2" class="block text-sm font-medium mb-1">Adapter Read 2</label>
-                    <input type="text" name="adapter_read2" id="adapter_read2" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                    <input type="text" name="adapter_read2" id="adapter_read2" maxlength="1000" class="w-full border rounded px-3 py-2 font-mono text-sm">
                 </div>
                 <p class="text-sm text-slate-600 sm:col-span-2">Adapter Read 1 and 2 are stored with the kit and are
                 <strong>not written to the Sample Sheet</strong>. A sheet's AdapterRead1 and AdapterRead2 cells come
                 from the run's application profile, never from the kit.</p>
                 <div>
                     <label for="default_index1_override" class="block text-sm font-medium mb-1">Default Index1 Override (e.g. I8, I*)</label>
-                    <input type="text" name="default_index1_override" id="default_index1_override" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                    <input type="text" name="default_index1_override" id="default_index1_override" maxlength="16" class="w-full border rounded px-3 py-2 font-mono text-sm">
                 </div>
                 <div>
                     <label for="default_index2_override" class="block text-sm font-medium mb-1">Default Index2 Override</label>
-                    <input type="text" name="default_index2_override" id="default_index2_override" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                    <input type="text" name="default_index2_override" id="default_index2_override" maxlength="16" class="w-full border rounded px-3 py-2 font-mono text-sm">
                 </div>
                 <div>
                     <label for="default_read1_override" class="block text-sm font-medium mb-1">Default Read1 Override (e.g. Y150, Y*)</label>
-                    <input type="text" name="default_read1_override" id="default_read1_override" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                    <input type="text" name="default_read1_override" id="default_read1_override" maxlength="256" class="w-full border rounded px-3 py-2 font-mono text-sm">
                 </div>
                 <div>
                     <label for="default_read2_override" class="block text-sm font-medium mb-1">Default Read2 Override</label>
-                    <input type="text" name="default_read2_override" id="default_read2_override" class="w-full border rounded px-3 py-2 font-mono text-sm">
+                    <input type="text" name="default_read2_override" id="default_read2_override" maxlength="256" class="w-full border rounded px-3 py-2 font-mono text-sm">
                 </div>
             </div>
             <div>
                 <label for="comments" class="block text-sm font-medium mb-1">Comments</label>
-                <textarea name="comments" id="comments" rows="2" class="w-full border rounded px-3 py-2"></textarea>
+                <textarea name="comments" id="comments" maxlength="256" rows="2" class="w-full border rounded px-3 py-2"></textarea>
             </div>
         </fieldset>
 

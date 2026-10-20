@@ -44,8 +44,12 @@ Before a kit is saved, SeqSetup checks, in order:
    more), and against a stray NUL byte or invalid UTF-8 in the first 8 KB.
    A file that looks binary is rejected outright: index kits must be plain
    text.
-3. **Parsing** -- a file that fails to parse in the selected format is
-   rejected with a generic "check the format and try again" message. In
+3. **Parsing** -- a file that breaks one of the rules below is rejected with
+   every problem it has, each naming the line, the column and the key
+   (*"line 7: ownr: is not a key this file can have (check the spelling)"*).
+   Before, anything the format's own checks did not catch became one
+   sentence -- "Failed to parse file. Please check the format and try
+   again." -- with no line and no key. In
    **Unique Dual** mode an Illumina YAML or TSV file, which lists its i7 and
    i5 indexes apart, is paired by name: an i7 only with the i5 of the same
    name. A file whose names do not pair up is refused and the indexes left
@@ -177,13 +181,149 @@ Before a kit is saved, SeqSetup checks, in order:
 
 Only the **content type** check (2) and a file that fails to **parse** (3)
 are recorded on the :doc:`audit-trail` on rejection, alongside a
-**successful** upload. The **size** cap (1), **field validation** (4), and a
-**name + version clash** (5) reject the upload without an audit trail
-entry -- nothing is recorded for those three.
+**successful** upload. A refusal by the rules below is recorded too, under
+the reason it was refused for (``kit_file_problems``, ``repeated_names``,
+``columns_not_read``, ``kit_names_nothing``, ``kit_mode_differs``, or
+``form_box_refused`` for a value typed in the form). The **size** cap (1),
+**field validation** (4), and a **name + version clash** (5) reject the
+upload without an audit trail entry -- nothing is recorded for those three.
 
 .. note::
    A rejected upload never partially saves. Nothing is added to the kit
    library until every check above passes.
+
+What a kit file may hold
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Every kit file -- uploaded in any format, or read by the configuration sync --
+is checked against one set of rules. **A key the rules do not name is
+refused** (a misspelt ``ownr:`` was ignored before), and every problem names
+the file, the line, the column and the key, so a file is fixed in one pass
+instead of one problem at a time.
+
+These are the keys of SeqSetup's own YAML format, the one **Download YAML**
+writes and the configuration sync reads. The other formats are read into the
+same shape: an Illumina YAML's ``Name``, ``Version``, ``Description`` and
+``IndexSequences``; an Illumina TSV's ``[IndexKit]`` and ``[Indices]``
+sections; a CSV's columns.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 12 64
+
+   * - Key
+     - Required
+     - Value
+   * - ``name``
+     - yes
+     - text, 1 to 256 characters, not made only of dots
+   * - ``version``
+     - yes
+     - text, 1 to 256 characters, no ``:`` and no ``/``
+   * - ``index_mode``
+     - yes
+     - ``unique_dual``, ``combinatorial`` or ``single``
+   * - ``description``
+     - no
+     - text, at most 256 characters
+   * - ``comments``
+     - no
+     - text, at most 256 characters
+   * - ``is_fixed_layout``
+     - no (``false`` when absent)
+     - ``true`` or ``false``
+   * - ``adapter_read1``, ``adapter_read2``
+     - no
+     - a DNA sequence of A, C, G, T and N, at most 1000 bases
+   * - ``default_index1_cycles``, ``default_index2_cycles``
+     - no
+     - a whole number, 1 to 600
+   * - ``default_read1_override``, ``default_read2_override``
+     - no
+     - ``Y``, ``I``, ``U``, ``N``, digits and ``*``, at most 256 characters
+   * - ``index_pairs``
+     - in ``unique_dual``
+     - a list of at least one pair, at most 20,000
+   * - ``i7_indexes``
+     - in ``combinatorial`` and ``single``
+     - a list of at least one index, at most 20,000
+   * - ``i5_indexes``
+     - in ``combinatorial``
+     - a list of at least one index, at most 20,000
+
+An **index** holds ``name`` (text, 1 to 256 characters), ``sequence`` (a DNA
+sequence of A, C, G, T and N, 1 to 1000 bases) and, if the kit has a layout,
+``well_position`` (text, at most 256 characters). A **pair** holds ``name``,
+``index1``, an ``index2`` (leave it out for an i7-only pair) and
+``well_position``.
+
+A list the mode does not read is refused rather than kept where the index
+panel never shows it: *"i7_indexes: is not read when index_mode is
+unique_dual, which reads index_pairs: the index panel would never show these
+indexes, so no sample could be given one."* An empty list is allowed.
+
+How a value is written
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+YAML changes some values before any check sees them, so a kit file takes one
+plain spelling per value:
+
+* a whole number is plain digits (``8``), with no leading zero and no
+  ``0x``, ``_`` or ``:``;
+* ``true`` or ``false``, never ``yes``, ``no``, ``on`` or ``off``;
+* a decimal number must be quoted: ``version: 1.10`` is read as the number
+  1.1 and was stored as the version ``1.1``, so write ``version: "1.10"``;
+* text that YAML would read as something else is quoted: an index named
+  ``012`` is the number 10 unless it is written ``'012'``;
+* a YAML tag (``!!int``, ``!!str``), an anchor (``&name``), an alias
+  (``*name``) and a merge key (``<<``) are refused;
+* a key given twice is refused, naming both lines: *"The file gives the key
+  'D701' twice in one section (line 5), so nothing was saved: the second
+  would replace the first without a word."*
+
+The kit's name and version
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A kit's name and version are its identity: the address of its page, its
+download and its **Delete**, and what the configuration sync compares between
+runs. **Neither is ever invented.**
+
+* A **synced** file must write ``name`` and ``version``. A file with no name
+  was stored under the file's own name made into a title
+  (``my_kit_file.yaml`` became the kit *My Custom Kit*), and one with no
+  version under ``1.0``.
+* An **uploaded** file may give them in the file or in the **Kit name** and
+  **Kit version** boxes; a value typed in a box wins over the file's. A file
+  that gives neither, with the matching box empty, is refused naming both
+  places.
+* The two **CSV** shapes carry no name and no version at all, so a CSV upload
+  needs both boxes filled in. Before, the kit took the upload's filename
+  without its ending and the version ``1.0``.
+* The form's boxes follow the same rules as the file's keys and are
+  **refused, never cut**, each named in the refusal: **Kit name**, **Kit
+  version**, **Kit description**, **Comments**, **Adapter Read 1**, **Adapter Read 2**, **Default Index1 Override**, **Default Index2 Override**,
+  **Default Read1 Override** and **Default Read2 Override**. A **Kit name** of
+  300 characters was quietly cut to 256 -- a cut name is another name -- an
+  **Adapter Read 1** of 8,000 bases was stored whole, and a **Default Read1
+  Override** of 402 characters became a 410-character ``OverrideCycles`` on
+  every sample the kit touched.
+
+The mode picked on the form wins, as before, and a file that names a
+**different** mode is refused naming both: *"The file says index_mode:
+combinatorial but the kit was uploaded as single, so nothing was saved: the
+mode decides which indexes a sample can be given, and only one of the two can
+be right."* Before, the file's key was never read.
+
+Checking a settings repository before a sync
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``pixi run check-settings <folder>`` checks a settings repository with these
+same rules, with no database and no network, and prints one problem per line
+as ``file:line:column: key: problem``. It reads the kit folder the sync reads
+(``index_kits`` by default; ``--index-kits <folder>`` names another, and
+``--no-index-kits`` is for a lab whose sync does not read kits), runs the same
+field checks on each built kit, and names a kit name and version that two
+files give.
 
 Viewing a kit
 ----------------

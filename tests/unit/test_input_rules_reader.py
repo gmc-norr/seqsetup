@@ -9,7 +9,7 @@ problem can name its line and column.
 
 import pytest
 
-from seqsetup.input_rules.reader import MAX_PROBLEMS_PER_FILE, read_yaml
+from seqsetup.input_rules.reader import GIVEN_TWICE, MAX_PROBLEMS_PER_FILE, read_yaml
 
 
 def _read(text, **kwargs):
@@ -315,3 +315,37 @@ class TestAFileTheParserCannotTakeIn:
         (problem,) = _read("a: " + "[" * 3000 + "]" * 3000 + "\n").problems
 
         assert "deep" in problem.message
+
+
+class TestAQuotedValueDoesNotFollowTheFileSSize:
+    """``values_safe`` lets a message quote the value it is about, and it
+    quoted the whole scalar: a 100,000-character value gave a message just as
+    long, which a kit upload (1 MB at most) shows in the admin's HTML and the
+    settings command prints. The quote is cut."""
+
+    def test_a_long_refused_value_is_cut_in_the_message(self):
+        read = read_yaml(f"version: {'9' * 100_000}.5\n", "f.yaml", values_safe=True)
+
+        (problem,) = read.problems
+        assert len(problem.message) < 200
+        assert problem.message.startswith("'999")
+        assert "…" in problem.message
+
+    def test_a_short_refused_value_is_quoted_whole(self):
+        read = read_yaml("version: 1.10\n", "f.yaml", values_safe=True)
+
+        (problem,) = read.problems
+        assert problem.message.startswith("'1.10': ")
+        assert "…" not in problem.message
+
+
+class TestTheGivenTwiceWordingIsOneConstant:
+    """A kit upload audits a repeated index name under ``repeated_names``,
+    and the reader is what finds it now, so the kit checker has to recognise
+    that problem: its wording is a constant, not a string in two places."""
+
+    def test_a_repeated_key_says_the_constant(self):
+        read = read_yaml("a: 1\na: 2\n", "f.yaml")
+
+        (problem,) = read.problems
+        assert problem.message.startswith(GIVEN_TWICE)

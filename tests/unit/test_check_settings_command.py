@@ -20,7 +20,11 @@ CONFIG = REPO / "config"
 GOOD = (CONFIG / "instruments" / "miseq.yaml").read_text()
 
 
-def _run(*args, probe=False):
+def _run(*args, probe=False, kits=False):
+    """The command. ``kits=False`` adds --no-index-kits, so a test about
+    instruments or profiles needs no index kit folder of its own."""
+    if not kits:
+        args = (*args, "--no-index-kits")
     env = {**os.environ, "PYTHONPATH": str(REPO / "src"),
            "INSTRUMENTS_CONFIG": "/nonexistent/instruments.yaml",
            "MONGODB_URI": "mongodb://127.0.0.1:1"}
@@ -48,9 +52,11 @@ PROFILES = {
 }
 
 
-def _folder(tmp_path, files: dict, profiles: bool = True) -> Path:
+def _folder(tmp_path, files: dict, profiles: bool = True, kits: dict = None) -> Path:
     """A settings folder with ``files`` in instruments/ and, unless told
-    otherwise, one good application profile and one good test profile."""
+    otherwise, one good application profile and one good test profile.
+    ``kits`` fills index_kits/; without it the folder has none, and the
+    command is run with --no-index-kits."""
     for name, text in files.items():
         path = tmp_path / "instruments" / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,17 +65,24 @@ def _folder(tmp_path, files: dict, profiles: bool = True) -> Path:
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
+    for name, text in (kits or {}).items():
+        path = tmp_path / "index_kits" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
     return tmp_path
 
 
 class TestTheShippedSettings:
 
     def test_pass(self):
-        done = _run(str(CONFIG), "--local-instruments", str(CONFIG / "instruments.yaml"))
+        # The shipped example kit folder is config/indexes; the sync's own
+        # default path is index_kits (ProfileSyncConfig.index_kits_path).
+        done = _run(str(CONFIG), "--local-instruments", str(CONFIG / "instruments.yaml"),
+                    "--index-kits", "indexes", kits=True)
 
         assert done.returncode == 0, done.stdout + done.stderr
         assert done.stdout == ""
-        assert "19 files checked, no errors" in done.stderr
+        assert "26 files checked, no errors" in done.stderr
 
 
 class TestAFolderWithProblems:
@@ -338,9 +351,9 @@ class TestJsonSchemas:
 
         assert done.returncode == 0, done.stderr
         written = sorted(p.name for p in tmp_path.iterdir())
-        assert written == ["application-profile.schema.json", "instrument.schema.json",
-                           "instruments-file.schema.json", "local-instruments.schema.json",
-                           "test-profile.schema.json"]
+        assert written == ["application-profile.schema.json", "index-kit.schema.json",
+                           "instrument.schema.json", "instruments-file.schema.json",
+                           "local-instruments.schema.json", "test-profile.schema.json"]
         for name in written:
             schema = json.loads((tmp_path / name).read_text())
             assert schema["additionalProperties"] is False, name
@@ -401,3 +414,84 @@ class TestProfilesForOtherTools:
 
         assert done.returncode == 1
         assert "ApplicationType: must be Dragen: BCLConvert is one of Illumina's applications" in done.stdout
+
+
+KIT = """\
+name: Synced kit
+version: "1.0"
+index_mode: single
+i7_indexes:
+  - name: A1
+    sequence: ATTACTCG
+"""
+
+
+class TestIndexKitFiles:
+    """The sync reads a kit folder too (``ProfileSyncConfig.index_kits_path``,
+    ``index_kits/`` by default), so the command checks it with the same
+    rulebook and runs IndexValidator on each built kit, as the sync does."""
+
+    def test_a_good_kit_folder_passes(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD}, kits={"dual.yaml": KIT})
+
+        done = _run(str(folder), kits=True)
+
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert "4 files checked, no errors" in done.stderr
+
+    def test_a_refused_kit_is_named_with_its_line_and_place(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD},
+                         kits={"bad.yaml": KIT + "ownr: me\n"})
+
+        done = _run(str(folder), kits=True)
+
+        assert done.returncode == 1
+        assert ("index_kits/bad.yaml:7:1: ownr: is not a key this file can have "
+                "(check the spelling)") in done.stdout.splitlines()
+
+    def test_a_kit_the_validator_refuses_is_named(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD},
+                         kits={"short.yaml": KIT.replace("ATTACTCG", "ACGT")
+                               + "default_index1_cycles: 8\n"})
+
+        done = _run(str(folder), kits=True)
+
+        assert done.returncode == 1
+        assert any("index_kits/short.yaml" in line and "cycles" in line
+                   for line in done.stdout.splitlines()), done.stdout
+
+    def test_two_files_for_one_kit_name_and_version(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD},
+                         kits={"a.yaml": KIT, "b.yaml": KIT})
+
+        done = _run(str(folder), kits=True)
+
+        assert done.returncode == 1
+        assert any("Synced kit 1.0" in line and "a.yaml" in line and "b.yaml" in line
+                   for line in done.stdout.splitlines()), done.stdout
+
+    def test_a_missing_kit_folder_fails(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+
+        done = _run(str(folder), kits=True)
+
+        assert done.returncode == 1
+        assert ("index_kits/: is not there (name the folder with --index-kits, or say "
+                "--no-index-kits when the sync does not read index kits)"
+                in done.stdout.splitlines())
+
+    def test_a_lab_that_does_not_sync_index_kits(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+
+        done = _run(str(folder), "--no-index-kits", kits=True)
+
+        assert done.returncode == 0, done.stdout + done.stderr
+
+    def test_the_folder_can_be_named(self, tmp_path):
+        folder = _folder(tmp_path, {"good.yaml": GOOD})
+        (folder / "indexes").mkdir()
+        (folder / "indexes" / "dual.yaml").write_text(KIT)
+
+        done = _run(str(folder), "--index-kits", "indexes", kits=True)
+
+        assert done.returncode == 0, done.stdout + done.stderr

@@ -86,4 +86,7 @@ class TestAKitFileIsNotPairedByAGuess:
         assert "HX-Redirect" not in resp.headers and "quote" in resp.text
         assert ctx.index_kit_repo.list_all() == []
         (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
-        assert (row.outcome, row.details["reason"]) == ("failure", "index_names_not_text")
+        # The reader refuses 012 as a value with no plain spelling, before
+        # YAML's reading of it reaches any name, so the row's reason is the
+        # rules' own; the message names the value and its line.
+        assert (row.outcome, row.details["reason"]) == ("failure", "kit_file_problems")

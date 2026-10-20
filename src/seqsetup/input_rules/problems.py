@@ -119,15 +119,26 @@ def bounded_report(message: str, problems: list[InputProblem], budget_bytes: int
     return report
 
 
+# How much of one name a path shows. A key is a name the file chose, so a key
+# of a thousand characters put a kilobyte of the file into every message
+# about it (fresh review of a382f57, P3-6).
+MOST_SHOWN_PER_ITEM = 60
+
+
+def _item_text(item) -> str:
+    if isinstance(item, int) and not isinstance(item, bool):
+        return f"item {item + 1}"
+    text = str(item)
+    return text if len(text) <= MOST_SHOWN_PER_ITEM else text[:MOST_SHOWN_PER_ITEM] + "…"
+
+
 def path_text(path: tuple[PathItem, ...]) -> str:
     """The path as a person reads it: ``flowcells > 10B > lanes``, a list
-    item as ``item 1``, the whole file as ``the file``."""
+    item as ``item 1``, the whole file as ``the file``. A name longer than
+    ``MOST_SHOWN_PER_ITEM`` is cut."""
     if not path:
         return "the file"
-    return " > ".join(
-        f"item {item + 1}" if isinstance(item, int) and not isinstance(item, bool) else str(item)
-        for item in path
-    )
+    return " > ".join(_item_text(item) for item in path)
 
 
 def problem_line(problem: InputProblem) -> str:

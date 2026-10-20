@@ -1,41 +1,43 @@
-"""Parser for index kit YAML files from GitHub sync."""
+"""Read one index kit YAML file from the configuration sync.
+
+The file goes through the input rules: the reader (one plain spelling per
+value, no tags or anchors, a key given twice refused, every problem with its
+line and column) and the one canonical kit rulebook
+(``input_rules/kits.py``). See docs/design/2026-10-18-input-rules-design.md,
+"Step 3: index kit files, every format".
+"""
 
 import logging
 from typing import Optional
 
-import yaml
-
-from ..utils.yaml_safety import DuplicateKeyError, safe_load_unique_keys
-
-from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
+from ..input_rules.check import CheckResult
+from ..input_rules.kits import KitFileProblems, build_kit, check_index_kit_file
+from ..models.index import IndexKit
 
 logger = logging.getLogger(__name__)
 
 
 class KitListsNotRead(ValueError):
-    """A synced kit file holding an index list its own ``index_mode`` does not
-    read. Raised out of ``parse`` rather than turned into None, so the sync's
-    refusal carries this message to the config-sync page."""
+    """Kept for callers outside this module: the rule it named -- an index
+    list the file's own ``index_mode`` does not read -- is now one of the kit
+    rulebook's checks, and ``KitFileProblems`` carries it with its line."""
 
 
 class IndexKitSyncParser:
-    """Parse index kit YAML files from GitHub sync format.
+    """Check and build one synced index kit file.
 
-    The sync YAML format supports all IndexKit fields:
+    The sync YAML format is the canonical kit shape, the one
+    ``IndexKitYamlExporter`` writes:
 
     ```yaml
-    name: "Kit Name"
-    version: "1.0"
+    name: "Kit Name"            # required
+    version: "1.0"              # required
+    index_mode: unique_dual     # required: unique_dual | combinatorial | single
     description: "Description"
     comments: "Notes"
-    index_mode: unique_dual  # unique_dual | combinatorial | single
     is_fixed_layout: true
-
-    # Optional adapter sequences
     adapter_read1: "SEQUENCE"
     adapter_read2: "SEQUENCE"
-
-    # Optional override cycles
     default_index1_cycles: 8
     default_index2_cycles: 8
     default_read1_override: "Y*"
@@ -64,163 +66,31 @@ class IndexKitSyncParser:
     """
 
     @classmethod
+    def check(cls, yaml_content: str, source_file: str) -> CheckResult:
+        """Every problem of the file, each with its line, and the checked
+        value when there is none. The sync uses this and puts the problems on
+        the Config Sync page and in its audit row; one exception could carry
+        only the first."""
+        return check_index_kit_file(yaml_content, source_file)
+
+    @classmethod
     def parse(cls, yaml_content: str, source_file: str) -> Optional[IndexKit]:
-        """Parse YAML content into IndexKit.
+        """The kit the file describes.
 
-        Args:
-            yaml_content: YAML string content
-            source_file: Source filename for logging
-
-        Returns:
-            IndexKit if parsing succeeds, None otherwise
+        ``None`` when the file could not be read at all -- it is empty, or it
+        is not YAML -- as before. Anything the rules refuse raises
+        ``KitFileProblems``, which lists every problem with its line, so the
+        sync's refusal carries them to the Config Sync page. Before, a
+        repeated key and an unread index list raised while a misspelt key, a
+        missing name, version or mode and a value of the wrong kind were read
+        as something else or dropped with only a log line.
         """
-        try:
-            data = safe_load_unique_keys(yaml_content)
-            if not data:
-                logger.warning(f"Empty YAML content in {source_file}")
-                return None
-            return cls._parse_kit(data, source_file)
-        except KitListsNotRead:
-            raise
-        except DuplicateKeyError as repeated:
-            # Raised, not returned as None: the sync's caller puts the message
-            # in the file's refusal, so the config-sync page says which key and
-            # which line. PyYAML would keep the last value without a word and
-            # the first index would be gone.
-            raise ValueError(
-                f"the key {repeated.key!r} is given twice in one mapping "
-                f"(line {repeated.line}), so nothing was read from this file: the "
-                f"second would replace the first without a word"
-            ) from None
-        except yaml.YAMLError as e:
-            logger.warning(f"Failed to parse YAML from {source_file}: {e}")
+        result = cls.check(yaml_content, source_file)
+        if result.ok:
+            return build_kit(result.value, created_by="github_sync", source="github")
+        if all(problem.path == () for problem in result.problems):
+            # Nothing about any key: the file is empty, or not YAML at all.
+            for problem in result.problems:
+                logger.warning(f"Could not read index kit {source_file}: {problem.message}")
             return None
-        except Exception as e:
-            logger.warning(f"Failed to process index kit from {source_file}: {e}")
-            return None
-
-    @classmethod
-    def _parse_kit(cls, data: dict, source_file: str) -> IndexKit:
-        """Parse dict data into IndexKit.
-
-        Raises ValueError on unknown index_mode rather than silently defaulting:
-        round-tripping a corrupted `combinatorial` kit through a `unique_dual`
-        fallback would silently change the assay model and pair samples with
-        the wrong indexes at demultiplex time.
-        """
-        # Parse index mode
-        mode_str = data.get("index_mode", "unique_dual")
-        try:
-            index_mode = IndexMode(mode_str)
-        except ValueError:
-            raise ValueError(
-                f"Unknown index_mode {mode_str!r} in {source_file}. "
-                f"Valid values: {[m.value for m in IndexMode]}"
-            )
-
-        name = data.get("name", "")
-        if not name:
-            # Derive name from filename if not provided
-            name = source_file.replace(".yaml", "").replace(".yml", "").replace("_", " ").title()
-
-        kit = IndexKit(
-            name=name,
-            version=str(data.get("version", "1.0")),
-            description=data.get("description", ""),
-            comments=data.get("comments", ""),
-            index_mode=index_mode,
-            is_fixed_layout=data.get("is_fixed_layout", False),
-            adapter_read1=data.get("adapter_read1"),
-            adapter_read2=data.get("adapter_read2"),
-            default_index1_cycles=data.get("default_index1_cycles"),
-            default_index2_cycles=data.get("default_index2_cycles"),
-            default_read1_override=data.get("default_read1_override"),
-            default_read2_override=data.get("default_read2_override"),
-            created_by="github_sync",
-            source="github",
-        )
-
-        # A mode reads some of the three index lists and not the others, so a
-        # list it does not read went nowhere and the sync reported success: a
-        # file saying index_mode: single with an i5_indexes list synced as an
-        # i7-only kit, and samples were then demultiplexed on the i7 alone
-        # (review of 3be7a45, P1-1). Refused before anything is read, naming
-        # the list and the mode; github_sync's per-file refusal then names
-        # the file and keeps the kit of that name and version already stored.
-        read = {IndexMode.UNIQUE_DUAL: ("index_pairs",),
-                IndexMode.COMBINATORIAL: ("i7_indexes", "i5_indexes"),
-                IndexMode.SINGLE: ("i7_indexes",)}[index_mode]
-        unread = [key for key in ("index_pairs", "i7_indexes", "i5_indexes")
-                  if key not in read and data.get(key)]
-        if unread:
-            raise KitListsNotRead(
-                f"index_mode is {index_mode.value}, which reads "
-                f"{' and '.join(read)}, so this file's "
-                f"{' and '.join(unread)} would have been dropped without a word and "
-                f"nothing was read from it: give the file the mode its lists are for, "
-                f"or take the unread {'list' if len(unread) == 1 else 'lists'} out"
-            )
-
-        # Parse indexes based on mode
-        if index_mode == IndexMode.UNIQUE_DUAL:
-            kit.index_pairs = cls._parse_index_pairs(data.get("index_pairs", []), kit.name)
-        else:
-            kit.i7_indexes = cls._parse_indexes(data.get("i7_indexes", []), IndexType.I7)
-            if index_mode == IndexMode.COMBINATORIAL:
-                kit.i5_indexes = cls._parse_indexes(data.get("i5_indexes", []), IndexType.I5)
-
-        return kit
-
-    @classmethod
-    def _parse_index_pairs(cls, pairs_data: list, kit_name: str) -> list[IndexPair]:
-        """Parse index pairs from YAML data."""
-        pairs = []
-        for i, pair_data in enumerate(pairs_data):
-            name = pair_data.get("name", f"Pair_{i + 1}")
-
-            # Parse index1 (i7)
-            i1_data = pair_data.get("index1", {})
-            index1 = Index(
-                name=i1_data.get("name", name),
-                sequence=i1_data.get("sequence", ""),
-                index_type=IndexType.I7,
-                well_position=i1_data.get("well_position"),
-            )
-
-            # Parse index2 (i5) - optional
-            index2 = None
-            i2_data = pair_data.get("index2")
-            if i2_data:
-                index2 = Index(
-                    name=i2_data.get("name", name),
-                    sequence=i2_data.get("sequence", ""),
-                    index_type=IndexType.I5,
-                    well_position=i2_data.get("well_position"),
-                )
-
-            pairs.append(
-                IndexPair(
-                    id=f"{kit_name}_{name}",
-                    name=name,
-                    index1=index1,
-                    index2=index2,
-                    well_position=pair_data.get("well_position"),
-                )
-            )
-
-        return pairs
-
-    @classmethod
-    def _parse_indexes(cls, indexes_data: list, index_type: IndexType) -> list[Index]:
-        """Parse individual indexes from YAML data."""
-        indexes = []
-        for idx_data in indexes_data:
-            indexes.append(
-                Index(
-                    name=idx_data.get("name", ""),
-                    sequence=idx_data.get("sequence", ""),
-                    index_type=index_type,
-                    well_position=idx_data.get("well_position"),
-                )
-            )
-        return indexes
+        raise KitFileProblems(result.problems, source_file)

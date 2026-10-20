@@ -20,8 +20,9 @@ STRONG = "Lab-Admin-Pass-42"
 KIT_YAML = (
     b"index_mode: unique_dual\n"
     b"index_pairs:\n"
-    b"  - id: DK-P1\n"
-    b"    name: P1\n"
+    # No id: a pair's id is built from the kit's name and the pair's; the
+    # key was read by nothing and is refused now.
+    b"  - name: P1\n"
     b"    index1:\n"
     b"      name: i7-A01\n"
     b"      sequence: ATTACTCG\n"
@@ -89,7 +90,9 @@ class TestTheIndexKitUploadRefusesANameOrVersionOfDotsOnly:
         refused = _upload_kit(logged_in_client, name=name, version="1.0")
 
         assert refused.headers.get("HX-Redirect") is None
-        assert "Failed to parse file" in refused.text
+        # The box is named now, where one "Failed to parse file" stood for
+        # every fault a kit upload could have.
+        assert "Kit name" in refused.text and "dots" in refused.text
         assert len(ctx.index_kit_repo.list_all()) == before
 
     @pytest.mark.parametrize("version", DOT_ONLY)
@@ -100,7 +103,7 @@ class TestTheIndexKitUploadRefusesANameOrVersionOfDotsOnly:
         refused = _upload_kit(logged_in_client, name="DotKit", version=version)
 
         assert refused.headers.get("HX-Redirect") is None
-        assert "Failed to parse file" in refused.text
+        assert "Kit version" in refused.text and "dots" in refused.text
         assert len(ctx.index_kit_repo.list_all()) == before
 
     def test_a_name_of_dots_inside_the_file_stores_no_kit(

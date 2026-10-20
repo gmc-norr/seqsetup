@@ -107,7 +107,9 @@ i7_indexes:
         assert len(kit.i5_indexes) == 0
 
     def test_parse_minimal_kit(self):
-        """Test parsing a minimal kit with only required fields."""
+        """A synced file must write its version and its mode out: they were
+        defaulted to "1.0" and unique_dual, so the file's own name decided the
+        identity a sync compares and a wrong mode was never seen."""
         yaml_content = """
 name: "Minimal Kit"
 index_pairs:
@@ -116,12 +118,12 @@ index_pairs:
       name: "i7"
       sequence: "ATCG"
 """
-        kit = IndexKitSyncParser.parse(yaml_content, "minimal.yaml")
+        with pytest.raises(ValueError) as refused:
+            IndexKitSyncParser.parse(yaml_content, "minimal.yaml")
 
-        assert kit is not None
-        assert kit.name == "Minimal Kit"
-        assert kit.version == "1.0"  # Default
-        assert kit.index_mode == IndexMode.UNIQUE_DUAL  # Default
+        message = str(refused.value)
+        assert "version" in message and "index_mode" in message, message
+        assert "is required" in message, message
 
     def test_parse_invalid_yaml(self):
         """Test parsing invalid YAML returns None."""
@@ -146,33 +148,41 @@ index_pairs:
       name: "i7"
       sequence: "ATCG"
 """
-        kit = IndexKitSyncParser.parse(yaml_content, "bogus_mode.yaml")
-        assert kit is None
+        with pytest.raises(ValueError) as refused:
+            IndexKitSyncParser.parse(yaml_content, "bogus_mode.yaml")
+
+        message = str(refused.value)
+        assert "index_mode" in message and "line 4" in message, message
 
     def test_parse_empty_content(self):
         """Test parsing empty content returns None."""
         kit = IndexKitSyncParser.parse("", "empty.yaml")
         assert kit is None
 
-    def test_parse_derives_name_from_filename(self):
-        """Test that name is derived from filename if not provided."""
+    def test_parse_refuses_a_file_that_names_no_kit(self):
+        """A file with no name was stored under the file's own name made into
+        a title ("my_custom_kit.yaml" -> "My Custom Kit"), so the file's name
+        decided the identity the next sync compares."""
         yaml_content = """
 version: "1.0"
+index_mode: unique_dual
 index_pairs:
   - name: "P1"
     index1:
       name: "i7"
       sequence: "ATCG"
 """
-        kit = IndexKitSyncParser.parse(yaml_content, "my_custom_kit.yaml")
+        with pytest.raises(ValueError) as refused:
+            IndexKitSyncParser.parse(yaml_content, "my_custom_kit.yaml")
 
-        assert kit is not None
-        assert kit.name == "My Custom Kit"
+        assert "name" in str(refused.value) and "is required" in str(refused.value)
 
     def test_parse_with_well_positions(self):
         """Test parsing index pairs with well positions."""
         yaml_content = """
 name: "Plate Kit"
+version: "1.0"
+index_mode: unique_dual
 is_fixed_layout: true
 index_pairs:
   - name: "P1"
@@ -228,3 +238,39 @@ index_pairs:
         assert kit.default_index2_cycles == 10
         assert kit.default_read1_override == "Y*"
         assert kit.default_read2_override == "N2Y*"
+
+
+class TestEveryProblemOfAFileComesBack:
+    """``parse`` could say only the first thing wrong, as one exception; the
+    sync needs them all for the Config Sync page and its audit row, so
+    ``check`` gives a CheckResult like step 2's profile checkers."""
+
+    def test_check_gives_every_problem_with_its_line(self):
+        content = ('name: "K"\nversion: 1\nindex_mode: single\nownr: me\n'
+                   'i7_indexes:\n  - name: A\n    sequence: ACGT\n')
+
+        result = IndexKitSyncParser.check(content, "k.yaml")
+
+        assert not result.ok
+        assert [(p.line, tuple(p.path)) for p in result.problems] == [
+            (2, ("version",)), (4, ("ownr",))]
+
+    def test_check_gives_the_value_a_good_file_describes(self):
+        result = IndexKitSyncParser.check(GOOD_FOR_CHECK, "k.yaml")
+
+        assert result.ok
+        assert result.value.name == "Checked kit"
+
+    def test_a_file_that_cannot_be_read_at_all_still_comes_back_as_none(self):
+        assert IndexKitSyncParser.parse("name: [unclosed\n", "k.yaml") is None
+        assert IndexKitSyncParser.parse("", "k.yaml") is None
+
+
+GOOD_FOR_CHECK = """\
+name: "Checked kit"
+version: "1.0"
+index_mode: single
+i7_indexes:
+  - name: A1
+    sequence: ATTACTCG
+"""

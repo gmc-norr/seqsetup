@@ -36,7 +36,9 @@ class TestARepeatedKeyInASyncedKitFileIsRefused:
 
         assert not ok, message
         assert "repeated.yaml" in message
-        assert "sequence" in message and "line 9" in message, message
+        # file:line:column:, as a refused profile or instrument file is
+        # named since step 2 of the input rules.
+        assert "sequence" in message and "repeated.yaml:9:" in message, message
         assert ctx.index_kit_repo.list_synced() == []
 
     def test_the_stored_kit_stays_when_a_later_sync_repeats_a_key(
