@@ -10,6 +10,8 @@ from datetime import datetime
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
+from bson import BSON
+
 from ..data.instruments import clear_synced_instruments_cache
 from ..models.application_profile import ApplicationProfile
 from ..models.index import IndexKit
@@ -22,6 +24,7 @@ from ..repositories.test_profile_repo import TestProfileRepository
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
+from .run_exports import EXPORT_FILE_MARGIN, MAX_EXPORT_FILE
 from ..input_rules.kits import KitFileProblems, build_kit
 from ..input_rules.profiles import (
     build_application_profile,
@@ -67,6 +70,25 @@ _APP_PROFILES = "application profiles"
 _TEST_PROFILES = "test profiles"
 _INSTRUMENTS = ProfileSyncConfigRepository.INSTRUMENT_SETTINGS
 _NOTED_IN_ORDER = (_APP_PROFILES, _TEST_PROFILES, _INSTRUMENTS)
+
+# MongoDB refuses a record over 16 MiB, and the sync writes only after it has
+# deleted what it replaces, so a record too large to store took the stored
+# ones with it: a kit file under the 10 MiB download cap can be one, as each
+# pair's stored id repeats the kit's name (outside review of 51eb3c4, P2-1).
+# Each item is measured where it is built, beside its other checks, with the
+# export files' margin (services/run_exports.py); one too large is a refused
+# file, so nothing it would replace is deleted.
+_MOST_STORED_BYTES = MAX_EXPORT_FILE - EXPORT_FILE_MARGIN
+
+
+def _too_large_to_store(item) -> str:
+    """Why ``item`` cannot be stored as one record, or "" when it can."""
+    size = len(BSON.encode(item.to_dict()))
+    if size <= _MOST_STORED_BYTES:
+        return ""
+    return (f"would take {size / 2**20:.2f} MiB to store, over the "
+            f"{_MOST_STORED_BYTES / 2**20:.2f} MiB SeqSetup stores in one record "
+            "(MongoDB stores at most 16 MiB)")
 
 
 def _names(collections: list[str]) -> str:
@@ -853,6 +875,9 @@ class GitHubSyncService:
                                     if len(errors) > 1 else "")
                             raise ProfileFileRefused(problem_line(errors[0]) + more)
                         profile = build(result.value, item_name)
+                        too_large = _too_large_to_store(profile)
+                        if too_large:
+                            raise ProfileFileRefused(f"{item_path}: {too_large}")
                         profiles.append(profile)
                         if paths is not None:
                             paths.append(item_path)
@@ -941,6 +966,10 @@ class GitHubSyncService:
                     for warning in result.problems:
                         logger.warning(f"Instrument file {problem_line(warning)}")
                     parsed = definitions_from(result.value, item_name)
+                    for definition in parsed:
+                        too_large = _too_large_to_store(definition)
+                        if too_large:
+                            raise InstrumentFileRefused(too_large)
                 except InstrumentFileRefused as e:
                     text = str(e) if str(e).startswith(item_path + ":") else f"{item_path}: {e}"
                     refused.append(text)
@@ -1169,6 +1198,14 @@ class GitHubSyncService:
                                         "kit": f"{kit.name} {kit.version}",
                                         "reason": "a kit of this name and version was uploaded "
                                                   "through SeqSetup, and the uploaded one is kept",
+                                    })
+                            elif validation.is_valid and (too_large := _too_large_to_store(kit)):
+                                logger.error(f"Index kit '{kit.name}' {kit.version} ({item_path}) "
+                                             f"{too_large}")
+                                if refused is not None:
+                                    refused.append({
+                                        "path": item_path, "name": kit.name,
+                                        "kit": f"{kit.name} {kit.version}", "reason": too_large,
                                     })
                             elif validation.is_valid:
                                 index_kits.append(kit)

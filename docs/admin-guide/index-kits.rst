@@ -169,6 +169,12 @@ Before a kit is saved, SeqSetup checks, in order:
    and the sync names the file and why. A synced kit file that gives one key
    twice is refused the same way -- YAML would keep the last value and lose
    the first -- and the stored kit of that name and version stays as it was.
+   So is a kit too large to store as one record: MongoDB stores at most
+   16 MiB in one, and a file under the sync's 10 MiB download limit can be
+   more once stored, because each pair's stored id repeats the kit's name.
+   The sync deletes what it replaces before it writes, so such a kit took
+   the stored synced kits with it; every kit, profile and instrument a sync
+   reads is now measured first, and one too large is a refused file.
 5. **Name + version clash** -- a kit with the same name and version already
    present is rejected rather than silently overwritten. A kit deleted
    and then uploaded again under its name and version is stored, even
