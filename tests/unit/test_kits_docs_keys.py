@@ -30,3 +30,17 @@ def test_the_guide_names_the_settings_command_options():
     text = GUIDE.read_text()
 
     assert "--index-kits" in text and "--no-index-kits" in text
+
+
+DB_GUIDE = GUIDE.parent.parent / "getting-started" / "configuration.rst"
+
+
+def test_the_configuration_guide_names_the_database_file_s_rules():
+    """The one page a lab reads about config/mongodb.yaml must say what the
+    rules refuse, in the words the code uses (break row W22)."""
+    text = DB_GUIDE.read_text()
+
+    flat = " ".join(text.split())
+    for said in ("``mongodb``", "``uri``", "``database``", "``mongodb://``",
+                 "``mongodb+srv://``", "63 bytes", "--local-database"):
+        assert said in flat, said

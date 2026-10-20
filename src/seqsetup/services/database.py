@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import unquote, unquote_plus
 
-import yaml
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.errors import ConnectionFailure, OperationFailure
+
+from ..input_rules.database import check_database_file, check_setting
+from ..input_rules.problems import problem_line
 
 logger = logging.getLogger(__name__)
 
@@ -89,48 +91,81 @@ def _safe(error: BaseException, uri: str) -> str:
     return f"{type(error).__name__}: {text}"
 
 
-def _yaml_refusal(broken: Exception) -> ValueError:
-    """What to raise for a ``config/mongodb.yaml`` that is not YAML: the file
-    and the place, never the message.
-
-    PyYAML's message quotes the line it stumbled on, and that line holds the
-    connection string -- password included. Measured: it does so for YAML
-    given as a *string*, and not for YAML given as an open file, which is how
-    this function reads it. So this is a guard rather than a live leak: it
-    makes the rule hold whichever way the file is loaded, because reading the
-    text first (``yaml.safe_load(f.read())``) is a small-looking change that
-    would otherwise put the password in the message.
-    """
-    mark = getattr(broken, "problem_mark", None) or getattr(broken, "context_mark", None)
-    where = (f" at line {mark.line + 1}, column {mark.column + 1}"
-             if mark is not None else "")
+def _refusal(problems) -> ValueError:
+    """One refusal naming every error of the settings file, each with its
+    line, column and place. No value of the file is in it: the rules build
+    every message themselves and scrub the file's own text out of it
+    (``input_rules/check.py``, a sensitive input), where PyYAML's own message
+    quotes the line it stumbled on -- and that line holds the connection
+    string."""
+    said = "; ".join(problem_line(p) for p in problems if p.level == "error")
     return ValueError(
-        f"{CONFIG_PATH} could not be read as YAML{where}: "
-        f"{type(broken).__name__}. The message is not repeated here: it can "
-        f"quote the line, and that line holds the connection string."
+        f"{CONFIG_PATH} cannot be used: {said}. No value of the file is "
+        f"repeated here: it can hold the connection string."
     )
 
 
+def _from_the_environment() -> dict:
+    """The two variables, whose meaning is unchanged: they win over the file,
+    and MONGODB_DATABASE alone still means nothing. Their values go through
+    the same rules as the file's, naming the variable where a file's problem
+    names a line: a MONGODB_DATABASE holding a '.' reached
+    ``_client[name]``, which is outside ``init_db``'s try."""
+    settings = {
+        "uri": os.environ["MONGODB_URI"],
+        "database": os.environ.get("MONGODB_DATABASE", "seqsetup"),
+    }
+    said = [problem for variable, key in (("MONGODB_URI", "uri"),
+                                          ("MONGODB_DATABASE", "database"))
+            for problem in check_setting(variable, settings[key])]
+    if said:
+        raise ValueError(
+            "The database settings in the environment cannot be used: "
+            + "; ".join(said) + ". No value is repeated here: it can hold the "
+            "connection string."
+        )
+    return settings
+
+
 def _load_config() -> dict:
-    """Load MongoDB configuration from file or environment."""
-    # Environment variable takes precedence
-    mongo_uri = os.environ.get("MONGODB_URI")
-    if mongo_uri:
-        return {
-            "uri": mongo_uri,
-            "database": os.environ.get("MONGODB_DATABASE", "seqsetup"),
-        }
+    """The connection string and the database name, from the environment or
+    from ``config/mongodb.yaml``.
 
-    # Fall back to config file
-    if CONFIG_PATH.exists():
-        with open(CONFIG_PATH) as f:
-            try:
-                config = yaml.safe_load(f)
-            except yaml.YAMLError as broken:
-                raise _yaml_refusal(broken) from None
-            return config.get("mongodb", {})
+    Three cases, as before: the environment wins; a file that is there must
+    be right; and no file at all means the local default. What a file that is
+    there says is now checked -- a misspelt ``mongodb:`` key meant
+    ``mongodb://localhost:27017``, a different server, without a word
+    (docs/design/2026-10-18-input-rules-design.md, step 4).
+    """
+    if os.environ.get("MONGODB_URI"):
+        logger.info("Database settings: from the environment (MONGODB_URI)")
+        return _from_the_environment()
 
-    # Default configuration
+    # lexists, not exists: Path.exists() says no for a dangling link, a link
+    # loop and an unreadable parent as well as for a file that is not there,
+    # so a file the operator DID configure -- a secret mount is a link --
+    # quietly became the local default (fresh review of 6164dd9, P1-1).
+    if os.path.lexists(CONFIG_PATH):
+        logger.info("Database settings: from %s", CONFIG_PATH)
+        try:
+            text = CONFIG_PATH.read_text(encoding="utf-8")
+        except OSError as e:
+            raise ValueError(
+                f"{CONFIG_PATH} cannot be read ({e.strerror or type(e).__name__})") from None
+        except UnicodeDecodeError:
+            # Not the exception's message: it names a byte of the file and
+            # where it is, and that byte can be part of the password.
+            raise ValueError(f"{CONFIG_PATH} is not UTF-8 text") from None
+        result = check_database_file(text, str(CONFIG_PATH))
+        for problem in result.problems:
+            if problem.level != "error":
+                logger.warning("Database settings: %s", problem_line(problem))
+        if not result.ok:
+            raise _refusal(result.problems)
+        return {"uri": result.value.mongodb.uri, "database": result.value.mongodb.database}
+
+    logger.info("Database settings: no database settings file at %s, so the local "
+                "default is used", CONFIG_PATH)
     return {
         "uri": "mongodb://localhost:27017",
         "database": "seqsetup",
@@ -145,8 +180,12 @@ def init_db() -> Database:
         return _db
 
     config = _load_config()
-    uri = config.get("uri", "mongodb://localhost:27017")
-    database_name = config.get("database", "seqsetup")
+    # Both keys are always there: _load_config builds them from a checked
+    # value, from the checked environment, or from the local default. The
+    # ``.get`` defaults these two lines had were a second silent fallback to
+    # localhost.
+    uri = config["uri"]
+    database_name = config["database"]
 
     try:
         _client = MongoClient(

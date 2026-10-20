@@ -18,6 +18,16 @@ from .reader import MAX_PROBLEMS_PER_FILE, Locations, read_yaml
 
 FURTHER_CHECKS = "Further checks run once these problems are fixed."
 UNKNOWN_KEY = "an unknown key"
+# What a sensitive file's own text is replaced with wherever it appears in a
+# message. A string shorter than this is not replaced: a two-letter value
+# would turn a message into asterisks, as ``database._safe`` reasons about a
+# short user name, and a value that short is no secret.
+MASKED = "***"
+SHORTEST_MASKED = 4
+# How many of a sensitive file's strings one pattern holds. A file of 20,000
+# keys is the operator's own, but the pattern is built for every problem list
+# and must not grow with the file without bound.
+MOST_SECRETS = 2000
 
 
 @dataclass(frozen=True)
@@ -50,6 +60,52 @@ class CheckResult:
 CrossCheck = Callable[[Any], Iterable[Finding]]
 
 
+def _strings_in(data, found: Optional[set] = None) -> set:
+    """Every string the data holds, values and map keys, at every depth. A
+    sensitive file's messages are scrubbed of these, so no message can quote
+    a value even if a validator tries to."""
+    found = set() if found is None else found
+    if isinstance(data, str):
+        found.add(data)
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            _strings_in(key, found)
+            _strings_in(value, found)
+    elif isinstance(data, (list, tuple)):
+        for item in data:
+            _strings_in(item, found)
+    return found
+
+
+def _secret_pattern(secrets: tuple):
+    """One pattern for every string of a sensitive file, longest first so
+    taking one out does not leave half of another behind, and ignoring case
+    because a server's message can repeat a value in another case -- the
+    same reasoning as ``services/database.py: _credentials``.
+
+    One pattern, not one ``str.replace`` per secret: a 2 MiB file of bad keys
+    made 20,000 secrets, and replacing each in each of 1,000 messages took 90
+    seconds (fresh review of 6164dd9, P3-6).
+    """
+    import re
+
+    return re.compile("|".join(re.escape(text) for text in secrets), re.IGNORECASE)
+
+
+def _scrubbed(problem: InputProblem, pattern) -> InputProblem:
+    """``problem`` with the file's own text taken out of its message.
+
+    ``sensitive`` masks a problem's PATH; a validator's own ``ValueError``
+    text goes through ``_message`` as it is, so a rule written
+    ``f"may not hold '/': {value!r}"`` would quote a password.
+    """
+    message = pattern.sub(MASKED, problem.message)
+    if message == problem.message:
+        return problem
+    return InputProblem(problem.file, problem.line, problem.column, problem.path,
+                        message, problem.level)
+
+
 def check_yaml(
     text: str,
     file: str,
@@ -61,8 +117,9 @@ def check_yaml(
     retired_keys: Optional[dict[str, str]] = None,
 ) -> CheckResult:
     """Check one YAML file against ``rulebook``. A ``sensitive`` file (one that
-    can hold a secret) never has a value quoted, and a key name the rulebook
-    does not define is kept only as "an unknown key"."""
+    can hold a secret) never has a value quoted, a key name the rulebook
+    does not define is kept only as "an unknown key", and the file's own text
+    is taken out of every message."""
     read = read_yaml(text, file, values_safe=not sensitive)
     if read.problems:
         return reader_refusal(read.problems, rulebook, sensitive)
@@ -99,7 +156,7 @@ def check_data(
     except ValidationError as error:
         problems = _from_pydantic_errors(error.errors(include_url=False), data, locations, file,
                                          retired_keys or {})
-        return _result(None, problems, FURTHER_CHECKS, rulebook, sensitive)
+        return _result(None, problems, FURTHER_CHECKS, rulebook, sensitive, data)
 
     problems = [
         _from_finding(finding, data, locations, file, "error")
@@ -107,17 +164,26 @@ def check_data(
         for finding in check(value)
     ]
     if problems:
-        return _result(None, problems, "", rulebook, sensitive)
+        return _result(None, problems, "", rulebook, sensitive, data)
     if warnings is not None:
         problems = [_from_finding(finding, data, locations, file, "warning")
                     for finding in warnings(value)]
-    return _result(value, problems, "", rulebook, sensitive)
+    return _result(value, problems, "", rulebook, sensitive, data)
 
 
-def _result(value, problems, note, rulebook, sensitive) -> CheckResult:
+def _result(value, problems, note, rulebook, sensitive, data=None) -> CheckResult:
     if sensitive:
         known = _field_names(rulebook)
         problems = [_masked(problem, known) for problem in problems]
+        # Not the names the rulebook itself defines: those are public, and
+        # a key named "mongodb" would turn "must begin mongodb://" into
+        # "must begin ***://".
+        secrets = tuple(sorted((text for text in _strings_in(data)
+                                if len(text) >= SHORTEST_MASKED and text not in known),
+                               key=len, reverse=True))[:MOST_SECRETS]
+        if secrets:
+            pattern = _secret_pattern(secrets)
+            problems = [_scrubbed(problem, pattern) for problem in problems]
     if len(problems) > MAX_PROBLEMS_PER_FILE:
         rest = problems[MAX_PROBLEMS_PER_FILE:]
         last = problems[MAX_PROBLEMS_PER_FILE - 1]

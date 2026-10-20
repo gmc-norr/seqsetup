@@ -35,7 +35,8 @@ def _run(*args, probe=False, kits=False):
             f"status = cli.main({list(args)!r})\n"
             "loaded = [m for m in ('seqsetup.data.instruments', 'seqsetup.services.github_sync',"
             " 'seqsetup.startup', 'pymongo.mongo_client', 'seqsetup.services.sheet_plan',"
-            " 'seqsetup.services.cycle_calculator') if m in sys.modules]\n"
+            " 'seqsetup.services.cycle_calculator', 'seqsetup.services.database')"
+            " if m in sys.modules]\n"
             "print('LOADED', loaded)\n"
             "sys.exit(status)\n"
         )
@@ -351,9 +352,10 @@ class TestJsonSchemas:
 
         assert done.returncode == 0, done.stderr
         written = sorted(p.name for p in tmp_path.iterdir())
-        assert written == ["application-profile.schema.json", "index-kit.schema.json",
-                           "instrument.schema.json", "instruments-file.schema.json",
-                           "local-instruments.schema.json", "test-profile.schema.json"]
+        assert written == ["application-profile.schema.json", "database.schema.json",
+                           "index-kit.schema.json", "instrument.schema.json",
+                           "instruments-file.schema.json", "local-instruments.schema.json",
+                           "test-profile.schema.json"]
         for name in written:
             schema = json.loads((tmp_path / name).read_text())
             assert schema["additionalProperties"] is False, name
@@ -493,5 +495,51 @@ class TestIndexKitFiles:
         (folder / "indexes" / "dual.yaml").write_text(KIT)
 
         done = _run(str(folder), "--index-kits", "indexes", kits=True)
+
+        assert done.returncode == 0, done.stdout + done.stderr
+
+
+DB_FILE = 'mongodb:\n  uri: "mongodb://db:27017/seqsetup"\n  database: "seqsetup"\n'
+
+
+class TestADatabaseSettingsFile:
+    """It is checked only when told to -- a settings repository does not hold
+    one -- and nothing in this command ever connects to anything."""
+
+    def test_the_shipped_file_passes(self, tmp_path):
+        done = _run(str(_folder(tmp_path, {"good.yaml": GOOD})),
+                    "--local-database", str(CONFIG / "mongodb.yaml"))
+
+        assert done.returncode == 0, done.stdout + done.stderr
+
+    def test_a_misspelt_key_is_named_with_its_line(self, tmp_path):
+        path = tmp_path / "mongodb.yaml"
+        path.write_text(DB_FILE.replace("mongodb:", "mongdb:"))
+
+        done = _run(str(_folder(tmp_path, {"good.yaml": GOOD})),
+                    "--local-database", str(path))
+
+        assert done.returncode == 1
+        assert "mongodb.yaml:1:1: mongodb: is required" in done.stdout, done.stdout
+
+    def test_no_value_of_the_file_is_printed(self, tmp_path):
+        path = tmp_path / "mongodb.yaml"
+        path.write_text('mongodb:\n  uri: "mongodb://u:s3cr3t-pw@db"\n  database: "a b"\n')
+
+        done = _run(str(_folder(tmp_path, {"good.yaml": GOOD})),
+                    "--local-database", str(path))
+
+        assert done.returncode == 1
+        assert "s3cr3t-pw" not in done.stdout and "s3cr3t-pw" not in done.stderr
+
+    def test_a_file_that_is_a_link_is_read_as_the_file_it_names(self, tmp_path):
+        """A mongodb.yaml is often a secret mount, which is a link."""
+        real = tmp_path / "real.yaml"
+        real.write_text(DB_FILE)
+        link = tmp_path / "mongodb.yaml"
+        link.symlink_to(real)
+
+        done = _run(str(_folder(tmp_path, {"good.yaml": GOOD})),
+                    "--local-database", str(link))
 
         assert done.returncode == 0, done.stdout + done.stderr
