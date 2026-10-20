@@ -147,7 +147,10 @@ paste or type into the box yourself is read up to 1 MB.
    and the whole paste with it (*"Row(s) <line numbers>: the sample_id is
    longer than 256 characters. SeqSetup does not shorten it; shorten it in
    the source."*). A cut ID would be another ID: two IDs alike in their
-   first 256 characters would become one.
+   first 256 characters would become one. An i7 or i5 sequence longer than
+   256 characters is refused the same way (*"Row(s) <line numbers>: the i7
+   index is longer than 256 characters. SeqSetup does not shorten it; fix
+   it in the source."*): a cut index would be another index.
 
 Two other things block the whole paste before you can add it: the same
 sample ID appearing more than once in the pasted text (SeqSetup cannot
@@ -222,10 +225,10 @@ assigned immediately, with Override Cycles calculated automatically.
    as text (*"LIMS row(s) <positions>: A sample ID made only of zeros is
    not a sample ID -- a LIMS may use 0 for an empty well. Fix the upstream
    record(s) before retrying."*) -- a LIMS may use 0 for an empty well.
-   So is a row whose sample ID, test or worksheet ID is longer than 256
-   characters (*"LIMS row(s) <positions>: the sample_id is longer than 256
-   characters. SeqSetup does not shorten it. Fix the upstream record(s)
-   before retrying."*): it is never cut.
+   So is a row whose sample ID, test, worksheet ID or i7 or i5 sequence is
+   longer than 256 characters (*"LIMS row(s) <positions>: the sample_id is
+   longer than 256 characters. SeqSetup does not shorten it. Fix the
+   upstream record(s) before retrying."*): it is never cut.
    So is a row with a field that looks like an index or a lane but is not
    one SeqSetup reads, such as ``index``, ``Index 2`` or ``lane``
    (*"LIMS row(s) 1: the field(s) "index" look like an index or a lane,

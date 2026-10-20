@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from ..models.index import VALID_DNA_RE
 from ..models.sample import (
     MAX_SAMPLE_TEXT,
     TEST_VERSION_RE,
@@ -15,17 +16,12 @@ from ..models.sample import (
 )
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 
-# DNA sequence validation pattern (compiled once at module level).
-# \Z (not $) so a trailing newline can't slip through — $ also matches just
-# before a final newline. Cells are stripped before this runs, but keep the
-# anchor strict for defense in depth and consistency with models/index.py.
-_VALID_DNA_RE = re.compile(r'^[ACGTN]*\Z')
-
 # Per-cell character cap. Matches the 256 limit applied by routes' sanitize_string()
 # on form-submitted fields, so pasted/imported values arrive at the model layer
-# already bounded. A sample ID or test cell over it is refused instead, never
-# cut (spec 2026-10-14 long sample text): the cut is for the cells that do not
-# become one of them.
+# already bounded. A sample ID, test or index sequence cell over it is refused
+# instead, never cut (spec 2026-10-14 long sample text; the user's word of
+# 2026-10-20 for a sequence): the cut is for the cells that do not become one
+# of them.
 _MAX_CELL_LEN = MAX_SAMPLE_TEXT
 
 
@@ -363,7 +359,8 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     # after the previous record ended.
     rows: list[tuple[int, list[str]]] = []
     # The columns of each line whose cell was longer than _MAX_CELL_LEN,
-    # before the cut, so a sample ID or test that long is refused.
+    # before the cut, so a sample ID, test or index sequence that long is
+    # refused.
     long_cells: dict[int, set[int]] = {}
     start_line = 1
     while True:
@@ -404,6 +401,7 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     rows_zero_sample_id: list[int] = []
     rows_long_sample_id: list[int] = []
     rows_long_test: list[int] = []
+    rows_long_index: dict[str, list[int]] = {"index1": [], "index2": []}
     rows_bad_version: list[int] = []
     unnamed_cells: list[tuple[int, int]] = []
     header: list[str] = []
@@ -490,6 +488,13 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
         if column_mapping.get("test_id", None if header_detected else 1) in too_long:
             rows_long_test.append(source_line)
             continue
+        # A sequence too: a cut index is another index, and the cut could take
+        # a character that is not DNA away with it.
+        long_index = next((field for field in ("index1", "index2")
+                           if field in column_mapping and column_mapping[field] in too_long), None)
+        if long_index:
+            rows_long_index[long_index].append(source_line)
+            continue
 
         # A version is at most 29 characters, so a cell cut to _MAX_CELL_LEN
         # is still refused: no cut makes a version good (spec 2026-10-07
@@ -506,13 +511,13 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
         index2_upper = index2.upper() if index2 else ""
 
         # Check for invalid DNA characters
-        if index1_upper and not _VALID_DNA_RE.match(index1_upper):
+        if index1_upper and not VALID_DNA_RE.match(index1_upper):
             invalid_chars = set(index1_upper) - set("ACGTN")
             raise ValueError(
                 f"Invalid characters in index1 for sample '{sample_id}': {invalid_chars}. "
                 f"Only A, C, G, T, N are allowed."
             )
-        if index2_upper and not _VALID_DNA_RE.match(index2_upper):
+        if index2_upper and not VALID_DNA_RE.match(index2_upper):
             invalid_chars = set(index2_upper) - set("ACGTN")
             raise ValueError(
                 f"Invalid characters in index2 for sample '{sample_id}': {invalid_chars}. "
@@ -560,6 +565,13 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
             raise ValueError(
                 f"Row(s) {rows_str}: {what} is longer than {MAX_SAMPLE_TEXT} characters. "
                 f"SeqSetup does not shorten it; shorten it in the source."
+            )
+    for field, what in (("index1", "the i7 index"), ("index2", "the i5 index")):
+        if rows_long_index[field]:
+            rows_str = ", ".join(str(n) for n in rows_long_index[field])
+            raise ValueError(
+                f"Row(s) {rows_str}: {what} is longer than {MAX_SAMPLE_TEXT} characters. "
+                f"SeqSetup does not shorten it; fix it in the source."
             )
     if rows_bad_version:
         rows_str = ", ".join(str(n) for n in rows_bad_version)

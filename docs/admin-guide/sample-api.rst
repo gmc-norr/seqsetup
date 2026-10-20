@@ -251,10 +251,11 @@ import too: SeqSetup would read only one of them. Lanes are never read
 from the LIMS: the user picks them on the import, as for a paste (see
 :doc:`/user-guide/samples`). The iGene API sends no such field.
 
-Every value pulled from a sample row is trimmed. A sample ID, test or
-worksheet ID longer than 256 characters refuses the whole worklist, naming
-its rows -- it is never cut, as a cut ID would be another ID; any other
-value is capped at 256 characters. An index sequence is uppercased and checked against
+Every value pulled from a sample row is trimmed. A sample ID, test,
+worksheet ID or index sequence longer than 256 characters refuses the whole
+worklist, naming its rows -- it is never cut, as a cut ID would be another
+ID and a cut index another index; any other value is capped at 256
+characters. An index sequence is uppercased and checked against
 ``[ACGTN]`` before it is accepted -- naming the offending sample instead of
 failing with an unrelated server error later. An i7 or i5 name without the
 sequence for it, or an index pair name with no sequence at all, rejects the

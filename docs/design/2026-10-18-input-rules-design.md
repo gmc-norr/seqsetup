@@ -1474,6 +1474,32 @@ would make a patient's name the sample ID (a fresh review of this design
 measured exactly that before the table was frozen). Everything else is the
 guard, the design and the three questions.
 
+### The user's word (2026-10-20)
+
+**C**, and **B for Q7**; the run's picks for Q1-Q5 stand as built.
+
+- **One DNA rule.** `VALID_DNA_RE` in `models/index.py`; the paste, the LIMS
+  import and the forms (`forms/validators.py`, a fourth copy written
+  `[ACGTN]*` with `fullmatch`, the same rule) import it. The LIMS import's
+  bound is `MAX_SAMPLE_TEXT` by name, as the paste's already was.
+  `tests/unit/test_dna_rule_and_bound_written_once.py` fails on a copy. The
+  "looks like DNA" patterns of the paste preview and the kit reader are other
+  rules and stay. No row predicate is extracted: the five shared row rules
+  already have one definition in `models/sample.py`. The guard passed
+  unchanged.
+- **An index sequence over 256 characters is refused, never cut**, in both
+  readers, naming its rows, in the deferred stage beside a long sample ID or
+  test (so a row's long index stops its own later checks, and a bad sequence
+  on another row is still said first): *"Row(s) 2: the i7 index is longer
+  than 256 characters. SeqSetup does not shorten it; fix it in the source."*
+  and *"LIMS row(s) 1: the i7 index is longer than 256 characters. SeqSetup
+  does not shorten it. Fix the upstream record(s) before retrying."* The cut
+  could take a character that is not DNA away with it. This is the one
+  accept-to-refuse change of step 5: the guard's record changes for the five
+  cases that held a long sequence, and fourteen cases are added (256 read
+  whole, 257 refused, an i5, two rows named, a long index beside a bad
+  sequence on another row and on its own row, in both orders).
+
 ## Later steps (each adds its details to this note, or a note of its own)
 
 2. **Profiles**: built as step 2, above.
