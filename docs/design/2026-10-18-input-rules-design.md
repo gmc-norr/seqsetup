@@ -1496,8 +1496,9 @@ guard, the design and the three questions.
   does not shorten it. Fix the upstream record(s) before retrying."* The cut
   could take a character that is not DNA away with it. This is the one
   accept-to-refuse change of step 5: the guard's record changes for the five
-  cases that held a long sequence, and ten cases are added (256 read whole,
-  257 refused, an i5, two rows named, a long index beside a bad sequence).
+  cases that held a long sequence, and fourteen cases are added (256 read
+  whole, 257 refused, an i5, two rows named, a long index beside a bad
+  sequence on another row and on its own row, in both orders).
 
 ## Later steps (each adds its details to this note, or a note of its own)
 

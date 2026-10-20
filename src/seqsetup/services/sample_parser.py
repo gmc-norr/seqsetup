@@ -359,7 +359,8 @@ def read_pasted_samples(paste_data: str) -> PasteReadResult:
     # after the previous record ended.
     rows: list[tuple[int, list[str]]] = []
     # The columns of each line whose cell was longer than _MAX_CELL_LEN,
-    # before the cut, so a sample ID or test that long is refused.
+    # before the cut, so a sample ID, test or index sequence that long is
+    # refused.
     long_cells: dict[int, set[int]] = {}
     start_line = 1
     while True:

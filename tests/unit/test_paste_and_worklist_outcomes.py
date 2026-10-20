@@ -161,6 +161,12 @@ def paste_corpus():
             "sample_id,index\nS1," + "A" * 257 + "\nS2,ATTAXTCG\n",
         "a long i7 and a long i5 on one row":
             "sample_id,index,index2\nS1," + "A" * 257 + "," + "C" * 257 + "\n",
+        # A long index stops its own row's later checks, and bad DNA on an
+        # earlier row is still said first (fresh review of 5eab8e2, P3-1).
+        "a long i7 and a bad i5 on one row":
+            "sample_id,index,index2\nS1," + "A" * 257 + ",TAXA\n",
+        "bad DNA on row 2, a long i7 on row 3":
+            "sample_id,index\nS1,ATTAXTCG\nS2," + "A" * 257 + "\n",
         "an i7 of 256 good bases and 44 that are not DNA":
             "sample_id,index\nS1," + "A" * 256 + "X" * 44 + "\n",
         "an i5 of 300 bases": "sample_id,index,index2\nS1,ATTACTCG," + "A" * 300 + "\n",
@@ -270,6 +276,10 @@ def worklist_corpus():
             {"sample_id": "S3", "index_i7": "C" * 300}],
         "a long i7 in row 1, a bad i7 in row 2": [
             {"sample_id": "S1", "index_i7": "A" * 257}, {"sample_id": "S2", "index_i7": "ATTAXTCG"}],
+        "a long i7 and a bad i5 in one row": [
+            {"sample_id": "S1", "index_i7": "A" * 257, "index_i5": "TAXA"}],
+        "a bad i7 in row 1, a long i7 in row 2": [
+            {"sample_id": "S1", "index_i7": "ATTAXTCG"}, {"sample_id": "S2", "index_i7": "A" * 257}],
         "one sample over the cap": [{"sample_id": f"S{n}"} for n in range(5001)],
     }
     # One case per field name the LIMS import reads, so dropping an alias is
@@ -313,6 +323,10 @@ def mapped_corpus():
 # What each paste gives today: ('read', rows, header_found, columns_used,
 # columns_unused), or ('refused', the exception's type, the words).
 PASTES = {
+    'bad DNA on row 2, a long i7 on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S1': {'X'}. Only A, C, G, T, N are allowed."),
+    'a long i7 and a bad i5 on one row':
+        ('refused', 'ValueError', 'Row(s) 2: the i7 index is longer than 256 characters. SeqSetup does not shorten it; fix it in the source.'),
     'a long i7 and a long i5 on one row':
         ('refused', 'ValueError', 'Row(s) 2: the i7 index is longer than 256 characters. SeqSetup does not shorten it; fix it in the source.'),
     'a long i7 on row 2, bad DNA on row 3':
@@ -577,6 +591,10 @@ PASTES = {
 
 # What each worklist gives today.
 WORKLISTS = {
+    'a bad i7 in row 1, a long i7 in row 2':
+        ('refused', 'ValueError', "Sample 'S1' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
+    'a long i7 and a bad i5 in one row':
+        ('refused', 'ValueError', 'LIMS row(s) 1: the i7 index is longer than 256 characters. SeqSetup does not shorten it. Fix the upstream record(s) before retrying.'),
     'a long i7 in row 1, a bad i7 in row 2':
         ('refused', 'ValueError', "Sample 'S2' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
     'long i7s in rows 1 and 3':
