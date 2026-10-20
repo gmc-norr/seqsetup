@@ -1286,19 +1286,201 @@ word" is no longer true of any path.
 - The guard test covers the new rulebook. Break checks. The full check with
   the 78 Sample Sheets unchanged. A fresh review.
 
+## Step 5: pasted samples and LIMS worklists
+
+These are the most patient-critical inputs the app has, and they are already
+the strictest: both refuse the **whole** input and name the rows
+(`ZERO_SAMPLE_ID_RULE`, "Never silently discard rows" in CLAUDE.md), both
+refuse a column or a field that looks like an index or a lane but is not one
+they read ("A paste never guesses an index column"), and both refuse sample
+text over 256 characters rather than cut it. **Their behaviour must not
+change.**
+
+### What this step is, and what it is not
+
+The move is mechanical: `services/sample_parser.py: read_pasted_samples` and
+`services/sample_api.py: parse_api_samples` keep their adapters -- a
+headerless paste, the column and field aliases, the LIMS field-name mapping, a
+sample ID sent as a JSON number, unrelated LIMS metadata ignored -- and the
+**row** they have adapted is checked by one strict rulebook instead of by the
+checks written inline. It is worth doing only if it changes **no outcome**:
+
+- for every input the release before accepts, the same samples come out --
+  every field, in order, with the same lanes, indexes, kit, test, test version
+  and worksheet;
+- for every input it refuses, this one refuses too, and the message says the
+  same or more.
+
+Neither of those can be argued; they have to be **measured**, over a corpus
+wide enough that a difference shows. So this step builds the measurement
+first, as its own deliverable, and the move only after.
+
+### The guard, built first
+
+`tests/unit/test_paste_and_worklist_outcomes.py` records what today's readers
+do with a corpus written for it -- 107 paste texts, 81 worklist payloads and 3
+read with a LIMS field mapping: header spellings and case, column order, tabs
+against commas, CRLF, a byte order mark, trailing blank rows, quoted cells, a
+number as an ID, extra metadata, long and short rows, 256 and 257 characters,
+IDs of zeros, a multi-line cell, an unnamed column, one case for **every
+column name the paste reads and every field name the LIMS import reads**,
+more samples than a run holds, a double quote that is not closed, and -- the
+case a fresh review of the first version showed was missing -- **three
+samples each carrying its own i7 and i5**, so an index exchanged between two
+rows is seen. For each one it asserts the outcome exactly: the samples field
+by field (every field of `ParsedSample`, taken from the dataclass so a new one
+is compared too), or the refusal's own exception type and words.
+
+The first version of this file held one sample per index-carrying case, and a
+fresh review wrote 24 behaviour-changing mutations of which **20 passed it**.
+Every one of those is now a case or an assertion, and
+`harness/rows_samples.py` keeps 16 of them as break rows.
+
+That file is **what a move would be held to**, and it is useful on its own: it
+holds the two readers to their behaviour whoever changes them next. It is not a
+proof that a move is safe -- a fresh review of this design wrote the one
+mutation it could not see, the DNA refusal deferred instead of raised inside
+the row loop, and all 216 assertions passed while three real pastes changed
+their message. Those cases are in it now (every immediate-against-deferred
+fault pair, in both orders and on one row, and the cap against a deferred
+fault both ways round), and the lesson stands: the file holds what it has a
+case for, and a move must come with the cases its own shape needs.
+
+### Where the rulebook would sit
+
+`input_rules/samples.py`, one rulebook for **one adapted row**:
+
+| Key | Rule |
+|---|---|
+| `sample_id` | filled text, not made only of zeros (`ZERO_SAMPLE_ID_RULE`); **the adapter refuses it over 256, never cuts it** |
+| `test_id` | text; **the adapter refuses it over 256** |
+| `worksheet_id` | text; **the adapter cuts it at 256**. LIMS-only: the paste has no such column and `ParsedSample` no such field |
+| `test_version` | text matching `TEST_VERSION_RE` (`1`, `1.2`, `1.2.3`) or absent |
+| `index1_sequence`, `index2_sequence` | DNA text of `[ACGTN]` after uppercasing. **The adapter cuts at 256, it does not refuse** (measured: a 300-base i7 is stored as 256 today, and a non-DNA character past 256 is cut away with it), so **the rulebook may not bound them** unless that is a listed accept-to-refuse change |
+| `index_pair_name`, `index1_name`, `index2_name` | text; **the adapter cuts at 256** |
+| `line` | the source line, which the adapter fills and nothing checks |
+
+**Which stage owns the 256 is written out above, field by field**, because the
+two readers do not agree: the sample text is **refused** over 256 and
+everything else is **cut**. A rulebook bound where the adapter cuts would be an
+accept-to-refuse change, which is what Q7 asks the user about.
+
+**An unknown key is the one place this series' `extra="forbid"` does not
+hold.** A LIMS row legitimately carries clinical metadata a lab's own system
+needs, and a paste may carry a column SeqSetup does not read; both are
+accepted today, and only a column or field that **looks like an index or a
+lane** is refused. The adapters therefore pass the rulebook **only the keys it
+names** and drop the rest -- they never hand it the row as the LIMS sent it.
+This is deliberate, it is the one departure in the series, and it has to be
+written down: a builder inheriting `StrictRules` without reading this would
+refuse a worklist a lab sends every day. A `field_mappings` entry for a field
+SeqSetup does not know puts that key into the adapted row today (measured),
+and the guard has a case for it.
+
+**Lanes are not in it**: neither reader gives a sample a lane -- they come
+from `_picked_lanes` in `routes/samples.py` after the read -- so a rulebook
+field for them would be a field nothing fills, and the guard above cannot see
+one either. "No page gives a sample no lane" stays the route's rule.
+
+The rules that are **about the worklist rather than the row** stay where they
+are, because they need every row at once or the file's own words. The paste's
+thirteen: the unreadable line, the multi-line cell, no header row with more
+than two columns, a column that is not read, a first column taken as the ID, a
+column with no header name, the delimiter, the header ranking, the rows with no
+`sample_id`, the rows whose ID is all zeros, and the long-ID, long-test and
+bad-version refusals that **name every such row in one message**, plus
+`MAX_SAMPLES_PER_RUN`. The LIMS import's thirteen: the non-map row, a field
+that looks like an index or a lane, two names for one index, two field names
+differing only in capitals, the JSON-type check on each of seven fields, the
+**repeated sample ID** (a true whole-worklist rule), the long-text refusals,
+`MAX_SAMPLES_PER_RUN` and the field-name mapping.
+
+Two of them are not symmetrical, and one row rulebook has to say which it
+follows: **"a test version but no test"** is a LIMS rule the paste does not
+have (measured: the same row reads as a sample with a version and no test on
+the paste path and is refused on the LIMS path), and **one sample ID twice** is
+refused by the LIMS reader while the paste reader accepts it and the route
+refuses it later. Unifying either is a behaviour change; the guard records both
+as they are.
+
+The `sample_id` row of the table above is the *shape* of one ID; the reader
+keeps the refusal that names **every** such row in one message.
+
+### Why the move is not made in this step
+
+Measured on step 4's tip: `read_pasted_samples` is one function of some 250
+lines, and its refusals come in **three stages**, not one order (all
+measured):
+
+1. **Immediate**, inside the row loop, in code order: a non-DNA i7, a non-DNA
+   i5, then the sample cap. The first offending **row** wins and the scan
+   stops there.
+2. **Deferred**, collected and raised after every row is read, in a fixed
+   class order: a column with no header name, a row with no ID, a row whose
+   ID is all zeros, a long ID, a long test, a bad test version.
+3. **Reader stage**, before any row: an unreadable line, a multi-line cell, no
+   header row with more than two columns, a column that is not read, a first
+   column taken as the ID.
+
+Two consequences, both measured and both in the guard. A paste holding a row
+with no ID and another with a bad test version reports only the no-ID row and
+does not mention the version at all. And the precedence of the **same two
+classes flips** depending on whether they share a row: row 2 with no ID and
+row 3 with a non-DNA i7 says "Invalid characters in index1"; the same two
+faults **on one row** say "sample_id is required". So no scheme that merely
+sorts a row's problems can reproduce today's words, and a Pydantic rulebook
+reports a row's faults together -- not less information, but not the same
+words either, and these are the two inputs whose words a lab reads under time
+pressure.
+
+So this step stops at the design and the guard, and the move waits for the
+user's word on **which of three** it should be:
+
+- **A**: keep today's words exactly. That means keeping today's **control
+  flow** -- the rulebook's DNA and cap problems stop the scan at the offending
+  row and the rest are collected -- not sorting a row's problems, which cannot
+  do it.
+- **B**: let a row report every fault it has, so a paste is fixed in one pass
+  instead of one row at a time -- better for a lab under time pressure, and a
+  change to the words of some refusals, each of which has to be listed and
+  probed as steps 3 and 4 list theirs.
+- **C**: no rulebook for these two inputs. Single-source what is actually
+  duplicated -- `_VALID_DNA_RE`, written out in `sample_parser.py`,
+  `sample_api.py` **and** `models/index.py`, and `_MAX_FIELD_LEN = 256`, a
+  hand-copy of `MAX_SAMPLE_TEXT` -- and extract the shared row predicates as
+  named functions both readers call, each keeping its own message and flow.
+  Five of the six shared row rules already have one definition in
+  `models/sample.py` which both readers import, so "the rules in one place" is
+  **two things**, and C buys them with no change of words, no ordering
+  question and no answer needed from the user.
+
+All three are in the run's QUESTIONS. Option A was first written here as "run
+the rulebook's problems through a fixed order per row"; a fresh review of this
+design showed that cannot reproduce the flip above, and that what A would buy
+is the two constants C buys more cheaply. **A rulebook's problem must never
+reach a person as it is**: `pydantic.ValidationError` is a `ValueError`, which
+`routes/samples.py` catches and writes straight into the banner, URL and all.
+
+
+### What this step does change
+
+One thing in `src/`, and it changes no behaviour: the LIMS import's table of
+field names is lifted out of `parse_api_samples` into the module constant
+`ALIAS_NAMES`, so the guard can walk it and fail when an alias is dropped --
+which a fresh review showed was otherwise silent for the test and kit fields.
+It is a **read-only** mapping of tuples: which LIMS field becomes a **sample
+ID** is not something a caller or a test may rewire, and a single appended name
+would make a patient's name the sample ID (a fresh review of this design
+measured exactly that before the table was frozen). Everything else is the
+guard, the design and the three questions.
+
 ## Later steps (each adds its details to this note, or a note of its own)
 
 2. **Profiles**: built as step 2, above.
 3. **Index kit files**: built as step 3, below.
 4. **`config/mongodb.yaml`**: built as step 4, below.
-5. **Pasted samples and LIMS worklists.** These already refuse the whole input and
-   name the rows, and their behaviour must not change unless a gap is found, which
-   is then decided on its own. They keep explicit adapters for what they accept
-   today: a headerless paste, column and field aliases, the LIMS field-name
-   mapping, a LIMS sample ID sent as a JSON number (read as text today), and
-   unrelated LIMS metadata (ignored today, except a field that looks like an
-   index or a lane, which is refused). The strict rulebook checks the adapted
-   rows, not the raw ones.
+5. **Pasted samples and LIMS worklists**: designed and measured as step 5,
+   below; no code moved (see "Why the move is not made in this step").
 
 Suggested by the review and left for a later decision: one canonical instrument
 file format for the bundled and the synced definitions, with the local cycle

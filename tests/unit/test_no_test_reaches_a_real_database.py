@@ -94,7 +94,14 @@ class TestNoTestOrToolBuildsAClientThatCouldReachTheRealOne:
 
     ALLOWED = "mongodb://127.0.0.1:1"
 
-    @pytest.mark.parametrize("folder", ["tests", "tools"])
+    FOLDERS = ["tests", "tools"]
+
+    def test_the_check_covers_every_folder_that_can_hold_a_client(self):
+        """An empty list of folders makes the test below a skip, which reads
+        as a pass (break row W25)."""
+        assert self.FOLDERS == ["tests", "tools"]
+
+    @pytest.mark.parametrize("folder", FOLDERS)
     def test_every_client_is_a_mock_or_names_an_address_nothing_listens_on(self, folder):
         wrong = [f"{where}: {given!r}"
                  for where, given, mock in _client_calls(ROOT / folder)
