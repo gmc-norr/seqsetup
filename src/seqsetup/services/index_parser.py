@@ -289,9 +289,9 @@ def _cells_with_no_column(numbered) -> None:
     if bad:
         raise ColumnsNotRead(
             f"These rows have a cell under no column name -- more cells than the header "
-            f"has columns, or a cell in a column whose header name is blank -- so nothing "
-            f"was saved: {_lines(bad)}. Such a cell was dropped unseen; give the column a "
-            f"header name or take the cell out."
+            f"has columns, or a cell in a column whose header name is blank or only spaces "
+            f"and underscores -- so nothing was saved: {_lines(bad)}. Such a cell was "
+            f"dropped unseen; give the column a header name or take the cell out."
         )
 
 

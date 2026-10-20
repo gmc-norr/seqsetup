@@ -84,6 +84,30 @@ class TestTheNormalFormOfAColumnName:
         assert column_key("index") != column_key("index2")
 
 
+class TestACellUnderNoColumnName:
+    """A column whose name is blank, or only spaces and underscores, is no
+    name: its cells go with the cells past the last column, which the kit
+    parser refuses when they hold anything."""
+
+    @pytest.mark.parametrize("blank", ["", " ", "_", "__", " _ "])
+    def test_a_name_whose_normal_form_is_empty_is_no_name(self, blank):
+        """``_`` is no name by the reader's own normal form (column_key), so
+        an i5 under it was dropped from a Single upload (third fresh review
+        of the P2 fixes)."""
+        table = read_table(f"name,index,{blank}\nA,ACGTACGT,TTGGCCAA\n")
+
+        assert [(row.cells, row.extra) for row in table.rows] == [
+            ({"name": "A", "index": "ACGTACGT"}, ["TTGGCCAA"])]
+
+    def test_a_cell_under_a_blank_column_name_is_under_no_column_name(self):
+        table = read_table("name,,index, ,\nA,x,ACGTACGT,y,\nB\n")
+
+        assert [(row.cells, row.extra) for row in table.rows] == [
+            ({"name": "A", "index": "ACGTACGT"}, ["x", "y", ""]),
+            ({"name": "B", "index": None}, []),
+        ]
+
+
 class TestARowWhoseQuotesDoNotCloseIsRefused:
     """``csv`` read a broken quote as it could: ``P1,"ACGT"NNNN`` gave the
     sequence ACGTNNNN, and a quote never closed took the rest of the file
@@ -145,24 +169,6 @@ class TestARowWhoseQuotesDoNotCloseIsRefused:
             (3, {"name": "P1", "index": "ACGTACGT", "index2": None}, []),
             (6, {"name": "P2", "index": "TCCGGAGA", "index2": "TATAGCCT"}, ["x"]),
             (7, {"name": "P3", "index": None, "index2": None}, []),
-        ]
-
-    @pytest.mark.parametrize("blank", ["", " ", "_", "__", " _ "])
-    def test_a_name_whose_normal_form_is_empty_is_no_name(self, blank):
-        """``_`` is no name by the reader's own normal form (column_key), so
-        an i5 under it was dropped from a Single upload (third fresh review
-        of the P2 fixes)."""
-        table = read_table(f"name,index,{blank}\nA,ACGTACGT,TTGGCCAA\n")
-
-        assert [(row.cells, row.extra) for row in table.rows] == [
-            ({"name": "A", "index": "ACGTACGT"}, ["TTGGCCAA"])]
-
-    def test_a_cell_under_a_blank_column_name_is_under_no_column_name(self):
-        table = read_table("name,,index, ,\nA,x,ACGTACGT,y,\nB\n")
-
-        assert [(row.cells, row.extra) for row in table.rows] == [
-            ({"name": "A", "index": "ACGTACGT"}, ["x", "y", ""]),
-            ({"name": "B", "index": None}, []),
         ]
 
     def test_the_line_counts_the_lines_taken_off_the_front(self):
