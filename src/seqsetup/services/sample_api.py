@@ -37,9 +37,12 @@ _MAX_RESPONSE_SIZE = 10 * 1024 * 1024
 # 256-char limit applied by form-submission paths so model invariants never
 # see an unbounded string regardless of which ingest route was taken. The
 # fields below are refused over it instead, never cut, naming their rows: a
-# cut ID is another ID (spec 2026-10-14 long sample text).
+# cut ID is another ID (spec 2026-10-14 long sample text), and a cut index
+# another index, whose cut could take a character that is not DNA away with
+# it (the user's word of 2026-10-20).
 _MAX_FIELD_LEN = MAX_SAMPLE_TEXT
-_NEVER_CUT = {"sample_id": "the sample_id", "test_id": "the test", "worksheet_id": "the worksheet ID"}
+_NEVER_CUT = {"sample_id": "the sample_id", "test_id": "the test", "worksheet_id": "the worksheet ID",
+              "index1_sequence": "the i7 index", "index2_sequence": "the i5 index"}
 
 
 # Minimum interval between consecutive LIMS API calls (per host). Defends
@@ -1094,7 +1097,8 @@ def parse_api_samples(data: list[dict], config: Optional[SampleApiConfig] = None
         raw_test = next((lower_item[alias] for alias in field_aliases["test_id"]
                          if lower_item.get(alias) is not None), None)
         _refuse_a_changed_value(f"Sample '{sample['sample_id']}' has a test", raw_test)
-        too_long = [field for field in ("test_id", "worksheet_id")
+        too_long = [field for field in ("test_id", "worksheet_id", "index1_sequence",
+                                        "index2_sequence")
                     if len(sample.get(field, "")) > MAX_SAMPLE_TEXT]
         if too_long:
             for field in too_long:

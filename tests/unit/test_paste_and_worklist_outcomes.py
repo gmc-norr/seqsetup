@@ -23,7 +23,10 @@ refusal's exception type, ``_MAX_FIELD_LEN``, ``MAX_SAMPLES_PER_RUN`` and the
 LIMS field mapping. Every one of those is a case or an assertion below.
 
 Recorded on 2026-10-19 from ``services/sample_parser.read_pasted_samples``
-and ``services/sample_api.parse_api_samples``.
+and ``services/sample_api.parse_api_samples``. Changed once since, on the
+user's word of 2026-10-20 (step 5, Q7): an index sequence over 256 characters
+is refused, naming its rows, where both readers cut it to 256 -- which could
+cut a character that is not DNA away with it.
 """
 
 from dataclasses import asdict, fields
@@ -146,11 +149,18 @@ def paste_corpus():
         "mixed tabs and commas (two cells become one id: a poor read, recorded as it is)":
             "sample_id\ttest_id\nS1,WGS\n",
         "a well column and a test column": "sample_id,well,test_id\nS1,A01,WGS\n",
-        # A long sequence is CUT to 256 today, not refused: a bound in a
-        # rulebook would be an accept-to-refuse change on the one field the
-        # index-mixup audit exists for (fresh review of the step 5 design,
-        # P1-3).
+        # A sequence over 256 is refused, never cut: a cut index is another
+        # index, and the cut once took a character that is not DNA away with
+        # it (the user's word of 2026-10-20, step 5, Q7).
+        "an i7 of 256 bases": "sample_id,index\nS1," + "A" * 256 + "\n",
+        "an i7 of 257 bases": "sample_id,index\nS1," + "A" * 257 + "\n",
         "an i7 of 300 bases": "sample_id,index\nS1," + "A" * 300 + "\n",
+        "long i7s on rows 2 and 4": ("sample_id,index\nS1," + "A" * 257 + "\nS2,ATTACTCG\nS3,"
+                                     + "C" * 300 + "\n"),
+        "a long i7 on row 2, bad DNA on row 3":
+            "sample_id,index\nS1," + "A" * 257 + "\nS2,ATTAXTCG\n",
+        "a long i7 and a long i5 on one row":
+            "sample_id,index,index2\nS1," + "A" * 257 + "," + "C" * 257 + "\n",
         "an i7 of 256 good bases and 44 that are not DNA":
             "sample_id,index\nS1," + "A" * 256 + "X" * 44 + "\n",
         "an i5 of 300 bases": "sample_id,index,index2\nS1,ATTACTCG," + "A" * 300 + "\n",
@@ -249,9 +259,17 @@ def worklist_corpus():
         "a bad i7 in row 1, a bad version in row 2": [
             {"sample_id": "S1", "index_i7": "ATTAXTCG"},
             {"sample_id": "S2", "test_version": "one"}],
+        "an i7 of 256 bases": [{"sample_id": "S1", "index_i7": "A" * 256}],
+        "an i7 of 257 bases": [{"sample_id": "S1", "index_i7": "A" * 257}],
         "an i7 of 300 bases": [{"sample_id": "S1", "index_i7": "A" * 300}],
+        "an i5 of 300 bases": [{"sample_id": "S1", "index_i7": "ATTACTCG", "index_i5": "C" * 300}],
         "an i7 of 256 good bases and 44 that are not DNA": [
             {"sample_id": "S1", "index_i7": "A" * 256 + "X" * 44}],
+        "long i7s in rows 1 and 3": [
+            {"sample_id": "S1", "index_i7": "A" * 257}, {"sample_id": "S2", "index_i7": "ATTACTCG"},
+            {"sample_id": "S3", "index_i7": "C" * 300}],
+        "a long i7 in row 1, a bad i7 in row 2": [
+            {"sample_id": "S1", "index_i7": "A" * 257}, {"sample_id": "S2", "index_i7": "ATTAXTCG"}],
         "one sample over the cap": [{"sample_id": f"S{n}"} for n in range(5001)],
     }
     # One case per field name the LIMS import reads, so dropping an alias is
@@ -295,6 +313,16 @@ def mapped_corpus():
 # What each paste gives today: ('read', rows, header_found, columns_used,
 # columns_unused), or ('refused', the exception's type, the words).
 PASTES = {
+    'a long i7 and a long i5 on one row':
+        ('refused', 'ValueError', 'Row(s) 2: the i7 index is longer than 256 characters. SeqSetup does not shorten it; fix it in the source.'),
+    'a long i7 on row 2, bad DNA on row 3':
+        ('refused', 'ValueError', "Invalid characters in index1 for sample 'S2': {'X'}. Only A, C, G, T, N are allowed."),
+    'long i7s on rows 2 and 4':
+        ('refused', 'ValueError', 'Row(s) 2, 4: the i7 index is longer than 256 characters. SeqSetup does not shorten it; fix it in the source.'),
+    'an i7 of 257 bases':
+        ('refused', 'ValueError', 'Row(s) 2: the i7 index is longer than 256 characters. SeqSetup does not shorten it; fix it in the source.'),
+    'an i7 of 256 bases':
+        ('read', (('S1', '', '', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index', 'i7')), ()),
     'CRLF':
         ('read', (('S1', 'WGS', '', 'ATTACTCG', 'TATAGCCT', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('test_id', 'Test'), ('index', 'i7'), ('index2', 'i5')), ()),
     'a bad test version and bad DNA on one row':
@@ -464,15 +492,15 @@ PASTES = {
     'an empty paste':
         ('read', (), False, (), ()),
     'an i5 of 300 bases':
-        ('read', (('S1', '', '', 'ATTACTCG', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index', 'i7'), ('index2', 'i5')), ()),
+        ('refused', 'ValueError', 'Row(s) 2: the i5 index is longer than 256 characters. SeqSetup does not shorten it; fix it in the source.'),
     'an i5 that is not DNA':
         ('refused', 'ValueError', "Invalid characters in index2 for sample 'S1': {'X'}. Only A, C, G, T, N are allowed."),
     'an i7 name of 300 characters':
         ('read', (('S1', '', '', '', '', '', 'NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN', '', 2),), True, (('sample_id', 'Sample ID'), ('i7_name', 'i7 name')), ()),
     'an i7 of 256 good bases and 44 that are not DNA':
-        ('read', (('S1', '', '', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index', 'i7')), ()),
+        ('refused', 'ValueError', 'Row(s) 2: the i7 index is longer than 256 characters. SeqSetup does not shorten it; fix it in the source.'),
     'an i7 of 300 bases':
-        ('read', (('S1', '', '', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('index', 'i7')), ()),
+        ('refused', 'ValueError', 'Row(s) 2: the i7 index is longer than 256 characters. SeqSetup does not shorten it; fix it in the source.'),
     'an id of 256 characters':
         ('read', (('SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS', 'WGS', '', '', '', '', '', '', 2),), True, (('sample_id', 'Sample ID'), ('test_id', 'Test')), ()),
     'an id of 257 characters':
@@ -549,6 +577,16 @@ PASTES = {
 
 # What each worklist gives today.
 WORKLISTS = {
+    'a long i7 in row 1, a bad i7 in row 2':
+        ('refused', 'ValueError', "Sample 'S2' has an invalid index1_sequence ('ATTAXTCG'): only A, C, G, T, N are allowed (offending: X)."),
+    'long i7s in rows 1 and 3':
+        ('refused', 'ValueError', 'LIMS row(s) 1, 3: the i7 index is longer than 256 characters. SeqSetup does not shorten it. Fix the upstream record(s) before retrying.'),
+    'an i5 of 300 bases':
+        ('refused', 'ValueError', 'LIMS row(s) 1: the i5 index is longer than 256 characters. SeqSetup does not shorten it. Fix the upstream record(s) before retrying.'),
+    'an i7 of 257 bases':
+        ('refused', 'ValueError', 'LIMS row(s) 1: the i7 index is longer than 256 characters. SeqSetup does not shorten it. Fix the upstream record(s) before retrying.'),
+    'an i7 of 256 bases':
+        ('read', ((('index1_sequence', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), ('sample_id', 'S1'), ('test_version', '')),)),
     'a bad i7 and no id in one row':
         ('refused', 'ValueError', 'LIMS row(s) 1: sample_id is missing or empty. Fix the upstream record(s) before retrying.'),
     'a bad i7 in row 1, a bad version in row 2':
@@ -692,9 +730,9 @@ WORKLISTS = {
     'an i7 name of 300 characters':
         ('read', ((('index1_name', 'NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN'), ('sample_id', 'S1'), ('test_version', '')),)),
     'an i7 of 256 good bases and 44 that are not DNA':
-        ('read', ((('index1_sequence', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), ('sample_id', 'S1'), ('test_version', '')),)),
+        ('refused', 'ValueError', 'LIMS row(s) 1: the i7 index is longer than 256 characters. SeqSetup does not shorten it. Fix the upstream record(s) before retrying.'),
     'an i7 of 300 bases':
-        ('read', ((('index1_sequence', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), ('sample_id', 'S1'), ('test_version', '')),)),
+        ('refused', 'ValueError', 'LIMS row(s) 1: the i7 index is longer than 256 characters. SeqSetup does not shorten it. Fix the upstream record(s) before retrying.'),
     'every field':
         ('read', ((('index1_name', 'D701'), ('index1_sequence', 'ATTACTCG'), ('index2_name', 'D501'), ('index2_sequence', 'TATAGCCT'), ('index_pair_name', 'Kit A'), ('sample_id', 'S1'), ('test_id', 'WGS'), ('test_version', '1.2'), ('worksheet_id', 'W1')),)),
     'ids of zeros in several rows':
@@ -904,15 +942,14 @@ class TestTheCorpusCanSeeTheThingsThatMatter:
         assert "sample_id is required" in together[2], together
         assert apart[2] != together[2]
 
-    def test_the_corpus_pins_a_long_sequence_as_cut_not_refused(self):
-        """A 300-base i7 is CUT to 256 today, not refused: a bound in a
-        rulebook would be an accept-to-refuse change on the one field the
-        index-mixup audit exists for (P1-3)."""
-        record = PASTES["an i7 of 300 bases"]
+    def test_the_corpus_pins_a_long_sequence_as_refused_not_cut(self):
+        """A 257-base i7 is refused, naming its row, in both readers; 256 is
+        read whole (the user's word of 2026-10-20, step 5, Q7)."""
         at = FIELDS.index("index1_sequence")
-
-        assert record[0] == "read"
-        assert len(record[1][0][at]) == 256
+        for record in (PASTES["an i7 of 257 bases"], WORKLISTS["an i7 of 257 bases"]):
+            assert record[0] == "refused" and "longer than 256 characters" in record[2]
+        assert len(PASTES["an i7 of 256 bases"][1][0][at]) == 256
+        assert dict(WORKLISTS["an i7 of 256 bases"][1][0])["index1_sequence"] == "A" * 256
 
     def test_the_corpus_pins_a_mapping_for_a_field_seqsetup_does_not_know(self):
         """Such a mapping puts that key into the adapted row, which a
