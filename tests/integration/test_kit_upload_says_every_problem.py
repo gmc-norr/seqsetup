@@ -245,3 +245,48 @@ class TestACsvRowWhoseQuotesDoNotCloseIsRefused:
         assert ctx.index_kit_repo.list_all() == []
         (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
         assert (row.outcome, row.details["reason"]) == ("failure", "table_not_read")
+
+
+class TestACellUnderAColumnWithNoNameIsRefused:
+    """A column whose header name is blank was read by no one: in a Single
+    upload an i5 there was dropped, and with two such columns the second's
+    empty cell took the first one's place, so a row of one sequence read as
+    empty and was skipped (second fresh review of the P2 fixes). A row
+    with a cell there is refused naming its line, as a cell past the last
+    column always was."""
+
+    @pytest.mark.parametrize("content, mode, lines", [
+        (b"name,index,\nA,ACGTACGT,TTGGCCAA\nB,GGGGCCCC,AACCGGTT\n", "single", "line 2, line 3"),
+        (b"name,index,,\nA,ACGTACGT,,\n,,GGGGCCCC,\n", "single", "line 3"),
+        (b"name, ,index\nA,x,ACGTACGT\n", "single", "line 2"),
+        (b"[i7]\nname,sequence,\nA,ATTACTCG,TATAGCCT\n\n[i5]\nname,sequence\n01,TATAGCCT\n",
+         "combinatorial", "line 3"),
+    ])
+    def test_the_upload_is_refused_naming_the_rows(self, logged_in_client, fresh_app,
+                                                   content, mode, lines):
+        _app, ctx, _db = fresh_app
+
+        resp = _upload(logged_in_client, content, mode=mode, filename="kit.csv",
+                       kit_name="Blank Kit", kit_version="1.0")
+
+        assert "HX-Redirect" not in resp.headers
+        assert f"saved: {lines}." in resp.text and "no column name" in resp.text, resp.text
+        assert ctx.index_kit_repo.list_all() == []
+        (row,) = ctx.audit_event_repo.search(limit=10, event_prefix="index_kit.upload")
+        assert (row.outcome, row.details["reason"]) == ("failure", "columns_not_read")
+
+    @pytest.mark.parametrize("content", [
+        b"name,index,\nA,ACGTACGT,\nB,GGGGCCCC,\n",
+        b"name,index,,\r\nA,ACGTACGT,,\r\nB,GGGGCCCC, ,\r\n",
+    ])
+    def test_an_empty_column_with_no_name_is_still_saved(self, logged_in_client, fresh_app,
+                                                         content):
+        """A spreadsheet's trailing separators: nothing in the column."""
+        _app, ctx, _db = fresh_app
+
+        resp = _upload(logged_in_client, content, filename="kit.csv",
+                       kit_name="Blank Kit", kit_version="1.0")
+
+        assert resp.headers.get("HX-Redirect") == "/indexes", resp.text
+        (kit,) = ctx.index_kit_repo.list_all()
+        assert [index.sequence for index in kit.i7_indexes] == ["ACGTACGT", "GGGGCCCC"]

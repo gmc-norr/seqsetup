@@ -109,6 +109,19 @@ class TestARowWhoseQuotesDoNotCloseIsRefused:
 
         assert refused.value.line == line
 
+    @pytest.mark.parametrize("text, line", [
+        ('name,index,index2,,\nA,ACGTACGT,TTGGCCAA,"\nB,GGGGCCCC,AACCGGTT\n"\nC,CATGCATG,GTACGTAC\n', 2),
+        ('name,sequence,,\nA,ACGTACGT,"x\nB,GGGGCCCC\n"\nC,CATGCATG\n', 2),
+    ])
+    def test_a_cell_over_two_lines_under_a_second_blank_name_is_refused(self, text, line):
+        """DictReader put the second blank column's None over the first
+        one's cell, so the line break escaped the check and row B went into
+        it without a word (second fresh review of the P2 fixes)."""
+        with pytest.raises(CellOverLines) as refused:
+            read_table(text)
+
+        assert refused.value.line == line
+
     def test_a_cell_over_two_lines_after_a_blank_line_names_its_own_line(self):
         with pytest.raises(CellOverLines) as refused:
             read_table('name,index\nP1,ACGTACGT\n\n"P2\nX",TCCGGAGA\n')
@@ -123,6 +136,14 @@ class TestARowWhoseQuotesDoNotCloseIsRefused:
             (3, {"name": "P1", "index": "ACGTACGT", "index2": None}, []),
             (6, {"name": "P2", "index": "TCCGGAGA", "index2": "TATAGCCT"}, ["x"]),
             (7, {"name": "P3", "index": None, "index2": None}, []),
+        ]
+
+    def test_a_cell_under_a_blank_column_name_is_under_no_column_name(self):
+        table = read_table("name,,index, ,\nA,x,ACGTACGT,y,\nB\n")
+
+        assert [(row.cells, row.extra) for row in table.rows] == [
+            ({"name": "A", "index": "ACGTACGT"}, ["x", "y", ""]),
+            ({"name": "B", "index": None}, []),
         ]
 
     def test_the_line_counts_the_lines_taken_off_the_front(self):

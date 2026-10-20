@@ -77,7 +77,7 @@ class TestTheLimitIsMongoDBs:
                        index_pairs=pairs)
 
         assert _size(kit) > github_sync._MOST_STORED_BYTES
-        assert "MiB" in github_sync._too_large_to_store(kit)
+        assert f"would take {_size(kit):,} bytes" in github_sync._too_large_to_store(kit)
 
     def test_a_kit_of_ordinary_size_is_stored(self):
         assert github_sync._too_large_to_store(_kit(GOOD_KIT_YAML)) == ""

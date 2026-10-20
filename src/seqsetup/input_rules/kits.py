@@ -31,8 +31,9 @@ from .reader import GIVEN_TWICE, Locations
 # 18 MB -- over MongoDB's 16 MiB, and the stored synced kits are deleted
 # before the new ones are written (github_sync.py). 20,000 is some fifty
 # times the largest shipped kit (384 pairs). The bound alone does not keep a
-# kit under 16 MiB -- 20,000 pairs with long names are 17.2 MiB -- so the sync
-# measures each kit before it deletes anything (github_sync._too_large_to_store).
+# kit under 16 MiB -- 20,000 pairs with 110-character names in a kit with a
+# 250-character name are 17.2 MiB -- so the sync measures each kit before it
+# deletes anything (github_sync._too_large_to_store).
 KIT_LIST_MAX = 20_000
 # A sequence this long is nonsense, and nothing reads the bound: it is a
 # sanity cap. A run reads at most 600 index cycles (routes/runs.py), and

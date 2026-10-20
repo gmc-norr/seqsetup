@@ -114,12 +114,22 @@ def read_table(text: str, line_offset: int = 0, delimiter: str = ",") -> Table:
 
 def _by_column(header: list, cells: list) -> tuple[dict, list]:
     """A row's cells by column name, None for a column the row is too short
-    for, and the cells past the last column -- as ``csv.DictReader`` gives
-    them, its ``restval`` and ``restkey`` both None."""
-    by_name = dict(zip(header, cells))
+    for, as ``csv.DictReader`` gives them (its ``restval`` None), and the
+    cells under no column name: those of a column whose header name is
+    blank, then those past the last column. DictReader kept a blank-named
+    column's cell under "", which no one reads -- an i5 there was dropped,
+    and a second blank column's cell took the first one's place (second
+    fresh review of the P2 fixes)."""
+    by_name, nameless = {}, []
+    for name, cell in zip(header, cells):
+        if name.strip():
+            by_name[name] = cell
+        else:
+            nameless.append(cell)
     for name in header[len(cells):]:
-        by_name[name] = None
-    return by_name, list(cells[len(header):])
+        if name.strip():
+            by_name[name] = None
+    return by_name, nameless + list(cells[len(header):])
 
 
 def _over_lines(cells) -> bool:

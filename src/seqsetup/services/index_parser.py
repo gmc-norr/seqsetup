@@ -277,14 +277,16 @@ def _slot_key(name) -> Optional[str]:
 
 def _cells_with_no_column(numbered) -> None:
     """Refuse rows that carry a cell under no column name (more cells than the
-    header), naming their lines: that cell was dropped unseen."""
+    header, or a cell in a column whose header name is blank), naming their
+    lines: that cell was dropped unseen."""
     bad = [lineno for lineno, row in numbered
            if any(str(extra).strip() for extra in (row.get(None) or []))]
     if bad:
         raise ColumnsNotRead(
-            f"These rows have more cells than the header has columns, so nothing was "
-            f"saved: {_lines(bad)}. A cell under no column name was dropped unseen; give "
-            f"the column a header name or take the cell out."
+            f"These rows have a cell under no column name -- more cells than the header "
+            f"has columns, or a cell in a column whose header name is blank -- so nothing "
+            f"was saved: {_lines(bad)}. Such a cell was dropped unseen; give the column a "
+            f"header name or take the cell out."
         )
 
 
