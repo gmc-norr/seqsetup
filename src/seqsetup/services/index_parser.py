@@ -245,6 +245,11 @@ def _columns_not_read(header, read: frozenset, reads: str) -> None:
     seen: dict[str, str] = {}
     for name in names:
         key = _slot_key(name) or _column_key(name)
+        # No name ("", " ", "_"): its cells are under no column name, which
+        # _cells_with_no_column refuses when they hold anything (third fresh
+        # review of the P2 fixes).
+        if not key:
+            continue
         if key in seen and seen[key] != name:
             raise ColumnsNotRead(
                 f'The file has two columns, "{seen[key]}" and "{name}", that name one '

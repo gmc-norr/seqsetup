@@ -79,7 +79,7 @@ Before a kit is saved, SeqSetup checks, in order:
    delete links, so such a kit would be listed and usable but could never be
    deleted.
 
-   Eight more faults refuse the whole file, with nothing saved.
+   Nine more faults refuse the whole file, with nothing saved.
 
    * **i5 data with Single picked.** A Single kit saves the i7 indexes
      only, so a file's ``index2`` column, ``i5Index2`` or ``Index2`` list,
@@ -116,10 +116,12 @@ Before a kit is saved, SeqSetup checks, in order:
      values go nowhere. A name that looks like neither an index nor a lane
      -- ``plate``, ``Description`` -- is still ignored.
    * **A cell under no column name.** A row with more cells than the header
-     has columns, or with a cell in a column whose header name is blank: that
-     cell was dropped unseen -- an i5 there was lost from a Single upload --
-     and the row is named by its line. A blank column with nothing in it, as a
-     spreadsheet's trailing separators give, is still read.
+     has columns, or with a cell in a column whose header name is blank (or
+     only ``_``): that cell was dropped unseen -- an i5 there was lost from a
+     Single upload -- and the row is named by its line. A blank column with
+     nothing in it, as a spreadsheet's trailing separators give, is still
+     read. A file written with a row-number column that has no name, as
+     pandas' ``to_csv()`` writes by default, is refused for this.
    * **A double quote that does not close where it should.** A quoted cell
      with text after its closing quote (``P1,"ACGT"NNNN``) was read as
      ``ACGTNNNN``, and a quote never closed took the rest of the file into

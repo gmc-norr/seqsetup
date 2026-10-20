@@ -259,6 +259,9 @@ class TestACellUnderAColumnWithNoNameIsRefused:
         (b"name,index,\nA,ACGTACGT,TTGGCCAA\nB,GGGGCCCC,AACCGGTT\n", "single", "line 2, line 3"),
         (b"name,index,,\nA,ACGTACGT,,\n,,GGGGCCCC,\n", "single", "line 3"),
         (b"name, ,index\nA,x,ACGTACGT\n", "single", "line 2"),
+        (b"name,index,_\nA,ACGTACGT,TTGGCCAA\nB,GGGGCCCC,AACCGGTT\n", "single", "line 2, line 3"),
+        # pandas' to_csv() with its defaults writes row numbers under no name.
+        (b",name,index\n0,A,ACGTACGT\n1,B,GGGGCCCC\n", "single", "line 2, line 3"),
         (b"[i7]\nname,sequence,\nA,ATTACTCG,TATAGCCT\n\n[i5]\nname,sequence\n01,TATAGCCT\n",
          "combinatorial", "line 3"),
     ])
@@ -278,6 +281,7 @@ class TestACellUnderAColumnWithNoNameIsRefused:
     @pytest.mark.parametrize("content", [
         b"name,index,\nA,ACGTACGT,\nB,GGGGCCCC,\n",
         b"name,index,,\r\nA,ACGTACGT,,\r\nB,GGGGCCCC, ,\r\n",
+        b"name,index, , ,_\nA,ACGTACGT,,,\nB,GGGGCCCC,,,\n",
     ])
     def test_an_empty_column_with_no_name_is_still_saved(self, logged_in_client, fresh_app,
                                                          content):

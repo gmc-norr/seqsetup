@@ -119,15 +119,16 @@ def _by_column(header: list, cells: list) -> tuple[dict, list]:
     blank, then those past the last column. DictReader kept a blank-named
     column's cell under "", which no one reads -- an i5 there was dropped,
     and a second blank column's cell took the first one's place (second
-    fresh review of the P2 fixes)."""
+    fresh review of the P2 fixes). Blank is the reader's own normal form:
+    ``_`` is no name, as `` `` is (third fresh review)."""
     by_name, nameless = {}, []
     for name, cell in zip(header, cells):
-        if name.strip():
+        if column_key(name):
             by_name[name] = cell
         else:
             nameless.append(cell)
     for name in header[len(cells):]:
-        if name.strip():
+        if column_key(name):
             by_name[name] = None
     return by_name, nameless + list(cells[len(header):])
 
@@ -141,9 +142,11 @@ def refuse_repeated_columns(names) -> None:
     in two spellings of one normal form."""
     seen: dict = {}
     for name in names or []:
-        if not name:
-            continue
         key = column_key(name)
+        # No name, as for _by_column: its cells are under no column name,
+        # which the kit parser refuses when they hold anything.
+        if not key:
+            continue
         if key in seen:
             first = seen[key]
             both = (f'two columns named "{name}"' if first == name
