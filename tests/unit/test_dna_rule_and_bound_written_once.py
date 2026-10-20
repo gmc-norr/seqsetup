@@ -14,9 +14,10 @@ from seqsetup.models.sample import MAX_SAMPLE_TEXT
 from seqsetup.services import sample_api, sample_parser
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "seqsetup"
-# The validity rule: any number of A, C, G, T, N and nothing else, anchored
-# or not. Not the "looks like DNA" patterns ({4,}, {6,}), which are other rules.
-_A_COPY = re.compile(r"""re\.compile\(\s*r?(['"])\^?\[ACGTN\]\*(\\Z|\$)?\1""")
+# The validity rule written as a pattern: any number of A, C, G, T, N and
+# nothing else, anchored or not, compiled or passed to re.match/fullmatch.
+# Not the "looks like DNA" patterns ({4,}, {6,}), which are other rules.
+_A_COPY = re.compile(r"""r?(['"])\^?\[ACGTN\]\*(\\Z|\$)?\1""")
 
 
 class TestTheDnaRuleIsWrittenOnce:
