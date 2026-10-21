@@ -77,12 +77,17 @@
                wrappers invisible when empty.
                tailwind: empty:hidden
                #}
+            {# #message-slots keeps its height while an index is dragged
+               (static/js/app.js, holdMessageSlots): a message that came or
+               went mid-drag moved the table under the pointer. #}
+            <div id="message-slots">
             <div id="form-errors" class="empty:hidden"></div>
             <div id="error-banner" class="empty:hidden"></div>
             {# A sample row's setting change the page could not save, or may
                show older than stored (static/js/app.js). Apart from
                #error-banner, which a later error replaces. #}
             <div id="row-setting-notes" class="empty:hidden"></div>
+            </div>
             {% block content %}{% endblock %}
         </div>
     </div>

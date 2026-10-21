@@ -583,6 +583,27 @@ document.addEventListener('htmx:beforeSwap', event => {
     }
 });
 
+// The message slots above the samples (#message-slots, _app_shell.html)
+// grow when an answer brings a message and shrink when a later one clears
+// it. An answer that landed during a drag moved the table under the pointer
+// by more than a row, and the index went to the next sample (project review
+// of 7d970c7, EDITING-4). From the start of a drag to its end the slots keep
+// the height they had; a message that comes meanwhile shows when it ends,
+// and its error toast shows at once. A drag whose chip left the page fires
+// no dragend, so the next press of a key or button lets go too.
+function holdMessageSlots(hold) {
+    const slots = document.getElementById('message-slots');
+    if (!slots) return;
+    const height = hold ? `${slots.offsetHeight}px` : '';
+    slots.style.minHeight = height;
+    slots.style.maxHeight = height;
+    slots.style.overflow = hold ? 'hidden' : '';
+}
+document.addEventListener('dragstart', () => holdMessageSlots(true));
+for (const type of ['dragend', 'mousedown', 'keydown']) {
+    document.addEventListener(type, () => holdMessageSlots(false));
+}
+
 function toggleSelectAllSamples(headerCheckbox) {
     const checkboxes = document.querySelectorAll('.sample-checkbox');
     checkboxes.forEach(cb => {
