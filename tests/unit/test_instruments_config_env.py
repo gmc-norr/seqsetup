@@ -25,7 +25,10 @@ SHIPPED = Path(__file__).resolve().parents[2] / "config" / "instruments.yaml"
 # a check is written out).
 OWN_FILE = {
     "instruments": {
-        "OnlyInTheOperatorsFile": {
+        # One of SeqSetup's own instruments (an instrument file may name no
+        # other), with a samplesheet_name the shipped file does not give it, so
+        # the entry read can only have come from this file.
+        "MiSeq i100 Series": {
             "samplesheet_name": "OnlyInTheOperatorsFile",
             "samplesheet_versions": [2],
             "chemistry_type": "2-color",
@@ -77,7 +80,9 @@ class TestTheVariableIsSetAndTheFileIsThere:
 
         instruments_module._initialize_at_start()
 
-        assert list(instruments_module._instruments) == ["OnlyInTheOperatorsFile"]
+        assert list(instruments_module._instruments) == ["MiSeq i100 Series"]
+        assert (instruments_module._instruments["MiSeq i100 Series"]["samplesheet_name"]
+                == "OnlyInTheOperatorsFile")
         assert instruments_module._index_cycle_options == [8, 10]
 
     def test_the_path_read_is_logged_at_info(self, monkeypatch, own_file, keep_loaded_config,

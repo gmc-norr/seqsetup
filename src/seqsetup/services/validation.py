@@ -228,7 +228,10 @@ class ValidationService:
             direction, no_direction = None, str(e)
 
         # Color balance and dark cycle analysis (delegated)
-        if color_balance_enabled and run.samples and direction is not None:
+        # Without the instrument's own channels there is nothing to count:
+        # _calculate_index_color_balance would fall back to made-up Blue/Green
+        # ones (review CONFIG-3). validate_configuration reports why.
+        if color_balance_enabled and channel_config and run.samples and direction is not None:
             color_balance = ColorAnalysisValidator.calculate_color_balance(
                 run, channel_config, i5_orientation=direction.read_orientation,
                 instrument_config=instrument_config,
@@ -429,6 +432,7 @@ class ValidationService:
         errors.extend(cls._validate_instrument_enabled(run))
         errors.extend(cls._validate_flowcell_offered(run, instrument_config))
         errors.extend(cls._validate_i5_direction(run))
+        errors.extend(cls._validate_colour_balance_channels(run))
 
         # Prerequisite: at least one sample
         if not run.samples:
@@ -569,6 +573,29 @@ class ValidationService:
                 message=message,
             )]
         return []
+
+    @classmethod
+    def _validate_colour_balance_channels(cls, run: SequencingRun) -> list[ConfigurationError]:
+        """Colour balance is on, so the instrument must state the two channels
+        and the dark base the check counts (review CONFIG-3). An instrument
+        file saying otherwise is refused by the instrument rulebook; a stored
+        instrument record could still say it, and then the checks did run --
+        on made-up Blue/Green channels."""
+        if not is_color_balance_enabled(run.instrument_platform):
+            return []
+        if get_channel_config(run.instrument_platform) is not None:
+            return []
+        return [ConfigurationError(
+            severity=ValidationSeverity.ERROR,
+            category="color_balance_without_channels",
+            message=(
+                f"Colour balance is switched on for {run.instrument_platform.value}, but its "
+                "settings state no dye channels, so the colour balance and dark-cycle checks "
+                "did not run. An administrator must correct the instrument settings "
+                "(a 2-color chemistry with channel1_bases, channel2_bases and dark_base, or "
+                "color_balance_enabled off)."
+            ),
+        )]
 
     @classmethod
     def _validate_override_cycles_match_run(

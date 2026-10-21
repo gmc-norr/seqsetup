@@ -109,8 +109,10 @@ and in each synced instrument file:
    ``name`` and an ``i5_read_orientation``: ``forward`` (the i5 is read as
    the index kit lists it) or ``reverse-complement``. Required, at least
    one. A name is 1-64 characters -- letters, digits, spaces, ``.``, ``_``
-   and ``-``, starting with a letter or digit -- and no two of an
-   instrument's names may be the same, ignoring case. The first workflow
+   and ``-``, starting and ending with a letter, digit, ``.``, ``_`` or
+   ``-`` -- and no two of an instrument's names may be the same, ignoring
+   case. ``Standard `` beside ``Standard`` is refused: the two look the same
+   on the run setup page and would write every i5 the other way round. The first workflow
    is the **standard** one: a new run, and a run moved to this instrument,
    gets it. Where an instrument lists more than one, the run setup page
    offers the choice (see :doc:`/user-guide/run-setup`).
@@ -324,7 +326,14 @@ are refused, and so is a key given twice in one map.
 
 ``name``
    The instrument's name, as the pages show it. Required in a file holding
-   one instrument.
+   one instrument. It must be one of the instruments SeqSetup has: GAIIx,
+   HiSeq 2000/2500, HiSeq 4000, HiSeq X, MiSeq, NextSeq 500/550, MiniSeq,
+   NovaSeq 6000, NovaSeq X Series, MiSeq i100 Series, NextSeq 1000/2000.
+   Another name -- ``NovaSeq X`` for ``NovaSeq X Series`` -- is refused,
+   naming the file, the line and the names it accepts: such a file was once
+   synced and counted, and then its instrument was on no page at all. A name
+   that begins or ends with a space, or holds a hidden character, is refused
+   too: two instruments must not look the same on a page.
 ``samplesheet_name``
    Required. Written on the Sample Sheet's ``InstrumentPlatform`` line, so
    only letters, digits, ``_`` and ``-``.
@@ -350,6 +359,23 @@ are refused, and so is a key given twice in one map.
    ``base_colors`` names each of ``A``, ``C``, ``G`` and ``T`` once; the
    bases are ``A``, ``C``, ``G`` or ``T``. A dye channel other than Blue,
    Green, Red or Yellow is a warning, not a refusal.
+
+   The facts must agree with each other, because each decides a check:
+   ``base_colors`` gives each base the channel or channels it lights
+   (``"Blue"``, ``"Blue+Green"``) or ``"Dark"``; ``channel1_bases`` must be
+   exactly the bases ``base_colors`` lights in ``channel1_name``, each once,
+   and ``channel2_bases`` the same for ``channel2_name``; and ``dark_base``
+   must be the base ``base_colors`` calls Dark. A file saying
+   ``dark_base: "T"`` while ``base_colors`` called G Dark switched the
+   two-dark-bases error (``GG`` at the start of an index) off with no word,
+   and a base listed twice in a channel was counted twice by the colour
+   balance. ``color_balance_enabled: true`` on a 4-color instrument is
+   refused as well: such an instrument states no channels, and the colour
+   balance and dark-cycle checks then ran on made-up Blue and Green ones.
+   Where a stored instrument record still says that, the Check page reports
+   *"Colour balance is switched on for <instrument>, but its settings state
+   no dye channels, so the colour balance and dark-cycle checks did not
+   run"* and Mark Ready refuses the run.
 ``samplesheet_versions``
    The Sample Sheet versions the instrument reads: ``[2]``, ``[1, 2]`` or
    ``[1]``. Left out, it means ``[2]``.

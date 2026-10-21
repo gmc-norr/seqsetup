@@ -28,6 +28,7 @@ from typing import Annotated, Literal, Optional
 
 from pydantic import AfterValidator, Field
 
+from ..models.sequencing_run import InstrumentPlatform
 from ..models.instrument_definition import (
     _I5_WORKFLOW_NAME_RE,
     _I5_WORKFLOW_NAME_RULE,
@@ -37,6 +38,7 @@ from ..models.instrument_definition import (
     InstrumentDefinition,
 )
 from .base import (
+    ExactName256,
     IlluminaApplicationName,
     Label,
     PlainName,
@@ -47,6 +49,12 @@ from .base import (
 )
 from .check import CheckResult, Finding, check_data, reader_refusal
 from .reader import read_yaml
+
+# The instruments SeqSetup has a place for. An instrument file naming another
+# one was stored and counted by the sync, then skipped by get_all_instruments
+# with a log line only -- and since synced records are the only ones that
+# count, the instrument the file was meant to describe was gone too.
+PLATFORM_NAMES = tuple(p.value for p in InstrumentPlatform)
 
 BASES = ("A", "C", "G", "T")
 USUAL_DYE_CHANNELS = ("Blue", "Green", "Red", "Yellow")
@@ -67,6 +75,8 @@ def _distinct(items: list) -> list:
 
 
 def _workflow_name(value: str) -> str:
+    # The name is picked on the run page and decides which way every i5 is
+    # written, so _I5_WORKFLOW_NAME_RE refuses a name ending in a space too.
     if not _I5_WORKFLOW_NAME_RE.fullmatch(value):
         raise ValueError(_I5_WORKFLOW_NAME_RULE)
     return value
@@ -95,7 +105,8 @@ class InstrumentRules(StrictRules):
     """One instrument. ``name`` and ``version`` are required or not by the
     document that holds it (see the checks below)."""
 
-    name: Optional[Text256] = None
+    # A name people pick: the instrument's own name, and each flow cell's.
+    name: Optional[ExactName256] = None
     samplesheet_name: PlainName
     version: Optional[Text256] = None
     chemistry_type: Literal[InstrumentDefinition._ALLOWED_CHEMISTRY_TYPES]
@@ -116,7 +127,7 @@ class InstrumentRules(StrictRules):
         list[whole(1, 2)], Field(min_length=1), AfterValidator(_distinct)
     ] = [2]
     onboard_applications: dict[IlluminaApplicationName, OnboardApplicationRules]
-    flowcells: Annotated[dict[Text256, FlowcellRules], Field(min_length=1)]
+    flowcells: Annotated[dict[ExactName256, FlowcellRules], Field(min_length=1)]
     reagent_kit_max_cycles: dict[KIT_CYCLES, whole(1)] = {}
 
 
@@ -124,7 +135,7 @@ class InstrumentsFileRules(StrictRules):
     """A synced file holding several instruments under ``instruments:``,
     and nothing beside it."""
 
-    instruments: Annotated[dict[Text256, InstrumentRules], Field(min_length=1)]
+    instruments: Annotated[dict[ExactName256, InstrumentRules], Field(min_length=1)]
 
 
 class CycleDefaultsRules(StrictRules):
@@ -137,11 +148,63 @@ class CycleDefaultsRules(StrictRules):
 class LocalInstrumentsFileRules(StrictRules):
     """The local ``config/instruments.yaml``."""
 
-    instruments: Annotated[dict[Text256, InstrumentRules], Field(min_length=1)]
+    instruments: Annotated[dict[ExactName256, InstrumentRules], Field(min_length=1)]
     default_cycles: Annotated[dict[KIT_CYCLES, CycleDefaultsRules], Field(min_length=1)]
     index_cycle_options: Annotated[
         list[whole(1, 600)], Field(min_length=1), AfterValidator(_distinct)
     ]
+
+
+def _colour_findings(instrument: "InstrumentRules", at: tuple) -> list[Finding]:
+    """``base_colors``, the two channels and ``dark_base`` describe one
+    chemistry, so they must agree. ``dark_base`` decides the GG dark-start
+    error and each channel's bases are what the colour balance counts: a file
+    saying G is Dark while ``dark_base`` says T switched that error off, and a
+    base listed twice in a channel would be counted twice."""
+    colours = instrument.base_colors
+    names = (instrument.channel1_name, instrument.channel2_name)
+    channels = (instrument.channel1_bases, instrument.channel2_bases)
+    if colours is None or None in names or None in channels:
+        return []
+
+    found, lit = [], {}
+    for base, colour in colours.items():
+        parts = [part.strip() for part in colour.split("+")]
+        unknown = [part for part in parts
+                   if part not in names and part.lower() != "dark"]
+        if unknown:
+            found.append(Finding(
+                (*at, "base_colors", base),
+                f"names {unknown[0]!r}, which is neither channel1_name "
+                f"({names[0]!r}) nor channel2_name ({names[1]!r}) nor Dark",
+            ))
+            continue
+        lit[base] = (names[0] in parts, names[1] in parts,
+                     any(part.lower() == "dark" for part in parts))
+    if found:
+        return found
+
+    for which, (key, name) in enumerate((("channel1_bases", names[0]),
+                                         ("channel2_bases", names[1]))):
+        want = sorted(base for base, flags in lit.items() if flags[which])
+        if sorted(channels[which]) != want:
+            found.append(Finding(
+                (*at, key),
+                f"must be the bases base_colors lights in {name!r} "
+                f"({', '.join(want) if want else 'none'}), each once",
+            ))
+    dark = sorted(base for base, flags in lit.items() if flags[2])
+    if dark != ([instrument.dark_base] if instrument.dark_base is not None else []):
+        found.append(Finding(
+            (*at, "dark_base"),
+            f"must be the base base_colors calls Dark ({', '.join(dark)})" if dark
+            else "names a base base_colors does not call Dark",
+        ))
+    for base, flags in lit.items():
+        if flags[2] and (flags[0] or flags[1]):
+            found.append(Finding((*at, "base_colors", base),
+                                 "is Dark and lit in a channel at once"))
+    return found
 
 
 def _instrument_findings(instrument: InstrumentRules, at: tuple, *, needs_name: bool,
@@ -156,8 +219,15 @@ def _instrument_findings(instrument: InstrumentRules, at: tuple, *, needs_name: 
         ))
     if needs_version and instrument.version is None:
         found.append(Finding((*at, "version"), "is required"))
+    named = map_key if map_key is not None else instrument.name
+    if named is not None and named not in PLATFORM_NAMES:
+        found.append(Finding(
+            (*at,) if map_key is not None else (*at, "name"),
+            f"is not one of the instruments SeqSetup has ({', '.join(PLATFORM_NAMES)})",
+        ))
 
     written = instrument.model_fields_set
+    colour_problems = len(found)
     for key in COLOUR_FIELDS:
         present = key in written
         value = getattr(instrument, key)
@@ -173,9 +243,21 @@ def _instrument_findings(instrument: InstrumentRules, at: tuple, *, needs_name: 
                 (*at, key), "must not be empty when colour balance is on (color_balance_enabled: true)"))
         elif present and value is None:
             found.append(Finding((*at, key), "needs a value"))
+    if instrument.chemistry_type == "4-color" and instrument.color_balance_enabled:
+        # A 4-color instrument states no channels and no dark base, so the
+        # colour balance and dark-cycle checks would run on made-up ones.
+        found.append(Finding(
+            (*at, "color_balance_enabled"),
+            "must be false on a 4-color instrument: the colour balance and dark-cycle "
+            "checks need two channels and a dark base, which only a 2-color instrument states",
+        ))
     if instrument.chemistry_type == "2-color" and instrument.base_colors is not None:
         if set(instrument.base_colors) != set(BASES):
             found.append(Finding((*at, "base_colors"), "must name each of A, C, G and T once"))
+        elif len(found) == colour_problems:
+            # Only once every colour fact is there and not empty: the findings
+            # above already name a missing or empty one.
+            found.extend(_colour_findings(instrument, at))
 
     seen = set()
     for index, workflow in enumerate(instrument.i5_workflows):

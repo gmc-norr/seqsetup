@@ -89,6 +89,9 @@ BAD = [
     pytest.param({"i5_workflows": ["Index-first"]}, "i5_workflows", id="entry-not-a-mapping"),
     pytest.param({"i5_workflows": [_workflow("", FORWARD)]}, "i5_workflows", id="empty-name"),
     pytest.param({"i5_workflows": [_workflow(" A", FORWARD)]}, "i5_workflows", id="leading-space"),
+    # "Standard " beside "Standard", with the opposite i5 direction, is two
+    # names a page shows the same (review CONFIG-11).
+    pytest.param({"i5_workflows": [_workflow("A ", FORWARD)]}, "i5_workflows", id="trailing-space"),
     pytest.param({"i5_workflows": [_workflow("A" * 65, FORWARD)]}, "i5_workflows",
                  id="65-characters"),
     pytest.param({"i5_workflows": [_workflow("A/B", FORWARD)]}, "i5_workflows", id="slash"),
