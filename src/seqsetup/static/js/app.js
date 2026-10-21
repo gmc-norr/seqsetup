@@ -367,6 +367,45 @@ function replaceDropConfirmed(event, zone) {
     return window.confirm(message);
 }
 
+// A unique-dual pair fills both cells, so a pair put on the empty cell of a
+// row that already shows an index (an i7 with no i5, say) replaces that
+// index. That is a replace like any other: refused while "Edit indexes" is
+// off, asked about while it is on (index-assignment.rst; project review of
+// 7d970c7, EDITING-1). A single i7 or i5 on its own empty cell, as a
+// combinatorial kit is used, replaces nothing.
+function pairOnShownIndexAllowed(sampleId, idx) {
+    if (!idx || idx.type !== 'pair') return true;
+    const [i7, i5] = shownIndexOfRow(sampleId);
+    if (!i7 && !i5) return true;
+    const row = document.getElementById(`sample-row-${sampleId}`);
+    // The run page's assigned cells carry the sample's name, and are a
+    // .replace-zone while editing; the wizard's carry neither.
+    const assigned = row ? row.querySelector('.index-assigned[data-sample-name]') : null;
+    const name = (assigned && assigned.dataset.sampleName) || 'This sample';
+    if (!assigned || !assigned.classList.contains('replace-zone')) {
+        showErrorBanner(`${name} already has an index, and an index pair fills both its i7 and i5. ` +
+            (assigned ? 'Select Edit indexes to replace it.' : 'Clear its index first to give it a pair.'));
+        return false;
+    }
+    const current = assigned.dataset.indexName ? ` (${assigned.dataset.indexName})` : '';
+    return window.confirm(`${name} already has an index${current}. ` +
+        'Replace it with the index pair you dropped? A pair fills both its i7 and i5.');
+}
+
+// The same, for a drop on an empty cell. A drop of several goes on to
+// handleIndexDrop, whose multiDropWarning names every row it would replace.
+function pairDropOnShownIndexAllowed(event, zone) {
+    let indexes = null;
+    try {
+        const dragData = JSON.parse(event.dataTransfer.getData('text/plain'));
+        indexes = dragData ? (dragData.indexes || [dragData]) : null;
+    } catch (e) {
+        indexes = null;
+    }
+    if (!indexes || indexes.length !== 1) return true;
+    return pairOnShownIndexAllowed(zone.dataset.sampleId, indexes[0]);
+}
+
 function handleIndexKeydown(event) {                 // chip: Enter/Space = select
     if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
@@ -385,6 +424,10 @@ function assignSelectedIndexToSample(sampleId, runId, dropZoneType, dropZoneEl) 
     if (selectedIndexes.length === 0) return false;  // nothing selected → no-op
     const idx = inPanelOrder(selectedIndexes)[0];    // keyboard path = single assign: the panel's first
     if ((idx.type === 'i7' || idx.type === 'i5') && dropZoneType && dropZoneType !== idx.type) return false;
+    if (!pairOnShownIndexAllowed(sampleId, idx)) {
+        clearIndexSelection();
+        return false;
+    }
     const context = dropZoneEl && dropZoneEl.dataset ? (dropZoneEl.dataset.context || '') : '';
     const sampleTable = document.getElementById('sample-table');
     const existingIds = sampleTable ? (sampleTable.dataset.existingIds || '') : '';
@@ -1380,7 +1423,8 @@ document.addEventListener('dragleave', function(event) {
 document.addEventListener('drop', function(event) {
     const zone = event.target.closest('.drop-zone, .replace-zone');
     if (!zone) return;
-    if (zone.classList.contains('replace-zone') && !replaceDropConfirmed(event, zone)) {
+    if (zone.classList.contains('replace-zone') ? !replaceDropConfirmed(event, zone)
+                                                : !pairDropOnShownIndexAllowed(event, zone)) {
         event.preventDefault();
         zone.classList.remove('drag-over');
         clearIndexSelection();

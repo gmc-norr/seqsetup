@@ -57,7 +57,11 @@ chip (combinatorial or single-index kits) only fills the matching target
 and refuses the other one. Dropping a new index on a sample that already
 has one does nothing -- once a cell holds an index, it is no longer a
 drop target -- unless you are editing indexes (see `Changing an
-index`_).
+index`_). That holds for a pair dropped on the empty cell of a sample
+that has one index, such as an i7 with no i5: the pair would fill both
+cells and replace the i7, so SeqSetup refuses it and says so, and while
+you are editing indexes it asks first. A single i5 dropped there fills
+the i5, as a combinatorial kit is used.
 
 You can do the same thing from the keyboard: press **Enter** or
 **Space** on an index chip to select it, then **Tab** to the sample's
