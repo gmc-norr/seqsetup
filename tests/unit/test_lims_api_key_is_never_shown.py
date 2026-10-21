@@ -35,9 +35,14 @@ def _config() -> SampleApiConfig:
 
 class TestTheKeyIsRefusedAtStartUp:
 
-    @pytest.mark.parametrize("ending", ["\n", "\r\n", "\r", "\t", "\x1b", "\x7f"])
-    def test_a_key_with_a_control_character_stops_the_start(self, monkeypatch, ending):
-        monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", KEY + ending)
+    # A key file's newline comes at the end; a key pasted through a broken
+    # editor can carry one anywhere. Neither can go in a header.
+    @pytest.mark.parametrize("written", [KEY + "\n", KEY + "\r\n", KEY + "\r",
+                                         KEY + "\t", KEY + "\x1b", KEY + "\x7f",
+                                         "\n" + KEY, KEY[:5] + "\n" + KEY[5:],
+                                         KEY[:5] + "\x0b" + KEY[5:]])
+    def test_a_key_with_a_control_character_stops_the_start(self, monkeypatch, written):
+        monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", written)
 
         with pytest.raises(RuntimeError) as stopped:
             sa.check_lims_api_key()
@@ -65,9 +70,10 @@ class TestTheKeyIsRefusedAtStartUp:
 
 class TestTheKeyIsNeverSentAndNeverShown:
 
-    @pytest.mark.parametrize("ending", ["\n", "\r\n", "\r"])
-    def test_fetch_worklists_says_so_without_the_key(self, monkeypatch, ending):
-        monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", KEY + ending)
+    @pytest.mark.parametrize("written", [KEY + "\n", KEY + "\r\n", KEY + "\r",
+                                         KEY[:5] + "\n" + KEY[5:]])
+    def test_fetch_worklists_says_so_without_the_key(self, monkeypatch, written):
+        monkeypatch.setenv("SEQSETUP_LIMS_API_KEY", written)
 
         ok, message, worksheets, left_out = sa.fetch_worklists(_config())
 

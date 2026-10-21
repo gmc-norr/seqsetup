@@ -17,6 +17,14 @@ from .test_export_files_own_records import ORIGIN, records, seed_run
 from .test_export_write_failures import _fail_on
 
 
+def _log_lines(caplog) -> str:
+    """The log without the audit rows: an audit row reaches the log too (and
+    now names the files), so reading caplog whole would not tell the log line
+    and the audit row apart -- and Admin > Logs keeps audit rows out."""
+    return "\n".join(record.getMessage() for record in caplog.records
+                      if not record.name.startswith("seqsetup.audit"))
+
+
 def _denial(ctx, run_id, reason):
     for event in ctx.audit_event_repo.search(limit=50, event_prefix="run.status.denied"):
         if event.target == run_id and event.details.get("reason") == reason:
@@ -38,7 +46,7 @@ class TestAReadBackThatDiffers:
         assert answer.status_code == 500, answer.text[:300]
         left = [r["_id"] for r in records(ctx, run_id)]
         assert len(left) == 3, left   # v2, v1, and the json that read back wrong
-        assert [file_id for file_id in left if file_id not in caplog.text] == []
+        assert [file_id for file_id in left if file_id not in _log_lines(caplog)] == []
 
     def test_the_audit_row_names_every_file_written(self, logged_in_client, fresh_app,
                                                     monkeypatch):
@@ -81,7 +89,7 @@ class TestAnInsertThatFailsPartWay:
             mark_ready(logged_in_client, run_id, ORIGIN)
 
         left = [r["_id"] for r in records(ctx, run_id)]
-        assert [file_id for file_id in left if file_id not in caplog.text] == []
+        assert [file_id for file_id in left if file_id not in _log_lines(caplog)] == []
 
 
 class TestARefusalBeforeAnythingIsWritten:
