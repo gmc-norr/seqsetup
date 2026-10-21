@@ -235,7 +235,7 @@ def app_server(tmp_path_factory):
     screenshot_profile = TestProfile(
         id="screenshot-wgs-profile",
         test_type="WGS",
-        test_name="Whole Genome Sequencing",
+        test_name="WGS",
         description="WGS test profile for screenshot tests",
         version="1.0.0",
         synced_at=datetime(2026, 1, 10, 7, 0, 0),

@@ -311,7 +311,7 @@ def _seed_profiles(ctx):
                      "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2"],
     ))
     ctx.test_profile_repo.save(TestProfile(
-        test_type=TEST_ID, test_name="Index safety net test", description="net",
+        test_type=TEST_ID, test_name=TEST_ID, description="net",
         version=TEST_VERSION,
         application_profiles=[ApplicationProfileReference(
             profile_name="NetBCL", profile_version=TEST_VERSION)],

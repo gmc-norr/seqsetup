@@ -119,7 +119,7 @@
             <select name="test_id" id="fix-test-id" class="paste-select" required>
                 <option value="">Select a test…</option>
                 {% for tp in test_profiles %}
-                <option value="{{ tp.test_type }}">{{ tp.test_type }}{% if tp.test_name and tp.test_name != tp.test_type %} ({{ tp.test_name }}){% endif %}</option>
+                <option value="{{ tp.test_name }}">{{ tp.test_name }}{% if tp.test_type and tp.test_type != tp.test_name %} ({{ tp.test_type }}){% endif %}</option>
                 {% endfor %}
             </select>
             <input type="text" name="test_version" class="paste-select" required

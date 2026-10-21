@@ -32,7 +32,7 @@ def _run(ctx, run_id="paste-run", *, samples=(), status=RunStatus.DRAFT, flowcel
 def _wgs(ctx):
     # Imported here: a module-level TestProfile would be collected by pytest.
     from seqsetup.models.test_profile import TestProfile
-    ctx.test_profile_repo.save(TestProfile(test_type="WGS", test_name="Whole Genome"))
+    ctx.test_profile_repo.save(TestProfile(test_type="WGS", test_name="WGS"))
 
 
 def _post(client, run_id, action, text, *, lanes=("1",), default_test="", default_version=None):

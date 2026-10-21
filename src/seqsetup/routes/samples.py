@@ -382,9 +382,11 @@ class _PasteInput:
     default_version: str = ""
 
 
-def _test_types(ctx: AppContext) -> set[str]:
+def _test_names(ctx: AppContext) -> set[str]:
+    """The tests a sample may give: TestNames, which several tests of one
+    TestType have each their own of (docs/design/2026-10-21-tests-by-name-design.md)."""
     repo = ctx.test_profile_repo
-    return {tp.test_type for tp in repo.list_all()} if repo else set()
+    return {tp.test_name for tp in repo.list_all()} if repo else set()
 
 
 def _test_version_with(test_id: str, raw) -> tuple[str, str]:
@@ -449,7 +451,7 @@ async def _read_paste_input(
     if refusal := _too_long("test_id", form.get("default_test_id", "")):
         return None, refusal
     default_test = sanitize_string(form.get("default_test_id", ""), 256)
-    if default_test and default_test not in _test_types(ctx):
+    if default_test and default_test not in _test_names(ctx):
         return None, f'No test called "{default_test}".'
 
     # Stripped, never cut: a cut could make a bad version good (spec
@@ -971,7 +973,7 @@ async def preview_paste(
         preview = build_paste_preview(
             read,
             existing_ids={s.sample_id for s in run.samples},
-            test_types={tp.test_type for tp in test_profiles},
+            test_names={tp.test_name for tp in test_profiles},
             default_test=paste.default_test,
             room=cap - len(run.samples),
             default_version=paste.default_version,

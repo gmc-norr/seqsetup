@@ -60,9 +60,9 @@ class TestABadCell:
 
 
 class TestThePreview:
-    def _row(self, text, default_version="", test_types=frozenset({"WGS"}), default_test=""):
+    def _row(self, text, default_version="", test_names=frozenset({"WGS"}), default_test=""):
         preview = build_paste_preview(
-            read_pasted_samples(text), existing_ids=set(), test_types=set(test_types),
+            read_pasted_samples(text), existing_ids=set(), test_names=set(test_names),
             default_test=default_test, default_version=default_version, room=100,
         )
         (row,) = preview.rows
@@ -86,14 +86,14 @@ class TestThePreview:
         assert row.notes == ["No test. Check will ask for one."]
 
     def test_without_test_profiles_there_is_no_note(self):
-        row = self._row("sample_id,test_id\nS1,WGS\n", test_types=frozenset())
+        row = self._row("sample_id,test_id\nS1,WGS\n", test_names=frozenset())
         assert (row.notes, row.state) == ([], OK)
 
     def test_a_version_without_a_test_stops_the_add(self):
         # A test and its version are set together (spec §2, decision 6).
         preview = build_paste_preview(
             read_pasted_samples("sample_id,test_id,test_version\nS1,WGS,1\nS2,,2\n"),
-            existing_ids=set(), test_types={"WGS"}, default_test="", room=100,
+            existing_ids=set(), test_names={"WGS"}, default_test="", room=100,
         )
         row = preview.rows[1]
         assert (row.test_version, row.state, row.notes) == ("2", LOOK, ["A test version needs a test."])
@@ -109,7 +109,7 @@ class TestThePreview:
         # row taking the picked test needs a version of its own or the box's.
         preview = build_paste_preview(
             read_pasted_samples("sample_id,test_id,test_version\nS1,WGS,\nS2,,2\nS3,,\n"),
-            existing_ids=set(), test_types={"WGS"}, default_test="WGS", room=100,
+            existing_ids=set(), test_names={"WGS"}, default_test="WGS", room=100,
         )
         own, versioned, picked = preview.rows
         assert (own.state, own.notes) == (LOOK, ["No test version. Check will ask for one."])
@@ -124,7 +124,7 @@ class TestThePreview:
 
     def test_the_box_lets_a_picked_test_through(self):
         preview = build_paste_preview(
-            read_pasted_samples("sample_id\nS1\n"), existing_ids=set(), test_types={"WGS"},
+            read_pasted_samples("sample_id\nS1\n"), existing_ids=set(), test_names={"WGS"},
             default_test="WGS", default_version="1", room=100,
         )
         assert (preview.picked_tests_without_version, preview.can_add) == ([], True)
@@ -136,7 +136,7 @@ class TestThePreview:
     def test_a_row_already_in_the_run_is_not_checked(self, text, default_test):
         # It is skipped, never added (plan review of 8b17009).
         preview = build_paste_preview(
-            read_pasted_samples(text), existing_ids={"S1"}, test_types={"WGS"},
+            read_pasted_samples(text), existing_ids={"S1"}, test_names={"WGS"},
             default_test=default_test, room=100,
         )
         assert [(r.sample_id, r.state) for r in preview.rows] == [("S1", SKIPPED), ("S2", OK)]

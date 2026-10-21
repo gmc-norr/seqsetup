@@ -117,16 +117,16 @@ def picked_test_needs_version_text(lines: list[int]) -> str:
             f"Fill in Version for rows without one, for example 1.")
 
 
-def _row_notes(s: ParsedSample, test: str, version: str, test_types: set[str]) -> list[str]:
+def _row_notes(s: ParsedSample, test: str, version: str, test_names: set[str]) -> list[str]:
     notes = []
     if version and not test:
         notes.append("A test version needs a test.")
     elif test and not s.test_id and not version:
         notes.append("The picked test needs a version.")
-    elif test_types:
+    elif test_names:
         if not test:
             notes.append("No test. Check will ask for one.")
-        elif test not in test_types:
+        elif test not in test_names:
             note = f'No test called "{test}".'
             if _DNA_LIKE_RE.match(test.upper()):
                 note += " It looks like an index sequence: is a column missing?"
@@ -142,15 +142,15 @@ def _row_notes(s: ParsedSample, test: str, version: str, test_types: set[str]) -
 def build_paste_preview(
     read: PasteReadResult,
     existing_ids: set[str],
-    test_types: set[str],
+    test_names: set[str],
     default_test: str,
     room: int,
     default_version: str = "",
 ) -> PastePreview:
     """What the paste would add to a run holding ``existing_ids``.
 
-    ``test_types`` are the known TestProfile test types (empty: no test
-    checks, as Check does without profiles). ``default_test`` fills blank
+    ``test_names`` are the known TestNames (empty: no test checks, as
+    Check does without profiles). ``default_test`` fills blank
     test cells only, and ``default_version`` blank version cells only.
     """
     lines_by_id: dict[str, list[int]] = defaultdict(list)
@@ -173,7 +173,7 @@ def build_paste_preview(
             state = SKIPPED
             notes = ["Already in this run. The one in the run is kept."]
         else:
-            notes = _row_notes(s, test, version, test_types)
+            notes = _row_notes(s, test, version, test_names)
             state = LOOK if notes else OK
         rows.append(PreviewRow(
             line=s.line,

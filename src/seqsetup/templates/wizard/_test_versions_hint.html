@@ -6,5 +6,5 @@
 #}
 {%- set with_versions = (test_profiles or []) | selectattr('versions') | list -%}
 {%- if with_versions -%}
-<span class="paste-option-help test-versions-hint">Synced: {% for t in with_versions %}{{ t.test_type }} {{ t.versions | join(', ') }}{% if not loop.last %} · {% endif %}{% endfor %}</span>
+<span class="paste-option-help test-versions-hint">Synced: {% for t in with_versions %}{{ t.test_name }} {{ t.versions | join(', ') }}{% if not loop.last %} · {% endif %}{% endfor %}</span>
 {%- endif -%}

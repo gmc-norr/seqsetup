@@ -111,7 +111,7 @@ def seed_demo(ctx) -> dict[str, str]:
         source_file="BCLConvertNextera.yaml", synced_at=_T,
     ))
     ctx.test_profile_repo.save(TestProfile(
-        id="demo-wgs", test_type="WGS", test_name="Whole Genome Sequencing",
+        id="demo-wgs", test_type="WGS", test_name="WGS",
         description="Demo test profile", version="1.0.0", synced_at=_T,
         application_profiles=[ApplicationProfileReference(
             profile_name="BCLConvertNextera", profile_version="~=1.0.0")],

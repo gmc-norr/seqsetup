@@ -37,7 +37,7 @@
             <select name="default_test_id" id="default_test_id" class="paste-select">
                 <option value="">Leave blank</option>
                 {% for tp in test_profiles %}
-                <option value="{{ tp.test_type }}"{% if tp.test_type == chosen_test %} selected{% endif %}>{{ tp.test_type }}{% if tp.test_name and tp.test_name != tp.test_type %} ({{ tp.test_name }}){% endif %}</option>
+                <option value="{{ tp.test_name }}"{% if tp.test_name == chosen_test %} selected{% endif %}>{{ tp.test_name }}{% if tp.test_type and tp.test_type != tp.test_name %} ({{ tp.test_type }}){% endif %}</option>
                 {% endfor %}
             </select>
             <span class="paste-option-help">Rows that already have a test keep it.</span>

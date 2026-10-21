@@ -70,8 +70,8 @@ class TestTheRepeatCheckWillNotRunOnListsOutOfStep:
     def _two_wgs_1_2():
         # Imported here: a module-level TestProfile would be collected by pytest.
         from seqsetup.models.test_profile import TestProfile
-        return [TestProfile(test_type="WGS", version="1.2.0", source_file="Wgs.yaml"),
-                TestProfile(test_type="WGS", version="1.2.0", source_file="Wgs.yaml")]
+        return [TestProfile(test_type="WGS", test_name="WGS", version="1.2.0", source_file="Wgs.yaml"),
+                TestProfile(test_type="WGS", test_name="WGS", version="1.2.0", source_file="Wgs.yaml")]
 
     def test_fewer_paths_than_profiles_raises_and_refuses_nothing_silently(self):
         refused: list[str] = []

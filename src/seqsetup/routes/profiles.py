@@ -66,7 +66,7 @@ def profiles_page(
         "profiles.html",
         {
             "test_profiles": test_profiles,
-            "test_profiles_sorted": sorted(test_profiles, key=lambda t: t.test_type),
+            "test_profiles_sorted": sorted(test_profiles, key=lambda t: t.test_name),
             "app_profiles": app_profiles,
             "app_profile_rows": app_profile_rows,
             "resolved_map": resolved_map,

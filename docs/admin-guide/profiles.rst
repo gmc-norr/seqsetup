@@ -12,11 +12,11 @@ Overview
 The profile system consists of two types:
 
 **Test Profiles**
-   Define a sequencing test type (e.g., "WGS", "Exome", "RNA-Seq") and link
-   it to one or more application profiles. When a sample has a test ID and
-   a test version, SeqSetup resolves the test profile (the newest synced
-   version that matches; see *Test versions* below) and includes the
-   associated application pipelines in the sample sheet.
+   Define a sequencing test, named by its ``TestName``, and link it to one
+   or more application profiles. When a sample has a test ID -- a
+   ``TestName`` -- and a test version, SeqSetup resolves the test profile
+   (the newest synced version that matches; see *Test versions* below) and
+   includes the associated application pipelines in the sample sheet.
 
 **Application Profiles**
    Define what the instrument runs: BCL Convert and the on-instrument DRAGEN
@@ -28,8 +28,9 @@ The profile system consists of two types:
 Test Profiles
 -------------
 
-A test profile defines a sequencing test type and its associated analysis
-pipelines.
+A test profile defines a sequencing test and its associated analysis
+pipelines. A sample names its test by the test's ``TestName``; several tests
+may share a ``TestType``, which is shown beside the name.
 
 Required Fields
 ~~~~~~~~~~~~~~~
@@ -43,10 +44,11 @@ Required Fields
      - Description
    * - ``TestType``
      - string
-     - The test's name, matching the test ID assigned to samples
+     - The kind of test, such as ``WGS``, shown beside its name; several
+       tests may share one
    * - ``TestName``
      - string
-     - Human-readable display name
+     - The test's name, matching the test ID assigned to samples
    * - ``Description``
      - string
      - Description of the test
@@ -102,7 +104,9 @@ Test versions
 ~~~~~~~~~~~~~
 
 One test can have several versions, each in its own file with the same
-``TestType`` and its own ``Version``. Every sample names its test and a
+``TestName`` and its own ``Version``. Two tests may share a ``TestType`` and
+a ``Version`` -- two whole-genome tests, one per downstream pipeline, are each
+their own file with their own ``TestName``. Every sample names its test and a
 version: ``1`` picks the newest synced 1.x.x, ``1.2`` the newest 1.2.x, and
 ``1.2.3`` exactly 1.2.3, comparing numbers (1.10.0 is newer than 1.9.0).
 **Mark Ready** picks the version, checks and writes the Sample Sheet with
@@ -117,8 +121,8 @@ repository, since two folders of the tree can hold the same file name::
 
    Test profiles refused: WGS 1.2.0 is in profiles/test_profiles/Wgs_a.yaml and profiles/test_profiles/archive/Wgs_a.yaml. A test and version may be in one file only.
 
-It also refuses **every** file of two tests whose ``TestType`` differs only
-in letter case. A ``TestType`` is matched exactly, so ``Wgs`` and ``WGS``
+It also refuses **every** file of two tests whose ``TestName`` differs only
+in letter case. A ``TestName`` is matched exactly, so ``Wgs`` and ``WGS``
 are two different tests with their own application profiles, while every
 page and the Sample Sheet show what a reader takes for one test. It names
 each file by its path too::
@@ -167,7 +171,7 @@ Example Test Profile
 
    ---
    TestType: WGS
-   TestName: Whole Genome Sequencing
+   TestName: WGS
    Description: Germline whole genome sequencing with variant calling
    Version: 1.0.0
 
