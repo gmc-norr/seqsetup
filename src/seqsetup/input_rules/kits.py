@@ -20,7 +20,7 @@ from pydantic import AfterValidator, Field, StringConstraints
 
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from ..utils.names import is_dot_only
-from .base import ExactName256, FilledText256, StrictRules, Text256, whole
+from .base import ExactName256, StrictRules, Text256, whole
 from .check import CheckResult, Finding, check_data, check_yaml
 from .problems import InputProblem, path_text
 from .reader import GIVEN_TWICE, Locations

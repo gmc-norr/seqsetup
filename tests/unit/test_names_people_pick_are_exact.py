@@ -36,6 +36,18 @@ def _instrument_errors(text):
             if p.level == "error"]
 
 
+# The exact-name rule's own two messages. A test that only counted the path
+# would pass on another rule refusing the same text (an instrument name that
+# is no instrument SeqSetup has, say), so each case reads the message.
+SAYS = ("must not begin or end with a space", "holds a hidden character")
+
+
+def _only_exact_name(errors, path):
+    assert [p for p, _ in errors] == [path], errors
+    ((_path, message),) = errors
+    assert message.startswith(SAYS), message
+
+
 class TestAKitsNames:
 
     def test_the_good_files_pass(self):
@@ -43,37 +55,28 @@ class TestAKitsNames:
 
     @pytest.mark.parametrize("written", ["Probe Kit ", " Probe Kit", "Probe Kit" + ZWSP])
     def test_a_kit_name(self, written):
-        paths = [path for path, _ in _kit_errors(SINGLE.replace(
-            "name: Probe Kit", f'name: "{written}"', 1))]
-
-        assert paths == [("name",)]
+        _only_exact_name(_kit_errors(SINGLE.replace(
+            "name: Probe Kit", f'name: "{written}"', 1)), ("name",))
 
     @pytest.mark.parametrize("written", ["1.0 ", "1.0" + ZWSP])
     def test_a_kit_version(self, written):
-        paths = [path for path, _ in _kit_errors(SINGLE.replace(
-            "version: '1.0'", f'version: "{written}"'))]
-
-        assert paths == [("version",)]
+        _only_exact_name(_kit_errors(SINGLE.replace(
+            "version: '1.0'", f'version: "{written}"')), ("version",))
 
     @pytest.mark.parametrize("written", ["A ", ZWSP + "A"])
     def test_an_index_name(self, written):
-        paths = [path for path, _ in _kit_errors(SINGLE.replace(
-            "  - name: A\n", f'  - name: "{written}"\n'))]
-
-        assert paths == [("i7_indexes", 0, "name")]
+        _only_exact_name(_kit_errors(SINGLE.replace(
+            "  - name: A\n", f'  - name: "{written}"\n')), ("i7_indexes", 0, "name"))
 
     @pytest.mark.parametrize("written", ["P1 ", "P1" + ZWSP])
     def test_a_pair_name(self, written):
-        paths = [path for path, _ in _kit_errors(PAIRS.replace(
-            "  - name: P1\n", f'  - name: "{written}"\n'))]
-
-        assert paths == [("index_pairs", 0, "name")]
+        _only_exact_name(_kit_errors(PAIRS.replace(
+            "  - name: P1\n", f'  - name: "{written}"\n')), ("index_pairs", 0, "name"))
 
     def test_a_name_inside_a_pair(self):
-        paths = [path for path, _ in _kit_errors(PAIRS.replace(
-            "      name: a\n", '      name: "a "\n'))]
-
-        assert paths == [("index_pairs", 0, "index1", "name")]
+        _only_exact_name(_kit_errors(PAIRS.replace(
+            "      name: a\n", '      name: "a "\n')),
+            ("index_pairs", 0, "index1", "name"))
 
     def test_a_space_inside_a_name_is_still_fine(self):
         assert _kit_errors(SINGLE.replace("  - name: A\n", "  - name: A 1\n")) == []
@@ -95,19 +98,15 @@ class TestAnInstrumentsNames:
 
     @pytest.mark.parametrize("written", ["NovaSeq X Series ", "NovaSeq X Series" + ZWSP])
     def test_an_instrument_name(self, written):
-        paths = [path for path, _ in _instrument_errors(
-            ONE.replace("\nname: NovaSeq X Series\n", f'\nname: "{written}"\n'))]
-
-        assert paths == [("name",)]
+        _only_exact_name(_instrument_errors(
+            ONE.replace("\nname: NovaSeq X Series\n", f'\nname: "{written}"\n')), ("name",))
 
     @pytest.mark.parametrize("written", ["10B ", "10B" + ZWSP])
     def test_a_flow_cell_name(self, written):
         """A flow cell is picked on the run page, and its name decides the
         lanes and the reagent kits the run may have."""
-        paths = [path for path, _ in _instrument_errors(
-            ONE.replace('  "10B":\n', f'  "{written}":\n'))]
-
-        assert paths == [("flowcells", written)]
+        _only_exact_name(_instrument_errors(
+            ONE.replace('  "10B":\n', f'  "{written}":\n')), ("flowcells", written))
 
     def test_an_i5_workflow_name(self):
         """``Standard `` beside ``Standard`` with the opposite i5 direction
@@ -118,6 +117,21 @@ class TestAnInstrumentsNames:
             '  - name: "Standard "\n    i5_read_orientation: reverse-complement\n'))]
 
         assert paths == [("i5_workflows", 1, "name")]
+
+    @pytest.mark.parametrize("written", ["NovaSeq X Series ", "NovaSeq X Series" + ZWSP])
+    def test_the_name_a_file_of_several_instruments_lists_one_under(self, written):
+        """Such a key is refused twice over -- it is no name SeqSetup has
+        either (test_instrument_name_is_one_seqsetup_has.py) -- so there is no
+        break row of its own for it; what matters is that the file is refused
+        and the entry named."""
+        from .test_input_rules_instruments import TestDocumentShapes
+
+        text = TestDocumentShapes.MULTI.replace(
+            "  NovaSeq X Series:\n", f'  "{written}":\n')
+
+        paths = [path for path, _ in _instrument_errors(text)]
+
+        assert paths == [("instruments", written)]  # by either rule: see the docstring
 
     def test_a_workflow_name_with_a_space_inside_is_still_fine(self):
         assert _instrument_errors(ONE.replace(
