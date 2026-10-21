@@ -120,3 +120,49 @@ def test_while_editing_no_keeps_every_index(logged_in_page, base_url, app_ctx, k
 
     assert seen["dialogs"] == [ASKED] and seen["assigns"] == []
     assert _stored(app_ctx) == BEFORE
+
+
+def _open_with_tk03_ticked(page, base_url, combi_kit):  # noqa: F811
+    page.goto(f"{base_url}/runs/{RUN}")
+    page.wait_for_load_state("networkidle")
+    _pick_kit(page, combi_kit)
+    page.locator(f"#sample-row-{RUN}-s3 .sample-checkbox").check()
+
+
+def _single(page, kind):
+    return page.locator(f'#index-list-container [data-index-id="{COMBI}_{kind}_C{kind.upper()}"]')
+
+
+@pytest.mark.browser
+def test_an_i7_is_refused_when_a_ticked_row_shows_an_i7(logged_in_page, base_url, app_ctx,
+                                                        combi_kit, run_id):  # noqa: F811
+    page = logged_in_page
+    _open_with_tk03_ticked(page, base_url, combi_kit)
+    seen = _watch(page)
+
+    _drag(page, _single(page, "i7"), page.locator(f"#sample-row-{RUN}-s2 .drop-zone.i7-drop"))
+    expect(page.locator("#error-banner")).to_have_text(
+        "TK-03 already has an index. Select Edit indexes to replace it, or untick it.")
+
+    page.wait_for_timeout(500)
+    assert seen["dialogs"] == [] and seen["assigns"] == []
+    assert _stored(app_ctx) == BEFORE
+
+
+@pytest.mark.browser
+def test_an_i5_fills_ticked_rows_that_have_an_i7_and_no_i5(logged_in_page, base_url, app_ctx,
+                                                           combi_kit, run_id):  # noqa: F811
+    """How a combinatorial kit is used: the i5 replaces nothing, so it is
+    asked about as before and given."""
+    page = logged_in_page
+    _open_with_tk03_ticked(page, base_url, combi_kit)
+    seen = _watch(page)
+
+    with page.expect_response(lambda r: "/assign-index-to-selected" in r.url) as answer:
+        _drag(page, _single(page, "i5"), page.locator(f"#sample-row-{RUN}-s2 .drop-zone.i5-drop"))
+
+    assert answer.value.status == 200
+    assert seen["dialogs"] == [
+        "Give this same index to all 2 samples (the ticked ones and the one you dropped on)?\n\n"
+        "Samples in the same lane must not share an index."]
+    assert _stored(app_ctx) == {**BEFORE, "TK-02": (None, "CCAATTGG"), "TK-03": (OWN_I7, "CCAATTGG")}

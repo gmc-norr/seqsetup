@@ -190,6 +190,9 @@ def test_a_multi_drop_answer_mid_drag_refuses_the_drop(logged_in_page, base_url,
     assert _given(app_ctx, I7[10]) == []
     assert _given(app_ctx, I7[9]) == ["MV-10"]           # the held drop itself landed
     expect(page.locator("#error-banner")).to_have_text(MOVED)
+    # The redraw took the dragged chip away, so no dragend came: the drop
+    # itself let the message slots go, and the refusal shows.
+    expect(page.locator("#message-slots")).to_have_attribute("style", "")
 
 
 @pytest.mark.browser
@@ -213,6 +216,7 @@ def test_the_index_panel_growing_above_the_table_refuses_the_drop(
     assert assigns == []
     assert _given(app_ctx, I7[2]) == []
     expect(page.locator("#error-banner")).to_have_text(MOVED)
+    expect(page.locator("#message-slots")).to_have_attribute("style", "")
 
 
 @pytest.mark.browser
@@ -252,3 +256,46 @@ def test_a_redraw_that_moves_nothing_does_not_refuse_the_drop(logged_in_page, ba
         page.mouse.up()
     assert answer.value.status == 200
     assert _given(app_ctx, I7[1]) == ["MV-03"]
+
+
+_SCRIPT_DROP = """([chipSel, zoneSel, pad]) => {
+    const chip = document.querySelector(chipSel);
+    const dt = new DataTransfer();
+    chip.dispatchEvent(new DragEvent('dragstart', {dataTransfer: dt, bubbles: true}));
+    if (pad) {
+        const block = document.createElement('div');
+        block.style.height = `${pad}px`;
+        document.getElementById('sample-table').before(block);
+    }
+    const zone = document.querySelector(zoneSel);
+    zone.dispatchEvent(new DragEvent('dragover', {dataTransfer: dt, bubbles: true, cancelable: true}));
+    zone.dispatchEvent(new DragEvent('drop', {dataTransfer: dt, bubbles: true, cancelable: true}));
+}"""
+
+
+@pytest.mark.browser
+def test_a_drop_made_in_script_after_its_row_moved_is_refused(logged_in_page, base_url, app_ctx, run_id):
+    """A drop made in script carries no pointer position, so the spot check
+    cannot run: its row must not have moved at all. 20 px is less than a
+    row, which the spot check would let through."""
+    page = logged_in_page
+    _open(page, base_url, 1280)
+    assigns = []
+    page.on("request", lambda r: assigns.append(r.url) if "/assign-index" in r.url else None)
+    page.evaluate(_SCRIPT_DROP, [f'#index-list-container [data-index-pair-id="{KIT}_P04"]',
+                                 f"#sample-row-{RUN_ID}-s5 .drop-zone.i7-drop", 20])
+    expect(page.locator("#error-banner")).to_have_text(MOVED)
+    page.wait_for_timeout(500)
+    assert assigns == []
+    assert _given(app_ctx, I7[4]) == []
+
+
+@pytest.mark.browser
+def test_a_drop_made_in_script_on_a_row_that_stayed_lands(logged_in_page, base_url, app_ctx, run_id):
+    page = logged_in_page
+    _open(page, base_url, 1280)
+    with page.expect_response(lambda r: "/assign-index" in r.url) as answer:
+        page.evaluate(_SCRIPT_DROP, [f'#index-list-container [data-index-pair-id="{KIT}_P04"]',
+                                     f"#sample-row-{RUN_ID}-s5 .drop-zone.i7-drop", 0])
+    assert answer.value.status == 200
+    assert _given(app_ctx, I7[4]) == ["MV-05"]
