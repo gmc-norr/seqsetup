@@ -300,7 +300,7 @@ SET_TEST = 'class="validate-fix"'
 def _a_test_profile(ctx):
     """The Check panel offers "Set test" only when there is a test to set."""
     from seqsetup.models.test_profile import TestProfile
-    ctx.test_profile_repo.save(TestProfile(test_type="WGS"))
+    ctx.test_profile_repo.save(TestProfile(test_type="WGS", test_name="WGS"))
 HEARTBEAT = "editLock("
 
 

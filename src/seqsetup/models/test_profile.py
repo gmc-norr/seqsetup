@@ -46,15 +46,16 @@ class ApplicationProfileReference:
 
 @dataclass
 class TestProfile:
-    """Test profile defining a sequencing test type with associated application profiles.
+    """Test profile defining a sequencing test with associated application profiles.
 
     Test profiles are synced from a GitHub repository and define which
-    application profiles should be used for a specific test type (e.g., WGS, RNA).
+    application profiles should be used for a test, named by its TestName;
+    several tests may share a TestType (e.g., WGS, RNA).
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    test_type: str = ""  # TestType (e.g., "WGS") - matches sample.test_id
-    test_name: str = ""  # TestName
+    test_type: str = ""  # TestType (e.g., "WGS"): a label several tests may share
+    test_name: str = ""  # TestName - matches sample.test_id (2026-10-21 tests-by-name design)
     description: str = ""  # Description
     version: str = ""  # Version
 

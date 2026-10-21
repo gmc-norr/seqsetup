@@ -209,9 +209,45 @@ class TestFilledText:
         assert _only(_test(text)).path == ("TestApplicationProfiles", "OnInstrument", 0, "ApplicationProfileVersion")
 
     def test_text_with_spaces_around_is_kept_as_written(self):
-        result = _test(TEST.replace("TestName: WGS", "TestName: ' WGS '"))
+        result = _test(TEST.replace("TestType: WGS", "TestType: ' WGS '"))
 
-        assert build_test_profile(result.value, "test.yaml").test_name == " WGS "
+        assert build_test_profile(result.value, "test.yaml").test_type == " WGS "
+
+
+class TestATestNameIsWhatASampleNames:
+    """A sample names its test by TestName, exactly. Every page trims what is
+    picked or pasted, so a TestName with a space at either end was matched to
+    another test or to none; a hidden character made two names look like one
+    (review of fix/tests-by-name, 2026-10-21)."""
+
+    @pytest.mark.parametrize("name, code", [
+        ("'WGS '", "U+0020"), ("' WGS'", "U+0020"),
+        ("WGS\u00a0", "U+00A0"), ("'\u3000WGS'", "U+3000"),
+    ])
+    def test_a_space_at_either_end_is_refused(self, name, code):
+        error = _only(_test(TEST.replace("TestName: WGS", f"TestName: {name}")))
+
+        assert error.path == ("TestName",)
+        assert error.message == f"must not begin or end with a space: {code}"
+
+    @pytest.mark.parametrize("char, code", [("\u200b", "U+200B"), ("\u00ad", "U+00AD"),
+                                            ("\u202e", "U+202E")])
+    def test_a_hidden_character_is_refused(self, char, code):
+        error = _only(_test(TEST.replace("TestName: WGS", f"TestName: WGS{char}Rare")))
+
+        assert error.path == ("TestName",)
+        assert error.message == f"holds a hidden character: {code}"
+
+    def test_a_space_inside_is_kept(self):
+        result = _test(TEST.replace("TestName: WGS", "TestName: WGS Rare Disease"))
+
+        assert _errors(result) == []
+        assert build_test_profile(result.value, "test.yaml").test_name == "WGS Rare Disease"
+
+    def test_the_test_type_is_a_label_and_keeps_its_spaces(self):
+        result = _test(TEST.replace("TestType: WGS", "TestType: 'WGS\u00a0'"))
+
+        assert _errors(result) == []
 
 
 class TestVersions:
@@ -612,10 +648,35 @@ class TestRulesAcrossFiles:
 
     def test_two_differing_only_in_capitals(self):
         tests = [build_test_profile(_test(TEST).value, "a.yaml"),
-                 build_test_profile(_test(TEST.replace("TestType: WGS", "TestType: Wgs")).value, "b.yaml")]
+                 build_test_profile(_test(TEST.replace("TestName: WGS", "TestName: Wgs")).value, "b.yaml")]
 
         (problem,) = differing_only_in_capitals(tests, ["a.yaml", "b.yaml"])
         assert problem == "WGS in a.yaml and Wgs in b.yaml differ only in capitals"
+
+    def _named(self, name, test_type="WGS"):
+        text = TEST.replace("TestName: WGS", f"TestName: {name}").replace(
+            "TestType: WGS", f"TestType: {test_type}")
+        return build_test_profile(_test(text).value, f"{name}.yaml")
+
+    def test_two_names_of_one_type_and_version_are_two_tests(self):
+        """The lab's two WGS tests, one per downstream pipeline (the user's
+        word, 2026-10-21; docs/design/2026-10-21-tests-by-name-design.md)."""
+        tests = [self._named("WGSRareDisease_1"), self._named("WGSRareDiseaseResearch_1")]
+
+        assert repeated_test_versions(tests, ["a.yaml", "b.yaml"]) == []
+        assert differing_only_in_capitals(tests, ["a.yaml", "b.yaml"]) == []
+
+    def test_one_name_and_version_of_two_types_is_one_test_given_twice(self):
+        tests = [self._named("Exome", "WES"), self._named("Exome", "WGS")]
+
+        (problem,) = repeated_test_versions(tests, ["x/a.yaml", "y/b.yaml"])
+        assert problem == "Exome 1.0.0 is in x/a.yaml and y/b.yaml"
+
+    def test_two_names_differing_only_in_capitals(self):
+        tests = [self._named("Exome"), self._named("EXOME", "WES")]
+
+        (problem,) = differing_only_in_capitals(tests, ["a.yaml", "b.yaml"])
+        assert problem == "EXOME in b.yaml and Exome in a.yaml differ only in capitals"
 
 
 def _without(text, key):
@@ -668,14 +729,14 @@ class TestTheRunCheckTakesAStoredWholeNumberVersion:
                                       settings={"SoftwareVersion": version})
 
         def stored_test(test, app):
-            return StoredTestProfile(test_type=test, version="1.0.0", application_profiles=[
+            return StoredTestProfile(test_type=test, test_name=test, version="1.0.0", application_profiles=[
                 ApplicationProfileReference(profile_name=app, profile_version="1.0.0")])
 
         class Tests:
             profiles = [stored_test("A", "OldApp"), stored_test("B", "NewApp")]
 
-            def list_by_test_type(self, test):
-                return [p for p in self.profiles if p.test_type == test]
+            def list_by_test_name(self, test):
+                return [p for p in self.profiles if p.test_name == test]
 
         class Apps:
             profiles = {"OldApp": stored_app("OldApp", 4), "NewApp": stored_app("NewApp", "4.3.6")}

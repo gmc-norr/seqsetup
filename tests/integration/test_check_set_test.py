@@ -35,7 +35,7 @@ def _profiles(ctx, *test_types):
     # Imported here: a module-level TestProfile would be collected by pytest.
     from seqsetup.models.test_profile import TestProfile
     for t in test_types:
-        ctx.test_profile_repo.save(TestProfile(test_type=t))
+        ctx.test_profile_repo.save(TestProfile(test_type=t, test_name=t))
 
 
 def _fix_ids(panel_html):

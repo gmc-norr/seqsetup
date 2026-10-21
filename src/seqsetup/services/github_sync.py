@@ -986,11 +986,13 @@ class GitHubSyncService:
 
     def _kept_test_versions_not_read(self, test_profiles: list[TestProfile]) -> list[str]:
         """The stored test versions that are not among ``test_profiles``, as
-        "<test> <version>". A refused test file keeps every stored profile,
-        including a version deleted from the repository on purpose, so the
-        refusal says which ones it kept without reading them."""
-        read = {(profile.test_type, profile.version) for profile in test_profiles}
-        stored = {(profile.test_type, profile.version)
+        "<test> <version>", a test named by its TestName. A refused test file
+        keeps every stored profile, including a version deleted from the
+        repository on purpose, so the refusal says which ones it kept without
+        reading them. By TestType, a kept test looked read when another of its
+        TestType and version was (docs/design/2026-10-21-tests-by-name-design.md)."""
+        read = {(profile.test_name, profile.version) for profile in test_profiles}
+        stored = {(profile.test_name, profile.version)
                   for profile in self.test_profile_repo.list_all()}
         return [f"{test} {version}" for test, version in sorted(stored - read)]
 
@@ -1096,8 +1098,8 @@ class GitHubSyncService:
     def _refuse_tests_differing_only_in_capitals(test_profiles: list[TestProfile],
                                                  refused: list[str],
                                                  paths: Optional[list[str]] = None) -> None:
-        """Two tests whose TestType differs only in letter case are logged and
-        added to ``refused``. A test is matched by its TestType exactly, so
+        """Two tests whose TestName differs only in letter case are logged and
+        added to ``refused``. A test is matched by its TestName exactly, so
         ``Wgs`` and ``WGS`` are two tests with their own application profiles,
         while every page and the Sample Sheet show what a reader takes for one
         test (spec 2026-10-07 group A4, what it did not cover). ``paths`` are

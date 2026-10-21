@@ -123,7 +123,7 @@ def _seed_synced_profile(ctx, app_name: str, settings: dict | None = None) -> No
     ))
     ctx.test_profile_repo.save(TestProfile(
         test_type="GUARD_T",
-        test_name="Guard",
+        test_name="GUARD_T",
         description="d",
         version="1.0.0",  # three whole numbers (spec 2026-10-07 group A4)
         application_profiles=[

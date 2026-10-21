@@ -24,8 +24,9 @@ def version_numbers(text: str) -> tuple[int, ...]:
 
 @dataclass(frozen=True)
 class OfferedTest:
-    """One test in a pick-list: its name, and the synced versions, oldest
-    first. Stored versions that break the rule are not offered (§1)."""
+    """One test in a pick-list: its TestName, which a pick saves, the
+    TestType of its newest version, shown beside it, and the synced versions,
+    oldest first. Stored versions that break the rule are not offered (§1)."""
 
     test_type: str
     test_name: str
@@ -33,17 +34,19 @@ class OfferedTest:
 
 
 def offered_tests(profiles) -> list[OfferedTest]:
-    """Each stored test once, sorted by test, named by its newest version."""
+    """Each stored test once, by its TestName, sorted by it; the TestType
+    shown is its newest version's. Several tests may share a TestType
+    (docs/design/2026-10-21-tests-by-name-design.md)."""
     by_test: dict[str, list] = {}
     for profile in profiles:
-        by_test.setdefault(profile.test_type, []).append(profile)
+        by_test.setdefault(profile.test_name, []).append(profile)
     offered = []
     for test in sorted(by_test):
         usable = sorted((p for p in by_test[test] if PROFILE_VERSION_RE.match(p.version)),
                         key=lambda p: version_numbers(p.version))
         newest = usable[-1] if usable else by_test[test][0]
         versions = tuple(dict.fromkeys(p.version for p in usable))
-        offered.append(OfferedTest(test, newest.test_name, versions))
+        offered.append(OfferedTest(newest.test_type, test, versions))
     return offered
 
 
@@ -58,14 +61,16 @@ class ResolvedTest:
 
 
 def resolve_test(test_profile_repo, test: str, asked: str) -> ResolvedTest:
-    """The newest stored version of ``test`` whose numbers start with those
-    of ``asked`` ("1" asks for the newest 1.x.x, "1.2" for 1.2.x, "1.2.3"
-    for exactly it). Never "the first one the database returns" (review
-    S-12). ``asked`` follows the sample's rule (models/sample.py)."""
-    stored = test_profile_repo.list_by_test_type(test)
+    """The newest stored version of the test whose TestName is ``test``,
+    exactly, whose numbers start with those of ``asked`` ("1" asks for the
+    newest 1.x.x, "1.2" for 1.2.x, "1.2.3" for exactly it). Never "the first
+    one the database returns" (review S-12). ``asked`` follows the sample's
+    rule (models/sample.py). Not the TestType, which several tests may share
+    (docs/design/2026-10-21-tests-by-name-design.md)."""
+    stored = test_profile_repo.list_by_test_name(test)
     if not stored:
         return ResolvedTest(None, "test_profile_not_found",
-                            f"No test profile found for test type '{test}'")
+                            f"No test profile found for test '{test}'")
     # The pattern before any number: a stored version from before this rule
     # is skipped, and never raises (spec §1).
     usable = sorted(((version_numbers(p.version), p) for p in stored

@@ -10,10 +10,10 @@ class TestProfileRepository(BaseRepository[TestProfile]):
     COLLECTION = "test_profiles"
     MODEL_CLASS = TestProfile
 
-    def list_by_test_type(self, test_type: str) -> list[TestProfile]:
-        """Every stored version of a test. Which one a sample gets is
-        services/versioned_tests.resolve_test's to decide."""
-        return [TestProfile.from_dict(doc) for doc in self.collection.find({"test_type": test_type})]
+    def list_by_test_name(self, test_name: str) -> list[TestProfile]:
+        """Every stored version of a test, by its TestName. Which one a sample
+        gets is services/versioned_tests.resolve_test's to decide."""
+        return [TestProfile.from_dict(doc) for doc in self.collection.find({"test_name": test_name})]
 
     def delete_all(self) -> int:
         """Delete all test profiles. Used for full resync."""

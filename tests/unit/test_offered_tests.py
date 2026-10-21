@@ -22,11 +22,6 @@ class TestTheOfferedTests:
                                 _profile("WGS", "1.9.10")])
         assert choices[0].versions == ("1.9.0", "1.9.10", "1.10.0")
 
-    def test_the_name_comes_from_the_newest_version(self):
-        choices = offered_tests([_profile("WGS", "2.0.0", "Whole genome v2"),
-                                _profile("WGS", "1.0.0", "Whole genome")])
-        assert choices[0].test_name == "Whole genome v2"
-
     def test_a_stored_version_that_breaks_the_rule_is_not_offered(self):
         # Only a sync from before group A4 can have stored it (spec §1).
         choices = offered_tests([_profile("WGS", "1.0"), _profile("WGS", "1.2.0")])
@@ -39,3 +34,22 @@ class TestTheOfferedTests:
 
     def test_nothing_stored_gives_nothing(self):
         assert offered_tests([]) == []
+
+
+class TestEachTestNameIsOffered:
+    """A pick saves a TestName: two tests of one TestType are two choices
+    (docs/design/2026-10-21-tests-by-name-design.md)."""
+
+    def test_two_names_of_one_type_are_two_choices_sorted_by_name(self):
+        choices = offered_tests([_profile("WGS", "1.0.0", "WGSRareDisease_1"),
+                                 _profile("WGS", "1.0.0", "WGSRareDiseaseResearch_1"),
+                                 _profile("WGS", "1.1.0", "WGSRareDisease_1")])
+
+        assert [(c.test_name, c.test_type, c.versions) for c in choices] == [
+            ("WGSRareDiseaseResearch_1", "WGS", ("1.0.0",)),
+            ("WGSRareDisease_1", "WGS", ("1.0.0", "1.1.0"))]
+
+    def test_the_type_shown_is_the_newest_versions(self):
+        choices = offered_tests([_profile("WES", "2.0.0", "Exome"), _profile("WGS", "1.0.0", "Exome")])
+
+        assert [(c.test_name, c.test_type) for c in choices] == [("Exome", "WES")]
