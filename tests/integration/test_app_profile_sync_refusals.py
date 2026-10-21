@@ -15,6 +15,7 @@ from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services.github_sync import GitHubSyncError
 
 from .conftest import mark_ready, stored_export
+from .conftest import shipped_flowcells
 from .test_group_a3 import ORIGIN, _indexed_draft
 from .test_group_a4 import _fake_github, _test_yaml
 
@@ -70,6 +71,7 @@ def _seed_instrument(ctx):
     from seqsetup.models.instrument_definition import InstrumentDefinition, OnboardApplication
     from seqsetup.services.validation import clear_validation_cache
     ctx.instrument_definition_repo.save(InstrumentDefinition(
+        flowcells=shipped_flowcells("NovaSeq X Series"),
         name="NovaSeq X Series", samplesheet_name="NovaSeqXSeries", version="1.0.0",
         chemistry_type="2-color",
         onboard_applications=[OnboardApplication(name="BCLConvert", software_version="4.3.6")],

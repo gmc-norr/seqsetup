@@ -19,6 +19,7 @@ from seqsetup.services.scheduler import ProfileSyncScheduler
 
 from .conftest import disable_repos
 from .conftest import hold_edit_lock
+from .conftest import shipped_flowcells
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -32,6 +33,7 @@ def _instrument(orientation: str) -> InstrumentDefinition:
     the sheet gets: forward when RunInfo.xml marks the reversed read,
     reversed when it does not (spec 2026-10-04 group A2, §2)."""
     return InstrumentDefinition(
+        flowcells=shipped_flowcells(INSTRUMENT),
         name=INSTRUMENT,
         samplesheet_name="NovaSeqXSeries",
         version="1.0.0",

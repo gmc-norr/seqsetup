@@ -58,11 +58,15 @@ Instrument, flowcell and reagent kit
 - **Flowcell** -- the flowcell type for that instrument. Changing it
   refreshes the Reagent Kit choices. If the run's own flowcell is not one
   the instrument lists, or it has none, it still shows, selected and
-  marked **(not available)**.
+  marked **(not available)**, and **Mark Ready** refuses the run until you
+  pick another: SeqSetup does not know how many lanes such a flowcell has.
+  A flowcell the instrument does not list, sent from a page opened before a
+  sync, is refused and nothing is saved.
 - **Reagent Kit (cycles)** -- the reagent kit. Changing it resets Read 1,
   Read 2, Index 1 and Index 2 below to that kit's default cycle counts. A
   kit the flowcell does not list still shows, selected and marked
-  **(not available)**. While a sample has an Override Cycles typed by
+  **(not available)**, and **Mark Ready** refuses the run until you pick
+  another; choosing one is refused. While a sample has an Override Cycles typed by
   hand, a change to the cycle counts -- here or below -- is refused (see
   :doc:`override-cycles`).
 - **i5 workflow** -- shown only for an instrument that reads the i5 in more

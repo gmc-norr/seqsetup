@@ -129,6 +129,13 @@ is one of these:
 - **Instrument disabled.** An administrator has switched the run's
   instrument off. Pick another in Run Setup. Only Draft runs get this
   error.
+- **Flowcell or reagent kit not offered.** *"Flowcell '10B' is not one
+  NovaSeq X Series offers. Pick a flowcell in Run Setup before marking the
+  run ready."* The run's flowcell is not one its instrument lists -- a sync
+  may have renamed or dropped it, or the run was duplicated from an old
+  one -- or its reagent kit is not one the flowcell lists. SeqSetup does not
+  know how many lanes an unlisted flowcell has, so it cannot check the
+  lanes or ask about empty ones. Only Draft runs get this error.
 - **Sample ID has invalid characters.** Only letters, digits, ``-`` and
   ``_`` are allowed.
 - **A sample assigned to a lane the flowcell doesn't have.**

@@ -8,6 +8,7 @@ import pytest
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from .page_shows import shown_setting
 from .conftest import hold_edit_lock, nothing_stored, stored_export
+from .conftest import shipped_flowcells
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -195,6 +196,7 @@ def profiles(fresh_app):
         application_profiles=[ApplicationProfileReference(profile_name="A3BCL",
                                                           profile_version="1.0.0")]))
     ctx.instrument_definition_repo.save(InstrumentDefinition(
+        flowcells=shipped_flowcells("NovaSeq X Series"),
         name="NovaSeq X Series", samplesheet_name="NovaSeqXSeries", version="1.0.0",
         chemistry_type="2-color",
         onboard_applications=[OnboardApplication(name="BCLConvert", software_version="4.3.6")],
@@ -390,7 +392,8 @@ def _miseq_draft(ctx, run_id: str, mismatch_index1=1, status=RunStatus.DRAFT, **
     from .conftest import disable_repos
     disable_repos(ctx, "test_profile", "app_profile")
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.MISEQ,
-                        flowcell_type="v3", run_cycles=RunCycles(151, 151, 8, 8), status=status,
+                        flowcell_type="v3", reagent_cycles=600,
+                        run_cycles=RunCycles(151, 151, 8, 8), status=status,
                         **fields)
     run.add_sample(Sample(sample_id="S1", lanes=[1], barcode_mismatches_index1=mismatch_index1,
                           index_pair=IndexPair(
@@ -502,6 +505,7 @@ def miseq_profiles(fresh_app):
         application_profiles=[ApplicationProfileReference(profile_name="A3BCL",
                                                           profile_version="1.0.0")]))
     ctx.instrument_definition_repo.save(InstrumentDefinition(
+        flowcells=shipped_flowcells("MiSeq"),
         name="MiSeq", samplesheet_name="MiSeq", version="1.0.0", chemistry_type="4-color",
         onboard_applications=[OnboardApplication(name="BCLConvert", software_version="4.3.6")],
         i5_workflows=[{"name": "Standard", "i5_read_orientation": "forward"}],
@@ -519,7 +523,7 @@ def _miseq_profile_draft(ctx, run_id: str, index_cycles=8, i7="ATTACTCG", i5="TA
     from seqsetup.models.index import Index, IndexPair, IndexType
     from seqsetup.models.sample import Sample
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.MISEQ,
-                        flowcell_type="v3",
+                        flowcell_type="v3", reagent_cycles=600,
                         run_cycles=RunCycles(151, 151, index_cycles, index_cycles))
     run.add_sample(Sample(sample_id="S1", test_id="A3M", test_version="1", lanes=[1],
                           barcode_mismatches_index1=mismatch_index1,
