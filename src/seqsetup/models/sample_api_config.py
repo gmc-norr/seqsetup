@@ -15,6 +15,18 @@ from ..utils.names import is_dot_only
 # written, read or used.
 _API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
 
+# How many worksheets to ask the LIMS for at once. iGene pages /worksheets and
+# answers its own default page -- 20 -- when no page_size is asked for
+# (tools/igene_openapi.json, tools/mock_igene_api.py: page_size=Query(20)), so
+# a laboratory with more than 20 saw 20 of them with no word about the rest
+# (review INGEST-2). One larger page is asked for instead, and
+# fetch_worklists says so when the answer's pagination names more than it
+# holds; a second page is never fetched, because a list that moves between
+# two requests could send one worksheet twice and the duplicate-ID rule would
+# then hide it. The parameter's name and this size come from the mock's model
+# of iGene and must be confirmed against the real one.
+WORKSHEET_PAGE_SIZE = 200
+
 
 # Worklist IDs are operator-supplied (pasted from a LIMS UI, etc.) and
 # end up appended to the LIMS URL. The alphabet is letters, digits, '_',
@@ -105,8 +117,7 @@ class SampleApiConfig:
         params = ["detail=true"]
         if status:
             params.append(f"status={status}")
-        if limit:
-            params.append(f"page_size={limit}")
+        params.append(f"page_size={limit or WORKSHEET_PAGE_SIZE}")
 
         return f"{base}/worksheets?{'&'.join(params)}"
 

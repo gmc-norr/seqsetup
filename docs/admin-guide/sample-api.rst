@@ -29,6 +29,19 @@ Configuring the connection
 
    When it is unset, requests carry no ``api-key`` header at all.
 
+   The key must be **the key alone**: a line break or any other control
+   character in it cannot go in a request header. SeqSetup refuses to start
+   while ``SEQSETUP_LIMS_API_KEY`` holds one, and says so naming the variable
+   and never its value; if one is set after the start, nothing is asked of
+   the LIMS and the page says *"The LIMS API key holds a line break or
+   another control character, so nothing was asked of the LIMS. An
+   administrator must set SEQSETUP_LIMS_API_KEY again, to the key alone (see
+   Admin > Sample API). The key itself is not shown anywhere."* The usual
+   cause is a key file's own newline -- ``export
+   SEQSETUP_LIMS_API_KEY=$(tr -d '\r\n' < keyfile)`` strips it. Before this
+   check, such a key was quoted in full in the message every user saw on the
+   run page.
+
    An older version of SeqSetup had a key box here and stored what was typed
    into it. A key left behind by one of those versions is **never used**. The
    page says it is there, and the next save of this page removes it. Before
@@ -113,12 +126,22 @@ The external API must implement two endpoints.
 List Worklists
 ^^^^^^^^^^^^^^
 
-``GET {base_url}/worksheets?detail=true``
+``GET {base_url}/worksheets?detail=true&page_size=200``
 
 Returns a JSON array of worklist objects (or a two-element
 ``[worklists, pagination]`` array -- the first element is used). Each object
 must include at least an ``id`` field. A ``name`` field is recommended for
 display purposes.
+
+SeqSetup asks for one page of **200** worksheets. A LIMS that pages this
+endpoint and has more than that answers the first 200, and when its
+``pagination`` element names a larger ``total`` the worksheet list says so:
+*"Showing 200 of 254 worksheets from the LIMS: the rest are not in this list.
+Ask the laboratory system to close or archive the worksheets this run does not
+need."* SeqSetup never asks for a second page: a list that changes between two
+requests could send one worksheet twice, and the duplicate-ID rule below would
+then drop it without a word. A LIMS that answers a plain array, with no
+pagination element, is listed whole as before.
 
 **Example response:**
 

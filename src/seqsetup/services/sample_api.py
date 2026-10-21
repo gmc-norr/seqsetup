@@ -113,6 +113,26 @@ class LimsAllowedNetsError(ValueError):
 # the one it replaced. The old one switched the whole address check off at
 # once -- loopback, every RFC1918 range, CGNAT, and link-local, so a LIMS
 # URL could reach 169.254.169.254 and read a cloud host's own credentials.
+# The api-key comes from the server's own environment and nowhere else
+# (models/sample_api_config.py). A key that holds a control character cannot
+# go in a header: http.client raises ValueError("Invalid header value
+# b'<the key>\n'"), and that text reached the run page, the admin page, Admin
+# > Logs and the container log (review INGEST-1 / SEC-1). A key file's
+# trailing newline is the usual cause.
+_API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+API_KEY_REFUSED = (
+    "The LIMS API key holds a line break or another control character, so nothing was "
+    f"asked of the LIMS. An administrator must set {_API_KEY_ENV} again, to the key "
+    "alone (see Admin > Sample API). The key itself is not shown anywhere."
+)
+# What a message says instead of the words http.client puts in its ValueError,
+# which quote the header value in full.
+HEADER_VALUE_REFUSED = (
+    "The request to the LIMS could not be sent: one of its headers holds a character a "
+    "header may not carry. No value is shown here."
+)
+
 _ALLOWED_NETS_ENV = "SEQSETUP_LIMS_ALLOWED_NETS"
 _REMOVED_ALLOW_PRIVATE_NETS_ENV = "SEQSETUP_LIMS_ALLOW_PRIVATE_NETS"
 
@@ -219,6 +239,26 @@ def parse_allowed_nets(value: str) -> tuple:
             )
         nets.append(net)
     return tuple(nets)
+
+
+def api_key_is_unusable(api_key: str) -> bool:
+    """True when the key cannot be put in a header, so it must not be sent."""
+    return bool(_CONTROL_CHARACTER.search(api_key))
+
+
+def check_lims_api_key() -> None:
+    """Stop the start when the api-key holds a control character.
+
+    Called from app.py beside the other start-up checks. The message names the
+    variable and never its value: it reaches the container log, and the value
+    is the secret itself.
+    """
+    if api_key_is_unusable(os.environ.get(_API_KEY_ENV, "")):
+        raise RuntimeError(
+            f"{_API_KEY_ENV} holds a line break or another control character, which "
+            f"cannot go in a request header. Set it to the key alone -- a key file's "
+            f"own newline is the usual cause. Its value is not shown here."
+        )
 
 
 def check_lims_allowed_nets() -> None:
@@ -428,6 +468,10 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
     actual TCP destination matches the address we validated — no DNS
     rebinding window between validate and connect.
     """
+    # Before anything leaves this machine: a key that cannot go in a header is
+    # not sent, and the refusal names no value.
+    if api_key and api_key_is_unusable(api_key):
+        raise SampleApiError(API_KEY_REFUSED)
     try:
         resolved_ips = _validate_url(url)
     except LimsUrlValidationError as exc:
@@ -497,6 +541,11 @@ def _api_get(url: str, api_key: str = "") -> dict | list:
             response = conn.getresponse()
         except (socket.error, http.client.HTTPException, ssl.SSLError) as exc:
             raise SampleApiError(f"Network error: {exc}")
+        except ValueError:
+            # http.client quotes the offending header value in its message, so
+            # neither it nor the exception it came from is passed on (`from
+            # None`: a logger.exception higher up would print the chain).
+            raise SampleApiError(HEADER_VALUE_REFUSED) from None
 
         if response.status >= 400:
             raise SampleApiError(f"API error: {response.status} {response.reason}")
@@ -693,9 +742,10 @@ def fetch_worklists(
 
         # Handle response format: [worksheets_list, pagination_info]
         worksheets_data = data
+        pagination: dict = {}
         if isinstance(data, list) and len(data) == 2:
             if isinstance(data[0], list) and isinstance(data[1], dict):
-                worksheets_data = data[0]
+                worksheets_data, pagination = data[0], data[1]
 
         if not isinstance(worksheets_data, list):
             return False, "API response is not a valid format", [], []
@@ -704,6 +754,16 @@ def fetch_worklists(
             return False, "No worksheets available", [], []
 
         worksheets, left_out = _read_worksheets(worksheets_data, config)
+        # One page is asked for and one page is read: when the LIMS says it
+        # has more than it sent, the list says so rather than looking whole
+        # (review INGEST-2).
+        total = pagination.get("total")
+        if isinstance(total, int) and not isinstance(total, bool) and total > len(worksheets_data):
+            left_out.append(
+                f"Showing {len(worksheets_data)} of {total} worksheets from the LIMS: the "
+                f"rest are not in this list. Ask the laboratory system to close or archive "
+                f"the worksheets this run does not need."
+            )
 
         if not worksheets:
             return False, "No valid worksheets found in API response", [], left_out

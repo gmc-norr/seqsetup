@@ -215,9 +215,16 @@ def _record(run_id: str, kind: str, content: Union[str, bytes], actor: str) -> t
     }, raw
 
 
-def write_exports(ctx, run, files: dict, *, actor: str = "") -> dict:
+def write_exports(ctx, run, files: dict, *, actor: str = "",
+                  written: Optional[dict] = None) -> dict:
     """Write each of ``files`` (kind -> bytes or text, None to skip) into its
     own record and return the manifest the run will carry.
+
+    ``written``, when given, is filled in as each file is stored, so a caller
+    whose Mark Ready is then refused can name every file it left -- whatever
+    was raised, and without catching each kind of failure separately
+    (CLAUDE.md: "every refusal after it that writes an audit row names those
+    ids in it"; review LIFECYCLE-1).
 
     Every record is measured first, so a file that cannot be stored refuses
     the whole Mark Ready before anything at all is written. Each record is
@@ -264,17 +271,26 @@ def write_exports(ctx, run, files: dict, *, actor: str = "") -> dict:
             # the line below is never reached (review 2, P3-2).
             _log_files_written(run.id, manifest, "a write that then failed")
             raise
+        # Inserted: it is in the collection now, whatever happens next, so
+        # the caller knows of it before it is read back.
+        manifest[kind] = {"id": record["_id"], "sha256": record["sha256"],
+                          "size": record["size"]}
+        if written is not None:
+            written[kind] = manifest[kind]
         back = ctx.run_export_repo.get(record["_id"])
-        if back is None:
-            raise ExportFileNotStored(kind, "it was not there when it was read back")
-        content = back.get("content")
-        read = (content.encode("utf-8") if isinstance(content, str)
-                else bytes(content) if isinstance(content, (bytes, bytearray)) else None)
-        if read != raw:
+        read = None
+        if back is not None:
+            content = back.get("content")
+            read = (content.encode("utf-8") if isinstance(content, str)
+                    else bytes(content) if isinstance(content, (bytes, bytearray)) else None)
+        if back is None or read != raw:
+            # Named here too: the line below is never reached (review 1,
+            # P2-1, and review LIFECYCLE-1 for this path).
+            _log_files_written(run.id, manifest, "a read-back that differed")
+            if back is None:
+                raise ExportFileNotStored(kind, "it was not there when it was read back")
             raise ExportFileNotStored(
                 kind, f"{len(read) if read is not None else 'no'} bytes came back, "
                       f"not the {len(raw)} that were written")
-        manifest[kind] = {"id": record["_id"], "sha256": record["sha256"],
-                          "size": record["size"]}
     _log_files_written(run.id, manifest, "a Mark Ready in progress")
     return manifest

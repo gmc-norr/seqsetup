@@ -44,7 +44,7 @@ from .routes.admin import (
 )
 from .security_headers import SecurityHeadersMiddleware, https_only_from_env, server_error_handler
 from .services.log_capture import setup_log_capture
-from .services.sample_api import check_lims_allowed_nets
+from .services.sample_api import check_lims_allowed_nets, check_lims_api_key
 from .services import web_sessions
 from .services.audit_log import set_actor_fingerprint_secret, set_audit_sink
 from .startup import (
@@ -75,6 +75,7 @@ _SESS_HTTPS_ONLY = https_only_from_env()
 # no LIMS may be called on, stops the start; so does the removed
 # SEQSETUP_LIMS_ALLOW_PRIVATE_NETS (services/sample_api.py).
 check_lims_allowed_nets()
+check_lims_api_key()
 
 # Resolve session secret
 _SESSION_SECRET = resolve_session_secret()

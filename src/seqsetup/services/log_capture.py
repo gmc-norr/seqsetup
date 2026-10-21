@@ -199,6 +199,15 @@ class LogCaptureHandler(logging.Handler):
 
 # Global log capture handler instance
 _log_capture_handler: Optional[LogCaptureHandler] = None
+# The handler that puts SeqSetup's own lines where a container runtime keeps
+# them. Created once; adding it twice would print every line twice.
+_stderr_handler: Optional[logging.Handler] = None
+
+# uvicorn's own loggers. It logs straight to them (not through the root
+# logger), and its handlers are the ones that reach the container log, so
+# they get the scrubbing filter too: a traceback's mongodb://user:password@
+# lives in the exception, which uvicorn prints in full.
+_UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "gunicorn.error")
 
 
 def _not_audit_record(record: logging.LogRecord) -> bool:
@@ -218,6 +227,27 @@ def get_log_capture_handler() -> LogCaptureHandler:
         )
         _log_capture_handler.addFilter(_not_audit_record)
     return _log_capture_handler
+
+
+def get_stderr_handler() -> logging.Handler:
+    """The handler that writes SeqSetup's own lines to stderr -- the container
+    log -- at INFO, through the same scrub as the in-memory buffer.
+
+    Without it a ``seqsetup.*`` line reached nothing lasting: the buffer above
+    is 2,000 entries that a restart or Clear Logs empties, the root logger has
+    no handler in a container, and because ``seqsetup`` *has* one Python's
+    last-resort stderr is never used. CLAUDE.md says of Mark Ready's two
+    ConflictError paths that "the log line is the record" (review OPSDOCS-1).
+    """
+    global _stderr_handler
+    if _stderr_handler is None:
+        handler = logging.StreamHandler()  # stderr, as a container expects
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        attach_scrubbing_filter_to_handler(handler)
+        _stderr_handler = handler
+    return _stderr_handler
 
 
 class ScrubbingFilter(logging.Filter):
@@ -320,6 +350,17 @@ def install_scrubbing_filter(logger_names: Optional[list[str]] = None) -> Scrubb
         logger = logging.getLogger(name)
         if flt not in logger.filters:
             logger.addFilter(flt)
+    # uvicorn's loggers: at logger level, because uvicorn logs directly to
+    # them (so their own filters do fire) and because its dictConfig, which
+    # runs after this, replaces a logger's handlers but keeps its filters.
+    # Its handlers get the filter too, for the order where uvicorn configured
+    # logging before this module was imported.
+    for name in _UVICORN_LOGGERS:
+        logger = logging.getLogger(name)
+        if flt not in logger.filters:
+            logger.addFilter(flt)
+        for handler in list(logger.handlers):
+            attach_scrubbing_filter_to_handler(handler)
     return flt
 
 
@@ -341,6 +382,15 @@ def setup_log_capture(logger_names: Optional[list[str]] = None) -> LogCaptureHan
         for name in logger_names:
             logger = logging.getLogger(name)
             logger.addHandler(handler)
+            # And somewhere lasting. Only when nothing else has claimed the
+            # root logger: an operator who configured their own stdout or
+            # file handler before importing the app already keeps these
+            # lines (the records propagate there), and a second handler
+            # would write every line twice.
+            if not logging.getLogger().handlers:
+                stderr = get_stderr_handler()
+                if stderr not in logger.handlers:
+                    logger.addHandler(stderr)
             # The handler is at DEBUG and Admin > Logs offers INFO and DEBUG
             # filters, but a named logger left at NOTSET inherits root's
             # WARNING, so no INFO record was ever made. Raise it to INFO,

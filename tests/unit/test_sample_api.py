@@ -70,7 +70,10 @@ class TestCheckConnection:
         success, msg = check_connection(config)
         assert success is True
         assert "1 worksheets" in msg
-        mock_get.assert_called_once_with("https://example.com/api/worksheets?detail=true", "key")
+        # One large page is asked for (models/sample_api_config.WORKSHEET_PAGE_SIZE):
+        # without a page_size iGene answered its own default of 20.
+        mock_get.assert_called_once_with(
+            "https://example.com/api/worksheets?detail=true&page_size=200", "key")
 
     @patch("seqsetup.services.sample_api._api_get")
     def test_successful_connection_empty_list(self, mock_get):
