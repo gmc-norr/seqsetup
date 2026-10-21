@@ -76,7 +76,7 @@
     data-test-id="{{ sample.test_id or '' }}" data-test-version="{{ sample.test_version or '' }}">
 {%- if effective_checkboxes %}
     <td class="checkbox-cell">
-        <input type="checkbox" class="sample-checkbox"
+        <input type="checkbox" class="sample-checkbox" autocomplete="off"
                data-sample-id="{{ sample.id }}"
                aria-label="Select {{ sample.sample_id or sample.id }}">
     </td>
@@ -211,7 +211,7 @@
                 a value typed while a save was on its way (outside review of
                 f490536, F3). #}
             <td class="override-cell">
-                <input type="text" name="override_cycles"
+                <input type="text" name="override_cycles" autocomplete="off"
                        id="override-cycles-{{ sample.id }}"
                        value="{{ sample.override_cycles or '' }}"
                        placeholder="Auto"
@@ -276,7 +276,7 @@
                     hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
                     hx-target="{{ '#sample-row-' ~ sample.id if context == 'add_step2' else '#sample-section' }}"
                     hx-swap="outerHTML"
-                    hx-confirm="Delete this sample?">&times;</button>
+                    hx-confirm="Delete sample {{ sample.sample_id }}?">&times;</button>
         </td>
     {%- endif %}
 {%- else %}
@@ -295,7 +295,7 @@
                     hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
                     hx-target="#sample-section"
                     hx-swap="outerHTML"
-                    hx-confirm="Delete this sample?">&times;</button>
+                    hx-confirm="Delete sample {{ sample.sample_id }}?">&times;</button>
         </td>
     {%- endif %}
 {%- endif %}

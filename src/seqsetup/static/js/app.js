@@ -832,6 +832,28 @@ function clearBulkTestIdForm() {
     htmx.trigger('#bulk-test-id-form', 'submit');
 }
 
+// The sample ID a row shows, as the person reading the table sees it, for a
+// question about that row. Falls back to the row's own id, which is never
+// empty, so a question is never about "".
+function shownSampleIdOfRow(sampleId) {
+    const row = document.getElementById(`sample-row-${sampleId}`);
+    const cell = row && row.querySelector('.sample-id-cell');
+    return ((cell && cell.textContent) || '').trim() || sampleId;
+}
+
+// What Delete Selected asks: how many rows, and which. A question naming
+// neither was confirmed on a 96-row table with nothing to catch a tick on
+// the wrong row (review EDITING-5). The first five names, then the rest as a
+// count, as the Check page's own lists do.
+function bulkDeleteQuestion(sampleIds) {
+    const names = sampleIds.map(shownSampleIdOfRow);
+    if (names.length === 1) return `Delete sample ${names[0]}?`;
+    const shown = names.slice(0, 5).join(', ');
+    const rest = names.length - 5;
+    return `Delete ${names.length} samples: ${shown}`
+        + (rest > 0 ? ` and ${rest} more?` : '?');
+}
+
 function applyBulkDeleteForm() {
     const selectedSampleIds = getSelectedSampleIds();
     if (selectedSampleIds.length === 0) {
@@ -845,6 +867,10 @@ function applyBulkDeleteForm() {
     document.getElementById('bulk-delete-sample-ids').value = JSON.stringify(selectedSampleIds);
     document.getElementById('bulk-delete-target-indexes').value =
         JSON.stringify(selectedSampleIds.map(shownIndexOfRow));
+    // htmx reads hx-confirm when it issues the request, so the question names
+    // the rows that are ticked now.
+    document.getElementById('bulk-delete-form').setAttribute(
+        'hx-confirm', bulkDeleteQuestion(selectedSampleIds));
 
     // Trigger HTMX form submission (will show confirm dialog from hx-confirm)
     htmx.trigger('#bulk-delete-form', 'submit');
@@ -1266,6 +1292,16 @@ window.addEventListener('beforeunload', function(event) {
     if (unsentRowSaves() === 0) return;
     event.preventDefault();
     event.returnValue = '';
+});
+
+// A page the browser kept in its back/forward cache comes back whole: the
+// boxes hold what was typed, a refusal is still on screen, and a row's tick
+// is on whichever row now sits in that place. Fetch it again instead, so
+// Back shows what is stored (review EDITING-3). The page's own inputs and
+// tick boxes carry autocomplete="off" for the other restoration, the one a
+// browser does to a page it fetches afresh.
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) window.location.reload();
 });
 
 new MutationObserver(function() {

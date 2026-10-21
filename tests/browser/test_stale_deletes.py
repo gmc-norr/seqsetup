@@ -54,7 +54,7 @@ def run_id(app_ctx):
 def _open(page, base_url):
     page.goto(f"{base_url}/runs/{RUN_ID}")
     page.wait_for_load_state("networkidle")
-    page.on("dialog", lambda d: d.accept())      # "Delete this sample?"
+    page.on("dialog", lambda d: d.accept())      # "Delete sample <id>?"
 
 
 def _the_other_tab_indexes(app_ctx, n):
