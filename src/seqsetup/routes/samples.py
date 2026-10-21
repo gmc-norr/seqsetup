@@ -1759,14 +1759,21 @@ async def set_override_cycles_bulk(
     Y151;I10;I10;Y151 and the UMI bases would be read as Read 1 (CLAUDE.md,
     partial updates). The panel's hidden input always sends a value, "" among
     them when Auto is used.
+
+    Apply and Auto are two buttons, and the panel says which was pressed
+    (``mode``); a request that does not say is an Apply. Apply with nothing
+    typed is refused: it was the same request as Auto, so a typed UMI read
+    was rebuilt from the indexes with no word (project review of 7d970c7,
+    EDITING-2), as the Mismatches row refuses Apply with its boxes blank.
     """
     run_id = run.id
 
     form = await request.form()
     if "override_cycles" not in form:
         return Response("No override cycles were sent. Nothing was saved.", status_code=400)
+    auto = form.get("mode", "apply") == "auto"
     sample_ids_json = form.get("sample_ids", "[]")
-    override_cycles_str = form.get("override_cycles", "")
+    override_cycles_str = "" if auto else form.get("override_cycles", "")
 
     sample_ids = _parse_sample_ids(sample_ids_json)
     if sample_ids is None:
@@ -1776,6 +1783,11 @@ async def set_override_cycles_bulk(
     # a multi-megabyte all-`Y` string would still match and balloon the doc.
     override_cycles = sanitize_string(override_cycles_str, 256) if override_cycles_str else None
     override_cycles = override_cycles or None  # empty string -> None for the recalculate path
+    if not auto and not override_cycles:
+        raise HTTPException(status_code=400, detail=(
+            "Type an Override Cycles to apply, or use Auto to work each sample's out from its "
+            "index and the run's cycles. Nothing was saved."
+        ))
 
     try:
         if override_cycles:

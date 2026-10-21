@@ -65,6 +65,9 @@
           hx-swap="outerHTML">
         <input type="hidden" name="sample_ids" id="bulk-override-sample-ids">
         <input type="hidden" name="override_cycles" id="bulk-override-cycles">
+        {# apply or auto: which button was pressed. Apply with nothing typed
+           is refused; it once acted as Auto. #}
+        <input type="hidden" name="mode" id="bulk-override-mode" value="apply">
         <input type="hidden" name="target_override_cycles" id="bulk-target-override-cycles">
     </form>
     <form id="bulk-test-id-form" style="display: none;"

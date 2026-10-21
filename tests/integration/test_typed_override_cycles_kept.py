@@ -49,11 +49,13 @@ def _make_run(ctx, samples: int = 1, read1_pattern=None) -> None:
     hold_edit_lock(ctx, RUN_ID)
 
 
-def _type(client, sample_ids, value):
+def _type(client, sample_ids, value, mode="apply"):
     # target_override_cycles: what the page showed in those rows, as the
-    # bulk panel sends it (design note 2026-10-17).
+    # bulk panel sends it (design note 2026-10-17). mode: which of the
+    # panel's buttons, Apply or Auto.
     resp = client.post(f"/runs/{RUN_ID}/samples/set-override-cycles", headers=ORIGIN,
                        data={"sample_ids": json.dumps(sample_ids), "override_cycles": value,
+                             "mode": mode,
                              "target_override_cycles": shown_override_cycles(
                                  client, RUN_ID, sample_ids)})
     assert resp.status_code == 200, resp.text
@@ -235,7 +237,7 @@ class TestACycleChangeStillRecalculates:
         _app, ctx, _db = fresh_app
         _make_run(ctx)
         _type(logged_in_client, ["s0"], TYPED)
-        _type(logged_in_client, ["s0"], "")
+        _type(logged_in_client, ["s0"], "", mode="auto")
 
         resp = _post_cycles(logged_in_client, ctx, read2_cycles="101")
 

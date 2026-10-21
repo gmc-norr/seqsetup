@@ -316,14 +316,16 @@ class TestSetOverrideCyclesNeedsItsField:
         """The auto path, unchanged: green before and after the refusal.
 
         This is the regression pin for "sent empty is not absent" — the
-        panel's Auto button sends "" and must still recompute.
+        panel's Auto button sends "" (with mode auto: an Apply with nothing
+        typed is refused, test_override_apply_needs_a_value.py) and must
+        still recompute.
         """
         _app, ctx, _db = fresh_app
         _run(ctx, override_cycles=UMI_OVERRIDE, index_pair=_pair())
 
         response = logged_in_client.post(
             f"/runs/{RUN_ID}/samples/set-override-cycles",
-            data={"sample_ids": json.dumps(["s1"]), "override_cycles": "",
+            data={"sample_ids": json.dumps(["s1"]), "override_cycles": "", "mode": "auto",
                   "target_override_cycles": shown_override_cycles(
                       logged_in_client, RUN_ID, ["s1"])},
             headers=ORIGIN)

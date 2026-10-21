@@ -110,6 +110,9 @@ bulk-action panel above the table:
 
 Select **Auto** instead of **Apply** to drop whatever is stored for the
 ticked samples and go back to the calculated value described above.
+**Apply** with the box empty changes nothing and says so (*"Type an
+Override Cycles to apply, or use Auto ..."*): only **Auto** replaces a
+value typed by hand with the calculated one.
 
 A sample's own **Override Cycles** cell sends what it was showing too: if
 another tab changed that sample's Override Cycles since the page drew it,

@@ -149,7 +149,7 @@ class TestOverrideCyclesRefusedAtSave:
         resp = logged_in_client.post(
             f"/runs/{run_id}/samples/set-override-cycles",
             data={"sample_ids": f'["{run.samples[0].id}", "{run.samples[1].id}"]',
-                  "override_cycles": ""},
+                  "override_cycles": "", "mode": "auto"},
             headers=ORIGIN,
         )
 

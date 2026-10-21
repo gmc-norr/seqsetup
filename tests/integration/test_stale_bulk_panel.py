@@ -86,8 +86,8 @@ def _mismatches(client, sids, i7="1", i5="2", shown=(DEFAULT_MM, DEFAULT_MM), mo
     return client.post(f"/runs/{RUN}/samples/set-mismatches", data=data, headers=ORIGIN)
 
 
-def _override(client, sids, value="Y151;I10;I10;Y151", shown=("", "")):
-    data = _shown({"sample_ids": json.dumps(sids), "override_cycles": value},
+def _override(client, sids, value="Y151;I10;I10;Y151", shown=("", ""), mode="apply"):
+    data = _shown({"sample_ids": json.dumps(sids), "override_cycles": value, "mode": mode},
                   "target_override_cycles", _rows(shown))
     return client.post(f"/runs/{RUN}/samples/set-override-cycles", data=data, headers=ORIGIN)
 
@@ -244,7 +244,7 @@ class TestOverrideCycles:
         _behind_the_page(ctx, "s1", override_cycles="U8Y143;I10;I10;Y151")
         before = _everything(ctx)
 
-        resp = _override(logged_in_client, ["s1"], value="", shown=("",))
+        resp = _override(logged_in_client, ["s1"], value="", shown=("",), mode="auto")
 
         assert resp.status_code == 409, resp.text[:300]
         assert _everything(ctx) == before

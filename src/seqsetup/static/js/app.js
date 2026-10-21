@@ -763,6 +763,7 @@ function applyBulkOverrideCyclesForm() {
         // Populate hidden form fields
         document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
         document.getElementById('bulk-override-cycles').value = overrideCycles;
+        document.getElementById('bulk-override-mode').value = 'apply';
         document.getElementById('bulk-target-override-cycles').value =
             JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
 
@@ -782,6 +783,7 @@ function clearBulkOverrideCyclesForm() {
         // Populate hidden form fields with empty value to recalculate auto
         document.getElementById('bulk-override-sample-ids').value = JSON.stringify(selectedSampleIds);
         document.getElementById('bulk-override-cycles').value = '';
+        document.getElementById('bulk-override-mode').value = 'auto';
         document.getElementById('bulk-target-override-cycles').value =
             JSON.stringify(selectedSampleIds.map(shownOverrideOfRow));
 
