@@ -138,6 +138,65 @@ class TestAnInstrumentsNames:
             "  - name: Standard\n", "  - name: Standard Flow\n")) == []
 
 
+class TestIlluminasOwnTwoShapesTrimBeforeTheRules:
+    """A TSV and an Illumina YAML have their cells stripped by the adapter
+    (``services/index_parser.py``) before the rulebook sees them, so a name
+    with a space at an end is trimmed there rather than refused. The
+    guarantee holds all the same: two names that then read alike are refused
+    as one name given twice, and a hidden character -- which no strip removes
+    -- is refused by the rulebook. The project's own YAML and the CSV, whose
+    names reach the rulebook as written, refuse the space itself."""
+
+    @staticmethod
+    def _tsv(rows):
+        return "\n".join(["[IndexKit]", "Name\tOld kit", "Version\t1.0", "",
+                          "[Indices]", "Name\tSequence\tIndexNumber"] + rows)
+
+    @staticmethod
+    def _parse(text, filename):
+        from seqsetup.models.index import IndexMode
+        from seqsetup.services.index_parser import IndexParser
+
+        return IndexParser.parse_from_content(text, filename, index_mode=IndexMode.SINGLE)
+
+    def test_a_tsv_name_with_a_trailing_space_is_trimmed(self):
+        kit = self._parse(self._tsv(["D701 \tATTACTCG\t1"]), "k.tsv")
+
+        assert [i.name for i in kit.i7_indexes] == ["D701"]
+
+    def test_two_tsv_names_one_space_apart_are_one_name_given_twice(self):
+        with pytest.raises(Exception) as refused:
+            self._parse(self._tsv(["D701\tATTACTCG\t1", "D701 \tTCCGGAGA\t1"]), "k.tsv")
+
+        assert "twice" in str(refused.value), refused.value
+
+    def test_a_tsv_name_with_a_hidden_character_is_refused(self):
+        with pytest.raises(Exception) as refused:
+            self._parse(self._tsv([f"D701{ZWSP}\tATTACTCG\t1"]), "k.tsv")
+
+        assert "hidden character" in str(refused.value), refused.value
+
+    def test_an_illumina_yaml_name_with_a_trailing_space_is_trimmed(self):
+        kit = self._parse("Name: K\nVersion: '1.0'\nIndexSequences:\n"
+                          "  i7Index1:\n    'D701 ': ATTACTCG\n", "k.yaml")
+
+        assert [i.name for i in kit.i7_indexes] == ["D701"]
+
+    def test_two_illumina_yaml_names_one_space_apart_are_one_name_given_twice(self):
+        with pytest.raises(Exception) as refused:
+            self._parse("Name: K\nVersion: '1.0'\nIndexSequences:\n  i7Index1:\n"
+                        "    D701: ATTACTCG\n    'D701 ': TCCGGAGA\n", "k.yaml")
+
+        assert "twice" in str(refused.value), refused.value
+
+    def test_an_illumina_yaml_name_with_a_hidden_character_is_refused(self):
+        with pytest.raises(Exception) as refused:
+            self._parse("Name: K\nVersion: '1.0'\nIndexSequences:\n  i7Index1:\n"
+                        f"    'D701{ZWSP}': ATTACTCG\n", "k.yaml")
+
+        assert "hidden character" in str(refused.value), refused.value
+
+
 class TestTheKitUploadBoxes:
 
     @pytest.mark.parametrize("box, value", [("kit_name", "K" + ZWSP),

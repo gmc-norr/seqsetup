@@ -4,9 +4,13 @@ hold a hidden character, is refused and nothing is saved.
 A CSV upload kept the spaces: ``D701`` and ``D701 `` were two pairs, the
 duplicate-name check (exact text) passed, and the kit was saved with two chips
 that both read "D701" in the index panel -- HTML hides the space, and the chip
-shows the name only -- carrying different sequences (review OPSDOCS-2). The
-TSV and Illumina-YAML shapes refused it already; the rule now lives in the one
-kit rulebook, so every shape refuses it.
+shows the name only -- carrying different sequences (review OPSDOCS-2).
+
+Illumina's own two shapes, the TSV and the YAML, strip a cell in their adapter
+before the rulebook sees it, so there the two names became one name given twice
+and the file was refused for that. The rule now lives in the one kit rulebook,
+so the shapes whose names reach it as written refuse the space itself;
+tests/unit/test_names_people_pick_are_exact.py records what each shape does.
 """
 
 ORIGIN = {"Origin": "http://testserver"}

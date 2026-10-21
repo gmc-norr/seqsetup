@@ -46,6 +46,18 @@ def _asks(page, do):
 @pytest.mark.browser
 class TestTheRowsDeleteQuestion:
 
+    def test_the_check_has_flagged_every_row(self, logged_in_page, base_url, run_id):
+        """So the questions below are read off rows carrying the Check's
+        badge, which is prepended into the Sample ID cell."""
+        page = logged_in_page
+        page.goto(f"{base_url}/runs/{RUN_ID}")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
+
+        badges = page.locator(".row-error-badge")
+
+        assert badges.count() == 8, badges.count()
+
     def test_it_names_the_sample(self, logged_in_page, base_url, run_id):
         page = logged_in_page
         page.goto(f"{base_url}/runs/{RUN_ID}")
@@ -53,8 +65,10 @@ class TestTheRowsDeleteQuestion:
 
         asked = _asks(page, lambda: page.locator(f"#sample-row-{RUN_ID}-s2 .btn-danger").click())
 
-        assert len(asked) == 1, asked
-        assert "DC-02" in asked[0] and "DC-01" not in asked[0], asked
+        # The whole question, so the Check's "!" badge in the Sample ID cell
+        # (every sample here has no index, so every row carries one) cannot
+        # creep into the name.
+        assert asked == ["Delete sample DC-02?"], asked
 
 
 @pytest.mark.browser
@@ -69,9 +83,7 @@ class TestDeleteSelected:
 
         asked = _asks(page, lambda: page.locator('[data-action="bulk-delete"]').click())
 
-        assert len(asked) == 1, asked
-        assert "2" in asked[0] and "DC-01" in asked[0] and "DC-03" in asked[0], asked
-        assert "DC-02" not in asked[0], asked
+        assert asked == ["Delete 2 samples: DC-01, DC-03?"], asked
 
     def test_one_ticked_sample_is_named_alone(self, logged_in_page, base_url, run_id):
         page = logged_in_page
@@ -81,7 +93,7 @@ class TestDeleteSelected:
 
         asked = _asks(page, lambda: page.locator('[data-action="bulk-delete"]').click())
 
-        assert len(asked) == 1 and "DC-04" in asked[0], asked
+        assert asked == ["Delete sample DC-04?"], asked
 
     def test_many_are_counted_and_the_first_few_named(self, logged_in_page, base_url, run_id):
         page = logged_in_page
@@ -91,7 +103,4 @@ class TestDeleteSelected:
 
         asked = _asks(page, lambda: page.locator('[data-action="bulk-delete"]').click())
 
-        assert len(asked) == 1, asked
-        assert "8" in asked[0] and "DC-01" in asked[0], asked
-        assert "3 more" in asked[0], asked
-        assert "DC-08" not in asked[0], asked
+        assert asked == ["Delete 8 samples: DC-01, DC-02, DC-03, DC-04, DC-05 and 3 more?"], asked

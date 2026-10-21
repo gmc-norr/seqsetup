@@ -276,7 +276,7 @@
                     hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
                     hx-target="{{ '#sample-row-' ~ sample.id if context == 'add_step2' else '#sample-section' }}"
                     hx-swap="outerHTML"
-                    hx-confirm="Delete sample {{ sample.sample_id }}?">&times;</button>
+                    hx-confirm="Delete sample {{ sample.sample_id or sample.id }}?">&times;</button>
         </td>
     {%- endif %}
 {%- else %}
@@ -295,7 +295,7 @@
                     hx-vals='{{ {"target_indexes": shown_indexes} | tojson }}'
                     hx-target="#sample-section"
                     hx-swap="outerHTML"
-                    hx-confirm="Delete sample {{ sample.sample_id }}?">&times;</button>
+                    hx-confirm="Delete sample {{ sample.sample_id or sample.id }}?">&times;</button>
         </td>
     {%- endif %}
 {%- endif %}

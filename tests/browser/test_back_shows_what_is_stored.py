@@ -104,6 +104,40 @@ class TestARowBoxShowsTheStoredValue:
 
 
 @pytest.mark.browser
+class TestAPageGivenBackFromTheCache:
+    """A headless browser may never use its back/forward cache, so the Back
+    tests above do not reach the ``pageshow`` listener. These two drive it
+    directly: the run page asks to be fetched again, and a page that does not
+    ask is left alone (a page rendered as the answer to a POST would ask the
+    browser to send that POST again)."""
+
+    def test_the_run_page_is_fetched_again(self, logged_in_page, base_url, box_run):
+        page = logged_in_page
+        page.goto(f"{base_url}/runs/{BOX_RUN}")
+        page.wait_for_load_state("networkidle")
+        page.evaluate("window.__sameDocument = true")
+
+        with page.expect_navigation():
+            page.evaluate(
+                "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
+
+        page.wait_for_load_state("networkidle")
+        assert page.evaluate("window.__sameDocument || null") is None
+
+    def test_a_page_that_does_not_ask_is_left_alone(self, logged_in_page, base_url, box_run):
+        page = logged_in_page
+        page.goto(f"{base_url}/runs/{BOX_RUN}/validation")
+        page.wait_for_load_state("networkidle")
+        page.evaluate("window.__sameDocument = true")
+
+        page.evaluate(
+            "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
+        page.wait_for_timeout(500)
+
+        assert page.evaluate("window.__sameDocument || null") is True
+
+
+@pytest.mark.browser
 class TestNoTickComesBackOnAnotherRow:
 
     def test_after_back_with_the_list_changed(self, logged_in_page, base_url, app_ctx, tick_run):

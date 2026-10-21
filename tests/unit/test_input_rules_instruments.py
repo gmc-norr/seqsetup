@@ -356,6 +356,29 @@ class TestTheColourFactsAgree:
 
         assert error.path == ("color_balance_enabled",)
 
+    def test_base_colors_calling_two_bases_dark(self):
+        """The message must not ask for two values in a field that takes one."""
+        errors = _errors(_synced(ONE.replace('T: "Green"', 'T: "Dark"')))
+
+        assert (("base_colors",),
+                "calls more than one base Dark (G, T); a 2-color chemistry has one dark base"
+                ) in errors, errors
+
+    def test_the_facts_are_checked_against_each_other_with_colour_balance_off(self):
+        text = ONE.replace("color_balance_enabled: true", "color_balance_enabled: false")
+
+        error = _only(_synced(text.replace('dark_base: "G"', 'dark_base: "T"')))
+
+        assert error.path == ("dark_base",)
+
+    def test_with_colour_balance_off_a_fact_may_still_be_left_out(self):
+        """Nothing reads them then, and one refused instrument file stops a
+        whole configuration sync: they are compared once they are all there."""
+        text = _without(ONE.replace("color_balance_enabled: true",
+                                    "color_balance_enabled: false"), "dark_base")
+
+        assert _errors(_synced(text)) == []
+
     @pytest.mark.parametrize("path", SYNCED, ids=lambda p: p.name)
     def test_every_shipped_synced_file_agrees(self, path):
         assert _errors(_synced(path.read_text(), path.name)) == []

@@ -70,7 +70,7 @@ FilledText256 = Annotated[str, StringConstraints(min_length=1, max_length=256), 
 FilledText4096 = Annotated[str, StringConstraints(min_length=1, max_length=4096), AfterValidator(_filled)]
 
 
-def exact_name(value: str) -> str:
+def _exact_name(value: str) -> str:
     """A name people pick must be exactly what it looks like: two names that
     differ only in a space at an end or a hidden character look the same on
     every page (a kit CSV took ``D701`` and ``D701 `` as two indexes)."""
@@ -85,7 +85,7 @@ def exact_name(value: str) -> str:
 # picked or pasted, so a space at either end would match another name or none,
 # and a hidden character would make two names look like one.
 ExactName256 = Annotated[
-    str, StringConstraints(min_length=1, max_length=256), AfterValidator(_filled), AfterValidator(exact_name)
+    str, StringConstraints(min_length=1, max_length=256), AfterValidator(_filled), AfterValidator(_exact_name)
 ]
 # Text that may be empty, such as a description.
 Label = Annotated[str, StringConstraints(max_length=4096)]

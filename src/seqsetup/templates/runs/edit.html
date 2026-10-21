@@ -6,7 +6,10 @@
 {# Parts follow the work: setup, samples and indexes (Check just below the
    samples), (ready: the status bar in the header), export once Ready, then
    a closed "More" fold. The step bar links to each. #}
-<div class="edit-run-layout" id="edit-run-page">
+{#- data-reload-on-restore: app.js fetches this page again when the browser
+    gives it back from the back/forward cache, so Back shows what is stored
+    and not a box or a tick the browser put back (review EDITING-3). #}
+<div class="edit-run-layout" id="edit-run-page" data-reload-on-restore>
     <div class="run-header">
         <div class="run-header-top">
             <h1 class="run-title{% if not run.run_name %} run-title--untitled{% endif %}">{{ run.run_name or "Untitled run" }}</h1>

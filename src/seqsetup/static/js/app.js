@@ -833,12 +833,14 @@ function clearBulkTestIdForm() {
 }
 
 // The sample ID a row shows, as the person reading the table sees it, for a
-// question about that row. Falls back to the row's own id, which is never
-// empty, so a question is never about "".
+// question about that row. The cell's text can carry the Check's "!" badge,
+// which markSampleErrors prepends into it, so read the title -- as
+// rowSampleName does. Falls back to the row's own id, which is never empty,
+// so a question is never about "".
 function shownSampleIdOfRow(sampleId) {
     const row = document.getElementById(`sample-row-${sampleId}`);
     const cell = row && row.querySelector('.sample-id-cell');
-    return ((cell && cell.textContent) || '').trim() || sampleId;
+    return ((cell && cell.title) || '').trim() || sampleId;
 }
 
 // What Delete Selected asks: how many rows, and which. A question naming
@@ -1300,8 +1302,15 @@ window.addEventListener('beforeunload', function(event) {
 // Back shows what is stored (review EDITING-3). The page's own inputs and
 // tick boxes carry autocomplete="off" for the other restoration, the one a
 // browser does to a page it fetches afresh.
+//
+// Only a page that marks itself [data-reload-on-restore] -- the run page,
+// whose rows carry editable values -- is fetched again: a page rendered as
+// the answer to a POST (a refused sign-in) would ask the browser to send
+// that POST again.
 window.addEventListener('pageshow', function(event) {
-    if (event.persisted) window.location.reload();
+    if (event.persisted && document.querySelector('[data-reload-on-restore]')) {
+        window.location.reload();
+    }
 });
 
 new MutationObserver(function() {

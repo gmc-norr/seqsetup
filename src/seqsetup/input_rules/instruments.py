@@ -164,7 +164,7 @@ def _colour_findings(instrument: "InstrumentRules", at: tuple) -> list[Finding]:
     colours = instrument.base_colors
     names = (instrument.channel1_name, instrument.channel2_name)
     channels = (instrument.channel1_bases, instrument.channel2_bases)
-    if colours is None or None in names or None in channels:
+    if colours is None or None in names or None in channels or instrument.dark_base is None:
         return []
 
     found, lit = [], {}
@@ -194,10 +194,16 @@ def _colour_findings(instrument: "InstrumentRules", at: tuple) -> list[Finding]:
                 f"({', '.join(want) if want else 'none'}), each once",
             ))
     dark = sorted(base for base, flags in lit.items() if flags[2])
-    if dark != ([instrument.dark_base] if instrument.dark_base is not None else []):
+    if len(dark) > 1:
+        found.append(Finding(
+            (*at, "base_colors"),
+            f"calls more than one base Dark ({', '.join(dark)}); a 2-color chemistry "
+            "has one dark base",
+        ))
+    elif dark != [instrument.dark_base]:
         found.append(Finding(
             (*at, "dark_base"),
-            f"must be the base base_colors calls Dark ({', '.join(dark)})" if dark
+            f"must be the base base_colors calls Dark ({dark[0]})" if dark
             else "names a base base_colors does not call Dark",
         ))
     for base, flags in lit.items():

@@ -23,7 +23,8 @@ OLD_I5_KEY_MESSAGE = (
 _I5_WORKFLOW_NAME_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,62}[A-Za-z0-9._-])?")
 _I5_WORKFLOW_NAME_RULE = (
     "A workflow name must be 1-64 characters: letters, digits, spaces, '.', '_' "
-    "or '-', starting and ending with a letter, digit, '.', '_' or '-'"
+    "or '-', starting with a letter or digit and ending with a letter, digit, "
+    "'.', '_' or '-'"
 )
 
 

@@ -109,11 +109,11 @@ and in each synced instrument file:
    ``name`` and an ``i5_read_orientation``: ``forward`` (the i5 is read as
    the index kit lists it) or ``reverse-complement``. Required, at least
    one. A name is 1-64 characters -- letters, digits, spaces, ``.``, ``_``
-   and ``-``, starting and ending with a letter, digit, ``.``, ``_`` or
-   ``-`` -- and no two of an instrument's names may be the same, ignoring
-   case. ``Standard `` beside ``Standard`` is refused: the two look the same
-   on the run setup page and would write every i5 the other way round. The first workflow
-   is the **standard** one: a new run, and a run moved to this instrument,
+   and ``-``, starting with a letter or digit and ending with a letter,
+   digit, ``.``, ``_`` or ``-`` -- and no two of an instrument's names may be
+   the same, ignoring case. ``Standard `` beside ``Standard`` is refused: the
+   two look the same on the run setup page and would write every i5 the other
+   way round. The first workflow is the **standard** one: a new run, and a run moved to this instrument,
    gets it. Where an instrument lists more than one, the run setup page
    offers the choice (see :doc:`/user-guide/run-setup`).
 
