@@ -251,7 +251,7 @@ curl -H "Authorization: Bearer $SEQSETUP_TOKEN" https://your-host/api/openapi.js
 
 - **The online documentation** -- <https://seqsetup.readthedocs.io>, built from `docs/` on every change to `main`.
 - **`ARCHITECTURE.md`** -- how the code is organised, the conventions for routes, forms, templates and HTMX, and the reference implementations to copy.
-- **`CLAUDE.md`** -- the project's hard rules for clinical safety (input bounds, run state, exports, authentication).
+- **`CLAUDE.md`** -- the project's hard rules (input bounds, run state, exports, authentication).
 - **The Sphinx docs in `docs/`** -- user guide, admin guide, API reference, architecture and development pages, with screenshots. Build them with `pixi run docs`; the result is in `docs/_build/html/`.
 
 ### Project Layout
