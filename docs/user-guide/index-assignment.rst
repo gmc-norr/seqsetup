@@ -63,6 +63,14 @@ cells and replace the i7, so SeqSetup refuses it and says so, and while
 you are editing indexes it asks first. A single i5 dropped there fills
 the i5, as a combinatorial kit is used.
 
+If the samples move on the page while you are dragging -- an answer to
+an earlier change arrives and the table above or around them redraws --
+the row under the pointer may no longer be the one you aimed at. SeqSetup
+notes where each sample was when the drag began, and if the row you drop
+on was not at that spot then, nothing is assigned and the page says
+*"The samples moved while you were dragging, so no index was given. Drop
+it again."* Drop it again.
+
 You can do the same thing from the keyboard: press **Enter** or
 **Space** on an index chip to select it, then **Tab** to the sample's
 drop target and press **Enter** or **Space** there to assign it. The
@@ -209,7 +217,14 @@ sample, ignoring any ticked rows.
    (``N`` is however many samples are ticked, including the drop target
    if it was not already ticked.) If the only ticked row is the one you
    drop on, so exactly one sample would receive the index, SeqSetup skips
-   this dialog and assigns immediately. Selecting Cancel leaves every
+   this dialog and assigns immediately.
+
+   A ticked sample that already has an index would have it replaced. As
+   for a drop on that sample's own row, SeqSetup refuses this unless you
+   are editing indexes, and names the samples: *"TK-01 and TK-03 already
+   have an index. Select Edit indexes to replace them, or untick them."*
+   While you are editing indexes, the question above names them instead:
+   *"... It replaces the index TK-01 and TK-03 already have."* Selecting Cancel leaves every
    sample unchanged. Only tick rows you actually mean to give the same
    index to -- and check the run afterward, since two samples in the same
    lane with the same index is a real error, not just a warning here.

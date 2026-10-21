@@ -224,12 +224,29 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
             if (!checkedIds.includes(sampleId)) {
                 checkedIds.push(sampleId);
             }
+            // A ticked row that shows an index would have it replaced: like
+            // a drop on that row, refused while "Edit indexes" is off and
+            // named in the question while it is on (review of fix/review-p1).
+            const replaced = rowsAnIndexReplaces(checkedIds, indexData);
+            if (replaced.length && !replaced.every(r => r.editing)) {
+                const one = replaced.length === 1;
+                showErrorBanner(`${nameList(replaced.map(r => r.name))} already ${one ? 'has' : 'have'} ` +
+                    'an index. ' + (replaced.some(r => r.onRunPage)
+                        ? `Select Edit indexes to replace ${one ? 'it' : 'them'}, or untick ${one ? 'it' : 'them'}.`
+                        : `Clear ${one ? 'its' : 'their'} index first, or untick ${one ? 'it' : 'them'}.`));
+                clearIndexSelection();
+                return;
+            }
             // One index on several samples is only right when they are in
             // different lanes; a box ticked for another reason must not
             // receive it silently.
+            const replaces = replaced.length
+                ? ` It replaces the index ${nameList(replaced.map(r => r.name))} already ` +
+                  `${replaced.length === 1 ? 'has' : 'have'}.`
+                : '';
             if (checkedIds.length > 1 && !window.confirm(
                     `Give this same index to all ${checkedIds.length} samples ` +
-                    '(the ticked ones and the one you dropped on)?\n\n' +
+                    `(the ticked ones and the one you dropped on)?${replaces}\n\n` +
                     'Samples in the same lane must not share an index.')) {
                 clearIndexSelection();
                 return;
@@ -304,6 +321,38 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
 
     // Clear selection after drop
     clearIndexSelection();
+}
+
+// The rows of `sampleIds` that show an index `idx` would replace: a pair
+// fills both cells, so any index; an i7 or an i5 the one in its own cell
+// (a row's pair goes with it). `editing` is true while the row's index is a
+// .replace-zone ("Edit indexes" on); the wizard's rows never are, and carry
+// no data-sample-name.
+function rowsAnIndexReplaces(sampleIds, idx) {
+    const out = [];
+    for (const id of sampleIds) {
+        const row = document.getElementById(`sample-row-${id}`);
+        if (!row) continue;
+        const [i7, i5] = shownIndexOfRow(id);
+        const replaces = idx.type === 'pair' ? Boolean(i7 || i5) : Boolean(idx.type === 'i7' ? i7 : i5);
+        if (!replaces) continue;
+        const assigned = row.querySelector('.index-assigned[data-sample-name]');
+        const cell = row.querySelector('td[title]');
+        out.push({
+            name: (assigned && assigned.dataset.sampleName) || (cell && cell.title) || 'A sample',
+            onRunPage: Boolean(assigned),
+            editing: Boolean(assigned) && assigned.classList.contains('replace-zone'),
+        });
+    }
+    return out;
+}
+
+// "A", "A and B", "A, B and C"; past five, "A, B, C, D, E and 3 more".
+function nameList(names) {
+    const shown = names.slice(0, 5);
+    const more = names.length - shown.length;
+    if (more > 0) return `${shown.join(', ')} and ${more} more`;
+    return shown.length < 2 ? shown.join('') : `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
 }
 
 // The rows a multi-index drop fills: the drop target and the rows below it,
@@ -603,6 +652,61 @@ document.addEventListener('dragstart', () => holdMessageSlots(true));
 for (const type of ['dragend', 'mousedown', 'keydown']) {
     document.addEventListener(type, () => holdMessageSlots(false));
 }
+
+// Holding the slots keeps one cause away, but any answer that lands during a
+// drag and redraws the samples can still move the rows under the pointer:
+// the bulk panel folding when an Apply unticks the rows, ten rows a
+// multi-index drop filled growing shorter, the index panel above the table
+// gaining its hint. The index then went to a sample one to three rows from
+// the one aimed at (review of fix/review-p1). So the page notes where each
+// sample row is when an index drag starts -- in page coordinates, with every
+// scroll taken out, so scrolling during the drag moves nothing -- and a drop
+// is refused when the row under the pointer is not the row that was at that
+// spot when the drag began: the person drops again. A row filled above the
+// target is about 5 px shorter and moves the rows below by less than a row;
+// that keeps the same row under the spot, so it is no reason to refuse.
+let rowsAtDragStart = null;
+
+// How far `el`'s box is from where it would be with nothing scrolled.
+function scrollOffset(el) {
+    let top = 0;
+    let left = 0;
+    for (let p = el.parentElement; p; p = p.parentElement) {
+        top += p.scrollTop;
+        left += p.scrollLeft;
+    }
+    return { top, left };
+}
+
+function noteRowPositions() {
+    rowsAtDragStart = [];
+    for (const row of document.querySelectorAll('tr[id^="sample-row-"]')) {
+        const rect = row.getBoundingClientRect();
+        const off = scrollOffset(row);
+        rowsAtDragStart.push({ id: row.id, top: rect.top + off.top, bottom: rect.bottom + off.top,
+                               left: rect.left + off.left, right: rect.right + off.left });
+    }
+}
+
+function dropOnAnotherRow(event, zone) {
+    if (!rowsAtDragStart) return false;    // not dragged from this page
+    const row = zone.closest('tr[id^="sample-row-"]');
+    if (!row) return false;
+    const off = scrollOffset(row);
+    if (!event.clientX && !event.clientY) {
+        // A drop that carries no pointer position (one made in script) is
+        // held to more: its row must not have moved at all.
+        const rect = row.getBoundingClientRect();
+        const then = rowsAtDragStart.find(r => r.id === row.id);
+        return !then || Math.abs(rect.top + off.top - then.top) > 1 ||
+            Math.abs(rect.left + off.left - then.left) > 1;
+    }
+    const x = event.clientX + off.left;
+    const y = event.clientY + off.top;
+    const then = rowsAtDragStart.find(r => r.top <= y && y < r.bottom && r.left <= x && x < r.right);
+    return !then || then.id !== row.id;
+}
+document.addEventListener('dragend', () => { rowsAtDragStart = null; });
 
 function toggleSelectAllSamples(headerCheckbox) {
     const checkboxes = document.querySelectorAll('.sample-checkbox');
@@ -1428,6 +1532,7 @@ document.addEventListener('dragstart', function(event) {
     if (!chip) return;
     const indexId = chip.dataset.indexPairId || chip.dataset.indexId;
     const indexType = chip.dataset.indexType || 'pair';
+    noteRowPositions();
     handleDragStart(event, indexId, indexType);
 });
 
@@ -1446,6 +1551,19 @@ document.addEventListener('dragleave', function(event) {
 document.addEventListener('drop', function(event) {
     const zone = event.target.closest('.drop-zone, .replace-zone');
     if (!zone) return;
+    // Measured before the slots let go: that may move the rows itself. A
+    // chip a redraw took away mid-drag fires no dragend, so the drop lets
+    // the slots go too, and a refusal below is seen at once.
+    const moved = dropOnAnotherRow(event, zone);
+    rowsAtDragStart = null;
+    holdMessageSlots(false);
+    if (moved) {
+        event.preventDefault();
+        zone.classList.remove('drag-over');
+        clearIndexSelection();
+        showErrorBanner('The samples moved while you were dragging, so no index was given. Drop it again.');
+        return;
+    }
     if (zone.classList.contains('replace-zone') ? !replaceDropConfirmed(event, zone)
                                                 : !pairDropOnShownIndexAllowed(event, zone)) {
         event.preventDefault();
