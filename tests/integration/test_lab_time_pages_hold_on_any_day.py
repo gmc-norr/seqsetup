@@ -20,17 +20,17 @@ from . import test_lab_time_pages as lab_time_pages
 class TestTheTokenPageCheckHoldsOnAnyDay:
     """The token page's lab-time check reads its expiry from the page's own clock."""
 
-    @pytest.mark.parametrize("clock", [datetime(2027, 1, 9, 12, 0),
-                                       datetime(2031, 6, 1, 12, 0)])
+    # None is today's clock, left alone. The last one is far enough ahead that
+    # no hard-coded expiry can sit beyond it: with only 2027 and 2031 here, an
+    # expiry written as 2040 would pass and rot again in 2039.
+    @pytest.mark.parametrize("clock", [None,
+                                       datetime(2027, 1, 9, 12, 0),
+                                       datetime(2031, 6, 1, 12, 0),
+                                       datetime(2099, 1, 1, 12, 0)])
     def test_the_check_passes_whatever_the_clock_says(
         self, clock, logged_in_client, fresh_app, monkeypatch
     ):
         monkeypatch.setenv("TZ", "Europe/Stockholm")
-        monkeypatch.setattr(api_tokens_module, "utcnow", lambda: clock)
-        lab_time_pages.TestAdminPages().test_api_tokens(logged_in_client, fresh_app)
-
-    def test_the_check_passes_on_todays_clock(
-        self, logged_in_client, fresh_app, monkeypatch
-    ):
-        monkeypatch.setenv("TZ", "Europe/Stockholm")
+        if clock is not None:
+            monkeypatch.setattr(api_tokens_module, "utcnow", lambda: clock)
         lab_time_pages.TestAdminPages().test_api_tokens(logged_in_client, fresh_app)
