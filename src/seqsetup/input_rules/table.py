@@ -26,6 +26,31 @@ class ColumnGivenTwice(KitFileRefused):
     reason = "columns_not_read"
 
 
+class TableNotRead(KitFileRefused):
+    """A row ``csv`` cannot read strictly: a quoted cell with text after its
+    closing quote, or a quote that is never closed. Read loosely, the first
+    gave ``P1,"ACGT"NNNN`` the sequence ACGTNNNN and the second took the rest
+    of the file into one cell (outside review of 51eb3c4, P2-2). ``line`` is
+    the line the row starts on."""
+
+    reason = "table_not_read"
+    what = ('this line could not be read -- check it for a double quote (") that is not '
+            'closed, or for text after a closing quote')
+
+    def __init__(self, line: int):
+        self.line = line
+        super().__init__(f"Line {line}: {self.what}. Nothing was saved.")
+
+
+class CellOverLines(TableNotRead):
+    """A quoted cell holding a line break: the rows after it merge into the
+    cell and go nowhere, as the paste refuses (services/sample_parser.py)."""
+
+    what = ('a cell runs over more than one line -- a double quote (") that is not closed '
+            "where it should be, or a line break inside a cell, in any column; each row "
+            "must be on one line")
+
+
 def column_key(name) -> str:
     """One normal form for a column name: lower case, no spaces and no
     underscores, so ``INDEX``, ``Index`` and ``index_2`` read as the columns
@@ -54,16 +79,62 @@ def read_table(text: str, line_offset: int = 0, delimiter: str = ",") -> Table:
 
     ``line_offset`` is how many lines were taken off the front of ``text``
     before it was read, so a row names the file's own line. Raises
-    ``ColumnGivenTwice`` when the header names one column twice.
+    ``ColumnGivenTwice`` when the header names one column twice, and
+    ``TableNotRead`` for a row whose quotes do not close.
     """
-    reader = csv.DictReader(StringIO(text), delimiter=delimiter)
-    # Before any row: reading the header is what DictReader's fieldnames does.
-    refuse_repeated_columns(reader.fieldnames)
-    rows = []
-    for row in reader:
-        extra = list(row.pop(None, None) or [])
-        rows.append(Row(reader.line_num + line_offset, row, extra))
-    return Table(reader.fieldnames, rows)
+    # csv.reader, not DictReader: DictReader skips a blank line inside the
+    # read of the row after it, so a line taken before that read named the
+    # blank line (fresh review of the P2 fixes, P2-1). Each blank line is a
+    # read of its own here, and the cells go by column as DictReader puts them.
+    reader = csv.reader(StringIO(text), delimiter=delimiter, strict=True)
+    # A record starts on the line after the one the last record ended on.
+    start = 1
+    try:
+        header = next(reader, None)
+        # Before any row is read.
+        refuse_repeated_columns(header)
+        if _over_lines(header or []):
+            raise CellOverLines(1 + line_offset)
+        rows = []
+        while True:
+            start = reader.line_num + 1
+            try:
+                cells = next(reader)
+            except StopIteration:
+                break
+            if cells == []:
+                continue
+            if _over_lines(cells):
+                raise CellOverLines(start + line_offset)
+            rows.append(Row(reader.line_num + line_offset, *_by_column(header, cells)))
+    except csv.Error:
+        raise TableNotRead(start + line_offset) from None
+    return Table(header, rows)
+
+
+def _by_column(header: list, cells: list) -> tuple[dict, list]:
+    """A row's cells by column name, None for a column the row is too short
+    for, as ``csv.DictReader`` gives them (its ``restval`` None), and the
+    cells under no column name: those of a column whose header name is
+    blank, then those past the last column. DictReader kept a blank-named
+    column's cell under "", which no one reads -- an i5 there was dropped,
+    and a second blank column's cell took the first one's place (second
+    fresh review of the P2 fixes). Blank is the reader's own normal form:
+    ``_`` is no name, as `` `` is (third fresh review)."""
+    by_name, nameless = {}, []
+    for name, cell in zip(header, cells):
+        if column_key(name):
+            by_name[name] = cell
+        else:
+            nameless.append(cell)
+    for name in header[len(cells):]:
+        if column_key(name):
+            by_name[name] = None
+    return by_name, nameless + list(cells[len(header):])
+
+
+def _over_lines(cells) -> bool:
+    return any(isinstance(cell, str) and ("\n" in cell or "\r" in cell) for cell in cells)
 
 
 def refuse_repeated_columns(names) -> None:
@@ -71,9 +142,11 @@ def refuse_repeated_columns(names) -> None:
     in two spellings of one normal form."""
     seen: dict = {}
     for name in names or []:
-        if not name:
-            continue
         key = column_key(name)
+        # No name, as for _by_column: its cells are under no column name,
+        # which the kit parser refuses when they hold anything.
+        if not key:
+            continue
         if key in seen:
             first = seen[key]
             both = (f'two columns named "{name}"' if first == name

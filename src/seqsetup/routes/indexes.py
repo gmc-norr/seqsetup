@@ -27,7 +27,7 @@ from ..context import AppContext
 from ..models.index import IndexMode
 from ..services.audit_log import audit
 from ..services.index_kit_yaml_exporter import IndexKitYamlExporter
-from ..input_rules.kits import KitFileProblems, check_form_boxes
+from ..input_rules.kits import FORM_BOXES, KitFileProblems, check_form_boxes
 from ..services.index_parser import IndexParser, KitFileRefused
 from ..services.index_validator import IndexValidator
 from ..services.validation import clear_validation_cache
@@ -47,21 +47,34 @@ logger = logging.getLogger("seqsetup")
 router = APIRouter(prefix="/indexes", tags=["indexes"])
 
 
-# ---- Validation helpers (PRESERVE VERBATIM from the previous handler) ----
+# ---- Validation helpers ----
+
+# What an index override box takes, as the form says: I and a number of
+# cycles, I* or empty. Read whole: only its start was read, so N2I8 meant no
+# override, I8garbage meant 8, and the N2 of I8N2 went nowhere -- and the box
+# check saw the converted value (outside review of 51eb3c4, P2-3).
+# ASCII only: \d took any digit (I followed by a full-width 8 gave 8), and
+# .upper() made a dotless i an I (fresh review of the P2 fixes, P3-4).
+_INDEX_OVERRIDE_RE = re.compile(r"I([0-9]{1,6})|I\*|", re.IGNORECASE | re.ASCII)
+_INDEX_OVERRIDE_RULE = ("must be I and the number of index cycles, such as I8, or I* or "
+                        "empty for each index's own length")
+
+
+class IndexOverrideNotRead(ValueError):
+    """An index override box that is not I and a number, I* or empty."""
+
 
 def _parse_index_override(pattern: str) -> Optional[int]:
     """Parse an index override pattern into a cycle count.
 
     "I*" or empty → None (use actual sequence length)
-    "I8" or "I8N2" → 8 (use 8 index cycles)
+    "I8" → 8 (use 8 index cycles)
+    Anything else raises IndexOverrideNotRead.
     """
-    val = pattern.strip().upper()
-    if not val or val == "I*":
-        return None
-    m = re.match(r"I(\d+)", val)
-    if m:
-        return int(m.group(1))
-    return None
+    m = _INDEX_OVERRIDE_RE.fullmatch(pattern.strip())
+    if m is None:
+        raise IndexOverrideNotRead(pattern)
+    return int(m.group(1)) if m.group(1) else None
 
 
 _BINARY_MAGIC_BYTES: tuple[bytes, ...] = (
@@ -186,14 +199,22 @@ async def upload_index_kit(
     # The boxes are checked before the file, by the same rules as its keys:
     # a value typed here becomes the kit's identity or its stored text, and
     # the model cut it instead of refusing it.
-    box_problems = check_form_boxes(
+    index_cycles, box_problems = {}, []
+    for box, typed in (("default_index1_override", default_index1_override),
+                       ("default_index2_override", default_index2_override)):
+        try:
+            index_cycles[box] = _parse_index_override(typed)
+        except IndexOverrideNotRead:
+            index_cycles[box] = None
+            box_problems.append(f"{FORM_BOXES[box]}: {_INDEX_OVERRIDE_RULE}")
+    box_problems += check_form_boxes(
         kit_name=kit_name.strip(), kit_version=kit_version.strip(),
         kit_description=kit_description.strip(), comments=comments.strip(),
         adapter_read1=adapter_read1.strip(), adapter_read2=adapter_read2.strip(),
         default_read1_override=default_read1_override.strip().upper(),
         default_read2_override=default_read2_override.strip().upper(),
-        default_index1_override=_parse_index_override(default_index1_override),
-        default_index2_override=_parse_index_override(default_index2_override),
+        default_index1_override=index_cycles["default_index1_override"],
+        default_index2_override=index_cycles["default_index2_override"],
     )
     if box_problems:
         audit(
@@ -208,8 +229,8 @@ async def upload_index_kit(
     user = request.scope.get("auth")
     try:
         mode = IndexMode(index_mode)
-        idx1_cycles = _parse_index_override(default_index1_override)
-        idx2_cycles = _parse_index_override(default_index2_override)
+        idx1_cycles = index_cycles["default_index1_override"]
+        idx2_cycles = index_cycles["default_index2_override"]
 
         content = file_content.decode("utf-8")
         kit = IndexParser.parse_from_content(

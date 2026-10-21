@@ -10,6 +10,8 @@ from datetime import datetime
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
+from bson import BSON
+
 from ..data.instruments import clear_synced_instruments_cache
 from ..models.application_profile import ApplicationProfile
 from ..models.index import IndexKit
@@ -22,6 +24,7 @@ from ..repositories.test_profile_repo import TestProfileRepository
 from ..repositories.profile_sync_config_repo import ProfileSyncConfigRepository
 from .index_kit_sync_parser import IndexKitSyncParser
 from .index_validator import IndexValidator
+from .run_exports import EXPORT_FILE_MARGIN, MAX_EXPORT_FILE
 from ..input_rules.kits import KitFileProblems, build_kit
 from ..input_rules.profiles import (
     build_application_profile,
@@ -67,6 +70,26 @@ _APP_PROFILES = "application profiles"
 _TEST_PROFILES = "test profiles"
 _INSTRUMENTS = ProfileSyncConfigRepository.INSTRUMENT_SETTINGS
 _NOTED_IN_ORDER = (_APP_PROFILES, _TEST_PROFILES, _INSTRUMENTS)
+
+# MongoDB refuses a record over 16 MiB, and the sync writes only after it has
+# deleted what it replaces, so a record too large to store took the stored
+# ones with it: a kit file under the 10 MiB download cap can be one, as each
+# pair's stored id repeats the kit's name (outside review of 51eb3c4, P2-1).
+# Each item is measured where it is built, beside its other checks, with the
+# export files' margin (services/run_exports.py); one too large is a refused
+# file, so nothing it would replace is deleted.
+_MOST_STORED_BYTES = MAX_EXPORT_FILE - EXPORT_FILE_MARGIN
+
+
+def _too_large_to_store(item) -> str:
+    """Why ``item`` cannot be stored as one record, or "" when it can."""
+    size = len(BSON.encode(item.to_dict()))
+    if size <= _MOST_STORED_BYTES:
+        return ""
+    # In bytes: in MiB to two places, one byte over showed two equal sizes
+    # (fresh review of the P2 fixes, P3-5).
+    return (f"would take {size:,} bytes to store, over the {_MOST_STORED_BYTES:,} bytes "
+            "SeqSetup stores in one record (MongoDB stores at most 16 MiB)")
 
 
 def _names(collections: list[str]) -> str:
@@ -853,6 +876,9 @@ class GitHubSyncService:
                                     if len(errors) > 1 else "")
                             raise ProfileFileRefused(problem_line(errors[0]) + more)
                         profile = build(result.value, item_name)
+                        too_large = _too_large_to_store(profile)
+                        if too_large:
+                            raise ProfileFileRefused(f"{item_path}: {too_large}")
                         profiles.append(profile)
                         if paths is not None:
                             paths.append(item_path)
@@ -941,6 +967,10 @@ class GitHubSyncService:
                     for warning in result.problems:
                         logger.warning(f"Instrument file {problem_line(warning)}")
                     parsed = definitions_from(result.value, item_name)
+                    for definition in parsed:
+                        too_large = _too_large_to_store(definition)
+                        if too_large:
+                            raise InstrumentFileRefused(too_large)
                 except InstrumentFileRefused as e:
                     text = str(e) if str(e).startswith(item_path + ":") else f"{item_path}: {e}"
                     refused.append(text)
@@ -999,8 +1029,15 @@ class GitHubSyncService:
         a kit is stored its name and version mean the same indexes (a kit whose
         file left the repository is removed, and may come back changed), and a
         drop from a page loaded before cannot pick up new ones (index mix-up
-        audit #6, 2026-10-14)."""
+        audit #6, 2026-10-14). A file already refused for something else
+        still gives its kit's name and version, so the other file's kit is
+        refused too (fresh review of the P2 fixes, P2-2): its entry in
+        ``refused`` carries the kit's ``kit_id``, as check-settings counts
+        every built kit."""
         files: dict[str, list[str]] = {}
+        for entry in refused:
+            if entry.get("kit_id") is not None:
+                files.setdefault(entry["kit_id"], []).append(entry["path"])
         # strict=True: a kit without its path would be checked against none.
         for kit, where in zip(kits, paths, strict=True):
             files.setdefault(kit.kit_id, []).append(where)
@@ -1090,7 +1127,9 @@ class GitHubSyncService:
         Only valid index kits (passing IndexValidator) are returned. Each file
         that is not is added to ``refused`` as {"path", "name", "kit",
         "reason"}, with name and kit None when the file names no kit (the
-        night run's Q3: the sync names it and keeps the kit stored before).
+        night run's Q3: the sync names it and keeps the kit stored before),
+        and with the kit's ``kit_id`` when it was built, for
+        ``_refuse_changed_or_repeated_kits``.
         A kit whose kit_id is in ``uploaded_ids`` -- a kit uploaded through
         SeqSetup -- is refused the same way, and the uploaded one is kept
         (review P2-2, 2026-10-13). ``paths`` gets each returned kit's file
@@ -1165,10 +1204,18 @@ class GitHubSyncService:
                                 )
                                 if refused is not None:
                                     refused.append({
-                                        "path": item_path, "name": kit.name,
+                                        "path": item_path, "name": kit.name, "kit_id": kit.kit_id,
                                         "kit": f"{kit.name} {kit.version}",
                                         "reason": "a kit of this name and version was uploaded "
                                                   "through SeqSetup, and the uploaded one is kept",
+                                    })
+                            elif validation.is_valid and (too_large := _too_large_to_store(kit)):
+                                logger.error(f"Index kit '{kit.name}' {kit.version} ({item_path}) "
+                                             f"{too_large}")
+                                if refused is not None:
+                                    refused.append({
+                                        "path": item_path, "name": kit.name, "kit_id": kit.kit_id,
+                                        "kit": f"{kit.name} {kit.version}", "reason": too_large,
                                     })
                             elif validation.is_valid:
                                 index_kits.append(kit)
@@ -1185,7 +1232,7 @@ class GitHubSyncService:
                                 )
                                 if refused is not None:
                                     refused.append({
-                                        "path": item_path, "name": kit.name,
+                                        "path": item_path, "name": kit.name, "kit_id": kit.kit_id,
                                         "kit": f"{kit.name} {kit.version}",
                                         "reason": "; ".join(e.rstrip(".") for e in validation.errors),
                                     })

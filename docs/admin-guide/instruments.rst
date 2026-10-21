@@ -385,7 +385,9 @@ Checking settings before a sync
 
 ``pixi run check-settings <folder>`` checks a settings folder with the rules
 the sync uses, with no database, no network and no running SeqSetup -- for
-example on every change to your settings repository. It reads what the sync
+example on every change to your settings repository. It does not measure how
+large each instrument, profile or kit is once stored, as the sync does before
+it replaces anything (see :doc:`index-kits`). It reads what the sync
 reads: every ``.yaml`` and ``.yml`` file in the folder's ``instruments/`` and
 the folders below it (``--instruments <path>`` names another folder inside the
 settings folder). A link to a folder is skipped, as the sync skips it. A link

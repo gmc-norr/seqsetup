@@ -8,7 +8,7 @@ import yaml
 
 from ..input_rules.kits import KitFileProblems, KitFileRefused, build_kit, check_kit_data
 from ..input_rules.reader import GIVEN_TWICE, Locations, read_yaml
-from ..input_rules.table import ColumnGivenTwice, read_table
+from ..input_rules.table import ColumnGivenTwice, TableNotRead, read_table
 from ..utils.yaml_safety import safe_load_strict
 
 from ..models.index import IndexKit, IndexMode
@@ -245,6 +245,11 @@ def _columns_not_read(header, read: frozenset, reads: str) -> None:
     seen: dict[str, str] = {}
     for name in names:
         key = _slot_key(name) or _column_key(name)
+        # No name ("", " ", "_"): its cells are under no column name, which
+        # _cells_with_no_column refuses when they hold anything (third fresh
+        # review of the P2 fixes).
+        if not key:
+            continue
         if key in seen and seen[key] != name:
             raise ColumnsNotRead(
                 f'The file has two columns, "{seen[key]}" and "{name}", that name one '
@@ -277,14 +282,16 @@ def _slot_key(name) -> Optional[str]:
 
 def _cells_with_no_column(numbered) -> None:
     """Refuse rows that carry a cell under no column name (more cells than the
-    header), naming their lines: that cell was dropped unseen."""
+    header, or a cell in a column whose header name is blank), naming their
+    lines: that cell was dropped unseen."""
     bad = [lineno for lineno, row in numbered
            if any(str(extra).strip() for extra in (row.get(None) or []))]
     if bad:
         raise ColumnsNotRead(
-            f"These rows have more cells than the header has columns, so nothing was "
-            f"saved: {_lines(bad)}. A cell under no column name was dropped unseen; give "
-            f"the column a header name or take the cell out."
+            f"These rows have a cell under no column name -- more cells than the header "
+            f"has columns, or a cell in a column whose header name is blank or only spaces "
+            f"and underscores -- so nothing was saved: {_lines(bad)}. Such a cell was "
+            f"dropped unseen; give the column a header name or take the cell out."
         )
 
 
@@ -1280,7 +1287,11 @@ class IndexParser:
                 return
 
             numbers = [lineno for lineno, _text in section_lines]
-            table = read_table("\n".join(text for _n, text in section_lines))
+            try:
+                table = read_table("\n".join(text for _n, text in section_lines))
+            except TableNotRead as unread:
+                # Its line counts this section's own lines; name the file's.
+                raise type(unread)(numbers[min(unread.line, len(numbers)) - 1]) from None
             # A row's line_num counts the lines of this section read so far,
             # the header included, so it indexes the section's own line list.
             numbered = [(numbers[min(row.line, len(numbers)) - 1],

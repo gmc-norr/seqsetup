@@ -11,7 +11,8 @@ were accepted.
 
 import pytest
 
-from seqsetup.input_rules.table import ColumnGivenTwice, column_key, read_table
+from seqsetup.input_rules.table import (CellOverLines, ColumnGivenTwice, TableNotRead, column_key,
+                                         read_table)
 
 
 class TestEachRowKnowsItsLine:
@@ -63,6 +64,15 @@ class TestAColumnNameGivenTwiceIsRefused:
 
         assert table.rows[0].cells["name"] == "A"
 
+    @pytest.mark.parametrize("names", [", ", " , ", "_,__", " _ ,", ", ,_"])
+    def test_names_that_are_no_name_are_not_repeats(self, names):
+        """A name whose normal form is empty is no name, as an empty one is:
+        two of them were refused as one column given twice (third fresh
+        review of the P2 fixes)."""
+        table = read_table(f"name,index,{names}\nA,ACGT\n")
+
+        assert table.rows[0].cells == {"name": "A", "index": "ACGT"}
+
 
 class TestTheNormalFormOfAColumnName:
 
@@ -72,3 +82,121 @@ class TestTheNormalFormOfAColumnName:
 
     def test_two_names_that_differ_really_are_two(self):
         assert column_key("index") != column_key("index2")
+
+
+class TestACellUnderNoColumnName:
+    """A column whose name is blank, or only spaces and underscores, is no
+    name: its cells go with the cells past the last column, which the kit
+    parser refuses when they hold anything."""
+
+    @pytest.mark.parametrize("blank", ["", " ", "_", "__", " _ "])
+    def test_a_name_whose_normal_form_is_empty_is_no_name(self, blank):
+        """``_`` is no name by the reader's own normal form (column_key), so
+        an i5 under it was dropped from a Single upload (third fresh review
+        of the P2 fixes)."""
+        table = read_table(f"name,index,{blank}\nA,ACGTACGT,TTGGCCAA\n")
+
+        assert [(row.cells, row.extra) for row in table.rows] == [
+            ({"name": "A", "index": "ACGTACGT"}, ["TTGGCCAA"])]
+
+    def test_a_cell_under_a_blank_column_name_is_under_no_column_name(self):
+        table = read_table("name,,index, ,\nA,x,ACGTACGT,y,\nB\n")
+
+        assert [(row.cells, row.extra) for row in table.rows] == [
+            ({"name": "A", "index": "ACGTACGT"}, ["x", "y", ""]),
+            ({"name": "B", "index": None}, []),
+        ]
+
+
+class TestARowWhoseQuotesDoNotCloseIsRefused:
+    """``csv`` read a broken quote as it could: ``P1,"ACGT"NNNN`` gave the
+    sequence ACGTNNNN, and a quote never closed took the rest of the file
+    into one cell. Read strictly, the file is refused naming the line
+    (outside review of 51eb3c4, P2-2)."""
+
+    @pytest.mark.parametrize("text, line", [
+        ('name,index\nP1,"ACGT"NNNN\nP2,TCCGGAGA\n', 2),
+        ('name,index\nP1,ACGTACGT\nP2,"TCCGGAGA\n', 3),
+        ('"name,index\nP1,ACGTACGT\n', 1),
+    ])
+    def test_a_broken_quote_names_its_line(self, text, line):
+        with pytest.raises(TableNotRead) as refused:
+            read_table(text)
+
+        assert refused.value.line == line
+        assert f"Line {line}:" in str(refused.value)
+        assert 'double quote (")' in str(refused.value)
+
+    @pytest.mark.parametrize("text, line", [
+        ('name,index\nP1,ACGTACGT\n\nP2,"TCCG"GAGA\n', 4),
+        ('name,index\nP1,ACGTACGT\n\n\nP2,"TCCG"GAGA\n', 5),
+        ('name,index\r\nP1,ACGTACGT\r\n\r\nP2,"TCCG"GAGA\r\n', 4),
+        ('name,index\n\nP1,"TCCGGAGA\n', 3),
+    ])
+    def test_a_blank_line_before_the_row_is_not_the_row(self, text, line):
+        """A blank line is skipped inside the read of the row after it, so
+        the line taken before that read was the blank one (fresh review of
+        the P2 fixes, P2-1)."""
+        with pytest.raises(TableNotRead) as refused:
+            read_table(text)
+
+        assert refused.value.line == line
+
+    @pytest.mark.parametrize("text, line", [
+        ('name,index,index2,,\nA,ACGTACGT,TTGGCCAA,"\nB,GGGGCCCC,AACCGGTT\n"\nC,CATGCATG,GTACGTAC\n', 2),
+        ('name,sequence,,\nA,ACGTACGT,"x\nB,GGGGCCCC\n"\nC,CATGCATG\n', 2),
+    ])
+    def test_a_cell_over_two_lines_under_a_second_blank_name_is_refused(self, text, line):
+        """DictReader put the second blank column's None over the first
+        one's cell, so the line break escaped the check and row B went into
+        it without a word (second fresh review of the P2 fixes)."""
+        with pytest.raises(CellOverLines) as refused:
+            read_table(text)
+
+        assert refused.value.line == line
+
+    def test_a_cell_over_two_lines_after_a_blank_line_names_its_own_line(self):
+        with pytest.raises(CellOverLines) as refused:
+            read_table('name,index\nP1,ACGTACGT\n\n"P2\nX",TCCGGAGA\n')
+
+        assert refused.value.line == 4
+
+    def test_rows_after_blank_lines_keep_their_lines_and_cells(self):
+        table = read_table('name,index,index2\n\nP1,ACGTACGT\n\n\nP2,TCCGGAGA,TATAGCCT,x\nP3\n')
+
+        assert table.header == ["name", "index", "index2"]
+        assert [(row.line, row.cells, row.extra) for row in table.rows] == [
+            (3, {"name": "P1", "index": "ACGTACGT", "index2": None}, []),
+            (6, {"name": "P2", "index": "TCCGGAGA", "index2": "TATAGCCT"}, ["x"]),
+            (7, {"name": "P3", "index": None, "index2": None}, []),
+        ]
+
+    def test_the_line_counts_the_lines_taken_off_the_front(self):
+        with pytest.raises(TableNotRead) as refused:
+            read_table('name,index\nP1,"ACGT"NNNN\n', line_offset=3)
+
+        assert refused.value.line == 5
+
+    def test_a_tsv_is_read_strictly_too(self):
+        with pytest.raises(TableNotRead):
+            read_table('Name\tSequence\nD701\t"ATTA"CTCG\n', delimiter="\t")
+
+    def test_quotes_that_close_are_read(self):
+        table = read_table('"name","index"\n"P1","ACGTACGT"\n"P2,x",TCCGGAGA\n')
+
+        assert [(row.cells["name"], row.cells["index"]) for row in table.rows] == [
+            ("P1", "ACGTACGT"), ("P2,x", "TCCGGAGA")]
+
+    @pytest.mark.parametrize("text, line", [
+        ('name,index\n"P1\nP2",ACGTACGT\nP3,TCCGGAGA\n', 2),
+        ('name,index\nP1,ACGTACGT\n"P2\nP3,TCCGGAGA\nP4",CGCTCATT\n', 3),
+        ('"na\nme",index\nP1,ACGTACGT\n', 1),
+    ])
+    def test_a_cell_over_two_lines_is_refused(self, text, line):
+        """Rows merge into the cell, so the lines after it go nowhere -- the
+        paste refuses the same (services/sample_parser.py)."""
+        with pytest.raises(CellOverLines) as refused:
+            read_table(text)
+
+        assert refused.value.line == line
+        assert f"Line {line}:" in str(refused.value) and "more than one line" in str(refused.value)

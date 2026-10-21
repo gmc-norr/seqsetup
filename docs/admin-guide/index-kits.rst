@@ -79,7 +79,7 @@ Before a kit is saved, SeqSetup checks, in order:
    delete links, so such a kit would be listed and usable but could never be
    deleted.
 
-   Eight more faults refuse the whole file, with nothing saved.
+   Nine more faults refuse the whole file, with nothing saved.
 
    * **i5 data with Single picked.** A Single kit saves the i7 indexes
      only, so a file's ``index2`` column, ``i5Index2`` or ``Index2`` list,
@@ -115,8 +115,21 @@ Before a kit is saved, SeqSetup checks, in order:
      (``index`` and ``INDEX``), since one would be read and the other's
      values go nowhere. A name that looks like neither an index nor a lane
      -- ``plate``, ``Description`` -- is still ignored.
-   * **A row with more cells than the header has columns.** That cell was
-     under no column name and dropped unseen; the row is named by its line.
+   * **A cell under no column name.** A row with more cells than the header
+     has columns, or with a cell in a column whose header name is blank or
+     only spaces and underscores (``_``): that cell was dropped unseen -- an
+     i5 there was lost from a Single upload -- and the row is named by its
+     line. A blank column with nothing in it, as a spreadsheet's trailing
+     separators give, is still read. A file written with a row-number column
+     that has no name, as pandas' ``to_csv()`` writes by default, is refused
+     for this.
+   * **A double quote that does not close where it should.** A quoted cell
+     with text after its closing quote (``P1,"ACGT"NNNN``) was read as
+     ``ACGTNNNN``, and a quote never closed took the rest of the file into
+     one cell; a quoted cell over more than one line merged the rows after
+     it into the cell. Each is refused naming its line. A line break inside
+     a cell is refused as well, in any column, even an ignored
+     ``Description``: each row must be on one line.
    * **A line that is in no section, or in a section the format does not
      read.** In an ``[i7]``/``[i5]`` CSV, lines before the first ``[i7]``
      were read as part of it, so an ``[IndexKit]`` preamble became its
@@ -164,6 +177,12 @@ Before a kit is saved, SeqSetup checks, in order:
    and the sync names the file and why. A synced kit file that gives one key
    twice is refused the same way -- YAML would keep the last value and lose
    the first -- and the stored kit of that name and version stays as it was.
+   So is a kit too large to store as one record: MongoDB stores at most
+   16 MiB in one, and a file under the sync's 10 MiB download limit can be
+   more once stored, because each pair's stored id repeats the kit's name.
+   The sync deletes what it replaces before it writes, so such a kit took
+   the stored synced kits with it; every kit, profile and instrument a sync
+   reads is now measured first, and one too large is a refused file.
 5. **Name + version clash** -- a kit with the same name and version already
    present is rejected rather than silently overwritten. A kit deleted
    and then uploaded again under its name and version is stored, even
@@ -307,6 +326,11 @@ runs. **Neither is ever invented.**
   **Adapter Read 1** of 8,000 bases was stored whole, and a **Default Read1
   Override** of 402 characters became a 410-character ``OverrideCycles`` on
   every sample the kit touched.
+* **Default Index1 Override** and **Default Index2 Override** take ``I`` and
+  the number of index cycles (``I8``), ``I*``, or nothing; both ``I*`` and an
+  empty box mean each index's own length. Anything else is refused naming
+  the box. Only the start of the box was read: ``N2I8`` meant no override,
+  ``I8garbage`` meant 8, and the ``N2`` of ``I8N2`` went nowhere.
 
 The mode picked on the form wins, as before, and a file that names a
 **different** mode is refused naming both: *"The file says index_mode:
@@ -323,7 +347,8 @@ as ``file:line:column: key: problem``. It reads the kit folder the sync reads
 (``index_kits`` by default; ``--index-kits <folder>`` names another, and
 ``--no-index-kits`` is for a lab whose sync does not read kits), runs the same
 field checks on each built kit, and names a kit name and version that two
-files give.
+files give. It does not measure how large a kit is once stored; the sync
+does, and refuses one too large to store as one record.
 
 Viewing a kit
 ----------------
