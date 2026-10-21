@@ -114,7 +114,7 @@ numbers. It returns the profile, or the reason there is none -- no profile
 of that test, no matching version, or the newest match stored twice -- with
 the text the checks show. The sheet plan and the application-profile checks
 both use it; the repository only lists every stored version of a test
-(``list_by_test_type``). ``offered_tests`` gives the pages' test lists: each
+(``list_by_test_name``). ``offered_tests`` gives the pages' test lists: each
 test once, with its synced versions.
 
 JSONExporter

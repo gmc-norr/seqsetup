@@ -40,6 +40,7 @@ from ..services.versioned_tests import PROFILE_VERSION_RE, PROFILE_VERSION_RULE
 from .base import (
     ILLUMINA_APPLICATION_NAMES,
     STORAGE_MAX_INT,
+    ExactName256,
     FilledText256,
     FilledText4096,
     PlainName,
@@ -148,7 +149,7 @@ class TestProfileRules(StrictRules):
     __test__ = False  # not a test class, for pytest
 
     TestType: FilledText256
-    TestName: FilledText256
+    TestName: ExactName256
     Description: FilledText4096
     Version: TestVersion
     TestApplicationProfiles: TestApplicationProfilesRules

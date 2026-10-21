@@ -209,9 +209,45 @@ class TestFilledText:
         assert _only(_test(text)).path == ("TestApplicationProfiles", "OnInstrument", 0, "ApplicationProfileVersion")
 
     def test_text_with_spaces_around_is_kept_as_written(self):
-        result = _test(TEST.replace("TestName: WGS", "TestName: ' WGS '"))
+        result = _test(TEST.replace("TestType: WGS", "TestType: ' WGS '"))
 
-        assert build_test_profile(result.value, "test.yaml").test_name == " WGS "
+        assert build_test_profile(result.value, "test.yaml").test_type == " WGS "
+
+
+class TestATestNameIsWhatASampleNames:
+    """A sample names its test by TestName, exactly. Every page trims what is
+    picked or pasted, so a TestName with a space at either end was matched to
+    another test or to none; a hidden character made two names look like one
+    (review of fix/tests-by-name, 2026-10-21)."""
+
+    @pytest.mark.parametrize("name, code", [
+        ("'WGS '", "U+0020"), ("' WGS'", "U+0020"),
+        ("WGS\u00a0", "U+00A0"), ("'\u3000WGS'", "U+3000"),
+    ])
+    def test_a_space_at_either_end_is_refused(self, name, code):
+        error = _only(_test(TEST.replace("TestName: WGS", f"TestName: {name}")))
+
+        assert error.path == ("TestName",)
+        assert error.message == f"must not begin or end with a space: {code}"
+
+    @pytest.mark.parametrize("char, code", [("\u200b", "U+200B"), ("\u00ad", "U+00AD"),
+                                            ("\u202e", "U+202E")])
+    def test_a_hidden_character_is_refused(self, char, code):
+        error = _only(_test(TEST.replace("TestName: WGS", f"TestName: WGS{char}Rare")))
+
+        assert error.path == ("TestName",)
+        assert error.message == f"holds a hidden character: {code}"
+
+    def test_a_space_inside_is_kept(self):
+        result = _test(TEST.replace("TestName: WGS", "TestName: WGS Rare Disease"))
+
+        assert _errors(result) == []
+        assert build_test_profile(result.value, "test.yaml").test_name == "WGS Rare Disease"
+
+    def test_the_test_type_is_a_label_and_keeps_its_spaces(self):
+        result = _test(TEST.replace("TestType: WGS", "TestType: 'WGS\u00a0'"))
+
+        assert _errors(result) == []
 
 
 class TestVersions:

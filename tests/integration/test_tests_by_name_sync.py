@@ -60,3 +60,17 @@ class TestTwoTestsOfOneTypeAndVersion:
         assert ("Kept test profiles this sync did not read: WGSRareDiseaseResearch_1 1.0.0"
                 in message), message
         assert len(_stored(ctx)) == 2
+
+    def test_a_name_with_a_space_at_its_end_is_refused(self, fresh_app, monkeypatch):
+        """Picked, it was trimmed to the other test's name and the sample got
+        that test's settings (review of fix/tests-by-name, 2026-10-21)."""
+        _app, ctx, _db = fresh_app
+
+        ok, message, _logged = _sync_tests(ctx, monkeypatch, {
+            "WGSRareDisease_1.yaml": LAB["WGSRareDisease_1.yaml"],
+            "Nbsp.yaml": _named("WGSRareDisease_1\u00a0")})
+
+        assert ok is False
+        assert "Nbsp.yaml" in message and "TestName" in message, message
+        assert "must not begin or end with a space: U+00A0" in message, message
+        assert _stored(ctx) == []

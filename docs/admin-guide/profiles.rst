@@ -48,7 +48,8 @@ Required Fields
        tests may share one
    * - ``TestName``
      - string
-     - The test's name, matching the test ID assigned to samples
+     - The test's name, matching the test ID assigned to samples exactly;
+       it may not begin or end with a space or hold a hidden character
    * - ``Description``
      - string
      - Description of the test

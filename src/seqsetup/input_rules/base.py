@@ -68,6 +68,22 @@ def _filled(value: str) -> str:
 # Text that must hold more than spaces, kept as written (never trimmed).
 FilledText256 = Annotated[str, StringConstraints(min_length=1, max_length=256), AfterValidator(_filled)]
 FilledText4096 = Annotated[str, StringConstraints(min_length=1, max_length=4096), AfterValidator(_filled)]
+
+
+def _exact_name(value: str) -> str:
+    _hidden(value)
+    ends = value[: len(value) - len(value.lstrip())] + value[len(value.rstrip()):]
+    if ends:
+        raise ValueError(f"must not begin or end with a space: {describe(list(dict.fromkeys(ends)))}")
+    return value
+
+
+# Text a sample names exactly, such as a TestName. Every page trims what is
+# picked or pasted, so a space at either end would match another name or none,
+# and a hidden character would make two names look like one.
+ExactName256 = Annotated[
+    str, StringConstraints(min_length=1, max_length=256), AfterValidator(_filled), AfterValidator(_exact_name)
+]
 # Text that may be empty, such as a description.
 Label = Annotated[str, StringConstraints(max_length=4096)]
 

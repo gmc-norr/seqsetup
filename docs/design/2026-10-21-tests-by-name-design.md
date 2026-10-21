@@ -49,12 +49,18 @@ changes. It is shown as a label beside the name, and never picks a profile.
   Check page's fix box and the versions hint -- offer each TestName once, with
   its versions; the value a pick saves is the TestName, shown as
   "TestName (TestType)" when the two differ. `offered_tests` groups by TestName.
-- **The tests a page knows** (`routes/samples._test_types`, the paste preview's
+- **The tests a page knows** (`routes/samples._test_names`, the paste preview's
   "unknown test" note, the default test of a paste) are the TestNames.
 - **The Profiles and Config Sync pages** list test profiles by TestName, with
   their TestType.
-- **Docs**: the user guide's samples page, the admin guide's test versions,
-  and the lines of `CLAUDE.md` that say a test is matched by TestType.
+- **A TestName is matched as written.** Every page trims what is picked or
+  pasted, so a TestName that begins or ends with a space, or holds a hidden
+  character, is refused by the sync and `check-settings` (`ExactName256` in
+  `input_rules/base.py`). With a space at its end, a picked name was trimmed
+  to another test's name and the sample got that test's settings (fresh
+  review, 2026-10-21). TestType stays a label and keeps its spaces.
+- **Docs**: the admin guide's test versions and LIMS fields, the services
+  page, and the lines of `CLAUDE.md` that say a test is matched by TestType.
 
 ## What does not change
 

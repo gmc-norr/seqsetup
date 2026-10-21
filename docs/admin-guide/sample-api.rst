@@ -216,7 +216,7 @@ shows recognized field names for each attribute:
      - Unique sample identifier
    * - Test ID
      - ``test_id``, ``testid``, ``test``, ``test_type``, ``assay``, ``application``
-     - Associated test or assay type
+     - The test's ``TestName`` (see :doc:`profiles`)
    * - Test version
      - ``test_version``, ``testversion`` (or the **Test version field**); not
        ``version`` alone
