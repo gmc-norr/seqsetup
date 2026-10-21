@@ -630,13 +630,13 @@ def _plain_bclconvert(lane: bool = False) -> ApplicationProfile:
 
 
 class _StubTestProfileRepo:
-    """In-memory test profile repo keyed by test_type."""
+    """In-memory test profile repo keyed by the sample's test (a TestName)."""
 
-    def __init__(self, profiles_by_test_type: dict):
-        self._profiles = profiles_by_test_type
+    def __init__(self, profiles_by_test: dict):
+        self._profiles = profiles_by_test
 
-    def list_by_test_type(self, test_type):
-        profile = self._profiles.get(test_type)
+    def list_by_test_name(self, test_name):
+        profile = self._profiles.get(test_name)
         return [profile] if profile else []
 
 

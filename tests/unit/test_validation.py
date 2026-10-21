@@ -826,7 +826,7 @@ class _StubTestProfileRepo:
     without exercising real profile resolution.
     """
 
-    def list_by_test_type(self, test_id):
+    def list_by_test_name(self, test_id):
         return []
 
 

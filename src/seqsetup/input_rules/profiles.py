@@ -393,11 +393,13 @@ def repeated_app_versions(profiles: list[ApplicationProfile], paths: list[str]) 
 
 def repeated_test_versions(profiles: list[TestProfile], paths: list[str]) -> list[str]:
     """Each test and version in more than one file, since a sample could get
-    any of them (spec 2026-10-07 group A4, §1). strict=True: a plain zip stops
-    at the shorter list and would drop profiles out of this check."""
+    any of them (spec 2026-10-07 group A4, §1). A test is its TestName: two
+    tests may share a TestType and a version
+    (docs/design/2026-10-21-tests-by-name-design.md). strict=True: a plain zip
+    stops at the shorter list and would drop profiles out of this check."""
     files: dict[tuple, list[str]] = {}
     for profile, where in zip(profiles, paths, strict=True):
-        files.setdefault((profile.test_type, profile.version), []).append(where)
+        files.setdefault((profile.test_name, profile.version), []).append(where)
     problems = []
     for (test, version), names in files.items():
         if len(names) > 1:
@@ -407,13 +409,13 @@ def repeated_test_versions(profiles: list[TestProfile], paths: list[str]) -> lis
 
 
 def differing_only_in_capitals(profiles: list[TestProfile], paths: list[str]) -> list[str]:
-    """Two tests whose TestType differs only in letter case: a test is
+    """Two tests whose TestName differs only in letter case: a test is
     matched exactly, while every page and the Sample Sheet show what a reader
     takes for one test (spec 2026-10-07 group A4)."""
     files: dict[str, dict[str, list[str]]] = {}
     for profile, where in zip(profiles, paths, strict=True):
-        spellings = files.setdefault(profile.test_type.lower(), {})
-        spellings.setdefault(profile.test_type, []).append(where)
+        spellings = files.setdefault(profile.test_name.lower(), {})
+        spellings.setdefault(profile.test_name, []).append(where)
     problems = []
     for spellings in files.values():
         if len(spellings) < 2:

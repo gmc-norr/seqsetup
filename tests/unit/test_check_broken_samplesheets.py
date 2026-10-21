@@ -102,7 +102,7 @@ class TestFindProblems:
         )
 
         class _TestRepo:
-            def list_by_test_type(self, test_type):
+            def list_by_test_name(self, test_name):
                 return [TestProfile(
                     test_type="WGS", test_name="WGS", version="1.0.0",
                     application_profiles=[ApplicationProfileReference(

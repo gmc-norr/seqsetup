@@ -21,8 +21,8 @@ class _Repo:
     def __init__(self, *profiles):
         self.profiles = profiles
 
-    def list_by_test_type(self, test):
-        return [p for p in self.profiles if p.test_type == test]
+    def list_by_test_name(self, test):
+        return [p for p in self.profiles if p.test_name == test]
 
 
 STORED = _Repo(*(_profile(v) for v in ("1.2.0", "2.0.0", "1.10.0", "1.0.0", "1.2.5")),
@@ -54,7 +54,7 @@ class TestMatching:
     def test_no_profile_of_that_test(self):
         resolved = resolve_test(STORED, "WES", "1")
         assert (resolved.profile, resolved.error_type, resolved.detail) == (
-            None, "test_profile_not_found", "No test profile found for test type 'WES'")
+            None, "test_profile_not_found", "No test profile found for test 'WES'")
 
 
 class TestNumbersNotText:
@@ -127,5 +127,45 @@ class TestStorageOrder:
         for stored in ("1.0.0", "2.0.0"):
             repo.save(_profile(stored))
         repo.save(_profile("1.0.0", "RNA"))
-        assert sorted(p.version for p in repo.list_by_test_type("WGS")) == ["1.0.0", "2.0.0"]
+        assert sorted(p.version for p in repo.list_by_test_name("WGS")) == ["1.0.0", "2.0.0"]
         assert not hasattr(repo, "get_by_test_type")
+        assert not hasattr(repo, "list_by_test_type")
+
+
+def _named(name, test_type="WGS", version="1.0.0"):
+    from seqsetup.models.test_profile import TestProfile
+    return TestProfile(test_type=test_type, test_name=name, version=version,
+                       source_file=f"{name}.yaml")
+
+
+class TestATestIsNamedByItsTestName:
+    """The lab's two WGS tests share TestType WGS and version 1.0.0, one per
+    downstream pipeline, and the LIMS sends the TestName as a sample's test
+    (the user's word, 2026-10-21; docs/design/2026-10-21-tests-by-name-design.md).
+    A sample's test names its profile by TestName."""
+
+    LAB = _Repo(_named("WGSRareDisease_1"), _named("WGSRareDiseaseResearch_1"))
+
+    @pytest.mark.parametrize("name", ["WGSRareDisease_1", "WGSRareDiseaseResearch_1"])
+    def test_each_name_finds_its_own_profile(self, name):
+        resolved = resolve_test(self.LAB, name, "1")
+
+        assert (resolved.profile.test_name, resolved.error_type) == (name, "")
+
+    def test_a_test_type_is_not_a_test_name(self):
+        resolved = resolve_test(self.LAB, "WGS", "1")
+
+        assert (resolved.profile, resolved.error_type, resolved.detail) == (
+            None, "test_profile_not_found", "No test profile found for test 'WGS'")
+
+    def test_the_name_is_matched_in_its_own_letter_case(self):
+        assert resolve_test(self.LAB, "wgsraredisease_1", "1").profile is None
+
+    def test_the_repository_lists_the_versions_of_one_name(self):
+        repo = _mongo_repo()
+        for profile in (_named("WGSRareDisease_1"), _named("WGSRareDisease_1", version="2.0.0"),
+                        _named("WGSRareDiseaseResearch_1")):
+            repo.save(profile)
+
+        assert sorted(p.version for p in repo.list_by_test_name("WGSRareDisease_1")) == [
+            "1.0.0", "2.0.0"]
