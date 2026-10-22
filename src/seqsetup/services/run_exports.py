@@ -270,6 +270,16 @@ def write_exports(ctx, run, files: dict, *, actor: str = "",
             # not removed (the collection is insert-only). Named here, since
             # the line below is never reached (review 2, P3-2).
             _log_files_written(run.id, manifest, "a write that then failed")
+            # And this one: a write that loses its acknowledgement after the
+            # server applied it raises all the same, so the record may be
+            # there. Naming an id that may not exist is the safe direction;
+            # leaving out one that does exist is not (fresh review of this
+            # branch, Important 3).
+            logger.info("Run %s: %s=%s may also have been written", run.id, kind,
+                        record["_id"])
+            if written is not None:
+                written.setdefault(kind, {"id": record["_id"], "sha256": record["sha256"],
+                                          "size": record["size"], "uncertain": True})
             raise
         # Inserted: it is in the collection now, whatever happens next, so
         # the caller knows of it before it is read back.

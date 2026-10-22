@@ -65,6 +65,11 @@ answer = TestClient(app_module.app, base_url="http://seqsetup.example.com").post
     headers={"Origin": "https://seqsetup.example.com"}, follow_redirects=False)
 print("LOGIN-STATUS:" + str(answer.status_code))
 
+# 5. The access line uvicorn writes for every request, through uvicorn's own
+#    formatter, which unpacks five positional arguments of its own.
+logging.getLogger("uvicorn.access").info(
+    '%s - "%s %s HTTP/%s" %d', "1.2.3.4:5678", "GET", "/runs/abc", "1.1", 200)
+
 from seqsetup.services.log_capture import get_captured_logs
 kept = [e.message for e in get_captured_logs(limit=2000)]
 print("ADMIN-LOGS:" + repr([m for m in kept for tag in
@@ -122,6 +127,21 @@ class TestEveryLineIsKeptSomewhereLasting:
         said, _container_log = started
 
         assert said["BUFFER-COUNT:"] == "BUFFER-COUNT:1", said["BUFFER-COUNT:"]
+
+
+class TestTheWebServersOwnLinesStillWork:
+
+    def test_the_access_line_of_every_request(self, started):
+        """uvicorn's AccessFormatter renders the line from five positional
+        arguments. A filter that clears record.args after rendering the
+        message made that formatter raise, so every request wrote a
+        logging-error traceback instead of its access line."""
+        _said, container_log = started
+
+        assert '"GET /runs/abc HTTP/1.1" 200' in container_log, container_log[-1500:]
+        assert "--- Logging error ---" not in container_log, [
+            l for l in container_log.splitlines() if "Logging error" in l]
+        assert "not enough values to unpack" not in container_log
 
 
 class TestTheContainerLogIsScrubbed:

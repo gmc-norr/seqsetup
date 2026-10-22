@@ -135,10 +135,11 @@ display purposes.
 
 SeqSetup asks for one page of **200** worksheets. A LIMS that pages this
 endpoint and has more than that answers the first 200, and when its
-``pagination`` element names a larger ``total`` the worksheet list says so:
-*"Showing 200 of 254 worksheets from the LIMS: the rest are not in this list.
-Ask the laboratory system to close or archive the worksheets this run does not
-need."* SeqSetup never asks for a second page: a list that changes between two
+``pagination`` element names a larger ``total`` the worksheet list says so,
+as its first warning: *"The LIMS has 254 worksheets and sent 200 of them: the
+rest are not in this list. Ask the laboratory system to close or archive the
+worksheets this run does not need."* (A LIMS that sends an empty page while
+reporting a total says that too.) SeqSetup never asks for a second page: a list that changes between two
 requests could send one worksheet twice, and the duplicate-ID rule below would
 then drop it without a word. A LIMS that answers a plain array, with no
 pagination element, is listed whole as before.

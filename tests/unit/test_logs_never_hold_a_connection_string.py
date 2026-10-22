@@ -44,6 +44,38 @@ class TestScrubLogMessageKnowsAConnectionString:
 
         assert scrub_log_message(plain) == plain
 
+
+class TestAStackBlockIsScrubbedToo:
+    """``logger.error(..., stack_info=True)`` puts a stack block on the record,
+    which a formatter appends like a traceback. The in-memory buffer re-scrubs
+    the whole formatted record in ``emit``, so it was covered; the handler that
+    writes to the container log is not, so the filter has to do it."""
+
+    def _record(self) -> logging.LogRecord:
+        record = logging.LogRecord("seqsetup.probe", logging.ERROR, __file__, 1,
+                                   "start-up failed", None, None)
+        record.stack_info = (
+            "Stack (most recent call last):\n"
+            '  File "x.py", line 9\n'
+            f'    client = MongoClient("{URI}")\n')
+        return record
+
+    def test_the_filter_scrubs_it(self):
+        record = self._record()
+
+        ScrubbingFilter().filter(record)
+
+        assert PASSWORD not in record.stack_info, record.stack_info
+        assert "***@" in record.stack_info
+
+    def test_so_a_plain_handler_writes_no_password(self):
+        record = self._record()
+        formatter = logging.Formatter("%(message)s")
+
+        ScrubbingFilter().filter(record)
+
+        assert PASSWORD not in formatter.format(record)
+
     def test_a_plain_address_is_left_alone(self):
         """No scheme, so no credential part: an e-mail address or a host
         must not be mangled."""

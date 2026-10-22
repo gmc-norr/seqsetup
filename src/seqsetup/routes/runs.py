@@ -984,6 +984,9 @@ def update_status(
                 actor=get_username(request),
                 written=files_written,
             )
+        # The two arms below are raised before the first insert (every record
+        # is measured first), so _files_left is empty there by the design, not
+        # by chance; the two after them can name files.
         except ExportFileTooBig as too_big:
             audit(
                 "run.status.denied",

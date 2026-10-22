@@ -77,8 +77,13 @@ class TestAnInsertThatFailsPartWay:
             e.details for e in ctx.audit_event_repo.search(limit=20,
                                                            event_prefix="run.status.denied")]
         left = sorted(r["_id"] for r in records(ctx, run_id))
+        named = sorted(event.details.get("export_files", []))
         assert len(left) == 4, left   # everything but the pdf
-        assert sorted(event.details.get("export_files", [])) == left, event.details
+        # Every file that is there is named -- and the one whose insert raised
+        # is named as well: a write can be applied and still lose its answer,
+        # so naming an id that may not exist is the safe direction.
+        assert set(left) <= set(named), (left, named)
+        assert len(named) == 5, named
 
     def test_the_log_names_them_too(self, logged_in_client, fresh_app, monkeypatch, caplog):
         _app, ctx, _db = fresh_app

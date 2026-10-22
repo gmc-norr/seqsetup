@@ -13,7 +13,7 @@ from ..utils.names import is_dot_only
 # the admin page stored in the settings document; the secret then sat in every
 # database backup and in the form's round trip, so the stored key is no longer
 # written, read or used.
-_API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
+API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
 
 # How many worksheets to ask the LIMS for at once. iGene pages /worksheets and
 # answers its own default page -- 20 -- when no page_size is asked for
@@ -93,7 +93,7 @@ class SampleApiConfig:
         Empty when the variable is unset: a key in the settings document is
         not read, so no deployment keeps sending a secret nobody can see.
         """
-        return os.environ.get(_API_KEY_ENV, "")
+        return os.environ.get(API_KEY_ENV, "")
 
     # Field mappings: SeqSetup field name -> API field name
     # Supported SeqSetup fields: worksheet_id, investigator, updated_at, samples

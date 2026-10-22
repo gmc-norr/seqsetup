@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 import traceback
 from collections import deque
 from dataclasses import dataclass, field
@@ -206,8 +207,18 @@ _stderr_handler: Optional[logging.Handler] = None
 # uvicorn's own loggers. It logs straight to them (not through the root
 # logger), and its handlers are the ones that reach the container log, so
 # they get the scrubbing filter too: a traceback's mongodb://user:password@
-# lives in the exception, which uvicorn prints in full.
-_UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "gunicorn.error")
+# lives in the exception, which uvicorn prints in full. "gunicorn.error" is
+# for a deployment that swaps the server; its formatter, like uvicorn's
+# DefaultFormatter, renders record.getMessage().
+#
+# NOT "uvicorn.access": uvicorn's AccessFormatter unpacks five positional
+# arguments of its own (uvicorn/logging.py), and ScrubbingFilter clears
+# record.args once it has rendered the message, so the formatter raised and
+# every request wrote a logging-error traceback in place of its access line
+# (fresh review of this branch, Critical 1). An access line is
+# address, method, path, version and status: it carries no secret of
+# SeqSetup's own, and it had no filter before this change either.
+_UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "gunicorn.error")
 
 
 def _not_audit_record(record: logging.LogRecord) -> bool:
@@ -243,8 +254,16 @@ def get_stderr_handler() -> logging.Handler:
     if _stderr_handler is None:
         handler = logging.StreamHandler()  # stderr, as a container expects
         handler.setLevel(logging.INFO)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        # UTC, named, as every other time SeqSetup writes (utils/clock.py): an
+        # operator reading this beside Admin > Logs must not have to guess
+        # which clock each one is.
+        formatter = logging.Formatter("%(asctime)s UTC %(levelname)s %(name)s: %(message)s")
+        formatter.converter = time.gmtime
+        handler.setFormatter(formatter)
+        # The same lines the page shows: an audit row has its own permanent
+        # page (/admin/audit), and the line about an audit row that could not
+        # be saved is logged by audit_log's own module logger, so it is kept.
+        handler.addFilter(_not_audit_record)
         attach_scrubbing_filter_to_handler(handler)
         _stderr_handler = handler
     return _stderr_handler
@@ -296,6 +315,12 @@ class ScrubbingFilter(logging.Filter):
                 record.exc_text = "(traceback withheld: it could not be scrubbed)"
         elif record.exc_text:
             record.exc_text = scrub_log_message(record.exc_text)
+        # And a stack block (logger.error(..., stack_info=True)), which a
+        # formatter appends like the traceback. The in-memory buffer re-scrubs
+        # the whole formatted record in emit(); the stderr handler does not,
+        # so without this it would be the weaker of the two.
+        if record.stack_info:
+            record.stack_info = scrub_log_message(record.stack_info)
         return True
 
 

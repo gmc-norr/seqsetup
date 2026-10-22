@@ -66,6 +66,26 @@ class TestTheListSaysWhenTheLimsHasMore:
         assert said, left_out
         assert "200" in said[0], said
 
+    def test_it_is_the_first_warning_so_the_page_cannot_cut_it(self, monkeypatch):
+        """The worklist page shows ten warnings and counts the rest
+        (routes/samples.py), and a page of 200 can easily carry ten warnings
+        of its own: this is the one line that must not be the one cut."""
+        junk = ["not a worksheet"] * 12
+        _answer(monkeypatch, _page(200) + junk, {"total": 254})
+
+        ok, _message, _worksheets, left_out = sa.fetch_worklists(_config())
+
+        assert ok and len(left_out) > 10
+        assert "254" in left_out[0], left_out[:2]
+
+    def test_a_lims_that_sends_an_empty_page_says_what_it_has(self, monkeypatch):
+        _answer(monkeypatch, [], {"total": 254})
+
+        ok, message, worksheets, left_out = sa.fetch_worklists(_config())
+
+        assert not ok and worksheets == [] and message == "No worksheets available"
+        assert left_out and "254" in left_out[0], left_out
+
     def test_nothing_is_said_when_the_list_is_whole(self, monkeypatch):
         _answer(monkeypatch, _page(20), {"total": 20, "page": 1, "page_size": 200})
 
@@ -95,6 +115,23 @@ class TestTheListSaysWhenTheLimsHasMore:
         sa.fetch_worklists(_config())
 
         assert len(asked) == 1, asked
+
+
+class TestAKeyAHeaderCannotCarry:
+    """Not only a control character: http.client encodes a header value as
+    latin-1, so a key with a character outside it cannot be sent either, and
+    the message that names the variable is the useful one."""
+
+    @pytest.mark.parametrize("key, unusable", [
+        ("nyckel-\u00e5\u00e4\u00f6", False),   # a, a, o with marks: latin-1 has them
+        ("k\u20acy", True),                       # the euro sign: it has not
+        ("\u4e2d\u6587", True),
+        ("plain-key", False),
+    ])
+    def test_a_key_outside_latin_1(self, key, unusable):
+        from seqsetup.services.sample_api import api_key_is_unusable
+
+        assert api_key_is_unusable(key) is unusable
 
 
 class TestOneLargePageFitsTheAnswerCap:

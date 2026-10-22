@@ -24,7 +24,8 @@ from ..models.sample import (
     is_zero_only,
     shown_value,
 )
-from ..models.sample_api_config import InvalidWorklistIdError, SampleApiConfig, validate_worklist_id
+from ..models.sample_api_config import (API_KEY_ENV, InvalidWorklistIdError,
+                                        SampleApiConfig, validate_worklist_id)
 from ..models.sequencing_run import MAX_SAMPLES_PER_RUN
 from .sample_parser import _looks_like_index_or_lane
 
@@ -119,11 +120,10 @@ class LimsAllowedNetsError(ValueError):
 # b'<the key>\n'"), and that text reached the run page, the admin page, Admin
 # > Logs and the container log (review INGEST-1 / SEC-1). A key file's
 # trailing newline is the usual cause.
-_API_KEY_ENV = "SEQSETUP_LIMS_API_KEY"
 _CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
 API_KEY_REFUSED = (
     "The LIMS API key holds a line break or another control character, so nothing was "
-    f"asked of the LIMS. An administrator must set {_API_KEY_ENV} again, to the key "
+    f"asked of the LIMS. An administrator must set {API_KEY_ENV} again, to the key "
     "alone (see Admin > Sample API). The key itself is not shown anywhere."
 )
 # What a message says instead of the words http.client puts in its ValueError,
@@ -242,8 +242,20 @@ def parse_allowed_nets(value: str) -> tuple:
 
 
 def api_key_is_unusable(api_key: str) -> bool:
-    """True when the key cannot be put in a header, so it must not be sent."""
-    return bool(_CONTROL_CHARACTER.search(api_key))
+    """True when the key cannot be put in a header, so it must not be sent.
+
+    A control character is the usual case (a key file's newline). A character
+    outside latin-1 cannot be put in a header either -- http.client encodes a
+    header value as latin-1 -- and would otherwise start the app and fail at
+    every LIMS call with the vaguer message about a header.
+    """
+    if _CONTROL_CHARACTER.search(api_key):
+        return True
+    try:
+        api_key.encode("latin-1")
+    except UnicodeEncodeError:
+        return True
+    return False
 
 
 def check_lims_api_key() -> None:
@@ -253,9 +265,9 @@ def check_lims_api_key() -> None:
     variable and never its value: it reaches the container log, and the value
     is the secret itself.
     """
-    if api_key_is_unusable(os.environ.get(_API_KEY_ENV, "")):
+    if api_key_is_unusable(os.environ.get(API_KEY_ENV, "")):
         raise RuntimeError(
-            f"{_API_KEY_ENV} holds a line break or another control character, which "
+            f"{API_KEY_ENV} holds a line break or another control character, which "
             f"cannot go in a request header. Set it to the key alone -- a key file's "
             f"own newline is the usual cause. Its value is not shown here."
         )
@@ -750,19 +762,26 @@ def fetch_worklists(
         if not isinstance(worksheets_data, list):
             return False, "API response is not a valid format", [], []
 
+        total = pagination.get("total")
+        has_total = isinstance(total, int) and not isinstance(total, bool)
         if len(worksheets_data) == 0:
-            return False, "No worksheets available", [], []
+            return False, "No worksheets available", [], (
+                [f"The LIMS reports {total} worksheets but sent none."]
+                if has_total and total > 0 else [])
 
         worksheets, left_out = _read_worksheets(worksheets_data, config)
         # One page is asked for and one page is read: when the LIMS says it
         # has more than it sent, the list says so rather than looking whole
         # (review INGEST-2).
-        total = pagination.get("total")
-        if isinstance(total, int) and not isinstance(total, bool) and total > len(worksheets_data):
-            left_out.append(
-                f"Showing {len(worksheets_data)} of {total} worksheets from the LIMS: the "
-                f"rest are not in this list. Ask the laboratory system to close or archive "
-                f"the worksheets this run does not need."
+        if has_total and total > len(worksheets_data):
+            # First, not last: the page shows ten warnings and counts the rest
+            # (routes/samples.py), and this is the one that must not be the
+            # one cut (fresh review of this branch, Important 2).
+            left_out.insert(
+                0,
+                f"The LIMS has {total} worksheets and sent {len(worksheets_data)} of them: "
+                f"the rest are not in this list. Ask the laboratory system to close or "
+                f"archive the worksheets this run does not need."
             )
 
         if not worksheets:
