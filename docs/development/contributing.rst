@@ -294,6 +294,32 @@ Register the router in ``src/seqsetup/app.py``:
 
    app.include_router(my_feature.router)
 
+Every handler is a plain ``def``, never ``async def``. Starlette runs a
+``def`` on a worker thread; an ``async def`` runs on the one event loop that
+serves every request, so its database save held up everyone else's pages
+(``tests/integration/test_no_handler_blocks_the_loop.py`` fails on one). A
+handler that needs the whole submitted form takes it from the
+``submitted_form`` dependency, which reads it on the loop:
+
+.. code-block:: python
+
+   from starlette.datastructures import FormData
+
+   from .dependencies import get_ctx, get_editable_run, saving_run, submitted_form
+
+   @router.post("/runs/{run_id}/reagent-kit", response_class=HTMLResponse)
+   def update_reagent_kit(
+       request: Request,
+       form: FormData = Depends(submitted_form),
+       run: SequencingRun = Depends(get_editable_run),
+       ctx: AppContext = Depends(get_ctx),
+   ) -> Response:
+       ...
+
+``get_editable_run`` first waits for the run's turn, so two quick saves to
+one run go one after the other rather than the second losing the run's
+version check; any route that saves an edited run must get its run from it.
+
 A handler that serves one field of a page -- a select that posts on change,
 a hidden input a script fills in -- writes only the fields that were
 submitted, and refuses a submission that leaves its own field out with
@@ -301,7 +327,6 @@ submitted, and refuses a submission that leaves its own field out with
 
 .. code-block:: python
 
-   form = await request.form()
    if "reagent_cycles" not in form:
        return Response("No reagent kit was sent. Nothing was saved.", status_code=400)
 

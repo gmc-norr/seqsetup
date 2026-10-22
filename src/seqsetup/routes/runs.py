@@ -20,6 +20,7 @@ from typing import Annotated, Optional
 
 from bson import BSON
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from starlette.datastructures import FormData
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
@@ -64,7 +65,8 @@ from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
 from ..services import edit_locks
 from ..services.edit_locks import EditLockRefused
-from .dependencies import get_archivable_run, get_ctx, get_editable_run, require_edit_lock, saving_run
+from .dependencies import (get_archivable_run, get_ctx, get_editable_run, require_edit_lock,
+                           saving_run, submitted_form, wait_for_run_turn)
 from .utils import (check_status_transition, get_username, sanitize_string,
                     selected_kit_id, setup_panel_context)
 
@@ -245,13 +247,13 @@ def _with_fresh_version(response: Response, form, run: SequencingRun) -> Respons
 # --- Simple mutation handlers (DRAFT-only via get_editable_run) ---
 
 @router.post("/runs/{run_id}/name", response_class=HTMLResponse)
-async def update_run_name(
+def update_run_name(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/name — update run name and description."""
-    form = await request.form()
     # Write only the fields that were sent: a missing field must not be
     # saved as "" over its current value.
     has_name = "run_name" in form
@@ -281,8 +283,9 @@ def _cycle_total_oob(run: SequencingRun) -> dict:
 
 
 @router.post("/runs/{run_id}/instrument", response_class=HTMLResponse)
-async def update_instrument(
+def update_instrument(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -293,7 +296,6 @@ async def update_instrument(
     previous one — silent fallback would let a stale UI submit a
     mistyped enum and the change would not take.
     """
-    form = await request.form()
     # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
     if refusal := _stale_setup_version(form, run):
         return refusal
@@ -356,15 +358,15 @@ async def update_instrument(
 
 
 @router.post("/runs/{run_id}/i5-workflow", response_class=HTMLResponse)
-async def update_i5_workflow(
+def update_i5_workflow(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/i5-workflow — pick the run's i5 workflow (spec
     2026-10-04 group A2, §3). Only a name the instrument lists is saved, as
     sent; anything else is refused and nothing is written."""
-    form = await request.form()
     # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
     if refusal := _stale_setup_version(form, run):
         return refusal
@@ -388,8 +390,9 @@ async def update_i5_workflow(
 
 
 @router.post("/runs/{run_id}/flowcell", response_class=HTMLResponse)
-async def update_flowcell(
+def update_flowcell(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -399,7 +402,6 @@ async def update_flowcell(
     over the run's flowcell would be a change nobody asked for (CLAUDE.md,
     partial updates). The select always sends its value.
     """
-    form = await request.form()
     # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
     if refusal := _stale_setup_version(form, run):
         return refusal
@@ -425,8 +427,9 @@ async def update_flowcell(
 
 
 @router.post("/runs/{run_id}/reagent-kit", response_class=HTMLResponse)
-async def update_reagent_kit(
+def update_reagent_kit(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -439,7 +442,6 @@ async def update_reagent_kit(
     through ``_set_run_cycles``: a kit whose counts are the run's changes no
     sample, and other counts are refused while a value is typed by hand.
     """
-    form = await request.form()
     # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
     if refusal := _stale_setup_version(form, run):
         return refusal
@@ -605,8 +607,9 @@ def _set_run_cycles(run: SequencingRun, run_cycles: RunCycles) -> None:
 
 
 @router.post("/runs/{run_id}/cycles", response_class=HTMLResponse)
-async def update_cycles(
+def update_cycles(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -615,7 +618,6 @@ async def update_cycles(
     All four counts are required; a missing or invalid one is a 400 and
     nothing is saved. Returns the re-rendered cycle form (new total).
     """
-    form = await request.form()
     # Every setup save refuses a stale tab (the night run's Q2, 2026-10-13).
     if refusal := _stale_setup_version(form, run):
         return refusal
@@ -639,8 +641,9 @@ async def update_cycles(
 
 
 @router.post("/runs/{run_id}/setup", response_class=HTMLResponse)
-async def update_setup(
+def update_setup(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -649,7 +652,6 @@ async def update_setup(
     before leaving is never lost. All or nothing: any missing or invalid
     field is a 400 and nothing is saved.
     """
-    form = await request.form()
     missing = [key for key in ("run_name", "run_description") if key not in form]
     if missing:
         return Response(f"Missing field(s): {', '.join(missing)}", status_code=400)
@@ -740,6 +742,8 @@ _SETTINGS_CHANGED_DURING_EXPORT = (
 def update_status(
     request: Request,
     status: str,
+    # Before the run is loaded: the saves in line land first.
+    _saves_in_line: None = Depends(wait_for_run_turn),
     run: SequencingRun = Depends(get_archivable_run),
     ctx: AppContext = Depends(get_ctx),
     confirmed_at: Annotated[Optional[str], Form(alias="color_balance_confirmed_at")] = None,

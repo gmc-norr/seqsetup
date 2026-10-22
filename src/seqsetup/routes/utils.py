@@ -159,7 +159,7 @@ class UploadTooLargeError(Exception):
         super().__init__(f"Upload exceeds maximum size of {max_bytes} bytes")
 
 
-async def read_upload_capped(
+def read_upload_capped(
     upload, max_bytes: int, chunk_size: int = 64 * 1024
 ) -> bytes:
     """Read an UploadFile in bounded chunks, refusing oversize bodies early.
@@ -172,12 +172,13 @@ async def read_upload_capped(
 
     Raises ``UploadTooLargeError`` once the cap is exceeded (before reading the
     rest of the stream). Shared by every multipart upload route so the bound
-    cannot be forgotten on one of them.
+    cannot be forgotten on one of them. It reads ``upload.file`` directly:
+    the routes that call it are plain ``def`` on a worker thread (review F9).
     """
     chunks: list[bytes] = []
     bytes_so_far = 0
     while True:
-        chunk = await upload.read(chunk_size)
+        chunk = upload.file.read(chunk_size)
         if not chunk:
             break
         bytes_so_far += len(chunk)
