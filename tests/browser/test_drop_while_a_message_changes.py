@@ -14,6 +14,7 @@ the next sample by itself; the tests check that nothing above the table
 moves, and where the drop lands.
 """
 
+import re
 from datetime import datetime
 
 import pytest
@@ -160,3 +161,26 @@ def test_a_message_that_comes_mid_drag_does_not_move_the_drop_either(
     assert (stored["DM-03"], stored["DM-04"]) == ("CGCTCATT", None), stored
     # Once the drag is over the slots take their own height again.
     expect(page.locator("#message-slots")).to_have_attribute("style", "")
+
+
+@pytest.mark.browser
+def test_a_drag_let_go_off_the_samples_lets_the_slots_and_the_page_go(
+        logged_in_page, base_url, app_ctx, run_id):
+    """A drag that ends anywhere but on a sample has no drop to let the held
+    heights go; its dragend must, or a later message stays out of sight."""
+    page = logged_in_page
+    _open(page, base_url)
+    # Playwright's own drag first: before one, a drag made with the mouse
+    # alone starts no drag at all in this browser.
+    with page.expect_response(lambda r: "/assign-index" in r.url):
+        _chip(page, "sck-p2").drag_to(_zone(page, 2))
+    point = _start_drag_onto(page, "sck-p3", 3)
+    expect(page.locator("#message-slots")).to_have_attribute("style", re.compile("min-height"))
+    expect(page.locator("html")).to_have_attribute("style", re.compile("min-height"))
+    page.mouse.move(point[0], 5, steps=10)                       # the top of the window
+    page.mouse.up()
+
+    expect(page.locator("#message-slots")).to_have_attribute("style", "")
+    expect(page.locator("html")).to_have_attribute("style", "")
+    stored = {s.sample_id: s.index1_sequence for s in app_ctx.run_repo.get_by_id(RUN_ID).samples}
+    assert [k for k, v in stored.items() if v] == ["DM-02"], stored
