@@ -14,7 +14,7 @@ from seqsetup.models.sequencing_run import (
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
-from .conftest import disable_repos, mark_ready, nothing_stored, stored_export, seed_profiles
+from .conftest import mark_ready, nothing_stored, stored_export, seed_profiles
 from .conftest import hold_edit_lock
 from .conftest import shipped_flowcells
 

@@ -20,7 +20,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos, mark_ready, seed_profiles
+from .conftest import mark_ready, seed_profiles
 from .conftest import hold_edit_lock
 
 

@@ -21,7 +21,7 @@ from seqsetup.services.run_exports import (
 )
 from seqsetup.services.validation_report import ValidationReportPDF
 
-from .conftest import disable_repos, mark_ready
+from .conftest import mark_ready
 from .test_export_files_own_records import BOTH_SHEETS, ORIGIN, records, seed_run
 
 

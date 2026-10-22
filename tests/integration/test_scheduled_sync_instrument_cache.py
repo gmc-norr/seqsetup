@@ -18,7 +18,7 @@ from seqsetup.models.sequencing_run import (
 )
 from seqsetup.services.scheduler import ProfileSyncScheduler
 
-from .conftest import disable_repos, seed_profiles
+from .conftest import seed_profiles
 from .conftest import hold_edit_lock
 from .conftest import shipped_flowcells
 

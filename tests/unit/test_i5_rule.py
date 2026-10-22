@@ -15,7 +15,6 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.models.validation import ValidationResult
 from seqsetup.services.samplesheet_v1_exporter import SampleSheetV1Exporter
-from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.validation import ValidationService
 from seqsetup.services.validation_report import ValidationReportJSON, ValidationReportPDF
 

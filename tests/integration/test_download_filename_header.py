@@ -19,7 +19,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos, mark_ready, stored_export, seed_profiles
+from .conftest import mark_ready, stored_export, seed_profiles
 from .test_group_1c import _pair
 from .conftest import hold_edit_lock
 

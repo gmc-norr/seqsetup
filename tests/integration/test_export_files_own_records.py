@@ -23,7 +23,7 @@ from seqsetup.services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.validation_report import ValidationReportJSON, ValidationReportPDF
 
-from .conftest import disable_repos, hold_edit_lock, mark_ready, seed_profiles
+from .conftest import hold_edit_lock, mark_ready, seed_profiles
 from .test_group_1c import _pair
 
 

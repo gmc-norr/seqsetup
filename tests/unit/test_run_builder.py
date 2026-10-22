@@ -225,7 +225,6 @@ class TestExportHasNoDanglingAnalysisReference:
     isn't a sample in the run — that would route reads to a phantom sample."""
 
     def test_dragen_data_section_omits_excluded_sample(self):
-        from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 
         analyses = [Analysis(
             name="g", analysis_type=AnalysisType.DRAGEN_ONBOARD,

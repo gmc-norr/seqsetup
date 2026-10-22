@@ -107,7 +107,6 @@ class TestATypedIndexPartIsRefused:
 
     @pytest.mark.parametrize("value,rule", REFUSED)
     def test_mark_ready_refuses_a_stored_one(self, logged_in_client, fresh_app, value, rule):
-        from .conftest import disable_repos
         _app, ctx, _db = fresh_app
         seed_profiles(ctx)
         run = _indexed_draft(ctx, "a3-typed-ready", override=value)
@@ -125,7 +124,6 @@ class TestAnIndexMustBeAsLongAsTheCyclesRead:
 
     def test_kit_cycles_shorter_than_the_index_on_an_equal_read(self, logged_in_client, fresh_app):
         # A 10-base i7 with kit index cycles 8 on an 8-cycle read: 0 errors before.
-        from .conftest import disable_repos
         _app, ctx, _db = fresh_app
         seed_profiles(ctx)
         run = _indexed_draft(ctx, "a3-length", i7="ATTACTCGAT", cycles=RunCycles(151, 151, 8, 8),
@@ -389,7 +387,6 @@ V1_REASON = (
 def _miseq_draft(ctx, run_id: str, mismatch_index1=1, status=RunStatus.DRAFT, **fields):
     from seqsetup.models.index import Index, IndexPair, IndexType
     from seqsetup.models.sample import Sample
-    from .conftest import disable_repos
     seed_profiles(ctx)
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.MISEQ,
                         flowcell_type="v3", reagent_cycles=600,
@@ -654,7 +651,6 @@ def _two_sample_draft(ctx, run_id, first, second):
     """A NovaSeq X draft with two samples in lane 1; each is (i7, i5 or None)."""
     from seqsetup.models.index import Index, IndexPair, IndexType
     from seqsetup.models.sample import Sample
-    from .conftest import disable_repos
     seed_profiles(ctx)
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=NOVASEQ_X,
                         flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))

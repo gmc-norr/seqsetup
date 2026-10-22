@@ -12,7 +12,7 @@ from seqsetup.models.validation import ConfigurationError, ValidationSeverity
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.validation import ValidationService
 
-from .conftest import disable_repos, mark_ready, nothing_stored, seed_profiles
+from .conftest import mark_ready, nothing_stored, seed_profiles
 from .test_group_1c import _pair
 from .conftest import hold_edit_lock
 

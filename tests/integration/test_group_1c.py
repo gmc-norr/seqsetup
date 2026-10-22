@@ -15,7 +15,7 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunSta
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
 from .page_shows import shown_mismatches, shown_setting
-from .conftest import disable_repos, nothing_stored, run_version, seed_profiles
+from .conftest import nothing_stored, run_version, seed_profiles
 from .conftest import hold_edit_lock
 
 
