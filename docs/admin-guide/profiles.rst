@@ -71,7 +71,9 @@ be read by other tools, such as the lab's pipeline automation:
   profiles the instrument runs, which SeqSetup writes into the Sample Sheet.
   Each entry has exactly these two keys:
 
-  - ``ApplicationProfileName`` -- Name of the application profile
+  - ``ApplicationProfileName`` -- Name of the application profile, exactly
+    as that profile gives it; it may not begin or end with a space or hold
+    a hidden character
   - ``ApplicationProfileVersion`` -- Version constraint (PEP 440 format), as
     text: ``"~=1.0"`` matches any 1.x. A bare ``1`` is refused; a quoted
     ``"1"`` matches only a profile whose version is exactly ``1``
@@ -296,7 +298,8 @@ These fields are required in every application profile SeqSetup reads:
      - Description
    * - ``ApplicationProfileName``
      - string
-     - Unique profile identifier
+     - Unique profile identifier; it may not begin or end with a space or
+       hold a hidden character
    * - ``ApplicationProfileVersion``
      - string
      - Version (PEP 440 format, e.g., ``1.0.0``)

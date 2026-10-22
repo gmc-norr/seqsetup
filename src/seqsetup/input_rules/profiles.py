@@ -114,7 +114,9 @@ class ApplicationProfileRules(StrictRules):
     when the type is Dragen (see the checks below); an empty section means
     none."""
 
-    ApplicationProfileName: FilledText256
+    # A name a test profile picks it by, so exactly what it reads as
+    # (review leftover O7).
+    ApplicationProfileName: ExactName256
     ApplicationProfileVersion: ProfileVersion
     ApplicationName: PlainName
     ApplicationType: FilledText256
@@ -125,7 +127,7 @@ class ApplicationProfileRules(StrictRules):
 
 
 class ApplicationProfileReferenceRules(StrictRules):
-    ApplicationProfileName: FilledText256
+    ApplicationProfileName: ExactName256
     ApplicationProfileVersion: VersionOrSpecifier
 
 
