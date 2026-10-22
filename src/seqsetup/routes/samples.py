@@ -49,8 +49,8 @@ from ..services.sample_api import name_list
 from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
 from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
-from .dependencies import (get_ctx, get_editable_run, saving_run, submitted_form,
-                           submitted_form_with_parts_up_to)
+from .dependencies import (get_ctx, get_editable_run, get_editable_run_to_read, saving_run,
+                           submitted_form, submitted_form_with_parts_up_to)
 from .utils import (
     MAX_KIT_ID_LEN,
     UploadTooLargeError,
@@ -375,6 +375,8 @@ async def _preview_form(request: Request, edited: bool = False) -> FormData:
     """The paste preview's form: an edited preview sends the whole text in
     one field, so each field may hold the paste's full size."""
     return await request.form(max_part_size=_MAX_PASTE_CHARS if edited else _STARLETTE_FIELD_BYTES)
+
+
 # Caps on the whole request (app.py, body_limit.py): the biggest field plus
 # 1 MB for the other fields and the multipart headers.
 PREVIEW_MAX_BODY_BYTES = _MAX_PASTE_CHARS + 1024 * 1024
@@ -950,7 +952,7 @@ def add_bulk_samples(
 def preview_paste(
     request: Request,
     form: FormData = Depends(_preview_form),
-    run: SequencingRun = Depends(get_editable_run),
+    run: SequencingRun = Depends(get_editable_run_to_read),
     ctx: AppContext = Depends(get_ctx),
     edited: bool = False,
 ) -> Response:
@@ -1007,7 +1009,7 @@ def preview_paste(
 @router.get("/runs/{run_id}/samples/worklists", response_class=HTMLResponse)
 def list_worklists(
     request: Request,
-    run: SequencingRun = Depends(get_editable_run),
+    run: SequencingRun = Depends(get_editable_run_to_read),
     context: str = "",
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -1170,7 +1172,7 @@ def _worklist_plan_signature(worklist_id: str, new_samples: list, skipped: list)
 @router.get("/runs/{run_id}/samples/preview-worklist", response_class=HTMLResponse)
 def preview_worklist(
     request: Request,
-    run: SequencingRun = Depends(get_editable_run),
+    run: SequencingRun = Depends(get_editable_run_to_read),
     worklist_id: str = "",
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -1458,7 +1460,7 @@ def _index_fill_plan(form, run: SequencingRun, ctx: AppContext):
 def preview_index_fill(
     request: Request,
     form: FormData = Depends(submitted_form),
-    run: SequencingRun = Depends(get_editable_run),
+    run: SequencingRun = Depends(get_editable_run_to_read),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/index-fill/preview — what "Fill in order" would

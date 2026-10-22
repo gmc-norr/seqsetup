@@ -9,7 +9,10 @@ Clinical-safety contract (codified per Section 7 of the design spec):
 
 * ``get_editable_run`` waits for the run's turn (``hold_run_turn``:
   one request edits a run at a time), then loads + checks an editable run,
-  and that the request's user holds its edit lock. ``get_draft_run`` skips the lock
+  and that the request's user holds its edit lock.
+  ``get_editable_run_to_read`` makes the same checks without a turn, for a
+  route that saves nothing; ``wait_for_run_turn`` lets Mark Ready wait for
+  the saves in line without holding a turn itself. ``get_draft_run`` skips the lock
   check: it is only for the four ``/edit-lock`` routes that take, give
   back or keep the lock (tests/integration/test_edit_lock.py lists every
   run-changing route that does not use ``get_editable_run``). Mutation
@@ -110,6 +113,35 @@ def get_editable_run(
     run = _load_and_check_editable(run_id, ctx.run_repo)
     require_edit_lock(run, ctx, request)
     return run
+
+
+def get_editable_run_to_read(
+    run_id: str,
+    request: Request,
+    ctx: AppContext = Depends(get_ctx),
+) -> SequencingRun:
+    """FastAPI dep: ``get_editable_run`` without the run's turn, for a route
+    that saves nothing -- a preview, the LIMS lists. Such a route may wait on
+    the LIMS for as long as its socket timeout allows per read; holding the
+    turn meanwhile made the person's own saves wait, and be refused after
+    ``TURN_WAIT_SECONDS`` (fresh review of 057748e, P3-2)."""
+    run = _load_and_check_editable(run_id, ctx.run_repo)
+    require_edit_lock(run, ctx, request)
+    return run
+
+
+async def wait_for_run_turn(run_id: str) -> None:
+    """FastAPI dep: wait until the saves already in line for the run are
+    done, without holding a turn after them -- for Mark Ready, which then
+    loads the run they left. It may run for minutes, so it holds no turn
+    itself; started from the run before a save still landing, it ran every
+    check and drew the report, then lost the version check to the person's
+    own edit (fresh review of 057748e, P3-1)."""
+    try:
+        async with run_turns.turn(run_id):
+            pass
+    except run_turns.TurnNotGiven as refused:
+        raise ConflictError(str(refused)) from None
 
 
 def get_draft_run(

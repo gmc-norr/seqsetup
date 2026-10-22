@@ -261,3 +261,101 @@ class TestATurnThatDoesNotComeIsRefused:
         assert one["answer"].status_code == 200, one["answer"].text[:300]
         assert _mismatches(ctx, RUN, "s1") == (0, 1)
         assert _mismatches(ctx, RUN, "s2") == (1, 1)
+
+
+class TestARouteThatSavesNothingTakesNoTurn:
+    """The LIMS list waits on the LIMS, up to its socket timeout per read.
+    Holding the run's turn meanwhile would make the person's own saves wait,
+    and be refused after a minute (fresh review of 057748e, P3-2)."""
+
+    def test_a_row_save_lands_while_the_lims_list_waits(self, logged_in_client, two_rows, monkeypatch):
+        from seqsetup.models.sample_api_config import SampleApiConfig
+        from seqsetup.services import sample_api
+        ctx = two_rows
+        ctx.sample_api_config_repo.save(SampleApiConfig(base_url="https://lims.example.org/api",
+                                                        enabled=True))
+        asking, answer = threading.Event(), threading.Event()
+
+        def slow_lims(config):
+            asking.set()
+            answer.wait(timeout=30)
+            return False, "The LIMS did not answer", [], []
+
+        monkeypatch.setattr(sample_api, "fetch_worklists", slow_lims)
+        (listed, saved), (lister, saver) = _in_threads(
+            logged_in_client,
+            lambda: logged_in_client.get(f"/runs/{RUN}/samples/worklists"),
+            lambda: _save_box(logged_in_client, RUN, "s1", "barcode_mismatches_index1", "0", "1"),
+        )
+        with logged_in_client:
+            lister.start()
+            try:
+                assert asking.wait(timeout=30), "the list never asked the LIMS"
+                saver.start()
+                saver.join(timeout=5)
+                landed_meanwhile = not saver.is_alive()
+            finally:
+                answer.set()
+                lister.join(timeout=60)
+                if saver.ident:
+                    saver.join(timeout=60)
+
+        assert landed_meanwhile, "a row save waited for the LIMS list"
+        assert saved["answer"].status_code == 200, saved["answer"].text[:300]
+        assert listed["answer"].status_code == 200
+        assert _mismatches(ctx, RUN, "s1") == (0, 1)
+
+
+class TestMarkReadyStartsFromTheSavesInLine:
+    """Mark Ready takes no turn -- it may run for minutes -- but it waits for
+    the saves already in line, so it checks and writes the run they leave.
+    Started from the run before a save still landing, it ran the checks and
+    drew the report, then lost the version check at the end: "modified by
+    another user" for the person's own edit (fresh review of 057748e, P3-1)."""
+
+    def test_mark_ready_pressed_while_a_save_is_landing(self, logged_in_client, fresh_app, monkeypatch):
+        from seqsetup.models.sequencing_run import RunStatus
+        from .conftest import mark_ready, seed_profiles
+        from .test_scheduled_sync_instrument_cache import _scheduled_sync, _seed_run
+        _app, ctx, _db = fresh_app
+        profiles = seed_profiles(ctx, lane=False)
+        _scheduled_sync(ctx, monkeypatch, "forward", profiles)
+        run_id = _seed_run(ctx, "f9-mark-ready")
+        sid = ctx.run_repo.get_by_id(run_id).samples[0].id
+        real_save, real_get = ctx.run_repo.save, ctx.run_repo.get_by_id
+        edit_saving, ready_loaded = threading.Event(), threading.Event()
+
+        def get(some_id):
+            if edit_saving.is_set():
+                ready_loaded.set()
+            return real_get(some_id)
+
+        def save(run):
+            if not edit_saving.is_set():
+                edit_saving.set()
+                # Without the wait Mark Ready loads the run now; with it, it
+                # cannot, and this save goes on after a moment.
+                ready_loaded.wait(timeout=1.5)
+            return real_save(run)
+
+        monkeypatch.setattr(ctx.run_repo, "get_by_id", get)
+        monkeypatch.setattr(ctx.run_repo, "save", save)
+        (edit, ready), (editor, presser) = _in_threads(
+            logged_in_client,
+            lambda: _save_box(logged_in_client, run_id, sid, "barcode_mismatches_index1", "0", "1"),
+            lambda: mark_ready(logged_in_client, run_id, ORIGIN),
+        )
+        with logged_in_client:
+            editor.start()
+            try:
+                assert edit_saving.wait(timeout=30), "the edit never reached its save"
+                presser.start()
+            finally:
+                editor.join(timeout=60)
+                presser.join(timeout=180)
+
+        assert edit["answer"].status_code == 200, edit["answer"].text[:300]
+        assert ready["answer"].status_code == 200, ready["answer"].text[:300]
+        stored = real_get(run_id)
+        assert stored.status == RunStatus.READY, ready["answer"].text[:500]
+        assert stored.samples[0].barcode_mismatches_index1 == 0

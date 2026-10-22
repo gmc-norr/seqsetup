@@ -16,8 +16,11 @@ process with one event loop, so one table covers every request, as
 ``_SYNC_LOCK`` does for the configuration sync. A turn that does not come
 within ``TURN_WAIT_SECONDS`` is refused, never waited for without end.
 
-Mark Ready takes no turn: it may run for minutes, and it already refuses a
-run that changed while its files were written.
+Mark Ready holds no turn: it may run for minutes. It waits for the saves
+already in line before it loads the run (``wait_for_run_turn``), and it
+refuses a run that changed after that while its files were written. A route
+that saves nothing -- a preview, the LIMS lists -- takes no turn either
+(``get_editable_run_to_read``).
 """
 
 import asyncio

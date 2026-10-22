@@ -66,7 +66,7 @@ from ..templating import render, templates
 from ..services import edit_locks
 from ..services.edit_locks import EditLockRefused
 from .dependencies import (get_archivable_run, get_ctx, get_editable_run, require_edit_lock,
-                           saving_run, submitted_form)
+                           saving_run, submitted_form, wait_for_run_turn)
 from .utils import (check_status_transition, get_username, sanitize_string,
                     selected_kit_id, setup_panel_context)
 
@@ -742,6 +742,8 @@ _SETTINGS_CHANGED_DURING_EXPORT = (
 def update_status(
     request: Request,
     status: str,
+    # Before the run is loaded: the saves in line land first.
+    _saves_in_line: None = Depends(wait_for_run_turn),
     run: SequencingRun = Depends(get_archivable_run),
     ctx: AppContext = Depends(get_ctx),
     confirmed_at: Annotated[Optional[str], Form(alias="color_balance_confirmed_at")] = None,

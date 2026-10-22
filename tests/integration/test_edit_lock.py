@@ -575,7 +575,11 @@ class TestMoreLockPaths:
 
 class TestEveryRunChangeIsGuarded:
     """Every POST, PUT, PATCH or DELETE under /runs/{run_id} loads its run
-    with get_editable_run, or is on this list with the reason it need not."""
+    with get_editable_run, or is on this list with the reason it need not.
+    get_editable_run_to_read makes the same checks without the run's turn,
+    for a route that saves nothing (the two previews); which routes may take
+    it, and that none of them saves, is pinned by
+    tests/unit/test_every_run_edit_waits_its_turn.py."""
 
     NOT_EDITABLE_GUARDED = {
         ("POST", "/runs/{run_id}/status/{status}"): "checks the lock itself for Mark Ready",
@@ -603,7 +607,7 @@ class TestEveryRunChangeIsGuarded:
                 yield from self._api_routes(route.original_router.routes)
 
     def test_each_one_is_guarded_or_listed(self, fresh_app):
-        from seqsetup.routes.dependencies import get_editable_run
+        from seqsetup.routes.dependencies import get_editable_run, get_editable_run_to_read
         app, _ctx, _db = fresh_app
         found = set()
         unguarded = []
@@ -612,8 +616,9 @@ class TestEveryRunChangeIsGuarded:
                 continue
             for method in route.methods & {"POST", "PUT", "PATCH", "DELETE"}:
                 found.add((method, route.path))
-                if not self._uses(route.dependant, get_editable_run) and (
-                        method, route.path) not in self.NOT_EDITABLE_GUARDED:
+                guarded = (self._uses(route.dependant, get_editable_run)
+                           or self._uses(route.dependant, get_editable_run_to_read))
+                if not guarded and (method, route.path) not in self.NOT_EDITABLE_GUARDED:
                     unguarded.append((method, route.path))
         assert len(found) > 20, found
         assert unguarded == []
