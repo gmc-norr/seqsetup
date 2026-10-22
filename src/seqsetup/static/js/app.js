@@ -324,8 +324,9 @@ function handleIndexDrop(event, sampleId, runId, dropZoneType) {
 }
 
 // The rows of `sampleIds` that show an index `idx` would replace: a pair
-// fills both cells, so any index; an i7 or an i5 the one in its own cell
-// (a row's pair goes with it). `editing` is true while the row's index is a
+// fills both cells, so any index; an i7 or an i5 the one in its own cell,
+// and any index that came as a pair, which goes whole (a pair may have no
+// i5, and an i5 put on its empty cell took its i7 with it). `editing` is true while the row's index is a
 // .replace-zone ("Edit indexes" on); the wizard's rows never are, and carry
 // no data-sample-name.
 function rowsAnIndexReplaces(sampleIds, idx) {
@@ -334,7 +335,8 @@ function rowsAnIndexReplaces(sampleIds, idx) {
         const row = document.getElementById(`sample-row-${id}`);
         if (!row) continue;
         const [i7, i5] = shownIndexOfRow(id);
-        const replaces = idx.type === 'pair' ? Boolean(i7 || i5) : Boolean(idx.type === 'i7' ? i7 : i5);
+        const paired = Boolean(row.querySelector('.index-assigned[data-has-pair="1"]'));
+        const replaces = idx.type === 'pair' ? Boolean(i7 || i5) : Boolean(idx.type === 'i7' ? i7 : i5) || paired;
         if (!replaces) continue;
         const assigned = row.querySelector('.index-assigned[data-sample-name]');
         const cell = row.querySelector('td[title]');
@@ -372,7 +374,8 @@ function multiDropWarning(targets, indexes) {
     const type = indexes[0].type;
     const slot = (type === 'i7' || type === 'i5') ? `.assigned-index.${type}` : '.assigned-index';
     const replaced = targets
-        .filter(r => r.querySelector(slot))
+        .filter(r => r.querySelector(slot) ||
+            (type !== 'pair' && r.querySelector('.index-assigned[data-has-pair="1"]')))
         .map(r => { const c = r.querySelector('td[title]'); return c ? c.title : r.id; });
 
     const parts = [];
@@ -423,6 +426,7 @@ function replaceDropConfirmed(event, zone) {
 // 7d970c7, EDITING-1). A single i7 or i5 on its own empty cell, as a
 // combinatorial kit is used, replaces nothing.
 function pairOnShownIndexAllowed(sampleId, idx) {
+    if (idx && (idx.type === 'i7' || idx.type === 'i5')) return singleOnShownPairAllowed(sampleId, idx);
     if (!idx || idx.type !== 'pair') return true;
     const [i7, i5] = shownIndexOfRow(sampleId);
     if (!i7 && !i5) return true;
@@ -439,6 +443,27 @@ function pairOnShownIndexAllowed(sampleId, idx) {
     const current = assigned.dataset.indexName ? ` (${assigned.dataset.indexName})` : '';
     return window.confirm(`${name} already has an index${current}. ` +
         'Replace it with the index pair you dropped? A pair fills both its i7 and i5.');
+}
+
+// A single i7 or i5 put on a sample whose index came as a pair replaces the
+// whole pair (Sample.assign_index1 / assign_index2 drop it). A kit may have
+// a pair with no i5, whose sample shows an empty i5 cell, and an i5 dropped
+// there took the pair's i7 with it, unasked (second review of
+// fix/review-p1). Refused while "Edit indexes" is off, asked while it is on.
+// An i5 on the empty cell of an i7 from a combinatorial kit replaces nothing.
+function singleOnShownPairAllowed(sampleId, idx) {
+    const row = document.getElementById(`sample-row-${sampleId}`);
+    if (!row || !row.querySelector('.index-assigned[data-has-pair="1"]')) return true;
+    const assigned = row.querySelector('.index-assigned[data-sample-name]');
+    const name = (assigned && assigned.dataset.sampleName) || 'This sample';
+    if (!assigned || !assigned.classList.contains('replace-zone')) {
+        showErrorBanner(`${name} has an index pair, and a single ${idx.type} replaces the whole pair. ` +
+            (assigned ? 'Select Edit indexes to replace it.' : `Clear its index first to give it a single ${idx.type}.`));
+        return false;
+    }
+    const current = assigned.dataset.indexName ? ` (${assigned.dataset.indexName})` : '';
+    return window.confirm(`${name} has an index pair${current}. Replace it with the ${idx.type} you dropped? ` +
+        `The sample keeps only the ${idx.type}.`);
 }
 
 // The same, for a drop on an empty cell. A drop of several goes on to
@@ -707,6 +732,21 @@ function dropOnAnotherRow(event, zone) {
     return !then || then.id !== row.id;
 }
 document.addEventListener('dragend', () => { rowsAtDragStart = null; });
+
+// The page keeps its height during a drag too. Scrolled to its end, a page
+// that an answer makes shorter below the rows (a delete, rows filled below)
+// is scrolled up by the browser to stay within it: every row slides down
+// under the pointer while its place on the page stays the same, so the
+// check above cannot see it, and the drop went to the sample above the one
+// aimed at (second review of fix/review-p1).
+function holdPageHeight(hold) {
+    const page = document.documentElement;
+    page.style.minHeight = hold ? `${page.scrollHeight}px` : '';
+}
+document.addEventListener('dragstart', () => holdPageHeight(true));
+for (const type of ['dragend', 'mousedown', 'keydown']) {
+    document.addEventListener(type, () => holdPageHeight(false));
+}
 
 function toggleSelectAllSamples(headerCheckbox) {
     const checkboxes = document.querySelectorAll('.sample-checkbox');
@@ -1557,6 +1597,7 @@ document.addEventListener('drop', function(event) {
     const moved = dropOnAnotherRow(event, zone);
     rowsAtDragStart = null;
     holdMessageSlots(false);
+    holdPageHeight(false);
     if (moved) {
         event.preventDefault();
         zone.classList.remove('drag-over');

@@ -191,8 +191,10 @@ def test_a_multi_drop_answer_mid_drag_refuses_the_drop(logged_in_page, base_url,
     assert _given(app_ctx, I7[9]) == ["MV-10"]           # the held drop itself landed
     expect(page.locator("#error-banner")).to_have_text(MOVED)
     # The redraw took the dragged chip away, so no dragend came: the drop
-    # itself let the message slots go, and the refusal shows.
+    # itself let the message slots and the page's height go, and the
+    # refusal shows.
     expect(page.locator("#message-slots")).to_have_attribute("style", "")
+    expect(page.locator("html")).to_have_attribute("style", "")
 
 
 @pytest.mark.browser
@@ -232,9 +234,9 @@ def test_a_drop_on_a_table_that_did_not_move_still_lands(logged_in_page, base_ur
 
 @pytest.mark.browser
 def test_a_redraw_that_moves_nothing_does_not_refuse_the_drop(logged_in_page, base_url, app_ctx, run_id):
-    """An answer that redraws the section mid-drag but leaves every row where
-    it was (the panel beside the table, one row filled below the aimed one)
-    is no reason to refuse."""
+    """An answer that redraws a row mid-drag but leaves every row above the
+    aimed one where it was (one row filled below it) is no reason to
+    refuse."""
     page = logged_in_page
     _open(page, base_url, 1600)
     pattern = "**/samples/*/assign-index"
@@ -299,3 +301,85 @@ def test_a_drop_made_in_script_on_a_row_that_stayed_lands(logged_in_page, base_u
                                      f"#sample-row-{RUN_ID}-s5 .drop-zone.i7-drop", 0])
     assert answer.value.status == 200
     assert _given(app_ctx, I7[4]) == ["MV-05"]
+
+
+def _open_at_page_end(page, base_url, height):
+    """1600 px wide, scrolled to the end of the page: an answer that makes
+    the page shorter below the rows then pulls every row down on screen
+    (the browser keeps the scroll within the page), while in page
+    coordinates they stay where they were (second review of fix/review-p1)."""
+    _open(page, base_url, 1600)
+    page.set_viewport_size({"width": 1600, "height": height})
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    page.wait_for_timeout(200)
+
+
+def _chip_on_screen(page, ks):
+    height = page.viewport_size["height"]
+    return next(k for k in ks if 50 < _chip(page, k).bounding_box()["y"] < height - 50)
+
+
+def _drop_after(page, held, pattern, url_part, k, n):
+    """Drag chip k onto the middle of sample n's i7 box, let the held answer
+    land mid-drag, and drop where the pointer is."""
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    chip = _chip(page, k).bounding_box()
+    page.mouse.move(chip["x"] + chip["width"] / 2, chip["y"] + chip["height"] / 2)
+    page.mouse.down()
+    zone = _zone(page, n).bounding_box()
+    x, y = zone["x"] + zone["width"] / 2, zone["y"] + zone["height"] / 2
+    page.mouse.move(x, y, steps=10)
+    with page.expect_response(lambda r: url_part in r.url):
+        held[0].continue_()
+    page.unroute(pattern)
+    page.wait_for_timeout(500)
+    page.mouse.move(x, y + 1)
+    page.mouse.up()
+    page.wait_for_timeout(1000)
+
+
+@pytest.mark.browser
+def test_a_delete_below_at_the_page_end_does_not_move_the_drop(logged_in_page, base_url, app_ctx, run_id):
+    page = logged_in_page
+    _open_at_page_end(page, base_url, 1000)
+    page.on("dialog", lambda d: d.accept())
+    pattern = f"**/samples/{RUN_ID}-s24*"
+    held = _held(page, pattern)
+    page.locator(f"#sample-row-{RUN_ID}-s24 button[title='Delete sample']").click()
+    _wait_until_held(page, held)
+    assert len(held) == 1
+
+    k = _chip_on_screen(page, range(20))
+    _drop_after(page, held, pattern, f"{RUN_ID}-s24", k, 23)
+
+    assert _given(app_ctx, I7[k]) == ["MV-23"]
+    expect(page.locator("#error-banner")).to_be_empty()
+
+
+@pytest.mark.browser
+def test_a_fill_below_at_the_page_end_does_not_move_the_drop(logged_in_page, base_url, app_ctx, run_id):
+    page = logged_in_page
+    _open(page, base_url, 1600)
+    page.set_viewport_size({"width": 1600, "height": 1200})
+    # A first drop, so the section's first redraw (which adds the index
+    # panel's hint, making the page taller) is over before the one held.
+    _chip(page, 0).click()
+    _chip(page, 4).click(modifiers=["Shift"])
+    with page.expect_response(lambda r: "assign-indexes-bulk" in r.url):
+        _chip(page, 0).drag_to(_zone(page, 1))
+    page.wait_for_timeout(1500)
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    page.wait_for_timeout(200)
+    pattern = "**/samples/assign-indexes-bulk"
+    held = _held(page, pattern)
+    _chip(page, 5).click()
+    _chip(page, 14).click(modifiers=["Shift"])
+    _chip(page, 5).drag_to(_zone(page, 15))
+    _wait_until_held(page, held)
+    assert len(held) == 1
+
+    k = _chip_on_screen(page, range(15, 20))
+    _drop_after(page, held, pattern, "assign-indexes-bulk", k, 14)
+
+    assert _given(app_ctx, I7[k]) == ["MV-14"]
+    assert _given(app_ctx, I7[14]) == ["MV-24"]          # the held drop itself landed

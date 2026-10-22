@@ -61,7 +61,10 @@ index`_). That holds for a pair dropped on the empty cell of a sample
 that has one index, such as an i7 with no i5: the pair would fill both
 cells and replace the i7, so SeqSetup refuses it and says so, and while
 you are editing indexes it asks first. A single i5 dropped there fills
-the i5, as a combinatorial kit is used.
+the i5, as a combinatorial kit is used -- unless the i7 came as part of
+an index pair (a kit may have a pair with no i5): a single index replaces
+a whole pair, so that is refused the same way, and asked about while you
+are editing indexes.
 
 If the samples move on the page while you are dragging -- an answer to
 an earlier change arrives and the table above or around them redraws --
@@ -69,7 +72,9 @@ the row under the pointer may no longer be the one you aimed at. SeqSetup
 notes where each sample was when the drag began, and if the row you drop
 on was not at that spot then, nothing is assigned and the page says
 *"The samples moved while you were dragging, so no index was given. Drop
-it again."* Drop it again.
+it again."* Drop it again. While you drag, the page also keeps its
+height, so an answer that makes it shorter cannot scroll the samples
+under the pointer.
 
 You can do the same thing from the keyboard: press **Enter** or
 **Space** on an index chip to select it, then **Tab** to the sample's
