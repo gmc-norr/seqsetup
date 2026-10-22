@@ -17,7 +17,6 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services.cycle_calculator import CycleCalculator
 from seqsetup.services.json_exporter import JSONExporter
-from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 
 CALCULATED = "Y151;I10;I10;Y151"
 TYPED = "Y151;I10;I10;U10Y141"

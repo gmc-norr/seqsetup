@@ -341,7 +341,6 @@ class TestATypedIndex2MaskedFirstIsRefused:
 
     @pytest.mark.parametrize("platform", PLATFORMS)
     def test_mark_ready_refuses_a_stored_one(self, logged_in_client, fresh_app, platform):
-        from .conftest import disable_repos
         _app, ctx, _db = fresh_app
         seed_profiles(ctx)
         run = _indexed_draft(ctx, "a2-typed-ready", platform, override="Y151;I8N2;N2I8;Y151")
@@ -366,7 +365,6 @@ class TestAShortenedI5OnAReversedReadIsRefused:
 
     @pytest.mark.parametrize("platform", PLATFORMS)
     def test_mark_ready_refuses_it(self, logged_in_client, fresh_app, platform):
-        from .conftest import disable_repos
         _app, ctx, _db = fresh_app
         seed_profiles(ctx)
         run = _indexed_draft(ctx, "a2-short-i5", platform, i5="ACGGTTCAAG", index2_cycles=8)
@@ -475,7 +473,6 @@ class TestAnInstrumentLeftOutOfTheSync:
         return ctx, run
 
     def test_mark_ready_is_refused(self, logged_in_client, fresh_app):
-        from .conftest import disable_repos
         ctx, run = self._setup(fresh_app)
         seed_profiles(ctx)
 
@@ -637,7 +634,6 @@ class TestRecordsThatCannotBeUsed:
             self, logged_in_client, fresh_app, monkeypatch):
         from seqsetup.data.instruments import SyncedInstrumentsUnusable
         from seqsetup.routes import runs as runs_module
-        from .conftest import disable_repos
         from .test_group_1c import _clean_run
         _app, ctx, _db = fresh_app
         seed_profiles(ctx)
@@ -658,7 +654,6 @@ class TestRecordsThatCannotBeUsed:
 
     def test_the_switch_re_read_is_covered(self, logged_in_client, fresh_app, monkeypatch):
         from seqsetup.models.instrument_definition import InstrumentRecordError
-        from .conftest import disable_repos
         from .test_group_1c import _clean_run, _sync
         _app, ctx, _db = fresh_app
         seed_profiles(ctx)
@@ -682,7 +677,6 @@ class TestRecordsThatCannotBeUsed:
     def test_a_database_error_at_the_switch_re_read_is_the_fixed_sentence(
             self, logged_in_client, fresh_app, monkeypatch):
         from pymongo.errors import ServerSelectionTimeoutError
-        from .conftest import disable_repos
         from .test_group_1c import _clean_run, _sync
         _app, ctx, _db = fresh_app
         seed_profiles(ctx)

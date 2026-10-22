@@ -9,7 +9,7 @@ These cover the clinically-sensitive paths:
 
 import pytest
 
-from .conftest import disable_repos, mark_ready, stored_export, seed_profiles
+from .conftest import mark_ready, stored_export, seed_profiles
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (

@@ -9,6 +9,8 @@ production writes `na`, so it proved nothing about the sheet a laboratory gets
 that used it call instead.
 """
 
+import copy
+
 from seqsetup.models.analysis import DRAGENPipeline
 from seqsetup.models.application_profile import ApplicationProfile
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
@@ -84,14 +86,19 @@ def _repos_for(*profiles):
 
 def sheet(run, *, fields=None, settings=None, **kw) -> str:
     """The sheet production writes for ``run``: the profile-driven path, with
-    one plain BCLConvert profile. Every sample is given the test that profile
-    is listed under, which is what the checks require of a Ready run anyway
-    (``_validate_samples_have_test_id``).
+    one plain BCLConvert profile. Every sample without a test is given the
+    one that profile is listed under, which is what the checks require of a
+    Ready run anyway (``_validate_samples_have_test_id``) -- on a copy, so the
+    run a test built is the run it goes on checking.
 
     The profile carries a Lane column only when the run's samples have lanes,
     as the writer this replaced decided from the data -- a Lane column with a
     sample that has no lane is a refused sheet (``sheet_plan``), which is the
     lab's own rule and not what these tests are about."""
+    # Only the samples' test fields change, so a copy of the run holding
+    # copies of its samples is enough (a deep copy cannot copy every run).
+    run = copy.copy(run)
+    run.samples = [copy.copy(sample) for sample in run.samples]
     for sample in run.samples:
         if not sample.test_id:
             sample.test_id = _TEST_NAME

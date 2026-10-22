@@ -22,7 +22,6 @@ from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services import samplesheet_v2_exporter
-from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 
 # The section names in Illumina's sample sheet v2 version histories for
 # NovaSeq X and NextSeq 1000/2000 (help.connected.illumina.com, 2026-10-17).

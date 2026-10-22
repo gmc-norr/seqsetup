@@ -17,7 +17,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos, nothing_stored, seed_profiles
+from .conftest import nothing_stored, seed_profiles
 from .conftest import hold_edit_lock
 
 

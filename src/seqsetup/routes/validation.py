@@ -313,16 +313,20 @@ def _build_dark_cycles_ctx(result):
 def _render_tab_contents(run_id, result):
     """Pre-render each tab's body to an HTML string for Jinja2 |safe interpolation."""
     env = templates.env
+    # Colour balance on, but no dye channels: the checks did not run
+    # (color_balance_without_channels), so "no indexed samples" would be the
+    # wrong reason (review leftover O5).
+    no_channels = result.color_balance_enabled and not result.channel_config
     return {
         "issues_html": env.get_template("validation/_issues_tab.html").render(result=result),
         "heatmaps_html": env.get_template("validation/_heatmaps_tab.html").render(
             lanes=_build_heatmap_lanes(result),
         ),
         "color_balance_html": env.get_template("validation/_color_balance_tab.html").render(
-            **_build_color_balance_ctx(result),
+            **_build_color_balance_ctx(result), no_channels=no_channels,
         ),
         "dark_cycles_html": env.get_template("validation/_dark_cycles_tab.html").render(
-            **_build_dark_cycles_ctx(result),
+            **_build_dark_cycles_ctx(result), no_channels=no_channels,
         ),
     }
 

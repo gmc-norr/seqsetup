@@ -41,7 +41,7 @@ SeqSetup is **single-tenant by design**: any authenticated user with the
 owner field and no per-run ACL — the only authorization boundary is the
 `admin` role, which gates configuration and user management (instruments,
 auth, LIMS, index-kit upload, local users, API tokens) via
-`require_admin_dep`. This is an accepted decision for a trusted clinical
+`require_admin_dep`. This is an accepted decision for a trusted laboratory
 operator team that collaborates on shared runs; it is documented as a hard
 contract in the module docstring of `routes/utils.py` (audit L1).
 

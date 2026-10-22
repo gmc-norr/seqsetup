@@ -12,6 +12,7 @@ from ..input_rules.table import ColumnGivenTwice, TableNotRead, read_table
 from ..utils.yaml_safety import safe_load_strict
 
 from ..models.index import IndexKit, IndexMode
+from .sheet_text import describe, hidden_characters
 
 
 class UnpairedIndexes(KitFileRefused):
@@ -116,8 +117,17 @@ _NAME_SHOWN = 40
 
 
 def _quoted(name) -> str:
+    """A name for a message. A hidden character is shown by its code, never
+    itself: two names that differ only by one looked alike in the message,
+    and a direction override would reorder the page around it (review
+    leftover O6)."""
     text = str(name)
-    return f"'{text[:_NAME_SHOWN]}…'" if len(text) > _NAME_SHOWN else f"'{text}'"
+    hidden = hidden_characters(text)
+    shown = text[:_NAME_SHOWN]
+    for c in hidden:
+        shown = shown.replace(c, f"<U+{ord(c):04X}>")
+    quoted = f"'{shown}…'" if len(text) > _NAME_SHOWN else f"'{shown}'"
+    return f"{quoted} (holds a hidden character: {describe(hidden)})" if hidden else quoted
 
 
 def _names(names: list) -> str:

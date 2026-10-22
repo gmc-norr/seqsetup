@@ -3,6 +3,7 @@
 
    Inputs:
      color_balance_enabled: bool
+     no_channels:           bool         (on, but the instrument states no dye channels)
      color_balance_desc:    str | None   (description paragraph text; None when disabled)
      legend:                dict | None  (ch1_name, ch1_bases, ch2_name, ch2_bases; None when disabled)
      lanes:                 list[dict]   (empty when disabled or no indexed samples)
@@ -36,6 +37,8 @@
         <p class="info-message">Color balance analysis is not applicable for this instrument.</p>
         <p class="info-details">Color balance analysis is only enabled for modern 2-color chemistry instruments (e.g., NovaSeq X) where it is critical for successful sequencing. It is disabled for older instruments and 4-color chemistry platforms.</p>
     </div>
+    {% elif no_channels %}
+    <p class="no-data-message">The color balance check did not run: this instrument's settings state no dye channels. The Issues tab says what to change.</p>
     {% elif not lanes %}
     <p class="no-data-message">No indexed samples to analyze</p>
     {% else %}

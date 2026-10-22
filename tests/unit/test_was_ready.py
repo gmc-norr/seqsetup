@@ -8,7 +8,6 @@ from ..sheet_through_profiles import sheet as _sheet
 from seqsetup.models.sequencing_run import RunStatus, SequencingRun
 from seqsetup.services.json_exporter import JSONExporter
 from seqsetup.services.run_diff import diff_run
-from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 
 
 class TestWasReadyFlag:

@@ -12,7 +12,7 @@ import pytest
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import disable_repos, mark_ready, nothing_stored, stored_export, seed_profiles
+from .conftest import mark_ready, nothing_stored, stored_export, seed_profiles
 from .test_group_a3 import profiles  # noqa: F401 (fixture)
 from .test_group_1c import _pair
 from .test_served_runs import _full, _run, _section, _token

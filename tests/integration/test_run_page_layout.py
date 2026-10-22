@@ -111,7 +111,7 @@ class TestExportOnlyOnceReady:
     def test_the_status_change_swaps_export_in_and_out(self, logged_in_client, fresh_app):
         """Through the real route: Mark Ready swaps the downloads in, back
         to Draft swaps the hidden placeholder back, both out of band."""
-        from .conftest import disable_repos, mark_ready
+        from .conftest import mark_ready
         from .test_group_1c import _pair
 
         _app, ctx, _db = fresh_app

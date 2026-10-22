@@ -14,7 +14,7 @@ from pathlib import Path
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services.validation_report import ValidationReportPDF
 
-from .conftest import disable_repos, mark_ready, seed_profiles
+from .conftest import mark_ready, seed_profiles
 from .test_group_a3 import ORIGIN
 from .test_scheduled_sync_instrument_cache import _scheduled_sync, _seed_run
 

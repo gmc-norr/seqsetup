@@ -13,8 +13,7 @@ from seqsetup.services import sample_api as sample_api_module
 from seqsetup.services.index_fill import build_fill_plan
 
 from .page_shows import shown_indexes
-from .conftest import (PROFILE_TEST_NAME, disable_repos, mark_ready,
-                       seed_profiles, stored_export)
+from .conftest import PROFILE_TEST_NAME, mark_ready, seed_profiles, stored_export
 from .conftest import hold_edit_lock, import_from_preview
 
 ORIGIN = {"Origin": "http://testserver"}

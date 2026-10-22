@@ -23,7 +23,7 @@ from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services import github_sync
 from seqsetup.utils.clock import local_time
 
-from .conftest import disable_repos, mark_ready, nothing_stored, stored_export, seed_profiles
+from .conftest import mark_ready, nothing_stored, stored_export, seed_profiles
 from .test_group_a3 import ORIGIN, _indexed_draft
 from .test_group_a4 import _fake_github, _test_yaml
 from .test_scheduled_sync_instrument_cache import _scheduled_sync, _seed_run

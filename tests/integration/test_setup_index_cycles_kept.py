@@ -24,7 +24,6 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 from seqsetup.services.cycle_calculator import CycleCalculator
-from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from .conftest import hold_edit_lock
 
 ORIGIN = {"Origin": "http://testserver", "HX-Request": "true"}

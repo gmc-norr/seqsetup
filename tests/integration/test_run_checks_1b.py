@@ -7,7 +7,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 
 from .page_shows import shown_override_cycles, shown_setting
-from .conftest import disable_repos, nothing_stored, seed_profiles
+from .conftest import nothing_stored, seed_profiles
 from .conftest import hold_edit_lock
 
 

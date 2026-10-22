@@ -9,7 +9,7 @@ from seqsetup.data import instruments as instruments_module
 from seqsetup.models.instrument_definition import InstrumentDefinition, OnboardApplication
 from seqsetup.services.validation import clear_validation_cache
 
-from .conftest import disable_repos, nothing_stored, stored_export, seed_profiles
+from .conftest import nothing_stored, stored_export, seed_profiles
 from .test_sheet_safety import _assert_validation_passes, _seed_draft, _seed_synced_profile
 from .conftest import hold_edit_lock
 from .conftest import shipped_flowcells

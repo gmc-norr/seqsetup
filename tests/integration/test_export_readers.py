@@ -12,7 +12,7 @@ import pytest
 
 from seqsetup.models.sequencing_run import EXPORT_KINDS, RunStatus
 
-from .conftest import disable_repos, seed_profiles
+from .conftest import seed_profiles
 from .test_export_files_own_records import (
     BOTH_SHEETS, ORIGIN, V2_ONLY, records, seed_run, spy_on_exporters,
 )

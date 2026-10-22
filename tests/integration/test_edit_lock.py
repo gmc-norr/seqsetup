@@ -248,7 +248,6 @@ class TestTheLockFollowsTheRun:
         assert ctx.run_repo.get_by_id(run_id).status == RunStatus.DRAFT
 
     def test_the_holder_marks_it_ready_and_the_lock_goes(self, two):
-        from .conftest import disable_repos
         from .test_group_1c import _clean_run
         ctx, admin, _op = two
         seed_profiles(ctx, lane=False)
@@ -504,7 +503,6 @@ class TestMarkReadyChecksTheLockAgainBeforeSaving:
 
     def test_a_take_over_during_the_exports_is_refused(self, two, monkeypatch):
         from seqsetup.routes import runs as runs_module
-        from .conftest import disable_repos
         from .test_group_1c import _clean_run
         ctx, admin, op = two
         seed_profiles(ctx, lane=False)

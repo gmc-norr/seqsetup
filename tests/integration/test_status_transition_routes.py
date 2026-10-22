@@ -25,7 +25,7 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import disable_repos, hold_edit_lock, stored_export, seed_profiles
+from .conftest import hold_edit_lock, stored_export, seed_profiles
 
 ORIGIN = {"Origin": "http://testserver"}
 

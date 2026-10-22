@@ -18,10 +18,7 @@ from seqsetup.models.api_token import ApiToken
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import (
-    disable_repos, hold_edit_lock, mark_ready, seed_profiles, seed_stored_exports,
-    stored_export,
-)
+from .conftest import hold_edit_lock, mark_ready, seed_profiles, seed_stored_exports, stored_export
 from .test_group_1c import _pair
 
 SHEET = "[Header]\nFileFormatVersion,2\nRunName,Served <b>&amp; \"run\"</b>\n\n[Reads]\nRead1Cycles,151\n"
