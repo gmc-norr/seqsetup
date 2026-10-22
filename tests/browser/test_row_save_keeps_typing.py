@@ -12,7 +12,8 @@ drop or clear, a bulk Apply, the Check's Set test) was dropped. A lost
 Override Cycles typed by hand fits the run, so no check could see it.
 
 The first save (or load) of the run is held, as a slow database or a large
-run would hold it; the keys are the ones a person presses."""
+run would hold it, or a save is held on its way to the server, as a slow
+network would hold it; the keys are the ones a person presses."""
 
 import threading
 import time
@@ -58,6 +59,49 @@ def slow_next_load(app_ctx, mutable_run_id, monkeypatch):
 
     monkeypatch.setattr(app_ctx.run_repo, "get_by_id", get_by_id)
     return state
+
+
+class _SaveOnItsWay:
+    """Once armed, the next row save is held in the network -- sent by the
+    page, not yet at the server -- until ``release()``, as a slow network
+    would hold it. A save held at the server would hold a redraw sent after
+    it too: the server takes one run's edits in turn (review F9)."""
+
+    def __init__(self, page):
+        self.page = page
+        self.armed = False
+        self.held = []
+        self.released = False
+
+    def route(self, route):
+        if self.armed and not self.held:
+            self.armed = False
+            self.held.append(route)
+        else:
+            route.continue_()
+
+    def wait_until_held(self, seconds=5.0):
+        deadline = time.monotonic() + seconds
+        while not self.held and time.monotonic() < deadline:
+            self.page.wait_for_timeout(20)
+        return bool(self.held)
+
+    def release(self):
+        self.released = True
+        self.held[0].continue_()
+
+
+@pytest.fixture
+def save_on_its_way(logged_in_page):
+    held = _SaveOnItsWay(logged_in_page)
+    logged_in_page.route("**/samples/**/settings", held.route)
+    yield held
+    logged_in_page.unroute("**/samples/**/settings")
+    if held.held and not held.released:
+        try:
+            held.held[0].abort()
+        except Exception:                  # the page may have gone meanwhile
+            pass
 
 
 def _row(page, run_id, n=1):
@@ -339,49 +383,49 @@ class TestACorrectionTypedWhileTheBoxSaves:
 class TestARowRedrawnWhileASaveIsOnItsWay:
     """An index drop or clear, a bulk Apply or the Check's Set test redraws
     the row while a save of one of its boxes is on its way or waiting its
-    turn. Here the i7 save's load is held, the i5 save waits behind it, and
-    the row is redrawn as its index Clear button does."""
+    turn. Here the i7 save is held on its way to the server, the i5 save
+    waits behind it, and the row is redrawn as its index Clear button does."""
 
-    def _save_two_and_redraw(self, page, base_url, run_id, slow_next_load):
+    def _save_two_and_redraw(self, page, base_url, run_id, save_on_its_way):
         _open(page, base_url, run_id)
         row = _row(page, run_id)
         row.locator('input[name="barcode_mismatches_index1"]').click()
         page.keyboard.press("Control+A")
         page.keyboard.type("0")
-        slow_next_load["armed"] = True
-        page.keyboard.press("Tab")          # the i7 save starts; its load is held
+        save_on_its_way.armed = True
+        page.keyboard.press("Tab")          # the i7 save starts; it is held on its way
         page.keyboard.type("2")
         page.keyboard.press("Tab")          # the i5 save waits its turn
-        assert slow_next_load["holding"].wait(5), "the i7 save never reached its load"
-        _redraw_row(page, run_id)           # answered while the i7 load is held
+        assert save_on_its_way.wait_until_held(), "the i7 save was never sent"
+        _redraw_row(page, run_id)           # answered while the i7 save is on its way
 
     def test_a_save_still_waiting_is_named_as_not_saved(
-            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, save_on_its_way):
         page = logged_in_page
         sent = []
         page.on("request", lambda r: sent.append(r.post_data) if _a_settings_answer(r) else None)
 
-        self._save_two_and_redraw(page, base_url, mutable_run_id, slow_next_load)
+        self._save_two_and_redraw(page, base_url, mutable_run_id, save_on_its_way)
 
         banner = page.locator("#row-setting-notes")
         expect(banner).to_contain_text("MM i5 of MUT-01")
         expect(banner).to_contain_text("was not saved")
         with page.expect_response(_a_settings_answer):
-            pass                            # the held i7 save is answered
+            save_on_its_way.release()                            # the held i7 save is answered
         _handled(page)
         assert sent == ["barcode_mismatches_index1=0&target_setting=1"], sent
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index2 == 1, (
             "the banner says the i5 change was not saved, but it was")
 
     def test_an_answer_after_the_redraw_asks_for_a_reload(
-            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, save_on_its_way):
         """The redrawn row shows the i7 mismatch as it was before the held
         save stored 0; the answer of that save has no box left to fill."""
         page = logged_in_page
 
-        self._save_two_and_redraw(page, base_url, mutable_run_id, slow_next_load)
+        self._save_two_and_redraw(page, base_url, mutable_run_id, save_on_its_way)
         with page.expect_response(_a_settings_answer):
-            pass
+            save_on_its_way.release()
         _handled(page)
 
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 0
@@ -410,7 +454,7 @@ class TestARowRedrawnWhileASaveIsOnItsWay:
         assert _stored(app_ctx, mutable_run_id).barcode_mismatches_index1 == 0
 
     def test_a_save_lost_to_a_bulk_apply_is_named(
-            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, save_on_its_way):
         """Apply redraws the whole table; the Override Cycles change waits
         behind the held i7 save, as the click on Apply commits it."""
         page = logged_in_page
@@ -421,9 +465,9 @@ class TestARowRedrawnWhileASaveIsOnItsWay:
         row.locator('input[name="barcode_mismatches_index1"]').click()
         page.keyboard.press("Control+A")
         page.keyboard.type("0")
-        slow_next_load["armed"] = True
-        page.keyboard.press("Tab")          # the i7 save starts; its load is held
-        assert slow_next_load["holding"].wait(5), "the i7 save never reached its load"
+        save_on_its_way.armed = True
+        page.keyboard.press("Tab")          # the i7 save starts; it is held on its way
+        assert save_on_its_way.wait_until_held(), "the i7 save was never sent"
         row.locator('input[name="override_cycles"]').click()
         page.keyboard.press("Control+A")
         page.keyboard.type(TYPED_OVERRIDE)
@@ -432,15 +476,18 @@ class TestARowRedrawnWhileASaveIsOnItsWay:
 
         expect(page.locator("#main")).to_contain_text("Override Cycles of MUT-01")
         expect(page.locator("#main")).to_contain_text("was not saved")
+        with page.expect_response(_a_settings_answer):
+            save_on_its_way.release()       # the held i7 save is answered
+        _handled(page)
         assert _stored(app_ctx, mutable_run_id).override_cycles != TYPED_OVERRIDE
 
     def test_a_later_failure_keeps_the_not_saved_note(
-            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, save_on_its_way):
         page = logged_in_page
-        self._save_two_and_redraw(page, base_url, mutable_run_id, slow_next_load)
+        self._save_two_and_redraw(page, base_url, mutable_run_id, save_on_its_way)
         expect(page.locator("#main")).to_contain_text("MM i5 of MUT-01")
         with page.expect_response(_a_settings_answer):
-            pass                            # the held i7 save is answered
+            save_on_its_way.release()                            # the held i7 save is answered
         _handled(page)
 
         i7 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index1"]')
@@ -454,12 +501,12 @@ class TestARowRedrawnWhileASaveIsOnItsWay:
         expect(page.locator("#main")).to_contain_text("MM i5 of MUT-01")
 
     def test_the_not_saved_note_goes_once_the_change_is_saved(
-            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, save_on_its_way):
         page = logged_in_page
-        self._save_two_and_redraw(page, base_url, mutable_run_id, slow_next_load)
+        self._save_two_and_redraw(page, base_url, mutable_run_id, save_on_its_way)
         expect(page.locator("#main")).to_contain_text("MM i5 of MUT-01")
         with page.expect_response(_a_settings_answer):
-            pass
+            save_on_its_way.release()
         _handled(page)
 
         i5 = _row(page, mutable_run_id).locator('input[name="barcode_mismatches_index2"]')
@@ -614,7 +661,7 @@ class TestAWaitingActionWhenASaveDoesNotLand:
             "Mark Ready was not done")
 
     def test_done_editing_is_not_done_when_a_change_was_lost_to_a_redraw(
-            self, logged_in_page, base_url, mutable_run_id, app_ctx, slow_next_load):
+            self, logged_in_page, base_url, mutable_run_id, app_ctx, save_on_its_way):
         """The i5 save waits in the row's queue when the row is redrawn, so it
         is never sent: the run must not be left, nor marked Ready, with that
         change silently gone."""
@@ -627,15 +674,15 @@ class TestAWaitingActionWhenASaveDoesNotLand:
         row.locator('input[name="barcode_mismatches_index1"]').click()
         page.keyboard.press("Control+A")
         page.keyboard.type("0")
-        slow_next_load["armed"] = True
-        page.keyboard.press("Tab")          # the i7 save starts; its load is held
+        save_on_its_way.armed = True
+        page.keyboard.press("Tab")          # the i7 save starts; it is held on its way
         page.keyboard.type("2")
         page.keyboard.press("Tab")          # the i5 save waits its turn
         page.get_by_role("button", name="Done editing").click()
-        assert slow_next_load["holding"].wait(5), "the i7 save never reached its load"
+        assert save_on_its_way.wait_until_held(), "the i7 save was never sent"
         _redraw_row(page, mutable_run_id)   # drops the queued i5 save
         with page.expect_response(_a_settings_answer):
-            pass                            # the held i7 save is answered
+            save_on_its_way.release()                            # the held i7 save is answered
         _handled(page)
 
         assert sent == [], sent
