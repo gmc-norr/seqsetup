@@ -75,7 +75,7 @@ class TestAuditEventsAreRecorded:
             flowcell_type="10B",
             run_cycles=RunCycles(151, 151, 8, 8),
         )
-        run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1], 
+        run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1],
             sample_id="S1",
             index_pair=IndexPair(
                 id="p1", name="p1",

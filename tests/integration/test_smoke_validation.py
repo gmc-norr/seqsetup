@@ -43,7 +43,7 @@ def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
         flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8),
     )
-    run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1], 
+    run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1],
         sample_id="S1",
         index_pair=IndexPair(
             id="p1", name="p1",
@@ -51,7 +51,7 @@ def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
             index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
         ),
     ))
-    run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1], 
+    run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1],
         sample_id="S2",
         index_pair=IndexPair(
             id="p2", name="p2",

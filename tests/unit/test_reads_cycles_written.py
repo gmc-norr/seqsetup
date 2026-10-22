@@ -3,9 +3,10 @@
 Every test of the [Reads] section used Read 1 = Read 2 and Index 1 = Index 2
 (151/151/10/10), so a writer that swapped Read1Cycles and Read2Cycles, or
 Index1Cycles and Index2Cycles, passed them all. These runs have four
-different counts: the v2 [Reads] section (profile path, as Mark Ready writes
-it, and the fallback), the v1 [Reads] section, and the JSON export's cycle
-fields must each carry every count under its own name. A single-end run
+different counts: the v2 [Reads] section (through the shipped profiles, as
+Mark Ready writes it, and through one plain BCLConvert profile), the v1
+[Reads] section, and the JSON export's cycle fields must each carry every
+count under its own name. A single-end run
 (Read 2 = 0) and a single-index run (Index 2 = 0) pin what is written today:
 v2 writes the zero line (``Read2Cycles,0`` / ``Index2Cycles,0``) rather than
 leaving it out. Whether the instruments accept a zero line is not known here
@@ -94,7 +95,8 @@ def _expected_v2(counts) -> list[str]:
 
 class TestTheV2ReadsSectionWritesEachCountOnItsOwnLine:
     """[Reads] names each count and writes it once, in the order Read 1,
-    Read 2, Index 1, Index 2, on both writer paths."""
+    Read 2, Index 1, Index 2, through the shipped profiles and through one
+    plain BCLConvert profile."""
 
     @pytest.mark.parametrize("counts", DISTINCT)
     def test_the_profile_path_with_the_shipped_profiles_writes_the_four_counts(self, counts):
@@ -113,11 +115,12 @@ class TestTheV2ReadsSectionWritesEachCountOnItsOwnLine:
         assert _v2_reads(sheet) == _expected_v2(counts)
 
     @pytest.mark.parametrize("counts", DISTINCT)
-    def test_the_fallback_path_writes_the_four_counts(self, counts):
+    def test_a_plain_bclconvert_profile_writes_the_four_counts(self, counts):
         sheet = _sheet(_run(counts))
 
         assert "[BCLConvert_Data]" in sheet
-        assert "[DragenGermline_Settings]" not in sheet  # no profiles: the fallback ran
+        # One BCLConvert profile and no other, so no DRAGEN section.
+        assert "[DragenGermline_Settings]" not in sheet
         assert _v2_reads(sheet) == _expected_v2(counts)
 
     def test_each_label_appears_once_in_the_sheet(self):
@@ -176,7 +179,7 @@ class TestASingleEndRunToday:
         assert _v2_reads(sheet) == ["Read1Cycles,151", "Read2Cycles,0",
                                     "Index1Cycles,10", "Index2Cycles,8"]
 
-    def test_v2_writes_read2cycles_zero_on_the_fallback_path(self):
+    def test_v2_writes_read2cycles_zero_with_a_plain_profile(self):
         sheet = _sheet(_run(self.COUNTS))
         assert _v2_reads(sheet) == ["Read1Cycles,151", "Read2Cycles,0",
                                     "Index1Cycles,10", "Index2Cycles,8"]
@@ -201,7 +204,7 @@ class TestASingleIndexRunToday:
         assert _v2_reads(sheet) == ["Read1Cycles,151", "Read2Cycles,101",
                                     "Index1Cycles,10", "Index2Cycles,0"]
 
-    def test_v2_writes_index2cycles_zero_on_the_fallback_path(self):
+    def test_v2_writes_index2cycles_zero_with_a_plain_profile(self):
         sheet = _sheet(_run(self.COUNTS))
         assert _v2_reads(sheet) == ["Read1Cycles,151", "Read2Cycles,101",
                                     "Index1Cycles,10", "Index2Cycles,0"]

@@ -38,11 +38,19 @@ class IndexMode(Enum):
     SINGLE = "single"  # i7 only
 
 
-def checked_sequence(value: str) -> str:
+def checked_sequence(value) -> str:
     """An index sequence as the model stores it: uppercased and stripped of
     surrounding whitespace (a YAML literal-block scalar appends a newline, a
     spreadsheet cell can carry spaces), then held to ``VALID_DNA_RE`` -- which
-    refuses whitespace inside it, and every character that is not DNA."""
+    refuses whitespace inside it, and every character that is not DNA.
+
+    Anything but text is refused: ``None`` or a number stored as a sequence
+    opened the run and then failed as a bare 500 inside Mark Ready, where
+    nothing says which sample it was (fresh review of this branch, I1).
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            f"An index sequence must be text, not {type(value).__name__}: {value!r}")
     sequence = value.upper().strip()
     if sequence and not VALID_DNA_RE.match(sequence):
         invalid = set(sequence) - set("ACGTN")
@@ -75,7 +83,7 @@ class Index:
         the Sample Sheet (CLAUDE.md, Data integrity: "self-validating on every
         assignment"; review LIFECYCLE-3 / TH-3).
         """
-        if name == "sequence" and isinstance(value, str):
+        if name == "sequence":
             value = checked_sequence(value)
         object.__setattr__(self, name, value)
 

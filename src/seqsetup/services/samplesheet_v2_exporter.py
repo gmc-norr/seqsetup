@@ -8,7 +8,6 @@ from ..data.instruments import (
     get_samplesheet_platform_name,
     run_i5_direction,
 )
-from ..models.analysis import AnalysisType, DRAGENPipeline
 from ..models.sequencing_run import SequencingRun
 from .cycle_calculator import CycleCalculator
 from .samplesheet_v1_exporter import _PLAIN_IDENTIFIER_RE, _reverse_complement
@@ -24,7 +23,6 @@ from .sheet_plan import (
 from .sheet_text import (
     MISMATCH_COLUMNS,
     PLAIN_NAME_RE,
-    PLAIN_VERSION_RE,
     is_allowed_mismatch,
     is_i5_rule_setting,
     refuse_hidden_characters,
@@ -441,7 +439,7 @@ class SampleSheetV2Exporter:
             + "\n"
         )
 
-        # BCLConvert: one row per (sample, lane), as in _write_bclconvert_data —
+        # BCLConvert: one row per (sample, lane) —
         # writing only the first lane would send the other lanes' reads to
         # Undetermined. Without a Lane column the rows would be identical, so
         # write one. Other applications keep one row per sample (first lane).

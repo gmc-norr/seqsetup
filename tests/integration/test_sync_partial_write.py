@@ -212,7 +212,7 @@ class TestASyncThatStopsWhileWritingPausesMarkReady:
         assert resp.status_code == 200
         assert ctx.instrument_definition_repo.collection.count_documents({}) == 0
 
-        seed_profiles(ctx)
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "sync-instrument-write")
         _refused_while_paused(logged_in_client, ctx, run_id,
                               "application profiles, test profiles and instrument settings")
@@ -436,7 +436,7 @@ class TestALaterSyncMustWriteWhatWasLeftIncomplete:
         page = html.unescape(logged_in_client.get("/admin/config-sync").text)
         assert ("did not finish writing the instrument settings. Switch on Also sync "
                 "instruments, then press Sync now to write them again.") in page
-        seed_profiles(ctx)
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "sync-instruments-off")
         _refused_while_paused(logged_in_client, ctx, run_id, "instrument settings")
 

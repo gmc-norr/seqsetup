@@ -43,7 +43,7 @@ def _seed_miseq_draft(ctx, run_id: str) -> tuple[str, str]:
         reagent_cycles=600,
         run_cycles=RunCycles(150, 150, 8, 8),
     )
-    sample = Sample(test_id="WGS", test_version="1", lanes=[1], 
+    sample = Sample(test_id="WGS", test_version="1", lanes=[1],
         sample_id="S1",
         sample_name="S1name",
         project="P",

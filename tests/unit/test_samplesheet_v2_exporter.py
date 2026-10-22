@@ -19,7 +19,7 @@ from seqsetup.models.test_profile import ApplicationProfileReference, TestProfil
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.sheet_text import PLAIN_VERSION_RE
 
-from ..sheet_through_profiles import (  # noqa: F401  (the stubs are used below)
+from ..sheet_through_profiles import (  # noqa: F401  (several are used below)
     _DEFAULT_FIELDS, _DEFAULT_SETTINGS, _StubAppProfileRepo, _StubTestProfileRepo,
     _bclconvert_profile, sheet as _sheet,
 )
@@ -360,9 +360,9 @@ class TestSampleSheetV2Exporter:
         assert '"Y151,I8,I8,Y151"' not in output
 
     def test_export_escapes_index_sequence_with_comma(self):
-        """The non-profile BCLConvert_Data path must CSV-escape index sequences,
-        in parity with the profile-driven path. A stray comma must be quoted,
-        not split the row into the wrong column count."""
+        """The BCLConvert_Data writer must CSV-escape index sequences: a stray
+        comma must be quoted, not split the row into the wrong column
+        count."""
         idx1 = Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7)
         # Index.__setattr__ refuses this now (review LIFECYCLE-3 / TH-3), so
         # the test reaches past the model on purpose: what is under test is
@@ -387,40 +387,14 @@ class TestSampleSheetV2Exporter:
         output = _sheet(run)
         assert '"ATTAC,TCG"' in output
 
-    @pytest.mark.skip(reason="Retired with the fallback writer (review TH-1): "
+    @pytest.mark.skip(reason="Retired with the second writer (review TH-1): "
                              "analysis.reference_genome reached only that writer's DRAGEN "
                              "sections. Production writes a DRAGEN section from the "
                              "profile, and a comma in a profile data value is held by "
                              "test_export_escapes_application_profile_data_value_with_comma.")
     def test_export_escapes_reference_genome_with_comma(self):
-        """analysis.reference_genome with a comma must be quoted in DRAGEN sections."""
-        run = SequencingRun(
-            instrument_platform=InstrumentPlatform.NOVASEQ_X,
-            flowcell_type="10B",
-            run_cycles=RunCycles(151, 151, 10, 10),
-            samples=[
-                Sample(
-                    sample_id="S1",
-                    index_pair=IndexPair(
-                        id="p1", name="p1",
-                        index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
-                        index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
-                    ),
-                ),
-            ],
-            analyses=[
-                Analysis(
-                    name="malicious",
-                    analysis_type=AnalysisType.DRAGEN_ONBOARD,
-                    dragen_pipeline=DRAGENPipeline.GERMLINE,
-                    reference_genome="hg38,injected",
-                    sample_ids=["S1"],
-                ),
-            ],
-        )
-
-        output = _sheet(run)
-        assert '"hg38,injected"' in output
+        """Retired: see the skip reason. The body is gone, so nobody reads it
+        as a test that would pass if the marker were taken off."""
 
     def test_export_escapes_application_profile_data_value_with_comma(self):
         """profile.data fallback values must be CSV-quoted in the Data section.

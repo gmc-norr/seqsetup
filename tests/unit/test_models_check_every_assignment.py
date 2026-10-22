@@ -65,6 +65,16 @@ class TestAnIndexSequence:
         with pytest.raises(ValueError):
             Index.from_dict({"name": "x", "sequence": "ACGTX", "index_type": "i7"})
 
+    @pytest.mark.parametrize("written", [None, 12345678, b"ACGTACGT", ["ACGT"]])
+    def test_anything_but_text_is_refused(self, written):
+        """A stored ``null`` or number used to open the run and then fail as a
+        bare 500 inside Mark Ready, naming no sample."""
+        with pytest.raises(ValueError):
+            Index(name="x", sequence=written, index_type=IndexType.I7)
+
+        with pytest.raises(ValueError):
+            Index.from_dict({"name": "x", "sequence": written, "index_type": "i7"})
+
     def test_a_good_sequence_is_still_taken(self):
         index = _i7()
 
