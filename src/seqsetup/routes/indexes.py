@@ -151,7 +151,7 @@ def index_kit_import_page(request: Request) -> Response:
 
 
 @router.post("/upload", response_class=HTMLResponse, dependencies=[Depends(require_admin_dep)])
-async def upload_index_kit(
+def upload_index_kit(
     request: Request,
     index_file: Annotated[UploadFile, File()],
     index_mode: Annotated[str, Form()] = "unique_dual",
@@ -179,7 +179,7 @@ async def upload_index_kit(
     # Stream-read in bounded chunks via the shared helper so a multi-GB POST
     # can't exhaust memory before the size check fires.
     try:
-        file_content = await read_upload_capped(index_file, MAX_INDEX_FILE_SIZE)
+        file_content = read_upload_capped(index_file, MAX_INDEX_FILE_SIZE)
     except UploadTooLargeError:
         return _error_fragment(
             request,

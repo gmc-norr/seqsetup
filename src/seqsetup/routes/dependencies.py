@@ -7,8 +7,9 @@ Clinical-safety contract (codified per Section 7 of the design spec):
   short-circuit. The HTML-aware ``HTTPException`` handler renders the
   403 as an HTML fragment, not the FastAPI default JSON.
 
-* ``get_editable_run`` loads + checks an editable run, and that the
-  request's user holds its edit lock. ``get_draft_run`` skips the lock
+* ``get_editable_run`` waits for the run's turn (``hold_run_turn``:
+  one request edits a run at a time), then loads + checks an editable run,
+  and that the request's user holds its edit lock. ``get_draft_run`` skips the lock
   check: it is only for the four ``/edit-lock`` routes that take, give
   back or keep the lock (tests/integration/test_edit_lock.py lists every
   run-changing route that does not use ``get_editable_run``). Mutation
@@ -26,15 +27,16 @@ Clinical-safety contract (codified per Section 7 of the design spec):
 
 import logging
 from contextlib import contextmanager
-from typing import Iterator
+from typing import AsyncIterator, Callable, Iterator
 
 from fastapi import Depends, HTTPException, Request
+from starlette.datastructures import FormData
 
 from ..context import AppContext
 from ..models.sequencing_run import RunStatus, SequencingRun
 from ..models.user import UserRole
 from ..repositories.base import ConflictError
-from ..services import edit_locks
+from ..services import edit_locks, run_turns
 from ..services.audit_log import audit
 from ..services.edit_locks import EditLockRefused
 from ..services.run_history import record_run_updated
@@ -82,14 +84,29 @@ def _load_and_check_editable(run_id: str, run_repo) -> SequencingRun:
     return run
 
 
+async def hold_run_turn(run_id: str) -> AsyncIterator[None]:
+    """FastAPI dep: wait for the run's turn, on the event loop, and hold it
+    until the route function returns (``services/run_turns.py``). Routes run
+    on worker threads, so one person's two quick saves to a run would
+    otherwise overlap and the second lose the version check. A turn that does
+    not come is a 409 that changes nothing."""
+    try:
+        async with run_turns.turn(run_id):
+            yield
+    except run_turns.TurnNotGiven as refused:
+        raise ConflictError(str(refused)) from None
+
+
 def get_editable_run(
     run_id: str,
     request: Request,
     ctx: AppContext = Depends(get_ctx),
+    _turn: None = Depends(hold_run_turn, scope="function"),
 ) -> SequencingRun:
     """FastAPI dep: load + check the editable run, and that the request's
-    user holds its edit lock. Mutation handlers then enter
-    ``with saving_run(run, ctx, request):`` to persist."""
+    user holds its edit lock -- after the run's turn has come, so nothing
+    else edits it between this load and the save. Mutation handlers then
+    enter ``with saving_run(run, ctx, request):`` to persist."""
     run = _load_and_check_editable(run_id, ctx.run_repo)
     require_edit_lock(run, ctx, request)
     return run
@@ -184,6 +201,26 @@ def saving_run(
             )
             audit("run.history.record_failed", actor=actor, target=run.id,
                   outcome="failure", reason="append_error")
+
+
+# ---------------------------------------------------------------------------
+# The submitted form, read on the event loop. Reading a request's body is the
+# one thing a route needs the loop for; with this dep the route itself is a
+# plain ``def`` that Starlette runs on a worker thread (review F9).
+# ---------------------------------------------------------------------------
+
+
+async def submitted_form(request: Request) -> FormData:
+    """FastAPI dep: the request's form, as ``await request.form()`` reads it."""
+    return await request.form()
+
+
+def submitted_form_with_parts_up_to(max_part_size: int) -> Callable:
+    """A ``submitted_form`` that reads each field up to ``max_part_size``
+    bytes, as ``request.form(max_part_size=...)`` does."""
+    async def read(request: Request) -> FormData:
+        return await request.form(max_part_size=max_part_size)
+    return read
 
 
 # ---------------------------------------------------------------------------

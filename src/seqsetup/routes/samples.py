@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from starlette.datastructures import FormData
 from starlette.responses import HTMLResponse, Response
 
 from ..context import AppContext
@@ -48,7 +49,8 @@ from ..services.sample_api import name_list
 from ..services.sample_parser import parse_pasted_samples, read_pasted_samples
 from ..services.versioned_tests import offered_tests
 from ..templating import render, templates
-from .dependencies import get_ctx, get_editable_run, saving_run
+from .dependencies import (get_ctx, get_editable_run, saving_run, submitted_form,
+                           submitted_form_with_parts_up_to)
 from .utils import (
     MAX_KIT_ID_LEN,
     UploadTooLargeError,
@@ -365,6 +367,14 @@ _MAX_PASTE_CHARS = 10 * 1024 * 1024
 # (batch 4, item 4f(iii)).
 _STARLETTE_FIELD_BYTES = 1024 * 1024
 _MAX_ADD_FIELD_BYTES = 2 * _MAX_PASTE_CHARS
+# Add samples reads each field up to _MAX_ADD_FIELD_BYTES.
+_ADD_FORM = submitted_form_with_parts_up_to(_MAX_ADD_FIELD_BYTES)
+
+
+async def _preview_form(request: Request, edited: bool = False) -> FormData:
+    """The paste preview's form: an edited preview sends the whole text in
+    one field, so each field may hold the paste's full size."""
+    return await request.form(max_part_size=_MAX_PASTE_CHARS if edited else _STARLETTE_FIELD_BYTES)
 # Caps on the whole request (app.py, body_limit.py): the biggest field plus
 # 1 MB for the other fields and the multipart headers.
 PREVIEW_MAX_BODY_BYTES = _MAX_PASTE_CHARS + 1024 * 1024
@@ -403,19 +413,18 @@ def _test_version_with(test_id: str, raw) -> tuple[str, str]:
     return version, ""
 
 
-async def _read_paste_input(
-    request: Request, run: SequencingRun, ctx: AppContext,
-    max_field_bytes: int = _STARLETTE_FIELD_BYTES,
+def _read_paste_input(
+    form: FormData, run: SequencingRun, ctx: AppContext,
 ) -> tuple[Optional[_PasteInput], str]:
     """Read an Add-samples form (preview or add). Returns (input, "") or
     (None, message) for a 400. Saves nothing.
 
     Lanes: at least one, each within the flowcell — an empty choice is an
     error, never "all lanes". The default test must be empty or a known
-    test profile.
+    test profile. ``form`` is read by the route's form dependency, each
+    field up to the size that route allows (``_ADD_FORM``,
+    ``_preview_form``).
     """
-    form = await request.form(max_part_size=max_field_bytes)
-
     file_name = ""
     sample_file = form.get("sample_file")
     if sample_file and hasattr(sample_file, "read") and sample_file.filename:
@@ -423,7 +432,7 @@ async def _read_paste_input(
         # memory before the size check fires (the index-kit upload path uses
         # the same shared helper).
         try:
-            raw_bytes = await read_upload_capped(sample_file, _MAX_PASTE_CHARS)
+            raw_bytes = read_upload_capped(sample_file, _MAX_PASTE_CHARS)
         except UploadTooLargeError:
             return None, "File too large (max 10 MB)"
         try:
@@ -734,14 +743,14 @@ def _panel_position(idx_type: str, index, kit) -> int:
 
 
 @router.post("/runs/{run_id}/samples", response_class=HTMLResponse)
-async def add_sample(
+def add_sample(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/samples — add a single sample (legacy non-wizard form)."""
     run_id = run.id
-    form = await request.form()
     sample_id = form.get("sample_id", "")
     sample_name = form.get("sample_name", "")
     project = form.get("project", "")
@@ -786,8 +795,9 @@ async def add_sample(
 
 
 @router.post("/runs/{run_id}/samples/bulk", response_class=HTMLResponse)
-async def add_bulk_samples(
+def add_bulk_samples(
     request: Request,
+    form: FormData = Depends(_ADD_FORM),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
     context: str = "",
@@ -795,8 +805,7 @@ async def add_bulk_samples(
     """POST /runs/{run_id}/samples/bulk — add multiple samples from paste/file."""
     run_id = run.id
 
-    paste, error = await _read_paste_input(
-        request, run, ctx, max_field_bytes=_MAX_ADD_FIELD_BYTES)
+    paste, error = _read_paste_input(form, run, ctx)
     if paste is None:
         return Response(error, status_code=400)
 
@@ -938,8 +947,9 @@ async def add_bulk_samples(
 
 
 @router.post("/runs/{run_id}/samples/preview", response_class=HTMLResponse)
-async def preview_paste(
+def preview_paste(
     request: Request,
+    form: FormData = Depends(_preview_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
     edited: bool = False,
@@ -956,9 +966,7 @@ async def preview_paste(
     same cap, so this bounds nothing new — it only says which of the two
     boxes is being read.
     """
-    paste, error = await _read_paste_input(
-        request, run, ctx,
-        max_field_bytes=_MAX_PASTE_CHARS if edited else _STARLETTE_FIELD_BYTES)
+    paste, error = _read_paste_input(form, run, ctx)
     if paste is None:
         return Response(error, status_code=400)
 
@@ -1303,15 +1311,15 @@ def import_worklist_samples(
 
 
 @router.post("/runs/{run_id}/samples/assign-indexes-bulk", response_class=HTMLResponse)
-async def assign_indexes_bulk(
+def assign_indexes_bulk(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/samples/assign-indexes-bulk — assign indexes to consecutive samples."""
     run_id = run.id
 
-    form = await request.form()
     start_sample_id = form.get("start_sample_id", "")
     indexes_json = form.get("indexes_json", "")
     context = form.get("context", "")
@@ -1447,28 +1455,29 @@ def _index_fill_plan(form, run: SequencingRun, ctx: AppContext):
 
 
 @router.post("/runs/{run_id}/index-fill/preview", response_class=HTMLResponse)
-async def preview_index_fill(
+def preview_index_fill(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/index-fill/preview — what "Fill in order" would
     assign. Nothing is saved."""
-    plan, error = _index_fill_plan(await request.form(), run, ctx)
+    plan, error = _index_fill_plan(form, run, ctx)
     if error:
         return Response(error, status_code=400)
     return render(request, "runs/_index_fill_preview.html", {"run": run, "plan": plan})
 
 
 @router.post("/runs/{run_id}/index-fill", response_class=HTMLResponse)
-async def apply_index_fill(
+def apply_index_fill(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/index-fill — assign the previewed plan. Refused
     (409) unless the plan rebuilt now is the one the preview showed."""
-    form = await request.form()
     plan, error = _index_fill_plan(form, run, ctx)
     if error:
         return Response(error, status_code=400)
@@ -1509,14 +1518,14 @@ async def apply_index_fill(
 
 
 @router.post("/runs/{run_id}/samples/assign-index-to-selected", response_class=HTMLResponse)
-async def assign_index_to_selected(
+def assign_index_to_selected(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/samples/assign-index-to-selected — assign one index to selected samples."""
     run_id = run.id
-    form = await request.form()
     sample_ids_json = form.get("sample_ids", "")
     index_pair_id = form.get("index_pair_id", "")
     index_id = form.get("index_id", "")
@@ -1599,8 +1608,9 @@ async def assign_index_to_selected(
 
 
 @router.post("/runs/{run_id}/samples/set-lanes", response_class=HTMLResponse)
-async def set_lanes_bulk(
+def set_lanes_bulk(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -1613,7 +1623,6 @@ async def set_lanes_bulk(
     """
     run_id = run.id
 
-    form = await request.form()
     if "lanes" not in form:
         return Response("No lanes were sent. Nothing was saved.", status_code=400)
     sample_ids_json = form.get("sample_ids", "[]")
@@ -1673,15 +1682,15 @@ async def set_lanes_bulk(
 
 
 @router.post("/runs/{run_id}/samples/set-mismatches", response_class=HTMLResponse)
-async def set_mismatches_bulk(
+def set_mismatches_bulk(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/samples/set-mismatches — set barcode mismatches for selected samples."""
     run_id = run.id
 
-    form = await request.form()
     sample_ids_json = form.get("sample_ids", "[]")
     mismatch_index1_str = form.get("mismatch_index1", "")
     mismatch_index2_str = form.get("mismatch_index2", "")
@@ -1746,8 +1755,9 @@ async def set_mismatches_bulk(
 
 
 @router.post("/runs/{run_id}/samples/set-override-cycles", response_class=HTMLResponse)
-async def set_override_cycles_bulk(
+def set_override_cycles_bulk(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -1768,7 +1778,6 @@ async def set_override_cycles_bulk(
     """
     run_id = run.id
 
-    form = await request.form()
     if "override_cycles" not in form:
         return Response("No override cycles were sent. Nothing was saved.", status_code=400)
     auto = form.get("mode", "apply") == "auto"
@@ -1861,8 +1870,9 @@ async def set_override_cycles_bulk(
 
 
 @router.post("/runs/{run_id}/samples/set-test-id", response_class=HTMLResponse)
-async def set_test_id_bulk(
+def set_test_id_bulk(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -1875,7 +1885,6 @@ async def set_test_id_bulk(
     """
     run_id = run.id
 
-    form = await request.form()
     if "test_id" not in form:
         return Response("No test was sent. Nothing was saved.", status_code=400)
     sample_ids_json = form.get("sample_ids", "[]")
@@ -1946,15 +1955,15 @@ async def set_test_id_bulk(
 
 
 @router.post("/runs/{run_id}/samples/bulk-delete", response_class=HTMLResponse)
-async def delete_samples_bulk(
+def delete_samples_bulk(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/samples/bulk-delete — delete multiple selected samples."""
     run_id = run.id
 
-    form = await request.form()
     sample_ids_json = form.get("sample_ids", "[]")
 
     sample_ids = _parse_sample_ids(sample_ids_json)
@@ -2048,16 +2057,16 @@ def delete_sample(
 
 
 @router.post("/runs/{run_id}/samples/{sample_id}/assign-index", response_class=HTMLResponse)
-async def assign_index(
+def assign_index(
     request: Request,
     sample_id: str,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/samples/{sample_id}/assign-index — assign an index via drag-drop."""
     run_id = run.id
     sample_id_path = sample_id
-    form = await request.form()
     index_pair_id = form.get("index_pair_id", "")
     index_id = form.get("index_id", "")
     index_type = form.get("index_type", "")
@@ -2128,9 +2137,10 @@ async def assign_index(
 
 
 @router.post("/runs/{run_id}/samples/{sample_id}/clear-index", response_class=HTMLResponse)
-async def clear_index(
+def clear_index(
     request: Request,
     sample_id: str,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
     index_type: str = "",
@@ -2141,7 +2151,6 @@ async def clear_index(
     sample_id_path = sample_id
     # The clear button uses GET-style query params even on POST (htmx default)
     # and sends the index it showed in the body (hx-vals).
-    form = await request.form()
 
     # The row names the index it showed. A row another tab has since changed
     # is refused instead of cleared (F8). Before the half-of-a-pair refusal:
@@ -2186,9 +2195,10 @@ async def clear_index(
 
 
 @router.post("/runs/{run_id}/samples/{sample_id}/settings", response_class=HTMLResponse)
-async def update_sample_settings(
+def update_sample_settings(
     request: Request,
     sample_id: str,
+    form: FormData = Depends(submitted_form),
     run: SequencingRun = Depends(get_editable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -2205,7 +2215,6 @@ async def update_sample_settings(
     """
     run_id = run.id
     sample_id_path = sample_id
-    form = await request.form()
 
     sample = run.get_sample(sample_id_path)
     if not sample:

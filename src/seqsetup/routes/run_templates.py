@@ -8,6 +8,7 @@ ctx.run_template_repo and live entirely outside the run state machine.
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.datastructures import FormData
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..context import AppContext
@@ -19,7 +20,7 @@ from ..services.audit_log import audit
 from ..services.run_history import record_run_created_safe
 from ..services.run_builder import build_draft_run, RunInstantiationError, _filter_analyses
 from ..templating import render
-from .dependencies import get_archivable_run, get_ctx
+from .dependencies import get_archivable_run, get_ctx, submitted_form
 from .utils import get_username, sanitize_string
 
 
@@ -43,8 +44,9 @@ def _give_to_maker(ctx: AppContext, run, request: Request) -> None:
 
 
 @router.post("/runs/{run_id}/duplicate", response_class=Response)
-async def duplicate_run(
+def duplicate_run(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run=Depends(get_archivable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
@@ -53,7 +55,6 @@ async def duplicate_run(
     include_samples=true performs a full duplicate (re-run); false copies
     config only (new batch). The source is read, never mutated.
     """
-    form = await request.form()
     include_samples = _bool_field(form, "include_samples")
     requested_name = sanitize_string(form.get("run_name", ""), 256)
     new_name = requested_name or f"{run.run_name} (copy)"
@@ -114,15 +115,15 @@ def _config_from_run(run, name: str, description: str, scaffold_samples) -> RunT
 
 
 @router.post("/runs/{run_id}/save-as-template", response_class=Response)
-async def save_as_template(
+def save_as_template(
     request: Request,
+    form: FormData = Depends(submitted_form),
     run=Depends(get_archivable_run),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/{run_id}/save-as-template — snapshot a run's config into a
     NEW template. Create-only; a run of any status may be templated. A request
     naming samples for the template is refused (400)."""
-    form = await request.form()
     name = sanitize_string(form.get("name", ""), 256)
     if not name:
         return Response("Template name is required", status_code=400)
@@ -185,8 +186,9 @@ def list_templates(request: Request, ctx: AppContext = Depends(get_ctx)) -> Resp
 
 
 @router.post("/templates/{template_id}", response_class=Response)
-async def update_template(
-    template_id: str, request: Request, ctx: AppContext = Depends(get_ctx),
+def update_template(
+    template_id: str, request: Request,
+    form: FormData = Depends(submitted_form), ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /templates/{id} — overwrite a template's name and description.
     This is a whole-form overwrite, not a per-field HTMX patch; both fields
@@ -195,7 +197,6 @@ async def update_template(
     if template is None:
         return Response("Template not found", status_code=404)
     _require_template_owner_or_admin(request, template)
-    form = await request.form()
     name = sanitize_string(form.get("name", ""), 256)
     if not name:
         return Response("Template name is required", status_code=400)
@@ -261,8 +262,9 @@ def new_run_from_template(
 
 
 @router.post("/runs/new/from-template", response_class=Response)
-async def new_run_from_chosen_template(
-    request: Request, ctx: AppContext = Depends(get_ctx),
+def new_run_from_chosen_template(
+    request: Request,
+    form: FormData = Depends(submitted_form), ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     """POST /runs/new/from-template — the New Run page's "Start from a template".
 
@@ -271,7 +273,6 @@ async def new_run_from_chosen_template(
     empty, never-Ready draft that was checked (spec 2026-09-28 group 2a); its
     change history is kept. If the template can't be used, nothing is deleted.
     """
-    form = await request.form()
     template_id = sanitize_string(form.get("template_id", ""), 256)
     response = _run_from_template(template_id, request, ctx)
     if response.status_code != 303:
