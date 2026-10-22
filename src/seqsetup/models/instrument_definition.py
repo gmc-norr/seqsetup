@@ -20,10 +20,11 @@ OLD_I5_KEY_MESSAGE = (
     "Replaced by i5_workflows and runinfo_marks_i5_reversed; "
     "see Instruments in the admin guide"
 )
-_I5_WORKFLOW_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}")
+_I5_WORKFLOW_NAME_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,62}[A-Za-z0-9._-])?")
 _I5_WORKFLOW_NAME_RULE = (
     "A workflow name must be 1-64 characters: letters, digits, spaces, '.', '_' "
-    "or '-', starting with a letter or digit"
+    "or '-', starting with a letter or digit and ending with a letter, digit, "
+    "'.', '_' or '-'"
 )
 
 

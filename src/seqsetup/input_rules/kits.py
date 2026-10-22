@@ -20,7 +20,7 @@ from pydantic import AfterValidator, Field, StringConstraints
 
 from ..models.index import Index, IndexKit, IndexMode, IndexPair, IndexType
 from ..utils.names import is_dot_only
-from .base import FilledText256, StrictRules, Text256, whole
+from .base import ExactName256, StrictRules, Text256, whole
 from .check import CheckResult, Finding, check_data, check_yaml
 from .problems import InputProblem, path_text
 from .reader import GIVEN_TWICE, Locations
@@ -107,8 +107,10 @@ def _override_pattern(value: str) -> str:
     return upper
 
 
-KitName = Annotated[FilledText256, AfterValidator(_no_dot_only_part)]
-KitVersion = Annotated[FilledText256, AfterValidator(_id_text)]
+# A kit's name and version, an index's name and a pair's name are picked on a
+# page, so each is exactly what it reads as (ExactName256).
+KitName = Annotated[ExactName256, AfterValidator(_no_dot_only_part)]
+KitVersion = Annotated[ExactName256, AfterValidator(_id_text)]
 KitDna = Annotated[str, StringConstraints(min_length=1, max_length=MOST_BASES),
                    AfterValidator(_dna)]
 OverridePattern = Annotated[Text256, AfterValidator(_override_pattern)]
@@ -123,7 +125,7 @@ def _list_of(rules):
 class IndexRules(StrictRules):
     """One index in a kit's list, or one half of a pair."""
 
-    name: FilledText256
+    name: ExactName256
     sequence: KitDna
     well_position: Optional[KitLabel] = None
 
@@ -131,7 +133,7 @@ class IndexRules(StrictRules):
 class IndexPairRules(StrictRules):
     """One pre-paired i7 and i5. ``index2`` is absent for an i7-only pair."""
 
-    name: FilledText256
+    name: ExactName256
     index1: IndexRules
     index2: Optional[IndexRules] = None
     well_position: Optional[KitLabel] = None

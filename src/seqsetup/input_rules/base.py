@@ -71,6 +71,9 @@ FilledText4096 = Annotated[str, StringConstraints(min_length=1, max_length=4096)
 
 
 def _exact_name(value: str) -> str:
+    """A name people pick must be exactly what it looks like: two names that
+    differ only in a space at an end or a hidden character look the same on
+    every page (a kit CSV took ``D701`` and ``D701 `` as two indexes)."""
     _hidden(value)
     ends = value[: len(value) - len(value.lstrip())] + value[len(value.rstrip()):]
     if ends:

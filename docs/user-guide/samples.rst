@@ -385,13 +385,16 @@ Removing a sample
 --------------------
 
 Each row has a small delete button (``x``) that removes that one sample,
-after a confirmation prompt. This also drops any index and lane assignment
-that sample had -- there is no undo.
+after a confirmation prompt naming it: *"Delete sample PAT2?"*. This also
+drops any index and lane assignment that sample had -- there is no undo.
 
 To remove several samples at once, tick their checkboxes and select
 **Delete Selected** in the bulk-action panel above the table. It deletes
 every ticked sample in one action, after the same kind of confirmation
-prompt -- just as irreversible as the per-row button.
+prompt -- just as irreversible as the per-row button. That prompt says how
+many and which: *"Delete 3 samples: PAT1, PAT2, PAT7?"*, and with more than
+five, the first five and then *"and 4 more?"*. Read the names before you
+confirm: on a long table the ``x`` of the row above is one click away.
 
 Because a delete cannot be undone, both check that the page is up to date
 first. Each sends the index the row was showing, and if any of those samples

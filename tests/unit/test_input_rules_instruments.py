@@ -29,7 +29,7 @@ LOCAL = CONFIG / "instruments.yaml"
 
 ONE = """\
 version: "1.0.0"
-name: Test Seq
+name: NovaSeq X Series
 samplesheet_name: TestSeq
 chemistry_type: 2-color
 has_dragen_onboard: false
@@ -296,6 +296,97 @@ class TestTheColourFields:
         assert warning.path == ("dye_channels", 1)
 
 
+class TestTheColourFactsAgree:
+    """``base_colors``, the two channels and ``dark_base`` describe one
+    chemistry, so a file whose colour facts disagree is refused: ``dark_base:
+    "T"`` beside ``base_colors`` calling G Dark switched the GG dark-start
+    error off, and the lit bases of each channel are what the colour balance
+    check counts (review CONFIG-3)."""
+
+    def test_the_good_file_agrees_with_itself(self):
+        assert _errors(_synced(ONE)) == []
+
+    def test_a_dark_base_base_colors_light(self):
+        error = _only(_synced(ONE.replace('dark_base: "G"', 'dark_base: "T"')))
+
+        assert error.path == ("dark_base",)
+        assert "G" in error.message
+
+    def test_a_dark_base_listed_in_a_channel(self):
+        error = _only(_synced(ONE.replace('channel1_bases: ["A", "C"]',
+                                          'channel1_bases: ["A", "G"]')))
+
+        assert error.path == ("channel1_bases",)
+
+    def test_a_channel_without_a_base_base_colors_lights_in_it(self):
+        error = _only(_synced(ONE.replace('channel2_bases: ["C", "T"]',
+                                          'channel2_bases: ["T"]')))
+
+        assert error.path == ("channel2_bases",)
+
+    def test_a_channel_listing_a_base_twice(self):
+        """A base listed twice would be counted twice by the colour balance."""
+        error = _only(_synced(ONE.replace('channel1_bases: ["A", "C"]',
+                                          'channel1_bases: ["A", "A", "C"]')))
+
+        assert error.path == ("channel1_bases",)
+
+    def test_a_colour_that_names_neither_channel_nor_dark(self):
+        error = _only(_synced(ONE.replace('A: "Blue"', 'A: "Teal"')))
+
+        assert error.path == ("base_colors", "A")
+
+    def test_base_colors_calling_no_base_dark(self):
+        paths = {path for path, _ in _errors(_synced(ONE.replace('G: "Dark"', 'G: "Green"')))}
+
+        assert ("dark_base",) in paths
+
+    def test_the_order_of_a_channels_bases_does_not_matter(self):
+        assert _errors(_synced(ONE.replace('channel2_bases: ["C", "T"]',
+                                           'channel2_bases: ["T", "C"]'))) == []
+
+    def test_colour_balance_on_a_4_color_instrument_is_refused(self):
+        """A 4-color instrument states no channels, so the colour balance and
+        dark-cycle checks would run on made-up Blue/Green ones."""
+        text = ONE.replace("chemistry_type: 2-color", "chemistry_type: 4-color")
+        for key in COLOUR_KEYS:
+            text = _without(text, key)
+
+        error = _only(_synced(text))
+
+        assert error.path == ("color_balance_enabled",)
+
+    def test_base_colors_calling_two_bases_dark(self):
+        """The message must not ask for two values in a field that takes one."""
+        errors = _errors(_synced(ONE.replace('T: "Green"', 'T: "Dark"')))
+
+        assert (("base_colors",),
+                "calls more than one base Dark (G, T); a 2-color chemistry has one dark base"
+                ) in errors, errors
+
+    def test_the_facts_are_checked_against_each_other_with_colour_balance_off(self):
+        text = ONE.replace("color_balance_enabled: true", "color_balance_enabled: false")
+
+        error = _only(_synced(text.replace('dark_base: "G"', 'dark_base: "T"')))
+
+        assert error.path == ("dark_base",)
+
+    def test_with_colour_balance_off_a_fact_may_still_be_left_out(self):
+        """Nothing reads them then, and one refused instrument file stops a
+        whole configuration sync: they are compared once they are all there."""
+        text = _without(ONE.replace("color_balance_enabled: true",
+                                    "color_balance_enabled: false"), "dark_base")
+
+        assert _errors(_synced(text)) == []
+
+    @pytest.mark.parametrize("path", SYNCED, ids=lambda p: p.name)
+    def test_every_shipped_synced_file_agrees(self, path):
+        assert _errors(_synced(path.read_text(), path.name)) == []
+
+    def test_the_shipped_local_file_agrees(self):
+        assert _errors(check_local_instruments_file(LOCAL.read_text(), LOCAL.name)) == []
+
+
 class TestReagentKitMaxCycles:
 
     def test_a_limit_below_its_kit(self):
@@ -313,7 +404,7 @@ class TestReagentKitMaxCycles:
 
 class TestDocumentShapes:
 
-    MULTI = "instruments:\n  Test Seq:\n" + "".join(
+    MULTI = "instruments:\n  NovaSeq X Series:\n" + "".join(
         "    " + row if row.strip() else row
         for row in ONE.splitlines(keepends=True) if not row.startswith("name:"))
 
@@ -322,7 +413,7 @@ class TestDocumentShapes:
 
         assert _errors(result) == []
         (instrument,) = definitions_from(result.value, "multi.yaml")
-        assert instrument.name == "Test Seq"
+        assert instrument.name == "NovaSeq X Series"
 
     def test_a_key_beside_instruments_is_refused(self):
         error = _only(_synced(self.MULTI + "comment: x\n"))
@@ -330,26 +421,28 @@ class TestDocumentShapes:
         assert error.path == ("comment",)
 
     def test_a_name_that_differs_from_its_map_key_is_refused(self):
-        text = self.MULTI.replace("  Test Seq:\n", "  Test Seq:\n    name: Other Seq\n")
+        text = self.MULTI.replace("  NovaSeq X Series:\n",
+                                  "  NovaSeq X Series:\n    name: MiSeq\n")
 
         error = _only(_synced(text))
 
-        assert error.path == ("instruments", "Test Seq", "name")
+        assert error.path == ("instruments", "NovaSeq X Series", "name")
 
     def test_a_name_that_matches_its_map_key_is_fine(self):
-        text = self.MULTI.replace("  Test Seq:\n", "  Test Seq:\n    name: Test Seq\n")
+        text = self.MULTI.replace("  NovaSeq X Series:\n",
+                                  "  NovaSeq X Series:\n    name: NovaSeq X Series\n")
 
         assert _errors(_synced(text)) == []
 
     def test_a_problem_inside_one_names_the_instrument(self):
         error = _only(_synced(self.MULTI.replace("lanes: 8", "lanes: 9")))
 
-        assert error.path == ("instruments", "Test Seq", "flowcells", "10B", "lanes")
+        assert error.path == ("instruments", "NovaSeq X Series", "flowcells", "10B", "lanes")
 
     def test_a_version_is_required_in_each_synced_instrument(self):
         text = self.MULTI.replace('    version: "1.0.0"\n', "")
 
-        assert (("instruments", "Test Seq", "version"), "is required") in _errors(_synced(text))
+        assert (("instruments", "NovaSeq X Series", "version"), "is required") in _errors(_synced(text))
 
 
 class TestTheLocalFile:

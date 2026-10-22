@@ -194,4 +194,4 @@ class TestRunPagePasteForm:
         run_id = _run(ctx, flowcell="")
         page = logged_in_client.get(f"/runs/{run_id}").text
         assert '<input type="hidden" name="lanes" value="1">' in page
-        assert 'type="checkbox" name="lanes"' not in page
+        assert not re.search(r'type="checkbox"[^>]* name="lanes"', page)

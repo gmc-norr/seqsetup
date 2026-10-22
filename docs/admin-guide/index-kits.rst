@@ -65,9 +65,17 @@ Before a kit is saved, SeqSetup checks, in order:
    on both sides) from one of fixed pairs, so pick the mode the kit really
    is. In any mode, a name given twice in one list of a YAML or TSV file is
    refused, naming it: only the second entry was kept, so the first index
-   vanished and its name carried the other's sequence. Spaces around a
-   name are dropped, so ``D701`` and ``D701 `` are one name given twice. A
-   key given twice anywhere in a YAML file is refused the same way. An
+   vanished and its name carried the other's sequence. A name that begins or
+   ends with a space, or holds a hidden character such as a zero-width space,
+   is refused, naming the place and the character: a CSV once took ``D701``
+   and ``D701 `` as two pairs, and the index panel drew two chips both
+   reading D701 with different sequences. The same holds for the kit's own
+   name and version, typed in the form or read from the file. In Illumina's
+   own two shapes -- the TSV and the YAML -- spaces around a name are
+   dropped before that check, so ``D701`` and ``D701 `` are one name given
+   twice there and the file is refused for that instead; a hidden character
+   is refused in every shape. A key given twice anywhere in a YAML file is
+   refused the same way. An
    Illumina YAML
    file whose index names YAML does not read as text -- an unquoted ``012``
    is the number 10, ``yes`` is true -- is refused too; quote such names.

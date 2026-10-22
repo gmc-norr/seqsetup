@@ -38,7 +38,7 @@
         <legend class="paste-option-label">Lanes for these samples</legend>
         <div class="paste-lane-boxes">
             {% for lane in range(1, num_lanes + 1) %}
-            <label class="paste-lane"><input type="checkbox" name="lanes" value="{{ lane }}"{% if lane == 1 %} checked{% endif %}> {{ lane }}</label>
+            <label class="paste-lane"><input type="checkbox" autocomplete="off" name="lanes" value="{{ lane }}"{% if lane == 1 %} checked{% endif %}> {{ lane }}</label>
             {% endfor %}
         </div>
     </fieldset>

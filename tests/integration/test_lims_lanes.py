@@ -47,7 +47,10 @@ class TestThePickerOffersTheLanes:
 
         page = logged_in_client.get(f"/runs/{RUN}/samples/worklists").text
 
-        boxes = re.findall(r'<input type="checkbox" name="lanes" value="(\d+)"( checked)?>', page)
+        # Attributes between type and name (autocomplete="off", so the browser
+        # cannot refill a tick after Back) must not hide the boxes from this.
+        boxes = re.findall(
+            r'<input type="checkbox"[^>]* name="lanes" value="(\d+)"( checked)?>', page)
         assert [lane for lane, _ in boxes] == [str(n) for n in range(1, 9)]
         assert [lane for lane, checked in boxes if checked] == ["1"]
         assert 'hx-include="#worklist-select, #worklist-lanes"' in page
@@ -177,7 +180,7 @@ class TestAOneLaneFlowcell:
         _lims(ctx, monkeypatch)
 
         picker = logged_in_client.get(f"/runs/{RUN}/samples/worklists").text
-        assert 'type="checkbox" name="lanes"' not in picker
+        assert not re.search(r'type="checkbox"[^>]* name="lanes"', picker)
         hidden = re.search(r'<div id="worklist-lanes">(.*?)</div>', picker, re.S)
         assert hidden and _shown_lanes(hidden.group(1)) == ["1"]
 

@@ -106,7 +106,7 @@
                 <div class="lane-checkboxes">
                     {% for lane in range(1, num_lanes + 1) %}
                     <label class="lane-checkbox-label">
-                        <input type="checkbox" name="bulk_lane" value="{{ lane }}" class="bulk-lane-checkbox"> {{ lane }}
+                        <input type="checkbox" name="bulk_lane" value="{{ lane }}" autocomplete="off" class="bulk-lane-checkbox"> {{ lane }}
                     </label>
                     {% endfor %}
                 </div>
@@ -135,7 +135,7 @@
             {# Override cycles #}
             <div class="bulk-action-row">
                 <span class="bulk-action-label">Override Cycles:</span>
-                <input type="text" id="bulk-override-cycles-input" placeholder="e.g., Y151;I8N2;I8N2;Y151" aria-label="Override Cycles" title="Index 2 in reading order: the index first, then masked cycles (for example I8N2)" class="override-cycles-input bulk-override-input">
+                <input type="text" autocomplete="off" id="bulk-override-cycles-input" placeholder="e.g., Y151;I8N2;I8N2;Y151" aria-label="Override Cycles" title="Index 2 in reading order: the index first, then masked cycles (for example I8N2)" class="override-cycles-input bulk-override-input">
                 <div class="bulk-action-buttons">
                     <button type="button" class="btn btn-primary btn-small" data-action="bulk-apply-override">Apply</button>
                     <button type="button" class="btn btn-secondary btn-small" data-action="bulk-clear-override" title="Recalculate override cycles automatically">Auto</button>
@@ -146,7 +146,7 @@
                 <span class="bulk-action-label">Test ID:</span>
                 <div class="bulk-test-inputs">
                     {% include "wizard/_test_id_dropdown.html" %}
-                    <input type="text" id="bulk-test-version-input" class="bulk-test-version-input"
+                    <input type="text" autocomplete="off" id="bulk-test-version-input" class="bulk-test-version-input"
                            aria-label="Test version" placeholder="Version, e.g. 1">
                 </div>
                 <div class="bulk-action-buttons">
