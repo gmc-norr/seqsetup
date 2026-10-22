@@ -9,7 +9,7 @@ These cover the clinically-sensitive paths:
 
 import pytest
 
-from .conftest import disable_repos, mark_ready, stored_export
+from .conftest import disable_repos, mark_ready, stored_export, seed_profiles
 from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (
@@ -34,7 +34,7 @@ def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
     would otherwise fail with test_profile_not_found for un-seeded test
     types.
     """
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
 
     run = SequencingRun(
         id=run_id or "smoke-validation-run",
@@ -43,7 +43,7 @@ def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
         flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8),
     )
-    run.add_sample(Sample(
+    run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1], 
         sample_id="S1",
         index_pair=IndexPair(
             id="p1", name="p1",
@@ -51,7 +51,7 @@ def _make_ready_eligible_run(ctx, run_id: str = None) -> str:
             index2=Index(name="i5", sequence="TATAGCCT", index_type=IndexType.I5),
         ),
     ))
-    run.add_sample(Sample(
+    run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1], 
         sample_id="S2",
         index_pair=IndexPair(
             id="p2", name="p2",
@@ -77,7 +77,7 @@ class TestMarkReady:
     def test_mark_ready_refuses_run_with_no_samples(self, logged_in_client, fresh_app):
         """Mark Ready refuses an empty run with a real-time validation error."""
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = SequencingRun(
             id="empty-run",
             instrument_platform=InstrumentPlatform.NOVASEQ_X,

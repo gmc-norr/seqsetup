@@ -8,6 +8,8 @@ one. A sample with an OverrideCycles of its own keeps it.
 10-cycle indexes on 10 index cycles mask nothing, so no instrument changes the
 Index 2 part and the values below are written as they are."""
 
+from ..sheet_through_profiles import sheet as _sheet
+
 import json
 
 from seqsetup.models.index import Index, IndexPair, IndexType
@@ -76,29 +78,40 @@ class TestTheSharedValue:
         assert CycleCalculator.infer_global_override_cycles(run) is None
 
 
-class TestTheFallbackSampleSheet:
-    """SampleSheetV2Exporter.export without application profiles."""
+class TestTheSampleSheet:
+    """What the v2 sheet writes. Every sample's OverrideCycles is in its own
+    row: the second writer, which wrote one ``OverrideCycles`` line into
+    [BCLConvert_Settings] when every sample shared the value, is gone (review
+    TH-1) -- production never wrote that line."""
 
-    def test_a_typed_value_is_written_in_its_samples_row(self):
-        sheet = SampleSheetV2Exporter.export(_run(_sample(1), _sample(2, TYPED)))
-
-        assert not any(line.startswith("OverrideCycles,") for line in _section(sheet, "BCLConvert_Settings"))
+    @staticmethod
+    def _cells(sheet):
         header, *rows = _section(sheet, "BCLConvert_Data")
         column = header.split(",").index("OverrideCycles")
-        assert [(row.split(",")[0], row.split(",")[column]) for row in rows] == [
-            ("S1", CALCULATED), ("S2", TYPED)]
+        return [(row.split(",")[0], row.split(",")[column]) for row in rows]
 
-    def test_a_typed_value_every_sample_holds_is_written_once(self):
-        sheet = SampleSheetV2Exporter.export(_run(_sample(1, TYPED), _sample(2, TYPED)))
+    @staticmethod
+    def _no_settings_line(sheet):
+        return not any(line.startswith("OverrideCycles,")
+                       for line in _section(sheet, "BCLConvert_Settings"))
 
-        assert f"OverrideCycles,{TYPED}" in _section(sheet, "BCLConvert_Settings")
-        assert "OverrideCycles" not in _section(sheet, "BCLConvert_Data")[0]
+    def test_a_typed_value_is_written_in_its_samples_row(self):
+        sheet = _sheet(_run(_sample(1), _sample(2, TYPED)))
 
-    def test_without_typed_values_the_calculated_value_is_written_once(self):
-        sheet = SampleSheetV2Exporter.export(_run(_sample(1), _sample(2)))
+        assert self._no_settings_line(sheet)
+        assert self._cells(sheet) == [("S1", CALCULATED), ("S2", TYPED)]
 
-        assert f"OverrideCycles,{CALCULATED}" in _section(sheet, "BCLConvert_Settings")
-        assert "OverrideCycles" not in _section(sheet, "BCLConvert_Data")[0]
+    def test_a_typed_value_every_sample_holds_is_written_in_every_row(self):
+        sheet = _sheet(_run(_sample(1, TYPED), _sample(2, TYPED)))
+
+        assert self._no_settings_line(sheet)
+        assert self._cells(sheet) == [("S1", TYPED), ("S2", TYPED)]
+
+    def test_without_typed_values_the_calculated_value_is_written_in_every_row(self):
+        sheet = _sheet(_run(_sample(1), _sample(2)))
+
+        assert self._no_settings_line(sheet)
+        assert self._cells(sheet) == [("S1", CALCULATED), ("S2", CALCULATED)]
 
 
 class TestTheJsonExport:

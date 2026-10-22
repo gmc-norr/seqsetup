@@ -20,7 +20,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos, mark_ready
+from .conftest import disable_repos, mark_ready, seed_profiles
 from .conftest import hold_edit_lock
 
 
@@ -67,7 +67,7 @@ class TestAuditEventsAreRecorded:
 
     def test_mark_ready_is_recorded(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = SequencingRun(
             id="audit-visible",
             run_name="AuditVisible",
@@ -75,7 +75,7 @@ class TestAuditEventsAreRecorded:
             flowcell_type="10B",
             run_cycles=RunCycles(151, 151, 8, 8),
         )
-        run.add_sample(Sample(
+        run.add_sample(Sample(test_id="WGS", test_version="1", lanes=[1], 
             sample_id="S1",
             index_pair=IndexPair(
                 id="p1", name="p1",

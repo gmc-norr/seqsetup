@@ -15,7 +15,7 @@ from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunSta
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
 from .page_shows import shown_mismatches, shown_setting
-from .conftest import disable_repos, nothing_stored, run_version
+from .conftest import disable_repos, nothing_stored, run_version, seed_profiles
 from .conftest import hold_edit_lock
 
 
@@ -37,7 +37,7 @@ def _mismatch_run(ctx, run_id: str) -> SequencingRun:
     """A draft with two samples, each with mismatch overrides 2 / 2."""
     run = SequencingRun(id=run_id, run_name="Group 1c", run_cycles=RunCycles(151, 151, 10, 10))
     for n in (1, 2):
-        run.add_sample(Sample(sample_id=f"S{n}", lanes=[1],
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id=f"S{n}", lanes=[1],
                               barcode_mismatches_index1=2, barcode_mismatches_index2=2))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
@@ -236,7 +236,7 @@ def _clean_run(ctx, run_id: str, platform=InstrumentPlatform.NOVASEQ_X, flowcell
     # The shipped lane counts, written out: some tests store instrument
     # records that cannot be read before they build the run.
     lanes = list(range(1, {"10B": 8, "5M": 1, "S4": 4}[flowcell] + 1))
-    run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=lanes))
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=lanes))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
     return run
@@ -327,7 +327,7 @@ class TestDisabledInstrumentBlocksMarkReady:
 
     def _setup(self, fresh_app, run_id, disabled=(NOVASEQ_X,)):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         _sync(ctx, disabled=disabled)
         return ctx, _clean_run(ctx, run_id).id
 
@@ -444,7 +444,7 @@ class TestSampleIdCell:
         _app, ctx, _db = fresh_app
         run = SequencingRun(id="f5-page", run_name="R", flowcell_type="10B",
                             run_cycles=RunCycles(151, 151, 10, 10))
-        run.add_sample(Sample(sample_id=self.LONG_ID, lanes=[1]))
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id=self.LONG_ID, lanes=[1]))
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)
 

@@ -23,7 +23,7 @@ from seqsetup.services.samplesheet_v1_exporter import SampleSheetV1Exporter
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.validation_report import ValidationReportJSON, ValidationReportPDF
 
-from .conftest import disable_repos, hold_edit_lock, mark_ready
+from .conftest import disable_repos, hold_edit_lock, mark_ready, seed_profiles
 from .test_group_1c import _pair
 
 
@@ -65,14 +65,14 @@ def spy_on_exporters(monkeypatch) -> dict:
 
 def seed_run(ctx, run_id, which=BOTH_SHEETS, *, samples=1):
     instrument, flowcell, workflow = which
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
     run = SequencingRun(
         id=run_id, run_name=f"Run {run_id}", instrument_platform=instrument,
         flowcell_type=flowcell, i5_workflow=workflow,
         run_cycles=RunCycles(151, 151, 8, 8),
     )
     for n in range(samples):
-        run.add_sample(Sample(sample_id=f"S{n + 1}",
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id=f"S{n + 1}",
                               index_pair=_pair(_I7[n], _I5[n], f"p{n + 1}"), lanes=[1]))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)

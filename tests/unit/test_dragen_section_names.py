@@ -8,6 +8,8 @@ and NextSeq 1000/2000 sample sheet version histories; the hardcoded fallback
 writer wrote [DragenRNA_Settings] / [DragenRNA_Data].
 """
 
+from ..sheet_through_profiles import sheet as _sheet
+
 import re
 from pathlib import Path
 
@@ -45,7 +47,7 @@ def _rna_run() -> SequencingRun:
 class TestTheRnaSection:
 
     def test_the_fallback_writer_writes_illuminas_spelling(self):
-        sheet = SampleSheetV2Exporter.export(_rna_run())
+        sheet = _sheet(_rna_run())
         assert "[DragenRna_Settings]" in sheet
         assert "[DragenRna_Data]" in sheet
         assert "DragenRNA" not in sheet

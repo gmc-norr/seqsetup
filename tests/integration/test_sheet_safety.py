@@ -14,7 +14,7 @@ from seqsetup.models.sequencing_run import (
 from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
 from seqsetup.services.validation import ValidationService, clear_validation_cache
 
-from .conftest import disable_repos, mark_ready, nothing_stored, stored_export
+from .conftest import disable_repos, mark_ready, nothing_stored, stored_export, seed_profiles
 from .conftest import hold_edit_lock
 from .conftest import shipped_flowcells
 
@@ -22,7 +22,7 @@ from .conftest import shipped_flowcells
 ORIGIN = {"Origin": "http://testserver"}
 
 
-def _seed_draft(ctx, run_id: str, test_id: str = "", run_description: str = "Plan B") -> str:
+def _seed_draft(ctx, run_id: str, test_id: str = "WGS", run_description: str = "Plan B") -> str:
     """A NovaSeq X DRAFT run with one indexed sample, ready to be marked ready."""
     run = SequencingRun(
         id=run_id,
@@ -52,7 +52,7 @@ class TestMarkReadyRefusesHiddenCharacters:
 
     def test_tab_in_run_description_is_refused(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_draft(ctx, "hc-desc")
         assert logged_in_client.post(
             f"/runs/{run_id}/name",
@@ -71,7 +71,7 @@ class TestMarkReadyRefusesHiddenCharacters:
 
     def test_nul_in_sample_project_is_refused(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_draft(ctx, "hc-project")
         # Put straight in the stored run: no page edits a project.
         run = ctx.run_repo.get_by_id(run_id)
@@ -87,7 +87,7 @@ class TestMarkReadyRefusesHiddenCharacters:
 
     def test_visible_text_is_made_ready(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_draft(ctx, "hc-control", run_description="Åsa's run, 2 × 150")
 
         resp = mark_ready(logged_in_client, run_id, ORIGIN)
@@ -153,7 +153,9 @@ def _assert_validation_passes(ctx, run_id: str) -> None:
         app_profile_repo=ctx.app_profile_repo,
         instrument_config=ctx.instrument_config,
     )
-    assert result.error_count == 0, "validation must pass, so only the export guard can stop Mark Ready"
+    assert result.error_count == 0, (
+        "validation must pass, so only the export guard can stop Mark Ready: "
+        + "; ".join(e.message for e in result.configuration_errors))
 
 
 class TestExportGuardStopsBadSyncedNames:

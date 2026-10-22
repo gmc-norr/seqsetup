@@ -23,7 +23,7 @@ wrapper that refuses an oversize document as a real server does.
 from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services.validation_report import ValidationReportPDF
 
-from .conftest import disable_repos, mark_ready, nothing_stored
+from .conftest import disable_repos, mark_ready, nothing_stored, seed_profiles
 from .test_group_a3 import ORIGIN
 from .test_scheduled_sync_instrument_cache import _seed_run
 
@@ -46,7 +46,7 @@ class TestMarkReadyRefusesWhatWillNotFit:
 
     def test_the_run_stays_a_draft(self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "too-big")
         monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
 
@@ -58,7 +58,7 @@ class TestMarkReadyRefusesWhatWillNotFit:
     def test_the_refusal_names_the_size_and_the_limit(
             self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "too-big-message")
         monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
 
@@ -74,7 +74,7 @@ class TestMarkReadyRefusesWhatWillNotFit:
         lanes is the lab's design: the message must not bend either to this
         limit (the user's decision, 2026-10-16)."""
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "too-big-advice")
         monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
 
@@ -88,7 +88,7 @@ class TestMarkReadyRefusesWhatWillNotFit:
 
     def test_the_attempt_is_audited(self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "too-big-audit")
         monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
 
@@ -99,7 +99,7 @@ class TestMarkReadyRefusesWhatWillNotFit:
     def test_nothing_of_the_exports_is_left_on_the_run(
             self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "too-big-clean")
         monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
 
@@ -112,7 +112,7 @@ class TestMarkReadyRefusesWhatWillNotFit:
     def test_control_a_run_whose_exports_fit_still_goes_ready(
             self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "fits")
 
         resp = mark_ready(logged_in_client, run_id, ORIGIN)
@@ -130,7 +130,7 @@ class TestTheRefusalIsNotAValidationRefusal:
     def test_it_does_not_send_the_person_to_a_page_with_no_errors(
             self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "too-big-footer")
         monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
 
@@ -142,7 +142,7 @@ class TestTheRefusalIsNotAValidationRefusal:
     def test_it_does_not_count_the_size_as_an_error_to_fix(
             self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "too-big-count")
         monkeypatch.setattr(ValidationReportPDF, "export", _oversized_pdf)
 

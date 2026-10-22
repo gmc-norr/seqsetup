@@ -17,7 +17,7 @@ import pytest
 
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
-from .conftest import hold_edit_lock
+from .conftest import hold_edit_lock, seed_profiles
 
 
 def _run(ctx, run_id, status=RunStatus.DRAFT):
@@ -26,7 +26,7 @@ def _run(ctx, run_id, status=RunStatus.DRAFT):
         instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8), status=status,
     )
-    run.add_sample(Sample(id=f"{run_id}-s1", sample_id="L1", lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", id=f"{run_id}-s1", sample_id="L1", lanes=[1]))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
     return run_id
@@ -115,13 +115,13 @@ class TestExportOnlyOnceReady:
         from .test_group_1c import _pair
 
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = SequencingRun(
             id="export-swap", run_name="Export swap run",
             instrument_platform=InstrumentPlatform.NOVASEQ_6000, flowcell_type="S4",
             run_cycles=RunCycles(151, 151, 10, 10),
         )
-        run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"), lanes=[1]))
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)
         origin = {"Origin": "http://testserver"}

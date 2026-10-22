@@ -4,7 +4,6 @@ from io import StringIO
 from typing import TextIO, Optional, TYPE_CHECKING
 
 from ..data.instruments import (
-    get_bclconvert_software_version,
     get_lanes_for_flowcell,
     get_samplesheet_platform_name,
     run_i5_direction,
@@ -46,18 +45,27 @@ class SampleSheetV2Exporter:
     def export(
         cls,
         run: SequencingRun,
-        test_profile_repo: Optional["TestProfileRepository"] = None,
-        app_profile_repo: Optional["ApplicationProfileRepository"] = None,
+        test_profile_repo: "TestProfileRepository",
+        app_profile_repo: "ApplicationProfileRepository",
         instrument_config=None,
         plan_fingerprint: Optional[str] = None,
     ) -> str:
         """
         Export sequencing run to SampleSheet v2 CSV format.
 
+        Both repositories are required: every application section, BCLConvert
+        included, is written from the profiles a sample's test names. There
+        used to be a second writer here for the case where they were not given
+        -- hard-coded settings, another column order, and a global
+        OverrideCycles line production never wrote. Production always has both
+        repositories, so that writer ran only in tests, and those tests proved
+        nothing about the sheet a laboratory gets (review TH-1, 2026-10-21).
+        A test that needs a sheet uses ``tests/sheet_through_profiles.py``.
+
         Args:
             run: Sequencing run configuration
-            test_profile_repo: Optional repo for looking up TestProfiles by test_id
-            app_profile_repo: Optional repo for looking up ApplicationProfiles
+            test_profile_repo: repo for looking up TestProfiles by test name
+            app_profile_repo: repo for looking up ApplicationProfiles
             instrument_config: Optional InstrumentConfig, for the flow cell's
                 lane count (the same one the checks use)
             plan_fingerprint: At Mark Ready, the fingerprint of the sheet plan
@@ -67,6 +75,11 @@ class SampleSheetV2Exporter:
         Returns:
             SampleSheet v2 content as string
         """
+        if test_profile_repo is None or app_profile_repo is None:
+            raise ValueError(
+                "SampleSheetV2Exporter.export needs both profile repositories: every "
+                "application section is written from the profiles a sample's test names."
+            )
         output = StringIO()
 
         # [Header] section
@@ -76,18 +89,10 @@ class SampleSheetV2Exporter:
         cls._write_reads(output, run)
 
         # Application sections (BCLConvert, DRAGEN pipelines, etc.)
-        if test_profile_repo and app_profile_repo:
-            # Use ApplicationProfiles for all sections including BCLConvert
-            cls._write_application_sections_from_profiles(
-                output, run, test_profile_repo, app_profile_repo,
-                instrument_config, plan_fingerprint,
-            )
-        else:
-            # Fallback to hardcoded defaults when no repos provided
-            cls._write_bclconvert_settings(output, run)
-            cls._write_bclconvert_data(output, run)
-            if cls._has_dragen_analyses(run):
-                cls._write_dragen_sections(output, run)
+        cls._write_application_sections_from_profiles(
+            output, run, test_profile_repo, app_profile_repo,
+            instrument_config, plan_fingerprint,
+        )
 
         # Cloud sections (required for IMS compatibility)
         cls._write_cloud_sections(output, run)
@@ -140,45 +145,6 @@ class SampleSheetV2Exporter:
         output.write("\n")
 
     @classmethod
-    def _write_bclconvert_settings(cls, output: TextIO, run: SequencingRun):
-        """Write [BCLConvert_Settings] section with hardcoded defaults.
-
-        This is a fallback method used when no ApplicationProfile repos are provided.
-        When repos are available, use _write_application_sections_from_profiles instead.
-        """
-        output.write("[BCLConvert_Settings]\n")
-
-        # Use instrument config defaults
-        software_version = get_bclconvert_software_version(run.instrument_platform)
-        if software_version:
-            software_version = cls._require_plain(
-                software_version, PLAIN_VERSION_RE, "BCL Convert software version"
-            )
-            output.write(f"SoftwareVersion,{software_version}\n")
-        output.write("FastqCompressionFormat,gzip\n")
-
-        # Run-level BCL Convert flags carried on the SequencingRun model. Per
-        # the Illumina v2 spec these belong in [BCLConvert_Settings]:
-        #   NoLaneSplitting,true|false        (concat per-lane FASTQs)
-        #   CreateFastqForIndexReads,0|1      (emit FASTQs for index reads)
-        #   AdapterBehavior,trim|mask|none    (adapter trimming behaviour)
-        # We emit them unconditionally so a toggled value in the model
-        # always reaches the demultiplexer — silent drop would diverge
-        # operator expectation from sequencer behaviour.
-        for line in cls._format_bclconvert_run_settings(run):
-            output.write(line)
-
-        # Global override cycles (if all samples have same index lengths)
-        global_override = CycleCalculator.infer_global_override_cycles(run)
-        if global_override:
-            global_override = cls._adjust_override_cycles_for_instrument(
-                global_override, run
-            )
-            output.write(f"OverrideCycles,{global_override}\n")
-
-        output.write("\n")
-
-    @classmethod
     def _format_bclconvert_run_settings(cls, run: SequencingRun) -> list[str]:
         """Render the run-level BCL Convert v2 settings as ``key,value\\n`` lines.
 
@@ -198,153 +164,6 @@ class SampleSheetV2Exporter:
         if adapter and adapter != "trim":
             lines.append(f"AdapterBehavior,{adapter}\n")
         return lines
-
-    @classmethod
-    def _write_bclconvert_data(cls, output: TextIO, run: SequencingRun):
-        """Write [BCLConvert_Data] section."""
-        output.write("[BCLConvert_Data]\n")
-
-        # Determine columns based on data
-        has_lanes = any(len(s.lanes) > 0 for s in run.samples)
-        # Include per-sample OverrideCycles if no global override was set
-        has_per_sample_override = CycleCalculator.infer_global_override_cycles(run) is None
-        # Include barcode mismatch columns if any sample has custom values
-        has_barcode_mismatch = any(
-            s.barcode_mismatches_index1 is not None or s.barcode_mismatches_index2 is not None
-            for s in run.samples
-        )
-
-        # Header row - use capitalized Index/Index2 for IMS compatibility
-        columns = []
-        if has_lanes:
-            columns.append("Lane")
-        columns.extend(["Sample_ID", "Index", "Index2"])
-        if has_per_sample_override:
-            columns.append("OverrideCycles")
-        if has_barcode_mismatch:
-            columns.extend(["BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2"])
-
-        output.write(",".join(columns) + "\n")
-
-        # Data rows - output one row per sample per lane
-        for sample in run.samples:
-            # i5 sequence in sample-sheet orientation (RC applied for
-            # instruments where the sample sheet expects RC).
-            i5_seq = cls._resolve_i5(sample, run)
-
-            # Calculate per-sample override cycles if needed
-            override = None
-            if has_per_sample_override:
-                override = sample.override_cycles
-                if not override and sample.has_index and run.run_cycles:
-                    # has_index (not index_pair) so combinatorial/single-index
-                    # samples also get a computed OverrideCycles, not a blank cell.
-                    override = CycleCalculator.calculate_override_cycles(
-                        sample, run.run_cycles
-                    )
-                if override:
-                    override = cls._adjust_override_cycles_for_instrument(override, run)
-
-            # If sample has specific lanes, output one row per lane
-            # If no lanes specified (empty list), output single row without lane
-            lanes_to_output = sample.lanes if sample.lanes else [None]
-
-            for lane in lanes_to_output:
-                row = []
-
-                if has_lanes:
-                    row.append(str(lane) if lane else "")
-
-                row.append(cls._escape_identifier(sample.sample_id))
-                # Escape index sequences too — parity with the profile-driven
-                # path. They are model-validated to [ACGTN], but Index has no
-                # __setattr__ so a post-construction reassignment could bypass
-                # that; escaping defensively keeps the row column count correct.
-                row.append(cls._escape_csv(sample.index1_sequence or ""))
-                row.append(cls._escape_csv(i5_seq))
-
-                if has_per_sample_override:
-                    row.append(cls._escape_csv(override or ""))
-
-                if has_barcode_mismatch:
-                    # Use sample-specific values or fall back to run defaults
-                    mm1 = sample.barcode_mismatches_index1 if sample.barcode_mismatches_index1 is not None else run.barcode_mismatches_index1
-                    mm2 = sample.barcode_mismatches_index2 if sample.barcode_mismatches_index2 is not None else run.barcode_mismatches_index2
-                    row.append(str(mm1))
-                    row.append(str(mm2))
-
-                output.write(",".join(row) + "\n")
-
-        output.write("\n")
-
-    @classmethod
-    def _has_dragen_analyses(cls, run: SequencingRun) -> bool:
-        """Check if run has any DRAGEN onboard analyses."""
-        return any(a.analysis_type == AnalysisType.DRAGEN_ONBOARD for a in run.analyses)
-
-    @classmethod
-    def _write_dragen_sections(cls, output: TextIO, run: SequencingRun):
-        """Write DRAGEN-specific sections for onboard analyses."""
-        dragen_analyses = [
-            a for a in run.analyses if a.analysis_type == AnalysisType.DRAGEN_ONBOARD
-        ]
-
-        for analysis in dragen_analyses:
-            if analysis.dragen_pipeline == DRAGENPipeline.GERMLINE:
-                cls._write_dragen_germline(output, analysis)
-            elif analysis.dragen_pipeline == DRAGENPipeline.SOMATIC:
-                cls._write_dragen_somatic(output, analysis)
-            elif analysis.dragen_pipeline == DRAGENPipeline.RNA:
-                cls._write_dragen_rna(output, analysis)
-
-    @classmethod
-    def _write_dragen_germline(cls, output: TextIO, analysis):
-        """Write DRAGEN Germline settings and data sections."""
-        output.write("[DragenGermline_Settings]\n")
-
-        if analysis.reference_genome:
-            output.write(f"ReferenceGenomeDir,{cls._escape_csv(analysis.reference_genome)}\n")
-
-        output.write("MapAlignOutFormat,cram\n")
-        output.write("\n")
-
-        output.write("[DragenGermline_Data]\n")
-        output.write("Sample_ID\n")
-        for sample_id in analysis.sample_ids:
-            output.write(f"{cls._escape_identifier(sample_id)}\n")
-        output.write("\n")
-
-    @classmethod
-    def _write_dragen_somatic(cls, output: TextIO, analysis):
-        """Write DRAGEN Somatic settings and data sections."""
-        output.write("[DragenSomatic_Settings]\n")
-
-        if analysis.reference_genome:
-            output.write(f"ReferenceGenomeDir,{cls._escape_csv(analysis.reference_genome)}\n")
-
-        output.write("\n")
-
-        output.write("[DragenSomatic_Data]\n")
-        output.write("Sample_ID\n")
-        for sample_id in analysis.sample_ids:
-            output.write(f"{cls._escape_identifier(sample_id)}\n")
-        output.write("\n")
-
-    @classmethod
-    def _write_dragen_rna(cls, output: TextIO, analysis):
-        """Write DRAGEN RNA settings and data sections."""
-        output.write("[DragenRna_Settings]\n")
-
-        if analysis.reference_genome:
-            output.write(f"ReferenceGenomeDir,{cls._escape_csv(analysis.reference_genome)}\n")
-
-        output.write("\n")
-
-        output.write("[DragenRna_Data]\n")
-        output.write("Sample_ID\n")
-        for sample_id in analysis.sample_ids:
-            output.write(f"{cls._escape_identifier(sample_id)}\n")
-        output.write("\n")
 
     @classmethod
     def _adjust_override_cycles_for_instrument(

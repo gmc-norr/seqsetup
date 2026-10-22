@@ -14,6 +14,8 @@ The other person's change is made through the repository, as their own
 save would make it, from inside the export step.
 """
 
+from ..sheet_through_profiles import sheet as sheet_through_profiles
+
 import html
 
 import pytest
@@ -23,7 +25,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 
-from .conftest import disable_repos, hold_edit_lock, mark_ready, nothing_stored, stored_export
+from .conftest import disable_repos, hold_edit_lock, mark_ready, nothing_stored, stored_export, seed_profiles
 
 ORIGIN = {"Origin": "http://testserver"}
 OTHER_USER = "other-user"
@@ -44,21 +46,21 @@ def _pair(i7: str, i5: str, name: str) -> IndexPair:
 def _draft(ctx, run_id: str) -> SequencingRun:
     """A two-sample Draft that passes the checks with no profiles (the
     hardcoded BCLConvert path), its edit lock held by the logged-in admin."""
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
     run = SequencingRun(
         id=run_id, run_name="Edited mid-export",
         instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8),
     )
-    run.add_sample(Sample(sample_id="S1", index_pair=_pair("ATTACTCG", "TATAGCCT", "p1"), lanes=[1]))
-    run.add_sample(Sample(sample_id="S2", index_pair=_pair("TCCGGAGA", "ATAGAGGC", "p2"), lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("ATTACTCG", "TATAGCCT", "p1"), lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S2", index_pair=_pair("TCCGGAGA", "ATAGAGGC", "p2"), lanes=[1]))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
     return run
 
 
 def _sheet(ctx, run: SequencingRun) -> str:
-    return SampleSheetV2Exporter.export(run, instrument_config=ctx.instrument_config)
+    return sheet_through_profiles(run, instrument_config=ctx.instrument_config)
 
 
 def _change_i7(run):
@@ -66,7 +68,7 @@ def _change_i7(run):
 
 
 def _add_sample(run):
-    run.add_sample(Sample(sample_id="S3", index_pair=_pair("TAGGCATG", "CCTATCCT", "p3"), lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S3", index_pair=_pair("TAGGCATG", "CCTATCCT", "p3"), lanes=[1]))
 
 
 def _change_lanes(run):

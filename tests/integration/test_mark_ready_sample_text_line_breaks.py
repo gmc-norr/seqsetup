@@ -17,7 +17,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos, nothing_stored
+from .conftest import disable_repos, nothing_stored, seed_profiles
 from .conftest import hold_edit_lock
 
 
@@ -34,7 +34,7 @@ FAKE_SECTION = (
 def _seed_miseq_draft(ctx, run_id: str) -> tuple[str, str]:
     """A MiSeq DRAFT run (v1 export is supported there) that can be marked
     ready. Returns (run_id, sample.id)."""
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
     run = SequencingRun(
         id=run_id,
         run_name="LineBreaks",
@@ -43,7 +43,7 @@ def _seed_miseq_draft(ctx, run_id: str) -> tuple[str, str]:
         reagent_cycles=600,
         run_cycles=RunCycles(150, 150, 8, 8),
     )
-    sample = Sample(
+    sample = Sample(test_id="WGS", test_version="1", lanes=[1], 
         sample_id="S1",
         sample_name="S1name",
         project="P",

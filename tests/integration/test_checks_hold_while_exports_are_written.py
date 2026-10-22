@@ -12,7 +12,7 @@ from seqsetup.models.validation import ConfigurationError, ValidationSeverity
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.validation import ValidationService
 
-from .conftest import disable_repos, mark_ready, nothing_stored
+from .conftest import disable_repos, mark_ready, nothing_stored, seed_profiles
 from .test_group_1c import _pair
 from .conftest import hold_edit_lock
 
@@ -23,11 +23,11 @@ class TestTheReportsCheckMustPassToo:
     def test_an_error_found_while_the_exports_are_written_is_refused(
             self, logged_in_client, fresh_app, monkeypatch):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = SequencingRun(id="late-error", run_name="Late error", instrument_platform=InstrumentPlatform.NOVASEQ_X,
                             flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
         # Every lane of the 10B, so Mark Ready asks nothing (lanes without samples).
-        run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"),
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"),
                               lanes=list(range(1, 9))))
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)

@@ -13,6 +13,8 @@ and belongs to the lab's validation; if leaving the line out turns out to be
 right, change those tests with the writer.
 """
 
+from ..sheet_through_profiles import sheet as _sheet
+
 import json
 from datetime import datetime
 
@@ -112,7 +114,7 @@ class TestTheV2ReadsSectionWritesEachCountOnItsOwnLine:
 
     @pytest.mark.parametrize("counts", DISTINCT)
     def test_the_fallback_path_writes_the_four_counts(self, counts):
-        sheet = SampleSheetV2Exporter.export(_run(counts))
+        sheet = _sheet(_run(counts))
 
         assert "[BCLConvert_Data]" in sheet
         assert "[DragenGermline_Settings]" not in sheet  # no profiles: the fallback ran
@@ -175,7 +177,7 @@ class TestASingleEndRunToday:
                                     "Index1Cycles,10", "Index2Cycles,8"]
 
     def test_v2_writes_read2cycles_zero_on_the_fallback_path(self):
-        sheet = SampleSheetV2Exporter.export(_run(self.COUNTS))
+        sheet = _sheet(_run(self.COUNTS))
         assert _v2_reads(sheet) == ["Read1Cycles,151", "Read2Cycles,0",
                                     "Index1Cycles,10", "Index2Cycles,8"]
 
@@ -200,7 +202,7 @@ class TestASingleIndexRunToday:
                                     "Index1Cycles,10", "Index2Cycles,0"]
 
     def test_v2_writes_index2cycles_zero_on_the_fallback_path(self):
-        sheet = SampleSheetV2Exporter.export(_run(self.COUNTS))
+        sheet = _sheet(_run(self.COUNTS))
         assert _v2_reads(sheet) == ["Read1Cycles,151", "Read2Cycles,101",
                                     "Index1Cycles,10", "Index2Cycles,0"]
 

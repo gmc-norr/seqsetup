@@ -12,7 +12,7 @@ import pytest
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import disable_repos, mark_ready, nothing_stored, stored_export
+from .conftest import disable_repos, mark_ready, nothing_stored, stored_export, seed_profiles
 from .test_group_a3 import profiles  # noqa: F401 (fixture)
 from .test_group_1c import _pair
 from .test_served_runs import _full, _run, _section, _token
@@ -32,12 +32,12 @@ CASES = [
 
 
 def _ready(logged_in_client, ctx, run_id, instrument, flowcell, workflow):
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
     run = SequencingRun(
         id=run_id, run_name="Target run", instrument_platform=instrument, flowcell_type=flowcell,
         i5_workflow=workflow, run_cycles=RunCycles(151, 151, 10, 10),
     )
-    run.add_sample(Sample(sample_id="S1", index_pair=_pair("ATTACTCG", I5, "p1"), lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("ATTACTCG", I5, "p1"), lanes=[1]))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
     assert mark_ready(logged_in_client, run_id, ORIGIN).status_code == 200
@@ -237,10 +237,10 @@ class TestTheI5RuleMustHoldWhileTheExportsAreWritten:
         from seqsetup.services.validation_report import ValidationReportJSON
 
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = SequencingRun(id="rule-moved", run_name="Rule moved", instrument_platform=InstrumentPlatform.NOVASEQ_X,
                             flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
-        run.add_sample(Sample(sample_id="S1", index_pair=_pair("ATTACTCG", I5, "p1"), lanes=[1]))
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("ATTACTCG", I5, "p1"), lanes=[1]))
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)
 

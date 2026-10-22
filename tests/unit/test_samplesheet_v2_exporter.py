@@ -19,13 +19,18 @@ from seqsetup.models.test_profile import ApplicationProfileReference, TestProfil
 from seqsetup.services.samplesheet_v2_exporter import SampleSheetV2Exporter
 from seqsetup.services.sheet_text import PLAIN_VERSION_RE
 
+from ..sheet_through_profiles import (  # noqa: F401  (the stubs are used below)
+    _DEFAULT_FIELDS, _DEFAULT_SETTINGS, _StubAppProfileRepo, _StubTestProfileRepo,
+    _bclconvert_profile, sheet as _sheet,
+)
+
 
 class TestSampleSheetV2Exporter:
     """Tests for SampleSheetV2Exporter."""
 
     def test_export_header_section(self, sample_run):
         """Test [Header] section output."""
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
 
         assert "[Header]" in output
         assert "FileFormatVersion,2" in output
@@ -34,7 +39,7 @@ class TestSampleSheetV2Exporter:
 
     def test_export_reads_section(self, sample_run):
         """Test [Reads] section output."""
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
 
         assert "[Reads]" in output
         assert "Read1Cycles,151" in output
@@ -44,7 +49,7 @@ class TestSampleSheetV2Exporter:
 
     def test_export_bclconvert_settings(self, sample_run):
         """Test [BCLConvert_Settings] section output."""
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
 
         assert "[BCLConvert_Settings]" in output
         assert "FastqCompressionFormat,gzip" in output
@@ -52,7 +57,7 @@ class TestSampleSheetV2Exporter:
 
     def test_export_bclconvert_data(self, sample_run):
         """Test [BCLConvert_Data] section output."""
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
 
         assert "[BCLConvert_Data]" in output
         # Column names use capitalized Index/Index2 for IMS compatibility
@@ -68,8 +73,12 @@ class TestSampleSheetV2Exporter:
         N2I8 for an 8-base i5 on a 10-cycle read, as Illumina's NovaSeq X
         Settings page shows (spec 2026-10-04 group A2, §2).
         """
-        output = SampleSheetV2Exporter.export(sample_run)
-        assert "OverrideCycles,Y151;I8N2;N2I8;Y151" in output
+        output = _sheet(sample_run)
+        # The writer this replaced wrote one OverrideCycles line into
+        # [BCLConvert_Settings] when every sample shared it. Production writes
+        # it per sample, in the Data row's OverrideCycles cell -- the same
+        # instruction, where BCL Convert reads it for that sample.
+        assert "Sample_001,ATTACTCG,TATAGCCT,Y151;I8N2;N2I8;Y151" in output
 
     def test_export_override_cycles_global_forward_instrument(self, i100_with_index_first):
         """Test global OverrideCycles for a forward-orientation instrument: the
@@ -92,11 +101,11 @@ class TestSampleSheetV2Exporter:
             ],
         )
 
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
 
         # That i100's standard workflow (index-first) reads the i5 forward:
-        # nothing is reversed.
-        assert "OverrideCycles,Y150;I8N2;I8N2;Y150" in output
+        # nothing is reversed. Production writes it in the sample's own row.
+        assert "S1,ATTACTCG,TATAGCCT,Y150;I8N2;I8N2;Y150" in output
 
     def test_export_override_cycles_global_rc_instrument(self):
         """NextSeq 500/550 reads the i5 reversed and its RunInfo.xml does not
@@ -120,9 +129,10 @@ class TestSampleSheetV2Exporter:
                 ),
             ],
         )
-        output = SampleSheetV2Exporter.export(run)
-        assert "OverrideCycles,Y151;I8N2;I8N2;Y151" in output
-        assert "S1,ATTACTCG,AGGCTATA" in output
+        output = _sheet(run)
+        # Production writes the mask in the sample's own row, beside the
+        # reversed Index2 it belongs to.
+        assert "S1,ATTACTCG,AGGCTATA,Y151;I8N2;I8N2;Y151" in output
 
     # Where the Index 2 part is found (spec 2026-10-04 group A2, Tests): on
     # an instrument whose RunInfo.xml marks a reversed i5 read the Index 2
@@ -211,7 +221,7 @@ class TestSampleSheetV2Exporter:
                     name="j7", sequence="GGGGCCCC", index_type=IndexType.I7)),
             ],
         )
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         # SINGLE: index1 8bp -> I8N2; absent index2 over 10 cycles -> N10.
         assert "Y151;I8N2;N10;Y151" in output
 
@@ -223,7 +233,7 @@ class TestSampleSheetV2Exporter:
         sample_run.no_lane_splitting = True
         sample_run.create_fastq_for_index_reads = True
         sample_run.adapter_behavior = "mask"
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
         assert "NoLaneSplitting,true" in output
         assert "CreateFastqForIndexReads,1" in output
         assert "AdapterBehavior,mask" in output
@@ -232,7 +242,7 @@ class TestSampleSheetV2Exporter:
         """Defaults still go on the wire so the value is deterministic — BCL
         Convert would otherwise apply its own default and the operator can't
         tell from the artifact what the run was configured for."""
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
         assert "NoLaneSplitting,false" in output
         assert "CreateFastqForIndexReads,0" in output
         # AdapterBehavior is omitted when "trim" (default) — see
@@ -258,7 +268,7 @@ class TestSampleSheetV2Exporter:
             )
         )
 
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
 
         # Should have per-sample override cycles column
         assert "Sample_ID,Index,Index2,OverrideCycles" in output
@@ -267,23 +277,28 @@ class TestSampleSheetV2Exporter:
         """Test export with lane assignments."""
         sample_run.samples[0].lanes = [1]
 
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
 
-        # Should have Lane column
-        assert "Lane,Sample_ID" in output
-        assert "1,Sample_001" in output
+        # Production's own column order comes from the profile's DataFields:
+        # Sample_ID first, then Lane (the writer this replaced put Lane first).
+        assert "Sample_ID,Lane,Index,Index2" in output
+        assert "Sample_001,1,ATTACTCG,TATAGCCT" in output
 
     def test_export_with_dragen_germline(self, sample_run, sample_analysis):
-        """Test export with DRAGEN Germline analysis."""
+        """Test export with DRAGEN Germline analysis. Production writes the
+        section from the DragenGermline profile the sample's test names -- the
+        genome included -- not from the Analysis object."""
         sample_analysis.sample_ids = [sample_run.samples[0].sample_id]
         sample_run.add_analysis(sample_analysis)
 
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
 
         assert "[DragenGermline_Settings]" in output
-        assert "ReferenceGenomeDir,hg38" in output
         assert "[DragenGermline_Data]" in output
-        assert "Sample_001" in output
+        # A profile's Data value is a column of the Data section, not a
+        # Settings line (the writer this replaced wrote it as a line).
+        assert "Sample_ID,ReferenceGenomeDir" in output
+        assert "Sample_001,hg38" in output
 
     def test_export_escapes_csv_values(self):
         """Test that values with commas are properly escaped."""
@@ -292,7 +307,7 @@ class TestSampleSheetV2Exporter:
             run_cycles=RunCycles(151, 151, 10, 10),
         )
 
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
 
         assert '"Run, with comma"' in output
 
@@ -338,7 +353,7 @@ class TestSampleSheetV2Exporter:
             ],
         )
 
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         # Normalized to ';' (BCL Convert separator); no literal comma remains, so
         # no CSV-quoting is needed and the row keeps the right column count.
         assert "Y151;I8;I8;Y151" in output
@@ -369,9 +384,14 @@ class TestSampleSheetV2Exporter:
                 ),
             ],
         )
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         assert '"ATTAC,TCG"' in output
 
+    @pytest.mark.skip(reason="Retired with the fallback writer (review TH-1): "
+                             "analysis.reference_genome reached only that writer's DRAGEN "
+                             "sections. Production writes a DRAGEN section from the "
+                             "profile, and a comma in a profile data value is held by "
+                             "test_export_escapes_application_profile_data_value_with_comma.")
     def test_export_escapes_reference_genome_with_comma(self):
         """analysis.reference_genome with a comma must be quoted in DRAGEN sections."""
         run = SequencingRun(
@@ -399,7 +419,7 @@ class TestSampleSheetV2Exporter:
             ],
         )
 
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         assert '"hg38,injected"' in output
 
     def test_export_escapes_application_profile_data_value_with_comma(self):
@@ -492,11 +512,16 @@ class TestSampleSheetV2Exporter:
             run_cycles=RunCycles(151, 151, 10, 10),
         )
 
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
 
-        # Should still have sections
-        assert "[Header]" in output
-        assert "[BCLConvert_Data]" in output
+        # Production writes a section per application the run's samples' tests
+        # name, so a run with no samples has none -- and a run with no samples
+        # is one Mark Ready refuses (prerequisite_no_samples). What must hold
+        # is that the writer does not fall over: the run-level sections are
+        # there and nothing else is.
+        assert "[Header]" in output and "[Reads]" in output
+        assert "[Cloud_Settings]" in output and "[Cloud_Data]" in output
+        assert "[BCLConvert_" not in output
 
     def test_export_miseq_platform(self):
         """Test export for MiSeq i100 platform."""
@@ -507,7 +532,7 @@ class TestSampleSheetV2Exporter:
             run_cycles=RunCycles(150, 150, 10, 10),
         )
 
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
 
         # samplesheet_name for MiSeq i100 is "MiSeqi100Series"
         assert "InstrumentPlatform,MiSeqi100Series" in output
@@ -528,7 +553,7 @@ class TestSampleSheetV2Exporter:
                 ),
             ],
         )
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         # i5 should be forward (as stored) for NovaSeq X
         assert "S1,ATTACTCG,TATAGCCT," in output
 
@@ -548,7 +573,7 @@ class TestSampleSheetV2Exporter:
                 ),
             ],
         )
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         # TATAGCCT reverse-complemented is AGGCTATA
         assert "S1,ATTACTCG,AGGCTATA" in output
         # Check BCLConvert_Data section only (not Cloud_Data where forward i5 appears in LibraryName)
@@ -573,7 +598,7 @@ class TestSampleSheetV2Exporter:
                 ),
             ],
         )
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         # TATAGCCT reverse-complemented is AGGCTATA
         assert "S1,ATTACTCG,AGGCTATA," in output
         # The i5s are not forward, so the header does not say so.
@@ -595,7 +620,7 @@ class TestSampleSheetV2Exporter:
                 ),
             ],
         )
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         # i5 should be forward for MiSeq
         assert "S1,ATTACTCG,TATAGCCT," in output
 
@@ -615,7 +640,7 @@ class TestSampleSheetV2Exporter:
                 ),
             ],
         )
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         # TATAGCCT reverse-complemented is AGGCTATA
         assert "S1,ATTACTCG,AGGCTATA," in output
         # The i5s are not forward, so the header does not say so.
@@ -630,27 +655,6 @@ def _plain_bclconvert(lane: bool = False) -> ApplicationProfile:
         name="PlainBCLConvert", version="1.0.0", application_type="Dragen",
         application_name="BCLConvert", settings={}, data={}, data_fields=fields,
     )
-
-
-class _StubTestProfileRepo:
-    """In-memory test profile repo keyed by the sample's test (a TestName)."""
-
-    def __init__(self, profiles_by_test: dict):
-        self._profiles = profiles_by_test
-
-    def list_by_test_name(self, test_name):
-        profile = self._profiles.get(test_name)
-        return [profile] if profile else []
-
-
-class _StubAppProfileRepo:
-    """In-memory application profile repo keyed by (name, version)."""
-
-    def __init__(self, profiles_by_key: dict):
-        self._profiles = profiles_by_key
-
-    def get_by_name_version(self, name, version):
-        return self._profiles.get((name, version))
 
 
 class TestApplicationSectionsAcrossTestProfiles:
@@ -974,11 +978,11 @@ class TestSampleIdentifiersWrittenExactly:
         return TestApplicationSectionsAcrossTestProfiles._extract_section(output, name)
 
     def test_leading_dash_kept_in_bclconvert_data(self):
-        output = SampleSheetV2Exporter.export(self._run())
+        output = _sheet(self._run())
         assert "\n-S1,ATTACTCG,TATAGCCT" in self._section(output, "BCLConvert_Data")
 
     def test_leading_dash_kept_in_cloud_data(self):
-        output = SampleSheetV2Exporter.export(self._run())
+        output = _sheet(self._run())
         cloud = self._section(output, "Cloud_Data")
         assert "\n-S1," in cloud
         assert ",-S1_ATTACTCG_TATAGCCT" in cloud
@@ -1004,19 +1008,19 @@ class TestSampleIdentifiersWrittenExactly:
             dragen_pipeline=DRAGENPipeline.GERMLINE, reference_genome="hg38",
             sample_ids=["-S1"],
         )
-        output = SampleSheetV2Exporter.export(self._run(analysis=analysis))
+        output = _sheet(self._run(analysis=analysis))
         assert "\n-S1" in self._section(output, "DragenGermline_Data")
 
     def test_formula_like_text_still_guarded(self):
         # Not a valid sample name: validation blocks it, and the sheet keeps
         # the formula guard in case it is ever opened in a spreadsheet.
-        output = SampleSheetV2Exporter.export(self._run(sample_id="=1+2"))
+        output = _sheet(self._run(sample_id="=1+2"))
         assert "\n'=1+2," in self._section(output, "BCLConvert_Data")
 
     def test_leading_dash_run_name_kept_in_header_and_cloud_project(self):
         run = self._run()
         run.run_name = "-Run1"
-        output = SampleSheetV2Exporter.export(run)
+        output = _sheet(run)
         assert "\nRunName,-Run1\n" in output
         assert "\n-S1,-Run1," in self._section(output, "Cloud_Data")
 
@@ -1054,15 +1058,15 @@ class TestSheetTextGuards:
             lambda platform: "NovaSeqXSeries\n[Cloud_Data]",
         )
         with pytest.raises(ValueError, match="sample sheet name"):
-            SampleSheetV2Exporter.export(sample_run)
+            _sheet(sample_run)
 
-    def test_bad_software_version_is_refused(self, sample_run, monkeypatch):
-        monkeypatch.setattr(
-            "seqsetup.services.samplesheet_v2_exporter.get_bclconvert_software_version",
-            lambda platform: "4.3.6\n[Junk]",
-        )
-        with pytest.raises(ValueError, match="software version"):
-            SampleSheetV2Exporter.export(sample_run)
+    def test_bad_software_version_is_refused(self, sample_run):
+        """The version comes from the BCLConvert profile's own Settings (the
+        writer this replaced read it from the instrument settings instead), so
+        the guard that holds is the one on a profile value: a line break in it
+        would start a new line in the sheet."""
+        with pytest.raises(ValueError, match="Hidden character"):
+            _sheet(sample_run, settings={"SoftwareVersion": "4.3.6\n[Junk]"})
 
     def test_bad_application_name_is_refused(self):
         run = SequencingRun(
@@ -1109,7 +1113,7 @@ class TestSheetTextGuards:
             SampleSheetV2Exporter._require_plain(value, PLAIN_VERSION_RE, "v")
 
     def test_plain_names_are_written_unchanged(self, sample_run):
-        output = SampleSheetV2Exporter.export(sample_run)
+        output = _sheet(sample_run)
 
         assert "InstrumentPlatform,NovaSeqXSeries" in output
         assert "SoftwareVersion,4.3.6" in output
@@ -1302,7 +1306,7 @@ class TestInvisibleCharacters:
         sample_run.run_name = "Run​1"
 
         with pytest.raises(ValueError, match="U\\+200B"):
-            SampleSheetV2Exporter.export(sample_run)
+            _sheet(sample_run)
 
     def test_zero_width_space_in_cloud_data_is_refused(self, sample_run):
         sample_run.samples[0].sample_id = "S​1"

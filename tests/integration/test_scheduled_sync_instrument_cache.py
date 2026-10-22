@@ -8,7 +8,8 @@ until a restart — including the i5 orientation written to the Sample Sheet.
 
 from seqsetup.data import instruments as instruments_module
 from seqsetup.models.index import Index, IndexPair, IndexType
-from seqsetup.models.instrument_definition import InstrumentDefinition
+from seqsetup.models.instrument_definition import (InstrumentDefinition,
+                                                   OnboardApplication)
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import (
     InstrumentPlatform,
@@ -17,7 +18,7 @@ from seqsetup.models.sequencing_run import (
 )
 from seqsetup.services.scheduler import ProfileSyncScheduler
 
-from .conftest import disable_repos
+from .conftest import disable_repos, seed_profiles
 from .conftest import hold_edit_lock
 from .conftest import shipped_flowcells
 
@@ -40,6 +41,10 @@ def _instrument(orientation: str) -> InstrumentDefinition:
         chemistry_type="2-color",
         i5_workflows=[{"name": "Standard", "i5_read_orientation": "reverse-complement"}],
         runinfo_marks_i5_reversed=orientation == "forward",
+        # The sheet is written from the profiles a sample's test names, and a
+        # profile's application must be one the instrument runs: every shipped
+        # instrument file lists BCLConvert, so this one does too.
+        onboard_applications=[OnboardApplication(name="BCLConvert", software_version="4.3.6")],
     )
 
 
@@ -48,7 +53,7 @@ def _marks() -> bool:
     return instruments_module.get_instrument_config(INSTRUMENT)["runinfo_marks_i5_reversed"]
 
 
-def _scheduled_sync(ctx, monkeypatch, orientation: str) -> None:
+def _scheduled_sync(ctx, monkeypatch, orientation: str, profiles=None) -> None:
     """Run one scheduled sync, as the background scheduler does, with the
     GitHub fetches replaced by a fixed instrument definition."""
     config = ctx.profile_sync_config_repo.get()
@@ -60,9 +65,21 @@ def _scheduled_sync(ctx, monkeypatch, orientation: str) -> None:
     ctx.profile_sync_config_repo.save(config)
 
     service = ctx.get_github_sync_service()
-    monkeypatch.setattr(
-        service, "_fetch_profiles_recursive", lambda *a, **k: []
-    )
+
+    def _profiles(owner, repo, branch, path, *args, paths=None, **kw):
+        # A test that marks a run Ready passes the profiles it seeded, so this
+        # sync hands them back: one that fetched none while the database holds
+        # some is refused as a destructive replace. The sync zips what it got
+        # with the paths it was given, so one path per profile.
+        if profiles is None:
+            return []
+        app_profile, test_profile = profiles
+        found = [test_profile] if "test" in path else [app_profile]
+        if paths is not None:
+            paths.extend(f"{path}profile-{n}.yaml" for n, _ in enumerate(found))
+        return found
+
+    monkeypatch.setattr(service, "_fetch_profiles_recursive", _profiles)
     monkeypatch.setattr(
         service, "_fetch_instruments", lambda *a, **k: ([_instrument(orientation)], [])
     )
@@ -78,7 +95,7 @@ def _seed_run(ctx, run_id: str) -> str:
         flowcell_type="10B",
         run_cycles=RunCycles(151, 151, 8, 8),
     )
-    run.add_sample(Sample(
+    run.add_sample(Sample(test_id="WGS", test_version="1",
         sample_id="S1",
         index_pair=IndexPair(
             id="p1", name="p1",
@@ -121,9 +138,9 @@ class TestScheduledSyncRefreshesInstruments:
         self, fresh_app, logged_in_client, monkeypatch
     ):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        profiles = seed_profiles(ctx, lane=False)
 
-        _scheduled_sync(ctx, monkeypatch, "forward")
+        _scheduled_sync(ctx, monkeypatch, "forward", profiles)
         run_a = _seed_run(ctx, "sync-cache-a")
         assert logged_in_client.post(
             f"/runs/{run_a}/status/ready", headers=ORIGIN
@@ -131,7 +148,7 @@ class TestScheduledSyncRefreshesInstruments:
         sheet_a = logged_in_client.get(f"/runs/{run_a}/export/samplesheet-v2").text
         assert _i5_cell(sheet_a) == I5_FORWARD
 
-        _scheduled_sync(ctx, monkeypatch, "reverse-complement")
+        _scheduled_sync(ctx, monkeypatch, "reverse-complement", profiles)
         run_b = _seed_run(ctx, "sync-cache-b")
         assert logged_in_client.post(
             f"/runs/{run_b}/status/ready", headers=ORIGIN

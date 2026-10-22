@@ -3,6 +3,8 @@ workflow reads the i5 and whether RunInfo.xml marks a reversed read, the
 sheets write the Index2 column, the Index 2 part of OverrideCycles and the
 header line, and the checks read the i5 the way the instrument does."""
 
+from ..sheet_through_profiles import sheet as _sheet
+
 from datetime import datetime
 
 import pytest
@@ -82,21 +84,24 @@ class TestTheSheets:
     """What the v2 and v1 sheets write, for an 8-base i5 on a 10-cycle read
     (I8N2) and a 10-base one (I10, symmetric)."""
 
+    # The row production writes: the profile's own columns, Sample_ID first,
+    # with the sample's OverrideCycles in its own cell (the writer this
+    # replaced put Lane first and one OverrideCycles line in the Settings).
     @pytest.mark.parametrize("instrument,workflow,read,column,mask", RULE, ids=RULE_IDS)
     def test_the_v2_sheet(self, instrument, workflow, read, column, mask):
-        sheet = SampleSheetV2Exporter.export(_run(instrument, workflow))
-        assert _line(sheet, "1,S1,") == f"1,S1,{I7},{I5_RC if column else I5},1,1"
+        sheet = _sheet(_run(instrument, workflow))
         index2_mask = "N2I8" if mask else "I8N2"
-        assert _line(sheet, "OverrideCycles,") == f"OverrideCycles,Y151;I8N2;{index2_mask};Y151"
+        assert _line(sheet, "S1,1,") == (
+            f"S1,1,{I7},{I5_RC if column else I5},Y151;I8N2;{index2_mask};Y151,1,1")
         assert ("IndexOrientation,Forward" in sheet.splitlines()) is not column
         # Cloud_Data names the library with the i5 as the kit lists it.
         assert _line(sheet, "S1,A2-sheet,") == f"S1,A2-sheet,S1_{I7}_{I5}"
 
     @pytest.mark.parametrize("instrument,workflow,read,column,mask", RULE, ids=RULE_IDS)
     def test_a_symmetric_mask_does_not_change(self, instrument, workflow, read, column, mask):
-        sheet = SampleSheetV2Exporter.export(_run(instrument, workflow, i7=I7_10, i5=I5_10))
-        assert _line(sheet, "OverrideCycles,") == "OverrideCycles,Y151;I10;I10;Y151"
-        assert _line(sheet, "1,S1,") == f"1,S1,{I7_10},{I5_10_RC if column else I5_10},1,1"
+        sheet = _sheet(_run(instrument, workflow, i7=I7_10, i5=I5_10))
+        assert _line(sheet, "S1,1,") == (
+            f"S1,1,{I7_10},{I5_10_RC if column else I5_10},Y151;I10;I10;Y151,1,1")
 
     @pytest.mark.parametrize("instrument,workflow,read", [
         ("MiSeq", "Standard", F),
@@ -111,6 +116,11 @@ class TestTheSheets:
 
 # Today's sheets (main 9f14e32), for _run(instrument) with an 8-base or a
 # 10-base i5. They differ between instruments only in the values in TODAY.
+#
+# This is the sheet production writes -- the profile-driven path, through
+# tests/sheet_through_profiles.py. Until 2026-10-22 it was the second writer's
+# sheet (Lane first, one OverrideCycles line in the Settings), which production
+# never wrote (review TH-1).
 TODAY_V2 = """\
 [Header]
 FileFormatVersion,2
@@ -126,15 +136,14 @@ Index1Cycles,10
 Index2Cycles,10
 
 [BCLConvert_Settings]
-SoftwareVersion,4.3.6
-FastqCompressionFormat,gzip
 NoLaneSplitting,false
 CreateFastqForIndexReads,0
-OverrideCycles,Y151;{index1};{index2};Y151
+SoftwareVersion,4.3.6
+FastqCompressionFormat,gzip
 
 [BCLConvert_Data]
-Lane,Sample_ID,Index,Index2,BarcodeMismatchesIndex1,BarcodeMismatchesIndex2
-1,S1,{i7},{i5_cell},1,1
+Sample_ID,Lane,Index,Index2,OverrideCycles,BarcodeMismatchesIndex1,BarcodeMismatchesIndex2
+S1,1,{i7},{i5_cell},Y151;{index1};{index2};Y151,1,1
 
 [Cloud_Settings]
 GeneratedVersion,2.7.0
@@ -227,10 +236,10 @@ class TestTodaysSheets:
             expected = expected.replace("IndexOrientation,Forward\n", "")
         if size == 8 and instrument in INDEX2_MASK_NOW:
             old, new = INDEX2_MASK_NOW[instrument]
-            expected = expected.replace(f"OverrideCycles,Y151;I8N2;{old};Y151",
-                                        f"OverrideCycles,Y151;I8N2;{new};Y151")
+            expected = expected.replace(f"Y151;I8N2;{old};Y151",
+                                        f"Y151;I8N2;{new};Y151")
         i7, i5 = (I7, I5) if size == 8 else (I7_10, I5_10)
-        assert SampleSheetV2Exporter.export(_run(instrument, i7=i7, i5=i5)) == expected
+        assert _sheet(_run(instrument, i7=i7, i5=i5)) == expected
 
     @pytest.mark.parametrize("size", [8, 10])
     @pytest.mark.parametrize("instrument", ["MiSeq", "NovaSeq 6000"])
@@ -267,7 +276,7 @@ class TestNoDirection:
     def test_the_writers_refuse_it(self):
         run = _run("MiSeq i100 Series", "Old name")
         with pytest.raises(NoI5Direction):
-            SampleSheetV2Exporter.export(run)
+            _sheet(run)
         with pytest.raises(NoI5Direction):
             SampleSheetV1Exporter.export(_run("MiSeq", "Old name"))
 
@@ -329,9 +338,8 @@ class TestALabFileThatListsIndexFirst:
                 direction.index2_mask_reversed) == (F, False, False)
 
     def test_the_v2_sheet(self):
-        sheet = SampleSheetV2Exporter.export(_run("MiSeq i100 Series", "Index-first"))
-        assert _line(sheet, "1,S1,") == f"1,S1,{I7},{I5},1,1"
-        assert _line(sheet, "OverrideCycles,") == "OverrideCycles,Y151;I8N2;I8N2;Y151"
+        sheet = _sheet(_run("MiSeq i100 Series", "Index-first"))
+        assert _line(sheet, "S1,1,") == f"S1,1,{I7},{I5},Y151;I8N2;I8N2;Y151,1,1"
         assert "IndexOrientation,Forward" in sheet.splitlines()
 
     def test_the_dark_start_check_reads_it_forward(self):

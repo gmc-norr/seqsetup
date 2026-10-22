@@ -19,7 +19,7 @@ from seqsetup.models.sequencing_run import (
     SequencingRun,
 )
 
-from .conftest import disable_repos, mark_ready, stored_export
+from .conftest import disable_repos, mark_ready, stored_export, seed_profiles
 from .test_group_1c import _pair
 from .conftest import hold_edit_lock
 
@@ -45,7 +45,7 @@ def _ready_run(logged_in_client, ctx, run_id: str, name: str) -> str:
     five export routes answer for this run. Marked Ready through the real
     route, so every export is pre-generated the way production does it.
     """
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
     run = SequencingRun(
         id=run_id,
         run_name=name,
@@ -53,7 +53,7 @@ def _ready_run(logged_in_client, ctx, run_id: str, name: str) -> str:
         flowcell_type="S4",
         run_cycles=RunCycles(151, 151, 10, 10),
     )
-    run.add_sample(Sample(sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"),
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("CCCCCCCC", "GGGGGGGG", "p1"),
                           lanes=[1]))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)

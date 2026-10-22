@@ -1,5 +1,7 @@
 """Tests for build_draft_run — the shared clone/template instantiation path."""
 
+from ..sheet_through_profiles import sheet as _sheet
+
 import pytest
 
 from seqsetup.models.analysis import Analysis, AnalysisType, DRAGENPipeline
@@ -240,6 +242,6 @@ class TestExportHasNoDanglingAnalysisReference:
             config_source=src, samples=[ctrl], created_by="a",
             run_name="x", instrument_config=None,
         )
-        out = SampleSheetV2Exporter.export(run)
+        out = _sheet(run)
         assert "CTRL" in out
         assert "S1" not in out

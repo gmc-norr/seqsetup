@@ -7,7 +7,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
 
 from .page_shows import shown_override_cycles, shown_setting
-from .conftest import disable_repos, nothing_stored
+from .conftest import disable_repos, nothing_stored, seed_profiles
 from .conftest import hold_edit_lock
 
 
@@ -53,7 +53,7 @@ def _seed(ctx, run_id: str, pairs=(("ATTACTCG", "TATAGCCT"),), platform=Instrume
         run_cycles=RunCycles(151, 151, 10, 10),
     )
     for n, (i7, i5) in enumerate(pairs, start=1):
-        sample = Sample(sample_id=f"S{n}", index_pair=_pair(i7, i5, f"p{n}"), lanes=list(lanes))
+        sample = Sample(test_id="WGS", test_version="1", sample_id=f"S{n}", index_pair=_pair(i7, i5, f"p{n}"), lanes=list(lanes))
         if read1_pattern:
             sample.read1_override_pattern = read1_pattern
         run.add_sample(sample)
@@ -196,7 +196,7 @@ class TestReadyMessageSlot:
 
     def test_success_empties_the_ready_slot(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run_id = _seed(ctx, "slot-ok", pairs=(CLEAN_PAIR,), lanes=EVERY_LANE)
 
         resp = logged_in_client.post(f"/runs/{run_id}/status/ready", headers=ORIGIN)
@@ -239,7 +239,7 @@ class TestColorBalanceQuestion:
 
     def _setup(self, fresh_app, run_id, pairs=(("ATTACTCG", "TATAGCCT"),), lanes=(1,)):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         return ctx, _seed(ctx, run_id, pairs=pairs, lanes=lanes)
 
     def test_error_lanes_ask_and_stay_draft(self, logged_in_client, fresh_app):

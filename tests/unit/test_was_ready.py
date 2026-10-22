@@ -3,6 +3,8 @@
 The flag decides who may delete an emptied draft and whether a copy is
 kept. The model keeps it, so no route can forget it or clear it."""
 
+from ..sheet_through_profiles import sheet as _sheet
+
 from seqsetup.models.sequencing_run import RunStatus, SequencingRun
 from seqsetup.services.json_exporter import JSONExporter
 from seqsetup.services.run_diff import diff_run
@@ -87,5 +89,5 @@ class TestExportsDoNotCarryTheFlag:
         doc["was_ready"] = True
         once = SequencingRun.from_dict(doc)
         assert (never.was_ready, once.was_ready) == (False, True)
-        assert SampleSheetV2Exporter.export(once) == SampleSheetV2Exporter.export(never)
+        assert _sheet(once) == _sheet(never)
         assert JSONExporter.export(once) == JSONExporter.export(never)
