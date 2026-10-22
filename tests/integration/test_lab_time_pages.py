@@ -13,8 +13,9 @@ from seqsetup.models.deleted_run import DeletedRun
 from seqsetup.models.local_user import LocalUser
 from seqsetup.models.run_history import RunHistoryEntry
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunStatus, SequencingRun
+from seqsetup.routes import api_tokens as api_tokens_module
 from seqsetup.services.log_capture import get_log_capture_handler
-from seqsetup.utils.clock import utcnow
+from seqsetup.utils.clock import local_time, utcnow
 
 from .conftest import seed_stored_exports
 
@@ -68,12 +69,20 @@ class TestRunPages:
 
 class TestAdminPages:
     def test_api_tokens(self, logged_in_client, fresh_app):
+        # The expiry is read from the clock the page itself compares with
+        # (routes/api_tokens.utcnow), so a far-off expiry stays far off on any
+        # day this runs; test_lab_time_pages_hold_on_any_day.py holds it to
+        # that. The expiry cell is then checked against local_time(), the same
+        # function the template's filter calls, so that one string proves only
+        # that the cell goes through the filter; the display zone and its name
+        # are proved by WINTER_SHOWN and SUMMER_SHOWN, which are written out.
+        expires = api_tokens_module.utcnow() + timedelta(days=365)
         _app, ctx, _db = fresh_app
         ctx.api_token_repo.save(ApiToken(
             name="lt-token", token_hash="h", token_prefix="p", created_by="admin-test",
-            created_at=WINTER, last_used_at=SUMMER, expires_at=datetime(2027, 1, 15, 12, 0)))
+            created_at=WINTER, last_used_at=SUMMER, expires_at=expires))
         page = logged_in_client.get("/admin/api-tokens").text
-        for shown in (WINTER_SHOWN, SUMMER_SHOWN, "2027-01-15 13:00 CET"):
+        for shown in (WINTER_SHOWN, SUMMER_SHOWN, local_time(expires)):
             assert shown in page, shown
         assert "(EXPIRED)" not in page and "(expires soon)" not in page
 
