@@ -25,6 +25,8 @@
         <p class="info-message">Dark cycle analysis is not applicable for this instrument.</p>
         <p class="info-details">Dark cycle analysis is only relevant for 2-color chemistry instruments where a dark base (producing no signal in either channel) can cause issues if the first two bases of an index are both dark.</p>
     </div>
+    {% elif no_channels %}
+    <p class="no-data-message">The dark cycle check did not run: this instrument's settings state no dye channels. The Issues tab says what to change.</p>
     {% elif not rows %}
     <p class="no-data-message">No indexed samples to analyze</p>
     {% else %}
