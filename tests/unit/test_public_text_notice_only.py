@@ -118,3 +118,20 @@ class TestThePublicTextMakesNoReadinessClaim:
         found = [pattern for pattern in REFUSED
                  if re.search(pattern, flat, re.IGNORECASE)]
         assert not found, f"{path.relative_to(ROOT)} says {found}"
+
+
+def _pages() -> list[Path]:
+    """What a reader outside the lab reads: the README, ARCHITECTURE.md and
+    the built documentation."""
+    return [p for p in _public_files() if p.name != "CLAUDE.md"]
+
+
+class TestThePagesDoNotDescribeTheWorkAsClinical:
+    """Not only a readiness claim: a page that calls the operators, the data or
+    the setting "clinical" invites the same reading (review O1: "a trusted
+    clinical operator team", "finalized clinical content")."""
+
+    @pytest.mark.parametrize("path", _pages(), ids=lambda p: str(p.relative_to(ROOT)))
+    def test_the_page_does_not_say_clinical(self, path):
+        found = re.findall(r"\bclinical\w*", _flat(path), re.IGNORECASE)
+        assert not found, f"{path.relative_to(ROOT)} says {found}"

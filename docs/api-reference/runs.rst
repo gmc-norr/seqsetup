@@ -123,7 +123,7 @@ Status Meaning
    bare JSON array of full run documents (samples, generated Sample
    Sheets, validation PDF base64, etc.) from this endpoint. That was a
    privacy/data-exposure concern (audit finding C1) — a token-holder
-   enumerating runs could bulk-dump finalized clinical content. The
+   enumerating runs could bulk-dump every finalized run's content. The
    endpoint now returns a paginated envelope of minimal summaries.
    The bulky payloads (samples, exports, PDF) are served only by the
    per-run endpoints documented below.
