@@ -21,8 +21,31 @@ from seqsetup.services.sheet_text import PLAIN_VERSION_RE
 
 from ..sheet_through_profiles import (  # noqa: F401  (several are used below)
     _DEFAULT_FIELDS, _DEFAULT_SETTINGS, _StubAppProfileRepo, _StubTestProfileRepo,
-    _bclconvert_profile, sheet as _sheet,
+    _bclconvert_profile, _repos_for, sheet as _sheet,
 )
+
+
+class TestThereIsOneWriter:
+    """``export`` writes every application section from the profiles a
+    sample's test names, so it needs both repositories. A second writer for
+    the case where they were missing wrote another sheet -- another column
+    order, a global OverrideCycles line production never writes -- and ran
+    only in tests, which therefore proved nothing about the sheet a laboratory
+    gets (review TH-1)."""
+
+    @pytest.mark.parametrize("repos", [(None, None), ("test", None), (None, "app")])
+    def test_without_both_repositories_it_refuses_in_its_own_words(self, sample_run, repos):
+        test_repo, app_repo = repos
+        if test_repo is not None:
+            test_repo, _ = _repos_for(_bclconvert_profile())
+        if app_repo is not None:
+            _, app_repo = _repos_for(_bclconvert_profile())
+
+        with pytest.raises(ValueError, match="both profile repositories"):
+            SampleSheetV2Exporter.export(sample_run, test_repo, app_repo)
+
+    def test_with_both_it_writes_the_bclconvert_section(self, sample_run):
+        assert "[BCLConvert_Data]" in _sheet(sample_run)
 
 
 class TestSampleSheetV2Exporter:
