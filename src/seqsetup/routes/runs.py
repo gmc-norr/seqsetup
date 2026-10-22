@@ -967,6 +967,10 @@ def update_status(
             new_ss_v1 if new_ss_v1 is not None and not validation_result.v1_sheet_withheld
             else None
         )
+        # Filled in as each file is stored, so every refusal below names what
+        # this attempt left in an insert-only collection (CLAUDE.md,
+        # ``_files_left``; review LIFECYCLE-1).
+        files_written: dict = {}
         try:
             new_exports = write_exports(
                 ctx, run,
@@ -978,7 +982,11 @@ def update_status(
                     "validation_pdf": new_val_pdf,
                 },
                 actor=get_username(request),
+                written=files_written,
             )
+        # The two arms below are raised before the first insert (every record
+        # is measured first), so _files_left is empty there by the design, not
+        # by chance; the two after them can name files.
         except ExportFileTooBig as too_big:
             audit(
                 "run.status.denied",
@@ -989,6 +997,7 @@ def update_status(
                 attempted_status=new_status.value,
                 kind=too_big.kind,
                 file_bytes=too_big.size,
+                **_files_left(files_written),
             )
             return HTMLResponse(
                 templates.env.get_template("runs/_ready_refused.html").render(
@@ -1018,6 +1027,7 @@ def update_status(
                 reason="export_file_missing",
                 attempted_status=new_status.value,
                 kinds=list(nothing_to_store.kinds),
+                **_files_left(files_written),
             )
             return Response(
                 "One of this run's files came out empty, so it is still a Draft. Nothing "
@@ -1037,6 +1047,7 @@ def update_status(
                 reason="export_file_not_stored",
                 attempted_status=new_status.value,
                 kind=not_stored.kind,
+                **_files_left(files_written),
             )
             return Response(
                 "This run's files were not stored as they were written, so it is still a "
@@ -1056,6 +1067,7 @@ def update_status(
                 outcome="denied",
                 reason="export_files_not_written",
                 attempted_status=new_status.value,
+                **_files_left(files_written),
             )
             return Response(
                 "This run's files could not be stored, so it is still a Draft. Nothing of "

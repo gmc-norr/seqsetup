@@ -5,6 +5,20 @@ Application Logs
 lines -- up to the last 2000. It is not a file on disk: restarting the
 application clears it.
 
+Every ``INFO``, ``WARNING`` and ``ERROR`` line on this page is **also written
+to the application's standard error**, which is where a container runtime
+keeps it: with the
+shipped Compose file, ``docker compose logs app`` (or
+``docker compose logs -f app`` to follow it). That copy is what survives a
+restart and what to read when this page cannot be opened -- after a refused
+sign-in, for instance, whose reason is logged. Both copies pass through the
+same scrub described below, and so do the tracebacks the web server itself
+prints. If your deployment already configures Python logging of its own (a
+file or syslog handler on the root logger, set up before SeqSetup starts),
+SeqSetup leaves standard error alone and your own handler receives these
+lines instead, so no line is written twice. A ``DEBUG`` line, if your
+deployment asks for one, is on this page only.
+
 .. note::
    This page shows SeqSetup's **warnings and errors** -- a rejected request,
    a problem reaching an external server -- together with its ``INFO`` lines:
