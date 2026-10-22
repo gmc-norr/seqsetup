@@ -307,18 +307,34 @@ class TestSample:
         s = Sample(sample_id="S1", read1_override_pattern="n2y*")
         assert s.read1_override_pattern == "N2Y*"
 
-    def test_from_dict_recovers_legacy_invalid_override_pattern(self):
-        """Override-pattern fields are now grammar-validated on assignment, but
-        legacy records were stored without that check. from_dict must recover
-        (drop to None + log) rather than make the whole run unloadable."""
+    @pytest.mark.parametrize("field_name, stored", [
+        ("read1_override_pattern", "Y150, Y*"),        # comma+space: invalid segment
+        ("index1_override_pattern", "free text here"),
+    ])
+    def test_from_dict_refuses_a_stored_override_pattern_its_rule_refuses(
+        self, field_name, stored
+    ):
+        """A stored override pattern the rule refuses makes the run
+        unreadable, naming the sample and the field -- it is not dropped to
+        None with a log line.
+
+        It used to be dropped: the run then opened, every check passed, and
+        the sheet carried an OverrideCycles worked out from the indexes
+        instead of the one the document described, with nothing on any page
+        saying so (CLAUDE.md, "Never silently discard data"; review
+        LIFECYCLE-3 / TH-3). The guarantee is the same one -- a value the
+        rule refuses never reaches a Sample Sheet -- said the loud way.
+        """
+        with pytest.raises(ValueError) as refused:
+            Sample.from_dict({"id": "s1", "sample_id": "S1", field_name: stored})
+
+        assert field_name in str(refused.value) and "s1" in str(refused.value)
+
+    def test_from_dict_takes_a_stored_override_pattern_its_rule_allows(self):
         sample = Sample.from_dict({
-            "id": "s1", "sample_id": "S1",
-            "read1_override_pattern": "Y150, Y*",       # comma+space: invalid segment
-            "index1_override_pattern": "free text here",  # invalid
-        })
-        assert sample.sample_id == "S1"          # loaded, did not raise
-        assert sample.read1_override_pattern is None
-        assert sample.index1_override_pattern is None
+            "id": "s1", "sample_id": "S1", "read1_override_pattern": "Y*"})
+
+        assert sample.read1_override_pattern == "Y*"
 
     def test_to_dict_does_not_alias_mutable_fields(self):
         """to_dict() must snapshot lanes/analyses/metadata by value, not by

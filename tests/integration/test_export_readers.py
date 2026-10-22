@@ -12,7 +12,7 @@ import pytest
 
 from seqsetup.models.sequencing_run import EXPORT_KINDS, RunStatus
 
-from .conftest import disable_repos
+from .conftest import disable_repos, seed_profiles
 from .test_export_files_own_records import (
     BOTH_SHEETS, ORIGIN, V2_ONLY, records, seed_run, spy_on_exporters,
 )
@@ -284,7 +284,7 @@ class TestARunStoredBeforeTheFilesMovedOutIsServedAsBefore:
         from seqsetup.models.sample import Sample
         from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, SequencingRun
         from .test_group_1c import _pair
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run = SequencingRun(
             id=run_id, run_name="Old shape", instrument_platform=InstrumentPlatform.MISEQ,
             flowcell_type="v3", run_cycles=RunCycles(151, 151, 8, 8), status=RunStatus.READY,
@@ -294,7 +294,7 @@ class TestARunStoredBeforeTheFilesMovedOutIsServedAsBefore:
             generated_validation_json='{"errors": []}',
             generated_validation_pdf=b"%PDF-1.4\nold\n",
         )
-        run.add_sample(Sample(sample_id="S1", index_pair=_pair("ATTACTCG", "TATAGCCT", "p1"),
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("ATTACTCG", "TATAGCCT", "p1"),
                               lanes=[1]))
         ctx.run_repo.save(run)
         return run

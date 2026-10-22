@@ -4,9 +4,14 @@ profile writes its ApplicationName as it is; that is not checked here.)
 
 docs/design/2026-10-17-rna-section-spelling-design.md. The DRAGEN RNA
 section is [DragenRna_Settings] / [DragenRna_Data] in Illumina's NovaSeq X
-and NextSeq 1000/2000 sample sheet version histories; the hardcoded fallback
-writer wrote [DragenRNA_Settings] / [DragenRNA_Data].
+and NextSeq 1000/2000 sample sheet version histories; the second writer, which
+hardcoded its section names and is gone (review TH-1), wrote
+[DragenRNA_Settings] / [DragenRNA_Data]. The spelling is now a profile's own
+ApplicationName, so what holds it is the check over every shipped profile
+below.
 """
+
+from ..sheet_through_profiles import sheet as _sheet
 
 import re
 from pathlib import Path
@@ -44,8 +49,19 @@ def _rna_run() -> SequencingRun:
 
 class TestTheRnaSection:
 
-    def test_the_fallback_writer_writes_illuminas_spelling(self):
-        sheet = SampleSheetV2Exporter.export(_rna_run())
+    def test_the_shipped_rna_profiles_section_is_illuminas_spelling(self):
+        """Through the writer, from the shipped profile: the spelling the
+        sheet gets is the profile's ApplicationName, so the profile is what
+        this reads. (It used to read the second writer's own hardcoded name;
+        with that writer gone, a synthetic profile would only have proved the
+        writer echoes the name the test handed it.)"""
+        import yaml as _yaml
+
+        profile = _yaml.safe_load((PROFILES / "dragen" / "DragenRnaIdt.yaml").read_text())
+        assert profile["ApplicationName"] == "DragenRna", profile["ApplicationName"]
+
+        sheet = _sheet(_rna_run())
+
         assert "[DragenRna_Settings]" in sheet
         assert "[DragenRna_Data]" in sheet
         assert "DragenRNA" not in sheet

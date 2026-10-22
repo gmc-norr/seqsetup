@@ -161,6 +161,53 @@ def disable_repos(ctx, *repo_keys: str) -> None:
             startup._repos[key] = None
 
 
+# The test every sample of a seeded run carries, and the profiles behind it.
+PROFILE_TEST_NAME = "WGS"
+PROFILE_TEST_VERSION = "1"
+
+
+def seed_profiles(ctx, *, lane: bool = True) -> tuple:
+    """Give the app one BCLConvert profile and one test that names it, so a
+    run whose samples carry ``test_id=PROFILE_TEST_NAME`` exports the sheet
+    production writes.
+
+    This replaces ``disable_repos(ctx, "test_profile", "app_profile")`` in
+    tests that only wanted a run the checks let through: the v2 writer needs
+    both profile repositories, because there is one writer and it is the
+    profile-driven one (review TH-1, 2026-10-21). The fields are the shipped
+    BCLConvertNextera profile's, less the two adapter columns it leaves empty.
+
+    Returns the two profiles, for a test whose own fake configuration sync
+    must hand them back (a sync that fetched none would be refused as a
+    destructive replace).
+    """
+    from seqsetup.models.application_profile import ApplicationProfile
+    from seqsetup.models.test_profile import ApplicationProfileReference, TestProfile
+
+    fields = ["Sample_ID", "Lane", "Index", "Index2", "OverrideCycles",
+              "BarcodeMismatchesIndex1", "BarcodeMismatchesIndex2"]
+    if not lane:
+        fields.remove("Lane")
+    # Fixed ids, so calling this twice (two runs seeded in one test) replaces
+    # the profiles instead of leaving two of each -- two profiles of one test
+    # for one application is itself a Check error.
+    ctx.app_profile_repo.save(ApplicationProfile(
+        id="seeded-bclconvert",
+        name="SeededBCLConvert", version="1.0.0", application_type="Dragen",
+        application_name="BCLConvert",
+        settings={"SoftwareVersion": "4.3.6", "FastqCompressionFormat": "gzip"},
+        data={}, data_fields=fields, source_file="SeededBCLConvert.yaml"))
+    ctx.test_profile_repo.save(TestProfile(
+        id="seeded-test",
+        test_type=PROFILE_TEST_NAME, test_name=PROFILE_TEST_NAME, version="1.0.0",
+        description=PROFILE_TEST_NAME,
+        application_profiles=[ApplicationProfileReference(
+            profile_name="SeededBCLConvert", profile_version="1.0.0")],
+        source_file=f"{PROFILE_TEST_NAME}.yaml"))
+    return (ctx.app_profile_repo.get_by_name_version("SeededBCLConvert", "1.0.0"),
+            ctx.test_profile_repo.list_by_test_name(PROFILE_TEST_NAME)[0])
+
+
 @pytest.fixture
 def admin_user_seeded(fresh_app):
     """Insert a known-good admin into the LocalUser repo and return creds."""

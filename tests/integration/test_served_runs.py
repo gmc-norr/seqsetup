@@ -19,7 +19,8 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
 from .conftest import (
-    disable_repos, hold_edit_lock, mark_ready, seed_stored_exports, stored_export,
+    disable_repos, hold_edit_lock, mark_ready, seed_profiles, seed_stored_exports,
+    stored_export,
 )
 from .test_group_1c import _pair
 
@@ -46,7 +47,7 @@ def _run(ctx, run_id, status=RunStatus.READY, updated=datetime(2026, 1, 10, 9, 0
         run_cycles=RunCycles(151, 151, 8, 8), status=status,
         created_at=updated, updated_at=updated, **stored,
     )
-    run.add_sample(Sample(id=f"{run_id}-s1", sample_id="S1", lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", id=f"{run_id}-s1", sample_id="S1", lanes=[1]))
     ctx.run_repo.save(run)
     return run_id
 
@@ -406,15 +407,15 @@ class TestTheCheckReportOnThePage:
         """Marked Ready through the real route, so the report is the one the
         checks wrote."""
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = SequencingRun(
             id="real-report", run_name="Rapport å ä ö — Ł",
             instrument_platform=InstrumentPlatform.NOVASEQ_X, flowcell_type="10B",
             run_cycles=RunCycles(151, 151, 8, 8),
         )
-        run.add_sample(Sample(sample_id="S1", index_pair=_pair("ACGTACGT", "TTGGCCAA", "p1"),
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("ACGTACGT", "TTGGCCAA", "p1"),
                               lanes=[1]))
-        run.add_sample(Sample(sample_id="S2", index_pair=_pair("CATGCATG", "AATTCCGG", "p2"),
+        run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S2", index_pair=_pair("CATGCATG", "AATTCCGG", "p2"),
                               lanes=[1]))
         ctx.run_repo.save(run)
         hold_edit_lock(ctx, run.id)

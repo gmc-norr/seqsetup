@@ -14,6 +14,8 @@ Each save is built from the page as a browser sends it: a select sends
 its selected option, or its first when none is selected.
 """
 
+from ..sheet_through_profiles import sheet as _sheet
+
 import re
 from html.parser import HTMLParser
 
@@ -120,7 +122,7 @@ def _state(ctx, run_id):
     """The four counts, the sample's OverrideCycles, and the sheet's Reads."""
     run = ctx.run_repo.get_by_id(run_id)
     rc = run.run_cycles
-    reads = SampleSheetV2Exporter.export(run).split("[Reads]", 1)[1].split("\n\n", 1)[0]
+    reads = _sheet(run).split("[Reads]", 1)[1].split("\n\n", 1)[0]
     return ((rc.read1_cycles, rc.read2_cycles, rc.index1_cycles, rc.index2_cycles),
             run.samples[0].override_cycles, reads)
 

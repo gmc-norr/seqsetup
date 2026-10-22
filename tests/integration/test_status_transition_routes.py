@@ -25,7 +25,7 @@ from seqsetup.models.index import Index, IndexPair, IndexType
 from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
-from .conftest import disable_repos, hold_edit_lock, stored_export
+from .conftest import disable_repos, hold_edit_lock, stored_export, seed_profiles
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -69,14 +69,14 @@ def _seed(ctx, run_id: str, status: RunStatus) -> str:
     let through would go all the way. A Ready or Archived run carries
     stored exports; the logged-in admin holds the edit lock, so the lock is
     never what stops a request here."""
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
     run = SequencingRun(
         id=run_id, run_name="Status rules",
         instrument_platform=InstrumentPlatform.NOVASEQ_6000, flowcell_type="S4",
         i5_workflow="v1.0 reagents", run_cycles=RunCycles(151, 151, 8, 8),
     )
-    run.add_sample(Sample(sample_id="S1", index_pair=_pair("ATTACTCG", "TATAGCCT", "p1"), lanes=[1]))
-    run.add_sample(Sample(sample_id="S2", index_pair=_pair("TCCGGAGA", "ATAGAGGC", "p2"), lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", index_pair=_pair("ATTACTCG", "TATAGCCT", "p1"), lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S2", index_pair=_pair("TCCGGAGA", "ATAGAGGC", "p2"), lanes=[1]))
     if status != RunStatus.DRAFT:
         run.status = RunStatus.READY
         for key, value in STORED_EXPORTS.items():

@@ -11,7 +11,7 @@ from seqsetup.models.run_template import RunTemplate
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 
 from .page_shows import shown_setting
-from .conftest import nothing_stored, run_version
+from .conftest import nothing_stored, run_version, seed_profiles
 from .conftest import hold_edit_lock
 
 
@@ -277,7 +277,7 @@ def _indexed_draft(ctx, run_id: str, platform=NOVASEQ_X, override: str = "",
     flowcell = {NOVASEQ_X: "10B", InstrumentPlatform.NEXTSEQ_500_550: "High"}[platform]
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=platform,
                         flowcell_type=flowcell, run_cycles=RunCycles(151, 151, 10, 10))
-    run.add_sample(Sample(sample_id="S1", lanes=[1], override_cycles=override or None,
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", lanes=[1], override_cycles=override or None,
                           index2_cycles=index2_cycles,
                           index_pair=IndexPair(
                               id="p1", name="p1",
@@ -343,7 +343,7 @@ class TestATypedIndex2MaskedFirstIsRefused:
     def test_mark_ready_refuses_a_stored_one(self, logged_in_client, fresh_app, platform):
         from .conftest import disable_repos
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = _indexed_draft(ctx, "a2-typed-ready", platform, override="Y151;I8N2;N2I8;Y151")
 
         resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
@@ -368,7 +368,7 @@ class TestAShortenedI5OnAReversedReadIsRefused:
     def test_mark_ready_refuses_it(self, logged_in_client, fresh_app, platform):
         from .conftest import disable_repos
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = _indexed_draft(ctx, "a2-short-i5", platform, i5="ACGGTTCAAG", index2_cycles=8)
 
         resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
@@ -477,7 +477,7 @@ class TestAnInstrumentLeftOutOfTheSync:
     def test_mark_ready_is_refused(self, logged_in_client, fresh_app):
         from .conftest import disable_repos
         ctx, run = self._setup(fresh_app)
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
 
         resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
 
@@ -640,7 +640,7 @@ class TestRecordsThatCannotBeUsed:
         from .conftest import disable_repos
         from .test_group_1c import _clean_run
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = _clean_run(ctx, "a2-unusable-export-step")
 
         def unusable(run_, ctx_, **_kw):
@@ -661,7 +661,7 @@ class TestRecordsThatCannotBeUsed:
         from .conftest import disable_repos
         from .test_group_1c import _clean_run, _sync
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         _sync(ctx, names=(NOVASEQ_X.value,))
         run = _clean_run(ctx, "a2-unusable-reread")
 
@@ -685,7 +685,7 @@ class TestRecordsThatCannotBeUsed:
         from .conftest import disable_repos
         from .test_group_1c import _clean_run, _sync
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         _sync(ctx, names=(NOVASEQ_X.value,))
         run = _clean_run(ctx, "a2-unusable-reread-db")
 

@@ -7,7 +7,7 @@ import pytest
 
 from seqsetup.models.sequencing_run import InstrumentPlatform, RunCycles, RunStatus, SequencingRun
 from .page_shows import shown_setting
-from .conftest import hold_edit_lock, nothing_stored, stored_export
+from .conftest import hold_edit_lock, nothing_stored, stored_export, seed_profiles
 from .conftest import shipped_flowcells
 
 
@@ -109,7 +109,7 @@ class TestATypedIndexPartIsRefused:
     def test_mark_ready_refuses_a_stored_one(self, logged_in_client, fresh_app, value, rule):
         from .conftest import disable_repos
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = _indexed_draft(ctx, "a3-typed-ready", override=value)
 
         resp = logged_in_client.post(f"/runs/{run.id}/status/ready", headers=ORIGIN)
@@ -127,7 +127,7 @@ class TestAnIndexMustBeAsLongAsTheCyclesRead:
         # A 10-base i7 with kit index cycles 8 on an 8-cycle read: 0 errors before.
         from .conftest import disable_repos
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run = _indexed_draft(ctx, "a3-length", i7="ATTACTCGAT", cycles=RunCycles(151, 151, 8, 8),
                              index1_cycles=8)
 
@@ -390,12 +390,12 @@ def _miseq_draft(ctx, run_id: str, mismatch_index1=1, status=RunStatus.DRAFT, **
     from seqsetup.models.index import Index, IndexPair, IndexType
     from seqsetup.models.sample import Sample
     from .conftest import disable_repos
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=InstrumentPlatform.MISEQ,
                         flowcell_type="v3", reagent_cycles=600,
                         run_cycles=RunCycles(151, 151, 8, 8), status=status,
                         **fields)
-    run.add_sample(Sample(sample_id="S1", lanes=[1], barcode_mismatches_index1=mismatch_index1,
+    run.add_sample(Sample(test_id="WGS", test_version="1", sample_id="S1", lanes=[1], barcode_mismatches_index1=mismatch_index1,
                           index_pair=IndexPair(
                               id="p1", name="p1",
                               index1=Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7),
@@ -655,11 +655,11 @@ def _two_sample_draft(ctx, run_id, first, second):
     from seqsetup.models.index import Index, IndexPair, IndexType
     from seqsetup.models.sample import Sample
     from .conftest import disable_repos
-    disable_repos(ctx, "test_profile", "app_profile")
+    seed_profiles(ctx)
     run = SequencingRun(id=run_id, run_name=run_id, instrument_platform=NOVASEQ_X,
                         flowcell_type="10B", run_cycles=RunCycles(151, 151, 10, 10))
     for n, (i7, i5) in enumerate((first, second), start=1):
-        sample = Sample(sample_id=f"S{n}", lanes=[1])
+        sample = Sample(test_id="WGS", test_version="1", sample_id=f"S{n}", lanes=[1])
         if i5 is None:
             sample.assign_index1(Index(name=f"i7-{n}", sequence=i7, index_type=IndexType.I7))
         else:

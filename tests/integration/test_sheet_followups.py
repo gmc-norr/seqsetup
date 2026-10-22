@@ -9,7 +9,7 @@ from seqsetup.data import instruments as instruments_module
 from seqsetup.models.instrument_definition import InstrumentDefinition, OnboardApplication
 from seqsetup.services.validation import clear_validation_cache
 
-from .conftest import disable_repos, nothing_stored, stored_export
+from .conftest import disable_repos, nothing_stored, stored_export, seed_profiles
 from .test_sheet_safety import _assert_validation_passes, _seed_draft, _seed_synced_profile
 from .conftest import hold_edit_lock
 from .conftest import shipped_flowcells
@@ -23,7 +23,7 @@ class TestInvisibleCharacterStopsMarkReady:
 
     def test_zero_width_space_in_description_is_refused(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run_id = _seed_draft(ctx, "zw-desc")
         run = ctx.run_repo.get_by_id(run_id)
         run.samples[0].description = "Tube​7"
@@ -254,7 +254,7 @@ class TestStoredMismatchOfTheWrongKind:
 
     def test_a_run_stored_with_true_cannot_be_marked_ready(self, logged_in_client, fresh_app):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         run_id = _seed_draft(ctx, "mm-true")
         ctx.run_repo.collection.update_one(
             {"_id": run_id}, {"$set": {"samples.0.barcode_mismatches_index1": True}}

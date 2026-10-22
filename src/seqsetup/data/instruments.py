@@ -1003,20 +1003,6 @@ def get_samplesheet_platform_name(platform: InstrumentPlatform) -> str:
     return platform.value
 
 
-def get_bclconvert_software_version(platform: InstrumentPlatform) -> Optional[str]:
-    """Get the BCLConvert software version for a platform.
-
-    Returns the software_version from the BCLConvert onboard_applications config,
-    or None if not configured.
-    """
-    config = get_instrument_config(_platform_to_name(platform))
-    if config:
-        onboard_apps = config.get("onboard_applications", {})
-        bclconvert = onboard_apps.get("BCLConvert", {})
-        return bclconvert.get("software_version")
-    return None
-
-
 def get_onboard_applications(platform: InstrumentPlatform, instrument_config=None) -> list[dict]:
     """Get onboard applications for an instrument platform (legacy)."""
     return get_onboard_applications_by_name(_platform_to_name(platform), instrument_config)

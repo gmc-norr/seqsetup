@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 import uuid
 
-from .index import Index, IndexPair, IndexType
+from .index import Index, IndexPair, IndexType, checked_index_slot
 
 
 # Illumina override-cycle notation: Y (read), I (index), U (UMI), N (mask),
@@ -17,7 +17,10 @@ from .index import Index, IndexPair, IndexType
 # shipped in a Sample Sheet — BCL Convert's OverrideCycles requires explicit
 # counts. `*` remains valid only in the per-read/per-index *_override_pattern
 # fields below.
-_VALID_OVERRIDE_CYCLES_RE = re.compile(r'^[YIUN0-9;,]*$')
+# \Z, not $: $ matches before a trailing line break, which would then be
+# written into the Sample Sheet (VALID_DNA_RE in models/index.py says the
+# same of itself; review LIFECYCLE-3 / TH-3).
+_VALID_OVERRIDE_CYCLES_RE = re.compile(r'^[YIUN0-9;,]*\Z')
 
 # A per-read/per-index override PATTERN is a single segment (no ';'/',' joiner)
 # in the same Y/I/U/N/digit/* alphabet — e.g. "Y*", "N2Y*", "U8Y*", "I8N2".
@@ -233,6 +236,14 @@ class Sample:
                         f"not shorten it.")
             elif name == "index_kit_name" and isinstance(value, str):
                 value = value[:256]
+            elif name in ("index1", "index2"):
+                # The Sample Sheet writes Index from the first and Index2 from
+                # the second: an index of the other kind here would misroute
+                # every read of this sample (review LIFECYCLE-3 / TH-3).
+                value = checked_index_slot(f"Sample.{name}", name, value)
+            elif name == "index_pair" and not isinstance(value, IndexPair):
+                raise ValueError(
+                    f"Sample.index_pair must be an IndexPair, got {type(value).__name__}")
         object.__setattr__(self, name, value)
 
     @staticmethod
@@ -468,56 +479,45 @@ class Sample:
     def from_dict(cls, data: dict) -> "Sample":
         """Create from dictionary.
 
-        Legacy-data recovery: ``override_cycles`` is now regex-enforced on
-        every assignment. Historical records may contain values that were
-        accepted under earlier (more permissive) code. Rather than make
-        the entire run unloadable in that case, we catch the ``ValueError``
-        on the field-specific assignment, log the corruption (so it leaves
-        a forensic trail), drop it to ``None`` (the safe default that
-        triggers auto-recomputation downstream), and continue. Routes that
-        later overwrite the field still validate via ``__setattr__``.
+        A stored ``override_cycles`` (or read/index override pattern) that
+        breaks the rule makes the run **unreadable**, as a stored over-long
+        sample text does. It used to be dropped to None with a log line: the
+        run then opened, every check passed, and the sheet carried an
+        OverrideCycles worked out from the indexes instead of the one the
+        document held -- a sheet nobody asked for, and nothing on any page
+        said so (CLAUDE.md, "Never silently discard data"; review
+        LIFECYCLE-3 / TH-3). Nothing in ``src/`` writes such a value, so only
+        a document edited by hand, or written by a version before the rule,
+        can carry one; the message names the field and the sample.
         """
         # Handle backward compatibility: old 'lane' field -> new 'lanes' list
         lanes = data.get("lanes", [])
         if not lanes and data.get("lane") is not None:
             lanes = [data["lane"]]
 
-        stored_override_cycles = data.get("override_cycles")
-        try:
-            override_cycles = stored_override_cycles
-            if stored_override_cycles is not None:
-                # Probe the invariant once so we can recover gracefully on
-                # legacy bad data. ``_normalize_override_cycles`` raises on
-                # any character outside the allowed alphabet.
-                cls._normalize_override_cycles(stored_override_cycles)
-        except ValueError:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Sample %r has invalid override_cycles %r in stored data; "
-                "loading with override_cycles=None. Re-save the run to drop "
-                "the corruption from the document.",
-                data.get("id"), stored_override_cycles,
-            )
-            override_cycles = None
+        override_cycles = data.get("override_cycles")
+        if override_cycles is not None:
+            try:
+                cls._normalize_override_cycles(override_cycles)
+            except ValueError as refused:
+                raise ValueError(
+                    f"Sample {data.get('id')!r} has an override_cycles its rule refuses "
+                    f"in stored data: {refused}") from refused
 
-        def _recover_pattern(field_name):
-            """Legacy override-PATTERN fields were stored without the grammar
-            check now enforced in __setattr__; recover (drop to None + log)
-            rather than make the whole run unloadable on a legacy bad value."""
+        def _stored_pattern(field_name):
+            """A stored read or index override pattern, refused rather than
+            dropped: it shapes the sample's OverrideCycles, so a value the
+            rule refuses must not be replaced by one worked out instead."""
             value = data.get(field_name)
             if value is None:
                 return None
             try:
                 cls._normalize_override_pattern(field_name, value)
-                return value
-            except ValueError:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Sample %r has invalid %s %r in stored data; loading with "
-                    "%s=None. Re-save the run to drop the corruption.",
-                    data.get("id"), field_name, value, field_name,
-                )
-                return None
+            except ValueError as refused:
+                raise ValueError(
+                    f"Sample {data.get('id')!r} has a {field_name} its rule refuses "
+                    f"in stored data: {refused}") from refused
+            return value
 
         return cls(
             id=data["id"],
@@ -537,10 +537,10 @@ class Sample:
             barcode_mismatches_index2=data["barcode_mismatches_index2"] if "barcode_mismatches_index2" in data else 1,
             index1_cycles=data.get("index1_cycles"),
             index2_cycles=data.get("index2_cycles"),
-            index1_override_pattern=_recover_pattern("index1_override_pattern"),
-            index2_override_pattern=_recover_pattern("index2_override_pattern"),
-            read1_override_pattern=_recover_pattern("read1_override_pattern"),
-            read2_override_pattern=_recover_pattern("read2_override_pattern"),
+            index1_override_pattern=_stored_pattern("index1_override_pattern"),
+            index2_override_pattern=_stored_pattern("index2_override_pattern"),
+            read1_override_pattern=_stored_pattern("read1_override_pattern"),
+            read2_override_pattern=_stored_pattern("read2_override_pattern"),
             analyses=data.get("analyses", []),
             description=data.get("description", ""),
             metadata=data.get("metadata", {}),

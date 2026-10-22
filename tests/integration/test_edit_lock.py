@@ -14,7 +14,7 @@ from seqsetup.models.sample import Sample
 from seqsetup.models.sequencing_run import RunCycles, RunStatus, SequencingRun
 from seqsetup.utils.clock import utcnow
 
-from .conftest import mark_ready
+from .conftest import mark_ready, seed_profiles
 
 ORIGIN = {"Origin": "http://testserver"}
 ADMIN, OPERATOR = "admin-test", "operator"
@@ -24,7 +24,7 @@ def _draft(ctx, run_id="lock-run", samples=0):
     run = SequencingRun(id=run_id, run_name="Lock run", flowcell_type="10B",
                         run_cycles=RunCycles(151, 151, 10, 10))
     for n in range(samples):
-        run.add_sample(Sample(sample_id=f"S{n + 1}"))
+        run.add_sample(Sample(lanes=[1], sample_id=f"S{n + 1}"))
     ctx.run_repo.save(run)
     return run.id
 
@@ -251,7 +251,7 @@ class TestTheLockFollowsTheRun:
         from .conftest import disable_repos
         from .test_group_1c import _clean_run
         ctx, admin, _op = two
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _clean_run(ctx, "lock-ready").id
         _edit(admin, run_id)
 
@@ -507,7 +507,7 @@ class TestMarkReadyChecksTheLockAgainBeforeSaving:
         from .conftest import disable_repos
         from .test_group_1c import _clean_run
         ctx, admin, op = two
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _clean_run(ctx, "lock-lost").id
         _edit(admin, run_id)
         generate = runs_module._pregenerate_exports

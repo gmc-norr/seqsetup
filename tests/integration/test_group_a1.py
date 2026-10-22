@@ -13,7 +13,8 @@ from seqsetup.services import sample_api as sample_api_module
 from seqsetup.services.index_fill import build_fill_plan
 
 from .page_shows import shown_indexes
-from .conftest import disable_repos, mark_ready, stored_export
+from .conftest import (PROFILE_TEST_NAME, disable_repos, mark_ready,
+                       seed_profiles, stored_export)
 from .conftest import hold_edit_lock, import_from_preview
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -39,15 +40,23 @@ def _pair_kit(ctx, name, pairs, **defaults):
     return kit
 
 
-def _run(ctx, sample_ids, cycles=(151, 151, 10, 10)):
+def _run(ctx, sample_ids, cycles=(151, 151, 10, 10), test=""):
     """Save a NovaSeq X draft with one sample per Sample ID given; their
-    internal ids (Sample.id) are s1, s2, ..."""
+    internal ids (Sample.id) are s1, s2, ...
+
+    ``test`` names the test every sample carries. Empty by default: the files
+    that import this builder show a page where no test is picked and send that
+    as what the page showed, so a test filled in here would make every one of
+    their applies a 409. A test that marks the run Ready passes the one its
+    seeded profiles are listed under.
+    """
     run = SequencingRun(
         id=RUN, run_name="A1", instrument_platform=InstrumentPlatform.NOVASEQ_X,
         flowcell_type="10B", run_cycles=RunCycles(*cycles),
     )
     for k, sample_id in enumerate(sample_ids, start=1):
-        run.add_sample(Sample(id=f"s{k}", sample_id=sample_id, lanes=[1]))
+        run.add_sample(Sample(test_id=test, test_version="1" if test else "",
+                              id=f"s{k}", sample_id=sample_id, lanes=[1]))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
 
@@ -200,10 +209,10 @@ class TestANewKitReplacesTheOldKitsSettings:
     @pytest.mark.parametrize("kind", ["plain-pair", "single-i7"])
     def test_mark_ready_writes_the_new_kits_override_cycles(self, logged_in_client, fresh_app, kind):
         _app, ctx, _db = fresh_app
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx)
         umi = _umi_kit(ctx)
         slot, new, override_cycles = _new_kit(ctx, kind)
-        _run(ctx, ["PAT1", "PAT2"])
+        _run(ctx, ["PAT1", "PAT2"], test=PROFILE_TEST_NAME)
         _assign(logged_in_client, ctx, "one", "pair", umi)
         _assign(logged_in_client, ctx, "drop", slot, new)
 
@@ -298,7 +307,7 @@ def _given(ctx):
 def _add_behind_the_page(ctx, sid, sample_id):
     """Another tab adds a sample; it goes at the end of the run."""
     run = _stored(ctx)
-    run.add_sample(Sample(id=sid, sample_id=sample_id, lanes=[1]))
+    run.add_sample(Sample(test_id="WGS", test_version="1", id=sid, sample_id=sample_id, lanes=[1]))
     ctx.run_repo.save(run)
     hold_edit_lock(ctx, run.id)
 

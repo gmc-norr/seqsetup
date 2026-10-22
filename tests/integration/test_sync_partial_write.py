@@ -23,7 +23,7 @@ from seqsetup.models.sequencing_run import RunStatus
 from seqsetup.services import github_sync
 from seqsetup.utils.clock import local_time
 
-from .conftest import disable_repos, mark_ready, nothing_stored, stored_export
+from .conftest import disable_repos, mark_ready, nothing_stored, stored_export, seed_profiles
 from .test_group_a3 import ORIGIN, _indexed_draft
 from .test_group_a4 import _fake_github, _test_yaml
 from .test_scheduled_sync_instrument_cache import _scheduled_sync, _seed_run
@@ -212,7 +212,7 @@ class TestASyncThatStopsWhileWritingPausesMarkReady:
         assert resp.status_code == 200
         assert ctx.instrument_definition_repo.collection.count_documents({}) == 0
 
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "sync-instrument-write")
         _refused_while_paused(logged_in_client, ctx, run_id,
                               "application profiles, test profiles and instrument settings")
@@ -436,7 +436,7 @@ class TestALaterSyncMustWriteWhatWasLeftIncomplete:
         page = html.unescape(logged_in_client.get("/admin/config-sync").text)
         assert ("did not finish writing the instrument settings. Switch on Also sync "
                 "instruments, then press Sync now to write them again.") in page
-        disable_repos(ctx, "test_profile", "app_profile")
+        seed_profiles(ctx, lane=False)
         run_id = _seed_run(ctx, "sync-instruments-off")
         _refused_while_paused(logged_in_client, ctx, run_id, "instrument settings")
 
