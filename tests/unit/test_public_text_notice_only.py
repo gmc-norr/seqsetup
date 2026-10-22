@@ -4,8 +4,9 @@ says nothing about clinical or production readiness.
 The repository is public. The README and the built documentation are what a
 reader outside the lab sees: they state the notice, and they never claim (or
 deny) readiness for clinical or production use, CE marking, IVDR conformity, or
-say who must validate what. Design notes under ``docs/design/`` are the
-project's own history and are not scanned.
+say who must validate what. CLAUDE.md, the agents' instructions, is public too
+and is held to the same. Design notes under ``docs/design/`` are the project's
+own history and are not scanned.
 """
 
 import re
@@ -33,7 +34,7 @@ REFUSED = (
     r"ready for production",
     r"production[-\s]?ready",
     r"clinical safety",
-    r"clinical use",
+    r"clinical[-\s]use",
     r"clinically valid",
     r"CE[-\s]?mark",
     r"\bIVDR?\b",
@@ -46,7 +47,7 @@ REFUSED = (
 
 
 def _public_files() -> list[Path]:
-    files = [ROOT / "README.md", ROOT / "ARCHITECTURE.md"]
+    files = [ROOT / "README.md", ROOT / "ARCHITECTURE.md", ROOT / "CLAUDE.md"]
     # relative_to(ROOT): on an absolute path every ancestor directory counts,
     # so a checkout under a directory called "design" would quietly leave the
     # whole docs tree unscanned.
@@ -88,6 +89,8 @@ class TestWhatCountsAsAReadinessClaim:
         "for in-vitro diagnostic use",
         "for in vitro diagnostic use",
         "the project's hard rules for clinical safety",
+        "SeqSetup is a clinical-use application",
+        "for clinical use",
         "a CE-marked instrument",
         "no further validation is needed",
         "fit for clinical use",
