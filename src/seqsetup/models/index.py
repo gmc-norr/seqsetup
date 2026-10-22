@@ -38,6 +38,21 @@ class IndexMode(Enum):
     SINGLE = "single"  # i7 only
 
 
+def checked_sequence(value: str) -> str:
+    """An index sequence as the model stores it: uppercased and stripped of
+    surrounding whitespace (a YAML literal-block scalar appends a newline, a
+    spreadsheet cell can carry spaces), then held to ``VALID_DNA_RE`` -- which
+    refuses whitespace inside it, and every character that is not DNA."""
+    sequence = value.upper().strip()
+    if sequence and not VALID_DNA_RE.match(sequence):
+        invalid = set(sequence) - set("ACGTN")
+        raise ValueError(
+            f"Index sequence contains invalid characters: {invalid}. "
+            f"Only A, C, G, T, N are allowed."
+        )
+    return sequence
+
+
 @dataclass
 class Index:
     """Single index sequence (i7 or i5)."""
@@ -52,18 +67,17 @@ class Index:
         """Length of the index sequence."""
         return len(self.sequence)
 
-    def __post_init__(self):
-        # Normalize to uppercase and strip surrounding whitespace (a YAML
-        # literal-block scalar appends a trailing newline; spreadsheet cells
-        # can carry stray spaces). Internal whitespace is then rejected below.
-        self.sequence = self.sequence.upper().strip()
-        # Validate DNA characters
-        if self.sequence and not VALID_DNA_RE.match(self.sequence):
-            invalid = set(self.sequence) - set("ACGTN")
-            raise ValueError(
-                f"Index sequence contains invalid characters: {invalid}. "
-                f"Only A, C, G, T, N are allowed."
-            )
+    def __setattr__(self, name: str, value):
+        """The DNA rule on every assignment, not only at construction.
+
+        A dataclass runs ``__post_init__`` once, so ``index.sequence = ...``
+        afterwards went unchecked and whatever it was would be written into
+        the Sample Sheet (CLAUDE.md, Data integrity: "self-validating on every
+        assignment"; review LIFECYCLE-3 / TH-3).
+        """
+        if name == "sequence" and isinstance(value, str):
+            value = checked_sequence(value)
+        object.__setattr__(self, name, value)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for MongoDB storage."""
@@ -85,6 +99,25 @@ class Index:
         )
 
 
+# Which kind of index each slot named for an index takes. The Sample Sheet's
+# Index column is written from the first and Index2 from the second.
+_SLOT_TYPES = {"index1": IndexType.I7, "index2": IndexType.I5}
+
+
+def checked_index_slot(where: str, name: str, value) -> "Index":
+    """``value`` as the slot ``name`` of ``where`` may hold it: an ``Index``
+    of the slot's own kind."""
+    wanted = _SLOT_TYPES[name]
+    if not isinstance(value, Index):
+        raise ValueError(
+            f"{where} must be an Index, got {type(value).__name__}")
+    if value.index_type != wanted:
+        raise ValueError(
+            f"{where} must be an {wanted.value} index, got "
+            f"index_type={value.index_type.value}")
+    return value
+
+
 @dataclass
 class IndexPair:
     """A pair of indexes (dual indexing) that can be assigned to a sample."""
@@ -95,19 +128,17 @@ class IndexPair:
     index2: Optional[Index] = None  # i5 (optional for single indexing)
     well_position: Optional[str] = None  # e.g., "A01" for fixed-layout kits
 
-    def __post_init__(self):
-        # An i5 in the i7 slot (or vice versa) would silently misroute reads at
-        # demultiplexing — reject swapped pairs at construction time.
-        if self.index1.index_type != IndexType.I7:
-            raise ValueError(
-                f"IndexPair.index1 must be an i7 index, got "
-                f"index_type={self.index1.index_type.value}"
-            )
-        if self.index2 is not None and self.index2.index_type != IndexType.I5:
-            raise ValueError(
-                f"IndexPair.index2 must be an i5 index, got "
-                f"index_type={self.index2.index_type.value}"
-            )
+    def __setattr__(self, name: str, value):
+        """The slot rule on every assignment, not only at construction.
+
+        An i5 in the i7 slot (or the other way round) would misroute every
+        read of that sample at demultiplexing, and a dataclass runs
+        ``__post_init__`` once: ``pair.index1 = <an i5>`` afterwards was taken
+        (review LIFECYCLE-3 / TH-3).
+        """
+        if name in ("index1", "index2") and value is not None:
+            value = checked_index_slot(f"IndexPair.{name}", name, value)
+        object.__setattr__(self, name, value)
 
     @property
     def index1_length(self) -> int:

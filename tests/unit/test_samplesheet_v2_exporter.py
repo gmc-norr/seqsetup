@@ -346,11 +346,14 @@ class TestSampleSheetV2Exporter:
 
     def test_export_escapes_index_sequence_with_comma(self):
         """The non-profile BCLConvert_Data path must CSV-escape index sequences,
-        in parity with the profile-driven path. Index has no __setattr__, so a
-        post-construction reassignment bypasses DNA validation; a stray comma
-        must still be quoted, not split the row into the wrong column count."""
+        in parity with the profile-driven path. A stray comma must be quoted,
+        not split the row into the wrong column count."""
         idx1 = Index(name="i7", sequence="ATTACTCG", index_type=IndexType.I7)
-        idx1.sequence = "ATTAC,TCG"  # bypasses Index.__post_init__ DNA validation
+        # Index.__setattr__ refuses this now (review LIFECYCLE-3 / TH-3), so
+        # the test reaches past the model on purpose: what is under test is
+        # the writer's own escaping, which must hold even for bytes the model
+        # would never let through.
+        object.__setattr__(idx1, "sequence", "ATTAC,TCG")
         run = SequencingRun(
             instrument_platform=InstrumentPlatform.NOVASEQ_X,
             flowcell_type="10B",
