@@ -353,3 +353,21 @@ def nothing_stored(ctx, run_or_id) -> bool:
 
 # Shared with the browser suite: tests/export_seed.py.
 from ..export_seed import seed_stored_exports  # noqa: E402,F401
+
+
+# The flow cells config/instruments.yaml gives these instruments. A synced
+# instrument file must list one at least (input_rules/instruments.py), and a
+# Draft's flow cell and kit must be ones its instrument offers
+# (flowcell_not_offered), so a synced instrument a test saves lists them.
+SHIPPED_FLOWCELLS = {
+    "NovaSeq X Series": (("1.5B", 2, (100, 200, 300)), ("10B", 8, (100, 200, 300)),
+                         ("25B", 8, (100, 200, 300))),
+    "MiSeq": (("v2 Standard", 1, (50, 300, 500)), ("v3", 1, (150, 600)),
+              ("v2 Nano", 1, (300, 500)), ("v2 Micro", 1, (300,))),
+}
+
+
+def shipped_flowcells(instrument: str) -> list:
+    from seqsetup.models.instrument_definition import FlowcellDefinition
+    return [FlowcellDefinition(name=name, lanes=lanes, reagent_kits=list(kits))
+            for name, lanes, kits in SHIPPED_FLOWCELLS[instrument]]

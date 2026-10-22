@@ -3,6 +3,10 @@
 The drop gives the index to every ticked sample as well as the drop
 target. That is only right when those samples are in different lanes; a
 box ticked for some other reason used to receive the index silently.
+
+The ticked sample here has no index: a ticked sample that shows one is
+refused before any question while "Edit indexes" is off
+(test_ticked_rows_with_an_index.py).
 """
 
 import pytest
@@ -17,6 +21,15 @@ _DROP = """([chipSel, zoneSel]) => {
 }"""
 
 
+@pytest.fixture
+def s1_without_index(app_ctx, mutable_run_id):
+    """MUT-01, the sample these tests tick, with its index cleared."""
+    run = app_ctx.run_repo.get_by_id(mutable_run_id)
+    run.get_sample(f"{mutable_run_id}-s1").clear_index()
+    app_ctx.run_repo.save(run)
+    return mutable_run_id
+
+
 def _open(page, base_url, run_id):
     page.goto(f"{base_url}/runs/{run_id}")
     page.wait_for_load_state("networkidle")
@@ -27,7 +40,7 @@ def _drop_on_s4(page, run_id):
 
 
 @pytest.mark.browser
-def test_cancel_assigns_nothing(logged_in_page, base_url, mutable_run_id):
+def test_cancel_assigns_nothing(logged_in_page, base_url, mutable_run_id, s1_without_index):
     page = logged_in_page
     _open(page, base_url, mutable_run_id)
     page.locator(f"#sample-row-{mutable_run_id}-s1 .sample-checkbox").check()
@@ -46,7 +59,7 @@ def test_cancel_assigns_nothing(logged_in_page, base_url, mutable_run_id):
 
 
 @pytest.mark.browser
-def test_ok_assigns_to_all(logged_in_page, base_url, mutable_run_id):
+def test_ok_assigns_to_all(logged_in_page, base_url, mutable_run_id, s1_without_index):
     page = logged_in_page
     _open(page, base_url, mutable_run_id)
     page.locator(f"#sample-row-{mutable_run_id}-s1 .sample-checkbox").check()

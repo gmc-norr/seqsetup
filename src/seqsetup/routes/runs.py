@@ -406,6 +406,9 @@ async def update_flowcell(
     if "flowcell_type" not in form:
         return Response("No flowcell was sent. Nothing was saved.", status_code=400)
     flowcell_type = form.get("flowcell_type", "")
+    if flowcell_type not in get_flowcells_for_instrument(run.instrument_platform):
+        return Response(f"That flowcell is not one {run.instrument_platform.value} offers. "
+                        "Nothing was saved.", status_code=400)
 
     reagent_kits = get_reagent_kits_for_flowcell(run.instrument_platform, flowcell_type)
     with saving_run(run, ctx, request):
@@ -442,7 +445,13 @@ async def update_reagent_kit(
         return refusal
     if "reagent_cycles" not in form:
         return Response("No reagent kit was sent. Nothing was saved.", status_code=400)
-    reagent_cycles = max(1, min(_int_field(form, "reagent_cycles", 1), 2000))
+    raw = form.get("reagent_cycles", "")
+    offered = get_reagent_kits_for_flowcell(run.instrument_platform, run.flowcell_type)
+    if (not isinstance(raw, str) or not re.fullmatch(r"[0-9]{1,4}", raw)
+            or (offered and int(raw) not in offered)):
+        return Response(f"That reagent kit is not one {run.instrument_platform.value} offers "
+                        f"on the {run.flowcell_type} flowcell. Nothing was saved.", status_code=400)
+    reagent_cycles = max(1, min(int(raw), 2000))
 
     defaults = get_default_cycles(reagent_cycles)
     kept_kit = run.reagent_cycles

@@ -12,6 +12,7 @@ from seqsetup.services.validation import clear_validation_cache
 from .conftest import disable_repos, nothing_stored, stored_export
 from .test_sheet_safety import _assert_validation_passes, _seed_draft, _seed_synced_profile
 from .conftest import hold_edit_lock
+from .conftest import shipped_flowcells
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -153,6 +154,7 @@ class TestSyncRefusesRiskyValues:
             # instrument must offer BCLConvert 4.10, or Mark Ready refuses the
             # version.
             ctx.instrument_definition_repo.save(InstrumentDefinition(
+                flowcells=shipped_flowcells("NovaSeq X Series"),
                 name="NovaSeq X Series",
                 samplesheet_name="NovaSeqXSeries",
                 version="1.0.0",

@@ -16,6 +16,7 @@ from seqsetup.services.validation import ValidationService, clear_validation_cac
 
 from .conftest import disable_repos, mark_ready, nothing_stored, stored_export
 from .conftest import hold_edit_lock
+from .conftest import shipped_flowcells
 
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -131,6 +132,7 @@ def _seed_synced_profile(ctx, app_name: str, settings: dict | None = None) -> No
         ] + extra,
     ))
     ctx.instrument_definition_repo.save(InstrumentDefinition(
+        flowcells=shipped_flowcells("NovaSeq X Series"),
         name="NovaSeq X Series",
         samplesheet_name="NovaSeqXSeries",
         version="1.0.0",

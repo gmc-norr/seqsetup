@@ -19,6 +19,7 @@ from ..data.instruments import (
     NoI5Direction,
     get_channel_config,
     get_chemistry_type,
+    get_flowcells_for_instrument,
     get_lanes_for_flowcell,
     get_reagent_kit_max_cycles,
     is_color_balance_enabled,
@@ -426,6 +427,7 @@ class ValidationService:
         # A run setting, so checked before the sample checks below.
         errors.extend(cls._validate_cycles_fit_kit(run))
         errors.extend(cls._validate_instrument_enabled(run))
+        errors.extend(cls._validate_flowcell_offered(run, instrument_config))
         errors.extend(cls._validate_i5_direction(run))
 
         # Prerequisite: at least one sample
@@ -517,6 +519,38 @@ class ValidationService:
                 f"in Run Setup before marking the run ready."
             ),
         )]
+
+    @classmethod
+    def _validate_flowcell_offered(cls, run: SequencingRun, instrument_config=None) -> list[ConfigurationError]:
+        """A Draft's flow cell and reagent kit must be ones its instrument
+        offers. A flow cell it does not list counts as one lane, so every lane
+        check, and the sheet, would see a one-lane run (project review of
+        7d970c7, 2026-10-21). Ready and Archived runs are left alone, as for a
+        disabled instrument."""
+        if run.status != RunStatus.DRAFT:
+            return []
+        name = run.instrument_platform.value
+        flowcells = get_flowcells_for_instrument(run.instrument_platform, instrument_config)
+        if run.flowcell_type not in flowcells:
+            found = (f"Flowcell '{run.flowcell_type}' is not one {name} offers."
+                     if run.flowcell_type else "The run has no flowcell.")
+            return [ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="flowcell_not_offered",
+                message=f"{found} Pick a flowcell in Run Setup before marking the run ready.",
+            )]
+        kits = flowcells[run.flowcell_type].get("reagent_kits", [])
+        if kits and run.reagent_cycles not in kits:
+            return [ConfigurationError(
+                severity=ValidationSeverity.ERROR,
+                category="reagent_kit_not_offered",
+                message=(
+                    f"A {run.reagent_cycles}-cycle reagent kit is not one {name} offers on the "
+                    f"{run.flowcell_type} flowcell. Pick a reagent kit in Run Setup before "
+                    f"marking the run ready."
+                ),
+            )]
+        return []
 
     @classmethod
     def _validate_i5_direction(cls, run: SequencingRun) -> list[ConfigurationError]:
